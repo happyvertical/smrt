@@ -68,7 +68,7 @@ export declare class SmrtCollection<ModelType extends SmrtObject> extends SmrtCl
      * });
      * ```
      */
-    static create<T extends new (...args: any[]) => SmrtCollection<any>>(this: T, options?: SmrtClassOptions): Promise<InstanceType<T>>;
+    static create<T extends typeof SmrtCollection>(this: T, options?: SmrtClassOptions): Promise<InstanceType<T>>;
     /**
      * Initializes the collection, setting up database tables
      *

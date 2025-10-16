@@ -15,8 +15,8 @@ import { getManifest } from "./manifest.js";
 import { M, c as c3, a as a2, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
 import { MetricsAdapter } from "./chunks/metrics-JaU-tpt3.js";
 import { PubSubAdapter } from "./chunks/pubsub-BJ1ZU6QU.js";
-import { s as s2 } from "./chunks/index-BM0B4nPn.js";
-import { staticManifest } from "./chunks/static-manifest-C3aW5yKY.js";
+import { s as s2 } from "./chunks/index-CPvrIr4b.js";
+import { staticManifest } from "./chunks/static-manifest-Di73-JKu.js";
 function validateToolCall(methodName, args, allowedMethods) {
   if (!allowedMethods.includes(methodName)) {
     throw ValidationError.invalidValue(
