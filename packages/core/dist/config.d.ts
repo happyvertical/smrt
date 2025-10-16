@@ -1,5 +1,5 @@
 import { SignalBus } from './signals/bus.js';
-import { ISignalAdapter } from '@have/types';
+import { ISignalAdapter } from '@smrt/types';
 import { LoggerConfig } from '@have/logger';
 import { SanitizationConfig } from './signals/sanitizer.js';
 /**

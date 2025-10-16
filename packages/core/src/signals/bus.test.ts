@@ -4,7 +4,7 @@
 
 import { describe, expect, it, beforeEach } from 'vitest';
 import { SignalBus } from './bus.js';
-import type { Signal, ISignalAdapter } from '@have/types';
+import type { Signal, ISignalAdapter } from '@smrt/types';
 
 describe('SignalBus', () => {
   let bus: SignalBus;

@@ -602,7 +602,7 @@ function smrtPlugin(options = {}) {
   async function scanAndGenerateManifest() {
     if (process.env.NODE_ENV === "production") {
       try {
-        const { staticManifest } = await import("./static-manifest-CXJacn4Q.js");
+        const { staticManifest } = await import("./static-manifest-C3aW5yKY.js");
         if (staticManifest && Object.keys(staticManifest.objects).length > 0) {
           console.log("[smrt] Using pre-generated static manifest");
           return staticManifest;
@@ -1294,4 +1294,4 @@ export default {};`;
 export {
   smrtPlugin as s
 };
-//# sourceMappingURL=index-D8tLNPMQ.js.map
+//# sourceMappingURL=index-BM0B4nPn.js.map

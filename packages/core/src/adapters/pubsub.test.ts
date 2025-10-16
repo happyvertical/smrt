@@ -4,7 +4,7 @@
 
 import { describe, expect, it, beforeEach } from 'vitest';
 import { PubSubAdapter } from './pubsub.js';
-import type { Signal } from '@have/types';
+import type { Signal } from '@smrt/types';
 
 describe('PubSubAdapter', () => {
   let adapter: PubSubAdapter;

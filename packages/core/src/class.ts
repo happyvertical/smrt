@@ -4,7 +4,7 @@ import type { FilesystemAdapterOptions } from '@have/files';
 import { FilesystemAdapter } from '@have/files';
 import type { DatabaseInterface } from '@have/sql';
 import { getDatabase } from '@have/sql';
-import type { ISignalAdapter } from '@have/types';
+import type { ISignalAdapter } from '@smrt/types';
 import type { LoggerConfig } from '@have/logger';
 import { SignalBus } from './signals/bus.js';
 import type {
