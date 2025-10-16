@@ -1,5 +1,5 @@
-import type { SmrtObjectOptions } from '@have/smrt';
-import { SmrtObject, smrt } from '@have/smrt';
+import type { SmrtObjectOptions } from '@smrt/core';
+import { SmrtObject, smrt } from '@smrt/core';
 
 /**
  * Options for Content initialization

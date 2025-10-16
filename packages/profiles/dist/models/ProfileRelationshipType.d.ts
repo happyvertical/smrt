@@ -1,4 +1,4 @@
-import { SmrtObject, SmrtObjectOptions } from '../../../../core/smrt/src';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 import { ReciprocalHandler } from '../types';
 export interface ProfileRelationshipTypeOptions extends SmrtObjectOptions {
     slug?: string;
@@ -6,8 +6,8 @@ export interface ProfileRelationshipTypeOptions extends SmrtObjectOptions {
     reciprocal?: boolean;
 }
 export declare class ProfileRelationshipType extends SmrtObject {
-    name: any;
-    reciprocal: any;
+    name: import('@smrt/core').Field;
+    reciprocal: import('@smrt/core').Field;
     constructor(options?: ProfileRelationshipTypeOptions);
     /**
      * Convenience method for slug-based lookup

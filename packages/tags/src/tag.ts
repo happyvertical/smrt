@@ -5,7 +5,7 @@
  * for taxonomies and category trees.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
 import type { TagOptions, TagMetadata } from './types';
 
 @smrt({

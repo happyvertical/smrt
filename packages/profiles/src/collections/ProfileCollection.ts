@@ -4,7 +4,7 @@
  * Provides advanced querying and batch operations for Profile entities.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { Profile } from '../models/Profile';
 
 export class ProfileCollection extends SmrtCollection<Profile> {

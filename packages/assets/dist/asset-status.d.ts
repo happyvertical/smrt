@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { AssetStatusOptions } from './types';
 export declare class AssetStatus extends SmrtObject {
     slug: string;

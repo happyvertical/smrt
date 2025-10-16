@@ -4,7 +4,7 @@
  * Represents a debit or credit to a specific account
  */
 
-import { SmrtObject, smrt } from '@have/smrt';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { AccountTransactionEntryOptions, CurrencyCode } from '../types';
 
 @smrt({

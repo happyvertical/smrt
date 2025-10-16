@@ -21,7 +21,12 @@
   },
   "dependencies": {
     "@smrt/core": "workspace:*",
-    "@have/documents": "^0.1.0",
+    "@have/documents": "file:../../../sdk/packages/documents",
+    "@have/files": "file:../../../sdk/packages/files",
+    "@have/pdf": "file:../../../sdk/packages/pdf",
+    "@have/spider": "file:../../../sdk/packages/spider",
+    "@have/ocr": "file:../../../sdk/packages/ocr",
+    "@have/utils": "file:../../../sdk/packages/utils",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

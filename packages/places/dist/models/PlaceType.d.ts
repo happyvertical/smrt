@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { PlaceTypeOptions } from '../types';
 export declare class PlaceType extends SmrtObject {
     description: string;

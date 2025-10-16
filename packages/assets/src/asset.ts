@@ -4,7 +4,7 @@
  * Represents a digital asset with versioning, metadata, and tag support
  */
 
-import { SmrtObject, smrt } from '@have/smrt';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { Tag } from '@have/tags';
 import type { AssetOptions } from './types';
 import type { AssetType } from './asset-type';

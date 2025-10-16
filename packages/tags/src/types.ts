@@ -2,7 +2,7 @@
  * Type definitions for @have/tags package
  */
 
-import type { SmrtObjectOptions } from '@have/smrt';
+import type { SmrtObjectOptions } from '@smrt/core';
 
 /**
  * Options for creating a Tag instance

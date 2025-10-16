@@ -2,8 +2,8 @@
  * Test selective imports to avoid problematic dependencies
  */
 
-import { ASTScanner } from '@have/smrt/scanner';
-import { smrtPlugin } from '@have/smrt/vite-plugin';
+import { ASTScanner } from '@smrt/core/scanner';
+import { smrtPlugin } from '@smrt/core/vite-plugin';
 
 console.log('✅ Workspace dependency resolution works!');
 console.log('ASTScanner:', typeof ASTScanner);

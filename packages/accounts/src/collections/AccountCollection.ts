@@ -4,7 +4,7 @@
  * Provides account hierarchy traversal, filtering by type and currency.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { Account } from '../models/Account';
 import type { AccountType, CurrencyCode } from '../types';
 

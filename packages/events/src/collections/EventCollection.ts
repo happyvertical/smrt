@@ -4,7 +4,7 @@
  * Provides hierarchy traversal, filtering, and search capabilities.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { Event } from '../models/Event';
 import type { EventSearchFilters, EventStatus } from '../types';
 

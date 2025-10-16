@@ -4,7 +4,7 @@
  * Lookup table for asset status classification (e.g., 'draft', 'published', 'archived')
  */
 
-import { SmrtObject, smrt } from '@have/smrt';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { AssetStatusOptions } from './types';
 
 @smrt({

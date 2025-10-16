@@ -139,7 +139,7 @@ export declare class SmrtCollection<ModelType extends SmrtObject> extends SmrtCl
          * ```
          */
         include?: string[];
-    }): Promise<any>;
+    }): Promise<Awaited<ModelType>[]>;
     /**
      * Eagerly load relationships for a collection of instances
      *

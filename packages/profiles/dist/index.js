@@ -46,7 +46,7 @@ var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read fr
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 var _ProfileType_decorators, _init, _a, _Profile_decorators, _init2, _b, _ProfileMetafield_decorators, _init3, _c, _ProfileMetadata_decorators, _init4, _d, _ProfileRelationship_decorators, _init5, _e, _ProfileRelationshipType_decorators, _init6, _f, _ProfileRelationshipTerm_decorators, _init7, _g;
-import { SmrtObject, text, smrt, foreignKey, oneToMany, json, boolean, datetime, SmrtCollection } from "@have/smrt";
+import { SmrtObject, text, smrt, foreignKey, oneToMany, json, boolean, datetime, SmrtCollection } from "@smrt/core";
 _ProfileType_decorators = [smrt({
   api: { include: ["list", "get", "create", "update"] },
   mcp: { include: ["list", "get"] },

@@ -1,4 +1,4 @@
-import { SmrtObject, SmrtObjectOptions } from '../../../../core/smrt/src';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 export interface ProfileOptions extends SmrtObjectOptions {
     typeId?: string;
     email?: string;
@@ -6,13 +6,13 @@ export interface ProfileOptions extends SmrtObjectOptions {
     description?: string;
 }
 export declare class Profile extends SmrtObject {
-    typeId: any;
-    email: any;
-    name: any;
-    description: any;
-    metadata: any;
-    relationshipsFrom: any;
-    relationshipsTo: any;
+    typeId: import('@smrt/core').Field;
+    email: import('@smrt/core').Field;
+    name: import('@smrt/core').Field;
+    description: import('@smrt/core').Field;
+    metadata: import('@smrt/core').Field;
+    relationshipsFrom: import('@smrt/core').Field;
+    relationshipsTo: import('@smrt/core').Field;
     constructor(options?: ProfileOptions);
     /**
      * Get the profile type slug for this profile

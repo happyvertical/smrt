@@ -4,7 +4,7 @@
  * Provides tag management, versioning, and query operations for assets
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { Asset } from './asset';
 
 export class AssetCollection extends SmrtCollection<Asset> {

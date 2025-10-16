@@ -4,7 +4,7 @@
  * Manages asset status lookup table with common status initialization
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { AssetStatus } from './asset-status';
 
 export class AssetStatusCollection extends SmrtCollection<AssetStatus> {

@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { TagAlias } from './tag-alias';
 import { Tag } from './tag';
 export declare class TagAliasCollection extends SmrtCollection<TagAlias> {

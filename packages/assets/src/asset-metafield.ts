@@ -4,7 +4,7 @@
  * Lookup table for metadata field definitions with validation rules
  */
 
-import { SmrtObject, smrt } from '@have/smrt';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { AssetMetafieldOptions } from './types';
 
 @smrt({

@@ -4,7 +4,7 @@
  * Provides queries for participants by event, profile, role, and placement.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { EventParticipant } from '../models/EventParticipant';
 import type { ParticipantRole, ParticipantSearchFilters } from '../types';
 

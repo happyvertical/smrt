@@ -1,4 +1,4 @@
-import { SmrtObject, SmrtObjectOptions } from '../../../core/smrt/src';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 import { Logger } from '@have/logger';
 import { AgentStatusType } from './types.js';
 /**
@@ -20,7 +20,7 @@ import { AgentStatusType } from './types.js';
  * ```typescript
  * import { Agent } from '@have/agents';
  * import { getModuleConfig } from '@have/config';
- * import { smrt } from '@have/smrt';
+ * import { smrt } from '@smrt/core';
  *
  * @smrt()
  * class MyAgent extends Agent {

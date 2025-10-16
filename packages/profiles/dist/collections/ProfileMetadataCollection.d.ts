@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { ProfileMetadata } from '../models/ProfileMetadata';
 export declare class ProfileMetadataCollection extends SmrtCollection<ProfileMetadata> {
     static readonly _itemClass: typeof ProfileMetadata;

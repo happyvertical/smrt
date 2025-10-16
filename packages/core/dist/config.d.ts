@@ -1,5 +1,5 @@
 import { SignalBus } from './signals/bus.js';
-import { ISignalAdapter } from '../../types/src';
+import { ISignalAdapter } from '@have/types';
 import { LoggerConfig } from '@have/logger';
 import { SanitizationConfig } from './signals/sanitizer.js';
 /**
@@ -49,7 +49,7 @@ export interface GlobalSignalConfig {
  *
  * @example
  * ```typescript
- * import { config } from '@have/smrt';
+ * import { config } from '@smrt/core';
  *
  * // Set application-level defaults
  * config({

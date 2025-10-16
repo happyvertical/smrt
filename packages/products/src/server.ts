@@ -5,7 +5,7 @@
  * No manual route definitions needed - everything is generated from @smrt() decorated classes.
  */
 
-import { createRestServer, startRestServer } from '@have/smrt';
+import { createRestServer, startRestServer } from '@smrt/core';
 import { Category } from './lib/models/Category';
 import { Product } from './lib/models/Product';
 

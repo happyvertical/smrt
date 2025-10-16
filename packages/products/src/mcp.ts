@@ -7,7 +7,7 @@
  * Run with: npm run generate:mcp
  */
 
-import { MCPGenerator } from '@have/smrt/generators/mcp';
+import { MCPGenerator } from '@smrt/core/generators/mcp';
 
 /**
  * Generate MCP server for products package

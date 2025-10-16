@@ -1,13 +1,13 @@
-import { SmrtObject, SmrtObjectOptions } from '../../../../core/smrt/src';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 export interface ProfileRelationshipTermOptions extends SmrtObjectOptions {
     relationshipId?: string;
     startedAt?: Date;
     endedAt?: Date;
 }
 export declare class ProfileRelationshipTerm extends SmrtObject {
-    relationshipId: any;
-    startedAt: any;
-    endedAt: any;
+    relationshipId: import('@smrt/core').Field;
+    startedAt: import('@smrt/core').Field;
+    endedAt: import('@smrt/core').Field;
     constructor(options?: ProfileRelationshipTermOptions);
     /**
      * Check if this term is currently active

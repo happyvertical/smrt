@@ -46,7 +46,7 @@ var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read fr
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 var _Content_decorators, _init, _a;
-import { SmrtObject, smrt, SmrtCollection } from "@have/smrt";
+import { SmrtObject, smrt, SmrtCollection } from "@smrt/core";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchDocument } from "@have/documents";

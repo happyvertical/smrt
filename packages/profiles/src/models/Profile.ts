@@ -5,8 +5,8 @@
  * Uses UUID primary key with relationships to ProfileType for classification.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
-import { text, foreignKey, oneToMany } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { text, foreignKey, oneToMany } from '@smrt/core';
 import { ProfileType } from './ProfileType';
 
 export interface ProfileOptions extends SmrtObjectOptions {

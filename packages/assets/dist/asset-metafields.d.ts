@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { AssetMetafield } from './asset-metafield';
 export declare class AssetMetafieldCollection extends SmrtCollection<AssetMetafield> {
     static readonly _itemClass: typeof AssetMetafield;

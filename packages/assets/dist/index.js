@@ -46,7 +46,7 @@ var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read fr
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 var _AssetType_decorators, _init, _a, _AssetStatus_decorators, _init2, _b, _AssetMetafield_decorators, _init3, _c, _Asset_decorators, _init4, _d;
-import { SmrtObject, smrt, SmrtCollection } from "@have/smrt";
+import { SmrtObject, smrt, SmrtCollection } from "@smrt/core";
 _AssetType_decorators = [smrt({
   api: { include: ["list", "get", "create", "update", "delete"] },
   mcp: { include: ["list", "get", "create"] },

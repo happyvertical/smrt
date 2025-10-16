@@ -1,4 +1,4 @@
-import { SmrtObjectOptions } from '../../../core/smrt/src';
+import { SmrtObjectOptions } from '@smrt/core';
 /**
  * Geographic data structure
  * All fields optional to support both real-world and abstract places

@@ -1,4 +1,4 @@
-import { SmrtObject, SmrtObjectOptions } from '../../../../core/smrt/src';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 import { ValidationSchema, ValidatorFunction } from '../types';
 export interface ProfileMetafieldOptions extends SmrtObjectOptions {
     slug?: string;
@@ -7,9 +7,9 @@ export interface ProfileMetafieldOptions extends SmrtObjectOptions {
     validation?: ValidationSchema;
 }
 export declare class ProfileMetafield extends SmrtObject {
-    name: any;
-    description: any;
-    validation: any;
+    name: import('@smrt/core').Field;
+    description: import('@smrt/core').Field;
+    validation: import('@smrt/core').Field;
     constructor(options?: ProfileMetafieldOptions);
     /**
      * Convenience method for slug-based lookup

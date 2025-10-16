@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { ProfileMetafield } from '../models/ProfileMetafield';
 import { ValidationSchema } from '../types';
 export declare class ProfileMetafieldCollection extends SmrtCollection<ProfileMetafield> {

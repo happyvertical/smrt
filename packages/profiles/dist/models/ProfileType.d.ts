@@ -1,12 +1,12 @@
-import { SmrtObject, SmrtObjectOptions } from '../../../../core/smrt/src';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 export interface ProfileTypeOptions extends SmrtObjectOptions {
     slug?: string;
     name?: string;
     description?: string;
 }
 export declare class ProfileType extends SmrtObject {
-    name: any;
-    description: any;
+    name: import('@smrt/core').Field;
+    description: import('@smrt/core').Field;
     constructor(options?: ProfileTypeOptions);
     /**
      * Convenience method for slug-based lookup

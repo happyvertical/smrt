@@ -4,7 +4,7 @@
  * Provides lookup and creation for event types.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { EventType } from '../models/EventType';
 
 export class EventTypeCollection extends SmrtCollection<EventType> {

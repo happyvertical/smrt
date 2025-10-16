@@ -4,7 +4,7 @@
  * Provides querying for profile metafield lookup table.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { ProfileMetafield } from '../models/ProfileMetafield';
 import type { ValidationSchema } from '../types';
 

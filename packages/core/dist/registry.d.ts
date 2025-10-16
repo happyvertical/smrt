@@ -290,7 +290,7 @@ export declare class ObjectRegistry {
      * console.log(orders1 === orders3); // false (different config)
      * ```
      *
-     * @see {@link https://github.com/happyvertical/sdk/blob/main/packages/smrt/CLAUDE.md#singleton-collection-management-phase-4|Phase 4 Documentation}
+     * @see {@link https://github.com/happyvertical/sdk/blob/main/packages/core/CLAUDE.md#singleton-collection-management-phase-4|Phase 4 Documentation}
      */
     static getCollection<T extends SmrtObject>(className: string, options?: any): Promise<SmrtCollection<T>>;
     /**

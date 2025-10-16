@@ -5,8 +5,8 @@
  * Uses UUID primary key with unique slug for human-readable lookups.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
-import { text, json } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { text, json } from '@smrt/core';
 import type { ValidationSchema, ValidatorFunction } from '../types';
 
 export interface ProfileMetafieldOptions extends SmrtObjectOptions {

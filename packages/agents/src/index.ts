@@ -15,7 +15,7 @@
  * ```typescript
  * import { Agent } from '@have/agents';
  * import { getModuleConfig } from '@have/config';
- * import { smrt } from '@have/smrt';
+ * import { smrt } from '@smrt/core';
  *
  * @smrt()
  * class MyAgent extends Agent {

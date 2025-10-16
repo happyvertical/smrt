@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Agent } from './agent.js';
-import { smrt } from '@have/smrt';
+import { smrt } from '@smrt/core';
 import { getModuleConfig } from '@have/config';
 
 // Test agent implementation

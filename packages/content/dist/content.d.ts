@@ -1,4 +1,4 @@
-import { SmrtObjectOptions, SmrtObject } from '../../../core/smrt/src';
+import { SmrtObjectOptions, SmrtObject } from '@smrt/core';
 /**
  * Options for Content initialization
  */
@@ -183,9 +183,9 @@ export declare class Content extends SmrtObject {
      * @returns JSON representation of this content
      */
     toJSON(): {
-        id: any;
-        slug: any;
-        context: any;
+        id: string;
+        slug: string;
+        context: string;
         type: string | null;
         variant: string;
         fileKey: string;

@@ -1,4 +1,4 @@
-import { SmrtObjectOptions } from '../../../core/smrt/src';
+import { SmrtObjectOptions } from '@smrt/core';
 /**
  * Account types based on standard accounting classifications
  */

@@ -2,7 +2,7 @@
  * Type definitions for @have/events
  */
 
-import type { SmrtObjectOptions } from '@have/smrt';
+import type { SmrtObjectOptions } from '@smrt/core';
 
 /**
  * Event status lifecycle

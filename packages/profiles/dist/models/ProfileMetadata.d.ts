@@ -1,13 +1,13 @@
-import { SmrtObject, SmrtObjectOptions } from '../../../../core/smrt/src';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 export interface ProfileMetadataOptions extends SmrtObjectOptions {
     profileId?: string;
     metafieldId?: string;
     value?: string;
 }
 export declare class ProfileMetadata extends SmrtObject {
-    profileId: any;
-    metafieldId: any;
-    value: any;
+    profileId: import('@smrt/core').Field;
+    metafieldId: import('@smrt/core').Field;
+    value: import('@smrt/core').Field;
     constructor(options?: ProfileMetadataOptions);
     /**
      * Validate this metadata value against the metafield's validation schema

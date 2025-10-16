@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { ProfileRelationshipTerm } from '../models/ProfileRelationshipTerm';
 export declare class ProfileRelationshipTermCollection extends SmrtCollection<ProfileRelationshipTerm> {
     static readonly _itemClass: typeof ProfileRelationshipTerm;

@@ -1,5 +1,5 @@
 /**
- * @have/smrt generators - Create CLIs, REST APIs, and MCP servers from SMRT objects
+ * @smrt/core generators - Create CLIs, REST APIs, and MCP servers from SMRT objects
  */
 export type { CLICommand, CLIConfig, CLIContext, ParsedArgs } from './cli';
 export { CLIGenerator, main } from './cli';

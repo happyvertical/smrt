@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { PlaceOptions, GeoData } from '../types';
 export declare class Place extends SmrtObject {
     typeId: string;

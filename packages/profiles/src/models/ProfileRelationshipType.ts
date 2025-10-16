@@ -5,8 +5,8 @@
  * Uses UUID primary key with unique slug for human-readable lookups.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
-import { text, boolean } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { text, boolean } from '@smrt/core';
 import type { ReciprocalHandler } from '../types';
 
 export interface ProfileRelationshipTypeOptions extends SmrtObjectOptions {

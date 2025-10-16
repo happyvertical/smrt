@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { EventSeriesOptions, RecurrencePattern } from '../types';
 export declare class EventSeries extends SmrtObject {
     typeId: string;

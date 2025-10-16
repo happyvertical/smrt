@@ -21,7 +21,7 @@ export const sharedDependencies: Record<string, SharedDependency> = {
   },
 
   // SMRT framework
-  '@have/smrt': {
+  '@smrt/core': {
     singleton: true,
     requiredVersion: 'workspace:*',
     eager: true,

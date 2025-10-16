@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { Account } from '../models/Account';
 import { AccountType, CurrencyCode } from '../types';
 export declare class AccountCollection extends SmrtCollection<Account> {
