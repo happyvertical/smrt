@@ -4,7 +4,7 @@
  * This creates the TypeScript declarations needed for virtual modules
  */
 
-import { generateDeclarations } from '@have/smrt/prebuild';
+import { generateDeclarations } from '@smrt/core/prebuild';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 

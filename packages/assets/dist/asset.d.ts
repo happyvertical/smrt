@@ -1,5 +1,5 @@
-import { SmrtObject } from '../../../core/smrt/src';
-import { Tag } from '../../tags/src';
+import { SmrtObject } from '@smrt/core';
+import { Tag } from '@have/tags';
 import { AssetOptions } from './types';
 import { AssetType } from './asset-type';
 import { AssetStatus } from './asset-status';

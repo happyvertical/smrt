@@ -2,7 +2,7 @@
  * @have/gnode - SMRT Federation Library
  *
  * Federated local knowledge bases (gnodes) with P2P discovery and protocols.
- * Built on top of @have/smrt for SMRT object federation.
+ * Built on top of @smrt/core for SMRT object federation.
  */
 
 export * from './federation/index.js';

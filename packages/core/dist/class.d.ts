@@ -1,7 +1,7 @@
 import { AIClientOptions, AIClient } from '@have/ai';
 import { FilesystemAdapterOptions, FilesystemAdapter } from '@have/files';
 import { DatabaseInterface } from '@have/sql';
-import { ISignalAdapter } from '../../types/src';
+import { ISignalAdapter } from '@have/types';
 import { LoggerConfig } from '@have/logger';
 import { SignalBus } from './signals/bus.js';
 import { MetricsConfig, PubSubConfig } from './config.js';

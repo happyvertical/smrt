@@ -3,7 +3,7 @@
  */
 
 import { resolve } from 'node:path';
-import { ASTScanner, smrtPlugin } from '@have/smrt';
+import { ASTScanner, smrtPlugin } from '@smrt/core';
 
 console.log('✅ Workspace dependency resolution works!');
 console.log('ASTScanner:', typeof ASTScanner);

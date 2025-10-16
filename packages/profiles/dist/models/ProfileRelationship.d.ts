@@ -1,4 +1,4 @@
-import { SmrtObject, SmrtObjectOptions } from '../../../../core/smrt/src';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 export interface ProfileRelationshipOptions extends SmrtObjectOptions {
     fromProfileId?: string;
     toProfileId?: string;
@@ -6,11 +6,11 @@ export interface ProfileRelationshipOptions extends SmrtObjectOptions {
     contextProfileId?: string;
 }
 export declare class ProfileRelationship extends SmrtObject {
-    fromProfileId: any;
-    toProfileId: any;
-    typeId: any;
-    contextProfileId: any;
-    terms: any;
+    fromProfileId: import('@smrt/core').Field;
+    toProfileId: import('@smrt/core').Field;
+    typeId: import('@smrt/core').Field;
+    contextProfileId: import('@smrt/core').Field;
+    terms: import('@smrt/core').Field;
     constructor(options?: ProfileRelationshipOptions);
     /**
      * Get the relationship type slug

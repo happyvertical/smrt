@@ -4,7 +4,7 @@
  * Provides hierarchy traversal, context filtering, and advanced tag operations.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { Tag } from './tag';
 import type { TagHierarchy } from './types';
 

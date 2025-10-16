@@ -7,13 +7,13 @@
  * Usage examples:
  *
  * // Import models
- * import { Product, Category } from '@have/smrt-template';
+ * import { Product, Category } from '@smrt/core-template';
  *
  * // Import UI components
- * import { ProductCard, ProductForm } from '@have/smrt-template/components';
+ * import { ProductCard, ProductForm } from '@smrt/core-template/components';
  *
  * // Import stores
- * import { ProductStoreClass } from '@have/smrt-template/stores';
+ * import { ProductStoreClass } from '@smrt/core-template/stores';
  */
 
 export { demonstrateClient } from './client';

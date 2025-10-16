@@ -4,7 +4,7 @@
  * Infinitely nestable: Game → Period → Goal → Assist
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
 import type { EventOptions, EventStatus } from '../types';
 
 @smrt({

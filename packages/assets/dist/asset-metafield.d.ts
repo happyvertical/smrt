@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { AssetMetafieldOptions } from './types';
 export declare class AssetMetafield extends SmrtObject {
     slug: string;

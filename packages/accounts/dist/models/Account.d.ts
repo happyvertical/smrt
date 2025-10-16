@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { AccountOptions, AccountType, CurrencyCode } from '../types';
 export declare class Account extends SmrtObject {
     type: AccountType;

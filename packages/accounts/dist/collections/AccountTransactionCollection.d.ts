@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { AccountTransaction } from '../models/AccountTransaction';
 export declare class AccountTransactionCollection extends SmrtCollection<AccountTransaction> {
     static readonly _itemClass: typeof AccountTransaction;

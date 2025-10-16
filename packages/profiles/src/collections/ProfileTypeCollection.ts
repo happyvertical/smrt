@@ -4,7 +4,7 @@
  * Provides querying for profile type lookup table.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { ProfileType } from '../models/ProfileType';
 
 export class ProfileTypeCollection extends SmrtCollection<ProfileType> {

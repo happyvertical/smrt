@@ -1,5 +1,5 @@
 {
-  "extends": "../../../tsconfig.json",
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
@@ -7,10 +7,5 @@
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"],
-  "references": [
-    { "path": "../../core/config" },
-    { "path": "../../core/logger" },
-    { "path": "../../core/smrt" }
-  ]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }

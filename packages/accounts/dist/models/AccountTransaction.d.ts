@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { AccountTransactionOptions } from '../types';
 export declare class AccountTransaction extends SmrtObject {
     date: Date;

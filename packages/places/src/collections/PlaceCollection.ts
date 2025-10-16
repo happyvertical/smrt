@@ -5,7 +5,7 @@
  * lookupOrCreate method that integrates with @have/geo.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { Place } from '../models/Place';
 import { PlaceTypeCollection } from './PlaceTypeCollection';
 import type { LookupOrCreateOptions } from '../types';

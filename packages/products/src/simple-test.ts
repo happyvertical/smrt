@@ -4,7 +4,7 @@
  */
 
 import { resolve } from 'node:path';
-import { ASTScanner, ManifestGenerator } from '@have/smrt/scanner';
+import { ASTScanner, ManifestGenerator } from '@smrt/core/scanner';
 
 async function testAST() {
   console.log('🔍 Testing AST Scanner...');

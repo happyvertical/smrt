@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test direct imports from the built @have/smrt package
+ * Test direct imports from the built @smrt/core package
  * This verifies all subpath exports are working correctly
  */
 
@@ -18,7 +18,7 @@ const imports = [
   { name: 'runtime/index', path: './dist/runtime/index.js' }
 ];
 
-console.log('Testing direct imports from @have/smrt package...\n');
+console.log('Testing direct imports from @smrt/core package...\n');
 
 let successful = 0;
 let failed = 0;

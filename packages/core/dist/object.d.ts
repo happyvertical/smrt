@@ -255,7 +255,7 @@ export declare class SmrtObject extends SmrtClass {
      * @param options - AI message options
      * @returns Promise resolving to the AI response
      */
-    do(instructions: string, options?: any): Promise<any>;
+    do(instructions: string, options?: any): Promise<string>;
     /**
      * Runs a lifecycle hook if it's defined in the object's configuration
      *

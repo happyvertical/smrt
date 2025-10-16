@@ -46,7 +46,7 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
 
   it('should create ProfileMetadata instances with lazy foreign key references', async () => {
     const { ProfileMetadata } = await import('../ProfileMetadata');
-    const { ObjectRegistry } = await import('@have/smrt');
+    const { ObjectRegistry } = await import('@smrt/core');
 
     // Create instance to trigger field initialization
     const metadata = new ProfileMetadata({
@@ -68,7 +68,7 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
   it('should resolve lazy string references at runtime via ObjectRegistry', async () => {
     const { Profile } = await import('../Profile');
     const { ProfileMetadata } = await import('../ProfileMetadata');
-    const { ObjectRegistry } = await import('@have/smrt');
+    const { ObjectRegistry } = await import('@smrt/core');
 
     // Verify both classes are registered
     expect(ObjectRegistry.hasClass('Profile')).toBe(true);
@@ -84,7 +84,7 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
   });
 
   it('should support lazy function references as alternative to strings', async () => {
-    const { foreignKey } = await import('@have/smrt');
+    const { foreignKey } = await import('@smrt/core');
 
     // Test lazy function reference (alternative syntax)
     const lazyField = foreignKey(() => class TestClass {}, { required: true });
@@ -94,7 +94,7 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
   });
 
   it('should maintain backward compatibility with direct class references', async () => {
-    const { foreignKey } = await import('@have/smrt');
+    const { foreignKey } = await import('@smrt/core');
 
     class TestClass {}
 

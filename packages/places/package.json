@@ -25,8 +25,8 @@
   },
   "dependencies": {
     "@smrt/core": "workspace:*",
-    "@have/geo": "^0.1.0",
-    "@have/cache": "^0.1.0"
+    "@have/geo": "file:../../../sdk/packages/geo",
+    "@have/cache": "file:../../../sdk/packages/cache"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

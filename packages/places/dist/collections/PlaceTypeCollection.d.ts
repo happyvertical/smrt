@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { PlaceType } from '../models/PlaceType';
 export declare class PlaceTypeCollection extends SmrtCollection<PlaceType> {
     static readonly _itemClass: typeof PlaceType;

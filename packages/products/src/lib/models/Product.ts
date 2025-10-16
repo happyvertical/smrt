@@ -4,7 +4,7 @@
  * SMRT auto-generates REST APIs, MCP tools, and TypeScript clients from this class.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
 
 /**
  * Options for Product initialization

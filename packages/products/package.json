@@ -58,7 +58,7 @@
     "dev:federation": "vite dev --mode federation --port 3002",
     "dev:library": "vite build --mode library --watch",
     "prebuild": "node scripts/generate-smrt-types.js",
-    "build": "npm run build:all",
+    "build": "vite build --mode library",
     "build:all": "npm run clean && npm run prebuild && npm run build:lib && npm run build:app && npm run build:federation",
     "build:lib": "vite build --mode library",
     "build:app": "vite build --mode standalone",

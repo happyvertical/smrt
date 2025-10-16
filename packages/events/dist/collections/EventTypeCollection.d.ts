@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { EventType } from '../models/EventType';
 export declare class EventTypeCollection extends SmrtCollection<EventType> {
     static readonly _itemClass: typeof EventType;

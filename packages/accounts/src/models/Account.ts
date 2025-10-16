@@ -4,7 +4,7 @@
  * Represents a category of economic activity (asset, liability, equity, revenue, expense)
  */
 
-import { SmrtObject, smrt } from '@have/smrt';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { AccountOptions, AccountType, CurrencyCode } from '../types';
 
 @smrt({

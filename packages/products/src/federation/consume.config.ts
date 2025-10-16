@@ -30,7 +30,7 @@ export const consumeConfig: ConsumeConfig = {
       singleton: true,
       requiredVersion: '^5.0.0',
     },
-    '@have/smrt': {
+    '@smrt/core': {
       singleton: true,
       requiredVersion: 'workspace:*',
     },

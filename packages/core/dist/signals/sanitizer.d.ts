@@ -1,4 +1,4 @@
-import { Signal } from '../../../types/src';
+import { Signal } from '@have/types';
 /**
  * Sanitization configuration
  */

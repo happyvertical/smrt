@@ -1,4 +1,4 @@
-import { SmrtObjectOptions } from '../../../core/smrt/src';
+import { SmrtObjectOptions } from '@smrt/core';
 /**
  * Options for creating a Tag instance
  */

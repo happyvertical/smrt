@@ -4,7 +4,7 @@
  * Provides transaction filtering by date range and description search.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { AccountTransaction } from '../models/AccountTransaction';
 
 export class AccountTransactionCollection extends SmrtCollection<AccountTransaction> {

@@ -4,7 +4,7 @@
  * Provides querying for relationship type lookup table.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { ProfileRelationshipType } from '../models/ProfileRelationshipType';
 
 export class ProfileRelationshipTypeCollection extends SmrtCollection<ProfileRelationshipType> {

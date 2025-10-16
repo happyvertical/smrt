@@ -1,5 +1,5 @@
 /**
- * @have/smrt - Core AI agent framework with standardized collections and code generators
+ * @smrt/core - Core AI agent framework with standardized collections and code generators
  *
  * This package provides the foundational framework for building vertical AI agents.
  * It provides core abstractions and integrates with other HAVE SDK packages

@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { EventSeries } from '../models/EventSeries';
 import { EventSeriesSearchFilters } from '../types';
 export declare class EventSeriesCollection extends SmrtCollection<EventSeries> {

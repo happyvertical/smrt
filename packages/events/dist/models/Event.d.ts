@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { EventOptions, EventStatus } from '../types';
 export declare class Event extends SmrtObject {
     seriesId: string;

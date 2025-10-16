@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { Place } from '../models/Place';
 import { LookupOrCreateOptions } from '../types';
 export declare class PlaceCollection extends SmrtCollection<Place> {
@@ -77,7 +77,11 @@ export declare class PlaceCollection extends SmrtCollection<Place> {
      * @param placeId - The place ID
      * @returns Object with ancestors, current place, and descendants
      */
-    getHierarchy(placeId: string): Promise<any>;
+    getHierarchy(placeId: string): Promise<{
+        ancestors: Place[];
+        current: Place;
+        descendants: Place[];
+    }>;
     /**
      * Search places by proximity to coordinates
      *

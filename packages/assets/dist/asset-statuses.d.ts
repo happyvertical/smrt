@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { AssetStatus } from './asset-status';
 export declare class AssetStatusCollection extends SmrtCollection<AssetStatus> {
     static readonly _itemClass: typeof AssetStatus;

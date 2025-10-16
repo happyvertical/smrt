@@ -1,4 +1,4 @@
-import { Location } from '../../../core/geo/src';
+import { Location } from '@have/geo';
 import { GeoData } from './types';
 /**
  * Map Location type from @have/geo to PlaceType slug

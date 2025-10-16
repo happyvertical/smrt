@@ -1,5 +1,5 @@
-import { AIClientOptions } from '../../../core/ai/src';
-import { SmrtCollectionOptions, SmrtCollection } from '../../../core/smrt/src';
+import { AIClientOptions } from '@have/ai';
+import { SmrtCollectionOptions, SmrtCollection } from '@smrt/core';
 import { Content } from './content';
 /**
  * Configuration options for Contents collection
@@ -51,7 +51,7 @@ export declare class Contents extends SmrtCollection<Content> {
      *
      * @returns Database interface
      */
-    getDb(): any;
+    getDb(): import('@have/sql').DatabaseInterface;
     /**
      * Initializes the collection
      *
@@ -75,7 +75,7 @@ export declare class Contents extends SmrtCollection<Content> {
         url: string;
         mirrorDir?: string;
         context?: string;
-    }): Promise<any>;
+    }): Promise<Content | undefined>;
     /**
      * Writes a Content object to the filesystem as a markdown file
      *

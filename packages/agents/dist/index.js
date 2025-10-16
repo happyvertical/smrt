@@ -1,4 +1,4 @@
-import { SmrtObject } from "@have/smrt";
+import { SmrtObject } from "@smrt/core";
 import { createLogger } from "@have/logger";
 class Agent extends SmrtObject {
   /**

@@ -4,7 +4,7 @@
  * Provides entry filtering by transaction, account, currency, and amount.
  */
 
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@smrt/core';
 import { AccountTransactionEntry } from '../models/AccountTransactionEntry';
 import type { CurrencyCode } from '../types';
 

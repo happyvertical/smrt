@@ -1,4 +1,4 @@
-import { SmrtCollection } from '../../../core/smrt/src';
+import { SmrtCollection } from '@smrt/core';
 import { Tag } from './tag';
 import { TagHierarchy } from './types';
 export declare class TagCollection extends SmrtCollection<Tag> {

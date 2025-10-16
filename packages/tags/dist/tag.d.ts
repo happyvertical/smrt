@@ -1,4 +1,4 @@
-import { SmrtObject } from '../../../core/smrt/src';
+import { SmrtObject } from '@smrt/core';
 import { TagOptions, TagMetadata } from './types';
 export declare class Tag extends SmrtObject {
     protected _slug: string;

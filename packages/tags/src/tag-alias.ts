@@ -5,7 +5,7 @@
  * Supports language-neutral aliases and context-scoped variations.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
 import type { TagAliasOptions } from './types';
 import type { Tag } from './tag';
 

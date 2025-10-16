@@ -4,7 +4,7 @@
  * Examples: 'country', 'city', 'building', 'zone', 'room', 'region'
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
 import type { PlaceTypeOptions } from '../types';
 
 @smrt({

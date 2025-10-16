@@ -4,7 +4,7 @@
  * Represents a financial event with one or more entries
  */
 
-import { SmrtObject, smrt } from '@have/smrt';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { AccountTransactionOptions } from '../types';
 
 @smrt({

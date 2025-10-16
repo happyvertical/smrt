@@ -15,14 +15,10 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --apply .",
     "clean": "rm -rf packages/*/dist packages/*/docs packages/*/tsconfig.*.tsbuildinfo .tsbuildinfo dist /*.js /*.d.ts /*.js.map /*.d.ts.map",
-    "build": "node scripts/build-all-packages.js",
+    "build": "pnpm -r --workspace-concurrency=4 run build",
     "build:clean": "pnpm run clean && pnpm run build",
-    "build:watch": "pnpm run build && concurrently \"pnpm run build:types --watch\" \"pnpm run build:core --watch\"",
-    "build:types": "VITE_BUILD_PACKAGE=types vite build",
-    "build:core": "VITE_BUILD_PACKAGE=core vite build",
     "typecheck": "tsc --noEmit",
     "validate-build": "node scripts/validate-build.js",
-    "dev": "npm run build:watch",
     "release": "npx semantic-release",
     "release:dry-run": "npx semantic-release --dry-run",
     "release:packages": "pnpm run build && pnpm -r --workspace-concurrency=1 exec -- npx semantic-release",
@@ -61,6 +57,21 @@
   },
   "resolutions": {
     "@types/node": "24.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@have/ai": "file:../sdk/packages/ai",
+      "@have/files": "file:../sdk/packages/files",
+      "@have/logger": "file:../sdk/packages/logger",
+      "@have/sql": "file:../sdk/packages/sql",
+      "@have/utils": "file:../sdk/packages/utils",
+      "@have/documents": "file:../sdk/packages/documents",
+      "@have/geo": "file:../sdk/packages/geo",
+      "@have/cache": "file:../sdk/packages/cache",
+      "@have/pdf": "file:../sdk/packages/pdf",
+      "@have/spider": "file:../sdk/packages/spider",
+      "@have/ocr": "file:../sdk/packages/ocr"
+    }
   },
   "engines": {
     "node": ">=24.0.0",
