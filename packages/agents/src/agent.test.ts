@@ -1,0 +1,120 @@
+import { describe, it, expect } from 'vitest';
+import { Agent } from './agent.js';
+import { smrt } from '@smrt/core';
+import { getModuleConfig } from '@have/config';
+
+// Test agent implementation
+interface TestAgentConfig {
+  maxItems: number;
+  enabled: boolean;
+}
+
+@smrt()
+class TestAgent extends Agent {
+  protected config = getModuleConfig<TestAgentConfig>('test-agent', {
+    maxItems: 10,
+    enabled: true,
+  });
+
+  // Agent-specific state (automatically persisted)
+  itemsProcessed: number = 0;
+
+  async validate(): Promise<void> {
+    if (!this.config.enabled) {
+      throw new Error('Agent is disabled');
+    }
+  }
+
+  async run(): Promise<void> {
+    // Simulate processing items
+    const itemCount = Math.min(5, this.config.maxItems);
+    this.itemsProcessed += itemCount;
+    this.logger.info(`Processed ${itemCount} items`);
+  }
+}
+
+describe('@have/agents', () => {
+  // Use in-memory database for tests to avoid file system issues and caching problems
+  const testDbUrl = 'file::memory:?cache=shared';
+
+  describe('Agent lifecycle', () => {
+    it('should initialize with default status', async () => {
+      const agent = new TestAgent({
+        name: 'test-agent',
+        db: {
+          type: 'sqlite',
+          url: testDbUrl,
+        },
+      });
+
+      await agent.initialize();
+
+      expect(agent.status).toBe('initializing');
+    });
+
+    it('should execute successfully and update status', async () => {
+      const agent = new TestAgent({
+        name: 'test-agent',
+        db: {
+          type: 'sqlite',
+          url: testDbUrl,
+        },
+      });
+
+      await agent.execute();
+
+      expect(agent.status).toBe('idle');
+      expect(agent.itemsProcessed).toBe(5);
+    });
+
+    it('should handle validation errors', async () => {
+      // Create agent with invalid config
+      const agent = new TestAgent({
+        name: 'test-agent',
+        db: {
+          type: 'sqlite',
+          url: testDbUrl,
+        },
+      });
+
+      // Override config to make validation fail
+      (agent as any).config = { enabled: false, maxItems: 10 };
+
+      await expect(agent.execute()).rejects.toThrow('Agent is disabled');
+
+      expect(agent.status).toBe('error');
+    });
+
+    it('should call shutdown lifecycle method', async () => {
+      const agent = new TestAgent({
+        name: 'test-agent',
+        db: {
+          type: 'sqlite',
+          url: testDbUrl,
+        },
+      });
+
+      await agent.initialize();
+      await agent.shutdown();
+
+      expect(agent.status).toBe('shutdown');
+    });
+  });
+
+  describe('Configuration', () => {
+    it('should use configuration values', async () => {
+      const agent = new TestAgent({
+        name: 'config-agent',
+        db: {
+          type: 'sqlite',
+          url: testDbUrl,
+        },
+      });
+
+      await agent.execute();
+
+      // Config maxItems is 10, but run() processes min(5, maxItems) = 5
+      expect(agent.itemsProcessed).toBe(5);
+    });
+  });
+});

@@ -1,7 +1,0 @@
-/**
- * Vite consumer plugin for SMRT packages
- *
- * Re-exports consumer plugin functionality from the consumer-plugin/ directory.
- * This file serves as the entry point for @have/smrt/consumer-plugin exports.
- */
-export * from './consumer-plugin/index.js';

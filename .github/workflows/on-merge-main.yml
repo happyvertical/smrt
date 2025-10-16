@@ -1,0 +1,192 @@
+name: Main Branch
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run semantic-release in dry-run mode'
+        required: false
+        type: boolean
+        default: false
+      skip-docs:
+        description: 'Skip documentation deployment'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    name: Run Test Suite
+    uses: ./.github/workflows/test-suite.yml
+
+  build-and-release:
+    name: Build and Release
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for semantic-release
+
+      - name: Checkout SDK repository
+        uses: actions/checkout@v4
+        with:
+          repository: happyvertical/sdk
+          path: sdk
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Semantic Release (Dry Run)
+        if: ${{ github.event.inputs.dry-run == 'true' }}
+        run: pnpm run release:dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Semantic Release
+        if: ${{ github.event.inputs.dry-run != 'true' }}
+        run: pnpm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  deploy-docs:
+    name: Deploy Documentation
+    needs: build-and-release
+    if: ${{ github.event.inputs.skip-docs != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: 'pages'
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout SDK repository
+        uses: actions/checkout@v4
+        with:
+          repository: happyvertical/sdk
+          path: sdk
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Generate documentation
+        run: |
+          # Generate TypeDoc documentation for all packages
+          pnpm -r --filter='./packages/*' run docs || true
+
+          # Create docs directory structure
+          mkdir -p docs
+
+          # Copy package documentation to docs directory
+          for pkg in packages/*; do
+            if [ -d "$pkg/docs" ]; then
+              pkg_name=$(basename $pkg)
+              mkdir -p "docs/$pkg_name"
+              cp -r "$pkg/docs/"* "docs/$pkg_name/" || true
+            fi
+          done
+
+          # Create index.html for docs root
+          cat > docs/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SMRT Framework Documentation</title>
+            <style>
+              body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 50px auto; padding: 0 20px; }
+              h1 { color: #333; }
+              ul { list-style: none; padding: 0; }
+              li { margin: 10px 0; }
+              a { color: #0066cc; text-decoration: none; font-size: 1.1em; }
+              a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <h1>SMRT Framework Documentation</h1>
+            <p>Select a package to view its documentation:</p>
+            <ul id="package-list"></ul>
+            <script>
+              const packages = Array.from(document.querySelectorAll('pre')).map(el => el.textContent.trim());
+              const list = document.getElementById('package-list');
+
+              // Dynamically discover package directories
+              fetch('.')
+                .then(r => r.text())
+                .then(html => {
+                  const parser = new DOMParser();
+                  const doc = parser.parseFromString(html, 'text/html');
+                  const links = Array.from(doc.querySelectorAll('a')).map(a => a.getAttribute('href'));
+                  const packageDirs = links.filter(link => link && link.endsWith('/') && !link.startsWith('.'));
+
+                  packageDirs.forEach(dir => {
+                    const name = dir.replace('/', '');
+                    const li = document.createElement('li');
+                    const a = document.createElement('a');
+                    a.href = dir;
+                    a.textContent = `@smrt/${name}`;
+                    li.appendChild(a);
+                    list.appendChild(li);
+                  });
+                })
+                .catch(() => {
+                  // Fallback: list known packages
+                  ['core', 'types', 'accounts', 'agents', 'assets', 'content', 'events', 'gnode', 'places', 'products', 'profiles', 'tags'].forEach(pkg => {
+                    const li = document.createElement('li');
+                    const a = document.createElement('a');
+                    a.href = `${pkg}/`;
+                    a.textContent = `@smrt/${pkg}`;
+                    li.appendChild(a);
+                    list.appendChild(li);
+                  });
+                });
+            </script>
+          </body>
+          </html>
+          EOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './docs'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

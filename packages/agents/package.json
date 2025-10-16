@@ -1,0 +1,39 @@
+{
+  "name": "@smrt/agents",
+  "version": "0.37.0",
+  "type": "module",
+  "description": "Agent framework for building autonomous actors in the SMRT ecosystem",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "build:watch": "vite build --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@smrt/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  },
+  "keywords": [
+    "agent",
+    "automation",
+    "smrt",
+    "framework"
+  ]
+}

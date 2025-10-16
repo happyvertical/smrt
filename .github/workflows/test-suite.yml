@@ -1,0 +1,81 @@
+name: Test Suite
+
+on:
+  workflow_call:
+    outputs:
+      tests-passed:
+        description: 'Whether all tests passed'
+        value: ${{ jobs.test.outputs.success }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      success: ${{ steps.tests.outcome == 'success' }}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout SDK repository
+        uses: actions/checkout@v4
+        with:
+          repository: happyvertical/sdk
+          path: sdk
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Format check
+        run: pnpm run format-check
+
+      - name: Run tests
+        id: tests
+        run: pnpm test
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          NODE_ENV: test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results/
+          retention-days: 7

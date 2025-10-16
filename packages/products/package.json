@@ -1,0 +1,85 @@
+{
+  "name": "@smrt/products",
+  "version": "0.37.0",
+  "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
+  "author": "Will Griffin <willgriffin@gmail.com>",
+  "type": "module",
+  "main": "dist/lib/index.js",
+  "types": "dist/lib/index.d.ts",
+  "files": [
+    "dist/lib",
+    "dist/app",
+    "dist/federation",
+    "docs"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
+    },
+    "./models": {
+      "types": "./dist/lib/models/index.d.ts",
+      "default": "./dist/lib/models/index.js"
+    },
+    "./components": {
+      "types": "./dist/lib/components/index.d.ts",
+      "default": "./dist/lib/components/index.js"
+    },
+    "./stores": {
+      "types": "./dist/lib/stores/index.d.ts",
+      "default": "./dist/lib/stores/index.js"
+    },
+    "./generated": {
+      "types": "./dist/lib/generated/index.d.ts",
+      "default": "./dist/lib/generated/index.js"
+    },
+    "./utils": {
+      "types": "./dist/lib/utils/index.d.ts",
+      "default": "./dist/lib/utils/index.js"
+    }
+  },
+  "dependencies": {
+    "@smrt/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@originjs/vite-plugin-federation": "^1.3.8",
+    "@sveltejs/vite-plugin-svelte": "^5.0.2",
+    "@types/cors": "2.8.19",
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.1.0",
+    "svelte": "^5.18.2",
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "dev": "npm run dev:all",
+    "dev:all": "concurrently \"npm run dev:standalone\" \"npm run dev:federation\"",
+    "dev:standalone": "vite dev --mode standalone --port 3001",
+    "dev:federation": "vite dev --mode federation --port 3002",
+    "dev:library": "vite build --mode library --watch",
+    "prebuild": "node scripts/generate-smrt-types.js",
+    "build": "vite build --mode library",
+    "build:all": "npm run clean && npm run prebuild && npm run build:lib && npm run build:app && npm run build:federation",
+    "build:lib": "vite build --mode library",
+    "build:app": "vite build --mode standalone",
+    "build:federation": "vite build --mode federation",
+    "generate:mcp": "tsx src/mcp.ts",
+    "mcp": "node dist/mcp-server.js",
+    "start": "npm run start:standalone",
+    "start:standalone": "node dist/app/main.js",
+    "start:federation": "node dist/federation/main.js",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist src/lib/types/smrt-generated",
+    "prepare": "test -f ../smrt/dist/vite-plugin/index.js && npm run build:lib || echo 'Skipping products build:lib (smrt vite-plugin not available yet)'"
+  },
+  "keywords": [
+    "smrt",
+    "microservice",
+    "module-federation",
+    "svelte",
+    "typescript",
+    "auto-generation"
+  ]
+}
