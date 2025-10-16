@@ -1,0 +1,10 @@
+version: "3.1"
+services:
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: sqloo
+      POSTGRES_PASSWORD: sqloo
+      POSTGRES_DB: sqloo
+    ports:
+      - "35432:5432"

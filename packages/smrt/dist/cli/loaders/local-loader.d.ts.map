@@ -1,0 +1,1 @@
+{"version":3,"file":"local-loader.d.ts","sourceRoot":"","sources":["../../../src/cli/loaders/local-loader.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAMH,OAAO,KAAK,EAAE,cAAc,EAAE,MAAM,sBAAsB,CAAC;AAkF3D;;;;;;;;;GASG;AACH,wBAAsB,gBAAgB,CAAC,SAAS,EAAE,MAAM,GAAG,OAAO,CAAC,MAAM,CAAC,CAyBzE;AAED;;GAEG;AACH,wBAAsB,iBAAiB,CACrC,YAAY,EAAE,MAAM,GACnB,OAAO,CAAC,cAAc,CAAC,CAoCzB"}

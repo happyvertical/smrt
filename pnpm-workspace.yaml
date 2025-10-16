@@ -1,0 +1,5 @@
+packages:
+  - 'packages/*'
+
+# pnpm workspace configuration for SMRT Framework monorepo
+# All SMRT framework and module packages

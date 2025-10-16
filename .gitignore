@@ -1,0 +1,141 @@
+# Dependencies
+node_modules
+packages/*/node_modules
+smrt/*/node_modules
+.pnpm-store
+
+# Environment variables
+.envrc
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.direnv/
+.venv/
+
+# Build outputs
+build/
+docs/manual/
+
+# Auto-generated documentation
+packages/*/docs/
+smrt/*/docs/
+repomix-output.xml
+
+# Prevent built files in src directories (they should only be in dist)
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts.map
+smrt/*/src/**/*.js
+smrt/*/src/**/*.d.ts
+smrt/*/src/**/*.js.map
+smrt/*/src/**/*.d.ts.map
+
+# TypeScript
+*.tsbuildinfo
+.tscache
+
+# Compiled root-level artifacts
+/*.d.ts
+/*.d.ts.map
+/*.js
+/*.js.map
+tests/**/*.d.ts
+tests/**/*.d.ts.map
+tests/**/*.js
+tests/**/*.js.map
+typedoc.html.json
+vitest.setup.d.ts
+vitest.setup.d.ts.map
+vitest.setup.js
+vitest.setup.js.map
+
+# Configuration file artifacts (should not be tracked)
+packages/*/vite.config.js
+packages/*/vite.config.js.map
+packages/*/vite.config.d.ts
+packages/*/vite.config.d.ts.map
+packages/*/vitest.config.js
+packages/*/vitest.config.js.map
+packages/*/vitest.config.d.ts
+packages/*/vitest.config.d.ts.map
+packages/*/federation.config.js
+packages/*/federation.config.js.map
+packages/*/federation.config.d.ts
+packages/*/federation.config.d.ts.map
+packages/*/docusaurus.config.js
+packages/*/docusaurus.config.js.map
+packages/*/docusaurus.config.d.ts
+packages/*/docusaurus.config.d.ts.map
+
+# E2E test compilation artifacts
+e2e-tests/**/*.js
+e2e-tests/**/*.js.map
+e2e-tests/**/*.d.ts
+e2e-tests/**/*.d.ts.map
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Cache directories
+.npm
+.eslintcache
+.stylelintcache
+.next
+.nuxt
+.cache
+.turbo
+
+# Test coverage
+coverage/
+.nyc_output
+
+# Playwright
+playwright-report/
+test-results/
+.playwright-mcp/*.png
+.playwright-mcp/*.jpg
+.playwright-mcp/*.jpeg
+
+# Act (GitHub Actions local runner)
+ci-artifacts/
+ci-debug-*.log
+/tmp/act-artifacts
+
+# Misc
+.DS_Store
+*.pem
+.vercel
+
+*.traineddata
+.svelte-kit
+.npmrc.local
+
+# Package artifacts
+*.tgz
+
+**/.claude/settings.local.json
+**/.claude/mcp-config.json
+**/scripts/mcp-smrt.sh
+repomix-output.xml
+
+# MCP Server logs
+/tmp/smrt-mcp-*.log
+
+# Document processing cache
+*.processed_pdf

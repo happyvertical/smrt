@@ -1,0 +1,48 @@
+{
+  "name": "@have/sql",
+  "version": "0.37.0",
+  "description": "Database interface with support for SQLite, PostgreSQL, and DuckDB",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "npx vitest run",
+    "test:watch": "npx vitest",
+    "test:sqlite": "npx vitest run src/sqlite.spec.ts",
+    "test:postgres": "npx vitest run src/postgres.spec.ts",
+    "test:duckdb": "npx vitest run src/duckdb.spec.ts",
+    "build": "vite build",
+    "build:watch": "vite build --watch",
+    "docs": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules",
+    "docs:watch": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules --watch",
+    "clean": "rm -rf dist docs *.tsbuildinfo",
+    "dev": "npm run build:watch & npm run test:watch"
+  },
+  "keywords": [],
+  "author": "willgriffin@gmail.com",
+  "license": "ISC",
+  "dependencies": {
+    "@duckdb/node-api": "^1.4.1-r.1",
+    "@have/utils": "workspace:*",
+    "@libsql/client": "^0.14.0",
+    "sqlite-vss": "^0.1.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.3",
+    "vite": "7.1.3",
+    "vite-plugin-dts": "4.3.0",
+    "vitest": "^3.2.4"
+  }
+}

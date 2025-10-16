@@ -1,0 +1,1 @@
+{"version":3,"file":"duckdb.d.ts","sourceRoot":"","sources":["../src/duckdb.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EACV,iBAAiB,EAGjB,aAAa,EAEd,MAAM,gBAAgB,CAAC;AA+FxB;;;;;GAKG;AACH,wBAAsB,WAAW,CAC/B,OAAO,GAAE,aAAkB,GAC1B,OAAO,CAAC,iBAAiB,CAAC,CAykB5B"}

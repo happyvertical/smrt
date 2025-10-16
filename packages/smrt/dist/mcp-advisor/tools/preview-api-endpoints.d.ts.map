@@ -1,0 +1,1 @@
+{"version":3,"file":"preview-api-endpoints.d.ts","sourceRoot":"","sources":["../../../src/mcp-advisor/tools/preview-api-endpoints.ts"],"names":[],"mappings":"AAAA;;GAEG;AAGH,OAAO,KAAK,EAAE,wBAAwB,EAAE,WAAW,EAAE,MAAM,aAAa,CAAC;AAEzE;;GAEG;AACH,wBAAsB,mBAAmB,CACvC,KAAK,EAAE,wBAAwB,GAC9B,OAAO,CAAC;IAAE,SAAS,EAAE,WAAW,EAAE,CAAC;IAAC,QAAQ,EAAE,MAAM,CAAA;CAAE,CAAC,CAuLzD"}
