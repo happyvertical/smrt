@@ -1,4 +1,4 @@
-{
+const staticManifest = {
   "version": "1.0.0",
   "timestamp": 1760656092986,
   "objects": {
@@ -35,4 +35,9 @@
       "decoratorConfig": {}
     }
   }
-}
+};
+export {
+  staticManifest as default,
+  staticManifest
+};
+//# sourceMappingURL=static-manifest-3_BaNhar.js.map

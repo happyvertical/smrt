@@ -1,4 +1,5 @@
 import { syncSchema } from "@have/sql";
+import { SchemaGenerator } from "./index-9WZDN6n7.js";
 function toSnakeCase(str) {
   return str.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "");
 }
@@ -37,146 +38,35 @@ function dateAsObject(date) {
 function fieldsFromClass(ClassType, values) {
   const className = ClassType.name;
   const cachedFields = ObjectRegistry.getFields(className);
-  if (cachedFields.size > 0) {
-    const fields2 = {};
-    for (const [key, field] of cachedFields.entries()) {
-      fields2[key] = {
-        name: key,
-        type: field.type || "TEXT",
-        ...values && key in values ? { value: values[key] } : {}
-      };
-    }
-    return fields2;
+  if (cachedFields.size === 0) {
+    return {};
   }
   const fields = {};
-  const instance = new ClassType({
-    ai: {
-      type: "openai",
-      apiKey: "sk-proj-1234567890"
-    },
-    db: {
-      url: "file:/tmp/dummy.db"
-    },
-    _extractingFields: true,
-    // Prevent infinite recursion in initializeFields
-    _skipRegistration: true
-    // Don't register during field extraction
-  });
-  const descriptors = /* @__PURE__ */ new Map();
-  Object.entries(Object.getOwnPropertyDescriptors(instance)).forEach(
-    ([key, descriptor]) => {
-      descriptors.set(key, descriptor);
-    }
-  );
-  let proto = Object.getPrototypeOf(instance);
-  while (proto && proto !== Object.prototype) {
-    Object.entries(Object.getOwnPropertyDescriptors(proto)).forEach(
-      ([key, descriptor]) => {
-        if (!descriptors.has(key)) {
-          descriptors.set(key, descriptor);
-        }
-      }
-    );
-    proto = Object.getPrototypeOf(proto);
-  }
-  for (const [key, descriptor] of descriptors) {
-    if (typeof descriptor.value === "function" || descriptor.get || descriptor.set || key.startsWith("_") || key.startsWith("#") || key === "constructor") {
-      continue;
-    }
-    if (descriptor.value !== void 0) {
-      let type;
-      const defaultValue = descriptor.value;
-      if (defaultValue instanceof Date || isDateField(key)) {
-        type = "DATETIME";
-      } else if (typeof defaultValue === "string") {
-        type = "TEXT";
-      } else if (typeof defaultValue === "number") {
-        type = "INTEGER";
-      } else if (defaultValue === null) {
-        type = "TEXT";
-      }
-      if (type) {
-        fields[key] = {
-          name: key,
-          type,
-          ...values && key in values ? {
-            value: values[key]
-          } : {}
-        };
-      }
-    }
+  for (const [key, field] of cachedFields.entries()) {
+    fields[key] = {
+      name: key,
+      type: field.type || "TEXT",
+      ...values && key in values ? { value: values[key] } : {}
+    };
   }
   return fields;
 }
-function generateSchema(ClassType) {
-  const tableName = tableNameFromClass(ClassType);
-  const fields = fieldsFromClass(ClassType);
-  let customPKField = null;
-  let customPKColumnName = null;
+function generateSchema(ClassType, providedFields) {
   const className = ClassType.name;
-  const cachedFields = ObjectRegistry.getFields(className);
-  if (cachedFields.size > 0) {
-    for (const [key, field] of cachedFields.entries()) {
-      if (field.options?.primaryKey) {
-        customPKField = key;
-        customPKColumnName = toSnakeCase(key);
-        break;
-      }
-    }
+  const tableName = tableNameFromClass(ClassType);
+  const cachedFields = providedFields && providedFields.size > 0 ? providedFields : ObjectRegistry.getFields(className);
+  if (cachedFields.size === 0) {
+    throw new Error(
+      `Cannot generate schema for unregistered class '${className}'. Ensure the class is decorated with @smrt() for schema generation to work. Runtime introspection has been removed in Phase 2 of the schema management refactor.`
+    );
   }
-  let schema = `CREATE TABLE IF NOT EXISTS "${tableName}" (
-`;
-  const hasCustomPK = customPKField !== null;
-  if (!hasCustomPK) {
-    schema += "  id TEXT PRIMARY KEY,\n";
-    schema += "  slug TEXT NOT NULL,\n";
-    schema += "  context TEXT NOT NULL DEFAULT CAST('' AS TEXT),\n";
-  }
-  let hasCreatedAt = false;
-  let hasUpdatedAt = false;
-  for (const [key, field] of Object.entries(fields)) {
-    if (!hasCustomPK && (key === "id" || key === "slug" || key === "context")) {
-      continue;
-    }
-    if (key === "created_at" || key === "createdAt") {
-      if (hasCreatedAt) continue;
-      hasCreatedAt = true;
-    }
-    if (key === "updated_at" || key === "updatedAt") {
-      if (hasUpdatedAt) continue;
-      hasUpdatedAt = true;
-    }
-    const columnName = toSnakeCase(key);
-    const fieldDef = cachedFields.get(key);
-    const sqlType = fieldDef?.getSqlType() || field.type || "TEXT";
-    let constraints = fieldDef?.getSqlConstraints() || [];
-    if (constraints.length === 0 && sqlType === "TEXT") {
-      constraints = ["NOT NULL DEFAULT ''"];
-    }
-    schema += `  ${columnName} ${sqlType}${constraints.length > 0 ? " " + constraints.join(" ") : ""},
-`;
-  }
-  if (!hasCreatedAt) {
-    schema += "  created_at DATETIME,\n";
-  }
-  if (!hasUpdatedAt) {
-    schema += "  updated_at DATETIME,\n";
-  }
-  if (!hasCustomPK) {
-    schema += "  UNIQUE(slug, context),\n";
-  }
-  schema = schema.slice(0, -2);
-  schema += "\n);";
-  if (hasCustomPK) {
-    schema += `
-CREATE INDEX IF NOT EXISTS ${tableName}_${customPKColumnName}_idx ON ${tableName} (${customPKColumnName});`;
-  } else {
-    schema += `
-CREATE INDEX IF NOT EXISTS ${tableName}_id_idx ON ${tableName} (id);`;
-    schema += `
-CREATE INDEX IF NOT EXISTS ${tableName}_slug_context_idx ON ${tableName} (slug, context);`;
-  }
-  return schema;
+  const generator = new SchemaGenerator();
+  const schemaDefinition = generator.generateSchemaFromRegistry(
+    className,
+    tableName,
+    cachedFields
+  );
+  return generator.generateSQL(schemaDefinition);
 }
 function tableNameFromClass(ClassType) {
   if ("SMRT_TABLE_NAME" in ClassType) {
@@ -196,9 +86,12 @@ async function setupTableFromClass(db, ClassType) {
   }
   _setup_table_from_class_promises[tableName] = (async () => {
     try {
-      const schema = generateSchema(ClassType);
       const className = ClassType.name;
-      const cachedFields = ObjectRegistry.getFields(className);
+      let cachedFields = ObjectRegistry.getFields(className);
+      if (cachedFields.size === 0) {
+        cachedFields = ObjectRegistry.extractFields(ClassType);
+      }
+      const schema = generateSchema(ClassType, cachedFields);
       let primaryKeyColumn = "id";
       if (cachedFields.size > 0) {
         for (const [key, field] of cachedFields.entries()) {
@@ -268,7 +161,7 @@ class ObjectRegistry {
     }
     const fields = ObjectRegistry.extractFields(ctor);
     const tableName = config.tableName || tableNameFromClass(ctor);
-    const schemaDDL = generateSchema(ctor);
+    const schemaDDL = generateSchema(ctor, fields);
     const indexes = [];
     const ddlLines = schemaDDL.split("\n");
     const tableEndIndex = ddlLines.findIndex((line) => line.includes(");"));
@@ -449,7 +342,7 @@ class ObjectRegistry {
     }
     let collectionConstructor = registered.collectionConstructor;
     if (!collectionConstructor) {
-      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-DnmDOjNW.js").then((n) => n.i);
+      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-CXnxJbLy.js").then((n) => n.i);
       class DefaultCollection extends SmrtCollectionClass {
         static _itemClass = registered.constructor;
       }
@@ -494,6 +387,25 @@ class ObjectRegistry {
       if (ctor.fields) {
         for (const [key, field] of Object.entries(ctor.fields)) {
           fields.set(key, field);
+        }
+      }
+      if (fields.size === 0) {
+        for (const key of Object.getOwnPropertyNames(tempInstance)) {
+          if (key.startsWith("_") || key.startsWith("#")) continue;
+          const value = tempInstance[key];
+          const valueType = typeof value;
+          let fieldType = "text";
+          if (valueType === "string") fieldType = "text";
+          else if (valueType === "number") fieldType = Number.isInteger(value) ? "integer" : "decimal";
+          else if (valueType === "boolean") fieldType = "boolean";
+          else if (value instanceof Date) fieldType = "datetime";
+          else if (Array.isArray(value)) fieldType = "json";
+          else if (valueType === "object" && value !== null) fieldType = "json";
+          else continue;
+          fields.set(key, {
+            type: fieldType,
+            options: {}
+          });
         }
       }
     } catch (error) {
@@ -1104,4 +1016,4 @@ export {
   setupTableFromClass as s,
   tableNameFromClass as t
 };
-//# sourceMappingURL=registry-CzXM0OU7.js.map
+//# sourceMappingURL=registry-Bw7M6hFL.js.map

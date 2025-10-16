@@ -261,17 +261,78 @@ export class RuntimeSchemaManager {
 
 
   /**
-   * Update schema if changes are detected
+   * Update schema if changes are detected (Phase 4: Automatic Schema Evolution)
+   *
+   * Automatically adds new columns and indexes using the ALTER TABLE API.
+   * Safe operations only - no column drops, renames, or type changes.
    */
   private async updateSchemaIfNeeded(
     db: DatabaseInterface,
     schema: SchemaDefinition,
   ): Promise<void> {
-    // For now, just log that update is needed
-    // In future, implement ALTER TABLE logic
-    console.log(
-      `[schema] Schema update logic not yet implemented for ${schema.tableName}`,
-    );
+    const { tableName, columns, indexes } = schema;
+
+    // Graceful fallback for adapters without alterTable support
+    if (!db.alterTable || !db.getTableSchema) {
+      console.log(
+        `[schema] ALTER TABLE not supported for ${tableName}, skipping schema evolution`,
+      );
+      return;
+    }
+
+    try {
+      // Get current table schema
+      const currentSchema = await db.getTableSchema(tableName);
+      if (!currentSchema) {
+        console.warn(`[schema] Could not retrieve schema for ${tableName}`);
+        return;
+      }
+
+      // Track changes for logging
+      const addedColumns: string[] = [];
+      const addedIndexes: string[] = [];
+
+      // Auto-add new columns (safe operation with default values)
+      for (const [columnName, columnDef] of Object.entries(columns)) {
+        if (!currentSchema.columns[columnName]) {
+          await db.alterTable.addColumn(tableName, {
+            name: columnName,
+            ...columnDef,
+          });
+          addedColumns.push(columnName);
+        }
+      }
+
+      // Auto-add new indexes (safe operation)
+      for (const index of indexes) {
+        const indexExists = currentSchema.indexes.find(
+          (i) => i.name === index.name,
+        );
+        if (!indexExists) {
+          await db.alterTable.addIndex(tableName, index);
+          addedIndexes.push(index.name);
+        }
+      }
+
+      // Log changes if any were made
+      if (addedColumns.length > 0 || addedIndexes.length > 0) {
+        console.log(
+          `[schema] Evolved ${tableName}:`,
+          addedColumns.length > 0
+            ? `added columns [${addedColumns.join(', ')}]`
+            : '',
+          addedIndexes.length > 0
+            ? `added indexes [${addedIndexes.join(', ')}]`
+            : '',
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[schema] Failed to evolve schema for ${tableName}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      // Don't throw - schema evolution is non-critical
+    }
   }
 
   /**

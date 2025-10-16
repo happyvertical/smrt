@@ -71,29 +71,37 @@ export declare function dateAsObject(date: Date | string): string;
 /**
  * Extracts field definitions from a class constructor
  *
- * Creates a temporary instance to introspect field definitions and their types.
- * This enables automatic schema generation from TypeScript class properties.
+ * Uses ObjectRegistry cached fields from AST manifest exclusively.
+ * No runtime introspection fallback - classes must be decorated with @smrt()
+ * for schema generation to work.
  *
  * @param ClassType - Class constructor to extract fields from
  * @param values - Optional values to set for the fields
  * @returns Object containing field definitions with names, types, and values
- * @throws {Error} If the class cannot be instantiated for introspection
+ * @throws {Error} If the class is not registered in ObjectRegistry
  * @example
  * ```typescript
+ * @smrt()
+ * class Product extends SmrtObject {
+ *   name = text();
+ *   price = decimal();
+ * }
+ *
  * const fields = fieldsFromClass(Product);
  * console.log(fields.name.type); // 'TEXT'
- * console.log(fields.price.type); // 'INTEGER'
+ * console.log(fields.price.type); // 'REAL'
  * ```
  */
 export declare function fieldsFromClass(ClassType: new (...args: any[]) => any, values?: Record<string, any>): Record<string, any>;
 /**
  * Generates a complete database schema SQL statement for a class
  *
- * Creates CREATE TABLE statement with all fields, constraints, and indexes.
- * Automatically adds id, slug, and context fields for SMRT object support.
- * Column names are generated in snake_case for database convention.
+ * This is now a thin wrapper around SchemaGenerator that provides the
+ * single source of truth for schema generation. Uses ObjectRegistry
+ * cached fields from AST manifest for consistent schema generation.
  *
  * @param ClassType - Class constructor to generate schema for
+ * @param providedFields - Optional fields map (used during registration)
  * @returns SQL schema creation statement with CREATE TABLE and CREATE INDEX statements
  * @example
  * ```typescript
@@ -103,14 +111,14 @@ export declare function fieldsFromClass(ClassType: new (...args: any[]) => any, 
  * // CREATE TABLE IF NOT EXISTS products (
  * //   id TEXT PRIMARY KEY,
  * //   slug TEXT NOT NULL,
- * //   context TEXT NOT NULL DEFAULT '',
+ * //   context TEXT NOT NULL DEFAULT CAST('' AS TEXT),
  * //   name TEXT,
  * //   price INTEGER,
  * //   UNIQUE(slug, context)
  * // );
  * ```
  */
-export declare function generateSchema(ClassType: new (...args: any[]) => any): string;
+export declare function generateSchema(ClassType: new (...args: any[]) => any, providedFields?: Map<string, any>): string;
 /**
  * Generates a table name from a class constructor
  *

@@ -46,7 +46,10 @@ export declare class RuntimeSchemaManager {
      */
     private createIndex;
     /**
-     * Update schema if changes are detected
+     * Update schema if changes are detected (Phase 4: Automatic Schema Evolution)
+     *
+     * Automatically adds new columns and indexes using the ALTER TABLE API.
+     * Safe operations only - no column drops, renames, or type changes.
      */
     private updateSchemaIfNeeded;
     /**

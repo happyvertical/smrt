@@ -4,25 +4,29 @@ import { SmrtObject } from './object';
 import { Field } from './fields/index';
 import { tableNameFromClass } from './utils';
 
-// Test classes - Simple classes without field definitions
-// We'll manually register these with field metadata to avoid field function issues
+// Test classes - Need @smrt() decorator for Phase 2 registration
+// Phase 2: @smrt() decorator needed for test classes (not in AST manifest)
 
+@smrt()
 class TestCategory extends SmrtObject {
   name: string = '';
   description: string = '';
 }
 
+@smrt()
 class TestCustomer extends SmrtObject {
   name: string = '';
   email: string = '';
 }
 
+@smrt()
 class TestProduct extends SmrtObject {
   name: string = '';
   price: number = 0;
   categoryId: string = '';
 }
 
+@smrt()
 class TestOrder extends SmrtObject {
   customerId: string = '';
   productId: string = '';

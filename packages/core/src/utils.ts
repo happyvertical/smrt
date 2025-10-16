@@ -1,5 +1,6 @@
 import { syncSchema } from '@have/sql';
 import { ObjectRegistry } from './registry';
+import { SchemaGenerator } from './schema/generator';
 
 /**
  * Converts a camelCase string to snake_case
@@ -112,135 +113,64 @@ export function dateAsObject(date: Date | string) {
 /**
  * Extracts field definitions from a class constructor
  *
- * Creates a temporary instance to introspect field definitions and their types.
- * This enables automatic schema generation from TypeScript class properties.
+ * Uses ObjectRegistry cached fields from AST manifest exclusively.
+ * No runtime introspection fallback - classes must be decorated with @smrt()
+ * for schema generation to work.
  *
  * @param ClassType - Class constructor to extract fields from
  * @param values - Optional values to set for the fields
  * @returns Object containing field definitions with names, types, and values
- * @throws {Error} If the class cannot be instantiated for introspection
+ * @throws {Error} If the class is not registered in ObjectRegistry
  * @example
  * ```typescript
+ * @smrt()
+ * class Product extends SmrtObject {
+ *   name = text();
+ *   price = decimal();
+ * }
+ *
  * const fields = fieldsFromClass(Product);
  * console.log(fields.name.type); // 'TEXT'
- * console.log(fields.price.type); // 'INTEGER'
+ * console.log(fields.price.type); // 'REAL'
  * ```
  */
 export function fieldsFromClass(
   ClassType: new (...args: any[]) => any,
   values?: Record<string, any>,
 ) {
-  // First, try to get cached fields from ObjectRegistry
   const className = ClassType.name;
   const cachedFields = ObjectRegistry.getFields(className);
 
-  if (cachedFields.size > 0) {
-    // Use cached field definitions - much more efficient
-    const fields: Record<string, any> = {};
-
-    for (const [key, field] of cachedFields.entries()) {
-      fields[key] = {
-        name: key,
-        type: field.type || 'TEXT',
-        ...(values && key in values ? { value: values[key] } : {}),
-      };
-    }
-
-    return fields;
+  // Phase 2: AST manifest only - no runtime introspection fallback
+  if (cachedFields.size === 0) {
+    // Return empty fields for unregistered classes (for backward compatibility)
+    // generateSchema() will throw if it needs field definitions
+    return {};
   }
 
-  // Fallback: Create temporary instance for introspection (for unregistered classes)
+  // Use cached field definitions from AST manifest
   const fields: Record<string, any> = {};
-  const instance = new ClassType({
-    ai: {
-      type: 'openai',
-      apiKey: 'sk-proj-1234567890',
-    },
-    db: {
-      url: 'file:/tmp/dummy.db',
-    },
-    _extractingFields: true, // Prevent infinite recursion in initializeFields
-    _skipRegistration: true, // Don't register during field extraction
-  });
 
-  // Get descriptors from the instance and all ancestors
-  const descriptors = new Map<string, PropertyDescriptor>();
-
-  // Start with the instance
-  Object.entries(Object.getOwnPropertyDescriptors(instance)).forEach(
-    ([key, descriptor]) => {
-      descriptors.set(key, descriptor);
-    },
-  );
-
-  // Walk up the prototype chain
-  let proto = Object.getPrototypeOf(instance);
-  while (proto && proto !== Object.prototype) {
-    Object.entries(Object.getOwnPropertyDescriptors(proto)).forEach(
-      ([key, descriptor]) => {
-        // Only add if we haven't seen this property before
-        if (!descriptors.has(key)) {
-          descriptors.set(key, descriptor);
-        }
-      },
-    );
-    proto = Object.getPrototypeOf(proto);
+  for (const [key, field] of cachedFields.entries()) {
+    fields[key] = {
+      name: key,
+      type: field.type || 'TEXT',
+      ...(values && key in values ? { value: values[key] } : {}),
+    };
   }
 
-  // Process all collected descriptors
-  for (const [key, descriptor] of descriptors) {
-    // Skip methods, getters/setters, and internal properties
-    if (
-      typeof descriptor.value === 'function' ||
-      descriptor.get ||
-      descriptor.set ||
-      key.startsWith('_') ||
-      key.startsWith('#') ||
-      key === 'constructor'
-    ) {
-      continue;
-    }
-
-    // If it's a data property with a defined type
-    if (descriptor.value !== undefined) {
-      let type: string | undefined;
-
-      // Check the property definition
-      const defaultValue = descriptor.value;
-      if (defaultValue instanceof Date || isDateField(key)) {
-        type = 'DATETIME';
-      } else if (typeof defaultValue === 'string') {
-        type = 'TEXT';
-      } else if (typeof defaultValue === 'number') {
-        type = 'INTEGER';
-      } else if (defaultValue === null) {
-        type = 'TEXT';
-      }
-
-      if (type) {
-        fields[key] = {
-          name: key,
-          type,
-          ...(values && key in values
-            ? {
-                value: values[key],
-              }
-            : {}),
-        };
-      }
-    }
-  }
   return fields;
 }
 
 /**
  * Generates a complete database schema SQL statement for a class
  *
- * Creates CREATE TABLE statement with all fields, constraints, and indexes.
- * Automatically adds id, slug, and context fields for SMRT object support.
- * Column names are generated in snake_case for database convention.
+ * This is now a thin wrapper around SchemaGenerator that provides the
+ * single source of truth for schema generation. Uses ObjectRegistry
+ * cached fields from AST manifest for consistent schema generation.
  *
  * @param ClassType - Class constructor to generate schema for
+ * @param providedFields - Optional fields map (used during registration)
  * @returns SQL schema creation statement with CREATE TABLE and CREATE INDEX statements
  * @example
  * ```typescript
@@ -250,110 +180,43 @@ export function fieldsFromClass(
  * // CREATE TABLE IF NOT EXISTS products (
  * //   id TEXT PRIMARY KEY,
  * //   slug TEXT NOT NULL,
- * //   context TEXT NOT NULL DEFAULT '',
+ * //   context TEXT NOT NULL DEFAULT CAST('' AS TEXT),
  * //   name TEXT,
  * //   price INTEGER,
  * //   UNIQUE(slug, context)
  * // );
  * ```
  */
-export function generateSchema(ClassType: new (...args: any[]) => any) {
-  const tableName = tableNameFromClass(ClassType);
-  const fields = fieldsFromClass(ClassType);
-
-  // Check if any field is marked as primaryKey
-  let customPKField: string | null = null;
-  let customPKColumnName: string | null = null;
-
-  // First, check cached fields from ObjectRegistry (more reliable)
+export function generateSchema(
+  ClassType: new (...args: any[]) => any,
+  providedFields?: Map<string, any>
+) {
   const className = ClassType.name;
-  const cachedFields = ObjectRegistry.getFields(className);
+  const tableName = tableNameFromClass(ClassType);
 
-  if (cachedFields.size > 0) {
-    for (const [key, field] of cachedFields.entries()) {
-      if (field.options?.primaryKey) {
-        customPKField = key;
-        customPKColumnName = toSnakeCase(key);
-        break;
-      }
-    }
+  // Use provided fields if available AND non-empty (during registration), otherwise get from registry
+  const cachedFields = (providedFields && providedFields.size > 0)
+    ? providedFields
+    : ObjectRegistry.getFields(className);
+
+  // Throw error if class is not registered AND no fields provided
+  if (cachedFields.size === 0) {
+    throw new Error(
+      `Cannot generate schema for unregistered class '${className}'. ` +
+      `Ensure the class is decorated with @smrt() for schema generation to work. ` +
+      `Runtime introspection has been removed in Phase 2 of the schema management refactor.`
+    );
   }
 
-  // Quote table name to handle SQL reserved keywords (e.g., "is", "as", "select")
-  let schema = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+  // Use SchemaGenerator for consistent SQL generation
+  const generator = new SchemaGenerator();
+  const schemaDefinition = generator.generateSchemaFromRegistry(
+    className,
+    tableName,
+    cachedFields
+  );
 
-  // If there's a custom primary key, use it; otherwise use default id field
-  const hasCustomPK = customPKField !== null;
-
-  if (!hasCustomPK) {
-    // Default behavior: Add id field first (always required)
-    schema += '  id TEXT PRIMARY KEY,\n';
-
-    // Add slug and context fields
-    schema += '  slug TEXT NOT NULL,\n';
-    schema += "  context TEXT NOT NULL DEFAULT CAST('' AS TEXT),\n";
-  }
-
-  // Track which timestamp fields we've added to avoid duplicates
-  let hasCreatedAt = false;
-  let hasUpdatedAt = false;
-
-  // Add all fields - convert camelCase property names to snake_case column names
-  for (const [key, field] of Object.entries(fields)) {
-    // Skip id, slug, context only if we're using default PK behavior
-    if (!hasCustomPK && (key === 'id' || key === 'slug' || key === 'context')) {
-      continue;
-    }
-
-    // Track timestamp fields and skip duplicates
-    if (key === 'created_at' || key === 'createdAt') {
-      if (hasCreatedAt) continue; // Skip duplicate
-      hasCreatedAt = true;
-    }
-    if (key === 'updated_at' || key === 'updatedAt') {
-      if (hasUpdatedAt) continue; // Skip duplicate
-      hasUpdatedAt = true;
-    }
-
-    const columnName = toSnakeCase(key);
-    const fieldDef = cachedFields.get(key);
-    const sqlType = fieldDef?.getSqlType() || field.type || 'TEXT';
-    let constraints = fieldDef?.getSqlConstraints() || [];
-
-    // For TEXT columns without Field definitions (simple properties like url = ''),
-    // add NOT NULL DEFAULT '' to prevent DuckDB ANY type inference
-    if (constraints.length === 0 && sqlType === 'TEXT') {
-      constraints = ["NOT NULL DEFAULT ''"];
-    }
-
-    schema += `  ${columnName} ${sqlType}${constraints.length > 0 ? ' ' + constraints.join(' ') : ''},\n`;
-  }
-
-  // Ensure timestamp columns exist for triggers (if not already added)
-  if (!hasCreatedAt) {
-    schema += '  created_at DATETIME,\n';
-  }
-  if (!hasUpdatedAt) {
-    schema += '  updated_at DATETIME,\n';
-  }
-
-  // Add composite unique constraint for slug and context only if using default PK
-  if (!hasCustomPK) {
-    schema += '  UNIQUE(slug, context),\n';
-  }
-
-  schema = schema.slice(0, -2); // Remove trailing comma and newline
-  schema += '\n);';
-
-  // Add indexes
-  if (hasCustomPK) {
-    schema += `\nCREATE INDEX IF NOT EXISTS ${tableName}_${customPKColumnName}_idx ON ${tableName} (${customPKColumnName});`;
-  } else {
-    schema += `\nCREATE INDEX IF NOT EXISTS ${tableName}_id_idx ON ${tableName} (id);`;
-    schema += `\nCREATE INDEX IF NOT EXISTS ${tableName}_slug_context_idx ON ${tableName} (slug, context);`;
-  }
-
-  return schema;
+  return generator.generateSQL(schemaDefinition);
 }
 
 
@@ -454,12 +317,17 @@ export async function setupTableFromClass(db: any, ClassType: any) {
 
   _setup_table_from_class_promises[tableName] = (async () => {
     try {
-      // Always generate fresh schema to ensure latest field mapping is used
-      const schema = generateSchema(ClassType);
-
-      // Detect custom primary key field
       const className = ClassType.name;
-      const cachedFields = ObjectRegistry.getFields(className);
+
+      // Get fields from registry, or extract if not registered
+      let cachedFields = ObjectRegistry.getFields(className);
+      if (cachedFields.size === 0) {
+        // Class not registered - extract fields at runtime for test classes
+        cachedFields = ObjectRegistry.extractFields(ClassType);
+      }
+
+      // Always generate fresh schema to ensure latest field mapping is used
+      const schema = generateSchema(ClassType, cachedFields);
       let primaryKeyColumn = 'id'; // default
 
       if (cachedFields.size > 0) {

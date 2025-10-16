@@ -602,7 +602,7 @@ function smrtPlugin(options = {}) {
   async function scanAndGenerateManifest() {
     if (process.env.NODE_ENV === "production") {
       try {
-        const { staticManifest } = await import("./static-manifest-CPsB80P8.js");
+        const { staticManifest } = await import("./static-manifest-3_BaNhar.js");
         if (staticManifest && Object.keys(staticManifest.objects).length > 0) {
           console.log("[smrt] Using pre-generated static manifest");
           return staticManifest;
@@ -614,7 +614,7 @@ function smrtPlugin(options = {}) {
       }
     }
     try {
-      const [{ default: fg }, { ASTScanner, ManifestGenerator }] = await Promise.all([import("./index-D2SdCo8s.js").then((n) => n.i), import("./index-BqFLQpoS.js")]);
+      const [{ default: fg }, { ASTScanner, ManifestGenerator }] = await Promise.all([import("./index-D2SdCo8s.js").then((n) => n.i), import("./index-CS2JxlF_.js")]);
       if (!manifestGenerator) {
         manifestGenerator = new ManifestGenerator();
       }
@@ -671,7 +671,7 @@ function smrtPlugin(options = {}) {
 }
 async function generateRoutesModule(manifest) {
   try {
-    const { ManifestGenerator } = await import("./index-BqFLQpoS.js");
+    const { ManifestGenerator } = await import("./index-CS2JxlF_.js");
     const generator = new ManifestGenerator();
     const routes = generator.generateRestEndpoints(manifest);
     return `
@@ -737,7 +737,7 @@ export { createClient as default };
 }
 async function generateMCPModule(manifest) {
   try {
-    const { ManifestGenerator } = await import("./index-BqFLQpoS.js");
+    const { ManifestGenerator } = await import("./index-CS2JxlF_.js");
     const generator = new ManifestGenerator();
     const tools = generator.generateMCPTools(manifest);
     return `
@@ -810,7 +810,7 @@ async function generateTypesModule(manifest, mode = "server") {
   let interfaces = "";
   try {
     if (mode !== "client") {
-      const { ManifestGenerator } = await import("./index-BqFLQpoS.js");
+      const { ManifestGenerator } = await import("./index-CS2JxlF_.js");
       const generator = new ManifestGenerator();
       interfaces = generator.generateTypeDefinitions(manifest);
     } else {
@@ -1241,7 +1241,7 @@ export default setupCLI;
 }
 async function generateSchemaModule(manifest) {
   try {
-    const { SchemaGenerator } = await import("./index-YrRKnEDs.js");
+    const { SchemaGenerator } = await import("./index-9WZDN6n7.js");
     const schemaGenerator = new SchemaGenerator();
     const schemas = {};
     for (const [className, objectDef] of Object.entries(manifest.objects)) {
@@ -1294,4 +1294,4 @@ export default {};`;
 export {
   smrtPlugin as s
 };
-//# sourceMappingURL=index-BbfsvU_3.js.map
+//# sourceMappingURL=index-DYJFU_mK.js.map

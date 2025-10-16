@@ -12,18 +12,31 @@ import { faker } from '@faker-js/faker';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from './collection';
 import { SmrtObject } from './object';
+import { smrt } from './registry';
+
+// Utility functions (must be defined BEFORE classes that use them in decorators)
+const TMP_DIR = path.resolve(`${os.tmpdir()}/.have-sdk-perf-tests`);
+fs.mkdirSync(TMP_DIR, { recursive: true });
+
+function getTestDbUrl(): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(7);
+  return `file:${TMP_DIR}/perf-test-${timestamp}-${random}.db`;
+}
 
 // Performance test objects
+// Phase 2: @smrt() decorator needed for test classes (not in AST manifest)
+@smrt()
 class PerfTestUser extends SmrtObject {
   static tableName = 'perf_test_users';
 
-  declare username?: string;
-  declare email?: string;
-  declare age?: number;
-  declare active?: boolean;
-  declare createdAt?: Date;
-  declare lastLogin?: Date;
-  declare profileData?: string;
+  username: string = '';
+  email: string = '';
+  age: number = 0;
+  active: boolean = false;
+  createdAt: Date = new Date();
+  lastLogin: Date = new Date();
+  profileData: string = '';
 
   constructor(options: any = {}) {
     super({
@@ -57,16 +70,6 @@ class PerfTestUsers extends SmrtCollection<PerfTestUser> {
     await collection.initialize();
     return collection;
   }
-}
-
-// Utility functions
-const TMP_DIR = path.resolve(`${os.tmpdir()}/.have-sdk-perf-tests`);
-fs.mkdirSync(TMP_DIR, { recursive: true });
-
-function getTestDbUrl(): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(7);
-  return `file:${TMP_DIR}/perf-test-${timestamp}-${random}.db`;
 }
 
 function generateLargeText(size: number): string {
@@ -372,10 +375,12 @@ describe.skip('Performance Benchmarks', () => {
   describe('Database Schema Performance', () => {
     it('should create tables efficiently', async () => {
       // Test creating multiple object types
+      // Phase 2: @smrt() decorator needed for test classes
+      @smrt()
       class TestProduct extends SmrtObject {
         static tableName = 'test_products';
-        productName?: string;
-        price?: number;
+        productName: string = '';
+        price: number = 0;
 
         constructor(options: any = {}) {
           super({
@@ -392,10 +397,11 @@ describe.skip('Performance Benchmarks', () => {
         }
       }
 
+      @smrt()
       class TestOrder extends SmrtObject {
         static tableName = 'test_orders';
-        total?: number;
-        status?: string;
+        total: number = 0;
+        status: string = '';
 
         constructor(options: any = {}) {
           super({
