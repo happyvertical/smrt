@@ -155,7 +155,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * });
    * ```
    */
-  static async create<T extends new (...args: any[]) => SmrtCollection<any>>(
+  static async create<T extends typeof SmrtCollection>(
     this: T,
     options: SmrtClassOptions = {},
   ): Promise<InstanceType<T>> {
