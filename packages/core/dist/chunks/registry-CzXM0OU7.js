@@ -179,6 +179,9 @@ CREATE INDEX IF NOT EXISTS ${tableName}_slug_context_idx ON ${tableName} (slug, 
   return schema;
 }
 function tableNameFromClass(ClassType) {
+  if ("SMRT_TABLE_NAME" in ClassType) {
+    return ClassType.SMRT_TABLE_NAME;
+  }
   return ClassType.name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().replace(/([^s])$/, "$1s").replace(/y$/, "ies");
 }
 function classnameToTablename(className) {
@@ -264,7 +267,7 @@ class ObjectRegistry {
       return;
     }
     const fields = ObjectRegistry.extractFields(ctor);
-    const tableName = tableNameFromClass(ctor);
+    const tableName = config.tableName || tableNameFromClass(ctor);
     const schemaDDL = generateSchema(ctor);
     const indexes = [];
     const ddlLines = schemaDDL.split("\n");
@@ -446,7 +449,7 @@ class ObjectRegistry {
     }
     let collectionConstructor = registered.collectionConstructor;
     if (!collectionConstructor) {
-      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-BrEr-bfz.js").then((n) => n.i);
+      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-DnmDOjNW.js").then((n) => n.i);
       class DefaultCollection extends SmrtCollectionClass {
         static _itemClass = registered.constructor;
       }
@@ -1072,7 +1075,14 @@ class ObjectRegistry {
 }
 function smrt(config = {}) {
   return (ctor) => {
-    ObjectRegistry.register(ctor, config);
+    const tableName = config.tableName || classnameToTablename(ctor.name);
+    Object.defineProperty(ctor, "SMRT_TABLE_NAME", {
+      value: tableName,
+      writable: false,
+      enumerable: false,
+      configurable: false
+    });
+    ObjectRegistry.register(ctor, { ...config, tableName });
     return ctor;
   };
 }
@@ -1094,4 +1104,4 @@ export {
   setupTableFromClass as s,
   tableNameFromClass as t
 };
-//# sourceMappingURL=registry-CfuDpgvg.js.map
+//# sourceMappingURL=registry-CzXM0OU7.js.map

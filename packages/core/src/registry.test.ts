@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ObjectRegistry } from './registry';
+import { ObjectRegistry, smrt } from './registry';
 import { SmrtObject } from './object';
 import { Field } from './fields/index';
+import { tableNameFromClass } from './utils';
 
 // Test classes - Simple classes without field definitions
 // We'll manually register these with field metadata to avoid field function issues
@@ -575,6 +576,90 @@ describe('ObjectRegistry', () => {
       expect(categoryIndex).toBeLessThan(productIndex);
       expect(productIndex).toBeLessThan(orderIndex);
       expect(customerIndex).toBeLessThan(orderIndex);
+    });
+  });
+
+  describe('Table Name Capture (Issue #9 - Phase 1)', () => {
+    it('should work with @smrt decorator syntax', () => {
+      @smrt()
+      class DecoratorTest extends SmrtObject {
+        name: string = '';
+      }
+
+      // Verify SMRT_TABLE_NAME was set by decorator
+      expect('SMRT_TABLE_NAME' in DecoratorTest).toBe(true);
+      expect((DecoratorTest as any).SMRT_TABLE_NAME).toBe('decorator_tests');
+    });
+
+    it('should work with @smrt decorator and custom tableName', () => {
+      @smrt({ tableName: 'super_custom_table' })
+      class CustomDecoratorTest extends SmrtObject {
+        name: string = '';
+      }
+
+      // Verify custom tableName was set
+      expect((CustomDecoratorTest as any).SMRT_TABLE_NAME).toBe('super_custom_table');
+    });
+
+    it('should use captured table name from SMRT_TABLE_NAME property', () => {
+      @smrt()
+      class TableNameTest extends SmrtObject {
+        name: string = '';
+      }
+
+      const metadata = ObjectRegistry.getObjectMetadata('TableNameTest');
+      expect(metadata!.schema!.tableName).toBe('table_name_tests');
+    });
+
+    it('should respect custom tableName in config', () => {
+      @smrt({ tableName: 'my_custom_products' })
+      class CustomTableProduct extends SmrtObject {
+        name: string = '';
+        price: number = 0;
+      }
+
+      const metadata = ObjectRegistry.getObjectMetadata('CustomTableProduct');
+      expect(metadata!.schema!.tableName).toBe('my_custom_products');
+
+      // Check SMRT_TABLE_NAME property
+      expect((CustomTableProduct as any).SMRT_TABLE_NAME).toBe('my_custom_products');
+    });
+
+    it('should survive minification (simulated)', () => {
+      // Simulate what happens during minification - the class name changes
+      // but SMRT_TABLE_NAME should remain
+
+      @smrt()
+      class OriginalClassName extends SmrtObject {
+        name: string = '';
+      }
+
+      // Capture the SMRT_TABLE_NAME before "minification"
+      const capturedTableName = (OriginalClassName as any).SMRT_TABLE_NAME;
+      expect(capturedTableName).toBe('original_class_names');
+
+      // Even if the class name gets mangled (simulated), the property remains
+      // In real minification, OriginalClassName.name might become "a" or "b"
+      // but SMRT_TABLE_NAME is a property value, not derived from the name
+      Object.defineProperty(OriginalClassName, 'name', {
+        value: 'a', // Simulated minified name
+        configurable: true
+      });
+
+      // The SMRT_TABLE_NAME should still be the original
+      expect((OriginalClassName as any).SMRT_TABLE_NAME).toBe('original_class_names');
+    });
+
+    it('should use SMRT_TABLE_NAME in tableNameFromClass()', () => {
+      @smrt()
+      class TestForTableName extends SmrtObject {
+        name: string = '';
+      }
+
+      const tableName = tableNameFromClass(TestForTableName);
+
+      // Should read from SMRT_TABLE_NAME property, not derive from class name
+      expect(tableName).toBe('test_for_table_names');
     });
   });
 });

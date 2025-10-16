@@ -114,10 +114,25 @@ export declare function generateSchema(ClassType: new (...args: any[]) => any): 
 /**
  * Generates a table name from a class constructor
  *
+ * Checks for SMRT_TABLE_NAME static property first (set by @smrt() decorator),
+ * which survives code minification. Falls back to deriving from ClassType.name
+ * for backward compatibility.
+ *
  * @param ClassType - Class constructor or function
  * @returns Pluralized snake_case table name
+ * @example
+ * ```typescript
+ * // With @smrt() decorator (recommended)
+ * @smrt()
+ * class Product extends SmrtObject { }
+ * tableNameFromClass(Product); // "products" (captured before minification)
+ *
+ * // Without decorator (fallback)
+ * class Category extends SmrtObject { }
+ * tableNameFromClass(Category); // "categories" (derived from runtime name)
+ * ```
  */
-export declare function tableNameFromClass(ClassType: Function | (new (...args: any[]) => any)): string;
+export declare function tableNameFromClass(ClassType: Function | (new (...args: any[]) => any)): any;
 /**
  * Converts a class name to a table name with pluralization
  *

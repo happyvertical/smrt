@@ -360,13 +360,34 @@ export function generateSchema(ClassType: new (...args: any[]) => any) {
 /**
  * Generates a table name from a class constructor
  *
+ * Checks for SMRT_TABLE_NAME static property first (set by @smrt() decorator),
+ * which survives code minification. Falls back to deriving from ClassType.name
+ * for backward compatibility.
+ *
  * @param ClassType - Class constructor or function
  * @returns Pluralized snake_case table name
+ * @example
+ * ```typescript
+ * // With @smrt() decorator (recommended)
+ * @smrt()
+ * class Product extends SmrtObject { }
+ * tableNameFromClass(Product); // "products" (captured before minification)
+ *
+ * // Without decorator (fallback)
+ * class Category extends SmrtObject { }
+ * tableNameFromClass(Category); // "categories" (derived from runtime name)
+ * ```
  */
 export function tableNameFromClass(
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   ClassType: Function | (new (...args: any[]) => any),
 ) {
+  // Check for SMRT_TABLE_NAME property set by @smrt() decorator (survives minification)
+  if ('SMRT_TABLE_NAME' in ClassType) {
+    return (ClassType as any).SMRT_TABLE_NAME;
+  }
+
+  // Fallback: derive from class name (breaks with minification)
   return (
     ClassType.name
       // Insert underscore between lower & upper case letters
