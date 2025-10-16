@@ -41,14 +41,22 @@
     "**/*.spec.ts"
   ],
   "references": [
-    // Core infrastructure packages
+    // SMRT types
     { "path": "./packages/types" },
-    { "path": "./packages/utils" },
-    { "path": "./packages/logger" },
-    { "path": "./packages/files" },
-    { "path": "./packages/sql" },
-    { "path": "./packages/ai" },
+
     // SMRT core framework
-    { "path": "./packages/smrt" }
+    { "path": "./packages/core" },
+
+    // Domain modules
+    { "path": "./packages/accounts" },
+    { "path": "./packages/agents" },
+    { "path": "./packages/assets" },
+    { "path": "./packages/content" },
+    { "path": "./packages/events" },
+    { "path": "./packages/gnode" },
+    { "path": "./packages/places" },
+    { "path": "./packages/products" },
+    { "path": "./packages/profiles" },
+    { "path": "./packages/tags" }
   ]
 }

@@ -1,0 +1,46 @@
+{
+  "name": "@smrt/profiles",
+  "version": "0.37.0",
+  "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils.js",
+      "types": "./dist/utils.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "vite build --mode library",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "test": "npx vitest run",
+    "test:watch": "npx vitest"
+  },
+  "dependencies": {
+    "@smrt/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^9.3.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.3",
+    "vitest": "^2.1.8"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "profiles",
+    "relationships",
+    "metadata",
+    "smrt"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT"
+}

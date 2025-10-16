@@ -1,5 +1,5 @@
 {
-  "name": "@have/types",
+  "name": "@smrt/types",
   "version": "0.37.0",
   "description": "Shared type definitions for the HAVE SDK",
   "type": "module",
