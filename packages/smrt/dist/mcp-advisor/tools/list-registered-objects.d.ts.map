@@ -1,0 +1,1 @@
+{"version":3,"file":"list-registered-objects.d.ts","sourceRoot":"","sources":["../../../src/mcp-advisor/tools/list-registered-objects.ts"],"names":[],"mappings":"AAAA;;GAEG;AAGH,OAAO,KAAK,EACV,0BAA0B,EAC1B,oBAAoB,EACrB,MAAM,aAAa,CAAC;AAErB;;GAEG;AACH,wBAAsB,qBAAqB,CACzC,KAAK,GAAE,0BAA+B,GACrC,OAAO,CAAC;IAAE,OAAO,EAAE,oBAAoB,EAAE,CAAC;IAAC,KAAK,EAAE,MAAM,CAAA;CAAE,CAAC,CA0D7D"}

@@ -1,0 +1,112 @@
+/**
+ * Tests for Vite plugin functionality
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { smrtPlugin } from './index';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+describe('SMRT Vite Plugin', () => {
+  it('should create plugin with default options', () => {
+    const plugin = smrtPlugin();
+    
+    expect(plugin.name).toBe('smrt-auto-service');
+    expect(typeof plugin.resolveId).toBe('function');
+    expect(typeof plugin.load).toBe('function');
+  });
+
+  it('should resolve virtual module IDs', () => {
+    const plugin = smrtPlugin();
+    
+    expect(plugin.resolveId('@smrt/routes')).toBe('smrt:routes');
+    expect(plugin.resolveId('@smrt/client')).toBe('smrt:client');
+    expect(plugin.resolveId('@smrt/mcp')).toBe('smrt:mcp');
+    expect(plugin.resolveId('@smrt/types')).toBe('smrt:types');
+    expect(plugin.resolveId('@smrt/manifest')).toBe('smrt:manifest');
+    expect(plugin.resolveId('some-other-module')).toBe(null);
+  });
+
+  it('should generate empty modules when no SMRT objects found', () => {
+    const plugin = smrtPlugin({
+      include: ['non-existent-path/**/*.ts']
+    });
+    
+    // Simulate load calls
+    const routesCode = plugin.load('smrt:routes');
+    const clientCode = plugin.load('smrt:client');
+    const mcpCode = plugin.load('smrt:mcp');
+    const typesCode = plugin.load('smrt:types');
+    const manifestCode = plugin.load('smrt:manifest');
+    
+    expect(typeof routesCode).toBe('string');
+    expect(typeof clientCode).toBe('string');
+    expect(typeof mcpCode).toBe('string');
+    expect(typeof typesCode).toBe('string');
+    expect(typeof manifestCode).toBe('string');
+    
+    // Should contain basic structure even with no objects
+    expect(routesCode).toContain('setupRoutes');
+    expect(clientCode).toContain('createClient');
+    expect(mcpCode).toContain('createMCPServer');
+    expect(typesCode).toContain('Request');
+    expect(manifestCode).toContain('manifest');
+  });
+
+  it('should generate modules with test sample data', () => {
+    const testSamplePath = resolve(__dirname, '../scanner/test-sample.ts');
+    
+    const plugin = smrtPlugin({
+      include: [testSamplePath],
+      exclude: []
+    });
+    
+    // Load modules
+    const routesCode = plugin.load('smrt:routes');
+    const clientCode = plugin.load('smrt:client');
+    const mcpCode = plugin.load('smrt:mcp');
+    const manifestCode = plugin.load('smrt:manifest');
+    
+    // Check routes generation
+    expect(routesCode).toContain('products');
+    expect(routesCode).toContain('categories');
+    expect(routesCode).toContain('GET');
+    expect(routesCode).toContain('POST');
+    
+    // Check client generation
+    expect(clientCode).toContain('product:');
+    expect(clientCode).toContain('category:');
+    expect(clientCode).toContain('list:');
+    expect(clientCode).toContain('create:');
+    
+    // Check MCP generation
+    expect(mcpCode).toContain('list_products');
+    expect(mcpCode).toContain('get_product');
+    expect(mcpCode).toContain('create_product');
+    
+    // Check manifest
+    expect(manifestCode).toContain('"objects"');
+    expect(manifestCode).toContain('product');
+    expect(manifestCode).toContain('category');
+  });
+
+  it('should handle plugin options correctly', () => {
+    const customOptions = {
+      include: ['custom/**/*.ts'],
+      exclude: ['**/*.test.ts'],
+      outDir: 'custom-dist',
+      hmr: false,
+      watch: false,
+      generateTypes: false,
+      baseClasses: ['CustomBase']
+    };
+    
+    const plugin = smrtPlugin(customOptions);
+    
+    expect(plugin.name).toBe('smrt-auto-service');
+    // Options are stored internally and affect scanning behavior
+  });
+});

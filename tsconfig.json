@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    // Language and Environment
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    // Strict Type Checking
+    "strict": true,
+
+    // Code Quality
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Module System
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+
+    // Emit Configuration
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    // Performance
+    // "skipLibCheck": true, // Disabled to catch all type errors in CI
+
+    // Let Node.js module resolution handle workspace packages through package.json exports
+    "baseUrl": "."
+  },
+  "include": ["vitest.config.ts"],
+  "exclude": [
+    "docs/**/*",
+    "**/node_modules/**",
+    "dist/**/*",
+    "packages/*/dist/**/*",
+    "packages/*/.svelte-kit/**/*",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ],
+  "references": [
+    // Core infrastructure packages
+    { "path": "./packages/types" },
+    { "path": "./packages/utils" },
+    { "path": "./packages/logger" },
+    { "path": "./packages/files" },
+    { "path": "./packages/sql" },
+    { "path": "./packages/ai" },
+    // SMRT core framework
+    { "path": "./packages/smrt" }
+  ]
+}
