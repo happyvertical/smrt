@@ -17,14 +17,9 @@
     "clean": "rm -rf packages/*/dist packages/*/docs packages/*/tsconfig.*.tsbuildinfo .tsbuildinfo dist /*.js /*.d.ts /*.js.map /*.d.ts.map",
     "build": "node scripts/build-all-packages.js",
     "build:clean": "pnpm run clean && pnpm run build",
-    "build:watch": "pnpm run build && concurrently \"pnpm run build:utils --watch\" \"pnpm run build:files --watch\" \"pnpm run build:ai --watch\" \"pnpm run build:smrt --watch\"",
-    "build:utils": "VITE_BUILD_PACKAGE=utils vite build",
+    "build:watch": "pnpm run build && concurrently \"pnpm run build:types --watch\" \"pnpm run build:core --watch\"",
     "build:types": "VITE_BUILD_PACKAGE=types vite build",
-    "build:logger": "VITE_BUILD_PACKAGE=logger vite build",
-    "build:files": "VITE_BUILD_PACKAGE=files vite build",
-    "build:sql": "VITE_BUILD_PACKAGE=sql vite build",
-    "build:ai": "VITE_BUILD_PACKAGE=ai vite build",
-    "build:smrt": "VITE_BUILD_PACKAGE=smrt vite build",
+    "build:core": "VITE_BUILD_PACKAGE=core vite build",
     "typecheck": "tsc --noEmit",
     "validate-build": "node scripts/validate-build.js",
     "dev": "npm run build:watch",
@@ -36,8 +31,9 @@
     "release:test": "node scripts/release-helper.js test",
     "release:validate": "node scripts/release-helper.js validate",
     "release:full": "node scripts/release-helper.js full",
-    "smrt": "pnpm --filter @have/smrt cli"
+    "smrt": "pnpm --filter @smrt/core cli"
   },
+  "dependencies": {},
   "devDependencies": {
     "@anolilab/semantic-release-pnpm": "^2.0.4",
     "@biomejs/biome": "2.2.4",

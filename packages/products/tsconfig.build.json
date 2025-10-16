@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src/lib",
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "types": ["node"],
+    "lib": ["ES2022"],
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "isolatedModules": false
+  },
+  "include": ["src/lib/models/**/*.ts", "src/lib/utils/**/*.ts", "src/lib/generated/**/*.ts"],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "node_modules",
+    "dist",
+    "src/lib/components/**/*",
+    "src/lib/stores/**/*",
+    "src/lib/features/**/*",
+    "src/lib/index.ts",
+    "src/lib/federation-entry.ts",
+    "src/lib/mock-smrt-client.ts"
+  ]
+}

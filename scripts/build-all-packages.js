@@ -7,12 +7,19 @@ import { resolve } from 'path';
 // Package build order based on dependencies
 const buildOrder = [
   'types',   // Shared type definitions, zero dependencies
-  'utils',   // Base utilities, no internal dependencies
-  'logger',  // Depends on types, utils
-  'files',   // Depends on utils
-  'sql',     // No internal dependencies
-  'ai',      // No internal dependencies
-  'smrt',    // Depends on ai, files, sql, utils, types, logger (framework)
+  'core',    // Core framework (depends on external @have/ai, @have/files, etc.)
+
+  // Domain modules (all depend on @have/core)
+  'accounts',
+  'agents',
+  'assets',
+  'content',
+  'events',
+  'gnode',
+  'places',
+  'products',
+  'profiles',
+  'tags',
 ];
 
 console.log('Building all packages in dependency order...\n');
@@ -41,8 +48,8 @@ for (const packageName of buildOrder) {
       cwd: process.cwd()
     });
 
-    // Post-build step for smrt: copy template files
-    if (packageName === 'smrt') {
+    // Post-build step for core: copy template files
+    if (packageName === 'core') {
       console.log('  📋 Copying vite-plugin templates...');
       execSync(`cp -r packages/${packageName}/src/vite-plugin/templates packages/${packageName}/dist/vite-plugin/`, {
         stdio: 'inherit',

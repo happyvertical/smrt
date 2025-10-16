@@ -18,15 +18,31 @@ SMRT was split from the [HAppyVertical SDK](https://github.com/happyvertical/sdk
 
 The SMRT framework is organized as a pnpm workspace with the following packages:
 
-### Core Packages (`packages/`)
+### SMRT Packages (`packages/`)
 
+**Core Framework:**
+- **core**: Core framework with ORM, code generation, and AI integration
 - **types**: Shared TypeScript type definitions
-- **utils**: Base utility functions (slug generation, etc.)
-- **logger**: Logging infrastructure with @have/logger
-- **files**: File system operations (local and remote)
-- **sql**: Database interaction (SQLite, Postgres, DuckDB)
-- **ai**: Standardized AI interface (OpenAI, Anthropic, Google Gemini, AWS Bedrock)
-- **smrt**: Core framework with object-relational mapping and code generation
+
+**Domain Modules:**
+- **accounts**: Accounting ledger with multi-currency support
+- **agents**: Agent framework for autonomous actors
+- **assets**: Asset management with versioning and metadata
+- **content**: Content processing (documents, PDFs, web content)
+- **events**: Event management with participants and hierarchies
+- **gnode**: Federation library for local knowledge bases
+- **places**: Place management with geo integration
+- **products**: Product catalog and microservice template
+- **profiles**: Profile management with relationships
+- **tags**: Hierarchical tagging system
+
+**External SDK Dependencies:**
+The framework depends on these infrastructure packages from @have/sdk:
+- **@have/ai**: Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
+- **@have/files**: File system operations and utilities
+- **@have/sql**: Database operations (SQLite, Postgres, DuckDB)
+- **@have/utils**: Shared utility functions
+- **@have/logger**: Logging infrastructure
 
 ## Development Patterns
 
@@ -42,13 +58,11 @@ The SMRT framework is organized as a pnpm workspace with the following packages:
 
 The build process follows a specific order to respect internal dependencies:
 
-1. `@have/types` (shared type definitions)
-2. `@have/utils` (base utilities)
-3. `@have/logger` (logging infrastructure)
-4. `@have/files` (file system interactions)
-5. `@have/sql` (database interactions)
-6. `@have/ai` (AI model interfaces)
-7. `@have/smrt` (core framework)
+1. `@smrt/types` (shared type definitions)
+2. `@smrt/core` (core framework - depends on types)
+3. Domain modules (depend on core): accounts, agents, assets, content, events, gnode, places, products, profiles, tags
+
+External dependencies from @have/sdk are installed from npm.
 
 ### TypeScript Project References
 
@@ -66,12 +80,17 @@ Each package must have:
 {
   "references": [
     { "path": "./packages/types" },
-    { "path": "./packages/utils" },
-    { "path": "./packages/logger" },
-    { "path": "./packages/files" },
-    { "path": "./packages/sql" },
-    { "path": "./packages/ai" },
-    { "path": "./packages/smrt" }
+    { "path": "./packages/core" },
+    { "path": "./packages/accounts" },
+    { "path": "./packages/agents" },
+    { "path": "./packages/assets" },
+    { "path": "./packages/content" },
+    { "path": "./packages/events" },
+    { "path": "./packages/gnode" },
+    { "path": "./packages/places" },
+    { "path": "./packages/products" },
+    { "path": "./packages/profiles" },
+    { "path": "./packages/tags" }
   ]
 }
 ```
@@ -119,15 +138,17 @@ npm run format
 
 The packages have these dependency relationships:
 
-- `types`: No internal dependencies
-- `utils`: No internal dependencies
-- `logger`: Depends on `types`, `utils`
-- `files`: Depends on `utils`
-- `sql`: No internal dependencies
-- `ai`: No internal dependencies
-- `smrt`: Depends on all other packages
+**Within SMRT framework:**
+- `@smrt/types`: No internal dependencies
+- `@smrt/core`: Depends on `@smrt/types` and external SDK packages (`@have/*`)
+- Domain modules: All depend on `@smrt/core`, some have cross-dependencies:
+  - `@smrt/assets` → depends on `@smrt/tags`
+  - `@smrt/events` → depends on `@smrt/places`, `@smrt/profiles`
 
-When adding new features, maintain this dependency hierarchy to avoid circular dependencies.
+**External dependencies:**
+All SMRT packages can depend on SDK infrastructure packages (`@have/ai`, `@have/files`, `@have/sql`, `@have/utils`, `@have/logger`) which are installed from npm.
+
+When adding new features, maintain this dependency hierarchy to avoid circular dependencies within the SMRT framework.
 
 ## SMRT Framework Core Concepts
 
@@ -139,7 +160,7 @@ The SMRT package provides:
 - **Code Generation**: Automatic CLI, REST API, and MCP server generation
 - **Vite Plugin Integration**: Virtual module system for seamless development
 
-For detailed SMRT framework documentation, see [packages/smrt/CLAUDE.md](./packages/smrt/CLAUDE.md).
+For detailed SMRT framework documentation, see [packages/core/CLAUDE.md](./packages/core/CLAUDE.md).
 
 ## Contribution Guidelines
 
@@ -191,7 +212,7 @@ The framework includes automatic API documentation generation using TypeDoc:
 
 ```bash
 # Generate documentation (per package)
-cd packages/smrt
+cd packages/core
 npm run docs
 ```
 

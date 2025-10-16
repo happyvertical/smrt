@@ -1,0 +1,45 @@
+{
+  "name": "@smrt/accounts",
+  "version": "0.37.0",
+  "description": "Flexible accounting ledger with multi-currency support and SMRT framework integration",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "VITE_BUILD_PACKAGE=accounts vite build --mode library",
+    "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@smrt/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.6.3",
+    "vite": "^7.1.7",
+    "vitest": "^3.0.5"
+  },
+  "keywords": [
+    "accounting",
+    "ledger",
+    "transactions",
+    "multi-currency",
+    "smrt",
+    "typescript"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/sdk.git",
+    "directory": "packages/accounts"
+  }
+}

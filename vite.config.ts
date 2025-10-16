@@ -3,9 +3,9 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 
-// Function to read smrt package exports and generate entries
-function getSmrtEntries() {
-  const pkgPath = resolve(__dirname, 'packages/smrt/package.json');
+// Function to read core package exports and generate entries
+function getCoreEntries() {
+  const pkgPath = resolve(__dirname, 'packages/core/package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
   const entries: Record<string, string> = {};
 
@@ -20,7 +20,7 @@ function getSmrtEntries() {
       .replace(/^\.\/dist\//, 'src/')
       .replace(/\.js$/, '.ts');
 
-    entries[entryName] = resolve(__dirname, `packages/smrt/${sourcePath}`);
+    entries[entryName] = resolve(__dirname, `packages/core/${sourcePath}`);
   }
 
   return entries;
@@ -28,9 +28,9 @@ function getSmrtEntries() {
 
 // Function to create per-package build configuration
 function createPackageBuild(packageName: string, entryPath: string) {
-  // Special handling for smrt package with multiple entry points
-  if (packageName === 'smrt') {
-    const entries = getSmrtEntries();
+  // Special handling for core package with multiple entry points
+  if (packageName === 'core') {
+    const entries = getCoreEntries();
 
     return {
       lib: {
@@ -128,14 +128,16 @@ function createPackageBuild(packageName: string, entryPath: string) {
           '@modelcontextprotocol/sdk',
           /^@modelcontextprotocol\//,
 
-          // Internal @have/* packages
+          // Internal SMRT packages
           '@have/types',
+          '@have/core',
+
+          // External SDK packages
           '@have/utils',
           '@have/logger',
           '@have/files',
           '@have/sql',
           '@have/ai',
-          '@have/smrt',
 
           // Virtual modules from SMRT framework
           '@smrt/types',
@@ -250,14 +252,26 @@ function createPackageBuild(packageName: string, entryPath: string) {
         '@modelcontextprotocol/sdk',
         /^@modelcontextprotocol\//,
 
-        // Internal @have/* packages
+        // Internal SMRT packages
         '@have/types',
+        '@have/core',
+
+        // External SDK packages
         '@have/utils',
         '@have/logger',
         '@have/files',
         '@have/sql',
         '@have/ai',
-        '@have/smrt',
+
+        // Infrastructure packages (used by some modules)
+        '@have/cache',
+        '@have/config',
+        '@have/documents',
+        '@have/geo',
+        '@have/translator',
+        '@have/ocr',
+        '@have/pdf',
+        '@have/spider',
       ],
     },
     minify: false,
@@ -270,12 +284,19 @@ function createPackageBuild(packageName: string, entryPath: string) {
 // Package configurations with entry points
 const packages = [
   { name: 'types', entry: 'packages/types/src/index.ts' },
-  { name: 'utils', entry: 'packages/utils/src/index.ts' },
-  { name: 'logger', entry: 'packages/logger/src/index.ts' },
-  { name: 'files', entry: 'packages/files/src/index.ts' },
-  { name: 'sql', entry: 'packages/sql/src/index.ts' },
-  { name: 'ai', entry: 'packages/ai/src/index.ts' },
-  { name: 'smrt', entry: 'packages/smrt/src/index.ts' },
+  { name: 'core', entry: 'packages/core/src/index.ts' },
+
+  // Domain modules
+  { name: 'accounts', entry: 'packages/accounts/src/index.ts' },
+  { name: 'agents', entry: 'packages/agents/src/index.ts' },
+  { name: 'assets', entry: 'packages/assets/src/index.ts' },
+  { name: 'content', entry: 'packages/content/src/index.ts' },
+  { name: 'events', entry: 'packages/events/src/index.ts' },
+  { name: 'gnode', entry: 'packages/gnode/src/index.ts' },
+  { name: 'places', entry: 'packages/places/src/index.ts' },
+  { name: 'products', entry: 'packages/products/src/index.ts' },
+  { name: 'profiles', entry: 'packages/profiles/src/index.ts' },
+  { name: 'tags', entry: 'packages/tags/src/index.ts' },
 ];
 
 export default defineConfig(({ command, mode }) => {
@@ -314,12 +335,17 @@ export default defineConfig(({ command, mode }) => {
         resolve: {
           alias: {
             '@have/types': resolve(__dirname, 'packages/types/src'),
-            '@have/utils': resolve(__dirname, 'packages/utils/src'),
-            '@have/logger': resolve(__dirname, 'packages/logger/src'),
-            '@have/files': resolve(__dirname, 'packages/files/src'),
-            '@have/sql': resolve(__dirname, 'packages/sql/src'),
-            '@have/ai': resolve(__dirname, 'packages/ai/src'),
-            '@have/smrt': resolve(__dirname, 'packages/smrt/src'),
+            '@have/core': resolve(__dirname, 'packages/core/src'),
+            '@have/accounts': resolve(__dirname, 'packages/accounts/src'),
+            '@have/agents': resolve(__dirname, 'packages/agents/src'),
+            '@have/assets': resolve(__dirname, 'packages/assets/src'),
+            '@have/content': resolve(__dirname, 'packages/content/src'),
+            '@have/events': resolve(__dirname, 'packages/events/src'),
+            '@have/gnode': resolve(__dirname, 'packages/gnode/src'),
+            '@have/places': resolve(__dirname, 'packages/places/src'),
+            '@have/products': resolve(__dirname, 'packages/products/src'),
+            '@have/profiles': resolve(__dirname, 'packages/profiles/src'),
+            '@have/tags': resolve(__dirname, 'packages/tags/src'),
           },
         },
       };
@@ -335,12 +361,17 @@ export default defineConfig(({ command, mode }) => {
     resolve: {
       alias: {
         '@have/types': resolve(__dirname, 'packages/types/src'),
-        '@have/utils': resolve(__dirname, 'packages/utils/src'),
-        '@have/logger': resolve(__dirname, 'packages/logger/src'),
-        '@have/files': resolve(__dirname, 'packages/files/src'),
-        '@have/sql': resolve(__dirname, 'packages/sql/src'),
-        '@have/ai': resolve(__dirname, 'packages/ai/src'),
-        '@have/smrt': resolve(__dirname, 'packages/smrt/src'),
+        '@have/core': resolve(__dirname, 'packages/core/src'),
+        '@have/accounts': resolve(__dirname, 'packages/accounts/src'),
+        '@have/agents': resolve(__dirname, 'packages/agents/src'),
+        '@have/assets': resolve(__dirname, 'packages/assets/src'),
+        '@have/content': resolve(__dirname, 'packages/content/src'),
+        '@have/events': resolve(__dirname, 'packages/events/src'),
+        '@have/gnode': resolve(__dirname, 'packages/gnode/src'),
+        '@have/places': resolve(__dirname, 'packages/places/src'),
+        '@have/products': resolve(__dirname, 'packages/products/src'),
+        '@have/profiles': resolve(__dirname, 'packages/profiles/src'),
+        '@have/tags': resolve(__dirname, 'packages/tags/src'),
       },
     },
     optimizeDeps: {
