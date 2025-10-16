@@ -26,6 +26,7 @@
     "./vite-plugin": "./dist/vite-plugin.js",
     "./runtime": "./dist/runtime.js",
     "./prebuild": "./dist/prebuild.js",
+    "./prebuild/cli": "./dist/prebuild/cli.js",
     "./consumer-plugin": "./dist/consumer-plugin.js"
   },
   "dependencies": {
