@@ -301,7 +301,7 @@ export declare class ObjectRegistry {
     /**
      * Extract field definitions from a class constructor
      */
-    private static extractFields;
+    static extractFields(ctor: typeof SmrtObject): Map<string, any>;
     /**
      * Compile validation functions from field definitions
      *

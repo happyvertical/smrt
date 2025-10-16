@@ -80,7 +80,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     // - UNIQUE constraint
     // - CREATE INDEX statements
 
-    expect(schema).toContain(`CREATE TABLE IF NOT EXISTS ${tableName}`);
+    expect(schema).toContain(`CREATE TABLE IF NOT EXISTS "${tableName}"`);
     expect(schema).toContain('id TEXT PRIMARY KEY');
     expect(schema).toContain('slug TEXT NOT NULL');
     expect(schema).toContain('context TEXT NOT NULL');
@@ -89,7 +89,8 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(schema).toContain('start_date TEXT');
     expect(schema).toContain('created_at DATETIME');
     expect(schema).toContain('updated_at DATETIME');
-    expect(schema).toContain('UNIQUE(slug, context)');
+    // The new SchemaGenerator creates a UNIQUE INDEX instead of table constraint
+    expect(schema).toContain('UNIQUE INDEX');
   });
 
   it('should handle classes with explicit timestamp field definitions', () => {

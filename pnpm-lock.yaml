@@ -6,17 +6,17 @@ settings:
 
 overrides:
   '@types/node': 24.0.0
-  '@have/ai': file:../sdk/packages/ai
-  '@have/files': file:../sdk/packages/files
-  '@have/logger': file:../sdk/packages/logger
-  '@have/sql': file:../sdk/packages/sql
-  '@have/utils': file:../sdk/packages/utils
-  '@have/documents': file:../sdk/packages/documents
-  '@have/geo': file:../sdk/packages/geo
-  '@have/cache': file:../sdk/packages/cache
-  '@have/pdf': file:../sdk/packages/pdf
-  '@have/spider': file:../sdk/packages/spider
-  '@have/ocr': file:../sdk/packages/ocr
+  '@have/ai': file:./sdk/packages/ai
+  '@have/files': file:./sdk/packages/files
+  '@have/logger': file:./sdk/packages/logger
+  '@have/sql': file:./sdk/packages/sql
+  '@have/utils': file:./sdk/packages/utils
+  '@have/documents': file:./sdk/packages/documents
+  '@have/geo': file:./sdk/packages/geo
+  '@have/cache': file:./sdk/packages/cache
+  '@have/pdf': file:./sdk/packages/pdf
+  '@have/spider': file:./sdk/packages/spider
+  '@have/ocr': file:./sdk/packages/ocr
 
 importers:
 
@@ -152,23 +152,23 @@ importers:
   packages/content:
     dependencies:
       '@have/documents':
-        specifier: file:../../../sdk/packages/documents
-        version: file:../sdk/packages/documents(@types/node@24.0.0)
+        specifier: file:../../sdk/packages/documents
+        version: file:sdk/packages/documents(@types/node@24.0.0)
       '@have/files':
-        specifier: file:../../../sdk/packages/files
-        version: file:../sdk/packages/files
+        specifier: file:../../sdk/packages/files
+        version: file:sdk/packages/files
       '@have/ocr':
-        specifier: file:../../../sdk/packages/ocr
-        version: file:../sdk/packages/ocr
+        specifier: file:../../sdk/packages/ocr
+        version: file:sdk/packages/ocr
       '@have/pdf':
-        specifier: file:../../../sdk/packages/pdf
-        version: file:../sdk/packages/pdf
+        specifier: file:../../sdk/packages/pdf
+        version: file:sdk/packages/pdf
       '@have/spider':
-        specifier: file:../../../sdk/packages/spider
-        version: file:../sdk/packages/spider(@types/node@24.0.0)
+        specifier: file:../../sdk/packages/spider
+        version: file:sdk/packages/spider(@types/node@24.0.0)
       '@have/utils':
-        specifier: file:../../../sdk/packages/utils
-        version: file:../sdk/packages/utils
+        specifier: file:../../sdk/packages/utils
+        version: file:sdk/packages/utils
       '@smrt/core':
         specifier: workspace:*
         version: link:../core
@@ -201,20 +201,20 @@ importers:
   packages/core:
     dependencies:
       '@have/ai':
-        specifier: file:../../../sdk/packages/ai
-        version: file:../sdk/packages/ai(ws@8.18.3)(zod@3.25.76)
+        specifier: file:../../sdk/packages/ai
+        version: file:sdk/packages/ai(ws@8.18.3)(zod@3.25.76)
       '@have/files':
-        specifier: file:../../../sdk/packages/files
-        version: file:../sdk/packages/files
+        specifier: file:../../sdk/packages/files
+        version: file:sdk/packages/files
       '@have/logger':
-        specifier: file:../../../sdk/packages/logger
-        version: file:../sdk/packages/logger
+        specifier: file:../../sdk/packages/logger
+        version: file:sdk/packages/logger
       '@have/sql':
-        specifier: file:../../../sdk/packages/sql
-        version: file:../sdk/packages/sql
+        specifier: file:../../sdk/packages/sql
+        version: file:sdk/packages/sql
       '@have/utils':
-        specifier: file:../../../sdk/packages/utils
-        version: file:../sdk/packages/utils
+        specifier: file:../../sdk/packages/utils
+        version: file:sdk/packages/utils
       '@langchain/community':
         specifier: ^0.3.24
         version: 0.3.57(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.911.0)(@aws-sdk/credential-provider-node@3.911.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.56.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@5.23.2(ws@8.18.3)(zod@3.25.76))(zod@3.25.76))(@ibm-cloud/watsonx-ai@1.7.0)(@langchain/core@0.3.78(openai@5.23.2(ws@8.18.3)(zod@3.25.76)))(@libsql/client@0.14.0)(@mozilla/readability@0.5.0)(@smithy/util-utf8@2.3.0)(axios@1.12.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@9.15.1)(handlebars@4.7.8)(ibm-cloud-sdk-core@5.4.3)(ignore@5.3.2)(jsdom@26.1.0)(jsonwebtoken@9.0.2)(lodash@4.17.21)(openai@5.23.2(ws@8.18.3)(zod@3.25.76))(pg@8.16.3)(playwright@1.56.0)(redis@5.8.3)(weaviate-client@3.9.0)(ws@8.18.3)
@@ -312,11 +312,11 @@ importers:
   packages/places:
     dependencies:
       '@have/cache':
-        specifier: file:../../../sdk/packages/cache
-        version: file:../sdk/packages/cache
+        specifier: file:../../sdk/packages/cache
+        version: file:sdk/packages/cache
       '@have/geo':
-        specifier: file:../../../sdk/packages/geo
-        version: file:../sdk/packages/geo
+        specifier: file:../../sdk/packages/geo
+        version: file:sdk/packages/geo
       '@smrt/core':
         specifier: workspace:*
         version: link:../core
@@ -1306,38 +1306,38 @@ packages:
   '@gutenye/ocr-node@1.4.8':
     resolution: {integrity: sha512-Ej6hHQSrBLCY74Qb2rRYZ0v97kp3h1Q8obLdQDM208ft9BOyqj+aUN2yTYQ/1c/BO695OWDgufRSiWiLB92KLw==}
 
-  '@have/ai@file:../sdk/packages/ai':
-    resolution: {directory: ../sdk/packages/ai, type: directory}
+  '@have/ai@file:sdk/packages/ai':
+    resolution: {directory: sdk/packages/ai, type: directory}
 
-  '@have/cache@file:../sdk/packages/cache':
-    resolution: {directory: ../sdk/packages/cache, type: directory}
+  '@have/cache@file:sdk/packages/cache':
+    resolution: {directory: sdk/packages/cache, type: directory}
 
-  '@have/documents@file:../sdk/packages/documents':
-    resolution: {directory: ../sdk/packages/documents, type: directory}
+  '@have/documents@file:sdk/packages/documents':
+    resolution: {directory: sdk/packages/documents, type: directory}
 
-  '@have/files@file:../sdk/packages/files':
-    resolution: {directory: ../sdk/packages/files, type: directory}
+  '@have/files@file:sdk/packages/files':
+    resolution: {directory: sdk/packages/files, type: directory}
 
-  '@have/geo@file:../sdk/packages/geo':
-    resolution: {directory: ../sdk/packages/geo, type: directory}
+  '@have/geo@file:sdk/packages/geo':
+    resolution: {directory: sdk/packages/geo, type: directory}
 
-  '@have/logger@file:../sdk/packages/logger':
-    resolution: {directory: ../sdk/packages/logger, type: directory}
+  '@have/logger@file:sdk/packages/logger':
+    resolution: {directory: sdk/packages/logger, type: directory}
 
-  '@have/ocr@file:../sdk/packages/ocr':
-    resolution: {directory: ../sdk/packages/ocr, type: directory}
+  '@have/ocr@file:sdk/packages/ocr':
+    resolution: {directory: sdk/packages/ocr, type: directory}
 
-  '@have/pdf@file:../sdk/packages/pdf':
-    resolution: {directory: ../sdk/packages/pdf, type: directory}
+  '@have/pdf@file:sdk/packages/pdf':
+    resolution: {directory: sdk/packages/pdf, type: directory}
 
-  '@have/spider@file:../sdk/packages/spider':
-    resolution: {directory: ../sdk/packages/spider, type: directory}
+  '@have/spider@file:sdk/packages/spider':
+    resolution: {directory: sdk/packages/spider, type: directory}
 
-  '@have/sql@file:../sdk/packages/sql':
-    resolution: {directory: ../sdk/packages/sql, type: directory}
+  '@have/sql@file:sdk/packages/sql':
+    resolution: {directory: sdk/packages/sql, type: directory}
 
-  '@have/utils@file:../sdk/packages/utils':
-    resolution: {directory: ../sdk/packages/utils, type: directory}
+  '@have/utils@file:sdk/packages/utils':
+    resolution: {directory: sdk/packages/utils, type: directory}
 
   '@ibm-cloud/watsonx-ai@1.7.0':
     resolution: {integrity: sha512-TmLaoFXmLc7yVFJIQS25mzZcuWfju4JmRXcO62KthDKNENyPpXXJukrHN6gXfv1BotzFt0M2kyRnO1Vt8ZLlxQ==}
@@ -8172,12 +8172,12 @@ snapshots:
       onnxruntime-node: 1.23.0
       sharp: 0.33.5
 
-  '@have/ai@file:../sdk/packages/ai(ws@8.18.3)(zod@3.25.76)':
+  '@have/ai@file:sdk/packages/ai(ws@8.18.3)(zod@3.25.76)':
     dependencies:
       '@anthropic-ai/sdk': 0.30.1
       '@aws-sdk/client-bedrock-runtime': 3.911.0
       '@google/genai': 0.3.1
-      '@have/utils': file:../sdk/packages/utils
+      '@have/utils': file:sdk/packages/utils
       openai: 5.23.2(ws@8.18.3)(zod@3.25.76)
     transitivePeerDependencies:
       - aws-crt
@@ -8188,18 +8188,18 @@ snapshots:
       - ws
       - zod
 
-  '@have/cache@file:../sdk/packages/cache':
+  '@have/cache@file:sdk/packages/cache':
     dependencies:
-      '@have/utils': file:../sdk/packages/utils
+      '@have/utils': file:sdk/packages/utils
       redis: 5.8.3
 
-  '@have/documents@file:../sdk/packages/documents(@types/node@24.0.0)':
+  '@have/documents@file:sdk/packages/documents(@types/node@24.0.0)':
     dependencies:
-      '@have/files': file:../sdk/packages/files
-      '@have/ocr': file:../sdk/packages/ocr
-      '@have/pdf': file:../sdk/packages/pdf
-      '@have/spider': file:../sdk/packages/spider(@types/node@24.0.0)
-      '@have/utils': file:../sdk/packages/utils
+      '@have/files': file:sdk/packages/files
+      '@have/ocr': file:sdk/packages/ocr
+      '@have/pdf': file:sdk/packages/pdf
+      '@have/spider': file:sdk/packages/spider(@types/node@24.0.0)
+      '@have/utils': file:sdk/packages/utils
       uuid: 11.1.0
     transitivePeerDependencies:
       - '@napi-rs/canvas'
@@ -8211,45 +8211,45 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@have/files@file:../sdk/packages/files':
+  '@have/files@file:sdk/packages/files':
     dependencies:
-      '@have/utils': file:../sdk/packages/utils
+      '@have/utils': file:sdk/packages/utils
 
-  '@have/geo@file:../sdk/packages/geo':
+  '@have/geo@file:sdk/packages/geo':
     dependencies:
       '@googlemaps/google-maps-services-js': 3.4.2
-      '@have/cache': file:../sdk/packages/cache
-      '@have/utils': file:../sdk/packages/utils
+      '@have/cache': file:sdk/packages/cache
+      '@have/utils': file:sdk/packages/utils
     transitivePeerDependencies:
       - debug
 
-  '@have/logger@file:../sdk/packages/logger':
+  '@have/logger@file:sdk/packages/logger':
     dependencies:
-      '@have/utils': file:../sdk/packages/utils
+      '@have/utils': file:sdk/packages/utils
 
-  '@have/ocr@file:../sdk/packages/ocr':
+  '@have/ocr@file:sdk/packages/ocr':
     dependencies:
       '@gutenye/ocr-node': 1.4.8
-      '@have/utils': file:../sdk/packages/utils
+      '@have/utils': file:sdk/packages/utils
       jpeg-js: 0.4.4
       pngjs: 7.0.0
       tesseract.js: 5.1.1
     transitivePeerDependencies:
       - encoding
 
-  '@have/pdf@file:../sdk/packages/pdf':
+  '@have/pdf@file:sdk/packages/pdf':
     dependencies:
-      '@have/ocr': file:../sdk/packages/ocr
+      '@have/ocr': file:sdk/packages/ocr
       unpdf: 1.3.2
     transitivePeerDependencies:
       - '@napi-rs/canvas'
       - encoding
 
-  '@have/spider@file:../sdk/packages/spider(@types/node@24.0.0)':
+  '@have/spider@file:sdk/packages/spider(@types/node@24.0.0)':
     dependencies:
-      '@have/cache': file:../sdk/packages/cache
-      '@have/files': file:../sdk/packages/files
-      '@have/utils': file:../sdk/packages/utils
+      '@have/cache': file:sdk/packages/cache
+      '@have/files': file:sdk/packages/files
+      '@have/utils': file:sdk/packages/utils
       '@mozilla/readability': 0.5.0
       cheerio: 1.1.2
       crawlee: 3.15.1(@types/node@24.0.0)(playwright@1.56.0)
@@ -8265,10 +8265,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@have/sql@file:../sdk/packages/sql':
+  '@have/sql@file:sdk/packages/sql':
     dependencies:
       '@duckdb/node-api': 1.4.1-r.1
-      '@have/utils': file:../sdk/packages/utils
+      '@have/utils': file:sdk/packages/utils
       '@libsql/client': 0.14.0
       pg: 8.16.3
       sqlite-vss: 0.1.2
@@ -8277,7 +8277,7 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@have/utils@file:../sdk/packages/utils':
+  '@have/utils@file:sdk/packages/utils':
     dependencies:
       '@paralleldrive/cuid2': 2.2.2
       date-fns: 3.6.0

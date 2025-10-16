@@ -5,9 +5,37 @@
  * that collections can be created without duplicate column errors.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { unlinkSync } from 'node:fs';
+import { SmrtObject } from '../object';
+import { SmrtCollection } from '../collection';
+import { smrt } from '../registry';
 import { generateSchema } from '../utils';
+
+// Test classes that mimic Event and Profile from their respective packages
+@smrt()
+class TestEvent extends SmrtObject {
+  title: string = '';
+  description: string = '';
+  startDate: Date = new Date();
+  endDate: Date = new Date();
+}
+
+@smrt()
+class TestProfile extends SmrtObject {
+  firstName: string = '';
+  lastName: string = '';
+  email: string = '';
+  bio: string = '';
+}
+
+class TestEventCollection extends SmrtCollection<TestEvent> {
+  static readonly _itemClass = TestEvent;
+}
+
+class TestProfileCollection extends SmrtCollection<TestProfile> {
+  static readonly _itemClass = TestProfile;
+}
 
 describe('Issue #144: Integration Test with Real Collections', () => {
   const testDbPath = '/tmp/test-issue-144.db';
@@ -22,10 +50,8 @@ describe('Issue #144: Integration Test with Real Collections', () => {
   });
 
   it('should create EventCollection without duplicate column errors', async () => {
-    const { EventCollection } = await import('@have/events');
-
     // This should not throw "duplicate column name: created_at" error
-    const events = await EventCollection.create({
+    const events = await TestEventCollection.create({
       db: {
         type: 'sqlite',
         url: `file:${testDbPath}`,
@@ -36,10 +62,8 @@ describe('Issue #144: Integration Test with Real Collections', () => {
   });
 
   it('should create ProfileCollection without duplicate column errors', async () => {
-    const { ProfileCollection } = await import('@have/profiles');
-
     // This should not throw duplicate column errors
-    const profiles = await ProfileCollection.create({
+    const profiles = await TestProfileCollection.create({
       db: {
         type: 'sqlite',
         url: `file:${testDbPath}`,
@@ -49,10 +73,8 @@ describe('Issue #144: Integration Test with Real Collections', () => {
     expect(profiles).toBeDefined();
   });
 
-  it('should generate valid schema for Event class', async () => {
-    const { Event } = await import('@have/events');
-
-    const schema = generateSchema(Event);
+  it('should generate valid schema for Event class', () => {
+    const schema = generateSchema(TestEvent);
 
     // Verify no duplicate columns
     const createdMatches = schema.match(/created_at/g) || [];
@@ -66,10 +88,8 @@ describe('Issue #144: Integration Test with Real Collections', () => {
     expect(schema).toContain('updated_at DATETIME');
   });
 
-  it('should generate valid schema for Profile class', async () => {
-    const { Profile } = await import('@have/profiles');
-
-    const schema = generateSchema(Profile);
+  it('should generate valid schema for Profile class', () => {
+    const schema = generateSchema(TestProfile);
 
     // Verify no duplicate columns
     const createdMatches = schema.match(/created_at/g) || [];

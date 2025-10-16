@@ -268,7 +268,8 @@ export class ObjectRegistry {
     // Generate and cache schema definition
     // Use tableName from config if provided (captured by @smrt() decorator)
     const tableName = config.tableName || tableNameFromClass(ctor);
-    const schemaDDL = generateSchema(ctor);
+    // Pass extracted fields to avoid circular dependency (class isn't registered yet)
+    const schemaDDL = generateSchema(ctor, fields);
 
     // Parse schema DDL to extract indexes
     const indexes: string[] = [];
@@ -516,7 +517,7 @@ export class ObjectRegistry {
   /**
    * Extract field definitions from a class constructor
    */
-  private static extractFields(ctor: typeof SmrtObject): Map<string, any> {
+  static extractFields(ctor: typeof SmrtObject): Map<string, any> {
     const fields = new Map();
 
     try {
@@ -556,6 +557,33 @@ export class ObjectRegistry {
       if ((ctor as any).fields) {
         for (const [key, field] of Object.entries((ctor as any).fields)) {
           fields.set(key, field);
+        }
+      }
+
+      // Fallback: If no Field instances found, infer from primitive properties
+      // This supports test classes that use simple properties instead of Field instances
+      if (fields.size === 0) {
+        for (const key of Object.getOwnPropertyNames(tempInstance)) {
+          // Skip private/internal properties
+          if (key.startsWith('_') || key.startsWith('#')) continue;
+
+          const value = tempInstance[key];
+          const valueType = typeof value;
+
+          // Infer field type from primitive value
+          let fieldType = 'text'; // default
+          if (valueType === 'string') fieldType = 'text';
+          else if (valueType === 'number') fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
+          else if (valueType === 'boolean') fieldType = 'boolean';
+          else if (value instanceof Date) fieldType = 'datetime';
+          else if (Array.isArray(value)) fieldType = 'json';
+          else if (valueType === 'object' && value !== null) fieldType = 'json';
+          else continue; // Skip functions, undefined, null
+
+          fields.set(key, {
+            type: fieldType,
+            options: {}
+          });
         }
       }
     } catch (error) {
