@@ -4,7 +4,7 @@
 
 import { describe, expect, it, beforeEach } from 'vitest';
 import { MetricsAdapter } from './metrics.js';
-import type { Signal } from '@have/types';
+import type { Signal } from '@smrt/types';
 
 describe('MetricsAdapter', () => {
   let adapter: MetricsAdapter;

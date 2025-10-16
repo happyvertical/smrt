@@ -5,7 +5,7 @@
  */
 
 import { RuntimeError, ValidationError } from '../errors.js';
-import type { Signal } from '@have/types';
+import type { Signal } from '@smrt/types';
 import type { SignalBus } from '../signals/bus.js';
 
 /**

@@ -9,7 +9,7 @@
  */
 
 import type { SignalBus } from './signals/bus.js';
-import type { ISignalAdapter } from '@have/types';
+import type { ISignalAdapter } from '@smrt/types';
 import type { LoggerConfig } from '@have/logger';
 import type { SanitizationConfig } from './signals/sanitizer.js';
 

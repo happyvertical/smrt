@@ -6,7 +6,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { SignalBus } from './bus.js';
 import { SmrtClass } from '../class.js';
 import { config } from '../config.js';
-import type { Signal, ISignalAdapter } from '@have/types';
+import type { Signal, ISignalAdapter } from '@smrt/types';
 
 // Mock adapter for testing
 class TestAdapter implements ISignalAdapter {

@@ -5,7 +5,7 @@
  * Collects counts, durations, error rates, and success rates.
  */
 
-import type { Signal, ISignalAdapter } from '@have/types';
+import type { Signal, ISignalAdapter } from '@smrt/types';
 
 /**
  * Execution metrics for a specific method

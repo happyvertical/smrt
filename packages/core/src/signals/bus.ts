@@ -5,7 +5,7 @@
  * to registered adapters (logging, metrics, pub/sub, etc.).
  */
 
-import type { Signal, ISignalAdapter } from '@have/types';
+import type { Signal, ISignalAdapter } from '@smrt/types';
 import { makeId } from '@have/utils';
 import { SignalSanitizer } from './sanitizer.js';
 import type { SanitizationConfig } from './sanitizer.js';

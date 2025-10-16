@@ -11,5 +11,5 @@ export type {
   Signal,
   SignalType,
   ISignalAdapter,
-} from '@have/types';
+} from '@smrt/types';
 export type { SanitizationConfig } from './sanitizer.js';
