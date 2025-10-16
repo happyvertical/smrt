@@ -32,6 +32,7 @@ import type { SmrtObject } from './object';
 import {
   generateSchema,
   tableNameFromClass,
+  classnameToTablename,
 } from './utils';
 
 /**
@@ -47,6 +48,12 @@ export interface SmartObjectConfig {
    * Custom name for the object (defaults to class name)
    */
   name?: string;
+
+  /**
+   * Custom table name for database storage (defaults to pluralized snake_case class name)
+   * Explicitly setting this ensures the table name survives code minification
+   */
+  tableName?: string;
 
   /**
    * API configuration
@@ -259,7 +266,8 @@ export class ObjectRegistry {
     const fields = ObjectRegistry.extractFields(ctor);
 
     // Generate and cache schema definition
-    const tableName = tableNameFromClass(ctor);
+    // Use tableName from config if provided (captured by @smrt() decorator)
+    const tableName = config.tableName || tableNameFromClass(ctor);
     const schemaDDL = generateSchema(ctor);
 
     // Parse schema DDL to extract indexes
@@ -1254,12 +1262,20 @@ export class ObjectRegistry {
 /**
  * @smrt decorator for registering classes with the global registry
  *
+ * Captures the original class name before minification and stores it as
+ * a static property, ensuring table names remain consistent in production builds.
+ *
  * @example
  * ```typescript
  * @smrt()
  * class Product extends SmrtObject {
  *   name = text({ required: true });
  *   price = decimal({ min: 0 });
+ * }
+ *
+ * @smrt({ tableName: 'custom_products' })
+ * class Product extends SmrtObject {
+ *   name = text({ required: true });
  * }
  *
  * @smrt({ api: { exclude: ['delete'] } })
@@ -1270,7 +1286,20 @@ export class ObjectRegistry {
  */
 export function smrt(config: SmartObjectConfig = {}) {
   return <T extends typeof SmrtObject>(ctor: T): T => {
-    ObjectRegistry.register(ctor, config);
+    // Capture table name BEFORE minification (decorator runs at class definition time)
+    // This ensures the table name survives code minification
+    const tableName = config.tableName || classnameToTablename(ctor.name);
+
+    // Store table name in a static property that survives minification
+    Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
+      value: tableName,
+      writable: false,
+      enumerable: false,
+      configurable: false
+    });
+
+    // Register with the captured table name
+    ObjectRegistry.register(ctor, { ...config, tableName });
     return ctor;
   };
 }

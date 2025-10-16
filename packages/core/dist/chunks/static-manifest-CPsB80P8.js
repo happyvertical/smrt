@@ -1,10 +1,10 @@
 const staticManifest = {
   "version": "1.0.0",
-  "timestamp": 1760639548785,
+  "timestamp": 1760644722638,
   "objects": {}
 };
 export {
   staticManifest as default,
   staticManifest
 };
-//# sourceMappingURL=static-manifest-hx_rRxMU.js.map
+//# sourceMappingURL=static-manifest-CPsB80P8.js.map

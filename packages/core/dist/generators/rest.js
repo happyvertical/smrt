@@ -1,5 +1,5 @@
 import http from "node:http";
-import { O as ObjectRegistry } from "../chunks/registry-CfuDpgvg.js";
+import { O as ObjectRegistry } from "../chunks/registry-CzXM0OU7.js";
 class APIGenerator {
   config;
   collections = /* @__PURE__ */ new Map();
