@@ -1,5 +1,9 @@
 # SMRT Framework
 
+<p align="center">
+  <img src="./smrt-homer.png" alt="SMRT Framework" width="400" />
+</p>
+
 **A TypeScript framework for building vertical AI agents with automatic code generation, database persistence, and AI-powered operations.**
 
 ## Features
