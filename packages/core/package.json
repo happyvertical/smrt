@@ -1,0 +1,72 @@
+{
+  "name": "@smrt/core",
+  "version": "0.37.0",
+  "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
+  "author": "Will Griffin <willgriffin@gmail.com>",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "smrt": "dist/generators/cli.js",
+    "smrt-prebuild": "dist/prebuild/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./fields": "./dist/fields.js",
+    "./utils": "./dist/utils.js",
+    "./generators": "./dist/generators.js",
+    "./generators/cli": "./dist/generators/cli.js",
+    "./generators/rest": "./dist/generators/rest.js",
+    "./generators/mcp": "./dist/generators/mcp.js",
+    "./generators/swagger": "./dist/generators/swagger.js",
+    "./manifest": "./dist/manifest.js",
+    "./vite-plugin": "./dist/vite-plugin.js",
+    "./runtime": "./dist/runtime.js",
+    "./prebuild": "./dist/prebuild.js",
+    "./consumer-plugin": "./dist/consumer-plugin.js"
+  },
+  "dependencies": {
+    "@have/ai": "file:../../../sdk/packages/ai",
+    "@have/files": "file:../../../sdk/packages/files",
+    "@have/logger": "file:../../../sdk/packages/logger",
+    "@have/sql": "file:../../../sdk/packages/sql",
+    "@smrt/types": "workspace:*",
+    "@have/utils": "file:../../../sdk/packages/utils",
+    "@langchain/community": "^0.3.24",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "cheerio": "^1.0.0",
+    "fast-glob": "3.3.3",
+    "minimatch": "10.0.3",
+    "tar": "^7.5.1",
+    "typescript": "^5.7.3",
+    "yaml": "^2.7.0"
+  },
+  "scripts": {
+    "test": "npx vitest run",
+    "test:watch": "npx vitest",
+    "prebuild": "node scripts/generate-manifest.js",
+    "build": "vite build && cp -r src/vite-plugin/templates dist/vite-plugin/",
+    "build:watch": "vite build --watch",
+    "docs": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules",
+    "docs:watch": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules --watch",
+    "clean": "rm -rf dist docs",
+    "dev": "npm run build:watch & npm run test:watch",
+    "verify:consumer-plugin": "node -e \"try { const { smrtConsumer } = require('./dist/consumer-plugin.js'); const plugin = smrtConsumer(); console.log('✅ Consumer plugin working:', plugin.name); } catch(e) { console.error('❌ Consumer plugin failed:', e.message); process.exit(1); }\"",
+    "verify:exports": "node -e \"const pkg = require('./package.json'); const fs = require('fs'); Object.entries(pkg.exports).forEach(([key, path]) => { if (fs.existsSync(path)) { console.log('✅', key, '→', path); } else { console.error('❌', key, '→', path, '(missing)'); process.exit(1); } });\"",
+    "build:fresh": "npm run clean && npm run build && npm run verify:exports && npm run verify:consumer-plugin",
+    "prepack": "npm run build:fresh",
+    "cli": "tsx src/generators/cli.ts",
+    "cli:gnode": "tsx src/generators/cli.ts gnode"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^9.4.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.7.0",
+    "vite": "7.1.3",
+    "vite-plugin-dts": "4.3.0",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,5 +1,9 @@
 # SMRT Framework
 
+<p align="center">
+  <img src="./smrt-homer.png" alt="SMRT Framework" width="400" />
+</p>
+
 **A TypeScript framework for building vertical AI agents with automatic code generation, database persistence, and AI-powered operations.**
 
 ## Features
@@ -15,17 +19,17 @@
 
 ```bash
 # Install
-npm install @have/smrt
+npm install @smrt/core
 
 # Or with pnpm
-pnpm add @have/smrt
+pnpm add @smrt/core
 ```
 
 ## Basic Usage
 
 ```typescript
-import { SmrtObject, SmrtCollection, smrt } from '@have/smrt';
-import { text, decimal, boolean } from '@have/smrt/fields';
+import { SmrtObject, SmrtCollection, smrt } from '@smrt/core';
+import { text, decimal, boolean } from '@smrt/core/fields';
 
 // Define your domain object
 @smrt({
@@ -73,7 +77,7 @@ const active = await products.list({
 ### CLI Generation
 
 ```typescript
-import { CLIGenerator } from '@have/smrt/generators';
+import { CLIGenerator } from '@smrt/core/generators';
 
 const generator = new CLIGenerator({
   collections: [ProductCollection]
@@ -86,7 +90,7 @@ await generator.generate();
 ### REST API Generation
 
 ```typescript
-import { APIGenerator } from '@have/smrt/generators';
+import { APIGenerator } from '@smrt/core/generators';
 
 const generator = new APIGenerator({
   collections: [ProductCollection],
@@ -100,7 +104,7 @@ await generator.generate();
 ### MCP Server Generation
 
 ```typescript
-import { MCPGenerator } from '@have/smrt/generators';
+import { MCPGenerator } from '@smrt/core/generators';
 
 const generator = new MCPGenerator({
   collections: [ProductCollection]
@@ -114,7 +118,7 @@ await generator.generate();
 
 ```typescript
 // vite.config.js
-import { smrtPlugin } from '@have/smrt/vite-plugin';
+import { smrtPlugin } from '@smrt/core/vite-plugin';
 
 export default {
   plugins: [
@@ -131,23 +135,41 @@ import { createClient } from '@smrt/client';
 import { tools } from '@smrt/mcp';
 ```
 
-## Core Packages
+## Packages
 
-The SMRT framework includes these integrated packages:
+### Core SMRT Framework (`@smrt/*`)
 
-- `@have/smrt` - Core framework
-- `@have/ai` - Multi-provider AI client
-- `@have/files` - File system operations
+- `@smrt/core` - Core framework with ORM, code generation, and AI integration
+- `@smrt/types` - Shared TypeScript type definitions
+
+### Domain Modules (`@smrt/*`)
+
+- `@smrt/accounts` - Accounting ledger with multi-currency support
+- `@smrt/agents` - Agent framework for autonomous actors
+- `@smrt/assets` - Asset management with versioning and metadata
+- `@smrt/content` - Content processing (documents, PDFs, web content)
+- `@smrt/events` - Event management with participants and hierarchies
+- `@smrt/gnode` - Federation library for local knowledge bases
+- `@smrt/places` - Place management with geo integration
+- `@smrt/products` - Product catalog and microservice template
+- `@smrt/profiles` - Profile management with relationships
+- `@smrt/tags` - Hierarchical tagging system
+
+### SDK Infrastructure (`@have/*`)
+
+External dependencies provided by the HAppyVertical SDK:
+
+- `@have/ai` - Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
+- `@have/files` - File system operations and utilities
 - `@have/sql` - Database operations (SQLite, Postgres, DuckDB)
-- `@have/utils` - Utility functions
-- `@have/types` - Shared TypeScript types
+- `@have/utils` - Shared utility functions
 - `@have/logger` - Logging infrastructure
 
 ## Documentation
 
 - [Architecture Guide](./CLAUDE.md) - Development guide and patterns
-- [SMRT Package Docs](./packages/smrt/CLAUDE.md) - Detailed framework documentation
-- [API Reference](./packages/smrt/README.md) - Complete API reference
+- [Core Framework Docs](./packages/core/CLAUDE.md) - Detailed framework documentation
+- [API Reference](./packages/core/README.md) - Complete API reference
 
 ## Requirements
 

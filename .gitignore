@@ -139,3 +139,4 @@ repomix-output.xml
 
 # Document processing cache
 *.processed_pdf
+/sdk
