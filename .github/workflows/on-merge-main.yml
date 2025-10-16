@@ -37,6 +37,12 @@ jobs:
         with:
           fetch-depth: 0  # Full history for semantic-release
 
+      - name: Checkout SDK repository
+        uses: actions/checkout@v4
+        with:
+          repository: happyvertical/sdk
+          path: sdk
+
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
@@ -80,6 +86,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Checkout SDK repository
+        uses: actions/checkout@v4
+        with:
+          repository: happyvertical/sdk
+          path: sdk
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
