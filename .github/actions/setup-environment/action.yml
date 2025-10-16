@@ -1,0 +1,109 @@
+name: 'Setup Environment'
+description: 'Setup Node.js, pnpm, system dependencies, and install project dependencies'
+author: 'Happy Vertical'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '24'
+
+  install-deps:
+    description: 'Whether to install project dependencies'
+    required: false
+    default: 'true'
+
+  registry-url:
+    description: 'npm registry URL (for publishing)'
+    required: false
+    default: ''
+
+outputs:
+  pnpm-cache-hit:
+    description: 'Whether pnpm cache was hit'
+    value: ${{ steps.pnpm-cache.outputs.cache-hit }}
+
+  playwright-cache-hit:
+    description: 'Whether Playwright browser cache was hit'
+    value: ${{ steps.playwright-cache.outputs.cache-hit }}
+
+  store-path:
+    description: 'pnpm store path'
+    value: ${{ steps.pnpm-store.outputs.path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # Fetch full history for semantic-release if registry-url is set
+        fetch-depth: ${{ inputs.registry-url != '' && 0 || 1 }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        registry-url: ${{ inputs.registry-url || 'https://registry.npmjs.org' }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        run_install: false
+
+    - name: Get pnpm store directory
+      id: pnpm-store
+      shell: bash
+      run: |
+        echo "path=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+    - name: Setup pnpm cache
+      id: pnpm-cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Get Playwright version
+      id: playwright-version
+      shell: bash
+      run: |
+        PLAYWRIGHT_VERSION=$(npm list playwright --depth=0 --json 2>/dev/null | grep -oP '"playwright":\s*{\s*"version":\s*"\K[^"]+' || echo "1.54.2")
+        echo "version=$PLAYWRIGHT_VERSION" >> $GITHUB_OUTPUT
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      id: playwright-cache
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+        restore-keys: |
+          ${{ runner.os }}-playwright-
+
+    - name: Install system dependencies for ONNX Runtime
+      shell: bash
+      run: |
+        sudo apt-get update && sudo apt-get install -y \
+          libstdc++6 \
+          libc6-dev \
+          build-essential \
+          gcc \
+          g++ \
+          cmake \
+          libgomp1 \
+          libprotobuf-dev
+
+    - name: Install project dependencies
+      if: inputs.install-deps == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile
+      env:
+        # Force ONNX Runtime to skip CUDA installation
+        ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'
+
+    - name: Install Playwright browsers
+      if: inputs.install-deps == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: npx playwright install --with-deps chromium
