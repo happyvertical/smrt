@@ -32,6 +32,11 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for semantic-release
+
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
@@ -73,6 +78,9 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
