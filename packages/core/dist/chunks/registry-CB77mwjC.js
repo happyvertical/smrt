@@ -342,7 +342,7 @@ class ObjectRegistry {
     }
     let collectionConstructor = registered.collectionConstructor;
     if (!collectionConstructor) {
-      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-CXnxJbLy.js").then((n) => n.i);
+      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-lPtdtcrW.js").then((n) => n.i);
       class DefaultCollection extends SmrtCollectionClass {
         static _itemClass = registered.constructor;
       }
@@ -396,7 +396,8 @@ class ObjectRegistry {
           const valueType = typeof value;
           let fieldType = "text";
           if (valueType === "string") fieldType = "text";
-          else if (valueType === "number") fieldType = Number.isInteger(value) ? "integer" : "decimal";
+          else if (valueType === "number")
+            fieldType = Number.isInteger(value) ? "integer" : "decimal";
           else if (valueType === "boolean") fieldType = "boolean";
           else if (value instanceof Date) fieldType = "datetime";
           else if (Array.isArray(value)) fieldType = "json";
@@ -981,7 +982,9 @@ class ObjectRegistry {
    * ```
    */
   static async loadFromDatabase(db) {
-    const { rows } = await db.query("SELECT * FROM _smrt_registry ORDER BY class_name");
+    const { rows } = await db.query(
+      "SELECT * FROM _smrt_registry ORDER BY class_name"
+    );
     return rows;
   }
 }
@@ -1016,4 +1019,4 @@ export {
   setupTableFromClass as s,
   tableNameFromClass as t
 };
-//# sourceMappingURL=registry-Bw7M6hFL.js.map
+//# sourceMappingURL=registry-CB77mwjC.js.map

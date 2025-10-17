@@ -1,6 +1,6 @@
+import { Field } from '../fields/index';
 import { SmartObjectDefinition } from '../scanner/types';
 import { SchemaDefinition } from './types';
-import { Field } from '../fields/index';
 export declare class SchemaGenerator {
     /**
      * Generate schema definition from SMRT object definition

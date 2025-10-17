@@ -15,23 +15,23 @@
  * - APIGenerator: Generate REST APIs for SMRT objects
  * - MCPGenerator: Create MCP servers for AI model integration
  */
+export * from './adapters/index';
 export * from './class';
 export * from './collection';
+export type { GlobalSignalConfig, MetricsConfig, PubSubConfig, } from './config';
+export { config } from './config';
 export * from './errors';
 export * from './fields/index';
 export * from './generators/index';
+export * from './manifest/index';
 export * from './object';
 export * from './pleb';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
-export { config } from './config';
-export type { GlobalSignalConfig, MetricsConfig, PubSubConfig, } from './config';
 export * from './runtime/index';
-export * from './manifest/index';
-export * from './tools/index';
 export * from './signals/index';
-export * from './adapters/index';
-export { smrtPlugin } from './vite-plugin/index';
 export * from './system/index';
-export type { NoteOptions, NoteMetadata, RecallOptions, RecallAllOptions, ForgetOptions, ForgetScopeOptions, DiscoveryStrategy, SystemTableConfig, } from './system/types';
+export type { DiscoveryStrategy, ForgetOptions, ForgetScopeOptions, NoteMetadata, NoteOptions, RecallAllOptions, RecallOptions, SystemTableConfig, } from './system/types';
+export * from './tools/index';
+export { smrtPlugin } from './vite-plugin/index';
 //# sourceMappingURL=index.d.ts.map

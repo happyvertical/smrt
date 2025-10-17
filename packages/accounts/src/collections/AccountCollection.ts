@@ -86,10 +86,10 @@ export class AccountCollection extends SmrtCollection<Account> {
    *
    * @returns Array of root accounts with children property
    */
-  async getHierarchyTree(): Promise<any[]> {
+  async getHierarchyTree(): Promise<unknown[]> {
     const allAccounts = await this.list({});
-    const accountMap = new Map<string, any>();
-    const roots: any[] = [];
+    const accountMap = new Map<string, unknown>();
+    const roots: unknown[] = [];
 
     // Create map of accounts with children arrays
     for (const account of allAccounts) {

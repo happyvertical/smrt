@@ -45,136 +45,14 @@ var __privateIn = (member, obj) => Object(obj) !== obj ? __typeError('Cannot use
 var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read from private field"), getter ? getter.call(obj) : member.get(obj));
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
-var _AssetType_decorators, _init, _a, _AssetStatus_decorators, _init2, _b, _AssetMetafield_decorators, _init3, _c, _Asset_decorators, _init4, _d;
+var _Asset_decorators, _init, _a, _AssetMetafield_decorators, _init2, _b, _AssetStatus_decorators, _init3, _c, _AssetType_decorators, _init4, _d;
 import { SmrtObject, smrt, SmrtCollection } from "@smrt/core";
-_AssetType_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get", "create"] },
-  cli: true
-})];
-class AssetType extends (_a = SmrtObject) {
-  slug = "";
-  // Primary key (human-readable identifier, e.g., 'image', 'video')
-  name = "";
-  // Display name (e.g., 'Image', 'Video')
-  description = "";
-  // Optional description
-  constructor(options = {}) {
-    super(options);
-    if (options.slug) this.slug = options.slug;
-    if (options.name) this.name = options.name;
-    if (options.description) this.description = options.description;
-  }
-  /**
-   * Get asset type by slug
-   *
-   * @param slug - The slug to search for
-   * @returns AssetType instance or null
-   */
-  static async getBySlug(slug) {
-    return null;
-  }
-}
-_init = __decoratorStart(_a);
-AssetType = __decorateElement(_init, 0, "AssetType", _AssetType_decorators, AssetType);
-__runInitializers(_init, 1, AssetType);
-const assetType = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  AssetType
-}, Symbol.toStringTag, { value: "Module" }));
-_AssetStatus_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get", "create"] },
-  cli: true
-})];
-class AssetStatus extends (_b = SmrtObject) {
-  slug = "";
-  // Primary key (human-readable identifier, e.g., 'draft', 'published')
-  name = "";
-  // Display name (e.g., 'Draft', 'Published')
-  description = "";
-  // Optional description
-  constructor(options = {}) {
-    super(options);
-    if (options.slug) this.slug = options.slug;
-    if (options.name) this.name = options.name;
-    if (options.description) this.description = options.description;
-  }
-  /**
-   * Get asset status by slug
-   *
-   * @param slug - The slug to search for
-   * @returns AssetStatus instance or null
-   */
-  static async getBySlug(slug) {
-    return null;
-  }
-}
-_init2 = __decoratorStart(_b);
-AssetStatus = __decorateElement(_init2, 0, "AssetStatus", _AssetStatus_decorators, AssetStatus);
-__runInitializers(_init2, 1, AssetStatus);
-const assetStatus = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  AssetStatus
-}, Symbol.toStringTag, { value: "Module" }));
-_AssetMetafield_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get", "create"] },
-  cli: true
-})];
-class AssetMetafield extends (_c = SmrtObject) {
-  slug = "";
-  // Primary key (human-readable identifier, e.g., 'width', 'height')
-  name = "";
-  // Display name (e.g., 'Width', 'Height')
-  validation = "";
-  // JSON validation rules stored as text
-  constructor(options = {}) {
-    super(options);
-    if (options.slug) this.slug = options.slug;
-    if (options.name) this.name = options.name;
-    if (options.validation) this.validation = options.validation;
-  }
-  /**
-   * Get validation rules as parsed object
-   *
-   * @returns Parsed validation object or empty object if no validation
-   */
-  getValidation() {
-    if (!this.validation) return {};
-    try {
-      return JSON.parse(this.validation);
-    } catch {
-      return {};
-    }
-  }
-  /**
-   * Set validation rules from object
-   *
-   * @param rules - Validation rules object
-   */
-  setValidation(rules) {
-    this.validation = JSON.stringify(rules);
-  }
-  /**
-   * Get asset metafield by slug
-   *
-   * @param slug - The slug to search for
-   * @returns AssetMetafield instance or null
-   */
-  static async getBySlug(slug) {
-    return null;
-  }
-}
-_init3 = __decoratorStart(_c);
-AssetMetafield = __decorateElement(_init3, 0, "AssetMetafield", _AssetMetafield_decorators, AssetMetafield);
-__runInitializers(_init3, 1, AssetMetafield);
 _Asset_decorators = [smrt({
   api: { include: ["list", "get", "create", "update", "delete"] },
   mcp: { include: ["list", "get", "create", "update"] },
   cli: true
 })];
-class Asset extends (_d = SmrtObject) {
+class Asset extends (_a = SmrtObject) {
   // Core fields
   name = "";
   // User-friendly name
@@ -306,109 +184,61 @@ class Asset extends (_d = SmrtObject) {
     return null;
   }
 }
-_init4 = __decoratorStart(_d);
-Asset = __decorateElement(_init4, 0, "Asset", _Asset_decorators, Asset);
-__runInitializers(_init4, 1, Asset);
-class AssetTypeCollection extends SmrtCollection {
-  static _itemClass = AssetType;
-  /**
-   * Get or create an asset type by slug
-   *
-   * @param slug - The asset type slug
-   * @param name - The display name (defaults to slug)
-   * @param description - Optional description
-   * @returns The existing or newly created AssetType
-   */
-  async getOrCreate(slug, name, description) {
-    const existing = await this.list({ where: { slug }, limit: 1 });
-    if (existing.length > 0) {
-      return existing[0];
-    }
-    return await this.create({
-      slug,
-      name: name || slug,
-      description
-    });
+_init = __decoratorStart(_a);
+Asset = __decorateElement(_init, 0, "Asset", _Asset_decorators, Asset);
+__runInitializers(_init, 1, Asset);
+_AssetMetafield_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get", "create"] },
+  cli: true
+})];
+class AssetMetafield extends (_b = SmrtObject) {
+  slug = "";
+  // Primary key (human-readable identifier, e.g., 'width', 'height')
+  name = "";
+  // Display name (e.g., 'Width', 'Height')
+  validation = "";
+  // JSON validation rules stored as text
+  constructor(options = {}) {
+    super(options);
+    if (options.slug) this.slug = options.slug;
+    if (options.name) this.name = options.name;
+    if (options.validation) this.validation = options.validation;
   }
   /**
-   * Initialize common asset types
+   * Get validation rules as parsed object
    *
-   * Creates standard asset types if they don't exist:
-   * - image
-   * - video
-   * - document
-   * - audio
-   * - folder
+   * @returns Parsed validation object or empty object if no validation
    */
-  async initializeCommonTypes() {
-    await this.getOrCreate(
-      "image",
-      "Image",
-      "Image files (JPEG, PNG, GIF, etc.)"
-    );
-    await this.getOrCreate(
-      "video",
-      "Video",
-      "Video files (MP4, AVI, MOV, etc.)"
-    );
-    await this.getOrCreate(
-      "document",
-      "Document",
-      "Document files (PDF, DOCX, TXT, etc.)"
-    );
-    await this.getOrCreate(
-      "audio",
-      "Audio",
-      "Audio files (MP3, WAV, AAC, etc.)"
-    );
-    await this.getOrCreate(
-      "folder",
-      "Folder",
-      "Container for organizing assets"
-    );
+  getValidation() {
+    if (!this.validation) return {};
+    try {
+      return JSON.parse(this.validation);
+    } catch {
+      return {};
+    }
+  }
+  /**
+   * Set validation rules from object
+   *
+   * @param rules - Validation rules object
+   */
+  setValidation(rules) {
+    this.validation = JSON.stringify(rules);
+  }
+  /**
+   * Get asset metafield by slug
+   *
+   * @param slug - The slug to search for
+   * @returns AssetMetafield instance or null
+   */
+  static async getBySlug(slug) {
+    return null;
   }
 }
-class AssetStatusCollection extends SmrtCollection {
-  static _itemClass = AssetStatus;
-  /**
-   * Get or create an asset status by slug
-   *
-   * @param slug - The asset status slug
-   * @param name - The display name (defaults to slug)
-   * @param description - Optional description
-   * @returns The existing or newly created AssetStatus
-   */
-  async getOrCreate(slug, name, description) {
-    const existing = await this.list({ where: { slug }, limit: 1 });
-    if (existing.length > 0) {
-      return existing[0];
-    }
-    return await this.create({
-      slug,
-      name: name || slug,
-      description
-    });
-  }
-  /**
-   * Initialize common asset statuses
-   *
-   * Creates standard asset statuses if they don't exist:
-   * - draft
-   * - published
-   * - archived
-   * - deleted
-   */
-  async initializeCommonStatuses() {
-    await this.getOrCreate("draft", "Draft", "Work in progress, not yet ready");
-    await this.getOrCreate("published", "Published", "Live and available");
-    await this.getOrCreate(
-      "archived",
-      "Archived",
-      "No longer active but preserved"
-    );
-    await this.getOrCreate("deleted", "Deleted", "Marked for deletion");
-  }
-}
+_init2 = __decoratorStart(_b);
+AssetMetafield = __decorateElement(_init2, 0, "AssetMetafield", _AssetMetafield_decorators, AssetMetafield);
+__runInitializers(_init2, 1, AssetMetafield);
 class AssetMetafieldCollection extends SmrtCollection {
   static _itemClass = AssetMetafield;
   /**
@@ -471,6 +301,176 @@ class AssetMetafieldCollection extends SmrtCollection {
       type: "string",
       description: "Copyright notice"
     });
+  }
+}
+_AssetStatus_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get", "create"] },
+  cli: true
+})];
+class AssetStatus extends (_c = SmrtObject) {
+  slug = "";
+  // Primary key (human-readable identifier, e.g., 'draft', 'published')
+  name = "";
+  // Display name (e.g., 'Draft', 'Published')
+  description = "";
+  // Optional description
+  constructor(options = {}) {
+    super(options);
+    if (options.slug) this.slug = options.slug;
+    if (options.name) this.name = options.name;
+    if (options.description) this.description = options.description;
+  }
+  /**
+   * Get asset status by slug
+   *
+   * @param slug - The slug to search for
+   * @returns AssetStatus instance or null
+   */
+  static async getBySlug(slug) {
+    return null;
+  }
+}
+_init3 = __decoratorStart(_c);
+AssetStatus = __decorateElement(_init3, 0, "AssetStatus", _AssetStatus_decorators, AssetStatus);
+__runInitializers(_init3, 1, AssetStatus);
+const assetStatus = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  AssetStatus
+}, Symbol.toStringTag, { value: "Module" }));
+class AssetStatusCollection extends SmrtCollection {
+  static _itemClass = AssetStatus;
+  /**
+   * Get or create an asset status by slug
+   *
+   * @param slug - The asset status slug
+   * @param name - The display name (defaults to slug)
+   * @param description - Optional description
+   * @returns The existing or newly created AssetStatus
+   */
+  async getOrCreate(slug, name, description) {
+    const existing = await this.list({ where: { slug }, limit: 1 });
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    return await this.create({
+      slug,
+      name: name || slug,
+      description
+    });
+  }
+  /**
+   * Initialize common asset statuses
+   *
+   * Creates standard asset statuses if they don't exist:
+   * - draft
+   * - published
+   * - archived
+   * - deleted
+   */
+  async initializeCommonStatuses() {
+    await this.getOrCreate("draft", "Draft", "Work in progress, not yet ready");
+    await this.getOrCreate("published", "Published", "Live and available");
+    await this.getOrCreate(
+      "archived",
+      "Archived",
+      "No longer active but preserved"
+    );
+    await this.getOrCreate("deleted", "Deleted", "Marked for deletion");
+  }
+}
+_AssetType_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get", "create"] },
+  cli: true
+})];
+class AssetType extends (_d = SmrtObject) {
+  slug = "";
+  // Primary key (human-readable identifier, e.g., 'image', 'video')
+  name = "";
+  // Display name (e.g., 'Image', 'Video')
+  description = "";
+  // Optional description
+  constructor(options = {}) {
+    super(options);
+    if (options.slug) this.slug = options.slug;
+    if (options.name) this.name = options.name;
+    if (options.description) this.description = options.description;
+  }
+  /**
+   * Get asset type by slug
+   *
+   * @param slug - The slug to search for
+   * @returns AssetType instance or null
+   */
+  static async getBySlug(slug) {
+    return null;
+  }
+}
+_init4 = __decoratorStart(_d);
+AssetType = __decorateElement(_init4, 0, "AssetType", _AssetType_decorators, AssetType);
+__runInitializers(_init4, 1, AssetType);
+const assetType = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  AssetType
+}, Symbol.toStringTag, { value: "Module" }));
+class AssetTypeCollection extends SmrtCollection {
+  static _itemClass = AssetType;
+  /**
+   * Get or create an asset type by slug
+   *
+   * @param slug - The asset type slug
+   * @param name - The display name (defaults to slug)
+   * @param description - Optional description
+   * @returns The existing or newly created AssetType
+   */
+  async getOrCreate(slug, name, description) {
+    const existing = await this.list({ where: { slug }, limit: 1 });
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    return await this.create({
+      slug,
+      name: name || slug,
+      description
+    });
+  }
+  /**
+   * Initialize common asset types
+   *
+   * Creates standard asset types if they don't exist:
+   * - image
+   * - video
+   * - document
+   * - audio
+   * - folder
+   */
+  async initializeCommonTypes() {
+    await this.getOrCreate(
+      "image",
+      "Image",
+      "Image files (JPEG, PNG, GIF, etc.)"
+    );
+    await this.getOrCreate(
+      "video",
+      "Video",
+      "Video files (MP4, AVI, MOV, etc.)"
+    );
+    await this.getOrCreate(
+      "document",
+      "Document",
+      "Document files (PDF, DOCX, TXT, etc.)"
+    );
+    await this.getOrCreate(
+      "audio",
+      "Audio",
+      "Audio files (MP3, WAV, AAC, etc.)"
+    );
+    await this.getOrCreate(
+      "folder",
+      "Folder",
+      "Container for organizing assets"
+    );
   }
 }
 class AssetCollection extends SmrtCollection {

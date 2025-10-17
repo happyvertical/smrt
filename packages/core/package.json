@@ -1,6 +1,6 @@
 {
   "name": "@smrt/core",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",

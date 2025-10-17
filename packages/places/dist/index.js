@@ -46,8 +46,8 @@ var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read fr
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 var _Place_decorators, _init, _a, _PlaceType_decorators, _init2, _b;
-import { SmrtObject, smrt, SmrtCollection } from "@smrt/core";
 import { getGeoAdapter } from "@have/geo";
+import { SmrtObject, smrt, SmrtCollection } from "@smrt/core";
 _Place_decorators = [smrt({
   api: { include: ["list", "get", "create", "update", "delete"] },
   mcp: { include: ["list", "get", "create", "update"] },

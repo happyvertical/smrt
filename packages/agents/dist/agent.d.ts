@@ -1,5 +1,5 @@
-import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 import { Logger } from '@have/logger';
+import { SmrtObject, SmrtObjectOptions } from '@smrt/core';
 import { AgentStatusType } from './types.js';
 /**
  * Base Agent class for building autonomous actors in the SMRT ecosystem

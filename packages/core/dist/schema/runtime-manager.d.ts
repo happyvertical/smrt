@@ -1,5 +1,5 @@
-import { SchemaDefinition } from './types';
 import { DatabaseInterface } from '@have/sql';
+import { SchemaDefinition } from './types';
 export interface SchemaInitializationOptions {
     db: DatabaseInterface;
     schemas: Record<string, SchemaDefinition>;

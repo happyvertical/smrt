@@ -2,7 +2,55 @@ import { getDatabase, buildWhere, syncSchema } from "@have/sql";
 import { getAI } from "@have/ai";
 import { FilesystemAdapter } from "@have/files";
 import { makeId } from "@have/utils";
-import { O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-Bw7M6hFL.js";
+import { O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-CB77mwjC.js";
+class SmrtConfig {
+  static instance;
+  config = {
+    logging: true
+    // Default: console logging at info level
+  };
+  constructor() {
+  }
+  /**
+   * Get singleton instance
+   */
+  static getInstance() {
+    if (!SmrtConfig.instance) {
+      SmrtConfig.instance = new SmrtConfig();
+    }
+    return SmrtConfig.instance;
+  }
+  /**
+   * Configure global defaults
+   *
+   * @param config - Configuration to apply
+   */
+  configure(config2) {
+    this.config = { ...this.config, ...config2 };
+  }
+  /**
+   * Get current configuration
+   *
+   * @returns Current global configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  /**
+   * Reset to default configuration
+   */
+  reset() {
+    this.config = { logging: true };
+  }
+}
+function config(options) {
+  SmrtConfig.getInstance().configure(options);
+}
+config.reset = () => {
+  SmrtConfig.getInstance().reset();
+};
+config.toJSON = () => SmrtConfig.getInstance().getConfig();
+config.toString = () => JSON.stringify(SmrtConfig.getInstance().getConfig(), null, 2);
 const DEFAULT_REDACT_KEYS = [
   "password",
   "passwd",
@@ -204,54 +252,6 @@ class SignalBus {
     return this.adapters.length;
   }
 }
-class SmrtConfig {
-  static instance;
-  config = {
-    logging: true
-    // Default: console logging at info level
-  };
-  constructor() {
-  }
-  /**
-   * Get singleton instance
-   */
-  static getInstance() {
-    if (!SmrtConfig.instance) {
-      SmrtConfig.instance = new SmrtConfig();
-    }
-    return SmrtConfig.instance;
-  }
-  /**
-   * Configure global defaults
-   *
-   * @param config - Configuration to apply
-   */
-  configure(config2) {
-    this.config = { ...this.config, ...config2 };
-  }
-  /**
-   * Get current configuration
-   *
-   * @returns Current global configuration
-   */
-  getConfig() {
-    return { ...this.config };
-  }
-  /**
-   * Reset to default configuration
-   */
-  reset() {
-    this.config = { logging: true };
-  }
-}
-function config(options) {
-  SmrtConfig.getInstance().configure(options);
-}
-config.reset = () => {
-  SmrtConfig.getInstance().reset();
-};
-config.toJSON = () => SmrtConfig.getInstance().getConfig();
-config.toString = () => JSON.stringify(SmrtConfig.getInstance().getConfig(), null, 2);
 const CREATE_SMRT_CONTEXTS_TABLE = `
 CREATE TABLE IF NOT EXISTS _smrt_contexts (
   id TEXT PRIMARY KEY,
@@ -528,7 +528,7 @@ class SmrtClass {
       this._registeredAdapters.push(adapter);
     }
     if (config2.metrics?.enabled) {
-      const { MetricsAdapter } = await import("./metrics-JaU-tpt3.js");
+      const { MetricsAdapter } = await import("./metrics-uRpAh6uk.js");
       const adapter = new MetricsAdapter();
       this._signalBus.register(adapter);
       this._registeredAdapters.push(adapter);
@@ -1359,4 +1359,4 @@ export {
   SMRT_SCHEMA_VERSION as h,
   collection as i
 };
-//# sourceMappingURL=collection-CXnxJbLy.js.map
+//# sourceMappingURL=collection-lPtdtcrW.js.map

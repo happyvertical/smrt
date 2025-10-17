@@ -12,6 +12,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@smrt/core';
+import type { ProfileRelationshipTerm } from './ProfileRelationshipTerm';
 
 export interface ProfileRelationshipOptions extends SmrtObjectOptions {
   fromProfileId?: string;

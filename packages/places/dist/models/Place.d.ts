@@ -1,5 +1,5 @@
 import { SmrtObject } from '@smrt/core';
-import { PlaceOptions, GeoData } from '../types';
+import { GeoData, PlaceOptions } from '../types';
 export declare class Place extends SmrtObject {
     typeId: string;
     parentId: string;
