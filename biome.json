@@ -45,7 +45,6 @@
                 "selector": {
                   "kind": "interface"
                 },
-                "match": "^(?!I)[A-Z]",
                 "formats": ["PascalCase"]
               }
             ]
