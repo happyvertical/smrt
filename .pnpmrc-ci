@@ -1,0 +1,19 @@
+# CI-specific pnpm configuration
+# This file is activated in CI to use local SDK workspace packages
+# instead of npm registry versions.
+#
+# In CI workflow, this file is copied to .pnpmrc before running pnpm install
+# Local development uses the default configuration (SDK from ../sdk or npm)
+
+# Override SDK packages to use workspace versions
+overrides.@have/ai=workspace:*
+overrides.@have/files=workspace:*
+overrides.@have/logger=workspace:*
+overrides.@have/sql=workspace:*
+overrides.@have/utils=workspace:*
+overrides.@have/documents=workspace:*
+overrides.@have/geo=workspace:*
+overrides.@have/cache=workspace:*
+overrides.@have/pdf=workspace:*
+overrides.@have/spider=workspace:*
+overrides.@have/ocr=workspace:*
