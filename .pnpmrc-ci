@@ -7,13 +7,17 @@
 
 # Override SDK packages to use workspace versions
 overrides.@have/ai=workspace:*
-overrides.@have/files=workspace:*
-overrides.@have/logger=workspace:*
-overrides.@have/sql=workspace:*
-overrides.@have/utils=workspace:*
-overrides.@have/documents=workspace:*
-overrides.@have/geo=workspace:*
 overrides.@have/cache=workspace:*
+overrides.@have/config=workspace:*
+overrides.@have/documents=workspace:*
+overrides.@have/email=workspace:*
+overrides.@have/files=workspace:*
+overrides.@have/geo=workspace:*
+overrides.@have/languages=workspace:*
+overrides.@have/logger=workspace:*
+overrides.@have/ocr=workspace:*
 overrides.@have/pdf=workspace:*
 overrides.@have/spider=workspace:*
-overrides.@have/ocr=workspace:*
+overrides.@have/sql=workspace:*
+overrides.@have/translator=workspace:*
+overrides.@have/utils=workspace:*
