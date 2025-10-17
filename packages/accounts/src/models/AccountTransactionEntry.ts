@@ -53,14 +53,13 @@ export class AccountTransactionEntry extends SmrtObject {
       '../collections/AccountTransactionCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionCollection({
+    const collection = await AccountTransactionCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.get({ id: this.transactionId });
   }
@@ -77,14 +76,13 @@ export class AccountTransactionEntry extends SmrtObject {
       '../collections/AccountCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection({
+    const collection = await AccountCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.get({ id: this.accountId });
   }
