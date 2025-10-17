@@ -35,6 +35,10 @@ class Content extends SmrtObject {
     // Static method example
     return [];
   }
+
+  private validateContent(): boolean {
+    return this.title.length > 0;
+  }
 }
 
 // Simple Category class
@@ -92,6 +96,11 @@ class TestAgent extends SmrtObject {
       confidence: 0.85,
       timestamp: new Date(),
     };
+  }
+
+  // Standard method that should not appear in MCP tools
+  private validateSource(): boolean {
+    return this.source.length > 0;
   }
 }
 
