@@ -18,6 +18,11 @@ smrt/*/node_modules
 build/
 docs/manual/
 
+# Docusaurus
+docs/build/
+docs/.docusaurus/
+docs/node_modules/
+
 # Auto-generated documentation
 packages/*/docs/
 smrt/*/docs/
