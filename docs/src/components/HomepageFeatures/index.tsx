@@ -15,8 +15,8 @@ const FeatureList: FeatureItem[] = [
     description: (
       <>
         Use the @smrt() decorator to define your business logic once.
-        Automatically generate REST APIs, AI tools (MCP), and CLI commands
-        from a single source of truth.
+        Automatically generate REST APIs, AI tools (MCP), and CLI commands from
+        a single source of truth.
       </>
     ),
   },
