@@ -62,6 +62,9 @@ importers:
       semantic-release-monorepo:
         specifier: ^8.0.2
         version: 8.0.2(semantic-release@24.2.9(typescript@5.9.3))
+      tsx:
+        specifier: ^4.7.0
+        version: 4.20.6
       typedoc:
         specifier: ^0.28.4
         version: 0.28.14(typescript@5.9.3)
@@ -412,6 +415,32 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.0.0)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(tsx@4.20.6)(yaml@2.8.1)
+
+  sdk/packages/ai: {}
+
+  sdk/packages/cache: {}
+
+  sdk/packages/config: {}
+
+  sdk/packages/documents: {}
+
+  sdk/packages/files: {}
+
+  sdk/packages/geo: {}
+
+  sdk/packages/logger: {}
+
+  sdk/packages/ocr: {}
+
+  sdk/packages/pdf: {}
+
+  sdk/packages/spider: {}
+
+  sdk/packages/sql: {}
+
+  sdk/packages/translator: {}
+
+  sdk/packages/utils: {}
 
 packages:
 
