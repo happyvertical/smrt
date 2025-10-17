@@ -113,7 +113,7 @@ export class MetricsAdapter implements ISignalAdapter {
       );
     }
 
-    methodMetrics.lastExecuted = signal.timestamp;
+    methodMetrics.lastExecuted = signal.timestamp.getTime();
   }
 
   /**

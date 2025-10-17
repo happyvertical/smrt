@@ -218,8 +218,7 @@ export class RuntimeSchemaManager {
       if (columnDef.defaultValue !== undefined) {
         // Add explicit CAST for TEXT columns with empty string or NULL defaults
         // DuckDB infers ANY type without explicit casting, causing UPSERT failures
-        const isTextColumn =
-          columnDef.type === 'TEXT' || columnDef.type === 'VARCHAR';
+        const isTextColumn = columnDef.type === 'TEXT';
         const isEmptyOrNull =
           columnDef.defaultValue === "''" || columnDef.defaultValue === 'NULL';
 
