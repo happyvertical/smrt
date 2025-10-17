@@ -48,7 +48,7 @@ jobs:
 
       - name: Build SDK packages
         working-directory: ./sdk
-        run: pnpm run build
+        run: pnpm -r --filter='./packages/*' run build
 
       - name: Build packages
         run: pnpm run build
