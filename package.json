@@ -70,7 +70,8 @@
       "@have/cache": "file:./sdk/packages/cache",
       "@have/pdf": "file:./sdk/packages/pdf",
       "@have/spider": "file:./sdk/packages/spider",
-      "@have/ocr": "file:./sdk/packages/ocr"
+      "@have/ocr": "file:./sdk/packages/ocr",
+      "@have/config": "file:./sdk/packages/config"
     }
   },
   "engines": {
