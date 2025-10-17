@@ -1,5 +1,5 @@
-import { smrt } from '@smrt/core';
 import { getDatabase } from '@have/sql';
+import { smrt } from '@smrt/core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Agent } from './agent.js';
 
