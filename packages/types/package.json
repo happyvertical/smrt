@@ -1,6 +1,6 @@
 {
   "name": "@smrt/types",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "Shared type definitions for the HAVE SDK",
   "type": "module",
   "main": "./dist/index.js",

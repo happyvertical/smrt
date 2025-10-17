@@ -1,18 +1,18 @@
 import type { AIClientOptions } from '@have/ai';
-import { AIClient, getAI } from '@have/ai';
+import { type AIClient, getAI } from '@have/ai';
 import type { FilesystemAdapterOptions } from '@have/files';
 import { FilesystemAdapter } from '@have/files';
+import type { LoggerConfig } from '@have/logger';
 import type { DatabaseInterface } from '@have/sql';
 import { getDatabase } from '@have/sql';
-import type { ISignalAdapter } from '@have/types';
-import type { LoggerConfig } from '@have/logger';
-import { SignalBus } from './signals/bus.js';
+import type { ISignalAdapter } from '@smrt/types';
 import type {
   GlobalSignalConfig,
   MetricsConfig,
   PubSubConfig,
 } from './config.js';
 import { config } from './config.js';
+import { SignalBus } from './signals/bus.js';
 import { ALL_SYSTEM_TABLES, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
 /**
@@ -32,12 +32,15 @@ export interface SmrtClassOptions {
    * - Config object: { type: 'sqlite', url: 'products.db' }
    * - DatabaseInterface instance: await getDatabase(...)
    */
-  db?: string | {
-    url?: string;
-    type?: 'sqlite' | 'postgres';
-    authToken?: string;
-    [key: string]: any;
-  } | DatabaseInterface;
+  db?:
+    | string
+    | {
+        url?: string;
+        type?: 'sqlite' | 'postgres';
+        authToken?: string;
+        [key: string]: any;
+      }
+    | DatabaseInterface;
 
   /**
    * Filesystem adapter configuration options

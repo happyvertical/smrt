@@ -16,7 +16,7 @@ export class EventSeries extends SmrtObject {
   // id, slug, name inherited from SmrtObject
 
   typeId = ''; // FK to EventType
-  organizerId = ''; // FK to Profile (from @have/profiles)
+  organizerId = ''; // FK to Profile (from @smrt/profiles)
   description = '';
   startDate: Date | null = null;
   endDate: Date | null = null;
@@ -131,8 +131,7 @@ export class EventSeries extends SmrtObject {
     const { EventTypeCollection } = await import(
       '../collections/EventTypeCollection'
     );
-    const collection = new EventTypeCollection(this.options);
-    await collection.initialize();
+    const collection = await EventTypeCollection.create(this.options);
 
     return await collection.get({ id: this.typeId });
   }
@@ -145,14 +144,14 @@ export class EventSeries extends SmrtObject {
   async getOrganizer() {
     if (!this.organizerId) return null;
 
-    // Import Profile from @have/profiles
+    // Import Profile from @smrt/profiles
     try {
-      const { ProfileCollection } = await import('@have/profiles');
+      const { ProfileCollection } = await import('@smrt/profiles');
       const collection = await ProfileCollection.create(this.options);
 
       return await collection.get({ id: this.organizerId });
     } catch {
-      // @have/profiles not available
+      // @smrt/profiles not available
       return null;
     }
   }
@@ -164,8 +163,7 @@ export class EventSeries extends SmrtObject {
    */
   async getEvents() {
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = new EventCollection(this.options);
-    await collection.initialize();
+    const collection = await EventCollection.create(this.options);
 
     return await collection.list({ where: { seriesId: this.id } });
   }

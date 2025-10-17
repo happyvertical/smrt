@@ -1,4 +1,4 @@
-import { SchemaDefinition, SchemaOverride, ColumnDefinition } from './types';
+import { ColumnDefinition, SchemaDefinition, SchemaOverride } from './types';
 export declare class SchemaOverrideSystem {
     /**
      * Apply schema override to base schema

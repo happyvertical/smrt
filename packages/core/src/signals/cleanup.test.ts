@@ -2,11 +2,11 @@
  * Tests for cleanup and memory leak prevention
  */
 
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { SignalBus } from './bus.js';
+import type { ISignalAdapter, Signal } from '@smrt/types';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtClass } from '../class.js';
 import { config } from '../config.js';
-import type { Signal, ISignalAdapter } from '@have/types';
+import { SignalBus } from './bus.js';
 
 // Mock adapter for testing
 class TestAdapter implements ISignalAdapter {

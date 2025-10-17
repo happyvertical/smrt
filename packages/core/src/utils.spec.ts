@@ -1,14 +1,20 @@
 import { expect, it } from 'vitest';
+import { datetime, integer, text } from './fields';
+import { SmrtObject } from './object';
+import { smrt } from './registry';
 import { fieldsFromClass } from './utils';
 
 // import { contentToString, stringToContent } from '@have/content';
 // import { faker } from '@faker-js/faker';
 // import { Content } from '@have/content';
+
 // Test class with various field types
-class TestClass {
-  test_string = 'test';
-  test_number = 123;
-  test_date: Date = new Date();
+// Phase 2: Must use @smrt() decorator for fieldsFromClass() to work
+@smrt()
+class TestClass extends SmrtObject {
+  test_string = text();
+  test_number = integer();
+  test_date = datetime();
   methodField() {
     return true;
   }
@@ -19,15 +25,15 @@ it('should get fields from a class without values', () => {
   expect(fields).toEqual({
     test_string: {
       name: 'test_string',
-      type: 'TEXT',
+      type: 'text',
     },
     test_number: {
       name: 'test_number',
-      type: 'INTEGER',
+      type: 'integer',
     },
     test_date: {
       name: 'test_date',
-      type: 'DATETIME',
+      type: 'datetime',
     },
   });
 
@@ -49,17 +55,17 @@ it('should get fields from a class with values', () => {
   expect(fields).toEqual({
     test_string: {
       name: 'test_string',
-      type: 'TEXT',
+      type: 'text',
       value: 'custom value',
     },
     test_number: {
       name: 'test_number',
-      type: 'INTEGER',
+      type: 'integer',
       value: 456,
     },
     test_date: {
       name: 'test_date',
-      type: 'DATETIME',
+      type: 'datetime',
       value: '2024-01-01',
     },
   });

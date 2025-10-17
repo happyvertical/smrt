@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { Agent } from './agent.js';
+import { getDatabase } from '@have/sql';
 import { smrt } from '@smrt/core';
-import { getModuleConfig } from '@have/config';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { Agent } from './agent.js';
 
 // Test agent implementation
 interface TestAgentConfig {
@@ -11,10 +11,10 @@ interface TestAgentConfig {
 
 @smrt()
 class TestAgent extends Agent {
-  protected config = getModuleConfig<TestAgentConfig>('test-agent', {
+  protected config: TestAgentConfig = {
     maxItems: 10,
     enabled: true,
-  });
+  };
 
   // Agent-specific state (automatically persisted)
   itemsProcessed: number = 0;
@@ -34,17 +34,19 @@ class TestAgent extends Agent {
 }
 
 describe('@have/agents', () => {
-  // Use in-memory database for tests to avoid file system issues and caching problems
-  const testDbUrl = 'file::memory:?cache=shared';
+  // Create a SINGLE shared database instance for all tests
+  // This ensures all agents share the same in-memory database and tables persist
+  let sharedDb: any;
+
+  beforeAll(async () => {
+    sharedDb = await getDatabase({ type: 'sqlite', url: ':memory:' });
+  });
 
   describe('Agent lifecycle', () => {
     it('should initialize with default status', async () => {
       const agent = new TestAgent({
         name: 'test-agent',
-        db: {
-          type: 'sqlite',
-          url: testDbUrl,
-        },
+        db: sharedDb,
       });
 
       await agent.initialize();
@@ -54,11 +56,8 @@ describe('@have/agents', () => {
 
     it('should execute successfully and update status', async () => {
       const agent = new TestAgent({
-        name: 'test-agent',
-        db: {
-          type: 'sqlite',
-          url: testDbUrl,
-        },
+        name: 'test-agent-2',
+        db: sharedDb,
       });
 
       await agent.execute();
@@ -70,11 +69,8 @@ describe('@have/agents', () => {
     it('should handle validation errors', async () => {
       // Create agent with invalid config
       const agent = new TestAgent({
-        name: 'test-agent',
-        db: {
-          type: 'sqlite',
-          url: testDbUrl,
-        },
+        name: 'test-agent-3',
+        db: sharedDb,
       });
 
       // Override config to make validation fail
@@ -87,11 +83,8 @@ describe('@have/agents', () => {
 
     it('should call shutdown lifecycle method', async () => {
       const agent = new TestAgent({
-        name: 'test-agent',
-        db: {
-          type: 'sqlite',
-          url: testDbUrl,
-        },
+        name: 'test-agent-4',
+        db: sharedDb,
       });
 
       await agent.initialize();
@@ -105,10 +98,7 @@ describe('@have/agents', () => {
     it('should use configuration values', async () => {
       const agent = new TestAgent({
         name: 'config-agent',
-        db: {
-          type: 'sqlite',
-          url: testDbUrl,
-        },
+        db: sharedDb,
       });
 
       await agent.execute();

@@ -96,18 +96,22 @@ export class ASTScanner {
     node: ts.ClassDeclaration,
     sourceFile: ts.SourceFile,
   ): SmartObjectDefinition | null {
-    // Check if class has @smrt() decorator
-    const smrtDecorator = this.findSmrtDecorator(node);
-    if (!smrtDecorator) return null;
-
-    // Check if class extends a SMRT base class
-    if (!this.extendsBaseClass(node)) return null;
-
     const className = node.name?.text;
     if (!className) return null;
 
-    // Extract decorator configuration
-    const decoratorConfig = this.parseDecoratorConfig(smrtDecorator);
+    // Skip base classes themselves (they shouldn't be in the manifest)
+    if (this.options.baseClasses?.includes(className)) return null;
+
+    // Check if class extends a SMRT base class (primary requirement)
+    if (!this.extendsBaseClass(node)) return null;
+
+    // Look for @smrt() decorator (optional - only needed for custom config)
+    const smrtDecorator = this.findSmrtDecorator(node);
+
+    // Extract decorator configuration (use defaults if no decorator)
+    const decoratorConfig = smrtDecorator
+      ? this.parseDecoratorConfig(smrtDecorator)
+      : {}; // Default empty config when no decorator present
 
     // Generate collection name (pluralized)
     const collection = this.pluralize(className.toLowerCase());

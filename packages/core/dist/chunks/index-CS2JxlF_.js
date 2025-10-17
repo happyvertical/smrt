@@ -68,12 +68,12 @@ class ASTScanner {
    * Parse a class declaration for SMRT metadata
    */
   parseClassDeclaration(node, sourceFile) {
-    const smrtDecorator = this.findSmrtDecorator(node);
-    if (!smrtDecorator) return null;
-    if (!this.extendsBaseClass(node)) return null;
     const className = node.name?.text;
     if (!className) return null;
-    const decoratorConfig = this.parseDecoratorConfig(smrtDecorator);
+    if (this.options.baseClasses?.includes(className)) return null;
+    if (!this.extendsBaseClass(node)) return null;
+    const smrtDecorator = this.findSmrtDecorator(node);
+    const decoratorConfig = smrtDecorator ? this.parseDecoratorConfig(smrtDecorator) : {};
     const collection = this.pluralize(className.toLowerCase());
     const objectDef = {
       name: className.toLowerCase(),
@@ -413,4 +413,4 @@ export {
   scanFile,
   scanFiles
 };
-//# sourceMappingURL=index-BqFLQpoS.js.map
+//# sourceMappingURL=index-CS2JxlF_.js.map

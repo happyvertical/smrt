@@ -3,7 +3,7 @@
  */
 
 import { ObjectRegistry } from '../../registry.js';
-import type { PreviewApiEndpointsInput, ApiEndpoint } from '../types.js';
+import type { ApiEndpoint, PreviewApiEndpointsInput } from '../types.js';
 
 /**
  * Preview API endpoints that would be generated for a class

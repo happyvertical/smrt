@@ -4,7 +4,7 @@
 
 import { MCPGenerator } from '../../generators/mcp.js';
 import { ObjectRegistry } from '../../registry.js';
-import type { PreviewMcpToolsInput, McpToolDefinition } from '../types.js';
+import type { McpToolDefinition, PreviewMcpToolsInput } from '../types.js';
 
 /**
  * Preview MCP tools that would be generated for a class
@@ -54,10 +54,7 @@ export async function previewMcpTools(
 /**
  * Format tools as markdown table
  */
-function formatToolsAsMarkdown(
-  tools: any[],
-  className: string,
-): string {
+function formatToolsAsMarkdown(tools: any[], className: string): string {
   let markdown = `# MCP Tools for ${className}\n\n`;
   markdown += `| Tool Name | Description | Parameters |\n`;
   markdown += `|-----------|-------------|------------|\n`;

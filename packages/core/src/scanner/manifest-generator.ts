@@ -2,12 +2,12 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
+import { generateToolManifest } from '../tools/tool-generator';
 import type {
   ScanResult,
   SmartObjectDefinition,
   SmartObjectManifest,
 } from './types';
-import { generateToolManifest } from '../tools/tool-generator';
 
 export class ManifestGenerator {
   /**

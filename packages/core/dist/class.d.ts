@@ -1,10 +1,10 @@
 import { AIClientOptions, AIClient } from '@have/ai';
 import { FilesystemAdapterOptions, FilesystemAdapter } from '@have/files';
-import { DatabaseInterface } from '@have/sql';
-import { ISignalAdapter } from '@have/types';
 import { LoggerConfig } from '@have/logger';
-import { SignalBus } from './signals/bus.js';
+import { DatabaseInterface } from '@have/sql';
+import { ISignalAdapter } from '@smrt/types';
 import { MetricsConfig, PubSubConfig } from './config.js';
+import { SignalBus } from './signals/bus.js';
 /**
  * Configuration options for the SmrtClass
  */

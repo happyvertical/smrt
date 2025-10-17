@@ -199,6 +199,32 @@ npm run lint
 npm run format
 ```
 
+### Git Hooks
+
+This project uses [Lefthook](https://lefthook.dev/) to enforce commit message standards:
+
+- **Automatic Installation**: Lefthook is automatically installed when you run `pnpm install` (via the `prepare` script)
+- **Commit Message Validation**: All commits must follow [Conventional Commits](https://www.conventionalcommits.org/) format
+- **Local Enforcement**: Validation happens immediately during `git commit`, providing instant feedback
+
+**Commit Message Format:**
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Valid Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+
+**Example:**
+```bash
+git commit -m "feat(core): add eager loading support for relationships"
+```
+
+If your commit message doesn't follow this format, the hook will reject it with helpful guidance.
+
 ## Related Projects
 
 - [HAppyVertical SDK](https://github.com/happyvertical/sdk) - Infrastructure packages

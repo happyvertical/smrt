@@ -14,19 +14,19 @@ export declare class Account extends SmrtObject {
      *
      * @returns Parsed metadata object or empty object
      */
-    getMetadata(): Record<string, any>;
+    getMetadata(): Record<string, unknown>;
     /**
      * Set metadata from object
      *
      * @param data - Metadata object to store
      */
-    setMetadata(data: Record<string, any>): void;
+    setMetadata(data: Record<string, unknown>): void;
     /**
      * Update metadata by merging with existing values
      *
      * @param updates - Partial metadata to merge
      */
-    updateMetadata(updates: Record<string, any>): void;
+    updateMetadata(updates: Record<string, unknown>): void;
     /**
      * Get the parent account
      *

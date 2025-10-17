@@ -1,4 +1,4 @@
-import { PreviewApiEndpointsInput, ApiEndpoint } from '../types.js';
+import { ApiEndpoint, PreviewApiEndpointsInput } from '../types.js';
 /**
  * Preview API endpoints that would be generated for a class
  */

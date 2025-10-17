@@ -1,6 +1,6 @@
 {
   "name": "@smrt/tags",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",

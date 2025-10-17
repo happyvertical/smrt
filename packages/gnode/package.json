@@ -1,6 +1,6 @@
 {
   "name": "@smrt/gnode",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "SMRT federation library for building federated local knowledge bases (gnodes)",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",

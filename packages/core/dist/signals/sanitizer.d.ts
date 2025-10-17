@@ -1,4 +1,4 @@
-import { Signal } from '@have/types';
+import { Signal } from '@smrt/types';
 /**
  * Sanitization configuration
  */

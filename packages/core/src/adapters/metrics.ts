@@ -5,7 +5,7 @@
  * Collects counts, durations, error rates, and success rates.
  */
 
-import type { Signal, ISignalAdapter } from '@have/types';
+import type { ISignalAdapter, Signal } from '@smrt/types';
 
 /**
  * Execution metrics for a specific method
@@ -113,7 +113,7 @@ export class MetricsAdapter implements ISignalAdapter {
       );
     }
 
-    methodMetrics.lastExecuted = signal.timestamp;
+    methodMetrics.lastExecuted = signal.timestamp.getTime();
   }
 
   /**

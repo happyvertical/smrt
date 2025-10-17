@@ -1,6 +1,6 @@
 {
   "name": "@smrt/content",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "Content processing module for SMRT framework - handles documents, web content, and media",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,12 +21,12 @@
   },
   "dependencies": {
     "@smrt/core": "workspace:*",
-    "@have/documents": "file:../../../sdk/packages/documents",
-    "@have/files": "file:../../../sdk/packages/files",
-    "@have/pdf": "file:../../../sdk/packages/pdf",
-    "@have/spider": "file:../../../sdk/packages/spider",
-    "@have/ocr": "file:../../../sdk/packages/ocr",
-    "@have/utils": "file:../../../sdk/packages/utils",
+    "@have/documents": "*",
+    "@have/files": "*",
+    "@have/pdf": "*",
+    "@have/spider": "*",
+    "@have/ocr": "*",
+    "@have/utils": "*",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

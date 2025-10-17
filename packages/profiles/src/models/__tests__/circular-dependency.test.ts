@@ -5,7 +5,7 @@
  * dependency errors during module initialization.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('Issue #142: Foreign Key Circular Dependencies', () => {
   it('should import ProfileMetadata without circular dependency errors', async () => {
@@ -38,7 +38,9 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
 
   it('should import ProfileRelationshipTerm without circular dependency errors', async () => {
     expect(async () => {
-      const { ProfileRelationshipTerm } = await import('../ProfileRelationshipTerm');
+      const { ProfileRelationshipTerm } = await import(
+        '../ProfileRelationshipTerm'
+      );
       expect(ProfileRelationshipTerm).toBeDefined();
       expect(ProfileRelationshipTerm.name).toBe('ProfileRelationshipTerm');
     }).not.toThrow();
@@ -75,8 +77,11 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
     expect(ObjectRegistry.hasClass('ProfileMetadata')).toBe(true);
 
     // Verify relationship metadata is correctly extracted with string references
-    const metadataRelationships = ObjectRegistry.getRelationships('ProfileMetadata');
-    const profileRelationship = metadataRelationships.find(r => r.fieldName === 'profileId');
+    const metadataRelationships =
+      ObjectRegistry.getRelationships('ProfileMetadata');
+    const profileRelationship = metadataRelationships.find(
+      (r) => r.fieldName === 'profileId',
+    );
 
     expect(profileRelationship).toBeDefined();
     expect(profileRelationship?.targetClass).toBe('Profile');

@@ -5,10 +5,10 @@
  *
  * @packageDocumentation
  */
-export { Place } from './models/Place';
-export { PlaceType } from './models/PlaceType';
 export { PlaceCollection } from './collections/PlaceCollection';
 export { PlaceTypeCollection } from './collections/PlaceTypeCollection';
-export type { PlaceOptions, PlaceTypeOptions, GeoData, LookupOrCreateOptions, PlaceHierarchy, } from './types';
-export { mapLocationTypeToPlaceType, locationToGeoData, validateCoordinates, calculateDistance, formatCoordinates, parseCoordinates, normalizeAddressComponents, generateDisplayName, areCoordinatesNear, } from './utils';
+export { Place } from './models/Place';
+export { PlaceType } from './models/PlaceType';
+export type { GeoData, LookupOrCreateOptions, PlaceHierarchy, PlaceOptions, PlaceTypeOptions, } from './types';
+export { areCoordinatesNear, calculateDistance, formatCoordinates, generateDisplayName, locationToGeoData, mapLocationTypeToPlaceType, normalizeAddressComponents, parseCoordinates, validateCoordinates, } from './utils';
 //# sourceMappingURL=index.d.ts.map

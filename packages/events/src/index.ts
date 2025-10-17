@@ -6,44 +6,43 @@
  * @packageDocumentation
  */
 
-// Export models
-export { EventType } from './models/EventType';
-export { EventSeries } from './models/EventSeries';
-export { Event } from './models/Event';
-export { EventParticipant } from './models/EventParticipant';
-
-// Export collections
-export { EventTypeCollection } from './collections/EventTypeCollection';
-export { EventSeriesCollection } from './collections/EventSeriesCollection';
 export { EventCollection } from './collections/EventCollection';
 export { EventParticipantCollection } from './collections/EventParticipantCollection';
+export { EventSeriesCollection } from './collections/EventSeriesCollection';
+// Export collections
+export { EventTypeCollection } from './collections/EventTypeCollection';
+export { Event } from './models/Event';
+export { EventParticipant } from './models/EventParticipant';
+export { EventSeries } from './models/EventSeries';
+// Export models
+export { EventType } from './models/EventType';
 
 // Export types
 export type {
-  EventTypeOptions,
-  EventSeriesOptions,
   EventOptions,
   EventParticipantOptions,
-  EventStatus,
-  ParticipantRole,
-  RecurrencePattern,
-  RecurrenceFrequency,
   EventSearchFilters,
+  EventSeriesOptions,
   EventSeriesSearchFilters,
+  EventStatus,
+  EventTypeOptions,
+  ParticipantRole,
   ParticipantSearchFilters,
+  RecurrenceFrequency,
+  RecurrencePattern,
 } from './types';
 
 // Export utilities
 export {
-  validateEventStatus,
+  calculateDuration,
+  calculateNextOccurrence,
+  checkSchedulingConflict,
+  formatDuration,
   formatEventDateRange,
   generateEventSlug,
-  checkSchedulingConflict,
-  parseRecurrencePattern,
-  calculateNextOccurrence,
-  calculateDuration,
-  formatDuration,
-  isEventNow,
   getEventStatusFromDates,
+  isEventNow,
+  parseRecurrencePattern,
   sortEventsByDate,
+  validateEventStatus,
 } from './utils';

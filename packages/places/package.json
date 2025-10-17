@@ -1,6 +1,6 @@
 {
   "name": "@smrt/places",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "Hierarchical place management with geo integration and SMRT framework support",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,8 +25,8 @@
   },
   "dependencies": {
     "@smrt/core": "workspace:*",
-    "@have/geo": "file:../../../sdk/packages/geo",
-    "@have/cache": "file:../../../sdk/packages/cache"
+    "@have/geo": "*",
+    "@have/cache": "*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

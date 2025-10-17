@@ -3,12 +3,12 @@
  * Allows packages and applications to extend base schemas
  */
 
+import { createHash } from 'crypto';
 import type {
+  ColumnDefinition,
   SchemaDefinition,
   SchemaOverride,
-  ColumnDefinition,
 } from './types';
-import { createHash } from 'crypto';
 
 export class SchemaOverrideSystem {
   /**
@@ -20,7 +20,10 @@ export class SchemaOverrideSystem {
   ): SchemaDefinition {
     const overriddenSchema: SchemaDefinition = {
       ...baseSchema,
-      version: SchemaOverrideSystem.generateOverrideVersion(baseSchema, override),
+      version: SchemaOverrideSystem.generateOverrideVersion(
+        baseSchema,
+        override,
+      ),
       packageName: override.packageName,
     };
 
@@ -73,7 +76,8 @@ export class SchemaOverrideSystem {
     overriddenSchema.foreignKeys = SchemaOverrideSystem.extractForeignKeys(
       overriddenSchema.columns,
     );
-    overriddenSchema.dependencies = SchemaOverrideSystem.extractDependencies(overriddenSchema);
+    overriddenSchema.dependencies =
+      SchemaOverrideSystem.extractDependencies(overriddenSchema);
 
     return overriddenSchema;
   }
@@ -111,7 +115,10 @@ export class SchemaOverrideSystem {
 
     for (const override of overrides) {
       if (override.tableName === baseSchema.tableName) {
-        currentSchema = SchemaOverrideSystem.applyOverride(currentSchema, override);
+        currentSchema = SchemaOverrideSystem.applyOverride(
+          currentSchema,
+          override,
+        );
       }
     }
 

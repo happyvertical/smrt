@@ -2,9 +2,9 @@
  * Tests for MetricsAdapter
  */
 
-import { describe, expect, it, beforeEach } from 'vitest';
+import type { Signal } from '@smrt/types';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { MetricsAdapter } from './metrics.js';
-import type { Signal } from '@have/types';
 
 describe('MetricsAdapter', () => {
   let adapter: MetricsAdapter;
@@ -21,7 +21,7 @@ describe('MetricsAdapter', () => {
       method: 'analyze',
       type: 'end',
       duration: 100,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await adapter.handle(signal);
@@ -45,7 +45,7 @@ describe('MetricsAdapter', () => {
       type: 'error',
       error: new Error('Test error'),
       duration: 50,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await adapter.handle(signal);
@@ -66,7 +66,7 @@ describe('MetricsAdapter', () => {
         method: 'analyze',
         type: 'end',
         duration: 100,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       },
       {
         id: 'exec-2',
@@ -75,7 +75,7 @@ describe('MetricsAdapter', () => {
         method: 'analyze',
         type: 'end',
         duration: 200,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       },
       {
         id: 'exec-3',
@@ -84,7 +84,7 @@ describe('MetricsAdapter', () => {
         method: 'analyze',
         type: 'end',
         duration: 150,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       },
     ];
 
@@ -111,7 +111,7 @@ describe('MetricsAdapter', () => {
         method: 'analyze',
         type: 'end',
         duration: 100,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       },
       {
         id: 'exec-2',
@@ -120,7 +120,7 @@ describe('MetricsAdapter', () => {
         method: 'analyze',
         type: 'end',
         duration: 100,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       },
       {
         id: 'exec-3',
@@ -130,7 +130,7 @@ describe('MetricsAdapter', () => {
         type: 'error',
         error: new Error('Test'),
         duration: 100,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       },
     ];
 
@@ -153,7 +153,7 @@ describe('MetricsAdapter', () => {
       method: 'analyze',
       type: 'end',
       duration: 100,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     await adapter.handle({
@@ -163,7 +163,7 @@ describe('MetricsAdapter', () => {
       method: 'validate',
       type: 'end',
       duration: 50,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     const analyzeMetrics = adapter.getMethodMetrics('Product', 'analyze');
@@ -182,7 +182,7 @@ describe('MetricsAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     const metrics = adapter.getMethodMetrics('Product', 'analyze');
@@ -197,7 +197,7 @@ describe('MetricsAdapter', () => {
       method: 'analyze',
       type: 'end',
       duration: 100,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     const prometheus = adapter.toPrometheusFormat();
@@ -216,7 +216,7 @@ describe('MetricsAdapter', () => {
       method: 'analyze',
       type: 'end',
       duration: 100,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     const snapshot = adapter.getMetrics();
@@ -234,7 +234,7 @@ describe('MetricsAdapter', () => {
       method: 'analyze',
       type: 'end',
       duration: 100,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     adapter.reset();

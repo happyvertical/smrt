@@ -1,4 +1,4 @@
-import { GetObjectSchemaInput, FieldDefinition } from '../types.js';
+import { FieldDefinition, GetObjectSchemaInput } from '../types.js';
 /**
  * Get object schema with field definitions
  */

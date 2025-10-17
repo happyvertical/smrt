@@ -45,8 +45,8 @@ var __privateIn = (member, obj) => Object(obj) !== obj ? __typeError('Cannot use
 var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read from private field"), getter ? getter.call(obj) : member.get(obj));
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
-var _ProfileType_decorators, _init, _a, _Profile_decorators, _init2, _b, _ProfileMetafield_decorators, _init3, _c, _ProfileMetadata_decorators, _init4, _d, _ProfileRelationship_decorators, _init5, _e, _ProfileRelationshipType_decorators, _init6, _f, _ProfileRelationshipTerm_decorators, _init7, _g;
-import { SmrtObject, text, smrt, foreignKey, oneToMany, json, boolean, datetime, SmrtCollection } from "@smrt/core";
+var _ProfileType_decorators, _init, _a, _Profile_decorators, _init2, _b, _ProfileMetadata_decorators, _init3, _c, _ProfileMetafield_decorators, _init4, _d, _ProfileRelationship_decorators, _init5, _e, _ProfileRelationshipTerm_decorators, _init6, _f, _ProfileRelationshipType_decorators, _init7, _g;
+import { SmrtObject, text, smrt, foreignKey, oneToMany, SmrtCollection, json, datetime, boolean } from "@smrt/core";
 _ProfileType_decorators = [smrt({
   api: { include: ["list", "get", "create", "update"] },
   mcp: { include: ["list", "get"] },
@@ -398,13 +398,198 @@ class Profile extends (_b = SmrtObject) {
 _init2 = __decoratorStart(_b);
 Profile = __decorateElement(_init2, 0, "Profile", _Profile_decorators, Profile);
 __runInitializers(_init2, 1, Profile);
+class ProfileCollection extends SmrtCollection {
+  static _itemClass = Profile;
+  /**
+   * Find profiles by type slug
+   *
+   * @param typeSlug - The profile type slug to filter by
+   * @returns Array of matching profiles
+   */
+  async findByType(typeSlug) {
+    const allProfiles = await this.list({});
+    const filtered = [];
+    for (const profile of allProfiles) {
+      const slug = await profile.getTypeSlug();
+      if (slug === typeSlug) {
+        filtered.push(profile);
+      }
+    }
+    return filtered;
+  }
+  /**
+   * Batch get metadata for multiple profiles
+   *
+   * @param profileIds - Array of profile UUIDs
+   * @returns Map of profile ID to metadata object
+   */
+  async batchGetMetadata(profileIds) {
+    const result = /* @__PURE__ */ new Map();
+    for (const profileId of profileIds) {
+      const profile = await this.get({ id: profileId });
+      if (profile) {
+        const metadata = await profile.getMetadata();
+        result.set(profileId, metadata);
+      }
+    }
+    return result;
+  }
+  /**
+   * Batch update metadata for multiple profiles
+   *
+   * @param updates - Array of { profileId, data } objects
+   */
+  async batchUpdateMetadata(updates) {
+    for (const update of updates) {
+      const profile = await this.get({ id: update.profileId });
+      if (profile) {
+        await profile.updateMetadata(update.data);
+      }
+    }
+  }
+  /**
+   * Find related profiles for a given profile
+   *
+   * @param profileId - The profile UUID
+   * @param relationshipSlug - Optional filter by relationship type
+   * @returns Array of related profiles
+   */
+  async findRelated(profileId, relationshipSlug) {
+    const profile = await this.get({ id: profileId });
+    if (!profile) return [];
+    return await profile.getRelatedProfiles(relationshipSlug);
+  }
+  /**
+   * Get the relationship network for a profile up to a maximum depth
+   *
+   * @param profileId - The starting profile UUID
+   * @param options - Configuration options
+   * @returns Map of profile ID to depth level
+   */
+  async getRelationshipNetwork(profileId, options = {}) {
+    const maxDepth = options.maxDepth || 2;
+    const network = /* @__PURE__ */ new Map();
+    const visited = /* @__PURE__ */ new Set();
+    const queue = [
+      { id: profileId, depth: 0 }
+    ];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (visited.has(current.id) || current.depth > maxDepth) {
+        continue;
+      }
+      visited.add(current.id);
+      network.set(current.id, current.depth);
+      if (current.depth < maxDepth) {
+        const related = await this.findRelated(current.id);
+        for (const profile of related) {
+          if (!visited.has(profile.id)) {
+            queue.push({ id: profile.id, depth: current.depth + 1 });
+          }
+        }
+      }
+    }
+    return network;
+  }
+}
+const ProfileCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  ProfileCollection
+}, Symbol.toStringTag, { value: "Module" }));
+_ProfileMetadata_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get"] },
+  cli: true
+})];
+class ProfileMetadata extends (_c = SmrtObject) {
+  // id: UUID (auto-generated by SmrtObject)
+  profileId = foreignKey("Profile", { required: true });
+  // References Profile.id
+  metafieldId = foreignKey("ProfileMetafield", { required: true });
+  // References ProfileMetafield.id
+  value = text({ required: true });
+  // The metadata value (stored as text)
+  constructor(options = {}) {
+    super(options);
+  }
+  /**
+   * Validate this metadata value against the metafield's validation schema
+   *
+   * @returns True if valid, throws error if invalid
+   */
+  async validate() {
+    const metafield = await this.loadRelated("metafieldId");
+    if (!metafield) {
+      throw new Error("Metafield not found");
+    }
+    return await metafield.validateValue(this.value);
+  }
+  /**
+   * Get the metafield slug for this metadata
+   *
+   * @returns The slug of the metafield
+   */
+  async getMetafieldSlug() {
+    const metafield = await this.loadRelated("metafieldId");
+    return metafield?.slug || "";
+  }
+}
+_init3 = __decoratorStart(_c);
+ProfileMetadata = __decorateElement(_init3, 0, "ProfileMetadata", _ProfileMetadata_decorators, ProfileMetadata);
+__runInitializers(_init3, 1, ProfileMetadata);
+class ProfileMetadataCollection extends SmrtCollection {
+  static _itemClass = ProfileMetadata;
+  /**
+   * Get all metadata for a profile
+   *
+   * @param profileId - The profile UUID
+   * @returns Array of ProfileMetadata instances
+   */
+  async getByProfile(profileId) {
+    return await this.list({ where: { profileId } });
+  }
+  /**
+   * Get metadata as key-value object for a profile
+   *
+   * @param profileId - The profile UUID
+   * @returns Object with metafield slugs as keys
+   */
+  async getMetadataObject(profileId) {
+    const metadata = await this.getByProfile(profileId);
+    const result = {};
+    for (const item of metadata) {
+      const slug = await item.getMetafieldSlug();
+      if (slug) {
+        result[slug] = item.value;
+      }
+    }
+    return result;
+  }
+  /**
+   * Find all profiles with a specific metadata key-value pair
+   *
+   * @param metafieldId - The metafield UUID
+   * @param value - The value to match
+   * @returns Array of profile UUIDs
+   */
+  async findProfilesByMetadata(metafieldId, value) {
+    const matches = await this.list({
+      where: { metafieldId, value: String(value) }
+    });
+    return matches.map((m) => m.profileId);
+  }
+}
+const ProfileMetadataCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  ProfileMetadataCollection
+}, Symbol.toStringTag, { value: "Module" }));
 const customValidators = /* @__PURE__ */ new Map();
 _ProfileMetafield_decorators = [smrt({
   api: { include: ["list", "get", "create", "update"] },
   mcp: { include: ["list", "get"] },
   cli: true
 })];
-let _ProfileMetafield = class _ProfileMetafield extends (_c = SmrtObject) {
+let _ProfileMetafield = class _ProfileMetafield extends (_d = SmrtObject) {
   // id: UUID (auto-generated by SmrtObject)
   // slug is inherited from SmrtObject (auto-generated from name)
   name = text({ required: true });
@@ -516,51 +701,40 @@ let _ProfileMetafield = class _ProfileMetafield extends (_c = SmrtObject) {
     return true;
   }
 };
-_init3 = __decoratorStart(_c);
-_ProfileMetafield = __decorateElement(_init3, 0, "ProfileMetafield", _ProfileMetafield_decorators, _ProfileMetafield);
-__runInitializers(_init3, 1, _ProfileMetafield);
+_init4 = __decoratorStart(_d);
+_ProfileMetafield = __decorateElement(_init4, 0, "ProfileMetafield", _ProfileMetafield_decorators, _ProfileMetafield);
+__runInitializers(_init4, 1, _ProfileMetafield);
 let ProfileMetafield = _ProfileMetafield;
-_ProfileMetadata_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get"] },
-  cli: true
-})];
-class ProfileMetadata extends (_d = SmrtObject) {
-  // id: UUID (auto-generated by SmrtObject)
-  profileId = foreignKey("Profile", { required: true });
-  // References Profile.id
-  metafieldId = foreignKey("ProfileMetafield", { required: true });
-  // References ProfileMetafield.id
-  value = text({ required: true });
-  // The metadata value (stored as text)
-  constructor(options = {}) {
-    super(options);
+class ProfileMetafieldCollection extends SmrtCollection {
+  static _itemClass = ProfileMetafield;
+  /**
+   * Get metafield by slug
+   *
+   * @param slug - The slug to search for
+   * @returns ProfileMetafield instance or null
+   */
+  async getBySlug(slug) {
+    return await this.get({ slug });
   }
   /**
-   * Validate this metadata value against the metafield's validation schema
+   * Get or create a metafield by slug
    *
-   * @returns True if valid, throws error if invalid
+   * @param slug - The slug to search for
+   * @param defaults - Default values if creating
+   * @returns ProfileMetafield instance
    */
-  async validate() {
-    const metafield = await this.loadRelated("metafieldId");
-    if (!metafield) {
-      throw new Error("Metafield not found");
-    }
-    return await metafield.validateValue(this.value);
-  }
-  /**
-   * Get the metafield slug for this metadata
-   *
-   * @returns The slug of the metafield
-   */
-  async getMetafieldSlug() {
-    const metafield = await this.loadRelated("metafieldId");
-    return metafield?.slug || "";
+  async getOrCreateBySlug(slug, defaults) {
+    const existing = await this.getBySlug(slug);
+    if (existing) return existing;
+    const metafield = await this.create({ slug, ...defaults });
+    await metafield.save();
+    return metafield;
   }
 }
-_init4 = __decoratorStart(_d);
-ProfileMetadata = __decorateElement(_init4, 0, "ProfileMetadata", _ProfileMetadata_decorators, ProfileMetadata);
-__runInitializers(_init4, 1, ProfileMetadata);
+const ProfileMetafieldCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  ProfileMetafieldCollection
+}, Symbol.toStringTag, { value: "Module" }));
 _ProfileRelationship_decorators = [smrt({
   api: { include: ["list", "get", "create", "delete"] },
   mcp: { include: ["list", "get"] },
@@ -647,338 +821,6 @@ class ProfileRelationship extends (_e = SmrtObject) {
 _init5 = __decoratorStart(_e);
 ProfileRelationship = __decorateElement(_init5, 0, "ProfileRelationship", _ProfileRelationship_decorators, ProfileRelationship);
 __runInitializers(_init5, 1, ProfileRelationship);
-const reciprocalHandlers = /* @__PURE__ */ new Map();
-const DEFAULT_HANDLERS = {
-  // Symmetric relationships (same type in both directions)
-  friend: async (from, to, context) => {
-    await to.addRelationship(from, "friend", context);
-  },
-  spouse: async (from, to) => {
-    await to.addRelationship(from, "spouse");
-  },
-  partner: async (from, to, context) => {
-    await to.addRelationship(from, "partner", context);
-  },
-  colleague: async (from, to, context) => {
-    await to.addRelationship(from, "colleague", context);
-  },
-  sibling: async (from, to) => {
-    await to.addRelationship(from, "sibling");
-  }
-};
-for (const [slug, handler] of Object.entries(DEFAULT_HANDLERS)) {
-  reciprocalHandlers.set(slug, handler);
-}
-_ProfileRelationshipType_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update"] },
-  mcp: { include: ["list", "get"] },
-  cli: true
-})];
-let _ProfileRelationshipType = class _ProfileRelationshipType extends (_f = SmrtObject) {
-  // id: UUID (auto-generated by SmrtObject)
-  // slug is inherited from SmrtObject (auto-generated from name)
-  name = text({ required: true });
-  reciprocal = boolean({ default: true });
-  // True for two-way relationships
-  constructor(options = {}) {
-    super(options);
-  }
-  /**
-   * Convenience method for slug-based lookup
-   *
-   * @param slug - The slug to search for
-   * @returns ProfileRelationshipType instance or null if not found
-   */
-  static async getBySlug(slug) {
-    return null;
-  }
-  /**
-   * Register a custom reciprocal handler for a relationship type
-   *
-   * @param slug - The relationship type slug
-   * @param handler - The handler function to execute when creating reciprocal relationship
-   */
-  static registerReciprocalHandler(slug, handler) {
-    reciprocalHandlers.set(slug, handler);
-  }
-  /**
-   * Get the reciprocal handler for a relationship type
-   *
-   * @param slug - The relationship type slug
-   * @returns The handler function or undefined
-   */
-  static getReciprocalHandler(slug) {
-    return reciprocalHandlers.get(slug);
-  }
-  /**
-   * Check if a relationship type is reciprocal
-   *
-   * @param slug - The relationship type slug
-   * @returns True if reciprocal, false otherwise
-   */
-  static async isReciprocal(slug) {
-    const type = await _ProfileRelationshipType.getBySlug(slug);
-    return type?.reciprocal ? Boolean(type.reciprocal) : false;
-  }
-};
-_init6 = __decoratorStart(_f);
-_ProfileRelationshipType = __decorateElement(_init6, 0, "ProfileRelationshipType", _ProfileRelationshipType_decorators, _ProfileRelationshipType);
-__runInitializers(_init6, 1, _ProfileRelationshipType);
-let ProfileRelationshipType = _ProfileRelationshipType;
-const ProfileRelationshipType$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  ProfileRelationshipType
-}, Symbol.toStringTag, { value: "Module" }));
-_ProfileRelationshipTerm_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get"] },
-  cli: true
-})];
-class ProfileRelationshipTerm extends (_g = SmrtObject) {
-  // id: UUID (auto-generated by SmrtObject)
-  relationshipId = foreignKey("ProfileRelationship", { required: true });
-  // References ProfileRelationship.id
-  startedAt = datetime({ required: true });
-  // Start date of the term
-  endedAt = datetime();
-  // Optional end date
-  constructor(options = {}) {
-    super(options);
-  }
-  /**
-   * Check if this term is currently active
-   *
-   * @returns True if active (no end date or end date in future)
-   */
-  isActive() {
-    if (!this.endedAt) return true;
-    const endDate = this.endedAt instanceof Date ? this.endedAt : new Date(String(this.endedAt));
-    return endDate > /* @__PURE__ */ new Date();
-  }
-  /**
-   * End this term
-   *
-   * @param endedAt - End date for the term (defaults to now)
-   */
-  async end(endedAt = /* @__PURE__ */ new Date()) {
-    this.endedAt.value = endedAt;
-    await this.save();
-  }
-  /**
-   * Get the duration of this term in days
-   *
-   * @returns Duration in days
-   */
-  getDurationDays() {
-    const endValue = this.endedAt ? this.endedAt instanceof Date ? this.endedAt : new Date(String(this.endedAt)) : /* @__PURE__ */ new Date();
-    const startValue = this.startedAt instanceof Date ? this.startedAt : new Date(String(this.startedAt));
-    const diffMs = endValue.getTime() - startValue.getTime();
-    return Math.floor(diffMs / (1e3 * 60 * 60 * 24));
-  }
-}
-_init7 = __decoratorStart(_g);
-ProfileRelationshipTerm = __decorateElement(_init7, 0, "ProfileRelationshipTerm", _ProfileRelationshipTerm_decorators, ProfileRelationshipTerm);
-__runInitializers(_init7, 1, ProfileRelationshipTerm);
-class ProfileCollection extends SmrtCollection {
-  static _itemClass = Profile;
-  /**
-   * Find profiles by type slug
-   *
-   * @param typeSlug - The profile type slug to filter by
-   * @returns Array of matching profiles
-   */
-  async findByType(typeSlug) {
-    const allProfiles = await this.list({});
-    const filtered = [];
-    for (const profile of allProfiles) {
-      const slug = await profile.getTypeSlug();
-      if (slug === typeSlug) {
-        filtered.push(profile);
-      }
-    }
-    return filtered;
-  }
-  /**
-   * Batch get metadata for multiple profiles
-   *
-   * @param profileIds - Array of profile UUIDs
-   * @returns Map of profile ID to metadata object
-   */
-  async batchGetMetadata(profileIds) {
-    const result = /* @__PURE__ */ new Map();
-    for (const profileId of profileIds) {
-      const profile = await this.get({ id: profileId });
-      if (profile) {
-        const metadata = await profile.getMetadata();
-        result.set(profileId, metadata);
-      }
-    }
-    return result;
-  }
-  /**
-   * Batch update metadata for multiple profiles
-   *
-   * @param updates - Array of { profileId, data } objects
-   */
-  async batchUpdateMetadata(updates) {
-    for (const update of updates) {
-      const profile = await this.get({ id: update.profileId });
-      if (profile) {
-        await profile.updateMetadata(update.data);
-      }
-    }
-  }
-  /**
-   * Find related profiles for a given profile
-   *
-   * @param profileId - The profile UUID
-   * @param relationshipSlug - Optional filter by relationship type
-   * @returns Array of related profiles
-   */
-  async findRelated(profileId, relationshipSlug) {
-    const profile = await this.get({ id: profileId });
-    if (!profile) return [];
-    return await profile.getRelatedProfiles(relationshipSlug);
-  }
-  /**
-   * Get the relationship network for a profile up to a maximum depth
-   *
-   * @param profileId - The starting profile UUID
-   * @param options - Configuration options
-   * @returns Map of profile ID to depth level
-   */
-  async getRelationshipNetwork(profileId, options = {}) {
-    const maxDepth = options.maxDepth || 2;
-    const network = /* @__PURE__ */ new Map();
-    const visited = /* @__PURE__ */ new Set();
-    const queue = [
-      { id: profileId, depth: 0 }
-    ];
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (visited.has(current.id) || current.depth > maxDepth) {
-        continue;
-      }
-      visited.add(current.id);
-      network.set(current.id, current.depth);
-      if (current.depth < maxDepth) {
-        const related = await this.findRelated(current.id);
-        for (const profile of related) {
-          if (!visited.has(profile.id)) {
-            queue.push({ id: profile.id, depth: current.depth + 1 });
-          }
-        }
-      }
-    }
-    return network;
-  }
-}
-const ProfileCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  ProfileCollection
-}, Symbol.toStringTag, { value: "Module" }));
-class ProfileTypeCollection extends SmrtCollection {
-  static _itemClass = ProfileType;
-  /**
-   * Get profile type by slug
-   *
-   * @param slug - The slug to search for
-   * @returns ProfileType instance or null
-   */
-  async getBySlug(slug) {
-    return await this.get({ slug });
-  }
-  /**
-   * Get or create a profile type by slug
-   *
-   * @param slug - The slug to search for
-   * @param defaults - Default values if creating
-   * @returns ProfileType instance
-   */
-  async getOrCreateBySlug(slug, defaults) {
-    const existing = await this.getBySlug(slug);
-    if (existing) return existing;
-    const profileType = await this.create({ slug, ...defaults });
-    await profileType.save();
-    return profileType;
-  }
-}
-class ProfileMetafieldCollection extends SmrtCollection {
-  static _itemClass = ProfileMetafield;
-  /**
-   * Get metafield by slug
-   *
-   * @param slug - The slug to search for
-   * @returns ProfileMetafield instance or null
-   */
-  async getBySlug(slug) {
-    return await this.get({ slug });
-  }
-  /**
-   * Get or create a metafield by slug
-   *
-   * @param slug - The slug to search for
-   * @param defaults - Default values if creating
-   * @returns ProfileMetafield instance
-   */
-  async getOrCreateBySlug(slug, defaults) {
-    const existing = await this.getBySlug(slug);
-    if (existing) return existing;
-    const metafield = await this.create({ slug, ...defaults });
-    await metafield.save();
-    return metafield;
-  }
-}
-const ProfileMetafieldCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  ProfileMetafieldCollection
-}, Symbol.toStringTag, { value: "Module" }));
-class ProfileMetadataCollection extends SmrtCollection {
-  static _itemClass = ProfileMetadata;
-  /**
-   * Get all metadata for a profile
-   *
-   * @param profileId - The profile UUID
-   * @returns Array of ProfileMetadata instances
-   */
-  async getByProfile(profileId) {
-    return await this.list({ where: { profileId } });
-  }
-  /**
-   * Get metadata as key-value object for a profile
-   *
-   * @param profileId - The profile UUID
-   * @returns Object with metafield slugs as keys
-   */
-  async getMetadataObject(profileId) {
-    const metadata = await this.getByProfile(profileId);
-    const result = {};
-    for (const item of metadata) {
-      const slug = await item.getMetafieldSlug();
-      if (slug) {
-        result[slug] = item.value;
-      }
-    }
-    return result;
-  }
-  /**
-   * Find all profiles with a specific metadata key-value pair
-   *
-   * @param metafieldId - The metafield UUID
-   * @param value - The value to match
-   * @returns Array of profile UUIDs
-   */
-  async findProfilesByMetadata(metafieldId, value) {
-    const matches = await this.list({
-      where: { metafieldId, value: String(value) }
-    });
-    return matches.map((m) => m.profileId);
-  }
-}
-const ProfileMetadataCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  ProfileMetadataCollection
-}, Symbol.toStringTag, { value: "Module" }));
 class ProfileRelationshipCollection extends SmrtCollection {
   static _itemClass = ProfileRelationship;
   /**
@@ -1037,6 +879,182 @@ const ProfileRelationshipCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE
   __proto__: null,
   ProfileRelationshipCollection
 }, Symbol.toStringTag, { value: "Module" }));
+_ProfileRelationshipTerm_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get"] },
+  cli: true
+})];
+class ProfileRelationshipTerm extends (_f = SmrtObject) {
+  // id: UUID (auto-generated by SmrtObject)
+  relationshipId = foreignKey("ProfileRelationship", { required: true });
+  // References ProfileRelationship.id
+  startedAt = datetime({ required: true });
+  // Start date of the term
+  endedAt = datetime();
+  // Optional end date
+  constructor(options = {}) {
+    super(options);
+  }
+  /**
+   * Check if this term is currently active
+   *
+   * @returns True if active (no end date or end date in future)
+   */
+  isActive() {
+    if (!this.endedAt) return true;
+    const endDate = this.endedAt instanceof Date ? this.endedAt : new Date(String(this.endedAt));
+    return endDate > /* @__PURE__ */ new Date();
+  }
+  /**
+   * End this term
+   *
+   * @param endedAt - End date for the term (defaults to now)
+   */
+  async end(endedAt = /* @__PURE__ */ new Date()) {
+    this.endedAt.value = endedAt;
+    await this.save();
+  }
+  /**
+   * Get the duration of this term in days
+   *
+   * @returns Duration in days
+   */
+  getDurationDays() {
+    const endValue = this.endedAt ? this.endedAt instanceof Date ? this.endedAt : new Date(String(this.endedAt)) : /* @__PURE__ */ new Date();
+    const startValue = this.startedAt instanceof Date ? this.startedAt : new Date(String(this.startedAt));
+    const diffMs = endValue.getTime() - startValue.getTime();
+    return Math.floor(diffMs / (1e3 * 60 * 60 * 24));
+  }
+}
+_init6 = __decoratorStart(_f);
+ProfileRelationshipTerm = __decorateElement(_init6, 0, "ProfileRelationshipTerm", _ProfileRelationshipTerm_decorators, ProfileRelationshipTerm);
+__runInitializers(_init6, 1, ProfileRelationshipTerm);
+class ProfileRelationshipTermCollection extends SmrtCollection {
+  static _itemClass = ProfileRelationshipTerm;
+  /**
+   * Get all terms for a relationship
+   *
+   * @param relationshipId - The relationship UUID
+   * @returns Array of ProfileRelationshipTerm instances
+   */
+  async getByRelationship(relationshipId) {
+    return await this.list({
+      where: { relationshipId },
+      orderBy: ["startedAt DESC"]
+    });
+  }
+  /**
+   * Get the active term for a relationship (no end date or future end date)
+   *
+   * @param relationshipId - The relationship UUID
+   * @returns Active term or null
+   */
+  async getActiveTerm(relationshipId) {
+    const terms = await this.getByRelationship(relationshipId);
+    for (const term of terms) {
+      if (term.isActive()) {
+        return term;
+      }
+    }
+    return null;
+  }
+  /**
+   * Get all historical (ended) terms for a relationship
+   *
+   * @param relationshipId - The relationship UUID
+   * @returns Array of ended ProfileRelationshipTerm instances
+   */
+  async getHistoricalTerms(relationshipId) {
+    const terms = await this.getByRelationship(relationshipId);
+    return terms.filter((term) => !term.isActive());
+  }
+}
+const ProfileRelationshipTermCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  ProfileRelationshipTermCollection
+}, Symbol.toStringTag, { value: "Module" }));
+const reciprocalHandlers = /* @__PURE__ */ new Map();
+const DEFAULT_HANDLERS = {
+  // Symmetric relationships (same type in both directions)
+  friend: async (from, to, context) => {
+    await to.addRelationship(from, "friend", context);
+  },
+  spouse: async (from, to) => {
+    await to.addRelationship(from, "spouse");
+  },
+  partner: async (from, to, context) => {
+    await to.addRelationship(from, "partner", context);
+  },
+  colleague: async (from, to, context) => {
+    await to.addRelationship(from, "colleague", context);
+  },
+  sibling: async (from, to) => {
+    await to.addRelationship(from, "sibling");
+  }
+};
+for (const [slug, handler] of Object.entries(DEFAULT_HANDLERS)) {
+  reciprocalHandlers.set(slug, handler);
+}
+_ProfileRelationshipType_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update"] },
+  mcp: { include: ["list", "get"] },
+  cli: true
+})];
+let _ProfileRelationshipType = class _ProfileRelationshipType extends (_g = SmrtObject) {
+  // id: UUID (auto-generated by SmrtObject)
+  // slug is inherited from SmrtObject (auto-generated from name)
+  name = text({ required: true });
+  reciprocal = boolean({ default: true });
+  // True for two-way relationships
+  constructor(options = {}) {
+    super(options);
+  }
+  /**
+   * Convenience method for slug-based lookup
+   *
+   * @param slug - The slug to search for
+   * @returns ProfileRelationshipType instance or null if not found
+   */
+  static async getBySlug(slug) {
+    return null;
+  }
+  /**
+   * Register a custom reciprocal handler for a relationship type
+   *
+   * @param slug - The relationship type slug
+   * @param handler - The handler function to execute when creating reciprocal relationship
+   */
+  static registerReciprocalHandler(slug, handler) {
+    reciprocalHandlers.set(slug, handler);
+  }
+  /**
+   * Get the reciprocal handler for a relationship type
+   *
+   * @param slug - The relationship type slug
+   * @returns The handler function or undefined
+   */
+  static getReciprocalHandler(slug) {
+    return reciprocalHandlers.get(slug);
+  }
+  /**
+   * Check if a relationship type is reciprocal
+   *
+   * @param slug - The relationship type slug
+   * @returns True if reciprocal, false otherwise
+   */
+  static async isReciprocal(slug) {
+    const type = await _ProfileRelationshipType.getBySlug(slug);
+    return type?.reciprocal ? Boolean(type.reciprocal) : false;
+  }
+};
+_init7 = __decoratorStart(_g);
+_ProfileRelationshipType = __decorateElement(_init7, 0, "ProfileRelationshipType", _ProfileRelationshipType_decorators, _ProfileRelationshipType);
+__runInitializers(_init7, 1, _ProfileRelationshipType);
+let ProfileRelationshipType = _ProfileRelationshipType;
+const ProfileRelationshipType$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  ProfileRelationshipType
+}, Symbol.toStringTag, { value: "Module" }));
 class ProfileRelationshipTypeCollection extends SmrtCollection {
   static _itemClass = ProfileRelationshipType;
   /**
@@ -1083,50 +1101,32 @@ const ProfileRelationshipTypeCollection$1 = /* @__PURE__ */ Object.freeze(/* @__
   __proto__: null,
   ProfileRelationshipTypeCollection
 }, Symbol.toStringTag, { value: "Module" }));
-class ProfileRelationshipTermCollection extends SmrtCollection {
-  static _itemClass = ProfileRelationshipTerm;
+class ProfileTypeCollection extends SmrtCollection {
+  static _itemClass = ProfileType;
   /**
-   * Get all terms for a relationship
+   * Get profile type by slug
    *
-   * @param relationshipId - The relationship UUID
-   * @returns Array of ProfileRelationshipTerm instances
+   * @param slug - The slug to search for
+   * @returns ProfileType instance or null
    */
-  async getByRelationship(relationshipId) {
-    return await this.list({
-      where: { relationshipId },
-      orderBy: ["startedAt DESC"]
-    });
+  async getBySlug(slug) {
+    return await this.get({ slug });
   }
   /**
-   * Get the active term for a relationship (no end date or future end date)
+   * Get or create a profile type by slug
    *
-   * @param relationshipId - The relationship UUID
-   * @returns Active term or null
+   * @param slug - The slug to search for
+   * @param defaults - Default values if creating
+   * @returns ProfileType instance
    */
-  async getActiveTerm(relationshipId) {
-    const terms = await this.getByRelationship(relationshipId);
-    for (const term of terms) {
-      if (term.isActive()) {
-        return term;
-      }
-    }
-    return null;
-  }
-  /**
-   * Get all historical (ended) terms for a relationship
-   *
-   * @param relationshipId - The relationship UUID
-   * @returns Array of ended ProfileRelationshipTerm instances
-   */
-  async getHistoricalTerms(relationshipId) {
-    const terms = await this.getByRelationship(relationshipId);
-    return terms.filter((term) => !term.isActive());
+  async getOrCreateBySlug(slug, defaults) {
+    const existing = await this.getBySlug(slug);
+    if (existing) return existing;
+    const profileType = await this.create({ slug, ...defaults });
+    await profileType.save();
+    return profileType;
   }
 }
-const ProfileRelationshipTermCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  ProfileRelationshipTermCollection
-}, Symbol.toStringTag, { value: "Module" }));
 export {
   Profile,
   ProfileCollection,

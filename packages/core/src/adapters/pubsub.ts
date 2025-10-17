@@ -5,7 +5,7 @@
  * Supports multiple subscriber types (callbacks, WebSocket, SSE).
  */
 
-import type { Signal, ISignalAdapter } from '@have/types';
+import type { ISignalAdapter, Signal } from '@smrt/types';
 
 /**
  * Signal filter function

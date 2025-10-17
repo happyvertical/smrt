@@ -2,9 +2,9 @@
  * Tests for @smrt/cli virtual module generation
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ObjectRegistry } from '../registry';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject } from '../object';
+import { ObjectRegistry } from '../registry';
 
 // Mock decorator function for testing
 function smrt(config?: any) {

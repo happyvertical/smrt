@@ -1,5 +1,5 @@
-import { SchemaDefinition } from './types';
 import { SmartObjectDefinition } from '../scanner/types';
+import { SchemaDefinition } from './types';
 export declare class SchemaCodeGenerator {
     /**
      * Generate getSchema() method source code

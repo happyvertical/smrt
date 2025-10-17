@@ -52,7 +52,7 @@ export class Account extends SmrtObject {
    *
    * @returns Parsed metadata object or empty object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -66,7 +66,7 @@ export class Account extends SmrtObject {
    *
    * @param data - Metadata object to store
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
@@ -75,7 +75,7 @@ export class Account extends SmrtObject {
    *
    * @param updates - Partial metadata to merge
    */
-  updateMetadata(updates: Record<string, any>): void {
+  updateMetadata(updates: Record<string, unknown>): void {
     const current = this.getMetadata();
     this.setMetadata({ ...current, ...updates });
   }
@@ -92,14 +92,13 @@ export class Account extends SmrtObject {
       '../collections/AccountCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection({
+    const collection = await AccountCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.get({ id: this.parentId });
   }
@@ -114,14 +113,13 @@ export class Account extends SmrtObject {
       '../collections/AccountCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection({
+    const collection = await AccountCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.list({ where: { parentId: this.id } });
   }
@@ -223,14 +221,13 @@ export class Account extends SmrtObject {
       '../collections/AccountTransactionEntryCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionEntryCollection({
+    const collection = await AccountTransactionEntryCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.list({ where: { accountId: this.id } });
   }

@@ -1,6 +1,6 @@
 {
   "name": "@smrt/events",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "Hierarchical event management with participant tracking and SMRT framework support",
   "type": "module",
   "main": "./dist/index.js",

@@ -30,6 +30,7 @@
 import type { SmrtCollection } from './collection';
 import type { SmrtObject } from './object';
 import {
+  classnameToTablename,
   generateSchema,
   tableNameFromClass,
 } from './utils';
@@ -47,6 +48,12 @@ export interface SmartObjectConfig {
    * Custom name for the object (defaults to class name)
    */
   name?: string;
+
+  /**
+   * Custom table name for database storage (defaults to pluralized snake_case class name)
+   * Explicitly setting this ensures the table name survives code minification
+   */
+  tableName?: string;
 
   /**
    * API configuration
@@ -259,8 +266,10 @@ export class ObjectRegistry {
     const fields = ObjectRegistry.extractFields(ctor);
 
     // Generate and cache schema definition
-    const tableName = tableNameFromClass(ctor);
-    const schemaDDL = generateSchema(ctor);
+    // Use tableName from config if provided (captured by @smrt() decorator)
+    const tableName = config.tableName || tableNameFromClass(ctor);
+    // Pass extracted fields to avoid circular dependency (class isn't registered yet)
+    const schemaDDL = generateSchema(ctor, fields);
 
     // Parse schema DDL to extract indexes
     const indexes: string[] = [];
@@ -508,7 +517,7 @@ export class ObjectRegistry {
   /**
    * Extract field definitions from a class constructor
    */
-  private static extractFields(ctor: typeof SmrtObject): Map<string, any> {
+  static extractFields(ctor: typeof SmrtObject): Map<string, any> {
     const fields = new Map();
 
     try {
@@ -548,6 +557,34 @@ export class ObjectRegistry {
       if ((ctor as any).fields) {
         for (const [key, field] of Object.entries((ctor as any).fields)) {
           fields.set(key, field);
+        }
+      }
+
+      // Fallback: If no Field instances found, infer from primitive properties
+      // This supports test classes that use simple properties instead of Field instances
+      if (fields.size === 0) {
+        for (const key of Object.getOwnPropertyNames(tempInstance)) {
+          // Skip private/internal properties
+          if (key.startsWith('_') || key.startsWith('#')) continue;
+
+          const value = tempInstance[key];
+          const valueType = typeof value;
+
+          // Infer field type from primitive value
+          let fieldType = 'text'; // default
+          if (valueType === 'string') fieldType = 'text';
+          else if (valueType === 'number')
+            fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
+          else if (valueType === 'boolean') fieldType = 'boolean';
+          else if (value instanceof Date) fieldType = 'datetime';
+          else if (Array.isArray(value)) fieldType = 'json';
+          else if (valueType === 'object' && value !== null) fieldType = 'json';
+          else continue; // Skip functions, undefined, null
+
+          fields.set(key, {
+            type: fieldType,
+            options: {},
+          });
         }
       }
     } catch (error) {
@@ -1246,7 +1283,9 @@ export class ObjectRegistry {
   static async loadFromDatabase(
     db: import('@have/sql').DatabaseInterface,
   ): Promise<any[]> {
-    const { rows } = await db.query('SELECT * FROM _smrt_registry ORDER BY class_name');
+    const { rows } = await db.query(
+      'SELECT * FROM _smrt_registry ORDER BY class_name',
+    );
     return rows;
   }
 }
@@ -1254,12 +1293,20 @@ export class ObjectRegistry {
 /**
  * @smrt decorator for registering classes with the global registry
  *
+ * Captures the original class name before minification and stores it as
+ * a static property, ensuring table names remain consistent in production builds.
+ *
  * @example
  * ```typescript
  * @smrt()
  * class Product extends SmrtObject {
  *   name = text({ required: true });
  *   price = decimal({ min: 0 });
+ * }
+ *
+ * @smrt({ tableName: 'custom_products' })
+ * class Product extends SmrtObject {
+ *   name = text({ required: true });
  * }
  *
  * @smrt({ api: { exclude: ['delete'] } })
@@ -1270,7 +1317,20 @@ export class ObjectRegistry {
  */
 export function smrt(config: SmartObjectConfig = {}) {
   return <T extends typeof SmrtObject>(ctor: T): T => {
-    ObjectRegistry.register(ctor, config);
+    // Capture table name BEFORE minification (decorator runs at class definition time)
+    // This ensures the table name survives code minification
+    const tableName = config.tableName || classnameToTablename(ctor.name);
+
+    // Store table name in a static property that survives minification
+    Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
+      value: tableName,
+      writable: false,
+      enumerable: false,
+      configurable: false,
+    });
+
+    // Register with the captured table name
+    ObjectRegistry.register(ctor, { ...config, tableName });
     return ctor;
   };
 }
