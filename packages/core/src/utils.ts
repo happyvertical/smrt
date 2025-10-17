@@ -311,7 +311,10 @@ const _setup_table_from_class_promises: Record<string, Promise<void> | null> =
 export async function setupTableFromClass(db: any, ClassType: any) {
   const tableName = classnameToTablename(ClassType.name);
 
-  if (_setup_table_from_class_promises[tableName] !== undefined && _setup_table_from_class_promises[tableName] !== null) {
+  if (
+    _setup_table_from_class_promises[tableName] !== undefined &&
+    _setup_table_from_class_promises[tableName] !== null
+  ) {
     return _setup_table_from_class_promises[tableName];
   }
 
