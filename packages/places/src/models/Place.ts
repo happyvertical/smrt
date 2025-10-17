@@ -6,7 +6,7 @@
  */
 
 import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
-import type { PlaceOptions, GeoData } from '../types';
+import type { GeoData, PlaceOptions } from '../types';
 
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },

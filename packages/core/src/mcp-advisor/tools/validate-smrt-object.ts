@@ -103,15 +103,15 @@ export async function validateSmrtObject(
       errors.push({
         type: 'warning',
         message: 'No field definitions found',
-        suggestion:
-          'Add properties using field types from @smrt/core/fields',
+        suggestion: 'Add properties using field types from @smrt/core/fields',
       });
     }
 
     // Strict mode checks
     if (strictMode) {
       // Check for TypeScript types on properties
-      const hasUntypedProps = /\s+\w+\s*=/.test(content) && !/:\s*\w+\s*=/.test(content);
+      const hasUntypedProps =
+        /\s+\w+\s*=/.test(content) && !/:\s*\w+\s*=/.test(content);
       if (hasUntypedProps) {
         errors.push({
           type: 'warning',

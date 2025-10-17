@@ -9,8 +9,8 @@ import {
   formatDataSql,
   generateSchema,
   tableNameFromClass,
-  toSnakeCase,
   toCamelCase,
+  toSnakeCase,
 } from './utils';
 
 /**
@@ -664,7 +664,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return generateSchema(this._itemClass);
   }
 
-
   /**
    * Gets the database table name for this collection
    */
@@ -870,11 +869,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * });
    * ```
    */
-  public async recallAll(options: {
-    scope?: string;
-    includeDescendants?: boolean;
-    minConfidence?: number;
-  } = {}): Promise<Map<string, any>> {
+  public async recallAll(
+    options: {
+      scope?: string;
+      includeDescendants?: boolean;
+      minConfidence?: number;
+    } = {},
+  ): Promise<Map<string, any>> {
     if (!this.systemDb) {
       throw new Error('Database not initialized. Call initialize() first.');
     }

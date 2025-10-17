@@ -3,9 +3,9 @@
  * Coordinates schema initialization across multiple SMRT objects
  */
 
-import type { SchemaDefinition } from './types';
 import type { DatabaseInterface } from '@have/sql';
 import { createHash } from 'crypto';
+import type { SchemaDefinition } from './types';
 
 export interface SchemaInitializationOptions {
   db: DatabaseInterface;
@@ -218,8 +218,10 @@ export class RuntimeSchemaManager {
       if (columnDef.defaultValue !== undefined) {
         // Add explicit CAST for TEXT columns with empty string or NULL defaults
         // DuckDB infers ANY type without explicit casting, causing UPSERT failures
-        const isTextColumn = columnDef.type === 'TEXT' || columnDef.type === 'VARCHAR';
-        const isEmptyOrNull = columnDef.defaultValue === "''" || columnDef.defaultValue === 'NULL';
+        const isTextColumn =
+          columnDef.type === 'TEXT' || columnDef.type === 'VARCHAR';
+        const isEmptyOrNull =
+          columnDef.defaultValue === "''" || columnDef.defaultValue === 'NULL';
 
         if (isTextColumn && isEmptyOrNull) {
           def += ` DEFAULT CAST(${columnDef.defaultValue} AS TEXT)`;
@@ -258,7 +260,6 @@ export class RuntimeSchemaManager {
 
     await db.query(createIndexSQL);
   }
-
 
   /**
    * Update schema if changes are detected (Phase 4: Automatic Schema Evolution)

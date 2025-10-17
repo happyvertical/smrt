@@ -149,7 +149,7 @@ class EventSeries extends (_b = SmrtObject) {
   typeId = "";
   // FK to EventType
   organizerId = "";
-  // FK to Profile (from @have/profiles)
+  // FK to Profile (from @smrt/profiles)
   description = "";
   startDate = null;
   endDate = null;
@@ -251,8 +251,7 @@ class EventSeries extends (_b = SmrtObject) {
   async getType() {
     if (!this.typeId) return null;
     const { EventTypeCollection: EventTypeCollection2 } = await Promise.resolve().then(() => EventTypeCollection$1);
-    const collection = new EventTypeCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventTypeCollection2.create(this.options);
     return await collection.get({ id: this.typeId });
   }
   /**
@@ -263,7 +262,7 @@ class EventSeries extends (_b = SmrtObject) {
   async getOrganizer() {
     if (!this.organizerId) return null;
     try {
-      const { ProfileCollection } = await import("@have/profiles");
+      const { ProfileCollection } = await import("@smrt/profiles");
       const collection = await ProfileCollection.create(this.options);
       return await collection.get({ id: this.organizerId });
     } catch {
@@ -277,8 +276,7 @@ class EventSeries extends (_b = SmrtObject) {
    */
   async getEvents() {
     const { EventCollection: EventCollection2 } = await Promise.resolve().then(() => EventCollection$1);
-    const collection = new EventCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventCollection2.create(this.options);
     return await collection.list({ where: { seriesId: this.id } });
   }
   /**
@@ -310,7 +308,7 @@ class Event extends (_c = SmrtObject) {
   typeId = "";
   // FK to EventType
   placeId = "";
-  // FK to Place (from @have/places)
+  // FK to Place (from @smrt/places)
   description = "";
   startDate = null;
   endDate = null;
@@ -400,8 +398,7 @@ class Event extends (_c = SmrtObject) {
   async getSeries() {
     if (!this.seriesId) return null;
     const { EventSeriesCollection: EventSeriesCollection2 } = await Promise.resolve().then(() => EventSeriesCollection$1);
-    const collection = new EventSeriesCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventSeriesCollection2.create(this.options);
     return await collection.get({ id: this.seriesId });
   }
   /**
@@ -412,8 +409,7 @@ class Event extends (_c = SmrtObject) {
   async getType() {
     if (!this.typeId) return null;
     const { EventTypeCollection: EventTypeCollection2 } = await Promise.resolve().then(() => EventTypeCollection$1);
-    const collection = new EventTypeCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventTypeCollection2.create(this.options);
     return await collection.get({ id: this.typeId });
   }
   /**
@@ -424,7 +420,7 @@ class Event extends (_c = SmrtObject) {
   async getPlace() {
     if (!this.placeId) return null;
     try {
-      const { PlaceCollection } = await import("@have/places");
+      const { PlaceCollection } = await import("@smrt/places");
       const collection = await PlaceCollection.create(this.options);
       return await collection.get({ id: this.placeId });
     } catch {
@@ -439,8 +435,7 @@ class Event extends (_c = SmrtObject) {
   async getParent() {
     if (!this.parentEventId) return null;
     const { EventCollection: EventCollection2 } = await Promise.resolve().then(() => EventCollection$1);
-    const collection = new EventCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventCollection2.create(this.options);
     return await collection.get({ id: this.parentEventId });
   }
   /**
@@ -450,8 +445,7 @@ class Event extends (_c = SmrtObject) {
    */
   async getChildren() {
     const { EventCollection: EventCollection2 } = await Promise.resolve().then(() => EventCollection$1);
-    const collection = new EventCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventCollection2.create(this.options);
     return await collection.list({ where: { parentEventId: this.id } });
   }
   /**
@@ -516,8 +510,7 @@ class Event extends (_c = SmrtObject) {
    */
   async getParticipants() {
     const { EventParticipantCollection: EventParticipantCollection2 } = await Promise.resolve().then(() => EventParticipantCollection$1);
-    const collection = new EventParticipantCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventParticipantCollection2.create(this.options);
     return await collection.list({ where: { eventId: this.id } });
   }
   /**
@@ -554,7 +547,7 @@ class EventParticipant extends (_d = SmrtObject) {
   eventId = "";
   // FK to Event
   profileId = "";
-  // FK to Profile (from @have/profiles)
+  // FK to Profile (from @smrt/profiles)
   role = "";
   // Participant role (ParticipantRole or custom)
   placement = null;
@@ -627,8 +620,7 @@ class EventParticipant extends (_d = SmrtObject) {
   async getEvent() {
     if (!this.eventId) return null;
     const { EventCollection: EventCollection2 } = await Promise.resolve().then(() => EventCollection$1);
-    const collection = new EventCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventCollection2.create(this.options);
     return await collection.get({ id: this.eventId });
   }
   /**
@@ -639,7 +631,7 @@ class EventParticipant extends (_d = SmrtObject) {
   async getProfile() {
     if (!this.profileId) return null;
     try {
-      const { ProfileCollection } = await import("@have/profiles");
+      const { ProfileCollection } = await import("@smrt/profiles");
       const collection = await ProfileCollection.create(this.options);
       return await collection.get({ id: this.profileId });
     } catch {
@@ -654,8 +646,7 @@ class EventParticipant extends (_d = SmrtObject) {
   async getGroupParticipants() {
     if (!this.groupId) return [];
     const { EventParticipantCollection: EventParticipantCollection2 } = await Promise.resolve().then(() => EventParticipantCollection$1);
-    const collection = new EventParticipantCollection2(this.options);
-    await collection.initialize();
+    const collection = await EventParticipantCollection2.create(this.options);
     const participants = await collection.list({
       where: { eventId: this.eventId, groupId: this.groupId }
     });

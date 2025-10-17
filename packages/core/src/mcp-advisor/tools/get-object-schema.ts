@@ -3,7 +3,7 @@
  */
 
 import { ObjectRegistry } from '../../registry.js';
-import type { GetObjectSchemaInput, FieldDefinition } from '../types.js';
+import type { FieldDefinition, GetObjectSchemaInput } from '../types.js';
 
 /**
  * Get object schema with field definitions
@@ -70,8 +70,10 @@ function extractConstraints(options: any): Record<string, any> {
 
   if (options.min !== undefined) constraints.min = options.min;
   if (options.max !== undefined) constraints.max = options.max;
-  if (options.minLength !== undefined) constraints.minLength = options.minLength;
-  if (options.maxLength !== undefined) constraints.maxLength = options.maxLength;
+  if (options.minLength !== undefined)
+    constraints.minLength = options.minLength;
+  if (options.maxLength !== undefined)
+    constraints.maxLength = options.maxLength;
   if (options.pattern !== undefined) constraints.pattern = options.pattern;
   if (options.unique !== undefined) constraints.unique = options.unique;
   if (options.index !== undefined) constraints.index = options.index;
@@ -82,15 +84,16 @@ function extractConstraints(options: any): Record<string, any> {
 /**
  * Format schema as TypeScript interface
  */
-function formatAsTypeScript(className: string, fields: FieldDefinition[]): string {
+function formatAsTypeScript(
+  className: string,
+  fields: FieldDefinition[],
+): string {
   let ts = `interface ${className}Data {\n`;
 
   for (const field of fields) {
     const optional = field.required ? '' : '?';
     const type = mapFieldTypeToTS(field.type);
-    const comment = field.description
-      ? `  /** ${field.description} */\n`
-      : '';
+    const comment = field.description ? `  /** ${field.description} */\n` : '';
     ts += `${comment}  ${field.name}${optional}: ${type};\n`;
   }
 
@@ -102,19 +105,24 @@ function formatAsTypeScript(className: string, fields: FieldDefinition[]): strin
 /**
  * Format schema as markdown table
  */
-function formatAsMarkdownTable(className: string, fields: FieldDefinition[]): string {
+function formatAsMarkdownTable(
+  className: string,
+  fields: FieldDefinition[],
+): string {
   let md = `# Schema for ${className}\n\n`;
   md += `| Field | Type | Required | Default | Constraints |\n`;
   md += `|-------|------|----------|---------|-------------|\n`;
 
   for (const field of fields) {
     const required = field.required ? '✓' : '✗';
-    const defaultValue = field.default !== undefined ? JSON.stringify(field.default) : '-';
-    const constraints = Object.keys(field.constraints || {}).length > 0
-      ? Object.entries(field.constraints || {})
-          .map(([k, v]) => `${k}=${v}`)
-          .join(', ')
-      : '-';
+    const defaultValue =
+      field.default !== undefined ? JSON.stringify(field.default) : '-';
+    const constraints =
+      Object.keys(field.constraints || {}).length > 0
+        ? Object.entries(field.constraints || {})
+            .map(([k, v]) => `${k}=${v}`)
+            .join(', ')
+        : '-';
 
     md += `| ${field.name} | ${field.type} | ${required} | ${defaultValue} | ${constraints} |\n`;
   }

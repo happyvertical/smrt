@@ -9,24 +9,23 @@
 // Export models
 export { Tag } from './tag';
 export { TagAlias } from './tag-alias';
-
+export { TagAliasCollection } from './tag-aliases';
 // Export collections
 export { TagCollection } from './tags';
-export { TagAliasCollection } from './tag-aliases';
 
 // Export types
 export type {
-  TagOptions,
   TagAliasOptions,
-  TagMetadata,
   TagHierarchy,
+  TagMetadata,
+  TagOptions,
 } from './types';
 
 // Export utilities
 export {
-  validateSlug,
-  sanitizeSlug,
-  hasCircularReference,
   calculateLevel,
   generateUniqueSlug,
+  hasCircularReference,
+  sanitizeSlug,
+  validateSlug,
 } from './utils';

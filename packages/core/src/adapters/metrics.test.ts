@@ -2,9 +2,9 @@
  * Tests for MetricsAdapter
  */
 
-import { describe, expect, it, beforeEach } from 'vitest';
-import { MetricsAdapter } from './metrics.js';
 import type { Signal } from '@smrt/types';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { MetricsAdapter } from './metrics.js';
 
 describe('MetricsAdapter', () => {
   let adapter: MetricsAdapter;

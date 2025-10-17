@@ -12,16 +12,16 @@ import {
 import { Field } from './fields/index';
 import { ObjectRegistry } from './registry';
 import {
+  executeToolCall as executeToolCallInternal,
+  type ToolCall,
+  type ToolCallResult,
+} from './tools/tool-executor';
+import {
   fieldsFromClass,
   setupTableFromClass,
   tableNameFromClass,
   toSnakeCase,
 } from './utils';
-import {
-  executeToolCall as executeToolCallInternal,
-  type ToolCall,
-  type ToolCallResult,
-} from './tools/tool-executor';
 
 /**
  * Options for SmrtObject initialization
@@ -367,7 +367,6 @@ export class SmrtObject extends SmrtClass {
 
     return data;
   }
-
 
   /**
    * Gets or generates a unique ID for this object
@@ -1193,11 +1192,13 @@ export class SmrtObject extends SmrtClass {
    * }
    * ```
    */
-  public async recallAll(options: {
-    scope?: string;
-    includeDescendants?: boolean;
-    minConfidence?: number;
-  } = {}): Promise<Map<string, any>> {
+  public async recallAll(
+    options: {
+      scope?: string;
+      includeDescendants?: boolean;
+      minConfidence?: number;
+    } = {},
+  ): Promise<Map<string, any>> {
     if (!this.systemDb) {
       throw new Error('Database not initialized. Call initialize() first.');
     }

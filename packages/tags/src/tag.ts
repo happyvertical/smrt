@@ -6,7 +6,7 @@
  */
 
 import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
-import type { TagOptions, TagMetadata } from './types';
+import type { TagMetadata, TagOptions } from './types';
 
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },

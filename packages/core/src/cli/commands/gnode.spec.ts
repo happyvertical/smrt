@@ -2,7 +2,7 @@
  * Gnode Commands Tests
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CLICommand } from '../../generators/cli.js';
 
 // Mock dependencies

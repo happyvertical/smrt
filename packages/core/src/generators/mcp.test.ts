@@ -2,10 +2,10 @@
  * Tests for MCP generator with custom action support
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MCPGenerator } from './mcp';
-import { ObjectRegistry } from '../registry';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object';
+import { ObjectRegistry } from '../registry';
+import { MCPGenerator } from './mcp';
 
 // Mock decorator function for testing
 function smrt(config?: any) {

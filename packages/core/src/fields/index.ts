@@ -240,7 +240,10 @@ export class Field {
 
       // Add explicit CAST for TEXT types to prevent DuckDB ANY type inference
       // DuckDB infers ANY type when DEFAULT is an empty string or NULL without explicit type
-      if (sqlType === 'TEXT' && (this.options.default === '' || this.options.default === null)) {
+      if (
+        sqlType === 'TEXT' &&
+        (this.options.default === '' || this.options.default === null)
+      ) {
         constraints.push(`DEFAULT CAST(${escapedValue} AS TEXT)`);
       } else {
         constraints.push(`DEFAULT ${escapedValue}`);
@@ -414,7 +417,10 @@ export function foreignKey(
   if (typeof relatedClass === 'string') {
     // Direct string reference (recommended)
     relatedName = relatedClass;
-  } else if (typeof relatedClass === 'function' && relatedClass.prototype === undefined) {
+  } else if (
+    typeof relatedClass === 'function' &&
+    relatedClass.prototype === undefined
+  ) {
     // Arrow function returning a class - evaluate it
     const resolvedClass = relatedClass();
     relatedName = resolvedClass.name;
@@ -474,7 +480,10 @@ export function oneToMany(
 
   if (typeof relatedClass === 'string') {
     relatedName = relatedClass;
-  } else if (typeof relatedClass === 'function' && relatedClass.prototype === undefined) {
+  } else if (
+    typeof relatedClass === 'function' &&
+    relatedClass.prototype === undefined
+  ) {
     const resolvedClass = relatedClass();
     relatedName = resolvedClass.name;
   } else {
@@ -527,7 +536,10 @@ export function manyToMany(
 
   if (typeof relatedClass === 'string') {
     relatedName = relatedClass;
-  } else if (typeof relatedClass === 'function' && relatedClass.prototype === undefined) {
+  } else if (
+    typeof relatedClass === 'function' &&
+    relatedClass.prototype === undefined
+  ) {
     const resolvedClass = relatedClass();
     relatedName = resolvedClass.name;
   } else {

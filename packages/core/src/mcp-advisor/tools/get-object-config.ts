@@ -44,9 +44,14 @@ export async function getObjectConfig(
         if (
           methodName !== 'constructor' &&
           typeof (prototype as any)[methodName] === 'function' &&
-          !['save', 'delete', 'loadFromId', 'loadFromSlug', 'is', 'do'].includes(
-            methodName,
-          )
+          ![
+            'save',
+            'delete',
+            'loadFromId',
+            'loadFromSlug',
+            'is',
+            'do',
+          ].includes(methodName)
         ) {
           customMethods.push(methodName);
         }
@@ -155,7 +160,10 @@ function formatAsYAML(config: ObjectConfig): string {
     yaml += `  cli: ${config.decorator.cli}\n`;
   }
 
-  if (config.decorator.hooks && Object.keys(config.decorator.hooks).length > 0) {
+  if (
+    config.decorator.hooks &&
+    Object.keys(config.decorator.hooks).length > 0
+  ) {
     yaml += `  hooks:\n`;
     for (const [key, value] of Object.entries(config.decorator.hooks)) {
       yaml += `    ${key}: ${value}\n`;

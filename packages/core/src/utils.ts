@@ -189,22 +189,23 @@ export function fieldsFromClass(
  */
 export function generateSchema(
   ClassType: new (...args: any[]) => any,
-  providedFields?: Map<string, any>
+  providedFields?: Map<string, any>,
 ) {
   const className = ClassType.name;
   const tableName = tableNameFromClass(ClassType);
 
   // Use provided fields if available AND non-empty (during registration), otherwise get from registry
-  const cachedFields = (providedFields && providedFields.size > 0)
-    ? providedFields
-    : ObjectRegistry.getFields(className);
+  const cachedFields =
+    providedFields && providedFields.size > 0
+      ? providedFields
+      : ObjectRegistry.getFields(className);
 
   // Throw error if class is not registered AND no fields provided
   if (cachedFields.size === 0) {
     throw new Error(
       `Cannot generate schema for unregistered class '${className}'. ` +
-      `Ensure the class is decorated with @smrt() for schema generation to work. ` +
-      `Runtime introspection has been removed in Phase 2 of the schema management refactor.`
+        `Ensure the class is decorated with @smrt() for schema generation to work. ` +
+        `Runtime introspection has been removed in Phase 2 of the schema management refactor.`,
     );
   }
 
@@ -213,12 +214,11 @@ export function generateSchema(
   const schemaDefinition = generator.generateSchemaFromRegistry(
     className,
     tableName,
-    cachedFields
+    cachedFields,
   );
 
   return generator.generateSQL(schemaDefinition);
 }
-
 
 /**
  * Generates a table name from a class constructor
@@ -348,7 +348,6 @@ export async function setupTableFromClass(db: any, ClassType: any) {
 
   return _setup_table_from_class_promises[tableName];
 }
-
 
 /**
  * Formats data for JavaScript by converting date strings to Date objects

@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { Agent } from './agent.js';
-import { smrt } from '@smrt/core';
 import { getModuleConfig } from '@have/config';
+import { smrt } from '@smrt/core';
+import { describe, expect, it } from 'vitest';
+import { Agent } from './agent.js';
 
 // Test agent implementation
 interface TestAgentConfig {

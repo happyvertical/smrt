@@ -26,13 +26,13 @@ async function generateMCPServer() {
       // Database and AI context will be configured via environment variables in generated server
       // DATABASE_URL - for database connection
       // OPENAI_API_KEY or ANTHROPIC_API_KEY - for AI client
-    }
+    },
   );
 
   // Generate tools to preview what will be available
   const tools = generator.generateTools();
   console.log(`📝 Discovered ${tools.length} tools from SMRT objects:`);
-  tools.forEach(tool => {
+  tools.forEach((tool) => {
     console.log(`   - ${tool.name}: ${tool.description}`);
   });
   console.log();
@@ -49,7 +49,9 @@ async function generateMCPServer() {
   console.log('\n✅ MCP Server generation complete!');
   console.log('\n📚 Next steps:');
   console.log('   1. Build the server: npm run build');
-  console.log('   2. Add to Claude Desktop config (see dist/claude-config.example.json)');
+  console.log(
+    '   2. Add to Claude Desktop config (see dist/claude-config.example.json)',
+  );
   console.log('   3. Restart Claude Desktop');
   console.log('   4. Use the tools in Claude Code!\n');
 }

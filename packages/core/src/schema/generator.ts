@@ -3,17 +3,17 @@
  * Converts AST field definitions to database schema definitions
  */
 
-import type { FieldDefinition, SmartObjectDefinition } from '../scanner/types';
-import type {
-  SchemaDefinition,
-  ColumnDefinition,
-  IndexDefinition,
-  TriggerDefinition,
-  SQLDataType,
-  ForeignKeyDefinition,
-} from './types';
 import { createHash } from 'crypto';
 import type { Field } from '../fields/index';
+import type { FieldDefinition, SmartObjectDefinition } from '../scanner/types';
+import type {
+  ColumnDefinition,
+  ForeignKeyDefinition,
+  IndexDefinition,
+  SchemaDefinition,
+  SQLDataType,
+  TriggerDefinition,
+} from './types';
 
 export class SchemaGenerator {
   /**
@@ -115,7 +115,10 @@ export class SchemaGenerator {
       // Handle default values
       if (fieldDef.default !== undefined) {
         column.defaultValue = fieldDef.default;
-      } else if (!fieldDef.required && this.mapFieldTypeToSQL(fieldDef.type) === 'TEXT') {
+      } else if (
+        !fieldDef.required &&
+        this.mapFieldTypeToSQL(fieldDef.type) === 'TEXT'
+      ) {
         // For TEXT columns without explicit default or required constraint,
         // add NOT NULL DEFAULT '' to prevent DuckDB ANY type inference
         // DuckDB infers ANY type for nullable TEXT columns without defaults
@@ -309,7 +312,7 @@ export class SchemaGenerator {
   generateSchemaFromRegistry(
     className: string,
     tableName: string,
-    fields: Map<string, Field>
+    fields: Map<string, Field>,
   ): SchemaDefinition {
     const columns: Record<string, ColumnDefinition> = {};
 
@@ -352,7 +355,10 @@ export class SchemaGenerator {
     // Add fields from ObjectRegistry
     for (const [fieldName, field] of fields.entries()) {
       // Skip default fields if already added
-      if (!hasCustomPK && (fieldName === 'id' || fieldName === 'slug' || fieldName === 'context')) {
+      if (
+        !hasCustomPK &&
+        (fieldName === 'id' || fieldName === 'slug' || fieldName === 'context')
+      ) {
         continue;
       }
 
@@ -468,7 +474,10 @@ export class SchemaGenerator {
       triggers: [],
       foreignKeys: this.extractForeignKeys(columns),
       dependencies: [],
-      version: createHash('sha256').update(JSON.stringify(columns)).digest('hex').substring(0, 8),
+      version: createHash('sha256')
+        .update(JSON.stringify(columns))
+        .digest('hex')
+        .substring(0, 8),
       packageName: 'runtime',
       baseClass: 'SmrtObject',
     };
@@ -528,7 +537,7 @@ export class SchemaGenerator {
       if (columnDef.defaultValue !== undefined) {
         const defaultSQL = this.formatDefaultValue(
           columnDef.defaultValue,
-          columnDef.type
+          columnDef.type,
         );
         parts.push(`DEFAULT ${defaultSQL}`);
       }

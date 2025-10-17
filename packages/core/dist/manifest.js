@@ -1,7 +1,7 @@
-import { staticManifest } from "./chunks/static-manifest-B4nKBBtb.js";
+import { staticManifest } from "./chunks/static-manifest-BgWppe2v.js";
 import { M } from "./chunks/manifest-generator-Bb3IuFsV.js";
 function getManifest() {
-  return import("./chunks/static-manifest-B4nKBBtb.js").then((m) => m.staticManifest);
+  return import("./chunks/static-manifest-BgWppe2v.js").then((m) => m.staticManifest);
 }
 export {
   M as ManifestGenerator,

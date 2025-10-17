@@ -6,9 +6,9 @@
  */
 
 import { createInterface } from 'node:readline';
+import { type Command, type ParsedArgs, parseCliArgs } from '@have/utils';
 import type { SmrtCollection } from '../collection';
 import { ObjectRegistry } from '../registry';
-import { parseCliArgs, type Command, type ParsedArgs } from '@have/utils';
 
 // Lazy-load commands to avoid loading tar dependencies unless needed
 let _gnodeCommands: Record<string, Command> | null = null;
@@ -318,7 +318,9 @@ export class CLIGenerator {
 
       // Check if handler exists before invoking
       if (!command.handler) {
-        this.exitWithError(`Command '${parsed.command}' has no handler defined`);
+        this.exitWithError(
+          `Command '${parsed.command}' has no handler defined`,
+        );
         return;
       }
 

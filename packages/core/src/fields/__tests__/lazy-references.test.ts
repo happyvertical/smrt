@@ -5,8 +5,8 @@
  * dependency issues during module initialization.
  */
 
-import { describe, it, expect } from 'vitest';
-import { foreignKey, oneToMany, manyToMany } from '../index';
+import { describe, expect, it } from 'vitest';
+import { foreignKey, manyToMany, oneToMany } from '../index';
 
 describe('Lazy String References', () => {
   describe('foreignKey', () => {

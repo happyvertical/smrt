@@ -2,11 +2,11 @@
  * Template Loader Tests
  */
 
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { resolveTemplate, loadTemplate } from './template-loader.js';
-import * as npmLoader from './npm-loader.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as gitLoader from './git-loader.js';
 import * as localLoader from './local-loader.js';
+import * as npmLoader from './npm-loader.js';
+import { loadTemplate, resolveTemplate } from './template-loader.js';
 
 describe('Template Loader', () => {
   beforeEach(() => {

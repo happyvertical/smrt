@@ -5,8 +5,8 @@
  */
 
 import { SmrtCollection } from '@smrt/core';
-import { TagAlias } from './tag-alias';
 import type { Tag } from './tag';
+import { TagAlias } from './tag-alias';
 
 export class TagAliasCollection extends SmrtCollection<TagAlias> {
   static readonly _itemClass = TagAlias;
