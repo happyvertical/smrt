@@ -92,7 +92,13 @@ runs:
     - name: Install project dependencies
       if: inputs.install-deps == 'true'
       shell: bash
-      run: pnpm install --frozen-lockfile
+      run: |
+        # In CI, activate overrides to use local SDK workspace packages
+        if [ -f .pnpmrc-ci ]; then
+          echo "Activating CI-specific .pnpmrc for local SDK overrides"
+          cp .pnpmrc-ci .pnpmrc
+        fi
+        pnpm install --frozen-lockfile
       env:
         # Force ONNX Runtime to skip CUDA installation
         ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'
