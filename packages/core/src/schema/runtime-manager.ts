@@ -4,7 +4,6 @@
  */
 
 import type { DatabaseInterface } from '@have/sql';
-import { createHash } from 'crypto';
 import type { SchemaDefinition } from './types';
 
 export interface SchemaInitializationOptions {

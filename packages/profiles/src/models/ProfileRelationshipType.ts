@@ -80,7 +80,7 @@ export class ProfileRelationshipType extends SmrtObject {
    * @returns ProfileRelationshipType instance or null if not found
    */
   static async getBySlug(
-    slug: string,
+    _slug: string,
   ): Promise<ProfileRelationshipType | null> {
     // Will be auto-implemented by SMRT
     return null;

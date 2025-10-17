@@ -258,8 +258,8 @@ function validateRedirectUrl(redirectUrl: string): void {
  * Download and extract git repository tarball
  */
 async function downloadTarball(url: string, dest: string): Promise<string> {
-  const REQUEST_TIMEOUT = 30000; // 30 seconds
-  const MAX_TARBALL_SIZE = 100 * 1024 * 1024; // 100 MB
+  const RequestTimeout = 30000; // 30 seconds
+  const MaxTarballSize = 100 * 1024 * 1024; // 100 MB
 
   return new Promise((resolve, reject) => {
     let timedOut = false;
@@ -292,7 +292,7 @@ async function downloadTarball(url: string, dest: string): Promise<string> {
       // Monitor response size
       response.on('data', (chunk) => {
         receivedBytes += chunk.length;
-        if (receivedBytes > MAX_TARBALL_SIZE) {
+        if (receivedBytes > MaxTarballSize) {
           response.destroy(new Error('Tarball size exceeds limit'));
         }
       });
@@ -312,7 +312,7 @@ async function downloadTarball(url: string, dest: string): Promise<string> {
       });
     });
 
-    req.setTimeout(REQUEST_TIMEOUT, () => {
+    req.setTimeout(RequestTimeout, () => {
       timedOut = true;
       req.destroy(new Error('Request timed out'));
     });

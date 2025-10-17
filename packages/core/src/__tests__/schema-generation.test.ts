@@ -46,7 +46,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     const schema = generateSchema(TestEvent);
 
     // Extract the CREATE TABLE statement (before indexes)
-    const createTableStmt = schema.split('\n).')[0] + '\n);';
+    const createTableStmt = `${schema.split('\n).')[0]}\n);`;
 
     // Parse column names from the CREATE TABLE statement
     const columnLines = createTableStmt

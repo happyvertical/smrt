@@ -4,7 +4,7 @@
  * Examples: 'basketball-game', 'concert', 'conference', 'goal', 'period'
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { EventTypeOptions } from '../types';
 
 @smrt({
@@ -101,7 +101,7 @@ export class EventType extends SmrtObject {
    * @param slug - The slug to search for
    * @returns EventType instance or null if not found
    */
-  static async getBySlug(slug: string): Promise<EventType | null> {
+  static async getBySlug(_slug: string): Promise<EventType | null> {
     // Will be auto-implemented by SMRT
     return null;
   }

@@ -157,7 +157,7 @@ export function parseCoordinates(
   const lat = parseFloat(parts[0]);
   const lng = parseFloat(parts[1]);
 
-  if (isNaN(lat) || isNaN(lng)) return null;
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
 
   const validation = validateCoordinates(lat, lng);
   if (!validation.valid) return null;

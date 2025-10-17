@@ -9,8 +9,6 @@ import {
   formatDataSql,
   generateSchema,
   tableNameFromClass,
-  toCamelCase,
-  toSnakeCase,
 } from './utils';
 
 /**
