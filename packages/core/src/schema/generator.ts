@@ -281,13 +281,11 @@ export class SchemaGenerator {
    * Convert class name to table name (camelCase to snake_case, pluralized)
    */
   private classNameToTableName(className: string): string {
-    return (
-      `${className
-        .replace(/([A-Z])/g, '_$1')
-        .toLowerCase()
-        .replace(/^_/, '')
-        .replace(/s$/, '')}s`
-    ); // Simple pluralization
+    return `${className
+      .replace(/([A-Z])/g, '_$1')
+      .toLowerCase()
+      .replace(/^_/, '')
+      .replace(/s$/, '')}s`; // Simple pluralization
   }
 
   /**

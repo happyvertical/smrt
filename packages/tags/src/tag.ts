@@ -165,7 +165,10 @@ export class Tag extends SmrtObject {
    * @param context - Optional context filter
    * @returns Tag instance or null if not found
    */
-  static async getBySlug(_slug: string, _context?: string): Promise<Tag | null> {
+  static async getBySlug(
+    _slug: string,
+    _context?: string,
+  ): Promise<Tag | null> {
     // Will be auto-implemented by SMRT
     return null;
   }

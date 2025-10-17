@@ -3,12 +3,7 @@
  * Generates real TypeScript files in src/routes/api/ based on discovered SMRT objects
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type {
   SmartObjectDefinition,

@@ -59,7 +59,10 @@ export class TagAlias extends SmrtObject {
    * @param language - Optional language filter
    * @returns Array of matching tags
    */
-  static async searchByAlias(_alias: string, _language?: string): Promise<Tag[]> {
+  static async searchByAlias(
+    _alias: string,
+    _language?: string,
+  ): Promise<Tag[]> {
     // Will be auto-implemented by SMRT
     return [];
   }

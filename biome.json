@@ -106,10 +106,7 @@
       }
     },
     {
-      "includes": [
-        "packages/*/src/**/*.ts",
-        "packages/*/src/**/*.tsx"
-      ],
+      "includes": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
       "linter": {
         "rules": {
           "suspicious": {

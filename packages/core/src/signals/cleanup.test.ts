@@ -2,7 +2,7 @@
  * Tests for cleanup and memory leak prevention
  */
 
-import type { SignalAdapter, Signal } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@smrt/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtClass } from '../class.js';
 import { config } from '../config.js';
