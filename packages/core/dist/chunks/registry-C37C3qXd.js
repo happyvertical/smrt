@@ -81,7 +81,7 @@ function classnameToTablename(className) {
 const _setup_table_from_class_promises = {};
 async function setupTableFromClass(db, ClassType) {
   const tableName = classnameToTablename(ClassType.name);
-  if (_setup_table_from_class_promises[tableName] !== void 0 || null) {
+  if (_setup_table_from_class_promises[tableName] !== void 0 && _setup_table_from_class_promises[tableName] !== null) {
     return _setup_table_from_class_promises[tableName];
   }
   _setup_table_from_class_promises[tableName] = (async () => {
@@ -342,7 +342,7 @@ class ObjectRegistry {
     }
     let collectionConstructor = registered.collectionConstructor;
     if (!collectionConstructor) {
-      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-lPtdtcrW.js").then((n) => n.i);
+      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-CMrud5qH.js").then((n) => n.i);
       class DefaultCollection extends SmrtCollectionClass {
         static _itemClass = registered.constructor;
       }
@@ -1019,4 +1019,4 @@ export {
   setupTableFromClass as s,
   tableNameFromClass as t
 };
-//# sourceMappingURL=registry-CB77mwjC.js.map
+//# sourceMappingURL=registry-C37C3qXd.js.map

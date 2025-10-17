@@ -1,7 +1,7 @@
 import { MetricsAdapter } from "./chunks/metrics-uRpAh6uk.js";
 import { PubSubAdapter } from "./chunks/pubsub-BJ1ZU6QU.js";
-import { a as SmrtClass } from "./chunks/collection-lPtdtcrW.js";
-import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-lPtdtcrW.js";
+import { a as SmrtClass } from "./chunks/collection-CMrud5qH.js";
+import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-CMrud5qH.js";
 import { ValidationError, RuntimeError, DatabaseError, ErrorUtils } from "./chunks/errors-Cl0_Kxat.js";
 import { AIError, ConfigurationError, FilesystemError, NetworkError, SmrtError, ValidationReport, ValidationUtils } from "./chunks/errors-Cl0_Kxat.js";
 import { Field } from "./fields.js";
@@ -11,12 +11,12 @@ import { MCPGenerator } from "./generators/mcp.js";
 import { APIGenerator, createRestServer, startRestServer } from "./generators/rest.js";
 import { generateOpenAPISpec, setupSwaggerUI } from "./generators/swagger.js";
 import { getManifest } from "./manifest.js";
-import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-CB77mwjC.js";
-import { b as b2, b as b3 } from "./chunks/registry-CB77mwjC.js";
+import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-C37C3qXd.js";
+import { b as b2, b as b3 } from "./chunks/registry-C37C3qXd.js";
 import { a, c as c2, b as b4 } from "./chunks/server-DwHneUSW.js";
 import { M, c as c3, a as a2, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
-import { s as s2 } from "./chunks/index-oOoyy1TP.js";
-import { staticManifest } from "./chunks/static-manifest-DSTVRkqP.js";
+import { s as s2 } from "./chunks/index-BYcw7_SW.js";
+import { staticManifest } from "./chunks/static-manifest-BPFs-FaZ.js";
 function validateToolCall(methodName, args, allowedMethods) {
   if (!allowedMethods.includes(methodName)) {
     throw ValidationError.invalidValue(
@@ -292,10 +292,6 @@ class SmrtObject extends SmrtClass {
     }
     if (this.options.db) {
       await setupTableFromClass(this.db, this.constructor);
-      await this.db.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_slug_context
-        ON ${this.tableName}(slug, context);
-      `);
     }
     if (this._id && !this.options._skipLoad) {
       await this.loadFromId();

@@ -1,5 +1,5 @@
 import "@have/sql";
-import { m, l, j, f, c, d, g, i, h, k, s, t, e, a } from "./chunks/registry-CB77mwjC.js";
+import { m, l, j, f, c, d, g, i, h, k, s, t, e, a } from "./chunks/registry-C37C3qXd.js";
 import "./chunks/index-9WZDN6n7.js";
 export {
   m as classnameToTablename,

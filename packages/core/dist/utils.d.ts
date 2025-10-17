@@ -165,7 +165,7 @@ export declare function classnameToTablename(className: string): string;
  * // Table 'products' is now ready for use
  * ```
  */
-export declare function setupTableFromClass(db: any, ClassType: any): Promise<void | null>;
+export declare function setupTableFromClass(db: any, ClassType: any): Promise<void>;
 /**
  * Formats data for JavaScript by converting date strings to Date objects
  * and snake_case column names to camelCase properties

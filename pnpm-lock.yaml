@@ -131,6 +131,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@have/sql':
+        specifier: workspace:*
+        version: link:../../sdk/packages/sql
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
@@ -9440,7 +9443,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.2
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.12.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.12.2)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -10579,7 +10582,7 @@ snapshots:
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
 
-  retry-axios@2.6.0(axios@1.12.2(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.12.2):
     dependencies:
       axios: 1.12.2(debug@4.4.3)
 
