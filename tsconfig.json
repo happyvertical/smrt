@@ -25,7 +25,7 @@
     "sourceMap": true,
 
     // Performance
-    // "skipLibCheck": true, // Disabled to catch all type errors in CI
+    "skipLibCheck": true, // Required for workspace packages from SDK
 
     // Let Node.js module resolution handle workspace packages through package.json exports
     "baseUrl": "."
