@@ -15,7 +15,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --apply .",
     "clean": "rm -rf packages/*/dist packages/*/docs packages/*/tsconfig.*.tsbuildinfo .tsbuildinfo dist /*.js /*.d.ts /*.js.map /*.d.ts.map",
-    "build": "pnpm -r --workspace-concurrency=4 run build",
+    "build": "pnpm -r --workspace-concurrency=4 --filter='!@smrt/products' run build",
     "build:clean": "pnpm run clean && pnpm run build",
     "typecheck": "tsc --noEmit",
     "validate-build": "node scripts/validate-build.js",
