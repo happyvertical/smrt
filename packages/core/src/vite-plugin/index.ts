@@ -267,7 +267,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
     transformIndexHtml: {
       order: 'pre',
-      handler: async (html, ctx) => {
+      handler: async (html, _ctx) => {
         // Only provide default HTML if no index.html exists in project
         if (!server) return html;
 
@@ -329,7 +329,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           console.log('[smrt] Using pre-generated static manifest');
           return staticManifest;
         }
-      } catch (error) {
+      } catch (_error) {
         console.warn(
           '[smrt] Static manifest not found, falling back to dynamic scanning',
         );
@@ -1140,7 +1140,7 @@ async function generateCLIModule(
         availableCommands.push(`'${collectionName}:delete'`);
 
       // Custom action methods
-      for (const [methodName, method] of Object.entries(objectDef.methods)) {
+      for (const [methodName, _method] of Object.entries(objectDef.methods)) {
         // Skip private methods and standard CRUD
         if (
           methodName.startsWith('_') ||

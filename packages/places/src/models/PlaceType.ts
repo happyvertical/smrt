@@ -4,7 +4,7 @@
  * Examples: 'country', 'city', 'building', 'zone', 'room', 'region'
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { PlaceTypeOptions } from '../types';
 
 @smrt({
@@ -35,7 +35,7 @@ export class PlaceType extends SmrtObject {
    * @param slug - The slug to search for
    * @returns PlaceType instance or null if not found
    */
-  static async getBySlug(slug: string): Promise<PlaceType | null> {
+  static async getBySlug(_slug: string): Promise<PlaceType | null> {
     // Will be auto-implemented by SMRT
     return null;
   }

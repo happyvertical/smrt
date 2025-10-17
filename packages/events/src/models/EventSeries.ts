@@ -4,7 +4,7 @@
  * Examples: '2024 NBA Finals', 'Summer Tour 2024', 'Town Council 2024'
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { EventSeriesOptions, RecurrencePattern } from '../types';
 
 @smrt({

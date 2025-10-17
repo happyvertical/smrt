@@ -182,7 +182,7 @@ export async function previewApiEndpoints(
     }
 
     // Format as markdown table
-    const markdown = formatEndpointsAsMarkdown(endpoints, className);
+    const _markdown = formatEndpointsAsMarkdown(endpoints, className);
 
     return {
       endpoints,

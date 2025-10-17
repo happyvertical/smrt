@@ -26,7 +26,7 @@ export async function previewMcpTools(
 
     // Get config for this specific class
     const config = ObjectRegistry.getConfig(className);
-    const mcpConfig = config.mcp || {};
+    const _mcpConfig = config.mcp || {};
 
     // Generate tools for all registered objects
     const allTools = generator.generateTools();
@@ -38,7 +38,7 @@ export async function previewMcpTools(
     );
 
     // Format tools as markdown
-    const markdown = formatToolsAsMarkdown(classTools, className);
+    const _markdown = formatToolsAsMarkdown(classTools, className);
 
     return {
       tools: classTools as McpToolDefinition[],

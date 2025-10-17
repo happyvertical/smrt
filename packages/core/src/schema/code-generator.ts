@@ -11,7 +11,7 @@ export class SchemaCodeGenerator {
    * Generate getSchema() method source code
    */
   generateSchemaMethod(
-    objectDef: SmartObjectDefinition,
+    _objectDef: SmartObjectDefinition,
     schema: SchemaDefinition,
   ): string {
     const imports = this.generateImports();

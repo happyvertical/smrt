@@ -50,7 +50,7 @@ export class ProfileMetafield extends SmrtObject {
    * @param slug - The slug to search for
    * @returns ProfileMetafield instance or null if not found
    */
-  static async getBySlug(slug: string): Promise<ProfileMetafield | null> {
+  static async getBySlug(_slug: string): Promise<ProfileMetafield | null> {
     // Will be auto-implemented by SMRT
     return null;
   }

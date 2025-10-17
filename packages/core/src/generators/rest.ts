@@ -69,7 +69,7 @@ export class APIGenerator {
         const request = await this.nodeRequestToWebRequest(req);
         const response = await this.handleRequest(request);
         await this.webResponseToNodeResponse(response, res);
-      } catch (error) {
+      } catch (_error) {
         res.statusCode = 500;
         res.end('Internal Server Error');
       }

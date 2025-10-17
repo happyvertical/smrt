@@ -107,14 +107,24 @@
     },
     {
       "includes": [
-        "packages/ai/src/**/*.ts",
-        "packages/smrt/src/**/*.ts",
-        "packages/sql/src/**/*.ts"
+        "packages/*/src/**/*.ts",
+        "packages/*/src/**/*.tsx"
       ],
       "linter": {
         "rules": {
           "suspicious": {
-            "noExplicitAny": "off"
+            "noExplicitAny": "off",
+            "useAdjacentOverloadSignatures": "off"
+          },
+          "style": {
+            "useNamingConvention": "off"
+          },
+          "complexity": {
+            "noStaticOnlyClass": "off",
+            "noBannedTypes": "off"
+          },
+          "correctness": {
+            "noUnusedVariables": "off"
           }
         }
       }

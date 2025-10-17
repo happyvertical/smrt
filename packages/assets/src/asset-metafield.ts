@@ -53,7 +53,7 @@ export class AssetMetafield extends SmrtObject {
    * @param slug - The slug to search for
    * @returns AssetMetafield instance or null
    */
-  static async getBySlug(slug: string): Promise<AssetMetafield | null> {
+  static async getBySlug(_slug: string): Promise<AssetMetafield | null> {
     // Will be auto-implemented by SMRT
     return null;
   }

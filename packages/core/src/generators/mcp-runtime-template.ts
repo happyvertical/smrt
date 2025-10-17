@@ -10,14 +10,7 @@
  * - Graceful shutdown
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
 import type { MCPConfig, MCPContext } from './mcp.js';
-import { MCPGenerator } from './mcp.js';
 
 export interface RuntimeOptions {
   /** Server name (defaults to package name) */

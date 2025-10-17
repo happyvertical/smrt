@@ -60,7 +60,7 @@ export async function listRegisteredObjects(
     }
 
     // Format as markdown table
-    const markdown = formatObjectsAsMarkdown(objects);
+    const _markdown = formatObjectsAsMarkdown(objects);
 
     return {
       objects,

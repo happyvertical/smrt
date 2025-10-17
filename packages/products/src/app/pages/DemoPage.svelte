@@ -4,12 +4,9 @@
  * Progressive customization: Auto-generated → Custom components
  */
 
-import AutoForm from '../../lib/components/auto-generated/AutoForm.svelte';
-import ProductCard from '../../lib/components/ProductCard.svelte';
-import ProductForm from '../../lib/components/ProductForm.svelte';
 import type { ProductData } from '../../lib/types';
 
-const currentTab = $state<'auto' | 'custom' | 'comparison'>('auto');
+const _currentTab = $state<'auto' | 'custom' | 'comparison'>('auto');
 
 // Sample data for demonstration
 const sampleProduct: ProductData = $state({
@@ -26,17 +23,17 @@ const sampleProduct: ProductData = $state({
   tags: ['demo', 'widget', 'smrt'],
 });
 
-let autoFormData = $state({ ...sampleProduct });
-let customFormData = $state({ ...sampleProduct });
+let _autoFormData = $state({ ...sampleProduct });
+let _customFormData = $state({ ...sampleProduct });
 
-function handleAutoSubmit(data: ProductData) {
+function _handleAutoSubmit(data: ProductData) {
   console.log('Auto form submitted:', data);
-  autoFormData = { ...data };
+  _autoFormData = { ...data };
 }
 
-function handleCustomSubmit(data: ProductData) {
+function _handleCustomSubmit(data: ProductData) {
   console.log('Custom form submitted:', data);
-  customFormData = { ...data };
+  _customFormData = { ...data };
 }
 </script>
 

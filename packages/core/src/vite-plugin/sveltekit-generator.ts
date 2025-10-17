@@ -7,10 +7,9 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { join, relative } from 'node:path';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -272,7 +271,7 @@ async function generateRoutesForObject(
 
     if (apiConfig.exclude && Array.isArray(apiConfig.exclude)) {
       includedActions = includedActions.filter(
-        (action) => !apiConfig.exclude!.includes(action),
+        (action) => !apiConfig.exclude?.includes(action),
       );
     }
   }
@@ -415,11 +414,11 @@ function getSvelteKitImportPath(
  * Generates collection route template (GET list, POST create)
  */
 function generateCollectionRouteTemplate(
-  projectRoot: string,
+  _projectRoot: string,
   className: string,
-  objectDef: SmartObjectDefinition,
+  _objectDef: SmartObjectDefinition,
   includedActions: string[],
-  options: SvelteKitOptions,
+  _options: SvelteKitOptions,
 ): string {
   const hasGet = includedActions.includes('list');
   const hasPost = includedActions.includes('create');
@@ -482,7 +481,7 @@ function generateItemRouteTemplate(
   const hasDelete = includedActions.includes('delete');
 
   // Calculate import path using $lib alias for SvelteKit
-  const importPath = getSvelteKitImportPath(
+  const _importPath = getSvelteKitImportPath(
     projectRoot,
     objectDef.filePath,
     options.objectsDir,
@@ -559,7 +558,7 @@ function generateActionRouteTemplate(
   const paramsList = actionDef.parameters.map((p: any) => p.name).join(', ');
 
   // Calculate import path using $lib alias for SvelteKit
-  const importPath = getSvelteKitImportPath(
+  const _importPath = getSvelteKitImportPath(
     projectRoot,
     objectDef.filePath,
     options.objectsDir,
@@ -630,7 +629,7 @@ function updateGitignore(projectRoot: string, options: SvelteKitOptions): void {
     }
 
     // Add our patterns
-    gitignoreContent += linesToAdd.join('\n') + '\n';
+    gitignoreContent += `${linesToAdd.join('\n')}\n`;
 
     writeFileSync(gitignorePath, gitignoreContent, 'utf-8');
     console.log('[smrt] Updated .gitignore with generated route patterns');

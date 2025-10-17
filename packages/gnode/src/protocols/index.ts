@@ -12,7 +12,7 @@ export interface WebFingerResponse {
 }
 
 export class WebFingerProtocol {
-  static async discover(domain: string): Promise<WebFingerResponse | null> {
+  static async discover(_domain: string): Promise<WebFingerResponse | null> {
     // TODO: Implement WebFinger discovery
     // GET https://example.com/.well-known/gnode
     return null;
@@ -20,7 +20,7 @@ export class WebFingerProtocol {
 }
 
 export class PeerExchangeProtocol {
-  static async exchange(peerUrl: string): Promise<string[]> {
+  static async exchange(_peerUrl: string): Promise<string[]> {
     // TODO: Implement peer list exchange
     // GET /api/federation/peers
     return [];

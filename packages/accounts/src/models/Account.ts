@@ -133,7 +133,7 @@ export class Account extends SmrtObject {
     const ancestors: Account[] = [];
     let currentAccount: Account | null = this;
 
-    while (currentAccount && currentAccount.parentId) {
+    while (currentAccount?.parentId) {
       const parent = await currentAccount.getParent();
       if (!parent) break;
       ancestors.unshift(parent); // Add to beginning
