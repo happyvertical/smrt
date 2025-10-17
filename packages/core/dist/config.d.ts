@@ -1,5 +1,5 @@
 import { LoggerConfig } from '@have/logger';
-import { ISignalAdapter } from '@smrt/types';
+import { SignalAdapter } from '@smrt/types';
 import { SignalBus } from './signals/bus.js';
 import { SanitizationConfig } from './signals/sanitizer.js';
 /**
@@ -39,7 +39,7 @@ export interface GlobalSignalConfig {
         /** Shared signal bus instance */
         bus?: SignalBus;
         /** Additional custom adapters */
-        adapters?: ISignalAdapter[];
+        adapters?: SignalAdapter[];
     };
 }
 /**

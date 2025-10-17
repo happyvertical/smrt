@@ -5,7 +5,7 @@
  * Collects counts, durations, error rates, and success rates.
  */
 
-import type { ISignalAdapter, Signal } from '@smrt/types';
+import type { SignalAdapter, Signal } from '@smrt/types';
 
 /**
  * Execution metrics for a specific method
@@ -57,7 +57,7 @@ export interface MetricsSnapshot {
  * console.log(snapshot.methods['Product.analyze']);
  * ```
  */
-export class MetricsAdapter implements ISignalAdapter {
+export class MetricsAdapter implements SignalAdapter {
   private metrics: Map<string, MethodMetrics> = new Map();
   private totalSignals = 0;
   private startTime = Date.now();

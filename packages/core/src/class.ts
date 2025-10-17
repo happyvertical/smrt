@@ -5,7 +5,7 @@ import { FilesystemAdapter } from '@have/files';
 import type { LoggerConfig } from '@have/logger';
 import type { DatabaseInterface } from '@have/sql';
 import { getDatabase } from '@have/sql';
-import type { ISignalAdapter } from '@smrt/types';
+import type { SignalAdapter } from '@smrt/types';
 import type {
   GlobalSignalConfig,
   MetricsConfig,
@@ -79,7 +79,7 @@ export interface SmrtClassOptions {
     /** Shared signal bus instance */
     bus?: SignalBus;
     /** Additional custom adapters */
-    adapters?: ISignalAdapter[];
+    adapters?: SignalAdapter[];
   };
 }
 
@@ -119,7 +119,7 @@ export class SmrtClass {
   /**
    * Adapters registered by this instance (for cleanup)
    */
-  private _registeredAdapters: ISignalAdapter[] = [];
+  private _registeredAdapters: SignalAdapter[] = [];
 
   /**
    * Configuration options provided to the class

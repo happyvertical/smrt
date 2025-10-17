@@ -4,13 +4,13 @@
  * Tests the complete signal flow from SmrtClass → SignalBus → Adapters
  */
 
-import type { ISignalAdapter, Signal } from '@smrt/types';
+import type { SignalAdapter, Signal } from '@smrt/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtClass } from '../class.js';
 import { config } from '../config.js';
 
 // Mock custom adapter for testing
-class MockAdapter implements ISignalAdapter {
+class MockAdapter implements SignalAdapter {
   public signals: Signal[] = [];
 
   async handle(signal: Signal): Promise<void> {
@@ -254,7 +254,7 @@ describe('Universal Signaling System - Integration', () => {
 
   it('should handle signal emission with error handling', async () => {
     // Adapter that throws errors
-    class ErrorAdapter implements ISignalAdapter {
+    class ErrorAdapter implements SignalAdapter {
       async handle(): Promise<void> {
         throw new Error('Adapter error');
       }

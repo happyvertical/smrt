@@ -15,8 +15,8 @@ import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t 
 import { b as b2, b as b3 } from "./chunks/registry-C37C3qXd.js";
 import { a, c as c2, b as b4 } from "./chunks/server-DwHneUSW.js";
 import { M, c as c3, a as a2, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
-import { s as s2 } from "./chunks/index-BYcw7_SW.js";
-import { staticManifest } from "./chunks/static-manifest-BPFs-FaZ.js";
+import { s as s2 } from "./chunks/index-DZKaIohV.js";
+import { staticManifest } from "./chunks/static-manifest-Bcytjk44.js";
 function validateToolCall(methodName, args, allowedMethods) {
   if (!allowedMethods.includes(methodName)) {
     throw ValidationError.invalidValue(
