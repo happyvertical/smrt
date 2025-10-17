@@ -1,0 +1,32 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "moduleResolution": "bundler"
+  },
+  "include": [
+    "../packages/types/src/**/*",
+    "../packages/core/src/**/*",
+    "../packages/accounts/src/**/*",
+    "../packages/agents/src/**/*",
+    "../packages/assets/src/**/*",
+    "../packages/content/src/**/*",
+    "../packages/events/src/**/*",
+    "../packages/gnode/src/**/*",
+    "../packages/places/src/**/*",
+    "../packages/products/src/**/*",
+    "../packages/profiles/src/**/*",
+    "../packages/tags/src/**/*"
+  ],
+  "exclude": [
+    "src/**/*",
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/dist/**",
+    "**/build/**"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "name": "@smrt/docs",
+  "version": "0.41.0",
+  "private": true,
+  "main": "docusaurus.config.ts",
+  "description": "SMRT Framework Documentation - TypeScript framework for building vertical AI agents",
+  "scripts": {
+    "docusaurus": "docusaurus",
+    "copy-readmes": "node scripts/copy-readmes.js",
+    "prestart": "npm run copy-readmes",
+    "start": "docusaurus start",
+    "prebuild": "npm run copy-readmes",
+    "build": "docusaurus build",
+    "swizzle": "docusaurus swizzle",
+    "deploy": "docusaurus deploy",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "write-translations": "docusaurus write-translations",
+    "write-heading-ids": "docusaurus write-heading-ids",
+    "predev": "npm run copy-readmes",
+    "dev": "docusaurus start",
+    "test": "echo 'No tests for documentation'"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.8.1",
+    "@docusaurus/plugin-ideal-image": "^3.6.3",
+    "@docusaurus/plugin-pwa": "^3.6.3",
+    "@docusaurus/preset-classic": "^3.8.1",
+    "@docusaurus/theme-mermaid": "^3.6.3",
+    "@mdx-js/react": "^3.1.0",
+    "clsx": "^2.1.1",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "^3.8.1",
+    "@docusaurus/tsconfig": "^3.8.1",
+    "@docusaurus/types": "^3.8.1",
+    "@types/node": "24.0.0",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "docusaurus-plugin-typedoc": "^1.1.2",
+    "typedoc": "^0.28.4",
+    "typedoc-plugin-markdown": "^4.6.3",
+    "typescript": "^5.7.3"
+  },
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

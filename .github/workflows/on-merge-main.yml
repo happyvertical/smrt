@@ -102,82 +102,8 @@ jobs:
       - name: Build packages
         run: pnpm run build
 
-      - name: Generate documentation
-        run: |
-          # Generate TypeDoc documentation for all packages
-          pnpm -r --filter='./packages/*' run docs || true
-
-          # Create docs directory structure
-          mkdir -p docs
-
-          # Copy package documentation to docs directory
-          for pkg in packages/*; do
-            if [ -d "$pkg/docs" ]; then
-              pkg_name=$(basename $pkg)
-              mkdir -p "docs/$pkg_name"
-              cp -r "$pkg/docs/"* "docs/$pkg_name/" || true
-            fi
-          done
-
-          # Create index.html for docs root
-          cat > docs/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>SMRT Framework Documentation</title>
-            <style>
-              body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 50px auto; padding: 0 20px; }
-              h1 { color: #333; }
-              ul { list-style: none; padding: 0; }
-              li { margin: 10px 0; }
-              a { color: #0066cc; text-decoration: none; font-size: 1.1em; }
-              a:hover { text-decoration: underline; }
-            </style>
-          </head>
-          <body>
-            <h1>SMRT Framework Documentation</h1>
-            <p>Select a package to view its documentation:</p>
-            <ul id="package-list"></ul>
-            <script>
-              const packages = Array.from(document.querySelectorAll('pre')).map(el => el.textContent.trim());
-              const list = document.getElementById('package-list');
-
-              // Dynamically discover package directories
-              fetch('.')
-                .then(r => r.text())
-                .then(html => {
-                  const parser = new DOMParser();
-                  const doc = parser.parseFromString(html, 'text/html');
-                  const links = Array.from(doc.querySelectorAll('a')).map(a => a.getAttribute('href'));
-                  const packageDirs = links.filter(link => link && link.endsWith('/') && !link.startsWith('.'));
-
-                  packageDirs.forEach(dir => {
-                    const name = dir.replace('/', '');
-                    const li = document.createElement('li');
-                    const a = document.createElement('a');
-                    a.href = dir;
-                    a.textContent = `@smrt/${name}`;
-                    li.appendChild(a);
-                    list.appendChild(li);
-                  });
-                })
-                .catch(() => {
-                  // Fallback: list known packages
-                  ['core', 'types', 'accounts', 'agents', 'assets', 'content', 'events', 'gnode', 'places', 'products', 'profiles', 'tags'].forEach(pkg => {
-                    const li = document.createElement('li');
-                    const a = document.createElement('a');
-                    a.href = `${pkg}/`;
-                    a.textContent = `@smrt/${pkg}`;
-                    li.appendChild(a);
-                    list.appendChild(li);
-                  });
-                });
-            </script>
-          </body>
-          </html>
-          EOF
+      - name: Build documentation site
+        run: pnpm run docs:site:build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -185,7 +111,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './docs'
+          path: './docs/build'
 
       - name: Deploy to GitHub Pages
         id: deployment
