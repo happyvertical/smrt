@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { RuntimeSchemaManager } from './runtime-manager';
 import type { SchemaDefinition } from './types';
 

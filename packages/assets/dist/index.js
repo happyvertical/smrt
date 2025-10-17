@@ -221,16 +221,16 @@ class Asset extends (_d = SmrtObject) {
     if (options.updatedAt) this.updatedAt = options.updatedAt;
   }
   /**
-   * Get all tags for this asset from @have/tags
+   * Get all tags for this asset from @smrt/tags
    *
-   * @returns Array of Tag instances from @have/tags package
+   * @returns Array of Tag instances from @smrt/tags package
    */
   async getTags() {
     const collection = this.getCollection();
     if (!collection) return [];
     const db = await collection.getDb();
     const rows = await db.prepare("SELECT tag_slug FROM asset_tags WHERE asset_id = ?").all(this.id);
-    const { Tag } = await import("@have/tags");
+    const { Tag } = await import("@smrt/tags");
     const tags = [];
     for (const row of rows) {
       const tag = await Tag.getBySlug(row.tag_slug);
@@ -476,10 +476,10 @@ class AssetMetafieldCollection extends SmrtCollection {
 class AssetCollection extends SmrtCollection {
   static _itemClass = Asset;
   /**
-   * Add a tag to an asset (uses @have/tags)
+   * Add a tag to an asset (uses @smrt/tags)
    *
    * @param assetId - The asset ID to tag
-   * @param tagSlug - The tag slug from @have/tags
+   * @param tagSlug - The tag slug from @smrt/tags
    */
   async addTag(assetId, tagSlug) {
     const db = await this.getDb();

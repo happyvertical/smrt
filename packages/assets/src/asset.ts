@@ -6,9 +6,9 @@
 
 import { SmrtObject, smrt } from '@smrt/core';
 import type { Tag } from '@smrt/tags';
-import type { AssetOptions } from './types';
-import type { AssetType } from './asset-type';
 import type { AssetStatus } from './asset-status';
+import type { AssetType } from './asset-type';
+import type { AssetOptions } from './types';
 
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },

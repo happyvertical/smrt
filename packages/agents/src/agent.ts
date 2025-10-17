@@ -1,5 +1,5 @@
-import { SmrtObject, type SmrtObjectOptions } from '@smrt/core';
 import { createLogger, type Logger } from '@have/logger';
+import { SmrtObject, type SmrtObjectOptions } from '@smrt/core';
 import type { AgentStatusType } from './types.js';
 
 /**

@@ -5,11 +5,11 @@
  * for logging, metrics, pub/sub, and other observability needs.
  */
 
-export { SignalBus } from './bus.js';
-export { SignalSanitizer } from './sanitizer.js';
 export type {
+  ISignalAdapter,
   Signal,
   SignalType,
-  ISignalAdapter,
 } from '@smrt/types';
+export { SignalBus } from './bus.js';
 export type { SanitizationConfig } from './sanitizer.js';
+export { SignalSanitizer } from './sanitizer.js';

@@ -7,8 +7,8 @@ import {
   executeToolCall,
   executeToolCalls,
   formatToolResults,
-  validateToolCall,
   type ToolCall,
+  validateToolCall,
 } from './tool-executor';
 
 describe('validateToolCall', () => {

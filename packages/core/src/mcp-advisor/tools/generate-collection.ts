@@ -26,9 +26,7 @@ export async function generateCollection(
     }
 
     if (!itemClassName || !/^[A-Z][a-zA-Z0-9]*$/.test(itemClassName)) {
-      throw new Error(
-        'itemClassName must be in PascalCase (e.g., Product)',
-      );
+      throw new Error('itemClassName must be in PascalCase (e.g., Product)');
     }
 
     // Generate imports

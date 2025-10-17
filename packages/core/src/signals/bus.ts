@@ -5,10 +5,10 @@
  * to registered adapters (logging, metrics, pub/sub, etc.).
  */
 
-import type { Signal, ISignalAdapter } from '@smrt/types';
 import { makeId } from '@have/utils';
-import { SignalSanitizer } from './sanitizer.js';
+import type { ISignalAdapter, Signal } from '@smrt/types';
 import type { SanitizationConfig } from './sanitizer.js';
+import { SignalSanitizer } from './sanitizer.js';
 
 /**
  * Central signal distribution bus

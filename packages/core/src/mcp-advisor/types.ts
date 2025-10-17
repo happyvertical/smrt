@@ -46,7 +46,14 @@ export interface AddAiMethodsInput {
 export interface GenerateFieldDefinitionsInput {
   fields: Array<{
     name: string;
-    type: 'text' | 'integer' | 'decimal' | 'boolean' | 'datetime' | 'json' | 'foreignKey';
+    type:
+      | 'text'
+      | 'integer'
+      | 'decimal'
+      | 'boolean'
+      | 'datetime'
+      | 'json'
+      | 'foreignKey';
     options?: Record<string, any>;
   }>;
 }

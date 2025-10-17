@@ -6,32 +6,31 @@
  * @packageDocumentation
  */
 
+// Export collections
+export { PlaceCollection } from './collections/PlaceCollection';
+export { PlaceTypeCollection } from './collections/PlaceTypeCollection';
 // Export models
 export { Place } from './models/Place';
 export { PlaceType } from './models/PlaceType';
 
-// Export collections
-export { PlaceCollection } from './collections/PlaceCollection';
-export { PlaceTypeCollection } from './collections/PlaceTypeCollection';
-
 // Export types
 export type {
-  PlaceOptions,
-  PlaceTypeOptions,
   GeoData,
   LookupOrCreateOptions,
   PlaceHierarchy,
+  PlaceOptions,
+  PlaceTypeOptions,
 } from './types';
 
 // Export utilities
 export {
-  mapLocationTypeToPlaceType,
-  locationToGeoData,
-  validateCoordinates,
+  areCoordinatesNear,
   calculateDistance,
   formatCoordinates,
-  parseCoordinates,
-  normalizeAddressComponents,
   generateDisplayName,
-  areCoordinatesNear,
+  locationToGeoData,
+  mapLocationTypeToPlaceType,
+  normalizeAddressComponents,
+  parseCoordinates,
+  validateCoordinates,
 } from './utils';

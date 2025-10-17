@@ -5,8 +5,8 @@
  * into AI tool format at build time for use with LLM function calling.
  */
 
-import type { MethodDefinition } from '../scanner/types';
 import type { AITool } from '@have/ai';
+import type { MethodDefinition } from '../scanner/types';
 
 /**
  * Configuration for AI-callable methods

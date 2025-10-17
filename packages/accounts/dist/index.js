@@ -121,14 +121,13 @@ class Account extends (_a = SmrtObject) {
     if (!this.parentId) return null;
     const { AccountCollection: AccountCollection2 } = await Promise.resolve().then(() => AccountCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection2({
+    const collection = await AccountCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.get({ id: this.parentId });
   }
   /**
@@ -139,14 +138,13 @@ class Account extends (_a = SmrtObject) {
   async getChildren() {
     const { AccountCollection: AccountCollection2 } = await Promise.resolve().then(() => AccountCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection2({
+    const collection = await AccountCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.list({ where: { parentId: this.id } });
   }
   /**
@@ -229,14 +227,13 @@ class Account extends (_a = SmrtObject) {
   async getTransactionEntries() {
     const { AccountTransactionEntryCollection: AccountTransactionEntryCollection2 } = await Promise.resolve().then(() => AccountTransactionEntryCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionEntryCollection2({
+    const collection = await AccountTransactionEntryCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.list({ where: { accountId: this.id } });
   }
   /**
@@ -321,14 +318,13 @@ class AccountTransaction extends (_b = SmrtObject) {
   async getEntries() {
     const { AccountTransactionEntryCollection: AccountTransactionEntryCollection2 } = await Promise.resolve().then(() => AccountTransactionEntryCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionEntryCollection2({
+    const collection = await AccountTransactionEntryCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.list({ where: { transactionId: this.id } });
   }
   /**
@@ -434,14 +430,13 @@ let _AccountTransactionEntry = class _AccountTransactionEntry extends (_c = Smrt
     if (!this.transactionId) return null;
     const { AccountTransactionCollection: AccountTransactionCollection2 } = await Promise.resolve().then(() => AccountTransactionCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionCollection2({
+    const collection = await AccountTransactionCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.get({ id: this.transactionId });
   }
   /**
@@ -453,14 +448,13 @@ let _AccountTransactionEntry = class _AccountTransactionEntry extends (_c = Smrt
     if (!this.accountId) return null;
     const { AccountCollection: AccountCollection2 } = await Promise.resolve().then(() => AccountCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection2({
+    const collection = await AccountCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.get({ id: this.accountId });
   }
   /**

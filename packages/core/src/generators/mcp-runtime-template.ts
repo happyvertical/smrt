@@ -247,7 +247,9 @@ main().catch((error) => {
  * @param serverPath - Path to generated server file (relative to package root)
  * @returns Script command for package.json
  */
-export function generateMCPScript(serverPath: string = 'dist/mcp-server.js'): string {
+export function generateMCPScript(
+  serverPath: string = 'dist/mcp-server.js',
+): string {
   return `node ${serverPath}`;
 }
 

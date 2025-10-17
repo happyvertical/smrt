@@ -2,9 +2,9 @@
  * Tests for PubSubAdapter
  */
 
-import { describe, expect, it, beforeEach } from 'vitest';
-import { PubSubAdapter } from './pubsub.js';
 import type { Signal } from '@smrt/types';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { PubSubAdapter } from './pubsub.js';
 
 describe('PubSubAdapter', () => {
   let adapter: PubSubAdapter;

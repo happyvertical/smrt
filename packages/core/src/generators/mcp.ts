@@ -4,17 +4,16 @@
  * Exposes smrt objects as AI tools for Claude, GPT, and other AI models
  */
 
-import { writeFile } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import {
-  generateRuntimeBootstrap,
-  generateMCPScript,
   generateClaudeConfig,
   generateMCPDocumentation,
+  generateMCPScript,
+  generateRuntimeBootstrap,
   type RuntimeOptions,
 } from './mcp-runtime-template.js';
 
@@ -685,25 +684,27 @@ export class MCPGenerator {
    * });
    * ```
    */
-  async generateServer(options: {
-    /** Path to output server file (relative or absolute) */
-    outputPath?: string;
+  async generateServer(
+    options: {
+      /** Path to output server file (relative or absolute) */
+      outputPath?: string;
 
-    /** Server name for configuration */
-    serverName?: string;
+      /** Server name for configuration */
+      serverName?: string;
 
-    /** Server version */
-    serverVersion?: string;
+      /** Server version */
+      serverVersion?: string;
 
-    /** Enable debug logging */
-    debug?: boolean;
+      /** Enable debug logging */
+      debug?: boolean;
 
-    /** Generate Claude Desktop configuration example */
-    generateClaudeConfigFile?: boolean;
+      /** Generate Claude Desktop configuration example */
+      generateClaudeConfigFile?: boolean;
 
-    /** Generate README documentation */
-    generateReadme?: boolean;
-  } = {}): Promise<void> {
+      /** Generate README documentation */
+      generateReadme?: boolean;
+    } = {},
+  ): Promise<void> {
     const {
       outputPath = 'dist/mcp-server.js',
       serverName = this.config.name || 'smrt-mcp-server',

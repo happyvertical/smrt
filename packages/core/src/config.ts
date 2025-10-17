@@ -8,9 +8,9 @@
  * 3. Runtime behavior (from merged config)
  */
 
-import type { SignalBus } from './signals/bus.js';
-import type { ISignalAdapter } from '@smrt/types';
 import type { LoggerConfig } from '@have/logger';
+import type { ISignalAdapter } from '@smrt/types';
+import type { SignalBus } from './signals/bus.js';
 import type { SanitizationConfig } from './signals/sanitizer.js';
 
 /**
@@ -168,6 +168,7 @@ config.toJSON = (): GlobalSignalConfig => SmrtConfig.getInstance().getConfig();
  *
  * @returns JSON string representation of configuration
  */
-config.toString = (): string => JSON.stringify(SmrtConfig.getInstance().getConfig(), null, 2);
+config.toString = (): string =>
+  JSON.stringify(SmrtConfig.getInstance().getConfig(), null, 2);
 
 export { config };

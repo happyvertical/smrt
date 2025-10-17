@@ -3,9 +3,9 @@
  */
 
 export { ProfileCollection } from './ProfileCollection';
-export { ProfileTypeCollection } from './ProfileTypeCollection';
-export { ProfileMetafieldCollection } from './ProfileMetafieldCollection';
 export { ProfileMetadataCollection } from './ProfileMetadataCollection';
+export { ProfileMetafieldCollection } from './ProfileMetafieldCollection';
 export { ProfileRelationshipCollection } from './ProfileRelationshipCollection';
-export { ProfileRelationshipTypeCollection } from './ProfileRelationshipTypeCollection';
 export { ProfileRelationshipTermCollection } from './ProfileRelationshipTermCollection';
+export { ProfileRelationshipTypeCollection } from './ProfileRelationshipTypeCollection';
+export { ProfileTypeCollection } from './ProfileTypeCollection';

@@ -30,9 +30,9 @@
 import type { SmrtCollection } from './collection';
 import type { SmrtObject } from './object';
 import {
+  classnameToTablename,
   generateSchema,
   tableNameFromClass,
-  classnameToTablename,
 } from './utils';
 
 /**
@@ -573,7 +573,8 @@ export class ObjectRegistry {
           // Infer field type from primitive value
           let fieldType = 'text'; // default
           if (valueType === 'string') fieldType = 'text';
-          else if (valueType === 'number') fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
+          else if (valueType === 'number')
+            fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
           else if (valueType === 'boolean') fieldType = 'boolean';
           else if (value instanceof Date) fieldType = 'datetime';
           else if (Array.isArray(value)) fieldType = 'json';
@@ -582,7 +583,7 @@ export class ObjectRegistry {
 
           fields.set(key, {
             type: fieldType,
-            options: {}
+            options: {},
           });
         }
       }
@@ -1282,7 +1283,9 @@ export class ObjectRegistry {
   static async loadFromDatabase(
     db: import('@have/sql').DatabaseInterface,
   ): Promise<any[]> {
-    const { rows } = await db.query('SELECT * FROM _smrt_registry ORDER BY class_name');
+    const { rows } = await db.query(
+      'SELECT * FROM _smrt_registry ORDER BY class_name',
+    );
     return rows;
   }
 }
@@ -1323,7 +1326,7 @@ export function smrt(config: SmartObjectConfig = {}) {
       value: tableName,
       writable: false,
       enumerable: false,
-      configurable: false
+      configurable: false,
     });
 
     // Register with the captured table name

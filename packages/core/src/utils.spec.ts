@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
-import { fieldsFromClass } from './utils';
-import { smrt } from './registry';
+import { datetime, integer, text } from './fields';
 import { SmrtObject } from './object';
-import { text, integer, datetime } from './fields';
+import { smrt } from './registry';
+import { fieldsFromClass } from './utils';
 
 // import { contentToString, stringToContent } from '@have/content';
 // import { faker } from '@faker-js/faker';

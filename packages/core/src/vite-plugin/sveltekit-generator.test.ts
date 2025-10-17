@@ -2,9 +2,9 @@
  * Tests for SvelteKit route generator
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
 
 // Mock node:fs module

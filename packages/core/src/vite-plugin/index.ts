@@ -4,7 +4,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Plugin, ViteDevServer } from 'vite';
 import type { SmartObjectManifest } from '../scanner/types';
@@ -1108,8 +1108,7 @@ async function generateCLIModule(
       // Determine which operations to include
       const excluded =
         (typeof cliConfig === 'object' ? cliConfig.exclude : []) || [];
-      const included =
-        typeof cliConfig === 'object' ? cliConfig.include : null;
+      const included = typeof cliConfig === 'object' ? cliConfig.include : null;
 
       const shouldInclude = (command: string) => {
         if (included && !included.includes(command)) return false;

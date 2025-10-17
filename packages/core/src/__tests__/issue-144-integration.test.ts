@@ -5,10 +5,10 @@
  * that collections can be created without duplicate column errors.
  */
 
-import { describe, it, expect, afterAll } from 'vitest';
 import { unlinkSync } from 'node:fs';
-import { SmrtObject } from '../object';
+import { afterAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
+import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 import { generateSchema } from '../utils';
 

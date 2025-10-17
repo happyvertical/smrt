@@ -4,9 +4,9 @@
  * Verifies that generateSchema() produces valid SQL without duplicate columns.
  */
 
-import { describe, it, expect } from 'vitest';
-import { generateSchema, tableNameFromClass } from '../utils';
+import { describe, expect, it } from 'vitest';
 import { SmrtObject, smrt, text } from '../index';
+import { generateSchema, tableNameFromClass } from '../utils';
 
 describe('Issue #144: Schema Generation Duplicate Columns', () => {
   @smrt()
@@ -51,13 +51,17 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     // Parse column names from the CREATE TABLE statement
     const columnLines = createTableStmt
       .split('\n')
-      .filter(line => line.trim() && !line.includes('CREATE TABLE') && !line.includes(');'))
-      .map(line => line.trim().split(' ')[0].replace(',', ''));
+      .filter(
+        (line) =>
+          line.trim() && !line.includes('CREATE TABLE') && !line.includes(');'),
+      )
+      .map((line) => line.trim().split(' ')[0].replace(',', ''));
 
     // Check for duplicate column names
     const columnCounts = new Map<string, number>();
     for (const col of columnLines) {
-      if (col && !col.includes('UNIQUE')) { // Skip UNIQUE constraint line
+      if (col && !col.includes('UNIQUE')) {
+        // Skip UNIQUE constraint line
         columnCounts.set(col, (columnCounts.get(col) || 0) + 1);
       }
     }

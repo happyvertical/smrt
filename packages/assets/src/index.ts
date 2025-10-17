@@ -6,22 +6,21 @@
  * @packageDocumentation
  */
 
+export { Asset } from './asset';
+export { AssetMetafield } from './asset-metafield';
+export { AssetMetafieldCollection } from './asset-metafields';
+export { AssetStatus } from './asset-status';
+export { AssetStatusCollection } from './asset-statuses';
 // Export models
 export { AssetType } from './asset-type';
-export { AssetStatus } from './asset-status';
-export { AssetMetafield } from './asset-metafield';
-export { Asset } from './asset';
-
 // Export collections
 export { AssetTypeCollection } from './asset-types';
-export { AssetStatusCollection } from './asset-statuses';
-export { AssetMetafieldCollection } from './asset-metafields';
 export { AssetCollection } from './assets';
 
 // Export types
 export type {
-  AssetTypeOptions,
-  AssetStatusOptions,
   AssetMetafieldOptions,
   AssetOptions,
+  AssetStatusOptions,
+  AssetTypeOptions,
 } from './types';

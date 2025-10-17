@@ -5,8 +5,13 @@
  * Uses UUID primary key with foreign key to ProfileRelationship.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
-import { foreignKey, datetime } from '@smrt/core';
+import {
+  datetime,
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@smrt/core';
 
 export interface ProfileRelationshipTermOptions extends SmrtObjectOptions {
   relationshipId?: string;
