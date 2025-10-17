@@ -18,7 +18,7 @@ export class Event extends SmrtObject {
   seriesId = ''; // FK to EventSeries (nullable for standalone events)
   parentEventId = ''; // FK to Event (nullable, self-referencing for hierarchy)
   typeId = ''; // FK to EventType
-  placeId = ''; // FK to Place (from @have/places)
+  placeId = ''; // FK to Place (from @smrt/places)
   description = '';
   startDate: Date | null = null;
   endDate: Date | null = null;
@@ -118,8 +118,7 @@ export class Event extends SmrtObject {
     const { EventSeriesCollection } = await import(
       '../collections/EventSeriesCollection'
     );
-    const collection = new EventSeriesCollection(this.options);
-    await collection.initialize();
+    const collection = await EventSeriesCollection.create(this.options);
 
     return await collection.get({ id: this.seriesId });
   }
@@ -135,8 +134,7 @@ export class Event extends SmrtObject {
     const { EventTypeCollection } = await import(
       '../collections/EventTypeCollection'
     );
-    const collection = new EventTypeCollection(this.options);
-    await collection.initialize();
+    const collection = await EventTypeCollection.create(this.options);
 
     return await collection.get({ id: this.typeId });
   }
@@ -150,12 +148,12 @@ export class Event extends SmrtObject {
     if (!this.placeId) return null;
 
     try {
-      const { PlaceCollection } = await import('@have/places');
+      const { PlaceCollection } = await import('@smrt/places');
       const collection = await PlaceCollection.create(this.options);
 
       return await collection.get({ id: this.placeId });
     } catch {
-      // @have/places not available
+      // @smrt/places not available
       return null;
     }
   }
@@ -169,8 +167,7 @@ export class Event extends SmrtObject {
     if (!this.parentEventId) return null;
 
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = new EventCollection(this.options);
-    await collection.initialize();
+    const collection = await EventCollection.create(this.options);
 
     return await collection.get({ id: this.parentEventId });
   }
@@ -182,8 +179,7 @@ export class Event extends SmrtObject {
    */
   async getChildren(): Promise<Event[]> {
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = new EventCollection(this.options);
-    await collection.initialize();
+    const collection = await EventCollection.create(this.options);
 
     return await collection.list({ where: { parentEventId: this.id } });
   }
@@ -265,8 +261,7 @@ export class Event extends SmrtObject {
     const { EventParticipantCollection } = await import(
       '../collections/EventParticipantCollection'
     );
-    const collection = new EventParticipantCollection(this.options);
-    await collection.initialize();
+    const collection = await EventParticipantCollection.create(this.options);
 
     return await collection.list({ where: { eventId: this.id } });
   }
