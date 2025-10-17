@@ -23,6 +23,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@have/logger": "workspace:*",
     "@smrt/core": "workspace:*"
   },
   "devDependencies": {

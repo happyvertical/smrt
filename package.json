@@ -57,6 +57,23 @@
     "vite-plugin-dts": "4.5.4",
     "vitest": "3.2.4"
   },
+  "pnpm": {
+    "overrides": {
+      "@have/ai": "workspace:*",
+      "@have/cache": "workspace:*",
+      "@have/config": "workspace:*",
+      "@have/documents": "workspace:*",
+      "@have/files": "workspace:*",
+      "@have/geo": "workspace:*",
+      "@have/logger": "workspace:*",
+      "@have/ocr": "workspace:*",
+      "@have/pdf": "workspace:*",
+      "@have/spider": "workspace:*",
+      "@have/sql": "workspace:*",
+      "@have/translator": "workspace:*",
+      "@have/utils": "workspace:*"
+    }
+  },
   "resolutions": {
     "@types/node": "24.0.0"
   },
