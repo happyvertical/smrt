@@ -7,8 +7,8 @@ set -euo pipefail
 
 # Configuration
 SERVER_NAME="SMRT Advisor MCP Server"
-SDK_ROOT="${SDK_ROOT:-$(dirname "$0")/../..}"
-SERVER_SCRIPT="$SDK_ROOT/packages/core/smrt/src/mcp-advisor/index.ts"
+SMRT_ROOT="${SMRT_ROOT:-$(dirname "$0")/../..}"
+SERVER_SCRIPT="$SMRT_ROOT/packages/core/src/mcp-advisor/index.ts"
 LOG_FILE="/tmp/smrt-advisor-mcp-server.log"
 PID_FILE="/tmp/smrt-advisor-mcp-server.pid"
 DEBUG="${DEBUG:-false}"
@@ -88,7 +88,7 @@ health_check() {
 start_server() {
     log "Starting $SERVER_NAME..."
 
-    cd "$SDK_ROOT" || error "Cannot change to SDK root directory"
+    cd "$SMRT_ROOT" || error "Cannot change to SMRT root directory"
 
     # Set DEBUG environment variable if needed
     export DEBUG="$DEBUG"

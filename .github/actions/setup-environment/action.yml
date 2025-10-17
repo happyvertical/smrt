@@ -93,13 +93,39 @@ runs:
       if: inputs.install-deps == 'true'
       shell: bash
       run: |
-        # In CI, activate overrides to use local SDK workspace packages
-        if [ -f .pnpmrc-ci ]; then
-          echo "Activating CI-specific .pnpmrc for local SDK overrides"
-          cp .pnpmrc-ci .pnpmrc
-          # Use --no-frozen-lockfile when SDK workspace is present
-          # because overrides convert npm packages to workspace packages
-          # which changes lockfile structure
+        # In CI, add pnpm overrides to package.json for SDK workspace resolution
+        if [ -d sdk/packages ]; then
+          echo "Adding pnpm overrides for SDK workspace packages to package.json"
+
+          # Use node to add overrides to package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+
+            // Add pnpm.overrides section
+            pkg.pnpm = pkg.pnpm || {};
+            pkg.pnpm.overrides = {
+              '@have/ai': 'workspace:*',
+              '@have/cache': 'workspace:*',
+              '@have/config': 'workspace:*',
+              '@have/documents': 'workspace:*',
+              '@have/email': 'workspace:*',
+              '@have/files': 'workspace:*',
+              '@have/geo': 'workspace:*',
+              '@have/languages': 'workspace:*',
+              '@have/logger': 'workspace:*',
+              '@have/ocr': 'workspace:*',
+              '@have/pdf': 'workspace:*',
+              '@have/spider': 'workspace:*',
+              '@have/sql': 'workspace:*',
+              '@have/translator': 'workspace:*',
+              '@have/utils': 'workspace:*'
+            };
+
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            console.log('✓ Added SDK workspace overrides to package.json');
+          "
+
           echo "Installing with SDK workspace packages (--no-frozen-lockfile)"
           pnpm install --no-frozen-lockfile
         else
