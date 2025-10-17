@@ -139,11 +139,4 @@ runs:
     - name: Install Playwright browsers
       if: inputs.install-deps == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: |
-        # Check if playwright is installed as a dependency
-        if npx playwright --version >/dev/null 2>&1; then
-          echo "Installing Playwright browsers..."
-          npx playwright install --with-deps chromium
-        else
-          echo "Playwright not installed, skipping browser installation"
-        fi
+      run: npx playwright install --with-deps chromium
