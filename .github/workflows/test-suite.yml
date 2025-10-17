@@ -47,10 +47,8 @@ jobs:
           install-deps: 'true'
 
       - name: Build SDK packages
-        run: |
-          cd sdk
-          pnpm install --frozen-lockfile
-          pnpm -r --filter='./packages/*' run build
+        working-directory: ./sdk
+        run: pnpm -r --filter='!docs' --filter='!test-town-gnode' run build
 
       - name: Build packages
         run: pnpm run build
