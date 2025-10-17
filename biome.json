@@ -6,6 +6,10 @@
       "docs/src/**/*.{js,ts,tsx,jsx}",
       "*.{js,ts,tsx,jsx}"
     ],
+    "experimentalScannerIgnores": [
+      "**/static-manifest.ts",
+      "**/static-manifest.json"
+    ],
     "ignoreUnknown": true
   },
   "vcs": {
