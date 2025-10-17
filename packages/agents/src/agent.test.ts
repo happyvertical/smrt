@@ -1,4 +1,3 @@
-import { getModuleConfig } from '@have/config';
 import { smrt } from '@smrt/core';
 import { describe, expect, it } from 'vitest';
 import { Agent } from './agent.js';
@@ -11,10 +10,10 @@ interface TestAgentConfig {
 
 @smrt()
 class TestAgent extends Agent {
-  protected config = getModuleConfig<TestAgentConfig>('test-agent', {
+  protected config: TestAgentConfig = {
     maxItems: 10,
     enabled: true,
-  });
+  };
 
   // Agent-specific state (automatically persisted)
   itemsProcessed: number = 0;
