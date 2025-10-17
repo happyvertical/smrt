@@ -27,7 +27,10 @@
     "release:test": "node scripts/release-helper.js test",
     "release:validate": "node scripts/release-helper.js validate",
     "release:full": "node scripts/release-helper.js full",
-    "smrt": "pnpm --filter @smrt/core cli"
+    "smrt": "pnpm --filter @smrt/core cli",
+    "docs:site": "npm run --prefix docs start",
+    "docs:site:build": "npm run --prefix docs build",
+    "docs:site:dev": "npm run --prefix docs dev"
   },
   "devDependencies": {
     "@anolilab/semantic-release-pnpm": "^2.0.4",
