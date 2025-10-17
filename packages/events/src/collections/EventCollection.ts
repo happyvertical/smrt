@@ -153,7 +153,7 @@ export class EventCollection extends SmrtCollection<Event> {
       }
       if (filters.status) {
         if (Array.isArray(filters.status)) {
-          events = events.filter((e) => filters.status!.includes(e.status));
+          events = events.filter((e) => filters.status?.includes(e.status));
         } else {
           events = events.filter((e) => e.status === filters.status);
         }

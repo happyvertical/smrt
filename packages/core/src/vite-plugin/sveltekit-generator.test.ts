@@ -81,7 +81,7 @@ describe('SvelteKit Route Generator', () => {
         .mocked(writeFileSync)
         .mock.calls.find((call) => call[0].toString().endsWith('smrt.ts'));
       expect(configCall).toBeDefined();
-      const configContent = configCall![1] as string;
+      const configContent = configCall?.[1] as string;
 
       expect(configContent).toContain('objectOverrides');
       expect(configContent).toContain('getDefaultConfig');
@@ -201,7 +201,7 @@ describe('SvelteKit Route Generator', () => {
         );
 
       expect(collectionRoute).toBeDefined();
-      const content = collectionRoute![1] as string;
+      const content = collectionRoute?.[1] as string;
 
       // Should import from centralized config
       expect(content).toContain(
@@ -256,7 +256,7 @@ describe('SvelteKit Route Generator', () => {
         );
 
       expect(itemRoute).toBeDefined();
-      const content = itemRoute![1] as string;
+      const content = itemRoute?.[1] as string;
 
       // Should use centralized config
       expect(content).toContain(
@@ -320,7 +320,7 @@ describe('SvelteKit Route Generator', () => {
         );
 
       expect(analyzeRoute).toBeDefined();
-      const analyzeContent = analyzeRoute![1] as string;
+      const analyzeContent = analyzeRoute?.[1] as string;
 
       expect(analyzeContent).toContain(
         "import { getCollection } from '$lib/server/smrt'",
@@ -424,7 +424,7 @@ describe('SvelteKit Route Generator', () => {
         );
 
       expect(itemRoute).toBeDefined();
-      const content = itemRoute![1] as string;
+      const content = itemRoute?.[1] as string;
 
       // Should include GET and PUT
       expect(content).toContain('export const GET: RequestHandler');
@@ -512,7 +512,7 @@ describe('SvelteKit Route Generator', () => {
         .mock.calls.find((call) => call[0].toString().endsWith('.gitignore'));
 
       expect(gitignoreWrite).toBeDefined();
-      const content = gitignoreWrite![1] as string;
+      const content = gitignoreWrite?.[1] as string;
 
       expect(content).toContain('# SMRT auto-generated routes');
       expect(content).toContain('src/routes/api/**/+server.ts');
@@ -586,7 +586,7 @@ describe('SvelteKit Route Generator', () => {
         .mock.calls.find((call) => call[0].toString().endsWith('.gitignore'));
 
       expect(gitignoreWrite).toBeDefined();
-      const content = gitignoreWrite![1] as string;
+      const content = gitignoreWrite?.[1] as string;
 
       expect(content).toContain('# SMRT auto-generated routes');
       expect(content).toContain('src/routes/api/**/+server.ts');

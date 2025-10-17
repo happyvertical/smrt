@@ -35,18 +35,17 @@ export async function getObjectSchema(
     }
 
     // Format output based on requested format
-    let output: string;
+    let _output: string;
 
     switch (format) {
       case 'typescript':
-        output = formatAsTypeScript(className, fields);
+        _output = formatAsTypeScript(className, fields);
         break;
       case 'table':
-        output = formatAsMarkdownTable(className, fields);
+        _output = formatAsMarkdownTable(className, fields);
         break;
-      case 'json':
       default:
-        output = JSON.stringify({ className, fields }, null, 2);
+        _output = JSON.stringify({ className, fields }, null, 2);
         break;
     }
 

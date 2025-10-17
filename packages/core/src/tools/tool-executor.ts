@@ -136,7 +136,7 @@ export async function executeToolCall(
     // Parse arguments
     try {
       args = JSON.parse(toolCall.function.arguments);
-    } catch (parseError) {
+    } catch (_parseError) {
       throw ValidationError.invalidValue(
         'arguments',
         toolCall.function.arguments,

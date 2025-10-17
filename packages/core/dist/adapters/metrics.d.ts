@@ -1,4 +1,4 @@
-import { ISignalAdapter, Signal } from '@smrt/types';
+import { SignalAdapter, Signal } from '@smrt/types';
 /**
  * Execution metrics for a specific method
  */
@@ -47,7 +47,7 @@ export interface MetricsSnapshot {
  * console.log(snapshot.methods['Product.analyze']);
  * ```
  */
-export declare class MetricsAdapter implements ISignalAdapter {
+export declare class MetricsAdapter implements SignalAdapter {
     private metrics;
     private totalSignals;
     private startTime;

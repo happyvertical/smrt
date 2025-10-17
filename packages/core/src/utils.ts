@@ -288,8 +288,7 @@ export function classnameToTablename(className: string) {
 /**
  * Cache of table setup promises to avoid duplicate setup operations
  */
-const _setup_table_from_class_promises: Record<string, Promise<void> | null> =
-  {};
+const _setupTableFromClassPromises: Record<string, Promise<void> | null> = {};
 
 /**
  * Sets up database tables for a class with caching to prevent duplicate operations
@@ -312,13 +311,13 @@ export async function setupTableFromClass(db: any, ClassType: any) {
   const tableName = classnameToTablename(ClassType.name);
 
   if (
-    _setup_table_from_class_promises[tableName] !== undefined &&
-    _setup_table_from_class_promises[tableName] !== null
+    _setupTableFromClassPromises[tableName] !== undefined &&
+    _setupTableFromClassPromises[tableName] !== null
   ) {
-    return _setup_table_from_class_promises[tableName];
+    return _setupTableFromClassPromises[tableName];
   }
 
-  _setup_table_from_class_promises[tableName] = (async () => {
+  _setupTableFromClassPromises[tableName] = (async () => {
     try {
       const className = ClassType.name;
 
@@ -331,12 +330,12 @@ export async function setupTableFromClass(db: any, ClassType: any) {
 
       // Always generate fresh schema to ensure latest field mapping is used
       const schema = generateSchema(ClassType, cachedFields);
-      let primaryKeyColumn = 'id'; // default
+      let _primaryKeyColumn = 'id'; // default
 
       if (cachedFields.size > 0) {
         for (const [key, field] of cachedFields.entries()) {
           if (field.options?.primaryKey) {
-            primaryKeyColumn = toSnakeCase(key);
+            _primaryKeyColumn = toSnakeCase(key);
             break;
           }
         }
@@ -344,12 +343,12 @@ export async function setupTableFromClass(db: any, ClassType: any) {
 
       await syncSchema({ db, schema });
     } catch (error) {
-      _setup_table_from_class_promises[tableName] = null; // Allow retry on failure
+      _setupTableFromClassPromises[tableName] = null; // Allow retry on failure
       throw error;
     }
   })();
 
-  return _setup_table_from_class_promises[tableName];
+  return _setupTableFromClassPromises[tableName];
 }
 
 /**

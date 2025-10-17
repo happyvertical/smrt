@@ -2,7 +2,7 @@ import { AIClientOptions, AIClient } from '@have/ai';
 import { FilesystemAdapterOptions, FilesystemAdapter } from '@have/files';
 import { LoggerConfig } from '@have/logger';
 import { DatabaseInterface } from '@have/sql';
-import { ISignalAdapter } from '@smrt/types';
+import { SignalAdapter } from '@smrt/types';
 import { MetricsConfig, PubSubConfig } from './config.js';
 import { SignalBus } from './signals/bus.js';
 /**
@@ -58,7 +58,7 @@ export interface SmrtClassOptions {
         /** Shared signal bus instance */
         bus?: SignalBus;
         /** Additional custom adapters */
-        adapters?: ISignalAdapter[];
+        adapters?: SignalAdapter[];
     };
 }
 /**

@@ -101,7 +101,7 @@ export interface Signal {
  * Adapters are fire-and-forget - errors are caught and logged
  * but don't interrupt the main execution flow.
  */
-export interface ISignalAdapter {
+export interface SignalAdapter {
   /**
    * Handle a signal event
    *

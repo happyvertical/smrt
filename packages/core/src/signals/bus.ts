@@ -6,7 +6,7 @@
  */
 
 import { makeId } from '@have/utils';
-import type { ISignalAdapter, Signal } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@smrt/types';
 import type { SanitizationConfig } from './sanitizer.js';
 import { SignalSanitizer } from './sanitizer.js';
 
@@ -17,7 +17,7 @@ import { SignalSanitizer } from './sanitizer.js';
  * with fire-and-forget error handling.
  */
 export class SignalBus {
-  private adapters: ISignalAdapter[] = [];
+  private adapters: SignalAdapter[] = [];
   private sanitizer?: SignalSanitizer;
 
   /**
@@ -36,7 +36,7 @@ export class SignalBus {
    *
    * @param adapter - Adapter to register
    */
-  register(adapter: ISignalAdapter): void {
+  register(adapter: SignalAdapter): void {
     this.adapters.push(adapter);
   }
 
@@ -48,7 +48,7 @@ export class SignalBus {
    * @param adapter - Adapter to unregister
    * @returns True if adapter was found and removed
    */
-  unregister(adapter: ISignalAdapter): boolean {
+  unregister(adapter: SignalAdapter): boolean {
     const index = this.adapters.indexOf(adapter);
     if (index !== -1) {
       this.adapters.splice(index, 1);

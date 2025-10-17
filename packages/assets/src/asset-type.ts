@@ -30,7 +30,7 @@ export class AssetType extends SmrtObject {
    * @param slug - The slug to search for
    * @returns AssetType instance or null
    */
-  static async getBySlug(slug: string): Promise<AssetType | null> {
+  static async getBySlug(_slug: string): Promise<AssetType | null> {
     // Will be auto-implemented by SMRT
     return null;
   }

@@ -5,9 +5,9 @@
  * Supports package exports for template discovery.
  */
 
-import { access, readFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { access } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import glob from 'fast-glob';
 import type { TemplateConfig } from './template-loader.js';
 
@@ -160,7 +160,7 @@ export async function discoverInstalledTemplates(): Promise<
         const config = module.default || module;
 
         // Extract package name from path
-        const relativePath = configPath.replace(nodeModulesPath + '/', '');
+        const relativePath = configPath.replace(`${nodeModulesPath}/`, '');
         const source = relativePath.substring(
           0,
           relativePath.indexOf('/template.config'),

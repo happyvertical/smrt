@@ -5,9 +5,9 @@ import { createClient } from '../mock-smrt-client.ts';
 const client = createClient('/api/v1');
 
 let contents = $state([]);
-let loading = $state(true);
-let error = $state(null);
-let showAddForm = $state(false);
+let _loading = $state(true);
+let _error = $state(null);
+let _showAddForm = $state(false);
 let editingContent = $state(null);
 const searchTerm = $state('');
 const selectedType = $state('All Types');
@@ -25,13 +25,13 @@ let newContent = $state({
   fileKey: '',
 });
 
-const stats = $derived({
+const _stats = $derived({
   total: contents.length,
   published: contents.filter((c) => c.status === 'published').length,
   highlighted: contents.filter((c) => c.state === 'highlighted').length,
 });
 
-const filteredContents = $derived(
+const _filteredContents = $derived(
   contents.filter((content) => {
     const matchesSearch =
       searchTerm === '' ||
@@ -55,18 +55,18 @@ onMount(async () => {
 
 async function loadContents() {
   try {
-    loading = true;
+    _loading = true;
     const response = await client.contents.list();
     contents = response.data;
-    error = null;
+    _error = null;
   } catch (err) {
-    error = err.message;
+    _error = err.message;
   } finally {
-    loading = false;
+    _loading = false;
   }
 }
 
-async function handleAddContent() {
+async function _handleAddContent() {
   try {
     const response = await client.contents.create(newContent);
     contents = [...contents, response.data];
@@ -84,17 +84,17 @@ async function handleAddContent() {
       url: '',
       fileKey: '',
     };
-    showAddForm = false;
+    _showAddForm = false;
   } catch (err) {
-    error = err.message;
+    _error = err.message;
   }
 }
 
-async function handleEditContent(content) {
+async function _handleEditContent(content) {
   editingContent = { ...content };
 }
 
-async function handleUpdateContent() {
+async function _handleUpdateContent() {
   try {
     const response = await client.contents.update(
       editingContent.id,
@@ -104,27 +104,27 @@ async function handleUpdateContent() {
     contents[index] = response.data;
     editingContent = null;
   } catch (err) {
-    error = err.message;
+    _error = err.message;
   }
 }
 
-async function handleDeleteContent(content) {
+async function _handleDeleteContent(content) {
   if (confirm(`Are you sure you want to delete "${content.title}"?`)) {
     try {
       await client.contents.delete(content.id);
       contents = contents.filter((c) => c.id !== content.id);
     } catch (err) {
-      error = err.message;
+      _error = err.message;
     }
   }
 }
 
-function cancelEdit() {
+function _cancelEdit() {
   editingContent = null;
 }
 
-function cancelAdd() {
-  showAddForm = false;
+function _cancelAdd() {
+  _showAddForm = false;
   newContent = {
     title: '',
     description: '',
@@ -139,7 +139,7 @@ function cancelAdd() {
   };
 }
 
-function getTypeIcon(type) {
+function _getTypeIcon(type) {
   switch (type) {
     case 'article':
       return '📄';
@@ -152,7 +152,7 @@ function getTypeIcon(type) {
   }
 }
 
-function getStatusBadge(status) {
+function _getStatusBadge(status) {
   switch (status) {
     case 'published':
       return 'published';
@@ -165,7 +165,7 @@ function getStatusBadge(status) {
   }
 }
 
-function getStateBadge(state) {
+function _getStateBadge(state) {
   switch (state) {
     case 'highlighted':
       return 'highlighted';

@@ -4,8 +4,8 @@
  * Tracks who participated in an event with role and placement
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
-import type { EventParticipantOptions, ParticipantRole } from '../types';
+import { SmrtObject, smrt } from '@smrt/core';
+import type { EventParticipantOptions } from '../types';
 
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },

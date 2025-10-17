@@ -4,7 +4,7 @@
  * Infinitely nestable: Game → Period → Goal → Assist
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { EventOptions, EventStatus } from '../types';
 
 @smrt({
@@ -193,7 +193,7 @@ export class Event extends SmrtObject {
     const ancestors: Event[] = [];
     let currentEvent: Event | null = this;
 
-    while (currentEvent && currentEvent.parentEventId) {
+    while (currentEvent?.parentEventId) {
       const parent = await currentEvent.getParent();
       if (!parent) break;
       ancestors.unshift(parent); // Add to beginning
