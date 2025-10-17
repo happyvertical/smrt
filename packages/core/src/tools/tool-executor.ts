@@ -172,7 +172,7 @@ export async function executeToolCall(
         method: methodName,
         type: 'start',
         args: [args], // Wrap in array for consistency
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
       await signalBus.emit(startSignal);
     }
@@ -191,7 +191,7 @@ export async function executeToolCall(
         args: [args],
         result,
         duration: Date.now() - startTime,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
       await signalBus.emit(endSignal);
     }
@@ -219,7 +219,7 @@ export async function executeToolCall(
         ],
         error: error instanceof Error ? error : new Error(String(error)),
         duration: Date.now() - startTime,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
       await signalBus.emit(errorSignal);
     }

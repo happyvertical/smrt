@@ -158,7 +158,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   static async create<T extends typeof SmrtCollection>(
     this: T,
     options: SmrtClassOptions = {},
-  ): Promise<InstanceType<T>> {
+  ): Promise<any> {
     // Extract only collection-compatible options from broader SmrtClassOptions
     const {
       _className,
@@ -192,7 +192,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     await instance.initialize();
 
     // Return fully initialized instance
-    return instance as InstanceType<T>;
+    return instance as any;
   }
 
   /**
