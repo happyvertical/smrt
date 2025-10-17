@@ -1,4 +1,4 @@
-import { ISignalAdapter, Signal } from '@smrt/types';
+import { SignalAdapter, Signal } from '@smrt/types';
 import { SanitizationConfig } from './sanitizer.js';
 /**
  * Central signal distribution bus
@@ -22,7 +22,7 @@ export declare class SignalBus {
      *
      * @param adapter - Adapter to register
      */
-    register(adapter: ISignalAdapter): void;
+    register(adapter: SignalAdapter): void;
     /**
      * Unregister a signal adapter
      *
@@ -31,7 +31,7 @@ export declare class SignalBus {
      * @param adapter - Adapter to unregister
      * @returns True if adapter was found and removed
      */
-    unregister(adapter: ISignalAdapter): boolean;
+    unregister(adapter: SignalAdapter): boolean;
     /**
      * Clear all registered adapters
      *

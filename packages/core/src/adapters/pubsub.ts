@@ -5,7 +5,7 @@
  * Supports multiple subscriber types (callbacks, WebSocket, SSE).
  */
 
-import type { ISignalAdapter, Signal } from '@smrt/types';
+import type { SignalAdapter, Signal } from '@smrt/types';
 
 /**
  * Signal filter function
@@ -59,7 +59,7 @@ export interface Subscription {
  * pubsub.unsubscribe(subId);
  * ```
  */
-export class PubSubAdapter implements ISignalAdapter {
+export class PubSubAdapter implements SignalAdapter {
   private subscriptions: Map<string, Subscription> = new Map();
   private nextSubscriptionId = 1;
 

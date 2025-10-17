@@ -1,4 +1,4 @@
-import { ISignalAdapter, Signal } from '@smrt/types';
+import { SignalAdapter, Signal } from '@smrt/types';
 /**
  * Signal filter function
  *
@@ -48,7 +48,7 @@ export interface Subscription {
  * pubsub.unsubscribe(subId);
  * ```
  */
-export declare class PubSubAdapter implements ISignalAdapter {
+export declare class PubSubAdapter implements SignalAdapter {
     private subscriptions;
     private nextSubscriptionId;
     /**

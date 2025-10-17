@@ -2,14 +2,14 @@
  * Tests for cleanup and memory leak prevention
  */
 
-import type { ISignalAdapter, Signal } from '@smrt/types';
+import type { SignalAdapter, Signal } from '@smrt/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtClass } from '../class.js';
 import { config } from '../config.js';
 import { SignalBus } from './bus.js';
 
 // Mock adapter for testing
-class TestAdapter implements ISignalAdapter {
+class TestAdapter implements SignalAdapter {
   public signals: Signal[] = [];
 
   async handle(signal: Signal): Promise<void> {

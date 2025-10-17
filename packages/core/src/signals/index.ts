@@ -6,7 +6,7 @@
  */
 
 export type {
-  ISignalAdapter,
+  SignalAdapter,
   Signal,
   SignalType,
 } from '@smrt/types';
