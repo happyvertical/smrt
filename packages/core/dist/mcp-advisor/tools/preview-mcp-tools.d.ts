@@ -1,4 +1,4 @@
-import { PreviewMcpToolsInput, McpToolDefinition } from '../types.js';
+import { McpToolDefinition, PreviewMcpToolsInput } from '../types.js';
 /**
  * Preview MCP tools that would be generated for a class
  */

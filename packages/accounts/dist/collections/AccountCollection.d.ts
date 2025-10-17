@@ -51,6 +51,6 @@ export declare class AccountCollection extends SmrtCollection<Account> {
      *
      * @returns Array of root accounts with children property
      */
-    getHierarchyTree(): Promise<any[]>;
+    getHierarchyTree(): Promise<unknown[]>;
 }
 //# sourceMappingURL=AccountCollection.d.ts.map

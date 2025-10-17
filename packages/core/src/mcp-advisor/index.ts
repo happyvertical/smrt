@@ -11,24 +11,23 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
   type CallToolRequest,
+  CallToolRequestSchema,
   type ListToolsRequest,
+  ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-
+import { addAiMethods } from './tools/add-ai-methods.js';
+import { configureDecorators } from './tools/configure-decorators.js';
+import { generateCollection } from './tools/generate-collection.js';
+import { generateFieldDefinitions } from './tools/generate-field-definitions.js';
 // Import tool implementations
 import { generateSmrtClass } from './tools/generate-smrt-class.js';
-import { addAiMethods } from './tools/add-ai-methods.js';
-import { generateFieldDefinitions } from './tools/generate-field-definitions.js';
-import { generateCollection } from './tools/generate-collection.js';
-import { configureDecorators } from './tools/configure-decorators.js';
-import { validateSmrtObject } from './tools/validate-smrt-object.js';
+import { getObjectConfig } from './tools/get-object-config.js';
+import { getObjectSchema } from './tools/get-object-schema.js';
+import { listRegisteredObjects } from './tools/list-registered-objects.js';
 import { previewApiEndpoints } from './tools/preview-api-endpoints.js';
 import { previewMcpTools } from './tools/preview-mcp-tools.js';
-import { listRegisteredObjects } from './tools/list-registered-objects.js';
-import { getObjectSchema } from './tools/get-object-schema.js';
-import { getObjectConfig } from './tools/get-object-config.js';
+import { validateSmrtObject } from './tools/validate-smrt-object.js';
 
 // Server configuration
 const SERVER_NAME = 'smrt-advisor';
@@ -345,8 +344,7 @@ const TOOLS = [
   },
   {
     name: 'get-object-config',
-    description:
-      'Get the @smrt() decorator configuration for a SMRT object',
+    description: 'Get the @smrt() decorator configuration for a SMRT object',
     inputSchema: {
       type: 'object',
       properties: {
@@ -455,7 +453,9 @@ async function main() {
           const result = await handleToolCall(toolName, args || {});
 
           if (DEBUG) {
-            console.error(`[SMRT Advisor] Tool ${toolName} completed successfully`);
+            console.error(
+              `[SMRT Advisor] Tool ${toolName} completed successfully`,
+            );
           }
 
           // Format response
@@ -496,7 +496,9 @@ async function main() {
 
     if (DEBUG) {
       console.error(`[SMRT Advisor] Server connected via stdio transport`);
-      console.error(`[SMRT Advisor] Available tools: ${TOOLS.map((t) => t.name).join(', ')}`);
+      console.error(
+        `[SMRT Advisor] Available tools: ${TOOLS.map((t) => t.name).join(', ')}`,
+      );
       console.error(`[SMRT Advisor] Ready to receive requests`);
     }
 

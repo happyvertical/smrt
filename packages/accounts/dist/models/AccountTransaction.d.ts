@@ -12,19 +12,19 @@ export declare class AccountTransaction extends SmrtObject {
      *
      * @returns Parsed metadata object or empty object
      */
-    getMetadata(): Record<string, any>;
+    getMetadata(): Record<string, unknown>;
     /**
      * Set metadata from object
      *
      * @param data - Metadata object to store
      */
-    setMetadata(data: Record<string, any>): void;
+    setMetadata(data: Record<string, unknown>): void;
     /**
      * Update metadata by merging with existing values
      *
      * @param updates - Partial metadata to merge
      */
-    updateMetadata(updates: Record<string, any>): void;
+    updateMetadata(updates: Record<string, unknown>): void;
     /**
      * Get all entries for this transaction
      *
@@ -62,6 +62,6 @@ export declare class AccountTransaction extends SmrtObject {
      *
      * @returns Map of currency codes to arrays of entries
      */
-    getEntriesByCurrency(): Promise<Map<string, any[]>>;
+    getEntriesByCurrency(): Promise<Map<string, unknown[]>>;
 }
 //# sourceMappingURL=AccountTransaction.d.ts.map

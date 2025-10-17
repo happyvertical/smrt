@@ -3,17 +3,16 @@
  * Uses pre-generated manifest from build time instead of runtime scanning
  */
 
+// Re-export utility functions that work with static manifest
+export { ManifestGenerator } from '../scanner/manifest-generator';
+export type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types';
 export {
   staticManifest as manifest,
   staticManifest as default,
 } from './static-manifest';
-export type {
-  SmartObjectManifest,
-  SmartObjectDefinition,
-} from '../scanner/types';
-
-// Re-export utility functions that work with static manifest
-export { ManifestGenerator } from '../scanner/manifest-generator';
 
 /**
  * Get manifest data (static at runtime)

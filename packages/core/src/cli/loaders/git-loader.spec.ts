@@ -2,7 +2,7 @@
  * Git Loader Tests
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted to create mocks before hoisting
 const { mockMkdir, mockRm } = vi.hoisted(() => ({
@@ -18,9 +18,9 @@ vi.mock('node:fs/promises', () => ({
 
 // Import after mocks are set up
 import {
-  loadGitTemplate,
-  getGitTemplateDir,
   cleanupGitTemplate,
+  getGitTemplateDir,
+  loadGitTemplate,
 } from './git-loader.js';
 
 describe('Git Loader', () => {

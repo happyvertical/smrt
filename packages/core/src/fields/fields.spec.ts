@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { text, integer } from './index';
+import { describe, expect, it } from 'vitest';
+import { integer, text } from './index';
 
 describe('Field DEFAULT CAST for DuckDB', () => {
   it('should generate CAST for TEXT fields with empty string default', () => {
@@ -21,8 +21,8 @@ describe('Field DEFAULT CAST for DuckDB', () => {
     const constraints = statusField.getSqlConstraints();
 
     // Should have DEFAULT but without CAST
-    const hasDefault = constraints.some(c => c.startsWith('DEFAULT'));
-    const hasCast = constraints.some(c => c.includes('CAST'));
+    const hasDefault = constraints.some((c) => c.startsWith('DEFAULT'));
+    const hasCast = constraints.some((c) => c.includes('CAST'));
 
     expect(hasDefault).toBe(true);
     expect(hasCast).toBe(false);
@@ -33,8 +33,8 @@ describe('Field DEFAULT CAST for DuckDB', () => {
     const constraints = countField.getSqlConstraints();
 
     // Should have DEFAULT but without CAST (not a TEXT field)
-    const hasDefault = constraints.some(c => c.startsWith('DEFAULT'));
-    const hasCast = constraints.some(c => c.includes('CAST'));
+    const hasDefault = constraints.some((c) => c.startsWith('DEFAULT'));
+    const hasCast = constraints.some((c) => c.includes('CAST'));
 
     expect(hasDefault).toBe(true);
     expect(hasCast).toBe(false);

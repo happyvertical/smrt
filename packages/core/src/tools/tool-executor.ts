@@ -4,8 +4,8 @@
  * This module handles runtime execution of AI tool calls on SMRT object instances.
  */
 
+import type { Signal } from '@smrt/types';
 import { RuntimeError, ValidationError } from '../errors.js';
-import type { Signal } from '@have/types';
 import type { SignalBus } from '../signals/bus.js';
 
 /**
@@ -172,7 +172,7 @@ export async function executeToolCall(
         method: methodName,
         type: 'start',
         args: [args], // Wrap in array for consistency
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
       await signalBus.emit(startSignal);
     }
@@ -191,7 +191,7 @@ export async function executeToolCall(
         args: [args],
         result,
         duration: Date.now() - startTime,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
       await signalBus.emit(endSignal);
     }
@@ -219,7 +219,7 @@ export async function executeToolCall(
         ],
         error: error instanceof Error ? error : new Error(String(error)),
         duration: Date.now() - startTime,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
       await signalBus.emit(errorSignal);
     }

@@ -1,6 +1,6 @@
 {
   "name": "@smrt/agents",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "type": "module",
   "description": "Agent framework for building autonomous actors in the SMRT ecosystem",
   "author": "HappyVertical",
@@ -23,9 +23,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@have/logger": "workspace:*",
     "@smrt/core": "workspace:*"
   },
   "devDependencies": {
+    "@have/sql": "workspace:*",
     "@types/node": "^22.10.5",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"

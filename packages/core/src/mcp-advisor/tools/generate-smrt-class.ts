@@ -95,7 +95,10 @@ ${interfaceProperties}
 
     // Generate constructor assignments
     const constructorAssignments = properties
-      .map((p) => `    this.${p.name} = options.${p.name} || ${getDefaultValue(p.type)};`)
+      .map(
+        (p) =>
+          `    this.${p.name} = options.${p.name} || ${getDefaultValue(p.type)};`,
+      )
       .join('\n');
 
     // Generate complete class
@@ -125,7 +128,9 @@ ${classCode}
     return {
       success: false,
       error:
-        error instanceof Error ? error.message : 'Unknown error generating class',
+        error instanceof Error
+          ? error.message
+          : 'Unknown error generating class',
     };
   }
 }

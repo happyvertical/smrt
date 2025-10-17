@@ -43,7 +43,7 @@ class MetricsAdapter {
         signal.duration
       );
     }
-    methodMetrics.lastExecuted = signal.timestamp;
+    methodMetrics.lastExecuted = signal.timestamp.getTime();
   }
   /**
    * Get current metrics snapshot
@@ -165,4 +165,4 @@ class MetricsAdapter {
 export {
   MetricsAdapter
 };
-//# sourceMappingURL=metrics-JaU-tpt3.js.map
+//# sourceMappingURL=metrics-uRpAh6uk.js.map

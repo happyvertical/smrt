@@ -12,16 +12,16 @@ import {
 import { Field } from './fields/index';
 import { ObjectRegistry } from './registry';
 import {
+  executeToolCall as executeToolCallInternal,
+  type ToolCall,
+  type ToolCallResult,
+} from './tools/tool-executor';
+import {
   fieldsFromClass,
   setupTableFromClass,
   tableNameFromClass,
   toSnakeCase,
 } from './utils';
-import {
-  executeToolCall as executeToolCallInternal,
-  type ToolCall,
-  type ToolCallResult,
-} from './tools/tool-executor';
 
 /**
  * Options for SmrtObject initialization
@@ -270,10 +270,8 @@ export class SmrtObject extends SmrtClass {
     // Setup database tables if database is configured
     if (this.options.db) {
       await setupTableFromClass(this.db, this.constructor);
-      await this.db.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_slug_context
-        ON ${this.tableName}(slug, context);
-      `);
+      // Note: SchemaGenerator already creates the unique index on (slug, context)
+      // No need to create it manually here
     }
 
     if (this._id && !(this.options as any)._skipLoad) {
@@ -367,7 +365,6 @@ export class SmrtObject extends SmrtClass {
 
     return data;
   }
-
 
   /**
    * Gets or generates a unique ID for this object
@@ -1193,11 +1190,13 @@ export class SmrtObject extends SmrtClass {
    * }
    * ```
    */
-  public async recallAll(options: {
-    scope?: string;
-    includeDescendants?: boolean;
-    minConfidence?: number;
-  } = {}): Promise<Map<string, any>> {
+  public async recallAll(
+    options: {
+      scope?: string;
+      includeDescendants?: boolean;
+      minConfidence?: number;
+    } = {},
+  ): Promise<Map<string, any>> {
     if (!this.systemDb) {
       throw new Error('Database not initialized. Call initialize() first.');
     }

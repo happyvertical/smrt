@@ -2,11 +2,11 @@
  * NPM Loader Tests
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as fastGlob from 'fast-glob';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock modules
 vi.mock('node:fs');

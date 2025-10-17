@@ -2,9 +2,9 @@
  * Tests for SignalSanitizer
  */
 
+import type { Signal } from '@smrt/types';
 import { describe, expect, it } from 'vitest';
 import { SignalSanitizer } from './sanitizer.js';
-import type { Signal } from '@have/types';
 
 describe('SignalSanitizer', () => {
   describe('Default Redaction', () => {

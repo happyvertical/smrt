@@ -1,6 +1,6 @@
 {
   "name": "@smrt/profiles",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",

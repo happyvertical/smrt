@@ -92,7 +92,46 @@ runs:
     - name: Install project dependencies
       if: inputs.install-deps == 'true'
       shell: bash
-      run: pnpm install --frozen-lockfile
+      run: |
+        # In CI, add pnpm overrides to package.json for SDK workspace resolution
+        if [ -d sdk/packages ]; then
+          echo "Adding pnpm overrides for SDK workspace packages to package.json"
+
+          # Use node to add overrides to package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+
+            // Add pnpm.overrides section
+            pkg.pnpm = pkg.pnpm || {};
+            pkg.pnpm.overrides = {
+              '@have/ai': 'workspace:*',
+              '@have/cache': 'workspace:*',
+              '@have/config': 'workspace:*',
+              '@have/documents': 'workspace:*',
+              '@have/email': 'workspace:*',
+              '@have/files': 'workspace:*',
+              '@have/geo': 'workspace:*',
+              '@have/languages': 'workspace:*',
+              '@have/logger': 'workspace:*',
+              '@have/ocr': 'workspace:*',
+              '@have/pdf': 'workspace:*',
+              '@have/spider': 'workspace:*',
+              '@have/sql': 'workspace:*',
+              '@have/translator': 'workspace:*',
+              '@have/utils': 'workspace:*'
+            };
+
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            console.log('✓ Added SDK workspace overrides to package.json');
+          "
+
+          echo "Installing with SDK workspace packages (--no-frozen-lockfile)"
+          pnpm install --no-frozen-lockfile
+        else
+          echo "Installing with frozen lockfile"
+          pnpm install --frozen-lockfile
+        fi
       env:
         # Force ONNX Runtime to skip CUDA installation
         ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'

@@ -121,14 +121,13 @@ class Account extends (_a = SmrtObject) {
     if (!this.parentId) return null;
     const { AccountCollection: AccountCollection2 } = await Promise.resolve().then(() => AccountCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection2({
+    const collection = await AccountCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.get({ id: this.parentId });
   }
   /**
@@ -139,14 +138,13 @@ class Account extends (_a = SmrtObject) {
   async getChildren() {
     const { AccountCollection: AccountCollection2 } = await Promise.resolve().then(() => AccountCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection2({
+    const collection = await AccountCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.list({ where: { parentId: this.id } });
   }
   /**
@@ -229,14 +227,13 @@ class Account extends (_a = SmrtObject) {
   async getTransactionEntries() {
     const { AccountTransactionEntryCollection: AccountTransactionEntryCollection2 } = await Promise.resolve().then(() => AccountTransactionEntryCollection$1);
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionEntryCollection2({
+    const collection = await AccountTransactionEntryCollection2.create({
       persistence,
       db,
       ai,
       fs,
       _className
     });
-    await collection.initialize();
     return await collection.list({ where: { accountId: this.id } });
   }
   /**
@@ -253,291 +250,6 @@ class Account extends (_a = SmrtObject) {
 _init = __decoratorStart(_a);
 Account = __decorateElement(_init, 0, "Account", _Account_decorators, Account);
 __runInitializers(_init, 1, Account);
-_AccountTransaction_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get", "create", "update"] },
-  cli: true
-})];
-class AccountTransaction extends (_b = SmrtObject) {
-  // id inherited from SmrtObject
-  // Note: slug and name not typically used for transactions
-  date = /* @__PURE__ */ new Date();
-  description = "";
-  metadata = "";
-  // JSON metadata (stored as text)
-  // Timestamps
-  createdAt = /* @__PURE__ */ new Date();
-  updatedAt = /* @__PURE__ */ new Date();
-  constructor(options = {}) {
-    super(options);
-    if (options.date !== void 0) this.date = options.date;
-    if (options.description !== void 0)
-      this.description = options.description;
-    if (options.metadata !== void 0) {
-      if (typeof options.metadata === "string") {
-        this.metadata = options.metadata;
-      } else {
-        this.metadata = JSON.stringify(options.metadata);
-      }
-    }
-    if (options.createdAt) this.createdAt = options.createdAt;
-    if (options.updatedAt) this.updatedAt = options.updatedAt;
-  }
-  /**
-   * Get metadata as parsed object
-   *
-   * @returns Parsed metadata object or empty object
-   */
-  getMetadata() {
-    if (!this.metadata) return {};
-    try {
-      return JSON.parse(this.metadata);
-    } catch {
-      return {};
-    }
-  }
-  /**
-   * Set metadata from object
-   *
-   * @param data - Metadata object to store
-   */
-  setMetadata(data) {
-    this.metadata = JSON.stringify(data);
-  }
-  /**
-   * Update metadata by merging with existing values
-   *
-   * @param updates - Partial metadata to merge
-   */
-  updateMetadata(updates) {
-    const current = this.getMetadata();
-    this.setMetadata({ ...current, ...updates });
-  }
-  /**
-   * Get all entries for this transaction
-   *
-   * @returns Array of AccountTransactionEntry instances
-   */
-  async getEntries() {
-    const { AccountTransactionEntryCollection: AccountTransactionEntryCollection2 } = await Promise.resolve().then(() => AccountTransactionEntryCollection$1);
-    const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionEntryCollection2({
-      persistence,
-      db,
-      ai,
-      fs,
-      _className
-    });
-    await collection.initialize();
-    return await collection.list({ where: { transactionId: this.id } });
-  }
-  /**
-   * Calculate the total balance of all entries
-   * For balanced transactions, this should be zero
-   *
-   * @returns Sum of all entry amounts (debits positive, credits negative)
-   */
-  async getBalance() {
-    const entries = await this.getEntries();
-    return entries.reduce((sum, entry) => sum + entry.amount, 0);
-  }
-  /**
-   * Check if this transaction is balanced
-   * In double-entry accounting, balanced means debits = credits (sum = 0)
-   *
-   * @returns True if sum of all entries equals zero
-   */
-  async isBalanced() {
-    const balance = await this.getBalance();
-    return balance === 0;
-  }
-  /**
-   * Get total debits (positive amounts)
-   *
-   * @returns Sum of all positive entry amounts
-   */
-  async getTotalDebits() {
-    const entries = await this.getEntries();
-    return entries.filter((entry) => entry.amount > 0).reduce((sum, entry) => sum + entry.amount, 0);
-  }
-  /**
-   * Get total credits (negative amounts, returned as positive)
-   *
-   * @returns Sum of all negative entry amounts (as positive number)
-   */
-  async getTotalCredits() {
-    const entries = await this.getEntries();
-    return Math.abs(
-      entries.filter((entry) => entry.amount < 0).reduce((sum, entry) => sum + entry.amount, 0)
-    );
-  }
-  /**
-   * Get entries grouped by currency
-   *
-   * @returns Map of currency codes to arrays of entries
-   */
-  async getEntriesByCurrency() {
-    const entries = await this.getEntries();
-    const byCurrency = /* @__PURE__ */ new Map();
-    for (const entry of entries) {
-      const currency = entry.currency || "UNKNOWN";
-      if (!byCurrency.has(currency)) {
-        byCurrency.set(currency, []);
-      }
-      byCurrency.get(currency)?.push(entry);
-    }
-    return byCurrency;
-  }
-}
-_init2 = __decoratorStart(_b);
-AccountTransaction = __decorateElement(_init2, 0, "AccountTransaction", _AccountTransaction_decorators, AccountTransaction);
-__runInitializers(_init2, 1, AccountTransaction);
-_AccountTransactionEntry_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get", "create", "update"] },
-  cli: true
-})];
-let _AccountTransactionEntry = class _AccountTransactionEntry extends (_c = SmrtObject) {
-  // id inherited from SmrtObject
-  // Note: slug and name not typically used for transaction entries
-  transactionId = "";
-  // FK to AccountTransaction
-  accountId = "";
-  // FK to Account
-  amount = 0;
-  // Integer in smallest currency unit (e.g., cents)
-  currency = "USD";
-  // ISO 4217 currency code
-  description = "";
-  // Optional entry-specific description
-  // Timestamps
-  createdAt = /* @__PURE__ */ new Date();
-  updatedAt = /* @__PURE__ */ new Date();
-  constructor(options = {}) {
-    super(options);
-    if (options.transactionId !== void 0)
-      this.transactionId = options.transactionId;
-    if (options.accountId !== void 0) this.accountId = options.accountId;
-    if (options.amount !== void 0) this.amount = options.amount;
-    if (options.currency !== void 0) this.currency = options.currency;
-    if (options.description !== void 0)
-      this.description = options.description;
-    if (options.createdAt) this.createdAt = options.createdAt;
-    if (options.updatedAt) this.updatedAt = options.updatedAt;
-  }
-  /**
-   * Get the transaction this entry belongs to
-   *
-   * @returns AccountTransaction instance or null
-   */
-  async getTransaction() {
-    if (!this.transactionId) return null;
-    const { AccountTransactionCollection: AccountTransactionCollection2 } = await Promise.resolve().then(() => AccountTransactionCollection$1);
-    const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionCollection2({
-      persistence,
-      db,
-      ai,
-      fs,
-      _className
-    });
-    await collection.initialize();
-    return await collection.get({ id: this.transactionId });
-  }
-  /**
-   * Get the account this entry affects
-   *
-   * @returns Account instance or null
-   */
-  async getAccount() {
-    if (!this.accountId) return null;
-    const { AccountCollection: AccountCollection2 } = await Promise.resolve().then(() => AccountCollection$1);
-    const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection2({
-      persistence,
-      db,
-      ai,
-      fs,
-      _className
-    });
-    await collection.initialize();
-    return await collection.get({ id: this.accountId });
-  }
-  /**
-   * Check if this entry is a debit
-   *
-   * @returns True if amount is positive
-   */
-  isDebit() {
-    return this.amount > 0;
-  }
-  /**
-   * Check if this entry is a credit
-   *
-   * @returns True if amount is negative
-   */
-  isCredit() {
-    return this.amount < 0;
-  }
-  /**
-   * Get the absolute amount value
-   *
-   * @returns Absolute value of amount
-   */
-  getAbsoluteAmount() {
-    return Math.abs(this.amount);
-  }
-  /**
-   * Format amount as currency string
-   * Converts from smallest unit (cents) to standard format
-   *
-   * @param locale - Optional locale for formatting (default: 'en-US')
-   * @returns Formatted currency string
-   */
-  formatAmount(locale = "en-US") {
-    const standardAmount = this.amount / 100;
-    try {
-      return new Intl.NumberFormat(locale, {
-        style: "currency",
-        currency: this.currency
-      }).format(standardAmount);
-    } catch {
-      return `${this.currency} ${standardAmount.toFixed(2)}`;
-    }
-  }
-  /**
-   * Create a debit entry helper
-   * Static factory method for creating debit entries
-   *
-   * @param options - Entry options with positive amount
-   * @returns New AccountTransactionEntry instance
-   */
-  static createDebit(options) {
-    return new _AccountTransactionEntry({
-      ...options,
-      amount: Math.abs(options.amount)
-      // Ensure positive
-    });
-  }
-  /**
-   * Create a credit entry helper
-   * Static factory method for creating credit entries
-   *
-   * @param options - Entry options with amount (will be made negative)
-   * @returns New AccountTransactionEntry instance
-   */
-  static createCredit(options) {
-    return new _AccountTransactionEntry({
-      ...options,
-      amount: -Math.abs(options.amount)
-      // Ensure negative
-    });
-  }
-};
-_init3 = __decoratorStart(_c);
-_AccountTransactionEntry = __decorateElement(_init3, 0, "AccountTransactionEntry", _AccountTransactionEntry_decorators, _AccountTransactionEntry);
-__runInitializers(_init3, 1, _AccountTransactionEntry);
-let AccountTransactionEntry = _AccountTransactionEntry;
 class AccountCollection extends SmrtCollection {
   static _itemClass = Account;
   /**
@@ -627,6 +339,144 @@ const AccountCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object
   __proto__: null,
   AccountCollection
 }, Symbol.toStringTag, { value: "Module" }));
+_AccountTransaction_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get", "create", "update"] },
+  cli: true
+})];
+class AccountTransaction extends (_b = SmrtObject) {
+  // id inherited from SmrtObject
+  // Note: slug and name not typically used for transactions
+  date = /* @__PURE__ */ new Date();
+  description = "";
+  metadata = "";
+  // JSON metadata (stored as text)
+  // Timestamps
+  createdAt = /* @__PURE__ */ new Date();
+  updatedAt = /* @__PURE__ */ new Date();
+  constructor(options = {}) {
+    super(options);
+    if (options.date !== void 0) this.date = options.date;
+    if (options.description !== void 0)
+      this.description = options.description;
+    if (options.metadata !== void 0) {
+      if (typeof options.metadata === "string") {
+        this.metadata = options.metadata;
+      } else {
+        this.metadata = JSON.stringify(options.metadata);
+      }
+    }
+    if (options.createdAt) this.createdAt = options.createdAt;
+    if (options.updatedAt) this.updatedAt = options.updatedAt;
+  }
+  /**
+   * Get metadata as parsed object
+   *
+   * @returns Parsed metadata object or empty object
+   */
+  getMetadata() {
+    if (!this.metadata) return {};
+    try {
+      return JSON.parse(this.metadata);
+    } catch {
+      return {};
+    }
+  }
+  /**
+   * Set metadata from object
+   *
+   * @param data - Metadata object to store
+   */
+  setMetadata(data) {
+    this.metadata = JSON.stringify(data);
+  }
+  /**
+   * Update metadata by merging with existing values
+   *
+   * @param updates - Partial metadata to merge
+   */
+  updateMetadata(updates) {
+    const current = this.getMetadata();
+    this.setMetadata({ ...current, ...updates });
+  }
+  /**
+   * Get all entries for this transaction
+   *
+   * @returns Array of AccountTransactionEntry instances
+   */
+  async getEntries() {
+    const { AccountTransactionEntryCollection: AccountTransactionEntryCollection2 } = await Promise.resolve().then(() => AccountTransactionEntryCollection$1);
+    const { persistence, db, ai, fs, _className } = this.options;
+    const collection = await AccountTransactionEntryCollection2.create({
+      persistence,
+      db,
+      ai,
+      fs,
+      _className
+    });
+    return await collection.list({ where: { transactionId: this.id } });
+  }
+  /**
+   * Calculate the total balance of all entries
+   * For balanced transactions, this should be zero
+   *
+   * @returns Sum of all entry amounts (debits positive, credits negative)
+   */
+  async getBalance() {
+    const entries = await this.getEntries();
+    return entries.reduce((sum, entry) => sum + entry.amount, 0);
+  }
+  /**
+   * Check if this transaction is balanced
+   * In double-entry accounting, balanced means debits = credits (sum = 0)
+   *
+   * @returns True if sum of all entries equals zero
+   */
+  async isBalanced() {
+    const balance = await this.getBalance();
+    return balance === 0;
+  }
+  /**
+   * Get total debits (positive amounts)
+   *
+   * @returns Sum of all positive entry amounts
+   */
+  async getTotalDebits() {
+    const entries = await this.getEntries();
+    return entries.filter((entry) => entry.amount > 0).reduce((sum, entry) => sum + entry.amount, 0);
+  }
+  /**
+   * Get total credits (negative amounts, returned as positive)
+   *
+   * @returns Sum of all negative entry amounts (as positive number)
+   */
+  async getTotalCredits() {
+    const entries = await this.getEntries();
+    return Math.abs(
+      entries.filter((entry) => entry.amount < 0).reduce((sum, entry) => sum + entry.amount, 0)
+    );
+  }
+  /**
+   * Get entries grouped by currency
+   *
+   * @returns Map of currency codes to arrays of entries
+   */
+  async getEntriesByCurrency() {
+    const entries = await this.getEntries();
+    const byCurrency = /* @__PURE__ */ new Map();
+    for (const entry of entries) {
+      const currency = entry.currency || "UNKNOWN";
+      if (!byCurrency.has(currency)) {
+        byCurrency.set(currency, []);
+      }
+      byCurrency.get(currency)?.push(entry);
+    }
+    return byCurrency;
+  }
+}
+_init2 = __decoratorStart(_b);
+AccountTransaction = __decorateElement(_init2, 0, "AccountTransaction", _AccountTransaction_decorators, AccountTransaction);
+__runInitializers(_init2, 1, AccountTransaction);
 class AccountTransactionCollection extends SmrtCollection {
   static _itemClass = AccountTransaction;
   /**
@@ -707,6 +557,150 @@ const AccountTransactionCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE_
   __proto__: null,
   AccountTransactionCollection
 }, Symbol.toStringTag, { value: "Module" }));
+_AccountTransactionEntry_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get", "create", "update"] },
+  cli: true
+})];
+let _AccountTransactionEntry = class _AccountTransactionEntry extends (_c = SmrtObject) {
+  // id inherited from SmrtObject
+  // Note: slug and name not typically used for transaction entries
+  transactionId = "";
+  // FK to AccountTransaction
+  accountId = "";
+  // FK to Account
+  amount = 0;
+  // Integer in smallest currency unit (e.g., cents)
+  currency = "USD";
+  // ISO 4217 currency code
+  description = "";
+  // Optional entry-specific description
+  // Timestamps
+  createdAt = /* @__PURE__ */ new Date();
+  updatedAt = /* @__PURE__ */ new Date();
+  constructor(options = {}) {
+    super(options);
+    if (options.transactionId !== void 0)
+      this.transactionId = options.transactionId;
+    if (options.accountId !== void 0) this.accountId = options.accountId;
+    if (options.amount !== void 0) this.amount = options.amount;
+    if (options.currency !== void 0) this.currency = options.currency;
+    if (options.description !== void 0)
+      this.description = options.description;
+    if (options.createdAt) this.createdAt = options.createdAt;
+    if (options.updatedAt) this.updatedAt = options.updatedAt;
+  }
+  /**
+   * Get the transaction this entry belongs to
+   *
+   * @returns AccountTransaction instance or null
+   */
+  async getTransaction() {
+    if (!this.transactionId) return null;
+    const { AccountTransactionCollection: AccountTransactionCollection2 } = await Promise.resolve().then(() => AccountTransactionCollection$1);
+    const { persistence, db, ai, fs, _className } = this.options;
+    const collection = await AccountTransactionCollection2.create({
+      persistence,
+      db,
+      ai,
+      fs,
+      _className
+    });
+    return await collection.get({ id: this.transactionId });
+  }
+  /**
+   * Get the account this entry affects
+   *
+   * @returns Account instance or null
+   */
+  async getAccount() {
+    if (!this.accountId) return null;
+    const { AccountCollection: AccountCollection2 } = await Promise.resolve().then(() => AccountCollection$1);
+    const { persistence, db, ai, fs, _className } = this.options;
+    const collection = await AccountCollection2.create({
+      persistence,
+      db,
+      ai,
+      fs,
+      _className
+    });
+    return await collection.get({ id: this.accountId });
+  }
+  /**
+   * Check if this entry is a debit
+   *
+   * @returns True if amount is positive
+   */
+  isDebit() {
+    return this.amount > 0;
+  }
+  /**
+   * Check if this entry is a credit
+   *
+   * @returns True if amount is negative
+   */
+  isCredit() {
+    return this.amount < 0;
+  }
+  /**
+   * Get the absolute amount value
+   *
+   * @returns Absolute value of amount
+   */
+  getAbsoluteAmount() {
+    return Math.abs(this.amount);
+  }
+  /**
+   * Format amount as currency string
+   * Converts from smallest unit (cents) to standard format
+   *
+   * @param locale - Optional locale for formatting (default: 'en-US')
+   * @returns Formatted currency string
+   */
+  formatAmount(locale = "en-US") {
+    const standardAmount = this.amount / 100;
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency: this.currency
+      }).format(standardAmount);
+    } catch {
+      return `${this.currency} ${standardAmount.toFixed(2)}`;
+    }
+  }
+  /**
+   * Create a debit entry helper
+   * Static factory method for creating debit entries
+   *
+   * @param options - Entry options with positive amount
+   * @returns New AccountTransactionEntry instance
+   */
+  static createDebit(options) {
+    return new _AccountTransactionEntry({
+      ...options,
+      amount: Math.abs(options.amount)
+      // Ensure positive
+    });
+  }
+  /**
+   * Create a credit entry helper
+   * Static factory method for creating credit entries
+   *
+   * @param options - Entry options with amount (will be made negative)
+   * @returns New AccountTransactionEntry instance
+   */
+  static createCredit(options) {
+    return new _AccountTransactionEntry({
+      ...options,
+      amount: -Math.abs(options.amount)
+      // Ensure negative
+    });
+  }
+};
+_init3 = __decoratorStart(_c);
+_AccountTransactionEntry = __decorateElement(_init3, 0, "AccountTransactionEntry", _AccountTransactionEntry_decorators, _AccountTransactionEntry);
+__runInitializers(_init3, 1, _AccountTransactionEntry);
+let AccountTransactionEntry = _AccountTransactionEntry;
 class AccountTransactionEntryCollection extends SmrtCollection {
   static _itemClass = AccountTransactionEntry;
   /**

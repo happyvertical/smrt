@@ -16,7 +16,7 @@ export class EventParticipant extends SmrtObject {
   // id inherited from SmrtObject
 
   eventId = ''; // FK to Event
-  profileId = ''; // FK to Profile (from @have/profiles)
+  profileId = ''; // FK to Profile (from @smrt/profiles)
   role: string = ''; // Participant role (ParticipantRole or custom)
   placement: number | null = null; // Numeric position/placement
   groupId = ''; // Optional grouping (e.g., team ID for individual players)
@@ -94,8 +94,7 @@ export class EventParticipant extends SmrtObject {
     if (!this.eventId) return null;
 
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = new EventCollection(this.options);
-    await collection.initialize();
+    const collection = await EventCollection.create(this.options);
 
     return await collection.get({ id: this.eventId });
   }
@@ -109,12 +108,12 @@ export class EventParticipant extends SmrtObject {
     if (!this.profileId) return null;
 
     try {
-      const { ProfileCollection } = await import('@have/profiles');
+      const { ProfileCollection } = await import('@smrt/profiles');
       const collection = await ProfileCollection.create(this.options);
 
       return await collection.get({ id: this.profileId });
     } catch {
-      // @have/profiles not available
+      // @smrt/profiles not available
       return null;
     }
   }
@@ -130,8 +129,7 @@ export class EventParticipant extends SmrtObject {
     const { EventParticipantCollection } = await import(
       '../collections/EventParticipantCollection'
     );
-    const collection = new EventParticipantCollection(this.options);
-    await collection.initialize();
+    const collection = await EventParticipantCollection.create(this.options);
 
     const participants = await collection.list({
       where: { eventId: this.eventId, groupId: this.groupId },

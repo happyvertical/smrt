@@ -3,10 +3,10 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "1.0.0",
+  "version": "0.41.0",
   "scripts": {
     "format": "biome format --write .",
-    "format-check": "biome format --check .",
+    "format-check": "biome ci --diagnostic-level=error .",
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || echo 'Skipping lefthook install (not in git repository)'",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
@@ -15,7 +15,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --apply .",
     "clean": "rm -rf packages/*/dist packages/*/docs packages/*/tsconfig.*.tsbuildinfo .tsbuildinfo dist /*.js /*.d.ts /*.js.map /*.d.ts.map",
-    "build": "pnpm -r --workspace-concurrency=4 run build",
+    "build": "pnpm -r --workspace-concurrency=4 --filter='!@smrt/products' --filter='!@have/docs' run build",
     "build:clean": "pnpm run clean && pnpm run build",
     "typecheck": "tsc --noEmit",
     "validate-build": "node scripts/validate-build.js",
@@ -29,13 +29,13 @@
     "release:full": "node scripts/release-helper.js full",
     "smrt": "pnpm --filter @smrt/core cli"
   },
-  "dependencies": {},
   "devDependencies": {
     "@anolilab/semantic-release-pnpm": "^2.0.4",
     "@biomejs/biome": "2.2.4",
     "@changesets/cli": "^2.27.12",
     "@commitlint/cli": "^20.1.0",
     "@commitlint/config-conventional": "^20.0.0",
+    "@playwright/test": "^1.54.2",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^10.0.1",
@@ -46,8 +46,10 @@
     "express": "^4.21.2",
     "lefthook": "^1.11.13",
     "livereload": "^0.9.3",
+    "playwright-core": "^1.54.2",
     "semantic-release": "^24.2.9",
     "semantic-release-monorepo": "^8.0.2",
+    "tsx": "^4.7.0",
     "typedoc": "^0.28.4",
     "typedoc-plugin-markdown": "^4.6.3",
     "typescript": "^5.7.3",
@@ -55,23 +57,25 @@
     "vite-plugin-dts": "4.5.4",
     "vitest": "3.2.4"
   },
-  "resolutions": {
-    "@types/node": "24.0.0"
-  },
   "pnpm": {
     "overrides": {
-      "@have/ai": "file:./sdk/packages/ai",
-      "@have/files": "file:./sdk/packages/files",
-      "@have/logger": "file:./sdk/packages/logger",
-      "@have/sql": "file:./sdk/packages/sql",
-      "@have/utils": "file:./sdk/packages/utils",
-      "@have/documents": "file:./sdk/packages/documents",
-      "@have/geo": "file:./sdk/packages/geo",
-      "@have/cache": "file:./sdk/packages/cache",
-      "@have/pdf": "file:./sdk/packages/pdf",
-      "@have/spider": "file:./sdk/packages/spider",
-      "@have/ocr": "file:./sdk/packages/ocr"
+      "@have/ai": "workspace:*",
+      "@have/cache": "workspace:*",
+      "@have/config": "workspace:*",
+      "@have/documents": "workspace:*",
+      "@have/files": "workspace:*",
+      "@have/geo": "workspace:*",
+      "@have/logger": "workspace:*",
+      "@have/ocr": "workspace:*",
+      "@have/pdf": "workspace:*",
+      "@have/spider": "workspace:*",
+      "@have/sql": "workspace:*",
+      "@have/translator": "workspace:*",
+      "@have/utils": "workspace:*"
     }
+  },
+  "resolutions": {
+    "@types/node": "24.0.0"
   },
   "engines": {
     "node": ">=24.0.0",

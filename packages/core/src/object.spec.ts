@@ -4,8 +4,11 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject } from './object';
+import { smrt } from './registry';
 
 // Simple test class extending SmrtObject
+// Phase 2: @smrt() decorator needed for test classes (not in AST manifest)
+@smrt()
 class TestObject extends SmrtObject {
   static tableName = 'test_objects';
 

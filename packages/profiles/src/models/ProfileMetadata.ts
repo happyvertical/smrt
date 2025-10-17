@@ -5,8 +5,13 @@
  * Uses UUID primary key with foreign keys to Profile and ProfileMetafield.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
-import { text, foreignKey } from '@smrt/core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+  text,
+} from '@smrt/core';
 
 export interface ProfileMetadataOptions extends SmrtObjectOptions {
   profileId?: string;

@@ -11,10 +11,10 @@ export class AssetCollection extends SmrtCollection<Asset> {
   static readonly _itemClass = Asset;
 
   /**
-   * Add a tag to an asset (uses @have/tags)
+   * Add a tag to an asset (uses @smrt/tags)
    *
    * @param assetId - The asset ID to tag
-   * @param tagSlug - The tag slug from @have/tags
+   * @param tagSlug - The tag slug from @smrt/tags
    */
   async addTag(assetId: string, tagSlug: string): Promise<void> {
     const db = await this.getDb();

@@ -140,3 +140,6 @@ repomix-output.xml
 # Document processing cache
 *.processed_pdf
 /sdk
+# Generated manifest files
+**/static-manifest.ts
+**/static-manifest.json

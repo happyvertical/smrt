@@ -4,16 +4,16 @@
  */
 
 import {
-  writeFileSync,
-  mkdirSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import type {
-  SmartObjectManifest,
   SmartObjectDefinition,
+  SmartObjectManifest,
 } from '../scanner/types';
 
 export interface SvelteKitOptions {

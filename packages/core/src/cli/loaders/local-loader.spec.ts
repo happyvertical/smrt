@@ -2,8 +2,8 @@
  * Local Loader Tests
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { resolve } from 'node:path';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted to create mocks before hoisting
 const { mockAccess, mockHomedir } = vi.hoisted(() => ({
@@ -21,7 +21,7 @@ vi.mock('node:os', () => ({
 }));
 
 // Import after mocks are set up
-import { resolveLocalPath, loadLocalTemplate } from './local-loader.js';
+import { loadLocalTemplate, resolveLocalPath } from './local-loader.js';
 
 describe('Local Loader', () => {
   beforeEach(() => {

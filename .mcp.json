@@ -1,0 +1,52 @@
+{
+  "mcpServers": {
+    "smrt-advisor": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "tsx",
+        "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/mcp-advisor/index.ts"
+      ],
+      "env": {
+        "DEBUG": "false"
+      },
+      "cwd": "/Users/will/Work/happyvertical/repos/smrt"
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "/Users/will/Work/happyvertical/repos/smrt/scripts/mcp-servers/playwright.sh",
+      "args": [],
+      "env": {
+        "PLAYWRIGHT_MCP_ISOLATED": "true"
+      }
+    },
+    "mcp-svelte-docs": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-svelte-docs"
+      ],
+      "env": {}
+    },
+    "chrome-devtools": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ],
+      "env": {}
+    },
+    "gemini": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "gemini-mcp-tool"
+      ],
+      "env": {}
+    }
+  }
+}

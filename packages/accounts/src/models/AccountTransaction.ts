@@ -49,7 +49,7 @@ export class AccountTransaction extends SmrtObject {
    *
    * @returns Parsed metadata object or empty object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -63,7 +63,7 @@ export class AccountTransaction extends SmrtObject {
    *
    * @param data - Metadata object to store
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
@@ -72,7 +72,7 @@ export class AccountTransaction extends SmrtObject {
    *
    * @param updates - Partial metadata to merge
    */
-  updateMetadata(updates: Record<string, any>): void {
+  updateMetadata(updates: Record<string, unknown>): void {
     const current = this.getMetadata();
     this.setMetadata({ ...current, ...updates });
   }
@@ -87,14 +87,13 @@ export class AccountTransaction extends SmrtObject {
       '../collections/AccountTransactionEntryCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionEntryCollection({
+    const collection = await AccountTransactionEntryCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.list({ where: { transactionId: this.id } });
   }
@@ -152,9 +151,9 @@ export class AccountTransaction extends SmrtObject {
    *
    * @returns Map of currency codes to arrays of entries
    */
-  async getEntriesByCurrency(): Promise<Map<string, any[]>> {
+  async getEntriesByCurrency(): Promise<Map<string, unknown[]>> {
     const entries = await this.getEntries();
-    const byCurrency = new Map<string, any[]>();
+    const byCurrency = new Map<string, unknown[]>();
 
     for (const entry of entries) {
       const currency = entry.currency || 'UNKNOWN';

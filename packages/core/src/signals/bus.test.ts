@@ -2,9 +2,9 @@
  * Tests for SignalBus
  */
 
-import { describe, expect, it, beforeEach } from 'vitest';
+import type { ISignalAdapter, Signal } from '@smrt/types';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { SignalBus } from './bus.js';
-import type { Signal, ISignalAdapter } from '@have/types';
 
 describe('SignalBus', () => {
   let bus: SignalBus;

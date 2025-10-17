@@ -269,6 +269,138 @@ class TagAlias extends (_b = SmrtObject) {
 _init2 = __decoratorStart(_b);
 TagAlias = __decorateElement(_init2, 0, "TagAlias", _TagAlias_decorators, TagAlias);
 __runInitializers(_init2, 1, TagAlias);
+class TagAliasCollection extends SmrtCollection {
+  static _itemClass = TagAlias;
+  /**
+   * Add an alias to a tag (get or create)
+   *
+   * @param tagSlug - The tag slug
+   * @param alias - The alias text
+   * @param language - Optional language code
+   * @param context - Optional context
+   * @returns TagAlias instance
+   */
+  async addAlias(tagSlug, alias, language, context) {
+    const where = { tagSlug, alias };
+    if (language) where.language = language;
+    if (context) where.context = context;
+    const existing = await this.list({ where, limit: 1 });
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    return await this.create({
+      tagSlug,
+      alias,
+      language,
+      context
+    });
+  }
+  /**
+   * Search tags by alias
+   *
+   * @param alias - The alias to search for
+   * @param language - Optional language filter
+   * @returns Array of matching tags
+   */
+  async searchByAlias(alias, language) {
+    const where = { alias };
+    if (language) where.language = language;
+    const aliases = await this.list({ where });
+    const tagSlugs = [...new Set(aliases.map((a) => a.tagSlug))];
+    const { TagCollection: TagCollection2 } = await Promise.resolve().then(() => tags);
+    const tagCollection = await TagCollection2.create(this.options);
+    const tags$1 = [];
+    for (const slug of tagSlugs) {
+      const tag = await tagCollection.get({ slug });
+      if (tag) tags$1.push(tag);
+    }
+    return tags$1;
+  }
+  /**
+   * Get all aliases for a tag
+   *
+   * @param tagSlug - The tag slug
+   * @param language - Optional language filter
+   * @returns Array of TagAlias instances
+   */
+  async getAliasesForTag(tagSlug, language) {
+    const where = { tagSlug };
+    if (language) where.language = language;
+    return await this.list({ where });
+  }
+  /**
+   * Remove an alias by ID
+   *
+   * @param aliasId - The alias UUID
+   */
+  async removeAlias(aliasId) {
+    const alias = await this.get({ id: aliasId });
+    if (alias) {
+      await alias.delete();
+    }
+  }
+  /**
+   * Bulk add aliases to a tag
+   *
+   * @param tagSlug - The tag slug
+   * @param aliases - Array of alias configurations
+   * @returns Array of created TagAlias instances
+   */
+  async bulkAddAliases(tagSlug, aliases) {
+    const created = [];
+    for (const aliasData of aliases) {
+      const tagAlias = await this.addAlias(
+        tagSlug,
+        aliasData.alias,
+        aliasData.language,
+        aliasData.context
+      );
+      created.push(tagAlias);
+    }
+    return created;
+  }
+  /**
+   * Get aliases grouped by language
+   *
+   * @param tagSlug - The tag slug
+   * @returns Map of language code to array of aliases
+   */
+  async getAliasesByLanguage(tagSlug) {
+    const aliases = await this.getAliasesForTag(tagSlug);
+    const grouped = /* @__PURE__ */ new Map();
+    for (const alias of aliases) {
+      const lang = alias.language || "default";
+      if (!grouped.has(lang)) {
+        grouped.set(lang, []);
+      }
+      grouped.get(lang)?.push(alias.alias);
+    }
+    return grouped;
+  }
+  /**
+   * Find similar aliases (case-insensitive partial match)
+   *
+   * Note: This is a simple implementation. For production use,
+   * consider using full-text search or fuzzy matching.
+   *
+   * @param query - The search query
+   * @param language - Optional language filter
+   * @returns Array of matching TagAlias instances
+   */
+  async findSimilar(query, language) {
+    const where = {};
+    if (language) where.language = language;
+    const all = await this.list({ where });
+    const queryLower = query.toLowerCase();
+    return all.filter(
+      (alias) => alias.alias.toLowerCase().includes(queryLower)
+    );
+  }
+}
+const tagAliases = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  TagAliasCollection
+}, Symbol.toStringTag, { value: "Module" }));
 class TagCollection extends SmrtCollection {
   static _itemClass = Tag;
   /**
@@ -501,138 +633,6 @@ class TagCollection extends SmrtCollection {
 const tags = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   TagCollection
-}, Symbol.toStringTag, { value: "Module" }));
-class TagAliasCollection extends SmrtCollection {
-  static _itemClass = TagAlias;
-  /**
-   * Add an alias to a tag (get or create)
-   *
-   * @param tagSlug - The tag slug
-   * @param alias - The alias text
-   * @param language - Optional language code
-   * @param context - Optional context
-   * @returns TagAlias instance
-   */
-  async addAlias(tagSlug, alias, language, context) {
-    const where = { tagSlug, alias };
-    if (language) where.language = language;
-    if (context) where.context = context;
-    const existing = await this.list({ where, limit: 1 });
-    if (existing.length > 0) {
-      return existing[0];
-    }
-    return await this.create({
-      tagSlug,
-      alias,
-      language,
-      context
-    });
-  }
-  /**
-   * Search tags by alias
-   *
-   * @param alias - The alias to search for
-   * @param language - Optional language filter
-   * @returns Array of matching tags
-   */
-  async searchByAlias(alias, language) {
-    const where = { alias };
-    if (language) where.language = language;
-    const aliases = await this.list({ where });
-    const tagSlugs = [...new Set(aliases.map((a) => a.tagSlug))];
-    const { TagCollection: TagCollection2 } = await Promise.resolve().then(() => tags);
-    const tagCollection = await TagCollection2.create(this.options);
-    const tags$1 = [];
-    for (const slug of tagSlugs) {
-      const tag = await tagCollection.get({ slug });
-      if (tag) tags$1.push(tag);
-    }
-    return tags$1;
-  }
-  /**
-   * Get all aliases for a tag
-   *
-   * @param tagSlug - The tag slug
-   * @param language - Optional language filter
-   * @returns Array of TagAlias instances
-   */
-  async getAliasesForTag(tagSlug, language) {
-    const where = { tagSlug };
-    if (language) where.language = language;
-    return await this.list({ where });
-  }
-  /**
-   * Remove an alias by ID
-   *
-   * @param aliasId - The alias UUID
-   */
-  async removeAlias(aliasId) {
-    const alias = await this.get({ id: aliasId });
-    if (alias) {
-      await alias.delete();
-    }
-  }
-  /**
-   * Bulk add aliases to a tag
-   *
-   * @param tagSlug - The tag slug
-   * @param aliases - Array of alias configurations
-   * @returns Array of created TagAlias instances
-   */
-  async bulkAddAliases(tagSlug, aliases) {
-    const created = [];
-    for (const aliasData of aliases) {
-      const tagAlias = await this.addAlias(
-        tagSlug,
-        aliasData.alias,
-        aliasData.language,
-        aliasData.context
-      );
-      created.push(tagAlias);
-    }
-    return created;
-  }
-  /**
-   * Get aliases grouped by language
-   *
-   * @param tagSlug - The tag slug
-   * @returns Map of language code to array of aliases
-   */
-  async getAliasesByLanguage(tagSlug) {
-    const aliases = await this.getAliasesForTag(tagSlug);
-    const grouped = /* @__PURE__ */ new Map();
-    for (const alias of aliases) {
-      const lang = alias.language || "default";
-      if (!grouped.has(lang)) {
-        grouped.set(lang, []);
-      }
-      grouped.get(lang)?.push(alias.alias);
-    }
-    return grouped;
-  }
-  /**
-   * Find similar aliases (case-insensitive partial match)
-   *
-   * Note: This is a simple implementation. For production use,
-   * consider using full-text search or fuzzy matching.
-   *
-   * @param query - The search query
-   * @param language - Optional language filter
-   * @returns Array of matching TagAlias instances
-   */
-  async findSimilar(query, language) {
-    const where = {};
-    if (language) where.language = language;
-    const all = await this.list({ where });
-    const queryLower = query.toLowerCase();
-    return all.filter(
-      (alias) => alias.alias.toLowerCase().includes(queryLower)
-    );
-  }
-}
-const tagAliases = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  TagAliasCollection
 }, Symbol.toStringTag, { value: "Module" }));
 function validateSlug(slug) {
   const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

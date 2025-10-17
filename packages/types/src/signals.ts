@@ -78,9 +78,9 @@ export interface Signal {
   duration?: number;
 
   /**
-   * Unix timestamp when signal was emitted
+   * Timestamp when signal was emitted
    */
-  timestamp: number;
+  timestamp: Date;
 
   /**
    * Optional additional context

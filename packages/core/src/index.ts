@@ -16,45 +16,45 @@
  * - MCPGenerator: Create MCP servers for AI model integration
  */
 
+// Built-in signal adapters
+export * from './adapters/index';
 // Core SMRT framework
 export * from './class';
 export * from './collection';
-export * from './errors';
-export * from './fields/index';
-// Code generators (tree-shakeable)
-export * from './generators/index';
-export * from './object';
-export * from './pleb';
-export * from './registry';
-export { smrt as smrtRegistry } from './registry';
-// Global configuration (callable function)
-export { config } from './config';
 export type {
   GlobalSignalConfig,
   MetricsConfig,
   PubSubConfig,
 } from './config';
-// Runtime utilities
-export * from './runtime/index';
+// Global configuration (callable function)
+export { config } from './config';
+export * from './errors';
+export * from './fields/index';
+// Code generators (tree-shakeable)
+export * from './generators/index';
 // Static manifest (generated at build time)
 export * from './manifest/index';
-// AI function calling tools
-export * from './tools/index';
+export * from './object';
+export * from './pleb';
+export * from './registry';
+export { smrt as smrtRegistry } from './registry';
+// Runtime utilities
+export * from './runtime/index';
 // Universal signaling system
 export * from './signals/index';
-// Built-in signal adapters
-export * from './adapters/index';
-// Vite plugin for auto-service generation
-export { smrtPlugin } from './vite-plugin/index';
 // System tables and types (note-taking, migrations, registry, signals)
 export * from './system/index';
 export type {
-  NoteOptions,
-  NoteMetadata,
-  RecallOptions,
-  RecallAllOptions,
+  DiscoveryStrategy,
   ForgetOptions,
   ForgetScopeOptions,
-  DiscoveryStrategy,
+  NoteMetadata,
+  NoteOptions,
+  RecallAllOptions,
+  RecallOptions,
   SystemTableConfig,
 } from './system/types';
+// AI function calling tools
+export * from './tools/index';
+// Vite plugin for auto-service generation
+export { smrtPlugin } from './vite-plugin/index';

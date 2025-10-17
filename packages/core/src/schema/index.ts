@@ -2,20 +2,19 @@
  * Schema generation module exports
  */
 
-export * from './types';
-export { SchemaGenerator } from './generator';
 export { SchemaCodeGenerator } from './code-generator';
-export { RuntimeSchemaManager } from './runtime-manager';
+export { SchemaGenerator } from './generator';
 export { SchemaOverrideSystem } from './override-system';
-
+export { RuntimeSchemaManager } from './runtime-manager';
 // Re-export for easy access
 export type {
+  ColumnDefinition,
+  ForeignKeyDefinition,
+  IndexDefinition,
   SchemaDefinition,
   SchemaManifest,
-  SchemaOverride,
-  ColumnDefinition,
-  IndexDefinition,
-  TriggerDefinition,
-  ForeignKeyDefinition,
   SchemaMigration,
+  SchemaOverride,
+  TriggerDefinition,
 } from './types';
+export * from './types';

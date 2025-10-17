@@ -1,5 +1,5 @@
-import { MethodDefinition } from '../scanner/types';
 import { AITool } from '@have/ai';
+import { MethodDefinition } from '../scanner/types';
 /**
  * Configuration for AI-callable methods
  */

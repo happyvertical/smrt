@@ -9,8 +9,8 @@ import {
   formatDataSql,
   generateSchema,
   tableNameFromClass,
-  toSnakeCase,
   toCamelCase,
+  toSnakeCase,
 } from './utils';
 
 /**
@@ -155,10 +155,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * });
    * ```
    */
-  static async create<T extends new (...args: any[]) => SmrtCollection<any>>(
+  static async create<T extends typeof SmrtCollection>(
     this: T,
     options: SmrtClassOptions = {},
-  ): Promise<InstanceType<T>> {
+  ): Promise<any> {
     // Extract only collection-compatible options from broader SmrtClassOptions
     const {
       _className,
@@ -192,7 +192,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     await instance.initialize();
 
     // Return fully initialized instance
-    return instance as InstanceType<T>;
+    return instance as any;
   }
 
   /**
@@ -664,7 +664,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return generateSchema(this._itemClass);
   }
 
-
   /**
    * Gets the database table name for this collection
    */
@@ -870,11 +869,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * });
    * ```
    */
-  public async recallAll(options: {
-    scope?: string;
-    includeDescendants?: boolean;
-    minConfidence?: number;
-  } = {}): Promise<Map<string, any>> {
+  public async recallAll(
+    options: {
+      scope?: string;
+      includeDescendants?: boolean;
+      minConfidence?: number;
+    } = {},
+  ): Promise<Map<string, any>> {
     if (!this.systemDb) {
       throw new Error('Database not initialized. Call initialize() first.');
     }

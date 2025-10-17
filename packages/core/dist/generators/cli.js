@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline";
-import { O as ObjectRegistry } from "../chunks/registry-CfuDpgvg.js";
 import { parseCliArgs } from "@have/utils";
+import { O as ObjectRegistry } from "../chunks/registry-C37C3qXd.js";
 let _gnodeCommands = null;
 let _generateCommands = null;
 async function getGnodeCommands() {
@@ -220,7 +220,9 @@ class CLIGenerator {
         return;
       }
       if (!command.handler) {
-        this.exitWithError(`Command '${parsed.command}' has no handler defined`);
+        this.exitWithError(
+          `Command '${parsed.command}' has no handler defined`
+        );
         return;
       }
       try {

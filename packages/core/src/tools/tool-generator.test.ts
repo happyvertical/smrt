@@ -5,11 +5,11 @@
 import { describe, expect, it } from 'vitest';
 import type { MethodDefinition } from '../scanner/types';
 import {
+  type AiConfig,
   convertTypeToJsonSchema,
   generateToolFromMethod,
   generateToolManifest,
   shouldIncludeMethod,
-  type AiConfig,
 } from './tool-generator';
 
 describe('convertTypeToJsonSchema', () => {

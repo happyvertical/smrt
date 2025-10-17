@@ -3,9 +3,9 @@ import path from 'node:path';
 import type { AIClientOptions } from '@have/ai';
 import { fetchDocument } from '@have/documents';
 import { ensureDirectoryExists } from '@have/files';
+import { makeSlug } from '@have/utils';
 import type { SmrtCollectionOptions } from '@smrt/core';
 import { SmrtCollection } from '@smrt/core';
-import { makeSlug } from '@have/utils';
 import YAML from 'yaml';
 import { Content } from './content';
 

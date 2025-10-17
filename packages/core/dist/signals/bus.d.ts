@@ -1,4 +1,4 @@
-import { Signal, ISignalAdapter } from '@have/types';
+import { ISignalAdapter, Signal } from '@smrt/types';
 import { SanitizationConfig } from './sanitizer.js';
 /**
  * Central signal distribution bus
