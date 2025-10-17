@@ -5,7 +5,7 @@
  * (virtual worlds, game zones) by making all geo fields optional.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { GeoData, PlaceOptions } from '../types';
 
 @smrt({
@@ -198,7 +198,7 @@ export class Place extends SmrtObject {
     const ancestors: Place[] = [];
     let currentPlace: Place | null = this;
 
-    while (currentPlace && currentPlace.parentId) {
+    while (currentPlace?.parentId) {
       const parent = await currentPlace.getParent();
       if (!parent) break;
       ancestors.unshift(parent); // Add to beginning

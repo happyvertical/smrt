@@ -1,9 +1,9 @@
 /**
- * Tests for Signal and ISignalAdapter types
+ * Tests for Signal and SignalAdapter types
  */
 
 import { describe, expect, it } from 'vitest';
-import type { ISignalAdapter, Signal, SignalType } from './signals.js';
+import type { Signal, SignalAdapter, SignalType } from './signals.js';
 
 describe('Signal Types', () => {
   it('should allow creating valid Signal objects', () => {
@@ -78,11 +78,11 @@ describe('Signal Types', () => {
   });
 });
 
-describe('ISignalAdapter Interface', () => {
+describe('SignalAdapter Interface', () => {
   it('should allow implementing signal adapters', async () => {
     const receivedSignals: Signal[] = [];
 
-    const adapter: ISignalAdapter = {
+    const adapter: SignalAdapter = {
       async handle(signal: Signal): Promise<void> {
         receivedSignals.push(signal);
       },
@@ -106,7 +106,7 @@ describe('ISignalAdapter Interface', () => {
   it('should support async adapter implementations', async () => {
     let handledCount = 0;
 
-    const adapter: ISignalAdapter = {
+    const adapter: SignalAdapter = {
       async handle(signal: Signal): Promise<void> {
         // Simulate async operation
         await new Promise((resolve) => setTimeout(resolve, 10));

@@ -327,9 +327,9 @@ export class PlaceCollection extends SmrtCollection<Place> {
         return { place, distance };
       })
       .filter((p) => p !== null && p.distance <= radiusKm)
-      .sort((a, b) => a!.distance - b!.distance);
+      .sort((a, b) => a?.distance - b?.distance);
 
-    return placesWithDistance.map((p) => p!.place);
+    return placesWithDistance.map((p) => p?.place);
   }
 
   /**

@@ -134,13 +134,13 @@ describe('ObjectRegistry', () => {
       const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
 
       expect(metadata).not.toBeNull();
-      expect(metadata!.name).toBe('TestProduct');
-      expect(metadata!.constructor).toBe(TestProduct);
-      expect(metadata!.config.api).toEqual({
+      expect(metadata?.name).toBe('TestProduct');
+      expect(metadata?.constructor).toBe(TestProduct);
+      expect(metadata?.config.api).toEqual({
         include: ['list', 'get', 'create'],
       });
-      expect(metadata!.config.mcp).toEqual({ include: ['list', 'get'] });
-      expect(metadata!.config.cli).toBe(true);
+      expect(metadata?.config.mcp).toEqual({ include: ['list', 'get'] });
+      expect(metadata?.config.cli).toBe(true);
     });
 
     it('should include field definitions', () => {
@@ -157,12 +157,12 @@ describe('ObjectRegistry', () => {
       const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
 
       expect(metadata).not.toBeNull();
-      expect(metadata!.fields).toBeInstanceOf(Map);
-      expect(metadata!.fields.has('name')).toBe(true);
-      expect(metadata!.fields.has('price')).toBe(true);
-      expect(metadata!.fields.has('categoryId')).toBe(true);
+      expect(metadata?.fields).toBeInstanceOf(Map);
+      expect(metadata?.fields.has('name')).toBe(true);
+      expect(metadata?.fields.has('price')).toBe(true);
+      expect(metadata?.fields.has('categoryId')).toBe(true);
 
-      const nameField = metadata!.fields.get('name');
+      const nameField = metadata?.fields.get('name');
       expect(nameField.type).toBe('text');
       expect(nameField.options.required).toBe(true);
       expect(nameField.options.maxLength).toBe(100);
@@ -182,10 +182,10 @@ describe('ObjectRegistry', () => {
       const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
 
       expect(metadata).not.toBeNull();
-      expect(metadata!.schema).toBeDefined();
-      expect(metadata!.schema!.tableName).toBe('test_products');
-      expect(metadata!.schema!.ddl).toContain('CREATE TABLE');
-      expect(metadata!.schema!.triggers).toBeInstanceOf(Array);
+      expect(metadata?.schema).toBeDefined();
+      expect(metadata?.schema?.tableName).toBe('test_products');
+      expect(metadata?.schema?.ddl).toContain('CREATE TABLE');
+      expect(metadata?.schema?.triggers).toBeInstanceOf(Array);
     });
 
     it('should include validators', () => {
@@ -202,8 +202,8 @@ describe('ObjectRegistry', () => {
       const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
 
       expect(metadata).not.toBeNull();
-      expect(metadata!.validators).toBeInstanceOf(Array);
-      expect(metadata!.validators.length).toBeGreaterThan(0); // Has required field validators
+      expect(metadata?.validators).toBeInstanceOf(Array);
+      expect(metadata?.validators.length).toBeGreaterThan(0); // Has required field validators
     });
 
     it('should include relationships', () => {
@@ -229,14 +229,14 @@ describe('ObjectRegistry', () => {
       const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
 
       expect(metadata).not.toBeNull();
-      expect(metadata!.relationships).toBeInstanceOf(Array);
+      expect(metadata?.relationships).toBeInstanceOf(Array);
 
-      const categoryRel = metadata!.relationships.find(
+      const categoryRel = metadata?.relationships.find(
         (r) => r.fieldName === 'categoryId',
       );
       expect(categoryRel).toBeDefined();
-      expect(categoryRel!.type).toBe('foreignKey');
-      expect(categoryRel!.targetClass).toBe('TestCategory');
+      expect(categoryRel?.type).toBe('foreignKey');
+      expect(categoryRel?.targetClass).toBe('TestCategory');
     });
 
     it('should include inverse relationships', () => {
@@ -262,14 +262,14 @@ describe('ObjectRegistry', () => {
       const metadata = ObjectRegistry.getObjectMetadata('TestCategory');
 
       expect(metadata).not.toBeNull();
-      expect(metadata!.inverseRelationships).toBeInstanceOf(Array);
+      expect(metadata?.inverseRelationships).toBeInstanceOf(Array);
 
       // TestCategory should have inverse relationship from TestProduct.categoryId
-      const inverseRel = metadata!.inverseRelationships.find(
+      const inverseRel = metadata?.inverseRelationships.find(
         (r) => r.sourceClass === 'TestProduct' && r.fieldName === 'categoryId',
       );
       expect(inverseRel).toBeDefined();
-      expect(inverseRel!.targetClass).toBe('TestCategory');
+      expect(inverseRel?.targetClass).toBe('TestCategory');
     });
 
     it('should work with case-insensitive class names', () => {
@@ -290,8 +290,8 @@ describe('ObjectRegistry', () => {
       expect(metadata1).not.toBeNull();
       expect(metadata2).not.toBeNull();
       expect(metadata3).not.toBeNull();
-      expect(metadata1!.name).toBe(metadata2!.name);
-      expect(metadata2!.name).toBe(metadata3!.name);
+      expect(metadata1?.name).toBe(metadata2?.name);
+      expect(metadata2?.name).toBe(metadata3?.name);
     });
   });
 
@@ -435,31 +435,31 @@ describe('ObjectRegistry', () => {
 
       const testProduct = dashboardData.find((d) => d.name === 'TestProduct');
       expect(testProduct).toBeDefined();
-      expect(testProduct!.fieldCount).toBe(3);
-      expect(testProduct!.hasAPI).toBe(true);
-      expect(testProduct!.hasCLI).toBe(true);
-      expect(testProduct!.relationshipCount).toBe(1); // Has categoryId foreignKey
+      expect(testProduct?.fieldCount).toBe(3);
+      expect(testProduct?.hasAPI).toBe(true);
+      expect(testProduct?.hasCLI).toBe(true);
+      expect(testProduct?.relationshipCount).toBe(1); // Has categoryId foreignKey
 
       const testCategory = dashboardData.find((d) => d.name === 'TestCategory');
       expect(testCategory).toBeDefined();
-      expect(testCategory!.fieldCount).toBe(2);
-      expect(testCategory!.hasAPI).toBe(true);
-      expect(testCategory!.hasCLI).toBe(true);
-      expect(testCategory!.relationshipCount).toBe(0);
+      expect(testCategory?.fieldCount).toBe(2);
+      expect(testCategory?.hasAPI).toBe(true);
+      expect(testCategory?.hasCLI).toBe(true);
+      expect(testCategory?.relationshipCount).toBe(0);
 
       const testOrder = dashboardData.find((d) => d.name === 'TestOrder');
       expect(testOrder).toBeDefined();
-      expect(testOrder!.fieldCount).toBe(3);
-      expect(testOrder!.hasAPI).toBe(true);
-      expect(testOrder!.hasCLI).toBe(true);
-      expect(testOrder!.relationshipCount).toBe(2); // Has customerId and productId foreignKeys
+      expect(testOrder?.fieldCount).toBe(3);
+      expect(testOrder?.hasAPI).toBe(true);
+      expect(testOrder?.hasCLI).toBe(true);
+      expect(testOrder?.relationshipCount).toBe(2); // Has customerId and productId foreignKeys
 
       const testCustomer = dashboardData.find((d) => d.name === 'TestCustomer');
       expect(testCustomer).toBeDefined();
-      expect(testCustomer!.fieldCount).toBe(2);
-      expect(testCustomer!.hasAPI).toBe(true);
-      expect(testCustomer!.hasCLI).toBe(true);
-      expect(testCustomer!.relationshipCount).toBe(0);
+      expect(testCustomer?.fieldCount).toBe(2);
+      expect(testCustomer?.hasAPI).toBe(true);
+      expect(testCustomer?.hasCLI).toBe(true);
+      expect(testCustomer?.relationshipCount).toBe(0);
     });
 
     it('should be useful for schema documentation generation', () => {
@@ -505,18 +505,18 @@ describe('ObjectRegistry', () => {
       // Check TestProduct schema
       const productDoc = schemaDoc.find((doc) => doc.name === 'TestProduct');
       expect(productDoc).toBeDefined();
-      expect(productDoc!.table).toBe('test_products');
-      expect(productDoc!.fields).toContainEqual({
+      expect(productDoc?.table).toBe('test_products');
+      expect(productDoc?.fields).toContainEqual({
         name: 'name',
         type: 'text',
         required: true,
       });
-      expect(productDoc!.fields).toContainEqual({
+      expect(productDoc?.fields).toContainEqual({
         name: 'price',
         type: 'decimal',
         required: false,
       });
-      expect(productDoc!.relationships).toContainEqual({
+      expect(productDoc?.relationships).toContainEqual({
         field: 'categoryId',
         target: 'TestCategory',
         type: 'foreignKey',
@@ -550,11 +550,11 @@ describe('ObjectRegistry', () => {
       const relationships = ObjectRegistry.getRelationships('TestProduct');
 
       // Compare
-      expect(metadata!.config).toEqual(config);
-      expect(metadata!.fields.size).toBe(fields.size);
-      expect(metadata!.schema).toEqual(schema);
-      expect(metadata!.validators).toEqual(validators);
-      expect(metadata!.relationships).toEqual(relationships);
+      expect(metadata?.config).toEqual(config);
+      expect(metadata?.fields.size).toBe(fields.size);
+      expect(metadata?.schema).toEqual(schema);
+      expect(metadata?.validators).toEqual(validators);
+      expect(metadata?.relationships).toEqual(relationships);
     });
 
     it('should return field map copies to prevent mutations', () => {
@@ -569,16 +569,16 @@ describe('ObjectRegistry', () => {
       registerTestClass(TestProduct, fields);
 
       const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
-      const originalSize = metadata!.fields.size;
+      const originalSize = metadata?.fields.size;
 
       // Attempt to mutate
-      metadata!.fields.set('newField', { type: 'text' });
+      metadata?.fields.set('newField', { type: 'text' });
 
       // Get fresh metadata
       const freshMetadata = ObjectRegistry.getObjectMetadata('TestProduct');
 
-      expect(freshMetadata!.fields.size).toBe(originalSize);
-      expect(freshMetadata!.fields.has('newField')).toBe(false);
+      expect(freshMetadata?.fields.size).toBe(originalSize);
+      expect(freshMetadata?.fields.has('newField')).toBe(false);
     });
   });
 
@@ -718,7 +718,7 @@ describe('ObjectRegistry', () => {
       }
 
       const metadata = ObjectRegistry.getObjectMetadata('TableNameTest');
-      expect(metadata!.schema!.tableName).toBe('table_name_tests');
+      expect(metadata?.schema?.tableName).toBe('table_name_tests');
     });
 
     it('should respect custom tableName in config', () => {
@@ -729,7 +729,7 @@ describe('ObjectRegistry', () => {
       }
 
       const metadata = ObjectRegistry.getObjectMetadata('CustomTableProduct');
-      expect(metadata!.schema!.tableName).toBe('my_custom_products');
+      expect(metadata?.schema?.tableName).toBe('my_custom_products');
 
       // Check SMRT_TABLE_NAME property
       expect((CustomTableProduct as any).SMRT_TABLE_NAME).toBe(

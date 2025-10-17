@@ -36,7 +36,7 @@ export class ProfileType extends SmrtObject {
    * @param slug - The slug to search for
    * @returns ProfileType instance or null if not found
    */
-  static async getBySlug(slug: string): Promise<ProfileType | null> {
+  static async getBySlug(_slug: string): Promise<ProfileType | null> {
     // Will be auto-implemented by SMRT
     return null;
   }

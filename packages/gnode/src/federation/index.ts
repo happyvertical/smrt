@@ -18,14 +18,12 @@ export interface FederationConfig {
 }
 
 export class Federation {
-  constructor(private config: FederationConfig) {}
-
   async discoverPeers(): Promise<GnodePeer[]> {
     // TODO: Implement peer discovery via WebFinger, DNS, etc.
     return [];
   }
 
-  async exchangePeers(peer: GnodePeer): Promise<GnodePeer[]> {
+  async exchangePeers(_peer: GnodePeer): Promise<GnodePeer[]> {
     // TODO: Implement peer exchange protocol
     return [];
   }

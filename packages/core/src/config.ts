@@ -9,7 +9,7 @@
  */
 
 import type { LoggerConfig } from '@have/logger';
-import type { ISignalAdapter } from '@smrt/types';
+import type { SignalAdapter } from '@smrt/types';
 import type { SignalBus } from './signals/bus.js';
 import type { SanitizationConfig } from './signals/sanitizer.js';
 
@@ -56,7 +56,7 @@ export interface GlobalSignalConfig {
     /** Shared signal bus instance */
     bus?: SignalBus;
     /** Additional custom adapters */
-    adapters?: ISignalAdapter[];
+    adapters?: SignalAdapter[];
   };
 }
 

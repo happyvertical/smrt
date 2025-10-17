@@ -5,4 +5,4 @@
  * used across multiple HAVE SDK packages to prevent circular dependencies.
  */
 
-export type { ISignalAdapter, Signal, SignalType } from './signals.js';
+export type { Signal, SignalAdapter, SignalType } from './signals.js';

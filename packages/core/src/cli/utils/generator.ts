@@ -230,5 +230,5 @@ async function mergePackageJson(
   }
 
   // Write back
-  await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 }

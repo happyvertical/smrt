@@ -5,7 +5,7 @@
  * for taxonomies and category trees.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { TagMetadata, TagOptions } from './types';
 
 @smrt({
@@ -165,7 +165,10 @@ export class Tag extends SmrtObject {
    * @param context - Optional context filter
    * @returns Tag instance or null if not found
    */
-  static async getBySlug(slug: string, context?: string): Promise<Tag | null> {
+  static async getBySlug(
+    _slug: string,
+    _context?: string,
+  ): Promise<Tag | null> {
     // Will be auto-implemented by SMRT
     return null;
   }
@@ -176,7 +179,7 @@ export class Tag extends SmrtObject {
    * @param context - The context to filter by
    * @returns Array of root tags
    */
-  static async getRootTags(context: string = 'global'): Promise<Tag[]> {
+  static async getRootTags(_context: string = 'global'): Promise<Tag[]> {
     // Will be auto-implemented by SMRT
     return [];
   }

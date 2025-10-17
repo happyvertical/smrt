@@ -493,7 +493,7 @@ export class ObjectRegistry {
 
       // Create a default collection class dynamically
       class DefaultCollection extends SmrtCollectionClass<T> {
-        static readonly _itemClass = registered!.constructor as any;
+        static readonly _itemClass = registered?.constructor as any;
       }
 
       // Register it for future use

@@ -78,15 +78,14 @@ export async function getObjectConfig(
     };
 
     // Format output
-    let output: string;
+    let _output: string;
 
     switch (format) {
       case 'yaml':
-        output = formatAsYAML(objectConfig);
+        _output = formatAsYAML(objectConfig);
         break;
-      case 'json':
       default:
-        output = JSON.stringify(objectConfig, null, 2);
+        _output = JSON.stringify(objectConfig, null, 2);
         break;
     }
 

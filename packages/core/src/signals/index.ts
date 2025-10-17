@@ -6,8 +6,8 @@
  */
 
 export type {
-  ISignalAdapter,
   Signal,
+  SignalAdapter,
   SignalType,
 } from '@smrt/types';
 export { SignalBus } from './bus.js';

@@ -2,7 +2,7 @@
  * Tests for SignalBus
  */
 
-import type { ISignalAdapter, Signal } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@smrt/types';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SignalBus } from './bus.js';
 
@@ -14,7 +14,7 @@ describe('SignalBus', () => {
   });
 
   it('should register adapters', () => {
-    const adapter: ISignalAdapter = {
+    const adapter: SignalAdapter = {
       async handle(signal: Signal) {},
     };
 
@@ -23,7 +23,7 @@ describe('SignalBus', () => {
   });
 
   it('should unregister adapters', () => {
-    const adapter: ISignalAdapter = {
+    const adapter: SignalAdapter = {
       async handle(signal: Signal) {},
     };
 
@@ -37,7 +37,7 @@ describe('SignalBus', () => {
   it('should emit signals to registered adapters', async () => {
     const receivedSignals: Signal[] = [];
 
-    const adapter: ISignalAdapter = {
+    const adapter: SignalAdapter = {
       async handle(signal: Signal) {
         receivedSignals.push(signal);
       },
@@ -67,13 +67,13 @@ describe('SignalBus', () => {
     const received1: Signal[] = [];
     const received2: Signal[] = [];
 
-    const adapter1: ISignalAdapter = {
+    const adapter1: SignalAdapter = {
       async handle(signal: Signal) {
         received1.push(signal);
       },
     };
 
-    const adapter2: ISignalAdapter = {
+    const adapter2: SignalAdapter = {
       async handle(signal: Signal) {
         received2.push(signal);
       },
@@ -101,13 +101,13 @@ describe('SignalBus', () => {
   });
 
   it('should handle adapter errors gracefully', async () => {
-    const errorAdapter: ISignalAdapter = {
+    const errorAdapter: SignalAdapter = {
       async handle(signal: Signal) {
         throw new Error('Adapter error');
       },
     };
 
-    const workingAdapter: ISignalAdapter = {
+    const workingAdapter: SignalAdapter = {
       async handle(signal: Signal) {
         // Should still execute even if errorAdapter throws
       },
@@ -139,11 +139,11 @@ describe('SignalBus', () => {
   });
 
   it('should clear all adapters', () => {
-    const adapter1: ISignalAdapter = {
+    const adapter1: SignalAdapter = {
       async handle(signal: Signal) {},
     };
 
-    const adapter2: ISignalAdapter = {
+    const adapter2: SignalAdapter = {
       async handle(signal: Signal) {},
     };
 
@@ -158,7 +158,7 @@ describe('SignalBus', () => {
   it('should support different signal types', async () => {
     const receivedTypes: string[] = [];
 
-    const adapter: ISignalAdapter = {
+    const adapter: SignalAdapter = {
       async handle(signal: Signal) {
         receivedTypes.push(signal.type);
       },

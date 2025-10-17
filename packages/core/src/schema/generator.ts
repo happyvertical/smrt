@@ -3,7 +3,7 @@
  * Converts AST field definitions to database schema definitions
  */
 
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 import type { Field } from '../fields/index';
 import type { FieldDefinition, SmartObjectDefinition } from '../scanner/types';
 import type {
@@ -128,10 +128,10 @@ export class SchemaGenerator {
 
       // Handle foreign keys
       if (fieldDef.type === 'foreignKey' && fieldDef.related) {
-        const [table, column_name = 'id'] = fieldDef.related.split('.');
+        const [table, columnName = 'id'] = fieldDef.related.split('.');
         column.foreignKey = {
           table,
-          column: column_name,
+          column: columnName,
           onDelete: 'CASCADE', // Default behavior
           onUpdate: 'CASCADE',
         };
@@ -195,7 +195,7 @@ export class SchemaGenerator {
    * Generate trigger definitions for automatic timestamp updates
    */
   private generateTriggers(
-    objectDef: SmartObjectDefinition,
+    _objectDef: SmartObjectDefinition,
     tableName: string,
   ): TriggerDefinition[] {
     return [
@@ -281,13 +281,11 @@ export class SchemaGenerator {
    * Convert class name to table name (camelCase to snake_case, pluralized)
    */
   private classNameToTableName(className: string): string {
-    return (
-      className
-        .replace(/([A-Z])/g, '_$1')
-        .toLowerCase()
-        .replace(/^_/, '')
-        .replace(/s$/, '') + 's'
-    ); // Simple pluralization
+    return `${className
+      .replace(/([A-Z])/g, '_$1')
+      .toLowerCase()
+      .replace(/^_/, '')
+      .replace(/s$/, '')}s`; // Simple pluralization
   }
 
   /**
@@ -310,7 +308,7 @@ export class SchemaGenerator {
    * @returns Schema definition object
    */
   generateSchemaFromRegistry(
-    className: string,
+    _className: string,
     tableName: string,
     fields: Map<string, Field>,
   ): SchemaDefinition {
@@ -318,7 +316,7 @@ export class SchemaGenerator {
 
     // Check for custom primary key
     let hasCustomPK = false;
-    for (const [fieldName, field] of fields.entries()) {
+    for (const [_fieldName, field] of fields.entries()) {
       if (field.options?.primaryKey) {
         hasCustomPK = true;
         break;
@@ -542,12 +540,12 @@ export class SchemaGenerator {
         parts.push(`DEFAULT ${defaultSQL}`);
       }
 
-      sql += parts.join(' ') + ',\n';
+      sql += `${parts.join(' ')},\n`;
       addedColumns.push(columnName);
     }
 
     // Remove trailing comma and close table
-    sql = sql.slice(0, -2) + '\n);';
+    sql = `${sql.slice(0, -2)}\n);`;
 
     // Add indexes
     for (const index of schema.indexes) {

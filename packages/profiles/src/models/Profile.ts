@@ -423,8 +423,8 @@ export class Profile extends SmrtObject {
    * @returns Array of matching profiles
    */
   static async findByMetadata(
-    metafieldSlug: string,
-    value: any,
+    _metafieldSlug: string,
+    _value: any,
   ): Promise<Profile[]> {
     // Will be auto-implemented by SMRT
     return [];
@@ -436,7 +436,7 @@ export class Profile extends SmrtObject {
    * @param typeSlug - The profile type slug
    * @returns Array of matching profiles
    */
-  static async findByType(typeSlug: string): Promise<Profile[]> {
+  static async findByType(_typeSlug: string): Promise<Profile[]> {
     // Will be auto-implemented by SMRT
     return [];
   }
@@ -449,8 +449,8 @@ export class Profile extends SmrtObject {
    * @returns Array of related profiles
    */
   static async findRelated(
-    profileId: string,
-    relationshipSlug?: string,
+    _profileId: string,
+    _relationshipSlug?: string,
   ): Promise<Profile[]> {
     // Will be auto-implemented by SMRT
     return [];
@@ -462,7 +462,7 @@ export class Profile extends SmrtObject {
    * @param email - The email to search for
    * @returns Profile or null if not found
    */
-  static async searchByEmail(email: string): Promise<Profile | null> {
+  static async searchByEmail(_email: string): Promise<Profile | null> {
     // Will be auto-implemented by SMRT
     return null;
   }

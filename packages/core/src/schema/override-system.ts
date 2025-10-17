@@ -3,7 +3,7 @@
  * Allows packages and applications to extend base schemas
  */
 
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 import type {
   ColumnDefinition,
   SchemaDefinition,
@@ -53,7 +53,7 @@ export class SchemaOverrideSystem {
     // Apply index removals
     if (override.removeIndexes) {
       overriddenSchema.indexes = overriddenSchema.indexes.filter(
-        (index) => !override.removeIndexes!.includes(index.name),
+        (index) => !override.removeIndexes?.includes(index.name),
       );
     }
 
@@ -68,7 +68,7 @@ export class SchemaOverrideSystem {
     // Apply trigger removals
     if (override.removeTriggers) {
       overriddenSchema.triggers = overriddenSchema.triggers.filter(
-        (trigger) => !override.removeTriggers!.includes(trigger.name),
+        (trigger) => !override.removeTriggers?.includes(trigger.name),
       );
     }
 

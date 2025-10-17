@@ -5,7 +5,7 @@
  * Supports language-neutral aliases and context-scoped variations.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@smrt/core';
 import type { Tag } from './tag';
 import type { TagAliasOptions } from './types';
 
@@ -59,7 +59,10 @@ export class TagAlias extends SmrtObject {
    * @param language - Optional language filter
    * @returns Array of matching tags
    */
-  static async searchByAlias(alias: string, language?: string): Promise<Tag[]> {
+  static async searchByAlias(
+    _alias: string,
+    _language?: string,
+  ): Promise<Tag[]> {
     // Will be auto-implemented by SMRT
     return [];
   }
@@ -70,7 +73,7 @@ export class TagAlias extends SmrtObject {
    * @param tagSlug - The tag slug to get aliases for
    * @returns Array of TagAlias instances
    */
-  static async getAliasesForTag(tagSlug: string): Promise<TagAlias[]> {
+  static async getAliasesForTag(_tagSlug: string): Promise<TagAlias[]> {
     // Will be auto-implemented by SMRT
     return [];
   }
