@@ -5,8 +5,8 @@
  * Supports package exports for template discovery.
  */
 
-import { access, } from 'node:fs/promises';
-import { dirname, join, } from 'node:path';
+import { access } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import glob from 'fast-glob';
 import type { TemplateConfig } from './template-loader.js';

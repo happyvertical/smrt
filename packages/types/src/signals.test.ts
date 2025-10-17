@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { SignalAdapter, Signal, SignalType } from './signals.js';
+import type { Signal, SignalAdapter, SignalType } from './signals.js';
 
 describe('Signal Types', () => {
   it('should allow creating valid Signal objects', () => {

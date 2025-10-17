@@ -2,7 +2,7 @@
  * Tests for SignalBus
  */
 
-import type { SignalAdapter, Signal } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@smrt/types';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SignalBus } from './bus.js';
 

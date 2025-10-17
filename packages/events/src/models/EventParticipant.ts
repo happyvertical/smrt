@@ -5,7 +5,7 @@
  */
 
 import { SmrtObject, smrt } from '@smrt/core';
-import type { EventParticipantOptions, } from '../types';
+import type { EventParticipantOptions } from '../types';
 
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },

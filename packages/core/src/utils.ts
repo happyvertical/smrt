@@ -288,8 +288,7 @@ export function classnameToTablename(className: string) {
 /**
  * Cache of table setup promises to avoid duplicate setup operations
  */
-const _setupTableFromClassPromises: Record<string, Promise<void> | null> =
-  {};
+const _setupTableFromClassPromises: Record<string, Promise<void> | null> = {};
 
 /**
  * Sets up database tables for a class with caching to prevent duplicate operations

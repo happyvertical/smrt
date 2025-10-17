@@ -18,8 +18,6 @@ export interface FederationConfig {
 }
 
 export class Federation {
-  constructor(_config: FederationConfig) {}
-
   async discoverPeers(): Promise<GnodePeer[]> {
     // TODO: Implement peer discovery via WebFinger, DNS, etc.
     return [];

@@ -6,7 +6,7 @@
  */
 
 import { makeId } from '@have/utils';
-import type { SignalAdapter, Signal } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@smrt/types';
 import type { SanitizationConfig } from './sanitizer.js';
 import { SignalSanitizer } from './sanitizer.js';
 
