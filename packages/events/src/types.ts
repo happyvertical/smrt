@@ -76,7 +76,7 @@ export interface EventTypeOptions extends SmrtObjectOptions {
 export interface EventSeriesOptions extends SmrtObjectOptions {
   id?: string;
   typeId?: string;
-  organizerId?: string; // FK to Profile from @have/profiles
+  organizerId?: string; // FK to Profile from @smrt/profiles
   name?: string;
   slug?: string;
   description?: string;
@@ -98,7 +98,7 @@ export interface EventOptions extends SmrtObjectOptions {
   seriesId?: string; // Nullable - standalone events don't have series
   parentEventId?: string; // Nullable - for hierarchical events
   typeId?: string;
-  placeId?: string; // FK to Place from @have/places
+  placeId?: string; // FK to Place from @smrt/places
   name?: string;
   slug?: string;
   description?: string;
@@ -119,7 +119,7 @@ export interface EventOptions extends SmrtObjectOptions {
 export interface EventParticipantOptions extends SmrtObjectOptions {
   id?: string;
   eventId?: string;
-  profileId?: string; // FK to Profile from @have/profiles
+  profileId?: string; // FK to Profile from @smrt/profiles
   role?: ParticipantRole | string; // Allow custom roles
   placement?: number | null; // Numeric position/placement
   groupId?: string; // Optional grouping (e.g., team ID for individual players)

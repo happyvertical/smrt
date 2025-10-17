@@ -1,5 +1,5 @@
 import { SmrtObject } from '@smrt/core';
-import { Tag } from '@have/tags';
+import { Tag } from '@smrt/tags';
 import { AssetOptions } from './types';
 import { AssetType } from './asset-type';
 import { AssetStatus } from './asset-status';
@@ -19,9 +19,9 @@ export declare class Asset extends SmrtObject {
     updatedAt: Date;
     constructor(options?: AssetOptions);
     /**
-     * Get all tags for this asset from @have/tags
+     * Get all tags for this asset from @smrt/tags
      *
-     * @returns Array of Tag instances from @have/tags package
+     * @returns Array of Tag instances from @smrt/tags package
      */
     getTags(): Promise<Tag[]>;
     /**

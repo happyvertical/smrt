@@ -5,7 +5,7 @@
  */
 
 import { SmrtObject, smrt } from '@smrt/core';
-import type { Tag } from '@have/tags';
+import type { Tag } from '@smrt/tags';
 import type { AssetOptions } from './types';
 import type { AssetType } from './asset-type';
 import type { AssetStatus } from './asset-status';
@@ -55,9 +55,9 @@ export class Asset extends SmrtObject {
   }
 
   /**
-   * Get all tags for this asset from @have/tags
+   * Get all tags for this asset from @smrt/tags
    *
-   * @returns Array of Tag instances from @have/tags package
+   * @returns Array of Tag instances from @smrt/tags package
    */
   async getTags(): Promise<Tag[]> {
     // Query asset_tags join table and retrieve Tag instances
@@ -70,7 +70,7 @@ export class Asset extends SmrtObject {
       .all(this.id)) as { tag_slug: string }[];
 
     // Import Tag dynamically to avoid circular dependencies
-    const { Tag } = await import('@have/tags');
+    const { Tag } = await import('@smrt/tags');
     const tags: Tag[] = [];
 
     for (const row of rows) {

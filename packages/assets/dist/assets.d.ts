@@ -3,10 +3,10 @@ import { Asset } from './asset';
 export declare class AssetCollection extends SmrtCollection<Asset> {
     static readonly _itemClass: typeof Asset;
     /**
-     * Add a tag to an asset (uses @have/tags)
+     * Add a tag to an asset (uses @smrt/tags)
      *
      * @param assetId - The asset ID to tag
-     * @param tagSlug - The tag slug from @have/tags
+     * @param tagSlug - The tag slug from @smrt/tags
      */
     addTag(assetId: string, tagSlug: string): Promise<void>;
     /**
