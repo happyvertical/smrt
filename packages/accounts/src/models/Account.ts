@@ -92,14 +92,13 @@ export class Account extends SmrtObject {
       '../collections/AccountCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection({
+    const collection = await AccountCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.get({ id: this.parentId });
   }
@@ -114,14 +113,13 @@ export class Account extends SmrtObject {
       '../collections/AccountCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountCollection({
+    const collection = await AccountCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.list({ where: { parentId: this.id } });
   }
@@ -223,14 +221,13 @@ export class Account extends SmrtObject {
       '../collections/AccountTransactionEntryCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionEntryCollection({
+    const collection = await AccountTransactionEntryCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.list({ where: { accountId: this.id } });
   }

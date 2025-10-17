@@ -87,14 +87,13 @@ export class AccountTransaction extends SmrtObject {
       '../collections/AccountTransactionEntryCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = new AccountTransactionEntryCollection({
+    const collection = await AccountTransactionEntryCollection.create({
       persistence,
       db,
       ai,
       fs,
       _className,
     });
-    await collection.initialize();
 
     return await collection.list({ where: { transactionId: this.id } });
   }
