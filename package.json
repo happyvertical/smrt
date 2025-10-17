@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "1.0.0",
+  "version": "0.41.0",
   "scripts": {
     "format": "biome format --write .",
     "format-check": "biome ci --diagnostic-level=error .",

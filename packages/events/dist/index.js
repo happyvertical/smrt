@@ -45,261 +45,14 @@ var __privateIn = (member, obj) => Object(obj) !== obj ? __typeError('Cannot use
 var __privateGet = (obj, member, getter) => (__accessCheck(obj, member, "read from private field"), getter ? getter.call(obj) : member.get(obj));
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
-var _EventType_decorators, _init, _a, _EventSeries_decorators, _init2, _b, _Event_decorators, _init3, _c, _EventParticipant_decorators, _init4, _d;
+var _Event_decorators, _init, _a, _EventParticipant_decorators, _init2, _b, _EventSeries_decorators, _init3, _c, _EventType_decorators, _init4, _d;
 import { SmrtObject, smrt, SmrtCollection } from "@smrt/core";
-_EventType_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get", "create"] },
-  cli: true
-})];
-class EventType extends (_a = SmrtObject) {
-  // id, slug, name inherited from SmrtObject
-  description = "";
-  // Optional description
-  schema = "";
-  // JSON schema for event metadata (stored as text)
-  participantSchema = "";
-  // JSON schema for participant metadata (stored as text)
-  // Timestamps
-  createdAt = /* @__PURE__ */ new Date();
-  updatedAt = /* @__PURE__ */ new Date();
-  constructor(options = {}) {
-    super(options);
-    if (options.description !== void 0)
-      this.description = options.description;
-    if (options.schema !== void 0) {
-      if (typeof options.schema === "string") {
-        this.schema = options.schema;
-      } else {
-        this.schema = JSON.stringify(options.schema);
-      }
-    }
-    if (options.participantSchema !== void 0) {
-      if (typeof options.participantSchema === "string") {
-        this.participantSchema = options.participantSchema;
-      } else {
-        this.participantSchema = JSON.stringify(options.participantSchema);
-      }
-    }
-    if (options.createdAt) this.createdAt = options.createdAt;
-    if (options.updatedAt) this.updatedAt = options.updatedAt;
-  }
-  /**
-   * Get schema as parsed object
-   *
-   * @returns Parsed schema object or empty object if no schema
-   */
-  getSchema() {
-    if (!this.schema) return {};
-    try {
-      return JSON.parse(this.schema);
-    } catch {
-      return {};
-    }
-  }
-  /**
-   * Set schema from object
-   *
-   * @param data - Schema object to store
-   */
-  setSchema(data) {
-    this.schema = JSON.stringify(data);
-  }
-  /**
-   * Get participant schema as parsed object
-   *
-   * @returns Parsed participant schema object or empty object
-   */
-  getParticipantSchema() {
-    if (!this.participantSchema) return {};
-    try {
-      return JSON.parse(this.participantSchema);
-    } catch {
-      return {};
-    }
-  }
-  /**
-   * Set participant schema from object
-   *
-   * @param data - Participant schema object to store
-   */
-  setParticipantSchema(data) {
-    this.participantSchema = JSON.stringify(data);
-  }
-  /**
-   * Convenience method for slug-based lookup
-   *
-   * @param slug - The slug to search for
-   * @returns EventType instance or null if not found
-   */
-  static async getBySlug(slug) {
-    return null;
-  }
-}
-_init = __decoratorStart(_a);
-EventType = __decorateElement(_init, 0, "EventType", _EventType_decorators, EventType);
-__runInitializers(_init, 1, EventType);
-_EventSeries_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get", "create", "update"] },
-  cli: true
-})];
-class EventSeries extends (_b = SmrtObject) {
-  // id, slug, name inherited from SmrtObject
-  typeId = "";
-  // FK to EventType
-  organizerId = "";
-  // FK to Profile (from @smrt/profiles)
-  description = "";
-  startDate = null;
-  endDate = null;
-  recurrence = "";
-  // JSON recurrence pattern (stored as text)
-  metadata = "";
-  // JSON metadata (stored as text)
-  externalId = "";
-  // External system identifier
-  source = "";
-  // Source system (e.g., 'ticketmaster', 'espn')
-  // Timestamps
-  createdAt = /* @__PURE__ */ new Date();
-  updatedAt = /* @__PURE__ */ new Date();
-  constructor(options = {}) {
-    super(options);
-    if (options.typeId) this.typeId = options.typeId;
-    if (options.organizerId) this.organizerId = options.organizerId;
-    if (options.description !== void 0)
-      this.description = options.description;
-    if (options.startDate !== void 0)
-      this.startDate = options.startDate || null;
-    if (options.endDate !== void 0) this.endDate = options.endDate || null;
-    if (options.externalId !== void 0) this.externalId = options.externalId;
-    if (options.source !== void 0) this.source = options.source;
-    if (options.recurrence !== void 0) {
-      if (typeof options.recurrence === "string") {
-        this.recurrence = options.recurrence;
-      } else {
-        this.recurrence = JSON.stringify(options.recurrence);
-      }
-    }
-    if (options.metadata !== void 0) {
-      if (typeof options.metadata === "string") {
-        this.metadata = options.metadata;
-      } else {
-        this.metadata = JSON.stringify(options.metadata);
-      }
-    }
-    if (options.createdAt) this.createdAt = options.createdAt;
-    if (options.updatedAt) this.updatedAt = options.updatedAt;
-  }
-  /**
-   * Get recurrence pattern as parsed object
-   *
-   * @returns Parsed recurrence pattern or null
-   */
-  getRecurrence() {
-    if (!this.recurrence) return null;
-    try {
-      return JSON.parse(this.recurrence);
-    } catch {
-      return null;
-    }
-  }
-  /**
-   * Set recurrence pattern from object
-   *
-   * @param pattern - Recurrence pattern to store
-   */
-  setRecurrence(pattern) {
-    this.recurrence = JSON.stringify(pattern);
-  }
-  /**
-   * Get metadata as parsed object
-   *
-   * @returns Parsed metadata object or empty object
-   */
-  getMetadata() {
-    if (!this.metadata) return {};
-    try {
-      return JSON.parse(this.metadata);
-    } catch {
-      return {};
-    }
-  }
-  /**
-   * Set metadata from object
-   *
-   * @param data - Metadata object to store
-   */
-  setMetadata(data) {
-    this.metadata = JSON.stringify(data);
-  }
-  /**
-   * Update metadata by merging with existing values
-   *
-   * @param updates - Partial metadata to merge
-   */
-  updateMetadata(updates) {
-    const current = this.getMetadata();
-    this.setMetadata({ ...current, ...updates });
-  }
-  /**
-   * Get the event type for this series
-   *
-   * @returns EventType instance or null
-   */
-  async getType() {
-    if (!this.typeId) return null;
-    const { EventTypeCollection: EventTypeCollection2 } = await Promise.resolve().then(() => EventTypeCollection$1);
-    const collection = await EventTypeCollection2.create(this.options);
-    return await collection.get({ id: this.typeId });
-  }
-  /**
-   * Get the organizer profile for this series
-   *
-   * @returns Profile instance or null
-   */
-  async getOrganizer() {
-    if (!this.organizerId) return null;
-    try {
-      const { ProfileCollection } = await import("@smrt/profiles");
-      const collection = await ProfileCollection.create(this.options);
-      return await collection.get({ id: this.organizerId });
-    } catch {
-      return null;
-    }
-  }
-  /**
-   * Get all events in this series
-   *
-   * @returns Array of Event instances
-   */
-  async getEvents() {
-    const { EventCollection: EventCollection2 } = await Promise.resolve().then(() => EventCollection$1);
-    const collection = await EventCollection2.create(this.options);
-    return await collection.list({ where: { seriesId: this.id } });
-  }
-  /**
-   * Check if series is currently active
-   *
-   * @returns True if current date is between start and end
-   */
-  isActive() {
-    const now = /* @__PURE__ */ new Date();
-    if (this.startDate && now < this.startDate) return false;
-    if (this.endDate && now > this.endDate) return false;
-    return true;
-  }
-}
-_init2 = __decoratorStart(_b);
-EventSeries = __decorateElement(_init2, 0, "EventSeries", _EventSeries_decorators, EventSeries);
-__runInitializers(_init2, 1, EventSeries);
 _Event_decorators = [smrt({
   api: { include: ["list", "get", "create", "update", "delete"] },
   mcp: { include: ["list", "get", "create", "update"] },
   cli: true
 })];
-class Event extends (_c = SmrtObject) {
+class Event extends (_a = SmrtObject) {
   // id, slug, name inherited from SmrtObject
   seriesId = "";
   // FK to EventSeries (nullable for standalone events)
@@ -534,325 +287,9 @@ class Event extends (_c = SmrtObject) {
     return !this.parentEventId;
   }
 }
-_init3 = __decoratorStart(_c);
-Event = __decorateElement(_init3, 0, "Event", _Event_decorators, Event);
-__runInitializers(_init3, 1, Event);
-_EventParticipant_decorators = [smrt({
-  api: { include: ["list", "get", "create", "update", "delete"] },
-  mcp: { include: ["list", "get", "create", "update"] },
-  cli: true
-})];
-class EventParticipant extends (_d = SmrtObject) {
-  // id inherited from SmrtObject
-  eventId = "";
-  // FK to Event
-  profileId = "";
-  // FK to Profile (from @smrt/profiles)
-  role = "";
-  // Participant role (ParticipantRole or custom)
-  placement = null;
-  // Numeric position/placement
-  groupId = "";
-  // Optional grouping (e.g., team ID for individual players)
-  metadata = "";
-  // JSON metadata (stored as text)
-  externalId = "";
-  // External system identifier
-  source = "";
-  // Source system
-  // Timestamps
-  createdAt = /* @__PURE__ */ new Date();
-  updatedAt = /* @__PURE__ */ new Date();
-  constructor(options = {}) {
-    super(options);
-    if (options.eventId) this.eventId = options.eventId;
-    if (options.profileId) this.profileId = options.profileId;
-    if (options.role !== void 0) this.role = options.role;
-    if (options.placement !== void 0) this.placement = options.placement;
-    if (options.groupId !== void 0) this.groupId = options.groupId;
-    if (options.externalId !== void 0) this.externalId = options.externalId;
-    if (options.source !== void 0) this.source = options.source;
-    if (options.metadata !== void 0) {
-      if (typeof options.metadata === "string") {
-        this.metadata = options.metadata;
-      } else {
-        this.metadata = JSON.stringify(options.metadata);
-      }
-    }
-    if (options.createdAt) this.createdAt = options.createdAt;
-    if (options.updatedAt) this.updatedAt = options.updatedAt;
-  }
-  /**
-   * Get metadata as parsed object
-   *
-   * @returns Parsed metadata object or empty object
-   */
-  getMetadata() {
-    if (!this.metadata) return {};
-    try {
-      return JSON.parse(this.metadata);
-    } catch {
-      return {};
-    }
-  }
-  /**
-   * Set metadata from object
-   *
-   * @param data - Metadata object to store
-   */
-  setMetadata(data) {
-    this.metadata = JSON.stringify(data);
-  }
-  /**
-   * Update metadata by merging with existing values
-   *
-   * @param updates - Partial metadata to merge
-   */
-  updateMetadata(updates) {
-    const current = this.getMetadata();
-    this.setMetadata({ ...current, ...updates });
-  }
-  /**
-   * Get the event for this participant
-   *
-   * @returns Event instance or null
-   */
-  async getEvent() {
-    if (!this.eventId) return null;
-    const { EventCollection: EventCollection2 } = await Promise.resolve().then(() => EventCollection$1);
-    const collection = await EventCollection2.create(this.options);
-    return await collection.get({ id: this.eventId });
-  }
-  /**
-   * Get the profile for this participant
-   *
-   * @returns Profile instance or null
-   */
-  async getProfile() {
-    if (!this.profileId) return null;
-    try {
-      const { ProfileCollection } = await import("@smrt/profiles");
-      const collection = await ProfileCollection.create(this.options);
-      return await collection.get({ id: this.profileId });
-    } catch {
-      return null;
-    }
-  }
-  /**
-   * Get group participants (others with same groupId)
-   *
-   * @returns Array of EventParticipant instances
-   */
-  async getGroupParticipants() {
-    if (!this.groupId) return [];
-    const { EventParticipantCollection: EventParticipantCollection2 } = await Promise.resolve().then(() => EventParticipantCollection$1);
-    const collection = await EventParticipantCollection2.create(this.options);
-    const participants = await collection.list({
-      where: { eventId: this.eventId, groupId: this.groupId }
-    });
-    return participants.filter((p) => p.id !== this.id);
-  }
-  /**
-   * Check if this is a home participant (placement = 0)
-   *
-   * @returns True if placement is 0
-   */
-  isHome() {
-    return this.placement === 0;
-  }
-  /**
-   * Check if this is an away participant (placement = 1)
-   *
-   * @returns True if placement is 1
-   */
-  isAway() {
-    return this.placement === 1;
-  }
-}
-_init4 = __decoratorStart(_d);
-EventParticipant = __decorateElement(_init4, 0, "EventParticipant", _EventParticipant_decorators, EventParticipant);
-__runInitializers(_init4, 1, EventParticipant);
-class EventTypeCollection extends SmrtCollection {
-  static _itemClass = EventType;
-  /**
-   * Get or create an event type by slug
-   *
-   * @param slug - EventType slug (e.g., 'basketball-game', 'concert')
-   * @param name - Optional display name (defaults to capitalized slug)
-   * @returns EventType instance
-   */
-  async getOrCreate(slug, name) {
-    const existing = await this.get({ slug });
-    if (existing) {
-      return existing;
-    }
-    const displayName = name || slug.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-    return await this.create({
-      slug,
-      name: displayName
-    });
-  }
-  /**
-   * Get an event type by slug
-   *
-   * @param slug - EventType slug to search for
-   * @returns EventType instance or null if not found
-   */
-  async getBySlug(slug) {
-    return await this.get({ slug });
-  }
-  /**
-   * Initialize default event types
-   *
-   * Creates common event types if they don't exist:
-   * - Sports: game, period, goal, assist, penalty
-   * - Entertainment: concert, performance, song
-   * - Professional: conference, session, presentation, workshop
-   * - Community: meeting, agenda-item, motion, vote
-   *
-   * @returns Array of created/existing event types
-   */
-  async initializeDefaults() {
-    const defaults = [
-      // Sports
-      { slug: "game", name: "Game" },
-      { slug: "match", name: "Match" },
-      { slug: "period", name: "Period" },
-      { slug: "quarter", name: "Quarter" },
-      { slug: "inning", name: "Inning" },
-      { slug: "goal", name: "Goal" },
-      { slug: "assist", name: "Assist" },
-      { slug: "penalty", name: "Penalty" },
-      { slug: "substitution", name: "Substitution" },
-      // Entertainment
-      { slug: "concert", name: "Concert" },
-      { slug: "performance", name: "Performance" },
-      { slug: "set", name: "Set" },
-      { slug: "song", name: "Song" },
-      { slug: "theater", name: "Theater" },
-      { slug: "show", name: "Show" },
-      // Professional
-      { slug: "conference", name: "Conference" },
-      { slug: "session", name: "Session" },
-      { slug: "presentation", name: "Presentation" },
-      { slug: "workshop", name: "Workshop" },
-      { slug: "seminar", name: "Seminar" },
-      { slug: "keynote", name: "Keynote" },
-      { slug: "panel", name: "Panel" },
-      // Community
-      { slug: "meeting", name: "Meeting" },
-      { slug: "town-hall", name: "Town Hall" },
-      { slug: "agenda-item", name: "Agenda Item" },
-      { slug: "motion", name: "Motion" },
-      { slug: "amendment", name: "Amendment" },
-      { slug: "vote", name: "Vote" },
-      { slug: "discussion", name: "Discussion" },
-      // General
-      { slug: "event", name: "Event" },
-      { slug: "activity", name: "Activity" },
-      { slug: "action", name: "Action" }
-    ];
-    const types = [];
-    for (const def of defaults) {
-      const type = await this.getOrCreate(def.slug, def.name);
-      types.push(type);
-    }
-    return types;
-  }
-}
-const EventTypeCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  EventTypeCollection
-}, Symbol.toStringTag, { value: "Module" }));
-class EventSeriesCollection extends SmrtCollection {
-  static _itemClass = EventSeries;
-  /**
-   * Get series by organizer
-   *
-   * @param organizerId - Profile ID of the organizer
-   * @returns Array of EventSeries instances
-   */
-  async getByOrganizer(organizerId) {
-    return await this.list({ where: { organizerId } });
-  }
-  /**
-   * Get currently active series
-   *
-   * @returns Array of EventSeries instances active today
-   */
-  async getActive() {
-    const allSeries = await this.list({});
-    const now = /* @__PURE__ */ new Date();
-    return allSeries.filter((series) => {
-      if (series.startDate && now < series.startDate) return false;
-      if (series.endDate && now > series.endDate) return false;
-      return true;
-    });
-  }
-  /**
-   * Get upcoming series
-   *
-   * @param limit - Maximum number of series to return
-   * @returns Array of EventSeries instances starting in the future
-   */
-  async getUpcoming(limit) {
-    const allSeries = await this.list({});
-    const now = /* @__PURE__ */ new Date();
-    const upcoming = allSeries.filter((series) => series.startDate && series.startDate > now).sort((a, b) => {
-      if (!a.startDate || !b.startDate) return 0;
-      return a.startDate.getTime() - b.startDate.getTime();
-    });
-    return limit ? upcoming.slice(0, limit) : upcoming;
-  }
-  /**
-   * Get series by type
-   *
-   * @param typeId - EventType ID
-   * @returns Array of EventSeries instances
-   */
-  async getByType(typeId) {
-    return await this.list({ where: { typeId } });
-  }
-  /**
-   * Search series with filters
-   *
-   * @param query - Search query for name/description
-   * @param filters - Additional filter criteria
-   * @returns Array of matching EventSeries instances
-   */
-  async search(query, filters) {
-    let series = await this.list({});
-    if (query) {
-      const lowerQuery = query.toLowerCase();
-      series = series.filter(
-        (s) => s.name?.toLowerCase().includes(lowerQuery) || s.description?.toLowerCase().includes(lowerQuery)
-      );
-    }
-    if (filters) {
-      if (filters.typeId) {
-        series = series.filter((s) => s.typeId === filters.typeId);
-      }
-      if (filters.organizerId) {
-        series = series.filter((s) => s.organizerId === filters.organizerId);
-      }
-      if (filters.startDate) {
-        series = series.filter(
-          (s) => s.startDate && s.startDate >= filters.startDate
-        );
-      }
-      if (filters.endDate) {
-        series = series.filter(
-          (s) => s.endDate && s.endDate <= filters.endDate
-        );
-      }
-    }
-    return series;
-  }
-}
-const EventSeriesCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  EventSeriesCollection
-}, Symbol.toStringTag, { value: "Module" }));
+_init = __decoratorStart(_a);
+Event = __decorateElement(_init, 0, "Event", _Event_decorators, Event);
+__runInitializers(_init, 1, Event);
 class EventCollection extends SmrtCollection {
   static _itemClass = Event;
   /**
@@ -1014,6 +451,141 @@ const EventCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.d
   __proto__: null,
   EventCollection
 }, Symbol.toStringTag, { value: "Module" }));
+_EventParticipant_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get", "create", "update"] },
+  cli: true
+})];
+class EventParticipant extends (_b = SmrtObject) {
+  // id inherited from SmrtObject
+  eventId = "";
+  // FK to Event
+  profileId = "";
+  // FK to Profile (from @smrt/profiles)
+  role = "";
+  // Participant role (ParticipantRole or custom)
+  placement = null;
+  // Numeric position/placement
+  groupId = "";
+  // Optional grouping (e.g., team ID for individual players)
+  metadata = "";
+  // JSON metadata (stored as text)
+  externalId = "";
+  // External system identifier
+  source = "";
+  // Source system
+  // Timestamps
+  createdAt = /* @__PURE__ */ new Date();
+  updatedAt = /* @__PURE__ */ new Date();
+  constructor(options = {}) {
+    super(options);
+    if (options.eventId) this.eventId = options.eventId;
+    if (options.profileId) this.profileId = options.profileId;
+    if (options.role !== void 0) this.role = options.role;
+    if (options.placement !== void 0) this.placement = options.placement;
+    if (options.groupId !== void 0) this.groupId = options.groupId;
+    if (options.externalId !== void 0) this.externalId = options.externalId;
+    if (options.source !== void 0) this.source = options.source;
+    if (options.metadata !== void 0) {
+      if (typeof options.metadata === "string") {
+        this.metadata = options.metadata;
+      } else {
+        this.metadata = JSON.stringify(options.metadata);
+      }
+    }
+    if (options.createdAt) this.createdAt = options.createdAt;
+    if (options.updatedAt) this.updatedAt = options.updatedAt;
+  }
+  /**
+   * Get metadata as parsed object
+   *
+   * @returns Parsed metadata object or empty object
+   */
+  getMetadata() {
+    if (!this.metadata) return {};
+    try {
+      return JSON.parse(this.metadata);
+    } catch {
+      return {};
+    }
+  }
+  /**
+   * Set metadata from object
+   *
+   * @param data - Metadata object to store
+   */
+  setMetadata(data) {
+    this.metadata = JSON.stringify(data);
+  }
+  /**
+   * Update metadata by merging with existing values
+   *
+   * @param updates - Partial metadata to merge
+   */
+  updateMetadata(updates) {
+    const current = this.getMetadata();
+    this.setMetadata({ ...current, ...updates });
+  }
+  /**
+   * Get the event for this participant
+   *
+   * @returns Event instance or null
+   */
+  async getEvent() {
+    if (!this.eventId) return null;
+    const { EventCollection: EventCollection2 } = await Promise.resolve().then(() => EventCollection$1);
+    const collection = await EventCollection2.create(this.options);
+    return await collection.get({ id: this.eventId });
+  }
+  /**
+   * Get the profile for this participant
+   *
+   * @returns Profile instance or null
+   */
+  async getProfile() {
+    if (!this.profileId) return null;
+    try {
+      const { ProfileCollection } = await import("@smrt/profiles");
+      const collection = await ProfileCollection.create(this.options);
+      return await collection.get({ id: this.profileId });
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Get group participants (others with same groupId)
+   *
+   * @returns Array of EventParticipant instances
+   */
+  async getGroupParticipants() {
+    if (!this.groupId) return [];
+    const { EventParticipantCollection: EventParticipantCollection2 } = await Promise.resolve().then(() => EventParticipantCollection$1);
+    const collection = await EventParticipantCollection2.create(this.options);
+    const participants = await collection.list({
+      where: { eventId: this.eventId, groupId: this.groupId }
+    });
+    return participants.filter((p) => p.id !== this.id);
+  }
+  /**
+   * Check if this is a home participant (placement = 0)
+   *
+   * @returns True if placement is 0
+   */
+  isHome() {
+    return this.placement === 0;
+  }
+  /**
+   * Check if this is an away participant (placement = 1)
+   *
+   * @returns True if placement is 1
+   */
+  isAway() {
+    return this.placement === 1;
+  }
+}
+_init2 = __decoratorStart(_b);
+EventParticipant = __decorateElement(_init2, 0, "EventParticipant", _EventParticipant_decorators, EventParticipant);
+__runInitializers(_init2, 1, EventParticipant);
 class EventParticipantCollection extends SmrtCollection {
   static _itemClass = EventParticipant;
   /**
@@ -1152,6 +724,434 @@ class EventParticipantCollection extends SmrtCollection {
 const EventParticipantCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   EventParticipantCollection
+}, Symbol.toStringTag, { value: "Module" }));
+_EventSeries_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get", "create", "update"] },
+  cli: true
+})];
+class EventSeries extends (_c = SmrtObject) {
+  // id, slug, name inherited from SmrtObject
+  typeId = "";
+  // FK to EventType
+  organizerId = "";
+  // FK to Profile (from @smrt/profiles)
+  description = "";
+  startDate = null;
+  endDate = null;
+  recurrence = "";
+  // JSON recurrence pattern (stored as text)
+  metadata = "";
+  // JSON metadata (stored as text)
+  externalId = "";
+  // External system identifier
+  source = "";
+  // Source system (e.g., 'ticketmaster', 'espn')
+  // Timestamps
+  createdAt = /* @__PURE__ */ new Date();
+  updatedAt = /* @__PURE__ */ new Date();
+  constructor(options = {}) {
+    super(options);
+    if (options.typeId) this.typeId = options.typeId;
+    if (options.organizerId) this.organizerId = options.organizerId;
+    if (options.description !== void 0)
+      this.description = options.description;
+    if (options.startDate !== void 0)
+      this.startDate = options.startDate || null;
+    if (options.endDate !== void 0) this.endDate = options.endDate || null;
+    if (options.externalId !== void 0) this.externalId = options.externalId;
+    if (options.source !== void 0) this.source = options.source;
+    if (options.recurrence !== void 0) {
+      if (typeof options.recurrence === "string") {
+        this.recurrence = options.recurrence;
+      } else {
+        this.recurrence = JSON.stringify(options.recurrence);
+      }
+    }
+    if (options.metadata !== void 0) {
+      if (typeof options.metadata === "string") {
+        this.metadata = options.metadata;
+      } else {
+        this.metadata = JSON.stringify(options.metadata);
+      }
+    }
+    if (options.createdAt) this.createdAt = options.createdAt;
+    if (options.updatedAt) this.updatedAt = options.updatedAt;
+  }
+  /**
+   * Get recurrence pattern as parsed object
+   *
+   * @returns Parsed recurrence pattern or null
+   */
+  getRecurrence() {
+    if (!this.recurrence) return null;
+    try {
+      return JSON.parse(this.recurrence);
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Set recurrence pattern from object
+   *
+   * @param pattern - Recurrence pattern to store
+   */
+  setRecurrence(pattern) {
+    this.recurrence = JSON.stringify(pattern);
+  }
+  /**
+   * Get metadata as parsed object
+   *
+   * @returns Parsed metadata object or empty object
+   */
+  getMetadata() {
+    if (!this.metadata) return {};
+    try {
+      return JSON.parse(this.metadata);
+    } catch {
+      return {};
+    }
+  }
+  /**
+   * Set metadata from object
+   *
+   * @param data - Metadata object to store
+   */
+  setMetadata(data) {
+    this.metadata = JSON.stringify(data);
+  }
+  /**
+   * Update metadata by merging with existing values
+   *
+   * @param updates - Partial metadata to merge
+   */
+  updateMetadata(updates) {
+    const current = this.getMetadata();
+    this.setMetadata({ ...current, ...updates });
+  }
+  /**
+   * Get the event type for this series
+   *
+   * @returns EventType instance or null
+   */
+  async getType() {
+    if (!this.typeId) return null;
+    const { EventTypeCollection: EventTypeCollection2 } = await Promise.resolve().then(() => EventTypeCollection$1);
+    const collection = await EventTypeCollection2.create(this.options);
+    return await collection.get({ id: this.typeId });
+  }
+  /**
+   * Get the organizer profile for this series
+   *
+   * @returns Profile instance or null
+   */
+  async getOrganizer() {
+    if (!this.organizerId) return null;
+    try {
+      const { ProfileCollection } = await import("@smrt/profiles");
+      const collection = await ProfileCollection.create(this.options);
+      return await collection.get({ id: this.organizerId });
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * Get all events in this series
+   *
+   * @returns Array of Event instances
+   */
+  async getEvents() {
+    const { EventCollection: EventCollection2 } = await Promise.resolve().then(() => EventCollection$1);
+    const collection = await EventCollection2.create(this.options);
+    return await collection.list({ where: { seriesId: this.id } });
+  }
+  /**
+   * Check if series is currently active
+   *
+   * @returns True if current date is between start and end
+   */
+  isActive() {
+    const now = /* @__PURE__ */ new Date();
+    if (this.startDate && now < this.startDate) return false;
+    if (this.endDate && now > this.endDate) return false;
+    return true;
+  }
+}
+_init3 = __decoratorStart(_c);
+EventSeries = __decorateElement(_init3, 0, "EventSeries", _EventSeries_decorators, EventSeries);
+__runInitializers(_init3, 1, EventSeries);
+class EventSeriesCollection extends SmrtCollection {
+  static _itemClass = EventSeries;
+  /**
+   * Get series by organizer
+   *
+   * @param organizerId - Profile ID of the organizer
+   * @returns Array of EventSeries instances
+   */
+  async getByOrganizer(organizerId) {
+    return await this.list({ where: { organizerId } });
+  }
+  /**
+   * Get currently active series
+   *
+   * @returns Array of EventSeries instances active today
+   */
+  async getActive() {
+    const allSeries = await this.list({});
+    const now = /* @__PURE__ */ new Date();
+    return allSeries.filter((series) => {
+      if (series.startDate && now < series.startDate) return false;
+      if (series.endDate && now > series.endDate) return false;
+      return true;
+    });
+  }
+  /**
+   * Get upcoming series
+   *
+   * @param limit - Maximum number of series to return
+   * @returns Array of EventSeries instances starting in the future
+   */
+  async getUpcoming(limit) {
+    const allSeries = await this.list({});
+    const now = /* @__PURE__ */ new Date();
+    const upcoming = allSeries.filter((series) => series.startDate && series.startDate > now).sort((a, b) => {
+      if (!a.startDate || !b.startDate) return 0;
+      return a.startDate.getTime() - b.startDate.getTime();
+    });
+    return limit ? upcoming.slice(0, limit) : upcoming;
+  }
+  /**
+   * Get series by type
+   *
+   * @param typeId - EventType ID
+   * @returns Array of EventSeries instances
+   */
+  async getByType(typeId) {
+    return await this.list({ where: { typeId } });
+  }
+  /**
+   * Search series with filters
+   *
+   * @param query - Search query for name/description
+   * @param filters - Additional filter criteria
+   * @returns Array of matching EventSeries instances
+   */
+  async search(query, filters) {
+    let series = await this.list({});
+    if (query) {
+      const lowerQuery = query.toLowerCase();
+      series = series.filter(
+        (s) => s.name?.toLowerCase().includes(lowerQuery) || s.description?.toLowerCase().includes(lowerQuery)
+      );
+    }
+    if (filters) {
+      if (filters.typeId) {
+        series = series.filter((s) => s.typeId === filters.typeId);
+      }
+      if (filters.organizerId) {
+        series = series.filter((s) => s.organizerId === filters.organizerId);
+      }
+      if (filters.startDate) {
+        series = series.filter(
+          (s) => s.startDate && s.startDate >= filters.startDate
+        );
+      }
+      if (filters.endDate) {
+        series = series.filter(
+          (s) => s.endDate && s.endDate <= filters.endDate
+        );
+      }
+    }
+    return series;
+  }
+}
+const EventSeriesCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  EventSeriesCollection
+}, Symbol.toStringTag, { value: "Module" }));
+_EventType_decorators = [smrt({
+  api: { include: ["list", "get", "create", "update", "delete"] },
+  mcp: { include: ["list", "get", "create"] },
+  cli: true
+})];
+class EventType extends (_d = SmrtObject) {
+  // id, slug, name inherited from SmrtObject
+  description = "";
+  // Optional description
+  schema = "";
+  // JSON schema for event metadata (stored as text)
+  participantSchema = "";
+  // JSON schema for participant metadata (stored as text)
+  // Timestamps
+  createdAt = /* @__PURE__ */ new Date();
+  updatedAt = /* @__PURE__ */ new Date();
+  constructor(options = {}) {
+    super(options);
+    if (options.description !== void 0)
+      this.description = options.description;
+    if (options.schema !== void 0) {
+      if (typeof options.schema === "string") {
+        this.schema = options.schema;
+      } else {
+        this.schema = JSON.stringify(options.schema);
+      }
+    }
+    if (options.participantSchema !== void 0) {
+      if (typeof options.participantSchema === "string") {
+        this.participantSchema = options.participantSchema;
+      } else {
+        this.participantSchema = JSON.stringify(options.participantSchema);
+      }
+    }
+    if (options.createdAt) this.createdAt = options.createdAt;
+    if (options.updatedAt) this.updatedAt = options.updatedAt;
+  }
+  /**
+   * Get schema as parsed object
+   *
+   * @returns Parsed schema object or empty object if no schema
+   */
+  getSchema() {
+    if (!this.schema) return {};
+    try {
+      return JSON.parse(this.schema);
+    } catch {
+      return {};
+    }
+  }
+  /**
+   * Set schema from object
+   *
+   * @param data - Schema object to store
+   */
+  setSchema(data) {
+    this.schema = JSON.stringify(data);
+  }
+  /**
+   * Get participant schema as parsed object
+   *
+   * @returns Parsed participant schema object or empty object
+   */
+  getParticipantSchema() {
+    if (!this.participantSchema) return {};
+    try {
+      return JSON.parse(this.participantSchema);
+    } catch {
+      return {};
+    }
+  }
+  /**
+   * Set participant schema from object
+   *
+   * @param data - Participant schema object to store
+   */
+  setParticipantSchema(data) {
+    this.participantSchema = JSON.stringify(data);
+  }
+  /**
+   * Convenience method for slug-based lookup
+   *
+   * @param slug - The slug to search for
+   * @returns EventType instance or null if not found
+   */
+  static async getBySlug(slug) {
+    return null;
+  }
+}
+_init4 = __decoratorStart(_d);
+EventType = __decorateElement(_init4, 0, "EventType", _EventType_decorators, EventType);
+__runInitializers(_init4, 1, EventType);
+class EventTypeCollection extends SmrtCollection {
+  static _itemClass = EventType;
+  /**
+   * Get or create an event type by slug
+   *
+   * @param slug - EventType slug (e.g., 'basketball-game', 'concert')
+   * @param name - Optional display name (defaults to capitalized slug)
+   * @returns EventType instance
+   */
+  async getOrCreate(slug, name) {
+    const existing = await this.get({ slug });
+    if (existing) {
+      return existing;
+    }
+    const displayName = name || slug.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+    return await this.create({
+      slug,
+      name: displayName
+    });
+  }
+  /**
+   * Get an event type by slug
+   *
+   * @param slug - EventType slug to search for
+   * @returns EventType instance or null if not found
+   */
+  async getBySlug(slug) {
+    return await this.get({ slug });
+  }
+  /**
+   * Initialize default event types
+   *
+   * Creates common event types if they don't exist:
+   * - Sports: game, period, goal, assist, penalty
+   * - Entertainment: concert, performance, song
+   * - Professional: conference, session, presentation, workshop
+   * - Community: meeting, agenda-item, motion, vote
+   *
+   * @returns Array of created/existing event types
+   */
+  async initializeDefaults() {
+    const defaults = [
+      // Sports
+      { slug: "game", name: "Game" },
+      { slug: "match", name: "Match" },
+      { slug: "period", name: "Period" },
+      { slug: "quarter", name: "Quarter" },
+      { slug: "inning", name: "Inning" },
+      { slug: "goal", name: "Goal" },
+      { slug: "assist", name: "Assist" },
+      { slug: "penalty", name: "Penalty" },
+      { slug: "substitution", name: "Substitution" },
+      // Entertainment
+      { slug: "concert", name: "Concert" },
+      { slug: "performance", name: "Performance" },
+      { slug: "set", name: "Set" },
+      { slug: "song", name: "Song" },
+      { slug: "theater", name: "Theater" },
+      { slug: "show", name: "Show" },
+      // Professional
+      { slug: "conference", name: "Conference" },
+      { slug: "session", name: "Session" },
+      { slug: "presentation", name: "Presentation" },
+      { slug: "workshop", name: "Workshop" },
+      { slug: "seminar", name: "Seminar" },
+      { slug: "keynote", name: "Keynote" },
+      { slug: "panel", name: "Panel" },
+      // Community
+      { slug: "meeting", name: "Meeting" },
+      { slug: "town-hall", name: "Town Hall" },
+      { slug: "agenda-item", name: "Agenda Item" },
+      { slug: "motion", name: "Motion" },
+      { slug: "amendment", name: "Amendment" },
+      { slug: "vote", name: "Vote" },
+      { slug: "discussion", name: "Discussion" },
+      // General
+      { slug: "event", name: "Event" },
+      { slug: "activity", name: "Activity" },
+      { slug: "action", name: "Action" }
+    ];
+    const types = [];
+    for (const def of defaults) {
+      const type = await this.getOrCreate(def.slug, def.name);
+      types.push(type);
+    }
+    return types;
+  }
+}
+const EventTypeCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  EventTypeCollection
 }, Symbol.toStringTag, { value: "Module" }));
 function validateEventStatus(currentStatus, newStatus) {
   const validTransitions = {

@@ -250,6 +250,95 @@ class Account extends (_a = SmrtObject) {
 _init = __decoratorStart(_a);
 Account = __decorateElement(_init, 0, "Account", _Account_decorators, Account);
 __runInitializers(_init, 1, Account);
+class AccountCollection extends SmrtCollection {
+  static _itemClass = Account;
+  /**
+   * Get accounts by type
+   *
+   * @param type - Account type (asset, liability, equity, revenue, expense)
+   * @returns Array of Account instances
+   */
+  async getByType(type) {
+    return await this.list({ where: { type } });
+  }
+  /**
+   * Get accounts by currency
+   *
+   * @param currency - ISO 4217 currency code
+   * @returns Array of Account instances
+   */
+  async getByCurrency(currency) {
+    return await this.list({ where: { currency } });
+  }
+  /**
+   * Get root accounts (accounts with no parent)
+   *
+   * @returns Array of root Account instances
+   */
+  async getRootAccounts() {
+    const allAccounts = await this.list({});
+    return allAccounts.filter((account) => !account.parentId);
+  }
+  /**
+   * Get child accounts of a parent
+   *
+   * @param parentId - Parent account ID
+   * @returns Array of child Account instances
+   */
+  async getChildren(parentId) {
+    return await this.list({ where: { parentId } });
+  }
+  /**
+   * Get all accounts of a specific type and currency
+   *
+   * @param type - Account type
+   * @param currency - Currency code
+   * @returns Array of Account instances
+   */
+  async getByTypeAndCurrency(type, currency) {
+    return await this.list({ where: { type, currency } });
+  }
+  /**
+   * Search accounts by name (case-insensitive partial match)
+   *
+   * @param searchTerm - Search term
+   * @returns Array of matching Account instances
+   */
+  async searchByName(searchTerm) {
+    const allAccounts = await this.list({});
+    const lowerSearch = searchTerm.toLowerCase();
+    return allAccounts.filter(
+      (account) => account.name.toLowerCase().includes(lowerSearch)
+    );
+  }
+  /**
+   * Get account hierarchy tree structure
+   * Returns root accounts with nested children
+   *
+   * @returns Array of root accounts with children property
+   */
+  async getHierarchyTree() {
+    const allAccounts = await this.list({});
+    const accountMap = /* @__PURE__ */ new Map();
+    const roots = [];
+    for (const account of allAccounts) {
+      accountMap.set(account.id, { ...account, children: [] });
+    }
+    for (const account of allAccounts) {
+      const node = accountMap.get(account.id);
+      if (account.parentId && accountMap.has(account.parentId)) {
+        accountMap.get(account.parentId)?.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    return roots;
+  }
+}
+const AccountCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  AccountCollection
+}, Symbol.toStringTag, { value: "Module" }));
 _AccountTransaction_decorators = [smrt({
   api: { include: ["list", "get", "create", "update", "delete"] },
   mcp: { include: ["list", "get", "create", "update"] },
@@ -388,6 +477,86 @@ class AccountTransaction extends (_b = SmrtObject) {
 _init2 = __decoratorStart(_b);
 AccountTransaction = __decorateElement(_init2, 0, "AccountTransaction", _AccountTransaction_decorators, AccountTransaction);
 __runInitializers(_init2, 1, AccountTransaction);
+class AccountTransactionCollection extends SmrtCollection {
+  static _itemClass = AccountTransaction;
+  /**
+   * Get transactions by date range
+   *
+   * @param startDate - Start of date range
+   * @param endDate - End of date range
+   * @returns Array of AccountTransaction instances
+   */
+  async getByDateRange(startDate, endDate) {
+    const allTransactions = await this.list({});
+    return allTransactions.filter(
+      (transaction) => transaction.date >= startDate && transaction.date <= endDate
+    );
+  }
+  /**
+   * Get transactions on a specific date
+   *
+   * @param date - Date to filter by
+   * @returns Array of AccountTransaction instances
+   */
+  async getByDate(date) {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    return await this.getByDateRange(startOfDay, endOfDay);
+  }
+  /**
+   * Search transactions by description (case-insensitive partial match)
+   *
+   * @param searchTerm - Search term
+   * @returns Array of matching AccountTransaction instances
+   */
+  async searchByDescription(searchTerm) {
+    const allTransactions = await this.list({});
+    const lowerSearch = searchTerm.toLowerCase();
+    return allTransactions.filter(
+      (transaction) => transaction.description.toLowerCase().includes(lowerSearch)
+    );
+  }
+  /**
+   * Get recent transactions
+   *
+   * @param limit - Maximum number of transactions to return
+   * @returns Array of recent AccountTransaction instances
+   */
+  async getRecent(limit = 10) {
+    const allTransactions = await this.list({});
+    return allTransactions.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, limit);
+  }
+  /**
+   * Get transactions for current month
+   *
+   * @returns Array of AccountTransaction instances
+   */
+  async getCurrentMonth() {
+    const now = /* @__PURE__ */ new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
+    return await this.getByDateRange(startOfMonth, endOfMonth);
+  }
+  /**
+   * Get transactions for current year
+   *
+   * @returns Array of AccountTransaction instances
+   */
+  async getCurrentYear() {
+    const now = /* @__PURE__ */ new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const endOfYear = new Date(now.getFullYear(), 11, 31);
+    endOfYear.setHours(23, 59, 59, 999);
+    return await this.getByDateRange(startOfYear, endOfYear);
+  }
+}
+const AccountTransactionCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  AccountTransactionCollection
+}, Symbol.toStringTag, { value: "Module" }));
 _AccountTransactionEntry_decorators = [smrt({
   api: { include: ["list", "get", "create", "update", "delete"] },
   mcp: { include: ["list", "get", "create", "update"] },
@@ -532,175 +701,6 @@ _init3 = __decoratorStart(_c);
 _AccountTransactionEntry = __decorateElement(_init3, 0, "AccountTransactionEntry", _AccountTransactionEntry_decorators, _AccountTransactionEntry);
 __runInitializers(_init3, 1, _AccountTransactionEntry);
 let AccountTransactionEntry = _AccountTransactionEntry;
-class AccountCollection extends SmrtCollection {
-  static _itemClass = Account;
-  /**
-   * Get accounts by type
-   *
-   * @param type - Account type (asset, liability, equity, revenue, expense)
-   * @returns Array of Account instances
-   */
-  async getByType(type) {
-    return await this.list({ where: { type } });
-  }
-  /**
-   * Get accounts by currency
-   *
-   * @param currency - ISO 4217 currency code
-   * @returns Array of Account instances
-   */
-  async getByCurrency(currency) {
-    return await this.list({ where: { currency } });
-  }
-  /**
-   * Get root accounts (accounts with no parent)
-   *
-   * @returns Array of root Account instances
-   */
-  async getRootAccounts() {
-    const allAccounts = await this.list({});
-    return allAccounts.filter((account) => !account.parentId);
-  }
-  /**
-   * Get child accounts of a parent
-   *
-   * @param parentId - Parent account ID
-   * @returns Array of child Account instances
-   */
-  async getChildren(parentId) {
-    return await this.list({ where: { parentId } });
-  }
-  /**
-   * Get all accounts of a specific type and currency
-   *
-   * @param type - Account type
-   * @param currency - Currency code
-   * @returns Array of Account instances
-   */
-  async getByTypeAndCurrency(type, currency) {
-    return await this.list({ where: { type, currency } });
-  }
-  /**
-   * Search accounts by name (case-insensitive partial match)
-   *
-   * @param searchTerm - Search term
-   * @returns Array of matching Account instances
-   */
-  async searchByName(searchTerm) {
-    const allAccounts = await this.list({});
-    const lowerSearch = searchTerm.toLowerCase();
-    return allAccounts.filter(
-      (account) => account.name.toLowerCase().includes(lowerSearch)
-    );
-  }
-  /**
-   * Get account hierarchy tree structure
-   * Returns root accounts with nested children
-   *
-   * @returns Array of root accounts with children property
-   */
-  async getHierarchyTree() {
-    const allAccounts = await this.list({});
-    const accountMap = /* @__PURE__ */ new Map();
-    const roots = [];
-    for (const account of allAccounts) {
-      accountMap.set(account.id, { ...account, children: [] });
-    }
-    for (const account of allAccounts) {
-      const node = accountMap.get(account.id);
-      if (account.parentId && accountMap.has(account.parentId)) {
-        accountMap.get(account.parentId)?.children.push(node);
-      } else {
-        roots.push(node);
-      }
-    }
-    return roots;
-  }
-}
-const AccountCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  AccountCollection
-}, Symbol.toStringTag, { value: "Module" }));
-class AccountTransactionCollection extends SmrtCollection {
-  static _itemClass = AccountTransaction;
-  /**
-   * Get transactions by date range
-   *
-   * @param startDate - Start of date range
-   * @param endDate - End of date range
-   * @returns Array of AccountTransaction instances
-   */
-  async getByDateRange(startDate, endDate) {
-    const allTransactions = await this.list({});
-    return allTransactions.filter(
-      (transaction) => transaction.date >= startDate && transaction.date <= endDate
-    );
-  }
-  /**
-   * Get transactions on a specific date
-   *
-   * @param date - Date to filter by
-   * @returns Array of AccountTransaction instances
-   */
-  async getByDate(date) {
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-    return await this.getByDateRange(startOfDay, endOfDay);
-  }
-  /**
-   * Search transactions by description (case-insensitive partial match)
-   *
-   * @param searchTerm - Search term
-   * @returns Array of matching AccountTransaction instances
-   */
-  async searchByDescription(searchTerm) {
-    const allTransactions = await this.list({});
-    const lowerSearch = searchTerm.toLowerCase();
-    return allTransactions.filter(
-      (transaction) => transaction.description.toLowerCase().includes(lowerSearch)
-    );
-  }
-  /**
-   * Get recent transactions
-   *
-   * @param limit - Maximum number of transactions to return
-   * @returns Array of recent AccountTransaction instances
-   */
-  async getRecent(limit = 10) {
-    const allTransactions = await this.list({});
-    return allTransactions.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, limit);
-  }
-  /**
-   * Get transactions for current month
-   *
-   * @returns Array of AccountTransaction instances
-   */
-  async getCurrentMonth() {
-    const now = /* @__PURE__ */ new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    endOfMonth.setHours(23, 59, 59, 999);
-    return await this.getByDateRange(startOfMonth, endOfMonth);
-  }
-  /**
-   * Get transactions for current year
-   *
-   * @returns Array of AccountTransaction instances
-   */
-  async getCurrentYear() {
-    const now = /* @__PURE__ */ new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const endOfYear = new Date(now.getFullYear(), 11, 31);
-    endOfYear.setHours(23, 59, 59, 999);
-    return await this.getByDateRange(startOfYear, endOfYear);
-  }
-}
-const AccountTransactionCollection$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  AccountTransactionCollection
-}, Symbol.toStringTag, { value: "Module" }));
 class AccountTransactionEntryCollection extends SmrtCollection {
   static _itemClass = AccountTransactionEntry;
   /**

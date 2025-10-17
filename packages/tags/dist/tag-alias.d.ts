@@ -1,6 +1,6 @@
 import { SmrtObject } from '@smrt/core';
-import { TagAliasOptions } from './types';
 import { Tag } from './tag';
+import { TagAliasOptions } from './types';
 export declare class TagAlias extends SmrtObject {
     tagSlug: string;
     alias: string;

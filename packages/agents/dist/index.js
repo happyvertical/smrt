@@ -1,5 +1,5 @@
-import { SmrtObject } from "@smrt/core";
 import { createLogger } from "@have/logger";
+import { SmrtObject } from "@smrt/core";
 class Agent extends SmrtObject {
   /**
    * Current agent status

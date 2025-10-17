@@ -1,5 +1,7 @@
-import { a as SmrtClass } from "./chunks/collection-CXnxJbLy.js";
-import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-CXnxJbLy.js";
+import { MetricsAdapter } from "./chunks/metrics-uRpAh6uk.js";
+import { PubSubAdapter } from "./chunks/pubsub-BJ1ZU6QU.js";
+import { a as SmrtClass } from "./chunks/collection-lPtdtcrW.js";
+import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-lPtdtcrW.js";
 import { ValidationError, RuntimeError, DatabaseError, ErrorUtils } from "./chunks/errors-Cl0_Kxat.js";
 import { AIError, ConfigurationError, FilesystemError, NetworkError, SmrtError, ValidationReport, ValidationUtils } from "./chunks/errors-Cl0_Kxat.js";
 import { Field } from "./fields.js";
@@ -8,15 +10,13 @@ import { CLIGenerator, main } from "./generators/cli.js";
 import { MCPGenerator } from "./generators/mcp.js";
 import { APIGenerator, createRestServer, startRestServer } from "./generators/rest.js";
 import { generateOpenAPISpec, setupSwaggerUI } from "./generators/swagger.js";
-import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-Bw7M6hFL.js";
-import { b as b2, b as b3 } from "./chunks/registry-Bw7M6hFL.js";
-import { a, c as c2, b as b4 } from "./chunks/server-DwHneUSW.js";
 import { getManifest } from "./manifest.js";
+import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-CB77mwjC.js";
+import { b as b2, b as b3 } from "./chunks/registry-CB77mwjC.js";
+import { a, c as c2, b as b4 } from "./chunks/server-DwHneUSW.js";
 import { M, c as c3, a as a2, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
-import { MetricsAdapter } from "./chunks/metrics-JaU-tpt3.js";
-import { PubSubAdapter } from "./chunks/pubsub-BJ1ZU6QU.js";
-import { s as s2 } from "./chunks/index-8GLHb-3J.js";
-import { staticManifest } from "./chunks/static-manifest-BgWppe2v.js";
+import { s as s2 } from "./chunks/index-oOoyy1TP.js";
+import { staticManifest } from "./chunks/static-manifest-DSTVRkqP.js";
 function validateToolCall(methodName, args, allowedMethods) {
   if (!allowedMethods.includes(methodName)) {
     throw ValidationError.invalidValue(
@@ -70,7 +70,7 @@ async function executeToolCall(instance, toolCall, allowedMethods, signalBus) {
         type: "start",
         args: [args],
         // Wrap in array for consistency
-        timestamp: Date.now()
+        timestamp: /* @__PURE__ */ new Date()
       };
       await signalBus.emit(startSignal);
     }
@@ -85,7 +85,7 @@ async function executeToolCall(instance, toolCall, allowedMethods, signalBus) {
         args: [args],
         result,
         duration: Date.now() - startTime,
-        timestamp: Date.now()
+        timestamp: /* @__PURE__ */ new Date()
       };
       await signalBus.emit(endSignal);
     }
@@ -111,7 +111,7 @@ async function executeToolCall(instance, toolCall, allowedMethods, signalBus) {
         ],
         error: error instanceof Error ? error : new Error(String(error)),
         duration: Date.now() - startTime,
-        timestamp: Date.now()
+        timestamp: /* @__PURE__ */ new Date()
       };
       await signalBus.emit(errorSignal);
     }

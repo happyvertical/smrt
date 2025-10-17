@@ -1,6 +1,6 @@
-import { SignalBus } from './signals/bus.js';
-import { ISignalAdapter } from '@smrt/types';
 import { LoggerConfig } from '@have/logger';
+import { ISignalAdapter } from '@smrt/types';
+import { SignalBus } from './signals/bus.js';
 import { SanitizationConfig } from './signals/sanitizer.js';
 /**
  * Metrics adapter configuration

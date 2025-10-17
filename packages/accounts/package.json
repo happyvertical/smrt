@@ -1,6 +1,6 @@
 {
   "name": "@smrt/accounts",
-  "version": "0.37.0",
+  "version": "0.41.0",
   "description": "Flexible accounting ledger with multi-currency support and SMRT framework integration",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,8 +1,8 @@
 import { SmrtObject } from '@smrt/core';
 import { Tag } from '@smrt/tags';
-import { AssetOptions } from './types';
-import { AssetType } from './asset-type';
 import { AssetStatus } from './asset-status';
+import { AssetType } from './asset-type';
+import { AssetOptions } from './types';
 export declare class Asset extends SmrtObject {
     name: string;
     slug: string;

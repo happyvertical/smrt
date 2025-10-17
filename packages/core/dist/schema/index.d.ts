@@ -1,10 +1,10 @@
 /**
  * Schema generation module exports
  */
-export * from './types';
-export { SchemaGenerator } from './generator';
 export { SchemaCodeGenerator } from './code-generator';
-export { RuntimeSchemaManager } from './runtime-manager';
+export { SchemaGenerator } from './generator';
 export { SchemaOverrideSystem } from './override-system';
-export type { SchemaDefinition, SchemaManifest, SchemaOverride, ColumnDefinition, IndexDefinition, TriggerDefinition, ForeignKeyDefinition, SchemaMigration, } from './types';
+export { RuntimeSchemaManager } from './runtime-manager';
+export type { ColumnDefinition, ForeignKeyDefinition, IndexDefinition, SchemaDefinition, SchemaManifest, SchemaMigration, SchemaOverride, TriggerDefinition, } from './types';
+export * from './types';
 //# sourceMappingURL=index.d.ts.map

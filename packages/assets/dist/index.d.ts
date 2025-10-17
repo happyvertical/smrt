@@ -5,13 +5,13 @@
  *
  * @packageDocumentation
  */
-export { AssetType } from './asset-type';
-export { AssetStatus } from './asset-status';
-export { AssetMetafield } from './asset-metafield';
 export { Asset } from './asset';
-export { AssetTypeCollection } from './asset-types';
-export { AssetStatusCollection } from './asset-statuses';
+export { AssetMetafield } from './asset-metafield';
 export { AssetMetafieldCollection } from './asset-metafields';
+export { AssetStatus } from './asset-status';
+export { AssetStatusCollection } from './asset-statuses';
+export { AssetType } from './asset-type';
+export { AssetTypeCollection } from './asset-types';
 export { AssetCollection } from './assets';
-export type { AssetTypeOptions, AssetStatusOptions, AssetMetafieldOptions, AssetOptions, } from './types';
+export type { AssetMetafieldOptions, AssetOptions, AssetStatusOptions, AssetTypeOptions, } from './types';
 //# sourceMappingURL=index.d.ts.map
