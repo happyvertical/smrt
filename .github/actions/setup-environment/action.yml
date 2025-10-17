@@ -97,8 +97,15 @@ runs:
         if [ -f .pnpmrc-ci ]; then
           echo "Activating CI-specific .pnpmrc for local SDK overrides"
           cp .pnpmrc-ci .pnpmrc
+          # Use --no-frozen-lockfile when SDK workspace is present
+          # because overrides convert npm packages to workspace packages
+          # which changes lockfile structure
+          echo "Installing with SDK workspace packages (--no-frozen-lockfile)"
+          pnpm install --no-frozen-lockfile
+        else
+          echo "Installing with frozen lockfile"
+          pnpm install --frozen-lockfile
         fi
-        pnpm install --frozen-lockfile
       env:
         # Force ONNX Runtime to skip CUDA installation
         ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'
