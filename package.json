@@ -6,7 +6,7 @@
   "version": "1.0.0",
   "scripts": {
     "format": "biome format --write .",
-    "format-check": "biome ci .",
+    "format-check": "biome ci --diagnostic-level=error .",
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || echo 'Skipping lefthook install (not in git repository)'",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
