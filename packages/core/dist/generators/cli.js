@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline";
 import { parseCliArgs } from "@have/utils";
-import { O as ObjectRegistry } from "../chunks/registry-CB77mwjC.js";
+import { O as ObjectRegistry } from "../chunks/registry-C37C3qXd.js";
 let _gnodeCommands = null;
 let _generateCommands = null;
 async function getGnodeCommands() {

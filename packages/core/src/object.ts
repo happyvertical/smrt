@@ -270,10 +270,8 @@ export class SmrtObject extends SmrtClass {
     // Setup database tables if database is configured
     if (this.options.db) {
       await setupTableFromClass(this.db, this.constructor);
-      await this.db.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_slug_context
-        ON ${this.tableName}(slug, context);
-      `);
+      // Note: SchemaGenerator already creates the unique index on (slug, context)
+      // No need to create it manually here
     }
 
     if (this._id && !(this.options as any)._skipLoad) {
