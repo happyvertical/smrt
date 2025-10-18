@@ -21,30 +21,13 @@ npm install @smrt/core @smrt/types
 ### Create Your First SMRT Object
 
 ```typescript
-import { SmrtObject, smrt } from '@smrt/core';
-import { TextField, IntegerField } from '@smrt/core/fields';
+import { SmrtObject } from '@smrt/core';
 
-@smrt({
-  api: { include: ['create', 'read', 'update', 'delete', 'list'] },
-  cli: true,
-  mcp: { include: ['create', 'read', 'update', 'list'] }
-})
+// No decorator needed - it's optional
 class Task extends SmrtObject {
-  title = TextField({ required: true });
-  priority = IntegerField({ default: 0 });
-  completed = BooleanField({ default: false });
-
-  // AI-powered method
-  async do(instruction: string): Promise<void> {
-    // AI automatically determines how to fulfill the instruction
-    return super.do(instruction);
-  }
-
-  // AI-powered query
-  async is(question: string): Promise<boolean> {
-    // AI determines the answer based on object state
-    return super.is(question);
-  }
+  title = '';
+  priority = 0;
+  completed = false;
 }
 ```
 
