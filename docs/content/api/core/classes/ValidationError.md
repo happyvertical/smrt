@@ -1,6 +1,6 @@
 # Class: ValidationError
 
-Defined in: [smrt/packages/core/src/errors.ts:217](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L217)
+Defined in: [smrt/packages/core/src/errors.ts:217](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L217)
 
 Data validation errors
 
@@ -14,7 +14,7 @@ Data validation errors
 
 > **new ValidationError**(`message`, `code`, `details?`, `cause?`): `ValidationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:218](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L218)
+Defined in: [smrt/packages/core/src/errors.ts:218](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L218)
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: [smrt/packages/core/src/errors.ts:218](https://github.com/happyverti
 
 > `readonly` **category**: `"database"` \| `"ai"` \| `"filesystem"` \| `"validation"` \| `"network"` \| `"configuration"` \| `"runtime"`
 
-Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L13)
+Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L13)
 
 #### Inherited from
 
@@ -60,7 +60,7 @@ Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertic
 
 > `readonly` `optional` **cause**: `Error`
 
-Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L22)
+Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L22)
 
 #### Inherited from
 
@@ -72,7 +72,7 @@ Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertic
 
 > `readonly` **code**: `string`
 
-Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L12)
+Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L12)
 
 #### Inherited from
 
@@ -84,7 +84,7 @@ Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertic
 
 > `readonly` `optional` **details**: `Record`\<`string`, `any`\>
 
-Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L21)
+Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L21)
 
 #### Inherited from
 
@@ -154,7 +154,7 @@ not capture any frames.
 
 > **toJSON**(): `object`
 
-Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L47)
+Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L47)
 
 Converts error to a serializable object for logging/debugging
 
@@ -270,7 +270,7 @@ a();
 
 > `static` **invalidValue**(`fieldName`, `value`, `expectedType`): `ValidationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:235](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L235)
+Defined in: [smrt/packages/core/src/errors.ts:235](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L235)
 
 #### Parameters
 
@@ -326,7 +326,7 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 > `static` **rangeError**(`fieldName`, `value`, `min?`, `max?`): `ValidationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:255](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L255)
+Defined in: [smrt/packages/core/src/errors.ts:255](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L255)
 
 #### Parameters
 
@@ -356,7 +356,7 @@ Defined in: [smrt/packages/core/src/errors.ts:255](https://github.com/happyverti
 
 > `static` **requiredField**(`fieldName`, `objectType`): `ValidationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:227](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L227)
+Defined in: [smrt/packages/core/src/errors.ts:227](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L227)
 
 #### Parameters
 
@@ -378,7 +378,7 @@ Defined in: [smrt/packages/core/src/errors.ts:227](https://github.com/happyverti
 
 > `static` **uniqueConstraint**(`fieldName`, `value`): `ValidationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:247](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L247)
+Defined in: [smrt/packages/core/src/errors.ts:247](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L247)
 
 #### Parameters
 

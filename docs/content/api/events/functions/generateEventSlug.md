@@ -2,7 +2,7 @@
 
 > **generateEventSlug**(`name`, `date`): `string`
 
-Defined in: [events/src/utils.ts:63](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/utils.ts#L63)
+Defined in: [events/src/utils.ts:63](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/utils.ts#L63)
 
 Generate unique slug for an event
 

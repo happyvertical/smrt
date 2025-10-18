@@ -1,6 +1,6 @@
 # Interface: SmrtClassOptions
 
-Defined in: [smrt/packages/core/src/class.ts:21](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L21)
+Defined in: [smrt/packages/core/src/class.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L21)
 
 Configuration options for the SmrtClass
 
@@ -15,7 +15,7 @@ Configuration options for the SmrtClass
 
 > `optional` **\_className**: `string`
 
-Defined in: [smrt/packages/core/src/class.ts:25](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L25)
+Defined in: [smrt/packages/core/src/class.ts:25](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L25)
 
 Optional custom class name override
 
@@ -25,7 +25,7 @@ Optional custom class name override
 
 > `optional` **ai**: `AIClientOptions` \| `AIClient`
 
-Defined in: [smrt/packages/core/src/class.ts:53](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L53)
+Defined in: [smrt/packages/core/src/class.ts:53](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L53)
 
 AI client configuration options or instance
 
@@ -35,7 +35,7 @@ AI client configuration options or instance
 
 > `optional` **db**: `string` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"`; `url?`: `string`; \} \| `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:35](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L35)
+Defined in: [smrt/packages/core/src/class.ts:35](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L35)
 
 Database configuration - unified approach matching @have/sql
 
@@ -50,7 +50,7 @@ Supports three formats:
 
 > `optional` **fs**: `FilesystemAdapterOptions`
 
-Defined in: [smrt/packages/core/src/class.ts:48](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L48)
+Defined in: [smrt/packages/core/src/class.ts:48](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L48)
 
 Filesystem adapter configuration options
 
@@ -60,7 +60,7 @@ Filesystem adapter configuration options
 
 > `optional` **logging**: `LoggerConfig`
 
-Defined in: [smrt/packages/core/src/class.ts:58](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L58)
+Defined in: [smrt/packages/core/src/class.ts:58](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L58)
 
 Logging configuration (overrides global default)
 
@@ -70,7 +70,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metrics**: [`MetricsConfig`](MetricsConfig.md)
 
-Defined in: [smrt/packages/core/src/class.ts:63](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L63)
+Defined in: [smrt/packages/core/src/class.ts:63](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L63)
 
 Metrics configuration (overrides global default)
 
@@ -80,7 +80,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **pubsub**: [`PubSubConfig`](PubSubConfig.md)
 
-Defined in: [smrt/packages/core/src/class.ts:68](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L68)
+Defined in: [smrt/packages/core/src/class.ts:68](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L68)
 
 Pub/Sub configuration (overrides global default)
 
@@ -90,7 +90,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **sanitization**: `false` \| [`SanitizationConfig`](SanitizationConfig.md)
 
-Defined in: [smrt/packages/core/src/class.ts:73](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L73)
+Defined in: [smrt/packages/core/src/class.ts:73](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L73)
 
 Sanitization configuration (overrides global default)
 
@@ -100,7 +100,7 @@ Sanitization configuration (overrides global default)
 
 > `optional` **signals**: `object`
 
-Defined in: [smrt/packages/core/src/class.ts:78](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/class.ts#L78)
+Defined in: [smrt/packages/core/src/class.ts:78](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L78)
 
 Custom signal configuration (overrides global default)
 

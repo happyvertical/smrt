@@ -1,6 +1,6 @@
 # Interface: TagHierarchy
 
-Defined in: [tags/src/types.ts:64](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L64)
+Defined in: [tags/src/types.ts:64](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L64)
 
 Tag hierarchy result structure
 
@@ -10,7 +10,7 @@ Tag hierarchy result structure
 
 > **ancestors**: [`Tag`](../classes/Tag.md)[]
 
-Defined in: [tags/src/types.ts:65](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L65)
+Defined in: [tags/src/types.ts:65](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L65)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [tags/src/types.ts:65](https://github.com/happyvertical/smrt/blob/71
 
 > **current**: [`Tag`](../classes/Tag.md)
 
-Defined in: [tags/src/types.ts:66](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L66)
+Defined in: [tags/src/types.ts:66](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L66)
 
 ***
 
@@ -26,4 +26,4 @@ Defined in: [tags/src/types.ts:66](https://github.com/happyvertical/smrt/blob/71
 
 > **descendants**: [`Tag`](../classes/Tag.md)[]
 
-Defined in: [tags/src/types.ts:67](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L67)
+Defined in: [tags/src/types.ts:67](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L67)
