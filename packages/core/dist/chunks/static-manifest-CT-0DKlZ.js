@@ -1,6 +1,6 @@
 const staticManifest = {
   "version": "1.0.0",
-  "timestamp": 1760760317138,
+  "timestamp": 1760760563916,
   "objects": {
     "pleb": {
       "name": "pleb",
@@ -40,4 +40,4 @@ export {
   staticManifest as default,
   staticManifest
 };
-//# sourceMappingURL=static-manifest-BQ5qBIPl.js.map
+//# sourceMappingURL=static-manifest-CT-0DKlZ.js.map
