@@ -1,6 +1,6 @@
 # Class: Profile
 
-Defined in: [profiles/src/models/Profile.ts:30](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L30)
+Defined in: [profiles/src/models/Profile.ts:30](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L30)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: [profiles/src/models/Profile.ts:30](https://github.com/happyvertical
 
 > **new Profile**(`options`): `Profile`
 
-Defined in: [profiles/src/models/Profile.ts:42](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L42)
+Defined in: [profiles/src/models/Profile.ts:42](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L42)
 
 #### Parameters
 
@@ -34,7 +34,7 @@ Defined in: [profiles/src/models/Profile.ts:42](https://github.com/happyvertical
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: [core/dist/class.d.ts:75](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L75)
+Defined in: [core/dist/class.d.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L75)
 
 AI client instance for interacting with AI models
 
@@ -48,7 +48,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: [core/dist/class.d.ts:87](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L87)
+Defined in: [core/dist/class.d.ts:87](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L87)
 
 Class name used for identification
 
@@ -62,7 +62,7 @@ Class name used for identification
 
 > `protected` **\_context**: `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:79](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L79)
+Defined in: [core/dist/object.d.ts:79](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L79)
 
 Optional context to scope the slug
 
@@ -76,7 +76,7 @@ Optional context to scope the slug
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:83](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L83)
+Defined in: [core/dist/class.d.ts:83](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L83)
 
 Database interface for data persistence
 
@@ -90,7 +90,7 @@ Database interface for data persistence
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: [core/dist/class.d.ts:79](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L79)
+Defined in: [core/dist/class.d.ts:79](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L79)
 
 Filesystem adapter for file operations
 
@@ -104,7 +104,7 @@ Filesystem adapter for file operations
 
 > `protected` **\_id**: `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:71](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L71)
+Defined in: [core/dist/object.d.ts:71](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L71)
 
 Unique identifier for the object
 
@@ -118,7 +118,7 @@ Unique identifier for the object
 
 > `protected` `optional` **\_signalBus**: `SignalBus`
 
-Defined in: [core/dist/class.d.ts:91](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L91)
+Defined in: [core/dist/class.d.ts:91](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L91)
 
 Signal bus for method execution tracking
 
@@ -132,7 +132,7 @@ Signal bus for method execution tracking
 
 > `protected` **\_slug**: `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:75](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L75)
+Defined in: [core/dist/object.d.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L75)
 
 URL-friendly identifier
 
@@ -146,7 +146,7 @@ URL-friendly identifier
 
 > **\_tableName**: `string`
 
-Defined in: [core/dist/object.d.ts:57](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L57)
+Defined in: [core/dist/object.d.ts:57](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L57)
 
 Database table name for this object
 
@@ -160,7 +160,7 @@ Database table name for this object
 
 > **created\_at**: `Date` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:88](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L88)
+Defined in: [core/dist/object.d.ts:88](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L88)
 
 Creation timestamp
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **description**: `Field`
 
-Defined in: [profiles/src/models/Profile.ts:35](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L35)
+Defined in: [profiles/src/models/Profile.ts:35](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L35)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: [profiles/src/models/Profile.ts:35](https://github.com/happyvertical
 
 > **email**: `Field`
 
-Defined in: [profiles/src/models/Profile.ts:33](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L33)
+Defined in: [profiles/src/models/Profile.ts:33](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L33)
 
 ***
 
@@ -190,7 +190,7 @@ Defined in: [profiles/src/models/Profile.ts:33](https://github.com/happyvertical
 
 > **metadata**: `Field`
 
-Defined in: [profiles/src/models/Profile.ts:38](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L38)
+Defined in: [profiles/src/models/Profile.ts:38](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L38)
 
 ***
 
@@ -198,7 +198,7 @@ Defined in: [profiles/src/models/Profile.ts:38](https://github.com/happyvertical
 
 > **name**: `Field`
 
-Defined in: [profiles/src/models/Profile.ts:34](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L34)
+Defined in: [profiles/src/models/Profile.ts:34](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L34)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -213,7 +213,7 @@ Can be a string value or a Field instance (for Field-based schema definition)
 
 > `protected` **options**: `SmrtObjectOptions`
 
-Defined in: [core/dist/object.d.ts:67](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L67)
+Defined in: [core/dist/object.d.ts:67](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L67)
 
 Override options with SmrtObjectOptions type for proper type narrowing.
 Initialized by parent constructor via super() call.
@@ -228,7 +228,7 @@ Initialized by parent constructor via super() call.
 
 > **relationshipsFrom**: `Field`
 
-Defined in: [profiles/src/models/Profile.ts:39](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L39)
+Defined in: [profiles/src/models/Profile.ts:39](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L39)
 
 ***
 
@@ -236,7 +236,7 @@ Defined in: [profiles/src/models/Profile.ts:39](https://github.com/happyvertical
 
 > **relationshipsTo**: `Field`
 
-Defined in: [profiles/src/models/Profile.ts:40](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L40)
+Defined in: [profiles/src/models/Profile.ts:40](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L40)
 
 ***
 
@@ -244,7 +244,7 @@ Defined in: [profiles/src/models/Profile.ts:40](https://github.com/happyvertical
 
 > **typeId**: `Field`
 
-Defined in: [profiles/src/models/Profile.ts:32](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L32)
+Defined in: [profiles/src/models/Profile.ts:32](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L32)
 
 ***
 
@@ -252,7 +252,7 @@ Defined in: [profiles/src/models/Profile.ts:32](https://github.com/happyvertical
 
 > **updated\_at**: `Date` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:92](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L92)
+Defined in: [core/dist/object.d.ts:92](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L92)
 
 Last update timestamp
 
@@ -268,7 +268,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: [core/dist/class.d.ts:185](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L185)
+Defined in: [core/dist/class.d.ts:185](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L185)
 
 Gets the AI client instance
 
@@ -288,7 +288,7 @@ Gets the AI client instance
 
 > **get** **context**(): `string`
 
-Defined in: [core/dist/object.d.ts:130](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L130)
+Defined in: [core/dist/object.d.ts:130](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L130)
 
 Gets the context that scopes this object's slug
 
@@ -300,7 +300,7 @@ Gets the context that scopes this object's slug
 
 > **set** **context**(`value`): `void`
 
-Defined in: [core/dist/object.d.ts:137](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L137)
+Defined in: [core/dist/object.d.ts:137](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L137)
 
 Sets the context that scopes this object's slug
 
@@ -332,7 +332,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:181](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L181)
+Defined in: [core/dist/class.d.ts:181](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L181)
 
 Gets the database interface instance
 
@@ -352,7 +352,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: [core/dist/class.d.ts:177](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L177)
+Defined in: [core/dist/class.d.ts:177](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L177)
 
 Gets the filesystem adapter instance
 
@@ -372,7 +372,7 @@ Gets the filesystem adapter instance
 
 > **get** **id**(): `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:108](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L108)
+Defined in: [core/dist/object.d.ts:108](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L108)
 
 Gets the unique identifier for this object
 
@@ -384,7 +384,7 @@ Gets the unique identifier for this object
 
 > **set** **id**(`value`): `void`
 
-Defined in: [core/dist/object.d.ts:115](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L115)
+Defined in: [core/dist/object.d.ts:115](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L115)
 
 Sets the unique identifier for this object
 
@@ -416,7 +416,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: [core/dist/class.d.ts:191](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L191)
+Defined in: [core/dist/class.d.ts:191](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L191)
 
 Gets the signal bus instance
 
@@ -438,7 +438,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** **slug**(): `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:119](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L119)
+Defined in: [core/dist/object.d.ts:119](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L119)
 
 Gets the URL-friendly slug for this object
 
@@ -450,7 +450,7 @@ Gets the URL-friendly slug for this object
 
 > **set** **slug**(`value`): `void`
 
-Defined in: [core/dist/object.d.ts:126](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L126)
+Defined in: [core/dist/object.d.ts:126](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L126)
 
 Sets the URL-friendly slug for this object
 
@@ -482,7 +482,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:142](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L142)
+Defined in: [core/dist/class.d.ts:142](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L142)
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -503,7 +503,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: [core/dist/object.d.ts:163](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L163)
+Defined in: [core/dist/object.d.ts:163](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L163)
 
 Gets the database table name for this object
 
@@ -521,7 +521,7 @@ Gets the database table name for this object
 
 > **addMetadata**(`metafieldSlug`, `value`): `Promise`\<`void`\>
 
-Defined in: [profiles/src/models/Profile.ts:76](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L76)
+Defined in: [profiles/src/models/Profile.ts:76](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L76)
 
 Add metadata to this profile
 
@@ -549,7 +549,7 @@ The value to set
 
 > **addRelationship**(`toProfile`, `relationshipSlug`, `contextProfile?`): `Promise`\<`void`\>
 
-Defined in: [profiles/src/models/Profile.ts:196](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L196)
+Defined in: [profiles/src/models/Profile.ts:196](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L196)
 
 Add a relationship to another profile
 
@@ -583,7 +583,7 @@ Optional context profile for tertiary relationships
 
 > **allDescriptors**(): `object` & `object`
 
-Defined in: [core/dist/object.d.ts:155](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L155)
+Defined in: [core/dist/object.d.ts:155](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L155)
 
 Gets all property descriptors from this object's prototype
 
@@ -603,7 +603,7 @@ Object containing all property descriptors
 
 > **delete**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:271](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L271)
+Defined in: [core/dist/object.d.ts:271](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L271)
 
 Delete this object from the database
 
@@ -623,7 +623,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: [core/dist/class.d.ts:207](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L207)
+Defined in: [core/dist/class.d.ts:207](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L207)
 
 Cleanup method to prevent memory leaks
 
@@ -654,7 +654,7 @@ product.destroy(); // Clean up when done
 
 > **do**(`instructions`, `options?`): `Promise`\<`string`\>
 
-Defined in: [core/dist/object.d.ts:258](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L258)
+Defined in: [core/dist/object.d.ts:258](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L258)
 
 Performs actions on this object based on instructions using AI
 
@@ -688,7 +688,7 @@ Promise resolving to the AI response
 
 > **executeToolCall**(`toolCall`): `Promise`\<`ToolCallResult`\>
 
-Defined in: [core/dist/object.d.ts:374](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L374)
+Defined in: [core/dist/object.d.ts:374](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L374)
 
 Execute a tool call from AI on this object instance
 
@@ -735,7 +735,7 @@ console.log(result.success ? result.result : result.error);
 
 > `protected` **extractConstraintField**(`errorMessage`): `string`
 
-Defined in: [core/dist/object.d.ts:229](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L229)
+Defined in: [core/dist/object.d.ts:229](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L229)
 
 Extracts field name from database constraint error messages
 
@@ -759,7 +759,7 @@ Extracts field name from database constraint error messages
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:482](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L482)
+Defined in: [core/dist/object.d.ts:482](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L482)
 
 Forget specific remembered context for this object
 
@@ -806,7 +806,7 @@ await agent.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: [core/dist/object.d.ts:504](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L504)
+Defined in: [core/dist/object.d.ts:504](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L504)
 
 Forget all remembered context in a scope for this object
 
@@ -854,7 +854,7 @@ console.log(`Cleared ${count} cached strategies`);
 
 > **generateBio**(): `Promise`\<`string`\>
 
-Defined in: [profiles/src/models/Profile.ts:404](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L404)
+Defined in: [profiles/src/models/Profile.ts:404](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L404)
 
 AI-powered: Generate a professional bio for this profile
 
@@ -870,7 +870,7 @@ Generated bio text
 
 > **getAvailableTools**(): `AITool`[]
 
-Defined in: [core/dist/object.d.ts:350](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L350)
+Defined in: [core/dist/object.d.ts:350](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L350)
 
 Get available AI-callable tools for this object
 
@@ -904,7 +904,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getFields**(): `Record`\<`string`, `any`\>
 
-Defined in: [core/dist/object.d.ts:169](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L169)
+Defined in: [core/dist/object.d.ts:169](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L169)
 
 Gets field definitions and current values for this object
 
@@ -924,7 +924,7 @@ Object containing field definitions with current values
 
 > `protected` **getFieldValue**(`fieldName`): `any`
 
-Defined in: [core/dist/object.d.ts:214](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L214)
+Defined in: [core/dist/object.d.ts:214](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L214)
 
 Gets the value of a field on this object
 
@@ -948,7 +948,7 @@ Gets the value of a field on this object
 
 > **getId**(): `Promise`\<`string`\>
 
-Defined in: [core/dist/object.d.ts:181](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L181)
+Defined in: [core/dist/object.d.ts:181](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L181)
 
 Gets or generates a unique ID for this object
 
@@ -968,7 +968,7 @@ Promise resolving to the object's ID
 
 > **getMetadata**(): `Promise`\<`Record`\<`string`, `any`\>\>
 
-Defined in: [profiles/src/models/Profile.ts:130](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L130)
+Defined in: [profiles/src/models/Profile.ts:130](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L130)
 
 Get all metadata for this profile as key-value object
 
@@ -984,7 +984,7 @@ Object with metafield slugs as keys
 
 > `protected` **getPropertyValue**(`key`): `any`
 
-Defined in: [core/dist/object.d.ts:225](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L225)
+Defined in: [core/dist/object.d.ts:225](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L225)
 
 Gets the actual value from a property, whether it's a plain value or a Field instance
 
@@ -1016,7 +1016,7 @@ The actual value (unwrapped from Field if necessary)
 
 > **getRelated**(`fieldName`): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:336](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L336)
+Defined in: [core/dist/object.d.ts:336](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L336)
 
 Get a related object, loading it if not already loaded
 
@@ -1057,7 +1057,7 @@ const orders = await customer.getRelated('orders');
 
 > **getRelatedProfiles**(`relationshipSlug?`): `Promise`\<`Profile`[]\>
 
-Defined in: [profiles/src/models/Profile.ts:304](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L304)
+Defined in: [profiles/src/models/Profile.ts:304](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L304)
 
 Get related profiles
 
@@ -1081,7 +1081,7 @@ Array of related Profile instances
 
 > **getRelationships**(`options?`): `Promise`\<`ProfileRelationship`[]\>
 
-Defined in: [profiles/src/models/Profile.ts:259](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L259)
+Defined in: [profiles/src/models/Profile.ts:259](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L259)
 
 Get all relationships for this profile
 
@@ -1111,7 +1111,7 @@ Array of ProfileRelationship instances
 
 > **getSavedId**(): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:193](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L193)
+Defined in: [core/dist/object.d.ts:193](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L193)
 
 Gets the ID of this object if it's already saved in the database
 
@@ -1131,7 +1131,7 @@ Promise resolving to the saved ID or null if not saved
 
 > **getSlug**(): `Promise`\<`string` \| `null` \| `undefined`\>
 
-Defined in: [core/dist/object.d.ts:187](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L187)
+Defined in: [core/dist/object.d.ts:187](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L187)
 
 Gets or generates a slug for this object based on its name
 
@@ -1151,7 +1151,7 @@ Promise resolving to the object's slug
 
 > **getTypeSlug**(): `Promise`\<`string`\>
 
-Defined in: [profiles/src/models/Profile.ts:53](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L53)
+Defined in: [profiles/src/models/Profile.ts:53](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L53)
 
 Get the profile type slug for this profile
 
@@ -1167,7 +1167,7 @@ The slug of the profile type
 
 > **initialize**(): `Promise`\<`Profile`\>
 
-Defined in: [core/dist/object.d.ts:143](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L143)
+Defined in: [core/dist/object.d.ts:143](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L143)
 
 Initializes this object, setting up database tables and loading data if identifiers are provided
 
@@ -1187,7 +1187,7 @@ Promise that resolves to this instance for chaining
 
 > **is**(`criteria`, `options?`): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:250](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L250)
+Defined in: [core/dist/object.d.ts:250](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L250)
 
 Evaluates whether this object meets given criteria using AI
 
@@ -1225,7 +1225,7 @@ Error if the AI response is invalid
 
 > **isRelatedLoaded**(`fieldName`): `boolean`
 
-Defined in: [core/dist/object.d.ts:284](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L284)
+Defined in: [core/dist/object.d.ts:284](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L284)
 
 Check if a relationship has been loaded
 
@@ -1261,7 +1261,7 @@ if (order.isRelatedLoaded('customer')) {
 
 > **isSaved**(): `Promise`\<`boolean`\>
 
-Defined in: [core/dist/object.d.ts:199](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L199)
+Defined in: [core/dist/object.d.ts:199](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L199)
 
 Checks if this object is already saved in the database
 
@@ -1281,7 +1281,7 @@ Promise resolving to true if saved, false otherwise
 
 > **loadDataFromDb**(`data`): `void`
 
-Defined in: [core/dist/object.d.ts:149](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L149)
+Defined in: [core/dist/object.d.ts:149](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L149)
 
 Loads data from a database row into this object's properties
 
@@ -1307,7 +1307,7 @@ Database row data
 
 > **loadFromId**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:235](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L235)
+Defined in: [core/dist/object.d.ts:235](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L235)
 
 Loads this object's data from the database using its ID
 
@@ -1327,7 +1327,7 @@ Promise that resolves when loading is complete
 
 > **loadFromSlug**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:241](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L241)
+Defined in: [core/dist/object.d.ts:241](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L241)
 
 Loads this object's data from the database using its slug and context
 
@@ -1347,7 +1347,7 @@ Promise that resolves when loading is complete
 
 > **loadRelated**(`fieldName`): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:301](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L301)
+Defined in: [core/dist/object.d.ts:301](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L301)
 
 Load a related object for a foreignKey field (lazy loading)
 
@@ -1390,7 +1390,7 @@ console.log(customer.name); // Access customer properties
 
 > **loadRelatedMany**(`fieldName`): `Promise`\<`any`[]\>
 
-Defined in: [core/dist/object.d.ts:318](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L318)
+Defined in: [core/dist/object.d.ts:318](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L318)
 
 Load related objects for oneToMany or manyToMany fields (lazy loading)
 
@@ -1433,7 +1433,7 @@ console.log(`${orders.length} orders found`);
 
 > **matches**(`criteria`): `Promise`\<`boolean`\>
 
-Defined in: [profiles/src/models/Profile.ts:414](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L414)
+Defined in: [profiles/src/models/Profile.ts:414](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L414)
 
 AI-powered: Check if profile matches criteria
 
@@ -1457,7 +1457,7 @@ True if matches criteria
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:433](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L433)
+Defined in: [core/dist/object.d.ts:433](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L433)
 
 Recall remembered context for this object
 
@@ -1514,7 +1514,7 @@ const strategy = await agent.recall({
 
 > **recallAll**(`options?`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: [core/dist/object.d.ts:460](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L460)
+Defined in: [core/dist/object.d.ts:460](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L460)
 
 Recall all remembered context for this object in a scope
 
@@ -1569,7 +1569,7 @@ for (const [url, pattern] of strategies) {
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:404](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L404)
+Defined in: [core/dist/object.d.ts:404](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L404)
 
 Remember context about this object
 
@@ -1652,7 +1652,7 @@ await agent.remember({
 
 > **removeMetadata**(`metafieldSlug`): `Promise`\<`void`\>
 
-Defined in: [profiles/src/models/Profile.ts:158](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L158)
+Defined in: [profiles/src/models/Profile.ts:158](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L158)
 
 Remove metadata by metafield slug
 
@@ -1674,7 +1674,7 @@ The slug of the metafield to remove
 
 > **removeRelationship**(`toProfile`, `relationshipSlug`): `Promise`\<`void`\>
 
-Defined in: [profiles/src/models/Profile.ts:345](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L345)
+Defined in: [profiles/src/models/Profile.ts:345](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L345)
 
 Remove a relationship to another profile
 
@@ -1702,7 +1702,7 @@ The type of relationship to remove
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:265](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L265)
+Defined in: [core/dist/object.d.ts:265](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L265)
 
 Runs a lifecycle hook if it's defined in the object's configuration
 
@@ -1730,7 +1730,7 @@ Promise that resolves when the hook completes
 
 > **save**(): `Promise`\<`Profile`\>
 
-Defined in: [core/dist/object.d.ts:205](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L205)
+Defined in: [core/dist/object.d.ts:205](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L205)
 
 Saves this object to the database
 
@@ -1750,7 +1750,7 @@ Promise resolving to this object
 
 > **setTypeBySlug**(`slug`): `Promise`\<`void`\>
 
-Defined in: [profiles/src/models/Profile.ts:64](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L64)
+Defined in: [profiles/src/models/Profile.ts:64](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L64)
 
 Set the profile type by slug
 
@@ -1776,7 +1776,7 @@ Error if profile type not found
 
 > **toJSON**(): `any`
 
-Defined in: [core/dist/object.d.ts:175](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L175)
+Defined in: [core/dist/object.d.ts:175](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L175)
 
 Custom JSON serialization
 Returns a plain object with all field values for proper JSON.stringify() behavior
@@ -1796,7 +1796,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateMetadata**(`metadata`): `Promise`\<`void`\>
 
-Defined in: [profiles/src/models/Profile.ts:147](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L147)
+Defined in: [profiles/src/models/Profile.ts:147](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L147)
 
 Update multiple metadata values
 
@@ -1818,7 +1818,7 @@ Object with metafield slugs as keys and values
 
 > `protected` **validateBeforeSave**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:210](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L210)
+Defined in: [core/dist/object.d.ts:210](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L210)
 
 Validates object state before saving
 Override in subclasses to add custom validation logic
@@ -1837,7 +1837,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **findByMetadata**(`_metafieldSlug`, `_value`): `Promise`\<`Profile`[]\>
 
-Defined in: [profiles/src/models/Profile.ts:425](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L425)
+Defined in: [profiles/src/models/Profile.ts:425](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L425)
 
 Find profiles by metadata key-value pair
 
@@ -1863,7 +1863,7 @@ Array of matching profiles
 
 > `static` **findByType**(`_typeSlug`): `Promise`\<`Profile`[]\>
 
-Defined in: [profiles/src/models/Profile.ts:439](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L439)
+Defined in: [profiles/src/models/Profile.ts:439](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L439)
 
 Find profiles by type slug
 
@@ -1885,7 +1885,7 @@ Array of matching profiles
 
 > `static` **findRelated**(`_profileId`, `_relationshipSlug?`): `Promise`\<`Profile`[]\>
 
-Defined in: [profiles/src/models/Profile.ts:451](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L451)
+Defined in: [profiles/src/models/Profile.ts:451](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L451)
 
 Find related profiles for a given profile
 
@@ -1911,7 +1911,7 @@ Array of related profiles
 
 > `static` **searchByEmail**(`_email`): `Promise`\<`Profile` \| `null`\>
 
-Defined in: [profiles/src/models/Profile.ts:465](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/profiles/src/models/Profile.ts#L465)
+Defined in: [profiles/src/models/Profile.ts:465](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/profiles/src/models/Profile.ts#L465)
 
 Search profiles by email
 

@@ -1,6 +1,6 @@
 # Interface: WebFingerResponse
 
-Defined in: [protocols/index.ts:5](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/gnode/src/protocols/index.ts#L5)
+Defined in: [protocols/index.ts:5](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/protocols/index.ts#L5)
 
 Federation protocols for gnode discovery and communication
 
@@ -10,7 +10,7 @@ Federation protocols for gnode discovery and communication
 
 > **links**: `object`[]
 
-Defined in: [protocols/index.ts:7](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/gnode/src/protocols/index.ts#L7)
+Defined in: [protocols/index.ts:7](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/protocols/index.ts#L7)
 
 #### href
 
@@ -30,4 +30,4 @@ Defined in: [protocols/index.ts:7](https://github.com/happyvertical/smrt/blob/71
 
 > **subject**: `string`
 
-Defined in: [protocols/index.ts:6](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/gnode/src/protocols/index.ts#L6)
+Defined in: [protocols/index.ts:6](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/protocols/index.ts#L6)

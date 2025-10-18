@@ -1,6 +1,6 @@
 # Class: TagAliasCollection
 
-Defined in: [tags/src/tag-aliases.ts:11](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L11)
+Defined in: [tags/src/tag-aliases.ts:11](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L11)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: [tags/src/tag-aliases.ts:11](https://github.com/happyvertical/smrt/b
 
 > `protected` **new TagAliasCollection**(`options?`): `TagAliasCollection`
 
-Defined in: [core/dist/collection.d.ts:45](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L45)
+Defined in: [core/dist/collection.d.ts:45](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L45)
 
 Creates a new SmrtCollection instance
 
@@ -42,7 +42,7 @@ Use the static create() factory method instead
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: [core/dist/class.d.ts:75](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L75)
+Defined in: [core/dist/class.d.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L75)
 
 AI client instance for interacting with AI models
 
@@ -56,7 +56,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: [core/dist/class.d.ts:87](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L87)
+Defined in: [core/dist/class.d.ts:87](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L87)
 
 Class name used for identification
 
@@ -70,7 +70,7 @@ Class name used for identification
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:83](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L83)
+Defined in: [core/dist/class.d.ts:83](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L83)
 
 Database interface for data persistence
 
@@ -84,7 +84,7 @@ Database interface for data persistence
 
 > `protected` **\_db\_setup\_promise**: `Promise`\<`void`\> \| `null`
 
-Defined in: [core/dist/collection.d.ts:19](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L19)
+Defined in: [core/dist/collection.d.ts:19](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L19)
 
 Promise tracking the database setup operation
 
@@ -98,7 +98,7 @@ Promise tracking the database setup operation
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: [core/dist/class.d.ts:79](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L79)
+Defined in: [core/dist/class.d.ts:79](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L79)
 
 Filesystem adapter for file operations
 
@@ -112,7 +112,7 @@ Filesystem adapter for file operations
 
 > `protected` `optional` **\_signalBus**: `SignalBus`
 
-Defined in: [core/dist/class.d.ts:91](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L91)
+Defined in: [core/dist/class.d.ts:91](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L91)
 
 Signal bus for method execution tracking
 
@@ -126,7 +126,7 @@ Signal bus for method execution tracking
 
 > **\_tableName**: `string`
 
-Defined in: [core/dist/collection.d.ts:38](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L38)
+Defined in: [core/dist/collection.d.ts:38](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L38)
 
 Database table name for this collection
 
@@ -140,7 +140,7 @@ Database table name for this collection
 
 > `protected` **options**: `SmrtClassOptions`
 
-Defined in: [core/dist/class.d.ts:99](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L99)
+Defined in: [core/dist/class.d.ts:99](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L99)
 
 Configuration options provided to the class
 
@@ -154,7 +154,7 @@ Configuration options provided to the class
 
 > `readonly` `static` **\_itemClass**: *typeof* [`TagAlias`](TagAlias.md) = `TagAlias`
 
-Defined in: [tags/src/tag-aliases.ts:12](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L12)
+Defined in: [tags/src/tag-aliases.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L12)
 
 Static reference to the item class constructor
 
@@ -170,7 +170,7 @@ Static reference to the item class constructor
 
 > **get** `protected` **\_itemClass**(): (`options`) => `ModelType` & `object`
 
-Defined in: [core/dist/collection.d.ts:23](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L23)
+Defined in: [core/dist/collection.d.ts:23](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L23)
 
 Gets the class constructor for items in this collection
 
@@ -190,7 +190,7 @@ Gets the class constructor for items in this collection
 
 > **get** **ai**(): `AIClient`
 
-Defined in: [core/dist/class.d.ts:185](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L185)
+Defined in: [core/dist/class.d.ts:185](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L185)
 
 Gets the AI client instance
 
@@ -210,7 +210,7 @@ Gets the AI client instance
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:181](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L181)
+Defined in: [core/dist/class.d.ts:181](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L181)
 
 Gets the database interface instance
 
@@ -230,7 +230,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: [core/dist/class.d.ts:177](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L177)
+Defined in: [core/dist/class.d.ts:177](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L177)
 
 Gets the filesystem adapter instance
 
@@ -250,7 +250,7 @@ Gets the filesystem adapter instance
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: [core/dist/class.d.ts:191](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L191)
+Defined in: [core/dist/class.d.ts:191](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L191)
 
 Gets the signal bus instance
 
@@ -272,7 +272,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:142](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L142)
+Defined in: [core/dist/class.d.ts:142](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L142)
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -293,7 +293,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: [core/dist/collection.d.ts:217](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L217)
+Defined in: [core/dist/collection.d.ts:217](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L217)
 
 Gets the database table name for this collection
 
@@ -311,7 +311,7 @@ Gets the database table name for this collection
 
 > **addAlias**(`tagSlug`, `alias`, `language?`, `context?`): `Promise`\<[`TagAlias`](TagAlias.md)\>
 
-Defined in: [tags/src/tag-aliases.ts:23](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L23)
+Defined in: [tags/src/tag-aliases.ts:23](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L23)
 
 Add an alias to a tag (get or create)
 
@@ -353,7 +353,7 @@ TagAlias instance
 
 > **bulkAddAliases**(`tagSlug`, `aliases`): `Promise`\<[`TagAlias`](TagAlias.md)[]\>
 
-Defined in: [tags/src/tag-aliases.ts:110](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L110)
+Defined in: [tags/src/tag-aliases.ts:110](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L110)
 
 Bulk add aliases to a tag
 
@@ -383,7 +383,7 @@ Array of created TagAlias instances
 
 > **count**(`options?`): `Promise`\<`number`\>
 
-Defined in: [core/dist/collection.d.ts:233](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L233)
+Defined in: [core/dist/collection.d.ts:233](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L233)
 
 Counts records in the collection matching the given filters
 
@@ -417,7 +417,7 @@ Promise resolving to the total count of matching records
 
 > **create**(`options`): `Promise`\<[`TagAlias`](TagAlias.md)\>
 
-Defined in: [core/dist/collection.d.ts:177](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L177)
+Defined in: [core/dist/collection.d.ts:177](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L177)
 
 Creates a new instance of the collection's item class
 
@@ -445,7 +445,7 @@ New item instance
 
 > **destroy**(): `void`
 
-Defined in: [core/dist/class.d.ts:207](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L207)
+Defined in: [core/dist/class.d.ts:207](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L207)
 
 Cleanup method to prevent memory leaks
 
@@ -476,7 +476,7 @@ product.destroy(); // Clean up when done
 
 > **findSimilar**(`query`, `language?`): `Promise`\<[`TagAlias`](TagAlias.md)[]\>
 
-Defined in: [tags/src/tag-aliases.ts:164](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L164)
+Defined in: [tags/src/tag-aliases.ts:164](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L164)
 
 Find similar aliases (case-insensitive partial match)
 
@@ -509,7 +509,7 @@ Array of matching TagAlias instances
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: [core/dist/collection.d.ts:334](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L334)
+Defined in: [core/dist/collection.d.ts:334](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L334)
 
 Forget collection-level context
 
@@ -555,7 +555,7 @@ await documentCollection.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: [core/dist/collection.d.ts:354](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L354)
+Defined in: [core/dist/collection.d.ts:354](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L354)
 
 Forget all collection-level context in a scope
 
@@ -601,7 +601,7 @@ const count = await documentCollection.forgetScope({
 
 > **generateSchema**(): `string`
 
-Defined in: [core/dist/collection.d.ts:213](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L213)
+Defined in: [core/dist/collection.d.ts:213](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L213)
 
 Generates database schema for the collection's item class
 
@@ -623,7 +623,7 @@ Schema object for database setup
 
 > **generateTableName**(): `string`
 
-Defined in: [core/dist/collection.d.ts:223](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L223)
+Defined in: [core/dist/collection.d.ts:223](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L223)
 
 Generates a table name from the collection class name
 
@@ -643,7 +643,7 @@ Generated table name
 
 > **get**(`filter`): `Promise`\<[`TagAlias`](TagAlias.md) \| `null`\>
 
-Defined in: [core/dist/collection.d.ts:84](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L84)
+Defined in: [core/dist/collection.d.ts:84](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L84)
 
 Retrieves a single object from the collection by ID, slug, or custom filter
 
@@ -671,7 +671,7 @@ Promise resolving to the object or null if not found
 
 > **getAliasesByLanguage**(`tagSlug`): `Promise`\<`Map`\<`string`, `string`[]\>\>
 
-Defined in: [tags/src/tag-aliases.ts:139](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L139)
+Defined in: [tags/src/tag-aliases.ts:139](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L139)
 
 Get aliases grouped by language
 
@@ -695,7 +695,7 @@ Map of language code to array of aliases
 
 > **getAliasesForTag**(`tagSlug`, `language?`): `Promise`\<[`TagAlias`](TagAlias.md)[]\>
 
-Defined in: [tags/src/tag-aliases.ts:81](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L81)
+Defined in: [tags/src/tag-aliases.ts:81](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L81)
 
 Get all aliases for a tag
 
@@ -725,7 +725,7 @@ Array of TagAlias instances
 
 > **getDiff**(`existing`, `data`): `Record`\<`string`, `any`\>
 
-Defined in: [core/dist/collection.d.ts:193](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L193)
+Defined in: [core/dist/collection.d.ts:193](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L193)
 
 Gets differences between an existing object and new data
 
@@ -759,7 +759,7 @@ Object containing only the changed fields
 
 > **getFields**(): `Record`\<`string`, `any`\>
 
-Defined in: [core/dist/collection.d.ts:205](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L205)
+Defined in: [core/dist/collection.d.ts:205](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L205)
 
 Gets field definitions for the collection's item class
 
@@ -779,7 +779,7 @@ Object containing field definitions
 
 > **getOrUpsert**(`data`, `defaults?`): `Promise`\<[`TagAlias`](TagAlias.md)\>
 
-Defined in: [core/dist/collection.d.ts:185](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L185)
+Defined in: [core/dist/collection.d.ts:185](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L185)
 
 Gets an existing item or creates a new one if it doesn't exist
 
@@ -813,7 +813,7 @@ Promise resolving to the existing or new object
 
 > **initialize**(): `Promise`\<`TagAliasCollection`\>
 
-Defined in: [core/dist/collection.d.ts:77](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L77)
+Defined in: [core/dist/collection.d.ts:77](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L77)
 
 Initializes the collection, setting up database tables
 
@@ -833,7 +833,7 @@ Promise that resolves to this instance for chaining
 
 > **list**(`options`): `Promise`\<[`TagAlias`](TagAlias.md)[]\>
 
-Defined in: [core/dist/collection.d.ts:124](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L124)
+Defined in: [core/dist/collection.d.ts:124](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L124)
 
 Lists records from the collection with flexible filtering options
 
@@ -929,7 +929,7 @@ await users.list({
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: [core/dist/collection.d.ts:291](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L291)
+Defined in: [core/dist/collection.d.ts:291](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L291)
 
 Recall collection-level context
 
@@ -984,7 +984,7 @@ const strategy = await documentCollection.recall({
 
 > **recallAll**(`options?`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: [core/dist/collection.d.ts:313](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L313)
+Defined in: [core/dist/collection.d.ts:313](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L313)
 
 Recall all collection-level context in a scope
 
@@ -1034,7 +1034,7 @@ const strategies = await documentCollection.recallAll({
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: [core/dist/collection.d.ts:264](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L264)
+Defined in: [core/dist/collection.d.ts:264](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L264)
 
 Remember collection-level context
 
@@ -1116,7 +1116,7 @@ await documentCollection.remember({
 
 > **removeAlias**(`aliasId`): `Promise`\<`void`\>
 
-Defined in: [tags/src/tag-aliases.ts:96](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L96)
+Defined in: [tags/src/tag-aliases.ts:96](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L96)
 
 Remove an alias by ID
 
@@ -1138,7 +1138,7 @@ The alias UUID
 
 > **searchByAlias**(`alias`, `language?`): `Promise`\<[`Tag`](Tag.md)[]\>
 
-Defined in: [tags/src/tag-aliases.ts:55](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/tag-aliases.ts#L55)
+Defined in: [tags/src/tag-aliases.ts:55](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/tag-aliases.ts#L55)
 
 Search tags by alias
 
@@ -1168,7 +1168,7 @@ Array of matching tags
 
 > **setupDb**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/collection.d.ts:199](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L199)
+Defined in: [core/dist/collection.d.ts:199](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L199)
 
 Sets up the database schema for this collection
 
@@ -1188,7 +1188,7 @@ Promise that resolves when setup is complete
 
 > `static` **create**\<`T`\>(`this`, `options?`): `Promise`\<`any`\>
 
-Defined in: [core/dist/collection.d.ts:71](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L71)
+Defined in: [core/dist/collection.d.ts:71](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L71)
 
 Static factory method for creating fully initialized collection instances
 
@@ -1227,10 +1227,10 @@ Promise resolving to a fully initialized collection instance
 
 ```typescript
 // Create collection from object options
-const collection = await ProductCollection.create(smrtObject.options);
+const collection = await (ProductCollection as any).create(smrtObject.options);
 
 // Create collection with specific config
-const collection = await ProductCollection.create({
+const collection = await (ProductCollection as any).create({
   persistence: { type: 'sql', url: 'products.db' },
   ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
 });
@@ -1246,7 +1246,7 @@ const collection = await ProductCollection.create({
 
 > `static` **validate**(): `void`
 
-Defined in: [core/dist/collection.d.ts:34](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/collection.d.ts#L34)
+Defined in: [core/dist/collection.d.ts:34](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L34)
 
 Validates that the collection is properly configured
 Call this during development to catch configuration issues early

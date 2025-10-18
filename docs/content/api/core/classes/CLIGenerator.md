@@ -1,6 +1,6 @@
 # Class: CLIGenerator
 
-Defined in: [smrt/packages/core/src/generators/cli.ts:59](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/cli.ts#L59)
+Defined in: [smrt/packages/core/src/generators/cli.ts:59](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/cli.ts#L59)
 
 Generate CLI commands for smrt objects
 
@@ -10,7 +10,7 @@ Generate CLI commands for smrt objects
 
 > **new CLIGenerator**(`config`, `context`): `CLIGenerator`
 
-Defined in: [smrt/packages/core/src/generators/cli.ts:64](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/cli.ts#L64)
+Defined in: [smrt/packages/core/src/generators/cli.ts:64](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/cli.ts#L64)
 
 #### Parameters
 
@@ -32,7 +32,7 @@ Defined in: [smrt/packages/core/src/generators/cli.ts:64](https://github.com/hap
 
 > **executeCommand**(`parsed`, `commands`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/generators/cli.ts:294](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/cli.ts#L294)
+Defined in: [smrt/packages/core/src/generators/cli.ts:294](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/cli.ts#L294)
 
 Execute a parsed command
 
@@ -56,7 +56,7 @@ Execute a parsed command
 
 > **generateHandler**(): (`argv`) => `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/generators/cli.ts:102](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/cli.ts#L102)
+Defined in: [smrt/packages/core/src/generators/cli.ts:102](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/cli.ts#L102)
 
 Generate CLI handler function
 
@@ -80,7 +80,7 @@ Generate CLI handler function
 
 > **generateUtilityCommands**(): `Command`[]
 
-Defined in: [smrt/packages/core/src/generators/cli.ts:388](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/cli.ts#L388)
+Defined in: [smrt/packages/core/src/generators/cli.ts:388](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/cli.ts#L388)
 
 Generate utility commands
 
@@ -94,7 +94,7 @@ Generate utility commands
 
 > **showHelp**(`commands`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/generators/cli.ts:478](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/cli.ts#L478)
+Defined in: [smrt/packages/core/src/generators/cli.ts:478](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/cli.ts#L478)
 
 Show help information
 

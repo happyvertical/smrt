@@ -1,6 +1,6 @@
 # Interface: APIConfig
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:12](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/rest.ts#L12)
+Defined in: [smrt/packages/core/src/generators/rest.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L12)
 
 ## Extended by
 
@@ -12,7 +12,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:12](https://github.com/ha
 
 > `optional` **authMiddleware**: (`objectName`, `action`) => (`req`) => `Promise`\<`Request` \| `Response`\>
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:16](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/rest.ts#L16)
+Defined in: [smrt/packages/core/src/generators/rest.ts:16](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L16)
 
 #### Parameters
 
@@ -44,7 +44,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:16](https://github.com/ha
 
 > `optional` **basePath**: `string`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:13](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/rest.ts#L13)
+Defined in: [smrt/packages/core/src/generators/rest.ts:13](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L13)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:13](https://github.com/ha
 
 > `optional` **customRoutes**: `Record`\<`string`, (`req`) => `Promise`\<`Response`\>\>
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:15](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/rest.ts#L15)
+Defined in: [smrt/packages/core/src/generators/rest.ts:15](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L15)
 
 ***
 
@@ -60,7 +60,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:15](https://github.com/ha
 
 > `optional` **enableCors**: `boolean`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:14](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/rest.ts#L14)
+Defined in: [smrt/packages/core/src/generators/rest.ts:14](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L14)
 
 ***
 
@@ -68,7 +68,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:14](https://github.com/ha
 
 > `optional` **hostname**: `string`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:21](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/rest.ts#L21)
+Defined in: [smrt/packages/core/src/generators/rest.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L21)
 
 ***
 
@@ -76,4 +76,4 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:21](https://github.com/ha
 
 > `optional` **port**: `number`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:20](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/generators/rest.ts#L20)
+Defined in: [smrt/packages/core/src/generators/rest.ts:20](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L20)

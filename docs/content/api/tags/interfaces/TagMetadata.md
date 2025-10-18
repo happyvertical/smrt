@@ -1,6 +1,6 @@
 # Interface: TagMetadata
 
-Defined in: [tags/src/types.ts:33](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L33)
+Defined in: [tags/src/types.ts:33](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L33)
 
 Tag metadata structure (flexible, application-specific)
 
@@ -14,7 +14,7 @@ Tag metadata structure (flexible, application-specific)
 
 > `optional` **aiGenerated**: `boolean`
 
-Defined in: [tags/src/types.ts:52](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L52)
+Defined in: [tags/src/types.ts:52](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L52)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [tags/src/types.ts:52](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **backgroundColor**: `string`
 
-Defined in: [tags/src/types.ts:36](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L36)
+Defined in: [tags/src/types.ts:36](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L36)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [tags/src/types.ts:36](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **color**: `string`
 
-Defined in: [tags/src/types.ts:35](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L35)
+Defined in: [tags/src/types.ts:35](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L35)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [tags/src/types.ts:35](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **confidence**: `number`
 
-Defined in: [tags/src/types.ts:53](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L53)
+Defined in: [tags/src/types.ts:53](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L53)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [tags/src/types.ts:53](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **displayFormat**: `string`
 
-Defined in: [tags/src/types.ts:49](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L49)
+Defined in: [tags/src/types.ts:49](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L49)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [tags/src/types.ts:49](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **emoji**: `string`
 
-Defined in: [tags/src/types.ts:38](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L38)
+Defined in: [tags/src/types.ts:38](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L38)
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: [tags/src/types.ts:38](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **featured**: `boolean`
 
-Defined in: [tags/src/types.ts:46](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L46)
+Defined in: [tags/src/types.ts:46](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L46)
 
 ***
 
@@ -70,7 +70,7 @@ Defined in: [tags/src/types.ts:46](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **icon**: `string`
 
-Defined in: [tags/src/types.ts:37](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L37)
+Defined in: [tags/src/types.ts:37](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L37)
 
 ***
 
@@ -78,7 +78,7 @@ Defined in: [tags/src/types.ts:37](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **lastUsed**: `string`
 
-Defined in: [tags/src/types.ts:42](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L42)
+Defined in: [tags/src/types.ts:42](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L42)
 
 ***
 
@@ -86,7 +86,7 @@ Defined in: [tags/src/types.ts:42](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **reviewStatus**: `string`
 
-Defined in: [tags/src/types.ts:55](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L55)
+Defined in: [tags/src/types.ts:55](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L55)
 
 ***
 
@@ -94,7 +94,7 @@ Defined in: [tags/src/types.ts:55](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **showInNav**: `boolean`
 
-Defined in: [tags/src/types.ts:48](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L48)
+Defined in: [tags/src/types.ts:48](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L48)
 
 ***
 
@@ -102,7 +102,7 @@ Defined in: [tags/src/types.ts:48](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **sortOrder**: `number`
 
-Defined in: [tags/src/types.ts:47](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L47)
+Defined in: [tags/src/types.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L47)
 
 ***
 
@@ -110,7 +110,7 @@ Defined in: [tags/src/types.ts:47](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **source**: `string`
 
-Defined in: [tags/src/types.ts:54](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L54)
+Defined in: [tags/src/types.ts:54](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L54)
 
 ***
 
@@ -118,7 +118,7 @@ Defined in: [tags/src/types.ts:54](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **trending**: `boolean`
 
-Defined in: [tags/src/types.ts:43](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L43)
+Defined in: [tags/src/types.ts:43](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L43)
 
 ***
 
@@ -126,4 +126,4 @@ Defined in: [tags/src/types.ts:43](https://github.com/happyvertical/smrt/blob/71
 
 > `optional` **usageCount**: `number`
 
-Defined in: [tags/src/types.ts:41](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/tags/src/types.ts#L41)
+Defined in: [tags/src/types.ts:41](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/tags/src/types.ts#L41)

@@ -1,6 +1,6 @@
 # Interface: GlobalSignalConfig
 
-Defined in: [smrt/packages/core/src/config.ts:38](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/config.ts#L38)
+Defined in: [smrt/packages/core/src/config.ts:38](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/config.ts#L38)
 
 Global signal configuration
 
@@ -13,7 +13,7 @@ These can be overridden per-instance via SmrtClassOptions.
 
 > `optional` **logging**: `LoggerConfig`
 
-Defined in: [smrt/packages/core/src/config.ts:40](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/config.ts#L40)
+Defined in: [smrt/packages/core/src/config.ts:40](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/config.ts#L40)
 
 Logging configuration (default: true with console, info level)
 
@@ -23,7 +23,7 @@ Logging configuration (default: true with console, info level)
 
 > `optional` **metrics**: [`MetricsConfig`](MetricsConfig.md)
 
-Defined in: [smrt/packages/core/src/config.ts:43](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/config.ts#L43)
+Defined in: [smrt/packages/core/src/config.ts:43](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/config.ts#L43)
 
 Metrics configuration (default: undefined/disabled)
 
@@ -33,7 +33,7 @@ Metrics configuration (default: undefined/disabled)
 
 > `optional` **pubsub**: [`PubSubConfig`](PubSubConfig.md)
 
-Defined in: [smrt/packages/core/src/config.ts:46](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/config.ts#L46)
+Defined in: [smrt/packages/core/src/config.ts:46](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/config.ts#L46)
 
 Pub/Sub configuration (default: undefined/disabled)
 
@@ -43,7 +43,7 @@ Pub/Sub configuration (default: undefined/disabled)
 
 > `optional` **sanitization**: `false` \| [`SanitizationConfig`](SanitizationConfig.md)
 
-Defined in: [smrt/packages/core/src/config.ts:52](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/config.ts#L52)
+Defined in: [smrt/packages/core/src/config.ts:52](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/config.ts#L52)
 
 Signal sanitization configuration (default: enabled with standard redactions)
 Set to false to disable sanitization
@@ -54,7 +54,7 @@ Set to false to disable sanitization
 
 > `optional` **signals**: `object`
 
-Defined in: [smrt/packages/core/src/config.ts:55](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/config.ts#L55)
+Defined in: [smrt/packages/core/src/config.ts:55](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/config.ts#L55)
 
 Custom signal configuration
 
