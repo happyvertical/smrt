@@ -1,6 +1,6 @@
 # Interface: GnodePeer
 
-Defined in: [federation/index.ts:5](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/gnode/src/federation/index.ts#L5)
+Defined in: [federation/index.ts:5](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/federation/index.ts#L5)
 
 Federation utilities for gnode P2P discovery and communication
 
@@ -10,7 +10,7 @@ Federation utilities for gnode P2P discovery and communication
 
 > **discoveredAt**: `Date`
 
-Defined in: [federation/index.ts:8](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/gnode/src/federation/index.ts#L8)
+Defined in: [federation/index.ts:8](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/federation/index.ts#L8)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [federation/index.ts:8](https://github.com/happyvertical/smrt/blob/7
 
 > `optional` **lastSeen**: `Date`
 
-Defined in: [federation/index.ts:9](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/gnode/src/federation/index.ts#L9)
+Defined in: [federation/index.ts:9](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/federation/index.ts#L9)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [federation/index.ts:9](https://github.com/happyvertical/smrt/blob/7
 
 > **name**: `string`
 
-Defined in: [federation/index.ts:7](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/gnode/src/federation/index.ts#L7)
+Defined in: [federation/index.ts:7](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/federation/index.ts#L7)
 
 ***
 
@@ -34,4 +34,4 @@ Defined in: [federation/index.ts:7](https://github.com/happyvertical/smrt/blob/7
 
 > **url**: `string`
 
-Defined in: [federation/index.ts:6](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/gnode/src/federation/index.ts#L6)
+Defined in: [federation/index.ts:6](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/federation/index.ts#L6)

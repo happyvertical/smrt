@@ -12,11 +12,11 @@ import { smrt } from './registry';
 class TestObject extends SmrtObject {
   static tableName = 'test_objects';
 
-  // Don't initialize these - let SmrtObject handle them
-  declare name: string;
-  declare description?: string;
-  declare active: boolean;
-  declare count: number;
+  // Need to initialize properties for runtime field detection
+  name: string = '';
+  description?: string = '';
+  active: boolean = false;
+  count: number = 0;
 }
 
 describe('SmrtObject', () => {

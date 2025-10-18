@@ -96,7 +96,7 @@ function renderEmptyState(): string {
   `;
 }
 
-function renderCollection(name: string, obj: any, _client: any): string {
+function renderCollection(_name: string, obj: any, _client: any): string {
   const fields = Object.entries(obj.fields);
   const methods = Object.entries(obj.methods);
   const customMethods = methods.filter(
@@ -277,7 +277,7 @@ async function handleList(collection: string, client: any) {
 async function handleCreate(
   collection: string,
   manifest: SmrtManifest,
-  client: any,
+  _client: any,
 ) {
   // Get fields for this collection
   const obj = Object.values(manifest.objects).find(
@@ -423,7 +423,6 @@ function getInputType(fieldType: string): string {
       return 'checkbox';
     case 'datetime':
       return 'datetime-local';
-    case 'text':
     default:
       return 'text';
   }

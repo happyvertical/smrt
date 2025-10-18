@@ -66,7 +66,7 @@ class ProfileType extends (_a = SmrtObject) {
    * @param slug - The slug to search for
    * @returns ProfileType instance or null if not found
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
 }
@@ -363,7 +363,7 @@ class Profile extends (_b = SmrtObject) {
    * @param value - The value to match
    * @returns Array of matching profiles
    */
-  static async findByMetadata(metafieldSlug, value) {
+  static async findByMetadata(_metafieldSlug, _value) {
     return [];
   }
   /**
@@ -372,7 +372,7 @@ class Profile extends (_b = SmrtObject) {
    * @param typeSlug - The profile type slug
    * @returns Array of matching profiles
    */
-  static async findByType(typeSlug) {
+  static async findByType(_typeSlug) {
     return [];
   }
   /**
@@ -382,7 +382,7 @@ class Profile extends (_b = SmrtObject) {
    * @param relationshipSlug - Optional filter by relationship type
    * @returns Array of related profiles
    */
-  static async findRelated(profileId, relationshipSlug) {
+  static async findRelated(_profileId, _relationshipSlug) {
     return [];
   }
   /**
@@ -391,7 +391,7 @@ class Profile extends (_b = SmrtObject) {
    * @param email - The email to search for
    * @returns Profile or null if not found
    */
-  static async searchByEmail(email) {
+  static async searchByEmail(_email) {
     return null;
   }
 }
@@ -605,7 +605,7 @@ let _ProfileMetafield = class _ProfileMetafield extends (_d = SmrtObject) {
    * @param slug - The slug to search for
    * @returns ProfileMetafield instance or null if not found
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
   /**
@@ -1015,7 +1015,7 @@ let _ProfileRelationshipType = class _ProfileRelationshipType extends (_g = Smrt
    * @param slug - The slug to search for
    * @returns ProfileRelationshipType instance or null if not found
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
   /**

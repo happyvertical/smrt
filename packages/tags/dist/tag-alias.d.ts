@@ -23,13 +23,13 @@ export declare class TagAlias extends SmrtObject {
      * @param language - Optional language filter
      * @returns Array of matching tags
      */
-    static searchByAlias(alias: string, language?: string): Promise<Tag[]>;
+    static searchByAlias(_alias: string, _language?: string): Promise<Tag[]>;
     /**
      * Get all aliases for a tag
      *
      * @param tagSlug - The tag slug to get aliases for
      * @returns Array of TagAlias instances
      */
-    static getAliasesForTag(tagSlug: string): Promise<TagAlias[]>;
+    static getAliasesForTag(_tagSlug: string): Promise<TagAlias[]>;
 }
 //# sourceMappingURL=tag-alias.d.ts.map

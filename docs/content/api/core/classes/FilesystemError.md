@@ -1,6 +1,6 @@
 # Class: FilesystemError
 
-Defined in: [smrt/packages/core/src/errors.ts:178](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L178)
+Defined in: [smrt/packages/core/src/errors.ts:178](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L178)
 
 Filesystem operation errors
 
@@ -14,7 +14,7 @@ Filesystem operation errors
 
 > **new FilesystemError**(`message`, `code`, `details?`, `cause?`): `FilesystemError`
 
-Defined in: [smrt/packages/core/src/errors.ts:179](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L179)
+Defined in: [smrt/packages/core/src/errors.ts:179](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L179)
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: [smrt/packages/core/src/errors.ts:179](https://github.com/happyverti
 
 > `readonly` **category**: `"database"` \| `"ai"` \| `"filesystem"` \| `"validation"` \| `"network"` \| `"configuration"` \| `"runtime"`
 
-Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L13)
+Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L13)
 
 #### Inherited from
 
@@ -60,7 +60,7 @@ Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertic
 
 > `readonly` `optional` **cause**: `Error`
 
-Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L22)
+Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L22)
 
 #### Inherited from
 
@@ -72,7 +72,7 @@ Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertic
 
 > `readonly` **code**: `string`
 
-Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L12)
+Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L12)
 
 #### Inherited from
 
@@ -84,7 +84,7 @@ Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertic
 
 > `readonly` `optional` **details**: `Record`\<`string`, `any`\>
 
-Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L21)
+Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L21)
 
 #### Inherited from
 
@@ -154,7 +154,7 @@ not capture any frames.
 
 > **toJSON**(): `object`
 
-Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L47)
+Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L47)
 
 Converts error to a serializable object for logging/debugging
 
@@ -270,7 +270,7 @@ a();
 
 > `static` **diskSpaceExceeded**(`path`, `requiredBytes`): `FilesystemError`
 
-Defined in: [smrt/packages/core/src/errors.ts:202](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L202)
+Defined in: [smrt/packages/core/src/errors.ts:202](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L202)
 
 #### Parameters
 
@@ -292,7 +292,7 @@ Defined in: [smrt/packages/core/src/errors.ts:202](https://github.com/happyverti
 
 > `static` **fileNotFound**(`path`): `FilesystemError`
 
-Defined in: [smrt/packages/core/src/errors.ts:188](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L188)
+Defined in: [smrt/packages/core/src/errors.ts:188](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L188)
 
 #### Parameters
 
@@ -310,7 +310,7 @@ Defined in: [smrt/packages/core/src/errors.ts:188](https://github.com/happyverti
 
 > `static` **permissionDenied**(`path`, `operation`): `FilesystemError`
 
-Defined in: [smrt/packages/core/src/errors.ts:194](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/errors.ts#L194)
+Defined in: [smrt/packages/core/src/errors.ts:194](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L194)
 
 #### Parameters
 

@@ -37,6 +37,6 @@ export declare class EventType extends SmrtObject {
      * @param slug - The slug to search for
      * @returns EventType instance or null if not found
      */
-    static getBySlug(slug: string): Promise<EventType | null>;
+    static getBySlug(_slug: string): Promise<EventType | null>;
 }
 //# sourceMappingURL=EventType.d.ts.map

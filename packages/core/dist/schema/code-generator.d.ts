@@ -4,7 +4,7 @@ export declare class SchemaCodeGenerator {
     /**
      * Generate getSchema() method source code
      */
-    generateSchemaMethod(objectDef: SmartObjectDefinition, schema: SchemaDefinition): string;
+    generateSchemaMethod(_objectDef: SmartObjectDefinition, schema: SchemaDefinition): string;
     /**
      * Generate complete schema file with all methods
      */

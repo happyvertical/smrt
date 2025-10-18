@@ -1,1 +1,1 @@
-{"version":3,"file":"static-manifest.d.ts","sourceRoot":"","sources":["../../src/manifest/static-manifest.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,OAAO,KAAK,EAAE,mBAAmB,EAAE,MAAM,kBAAkB,CAAC;AAE5D,eAAO,MAAM,cAAc,EAAE,mBAqCnB,CAAC;AAEX,eAAe,cAAc,CAAC"}
+{"version":3,"file":"static-manifest.d.ts","sourceRoot":"","sources":["../../src/manifest/static-manifest.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,OAAO,KAAK,EAAE,mBAAmB,EAAE,MAAM,kBAAkB,CAAC;AAE5D,eAAO,MAAM,cAAc,EAAE,mBAInB,CAAC;AAEX,eAAe,cAAc,CAAC"}

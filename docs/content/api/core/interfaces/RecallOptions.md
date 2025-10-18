@@ -1,6 +1,6 @@
 # Interface: RecallOptions
 
-Defined in: [smrt/packages/core/src/system/types.ts:65](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/system/types.ts#L65)
+Defined in: [smrt/packages/core/src/system/types.ts:65](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L65)
 
 Options for recalling notes
 
@@ -10,7 +10,7 @@ Options for recalling notes
 
 > `optional` **includeAncestors**: `boolean`
 
-Defined in: [smrt/packages/core/src/system/types.ts:71](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/system/types.ts#L71)
+Defined in: [smrt/packages/core/src/system/types.ts:71](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L71)
 
 Search parent scopes if not found
 
@@ -20,7 +20,7 @@ Search parent scopes if not found
 
 > `optional` **includeDescendants**: `boolean`
 
-Defined in: [smrt/packages/core/src/system/types.ts:73](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/system/types.ts#L73)
+Defined in: [smrt/packages/core/src/system/types.ts:73](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L73)
 
 Search child scopes
 
@@ -30,7 +30,7 @@ Search child scopes
 
 > **key**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:69](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/system/types.ts#L69)
+Defined in: [smrt/packages/core/src/system/types.ts:69](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L69)
 
 Key to search for
 
@@ -40,7 +40,7 @@ Key to search for
 
 > `optional` **latestVersionOnly**: `boolean`
 
-Defined in: [smrt/packages/core/src/system/types.ts:77](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/system/types.ts#L77)
+Defined in: [smrt/packages/core/src/system/types.ts:77](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L77)
 
 Only return highest version
 
@@ -50,7 +50,7 @@ Only return highest version
 
 > `optional` **minConfidence**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:75](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/system/types.ts#L75)
+Defined in: [smrt/packages/core/src/system/types.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L75)
 
 Minimum confidence threshold
 
@@ -60,6 +60,6 @@ Minimum confidence threshold
 
 > **scope**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:67](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/system/types.ts#L67)
+Defined in: [smrt/packages/core/src/system/types.ts:67](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L67)
 
 Scope to search in

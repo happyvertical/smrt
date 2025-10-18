@@ -235,7 +235,7 @@ describe.skip('Performance Benchmarks', () => {
       expect(firstUser).toBeDefined();
 
       const { result, duration } = await measureTime(async () => {
-        return await collection.get(firstUser.id!);
+        return await collection.get(firstUser.id || '');
       });
 
       expect(duration).toBeLessThan(50);
@@ -327,7 +327,7 @@ describe.skip('Performance Benchmarks', () => {
         for (const userData of users) {
           const user = await collection.create(userData);
           // Immediately query it back
-          await collection.get(user.id!);
+          await collection.get(user.id || '');
         }
 
         // Force garbage collection if available
@@ -447,7 +447,9 @@ describe.skip('Performance Benchmarks', () => {
 
       // Perform concurrent reads
       const { duration } = await measureTime(async () => {
-        const promises = createdUsers.map((user) => collection.get(user.id!));
+        const promises = createdUsers.map((user) =>
+          collection.get(user.id || ''),
+        );
         await Promise.all(promises);
       });
 

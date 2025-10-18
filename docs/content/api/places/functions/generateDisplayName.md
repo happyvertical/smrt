@@ -2,7 +2,7 @@
 
 > **generateDisplayName**(`components`): `string`
 
-Defined in: [places/src/utils.ts:201](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/places/src/utils.ts#L201)
+Defined in: [places/src/utils.ts:201](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/utils.ts#L201)
 
 Generate a display name from address components
 

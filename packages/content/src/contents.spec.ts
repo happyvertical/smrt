@@ -25,7 +25,7 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
     const contents = await Contents.create({
       ai: {
         type: 'openai',
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: process.env.OPENAI_API_KEY || "test-key",
       },
       db: {
         url: getTestDbUrl('getOrInsert'),
@@ -56,7 +56,7 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
     const contents = await Contents.create({
       ai: {
         type: 'openai',
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: process.env.OPENAI_API_KEY || "test-key",
       },
       db: {
         url: getTestDbUrl('context-slug'),
@@ -115,7 +115,7 @@ it.skip('should be able to mirror a bit of content give a url', async () => {
   const contents = await Contents.create({
     ai: {
       type: 'openai',
-      apiKey: process.env.OPENAI_API_KEY!,
+      apiKey: process.env.OPENAI_API_KEY || "test-key",
     },
     db: {
       url: getTestDbUrl('mirror-content'),
@@ -133,7 +133,7 @@ it.skip('should be able to sync a content dir', async () => {
   const contents = await Contents.create({
     ai: {
       type: 'openai',
-      apiKey: process.env.OPENAI_API_KEY!,
+      apiKey: process.env.OPENAI_API_KEY || "test-key",
     },
     db: {
       url: getTestDbUrl('sync-content-dir'),
@@ -164,7 +164,7 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
     const contents = await Contents.create({
       ai: {
         type: 'openai',
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: process.env.OPENAI_API_KEY || "test-key",
       },
       db: {
         url: getTestDbUrl('list-content'),
@@ -228,7 +228,7 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
     const contents = await Contents.create({
       ai: {
         type: 'openai',
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: process.env.OPENAI_API_KEY || "test-key",
       },
       db: {
         url: getTestDbUrl('variant-field'),

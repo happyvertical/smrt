@@ -48,6 +48,11 @@ export class Contents extends SmrtCollection<Content> {
   public contentDir?: string;
 
   /**
+   * Cache for loaded content
+   */
+  public loaded: Map<string, Content>;
+
+  /**
    * Creates a new Contents collection
    *
    * Use the static `create()` method inherited from SmrtCollection for proper initialization.

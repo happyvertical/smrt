@@ -424,7 +424,7 @@ export class ErrorUtils {
     delay = 1000,
     backoffMultiplier = 2,
   ): Promise<T> {
-    let lastError: Error;
+    let lastError: Error = new Error('Operation failed without error details');
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -451,7 +451,7 @@ export class ErrorUtils {
       }
     }
 
-    throw lastError!;
+    throw lastError;
   }
 
   /**

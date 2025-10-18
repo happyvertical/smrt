@@ -94,7 +94,7 @@ export class EventParticipant extends SmrtObject {
     if (!this.eventId) return null;
 
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = await EventCollection.create(this.options);
+    const collection = await (EventCollection as any).create(this.options);
 
     return await collection.get({ id: this.eventId });
   }
@@ -109,7 +109,7 @@ export class EventParticipant extends SmrtObject {
 
     try {
       const { ProfileCollection } = await import('@smrt/profiles');
-      const collection = await ProfileCollection.create(this.options);
+      const collection = await (ProfileCollection as any).create(this.options);
 
       return await collection.get({ id: this.profileId });
     } catch {
@@ -129,7 +129,7 @@ export class EventParticipant extends SmrtObject {
     const { EventParticipantCollection } = await import(
       '../collections/EventParticipantCollection'
     );
-    const collection = await EventParticipantCollection.create(this.options);
+    const collection = await (EventParticipantCollection as any).create(this.options);
 
     const participants = await collection.list({
       where: { eventId: this.eventId, groupId: this.groupId },

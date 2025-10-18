@@ -14,7 +14,6 @@ import type {
 
 export class ASTScanner {
   private program: ts.Program;
-  private checker: ts.TypeChecker;
   private options: ScanOptions;
 
   constructor(filePaths: string[], options: ScanOptions = {}) {
@@ -36,8 +35,6 @@ export class ASTScanner {
       skipLibCheck: true,
       strict: true,
     });
-
-    this.checker = this.program.getTypeChecker();
   }
 
   /**

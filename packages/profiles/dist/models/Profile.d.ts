@@ -104,14 +104,14 @@ export declare class Profile extends SmrtObject {
      * @param value - The value to match
      * @returns Array of matching profiles
      */
-    static findByMetadata(metafieldSlug: string, value: any): Promise<Profile[]>;
+    static findByMetadata(_metafieldSlug: string, _value: any): Promise<Profile[]>;
     /**
      * Find profiles by type slug
      *
      * @param typeSlug - The profile type slug
      * @returns Array of matching profiles
      */
-    static findByType(typeSlug: string): Promise<Profile[]>;
+    static findByType(_typeSlug: string): Promise<Profile[]>;
     /**
      * Find related profiles for a given profile
      *
@@ -119,13 +119,13 @@ export declare class Profile extends SmrtObject {
      * @param relationshipSlug - Optional filter by relationship type
      * @returns Array of related profiles
      */
-    static findRelated(profileId: string, relationshipSlug?: string): Promise<Profile[]>;
+    static findRelated(_profileId: string, _relationshipSlug?: string): Promise<Profile[]>;
     /**
      * Search profiles by email
      *
      * @param email - The email to search for
      * @returns Profile or null if not found
      */
-    static searchByEmail(email: string): Promise<Profile | null>;
+    static searchByEmail(_email: string): Promise<Profile | null>;
 }
 //# sourceMappingURL=Profile.d.ts.map

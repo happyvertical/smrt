@@ -35,9 +35,9 @@ export declare class Contents extends SmrtCollection<Content> {
      */
     contentDir?: string;
     /**
-     * Cache of loaded content by key
+     * Cache for loaded content
      */
-    private loaded;
+    loaded: Map<string, Content>;
     /**
      * Creates a new Contents collection
      *

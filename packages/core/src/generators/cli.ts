@@ -838,7 +838,9 @@ export class CLIGenerator {
       await collection.initialize();
       this.collections.set(objectName, collection);
     }
-    return this.collections.get(objectName)!;
+    const collection = this.collections.get(objectName);
+    if (!collection) throw new Error(`Collection ${objectName} not found`);
+    return collection;
   }
 
   /**

@@ -209,7 +209,7 @@ class Event extends (_a = SmrtObject) {
   async getAncestors() {
     const ancestors = [];
     let currentEvent = this;
-    while (currentEvent && currentEvent.parentEventId) {
+    while (currentEvent?.parentEventId) {
       const parent = await currentEvent.getParent();
       if (!parent) break;
       ancestors.unshift(parent);
@@ -413,7 +413,7 @@ class EventCollection extends SmrtCollection {
       }
       if (filters.status) {
         if (Array.isArray(filters.status)) {
-          events = events.filter((e) => filters.status.includes(e.status));
+          events = events.filter((e) => filters.status?.includes(e.status));
         } else {
           events = events.filter((e) => e.status === filters.status);
         }
@@ -1054,7 +1054,7 @@ class EventType extends (_d = SmrtObject) {
    * @param slug - The slug to search for
    * @returns EventType instance or null if not found
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
 }

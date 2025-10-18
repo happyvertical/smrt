@@ -178,7 +178,7 @@ export class APIGenerator {
     }
 
     // Handle object routes
-    if (url.pathname.startsWith(this.config.basePath!)) {
+    if (url.pathname.startsWith(this.config.basePath || '')) {
       const response = await this.handleObjectRoute(req, url);
       return this.addCorsHeaders(response);
     }
@@ -192,7 +192,7 @@ export class APIGenerator {
    */
   private async handleObjectRoute(req: Request, url: URL): Promise<Response> {
     const pathParts = url.pathname
-      .replace(this.config.basePath!, '')
+      .replace(this.config.basePath || '', '')
       .split('/')
       .filter(Boolean);
 
@@ -205,7 +205,8 @@ export class APIGenerator {
 
     // Check for explicitly registered collection first
     if (this.collections.has(objectType)) {
-      const collection = this.collections.get(objectType)!;
+      const collection = this.collections.get(objectType);
+      if (!collection) throw new Error(`Collection ${objectType} not found`);
 
       // Apply auth middleware if configured
       if (this.config.authMiddleware) {
@@ -486,7 +487,9 @@ export class APIGenerator {
       });
       this.collections.set(classInfo.name, collection);
     }
-    return this.collections.get(classInfo.name)!;
+    const collection = this.collections.get(classInfo.name);
+    if (!collection) throw new Error(`Collection ${classInfo.name} not found`);
+    return collection;
   }
 
   /**

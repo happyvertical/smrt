@@ -15,7 +15,7 @@ export declare class ProfileRelationshipType extends SmrtObject {
      * @param slug - The slug to search for
      * @returns ProfileRelationshipType instance or null if not found
      */
-    static getBySlug(slug: string): Promise<ProfileRelationshipType | null>;
+    static getBySlug(_slug: string): Promise<ProfileRelationshipType | null>;
     /**
      * Register a custom reciprocal handler for a relationship type
      *

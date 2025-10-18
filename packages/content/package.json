@@ -21,12 +21,13 @@
   },
   "dependencies": {
     "@smrt/core": "workspace:*",
-    "@have/documents": "*",
-    "@have/files": "*",
-    "@have/pdf": "*",
-    "@have/spider": "*",
-    "@have/ocr": "*",
-    "@have/utils": "*",
+    "@have/ai": "workspace:*",
+    "@have/documents": "workspace:*",
+    "@have/files": "workspace:*",
+    "@have/pdf": "workspace:*",
+    "@have/spider": "workspace:*",
+    "@have/ocr": "workspace:*",
+    "@have/utils": "workspace:*",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

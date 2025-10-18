@@ -100,12 +100,12 @@ export class EventSeriesCollection extends SmrtCollection<EventSeries> {
       }
       if (filters.startDate) {
         series = series.filter(
-          (s) => s.startDate && s.startDate >= filters.startDate!,
+          (s) => s.startDate && s.startDate >= filters.startDate,
         );
       }
       if (filters.endDate) {
         series = series.filter(
-          (s) => s.endDate && s.endDate <= filters.endDate!,
+          (s) => s.endDate && s.endDate <= filters.endDate,
         );
       }
     }
