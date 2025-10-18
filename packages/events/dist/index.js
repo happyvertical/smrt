@@ -151,7 +151,9 @@ class Event extends (_a = SmrtObject) {
   async getSeries() {
     if (!this.seriesId) return null;
     const { EventSeriesCollection: EventSeriesCollection2 } = await Promise.resolve().then(() => EventSeriesCollection$1);
-    const collection = await EventSeriesCollection2.create(this.options);
+    const collection = await EventSeriesCollection2.create(
+      this.options
+    );
     return await collection.get({ id: this.seriesId });
   }
   /**
@@ -263,7 +265,9 @@ class Event extends (_a = SmrtObject) {
    */
   async getParticipants() {
     const { EventParticipantCollection: EventParticipantCollection2 } = await Promise.resolve().then(() => EventParticipantCollection$1);
-    const collection = await EventParticipantCollection2.create(this.options);
+    const collection = await EventParticipantCollection2.create(
+      this.options
+    );
     return await collection.list({ where: { eventId: this.id } });
   }
   /**
@@ -560,7 +564,9 @@ class EventParticipant extends (_b = SmrtObject) {
   async getGroupParticipants() {
     if (!this.groupId) return [];
     const { EventParticipantCollection: EventParticipantCollection2 } = await Promise.resolve().then(() => EventParticipantCollection$1);
-    const collection = await EventParticipantCollection2.create(this.options);
+    const collection = await EventParticipantCollection2.create(
+      this.options
+    );
     const participants = await collection.list({
       where: { eventId: this.eventId, groupId: this.groupId }
     });

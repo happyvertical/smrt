@@ -83,9 +83,9 @@ describe('Issue #144: Integration Test with Real Collections', () => {
     expect(createdMatches.length).toBe(1);
     expect(updatedMatches.length).toBe(1);
 
-    // Verify it contains the timestamp columns
-    expect(schema).toContain('created_at DATETIME');
-    expect(schema).toContain('updated_at DATETIME');
+    // Verify it contains the timestamp columns (with quoted column names)
+    expect(schema).toContain('"created_at" DATETIME');
+    expect(schema).toContain('"updated_at" DATETIME');
   });
 
   it('should generate valid schema for Profile class', () => {
@@ -98,8 +98,8 @@ describe('Issue #144: Integration Test with Real Collections', () => {
     expect(createdMatches.length).toBe(1);
     expect(updatedMatches.length).toBe(1);
 
-    // Verify it contains the timestamp columns
-    expect(schema).toContain('created_at DATETIME');
-    expect(schema).toContain('updated_at DATETIME');
+    // Verify it contains the timestamp columns (with quoted column names)
+    expect(schema).toContain('"created_at" DATETIME');
+    expect(schema).toContain('"updated_at" DATETIME');
   });
 });
