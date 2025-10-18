@@ -1,0 +1,3 @@
+# Variable: startMCPServer
+
+> **startMCPServer**: `any`
