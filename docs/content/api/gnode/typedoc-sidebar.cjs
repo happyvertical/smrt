@@ -1,0 +1,4 @@
+// @ts-check
+/** @type {import("@docusaurus/plugin-content-docs").SidebarsConfig} */
+const typedocSidebar = {items:[{type:"category",label:"Classes",items:[{type:"doc",id:"api/gnode/classes/Federation",label:"Federation"},{type:"doc",id:"api/gnode/classes/PeerExchangeProtocol",label:"PeerExchangeProtocol"},{type:"doc",id:"api/gnode/classes/WebFingerProtocol",label:"WebFingerProtocol"}]},{type:"category",label:"Interfaces",items:[{type:"doc",id:"api/gnode/interfaces/FederationConfig",label:"FederationConfig"},{type:"doc",id:"api/gnode/interfaces/GnodePeer",label:"GnodePeer"},{type:"doc",id:"api/gnode/interfaces/WebFingerResponse",label:"WebFingerResponse"}]},{type:"category",label:"Variables",items:[{type:"doc",id:"api/gnode/variables/version",label:"version"}]}]};
+module.exports = typedocSidebar.items;
