@@ -56,8 +56,8 @@ async function _handleDeleteProduct(id: string) {
 
 async function _handleSubmitProduct(productData: Partial<ProductData>) {
   try {
-    if (editingProduct) {
-      await productStore.updateProduct(editingProduct.id!, productData);
+    if (editingProduct && editingProduct.id) {
+      await productStore.updateProduct(editingProduct.id, productData);
     } else {
       await productStore.createProduct(productData);
     }

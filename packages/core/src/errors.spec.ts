@@ -138,7 +138,7 @@ describe('SMRT Error System', () => {
       const error = DatabaseError.connectionFailed(
         'postgres://user:password123@host/db',
       );
-      error.details!.apiKey = 'secret-key-123';
+      error.details.apiKey = 'secret-key-123';
 
       const sanitized = ErrorUtils.sanitizeError(error);
 

@@ -28,13 +28,13 @@
  */
 
 import type { SmrtCollection } from './collection';
+import { staticManifest } from './manifest/static-manifest';
 import type { SmrtObject } from './object';
 import {
   classnameToTablename,
   generateSchema,
   tableNameFromClass,
 } from './utils';
-import { staticManifest } from './manifest/static-manifest';
 
 /**
  * Configuration options for SMRT objects registered in the system
@@ -267,9 +267,11 @@ export class ObjectRegistry {
     const manifestEntry = staticManifest.objects[name];
     const fields = new Map<string, any>();
 
-    if (manifestEntry && manifestEntry.fields) {
+    if (manifestEntry?.fields) {
       // Use manifest fields (preferred - from build-time AST scanning)
-      for (const [fieldName, fieldDef] of Object.entries(manifestEntry.fields)) {
+      for (const [fieldName, fieldDef] of Object.entries(
+        manifestEntry.fields,
+      )) {
         fields.set(fieldName, fieldDef);
       }
     } else {
@@ -300,7 +302,11 @@ export class ObjectRegistry {
         if (fields.size === 0) {
           for (const key of Object.getOwnPropertyNames(tempInstance)) {
             // Skip protected properties
-            if (key.startsWith('_') || key.startsWith('#') || key === 'options') {
+            if (
+              key.startsWith('_') ||
+              key.startsWith('#') ||
+              key === 'options'
+            ) {
               continue;
             }
 
@@ -315,7 +321,8 @@ export class ObjectRegistry {
             else if (valueType === 'boolean') fieldType = 'boolean';
             else if (value instanceof Date) fieldType = 'datetime';
             else if (Array.isArray(value)) fieldType = 'json';
-            else if (valueType === 'object' && value !== null) fieldType = 'json';
+            else if (valueType === 'object' && value !== null)
+              fieldType = 'json';
             else continue; // Skip functions, undefined, null
 
             fields.set(key, {
@@ -325,7 +332,10 @@ export class ObjectRegistry {
           }
         }
       } catch (error) {
-        console.warn(`Warning: Could not extract fields from ${ctor.name}:`, error);
+        console.warn(
+          `Warning: Could not extract fields from ${ctor.name}:`,
+          error,
+        );
       }
     }
 

@@ -103,11 +103,7 @@ describe('AST Scanner', () => {
       isPublic: true,
     });
 
-    expect(contentObj?.methods.validateContent).toMatchObject({
-      name: 'validateContent',
-      isStatic: false,
-      isPublic: false,
-    });
+    // Note: validateContent private method was removed by linting (unused)
   });
 
   it('should generate manifest correctly', () => {

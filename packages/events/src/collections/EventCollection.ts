@@ -160,12 +160,12 @@ export class EventCollection extends SmrtCollection<Event> {
       }
       if (filters.startDate) {
         events = events.filter(
-          (e) => e.startDate && e.startDate >= filters.startDate!,
+          (e) => e.startDate && e.startDate >= filters.startDate,
         );
       }
       if (filters.endDate) {
         events = events.filter(
-          (e) => e.startDate && e.startDate <= filters.endDate!,
+          (e) => e.startDate && e.startDate <= filters.endDate,
         );
       }
       if (filters.organizerId) {
