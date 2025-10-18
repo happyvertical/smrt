@@ -97,6 +97,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Runtime files
+*.pid
+
 # Cache directories
 .npm
 .eslintcache
