@@ -18,6 +18,20 @@ export declare class SmrtCollection<ModelType extends SmrtObject> extends SmrtCl
      */
     protected _db_setup_promise: Promise<void> | null;
     /**
+     * Convert WHERE clause field names from camelCase to snake_case while preserving operators
+     *
+     * @param where - WHERE clause object with camelCase field names
+     * @returns WHERE clause object with snake_case field names
+     * @private
+     *
+     * @example
+     * ```typescript
+     * // Input: { 'typeId': 'foo', 'categoryId >': 100 }
+     * // Output: { 'type_id': 'foo', 'category_id >': 100 }
+     * ```
+     */
+    private convertWhereKeys;
+    /**
      * Gets the class constructor for items in this collection
      */
     protected get _itemClass(): (new (options: any) => ModelType) & {

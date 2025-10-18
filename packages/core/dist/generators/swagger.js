@@ -1,4 +1,4 @@
-import { O as ObjectRegistry } from "../chunks/registry-CGrc2jl2.js";
+import { O as ObjectRegistry } from "../chunks/registry-msPWGPQg.js";
 function generateOpenAPISpec(config = {}) {
   const {
     title = "smrt API",
