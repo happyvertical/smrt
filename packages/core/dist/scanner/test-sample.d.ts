@@ -8,7 +8,6 @@ declare class Content extends SmrtObject {
     tags: string[];
     generateSummary(maxLength: number): Promise<string>;
     static findByCategory(_category: string): never[];
-    private validateContent;
 }
 declare class Category extends SmrtObject {
     name: string;
@@ -23,7 +22,6 @@ declare class TestAgent extends SmrtObject {
     research(options?: any): Promise<any>;
     report(options?: any): Promise<any>;
     analyze(options?: any): Promise<any>;
-    private validateSource;
 }
 export { Content, Category, TestAgent };
 //# sourceMappingURL=test-sample.d.ts.map

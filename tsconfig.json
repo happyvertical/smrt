@@ -41,8 +41,9 @@
     "**/*.spec.ts"
   ],
   "references": [
-    // SMRT types
+    // SMRT types and config
     { "path": "./packages/types" },
+    { "path": "./packages/config" },
 
     // SMRT core framework
     { "path": "./packages/core" },

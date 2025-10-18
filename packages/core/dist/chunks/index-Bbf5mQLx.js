@@ -2,7 +2,6 @@ import * as ts from "typescript";
 import { M, g } from "./manifest-generator-Bb3IuFsV.js";
 class ASTScanner {
   program;
-  checker;
   options;
   constructor(filePaths, options = {}) {
     this.options = {
@@ -413,4 +412,4 @@ export {
   scanFile,
   scanFiles
 };
-//# sourceMappingURL=index-CS2JxlF_.js.map
+//# sourceMappingURL=index-Bbf5mQLx.js.map
