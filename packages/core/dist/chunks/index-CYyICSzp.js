@@ -193,8 +193,8 @@ function validateRedirectUrl(redirectUrl) {
   }
 }
 async function downloadTarball(url, dest) {
-  const REQUEST_TIMEOUT = 3e4;
-  const MAX_TARBALL_SIZE = 100 * 1024 * 1024;
+  const RequestTimeout = 3e4;
+  const MaxTarballSize = 100 * 1024 * 1024;
   return new Promise((resolve2, reject) => {
     let timedOut = false;
     let receivedBytes = 0;
@@ -218,7 +218,7 @@ async function downloadTarball(url, dest) {
       }
       response.on("data", (chunk) => {
         receivedBytes += chunk.length;
-        if (receivedBytes > MAX_TARBALL_SIZE) {
+        if (receivedBytes > MaxTarballSize) {
           response.destroy(new Error("Tarball size exceeds limit"));
         }
       });
@@ -234,7 +234,7 @@ async function downloadTarball(url, dest) {
         reject(err);
       });
     });
-    req.setTimeout(REQUEST_TIMEOUT, () => {
+    req.setTimeout(RequestTimeout, () => {
       timedOut = true;
       req.destroy(new Error("Request timed out"));
     });
@@ -513,7 +513,7 @@ async function discoverInstalledTemplates() {
         const configUrl = pathToFileURL(configPath).href;
         const module2 = await import(configUrl);
         const config = module2.default || module2;
-        const relativePath = configPath.replace(nodeModulesPath + "/", "");
+        const relativePath = configPath.replace(`${nodeModulesPath}/`, "");
         const source = relativePath.substring(
           0,
           relativePath.indexOf("/template.config")
@@ -730,7 +730,8 @@ async function mergePackageJson(outputDir, config, projectName) {
       "workflow:report": "tsx src/workflows/report.ts"
     };
   }
-  await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}
+`);
 }
 const gnodeCommands = {
   "gnode create": {
@@ -814,4 +815,4 @@ export {
   generateCommands,
   gnodeCommands
 };
-//# sourceMappingURL=index-Dequee6D.js.map
+//# sourceMappingURL=index-CYyICSzp.js.map

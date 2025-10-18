@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline";
 import { parseCliArgs } from "@have/utils";
-import { O as ObjectRegistry } from "../chunks/registry-C37C3qXd.js";
+import { O as ObjectRegistry } from "../chunks/registry-D9-wOwkq.js";
 let _gnodeCommands = null;
 let _generateCommands = null;
 async function getGnodeCommands() {
   if (!_gnodeCommands) {
-    const { gnodeCommands } = await import("../chunks/index-Dequee6D.js");
+    const { gnodeCommands } = await import("../chunks/index-CYyICSzp.js");
     _gnodeCommands = gnodeCommands;
   }
   return _gnodeCommands;
 }
 async function getGenerateCommands() {
   if (!_generateCommands) {
-    const { generateCommands } = await import("../chunks/index-Dequee6D.js");
+    const { generateCommands } = await import("../chunks/index-CYyICSzp.js");
     _generateCommands = generateCommands;
   }
   return _generateCommands;

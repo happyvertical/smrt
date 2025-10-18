@@ -34,6 +34,7 @@ import {
   generateSchema,
   tableNameFromClass,
 } from './utils';
+import { staticManifest } from './manifest/static-manifest';
 
 /**
  * Configuration options for SMRT objects registered in the system
@@ -262,8 +263,71 @@ export class ObjectRegistry {
       return; // Already registered, skip silently
     }
 
-    // Extract field definitions from the class
-    const fields = ObjectRegistry.extractFields(ctor);
+    // Get field definitions from AST manifest (generated at build time)
+    const manifestEntry = staticManifest.objects[name];
+    const fields = new Map<string, any>();
+
+    if (manifestEntry && manifestEntry.fields) {
+      // Use manifest fields (preferred - from build-time AST scanning)
+      for (const [fieldName, fieldDef] of Object.entries(manifestEntry.fields)) {
+        fields.set(fieldName, fieldDef);
+      }
+    } else {
+      // Fallback for test classes: detect fields at runtime
+      try {
+        const tempInstance = new (ctor as any)({
+          db: null,
+          ai: null,
+          fs: null,
+          _skipRegistration: true,
+        });
+
+        for (const key of Object.getOwnPropertyNames(tempInstance)) {
+          // Skip protected properties - this fixes Issue #13
+          if (key.startsWith('_') || key.startsWith('#') || key === 'options') {
+            continue;
+          }
+
+          const value = tempInstance[key];
+
+          // Check for Field instances first (from field helpers like text())
+          if (value && typeof value === 'object' && value.type) {
+            fields.set(key, value);
+          }
+        }
+
+        // If no Field instances found, infer from primitive properties
+        if (fields.size === 0) {
+          for (const key of Object.getOwnPropertyNames(tempInstance)) {
+            // Skip protected properties
+            if (key.startsWith('_') || key.startsWith('#') || key === 'options') {
+              continue;
+            }
+
+            const value = tempInstance[key];
+            const valueType = typeof value;
+
+            // Infer field type from primitive value
+            let fieldType = 'text';
+            if (valueType === 'string') fieldType = 'text';
+            else if (valueType === 'number')
+              fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
+            else if (valueType === 'boolean') fieldType = 'boolean';
+            else if (value instanceof Date) fieldType = 'datetime';
+            else if (Array.isArray(value)) fieldType = 'json';
+            else if (valueType === 'object' && value !== null) fieldType = 'json';
+            else continue; // Skip functions, undefined, null
+
+            fields.set(key, {
+              type: fieldType,
+              options: {},
+            });
+          }
+        }
+      } catch (error) {
+        console.warn(`Warning: Could not extract fields from ${ctor.name}:`, error);
+      }
+    }
 
     // Generate and cache schema definition
     // Use tableName from config if provided (captured by @smrt() decorator)
@@ -512,89 +576,6 @@ export class ObjectRegistry {
     ObjectRegistry.collectionCache.set(cacheKey, collection);
 
     return collection;
-  }
-
-  /**
-   * Extract field definitions from a class constructor
-   */
-  static extractFields(ctor: typeof SmrtObject): Map<string, any> {
-    const fields = new Map();
-
-    try {
-      // Create a temporary instance to inspect field definitions
-      const tempInstance = new (ctor as any)({
-        db: null,
-        ai: null,
-        fs: null,
-        _skipRegistration: true, // Prevent infinite recursion
-      });
-
-      // Look for Field instances on the instance
-      for (const key of Object.getOwnPropertyNames(tempInstance)) {
-        const value = tempInstance[key];
-        if (value && typeof value === 'object' && value.type) {
-          fields.set(key, value);
-        }
-      }
-
-      // Also check the prototype for field definitions
-      const proto = Object.getPrototypeOf(tempInstance);
-      const descriptors = Object.getOwnPropertyDescriptors(
-        proto.constructor.prototype,
-      );
-
-      for (const [key, descriptor] of Object.entries(descriptors)) {
-        if (
-          descriptor.value &&
-          typeof descriptor.value === 'object' &&
-          descriptor.value.type
-        ) {
-          fields.set(key, descriptor.value);
-        }
-      }
-
-      // Check static field definitions if they exist
-      if ((ctor as any).fields) {
-        for (const [key, field] of Object.entries((ctor as any).fields)) {
-          fields.set(key, field);
-        }
-      }
-
-      // Fallback: If no Field instances found, infer from primitive properties
-      // This supports test classes that use simple properties instead of Field instances
-      if (fields.size === 0) {
-        for (const key of Object.getOwnPropertyNames(tempInstance)) {
-          // Skip private/internal properties
-          if (key.startsWith('_') || key.startsWith('#')) continue;
-
-          const value = tempInstance[key];
-          const valueType = typeof value;
-
-          // Infer field type from primitive value
-          let fieldType = 'text'; // default
-          if (valueType === 'string') fieldType = 'text';
-          else if (valueType === 'number')
-            fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
-          else if (valueType === 'boolean') fieldType = 'boolean';
-          else if (value instanceof Date) fieldType = 'datetime';
-          else if (Array.isArray(value)) fieldType = 'json';
-          else if (valueType === 'object' && value !== null) fieldType = 'json';
-          else continue; // Skip functions, undefined, null
-
-          fields.set(key, {
-            type: fieldType,
-            options: {},
-          });
-        }
-      }
-    } catch (error) {
-      console.warn(
-        `Warning: Could not extract fields from ${ctor.name}:`,
-        error,
-      );
-    }
-
-    return fields;
   }
 
   /**
