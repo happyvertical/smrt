@@ -56,7 +56,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const snakeFieldName = toSnakeCase(fieldName);
 
       // Reconstruct key with operator if present
-      const newKey = operator ? `${snakeFieldName} ${operator}` : snakeFieldName;
+      const newKey = operator
+        ? `${snakeFieldName} ${operator}`
+        : snakeFieldName;
 
       converted[newKey] = value;
     }

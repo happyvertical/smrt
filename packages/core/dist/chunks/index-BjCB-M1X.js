@@ -603,7 +603,7 @@ function smrtPlugin(options = {}) {
   async function scanAndGenerateManifest() {
     if (process.env.NODE_ENV === "production") {
       try {
-        const { staticManifest } = await import("./static-manifest-CT-0DKlZ.js");
+        const { staticManifest } = await import("./static-manifest-BcNbTN_a.js");
         if (staticManifest && Object.keys(staticManifest.objects).length > 0) {
           console.log("[smrt] Using pre-generated static manifest");
           return staticManifest;
@@ -1242,7 +1242,7 @@ export default setupCLI;
 }
 async function generateSchemaModule(manifest) {
   try {
-    const { SchemaGenerator } = await import("./index-NeQe5WqD.js");
+    const { SchemaGenerator } = await import("./index-CAFfnhJA.js");
     const schemaGenerator = new SchemaGenerator();
     const schemas = {};
     for (const [className, objectDef] of Object.entries(manifest.objects)) {
@@ -1295,4 +1295,4 @@ export default {};`;
 export {
   smrtPlugin as s
 };
-//# sourceMappingURL=index-BA91k3oM.js.map
+//# sourceMappingURL=index-BjCB-M1X.js.map

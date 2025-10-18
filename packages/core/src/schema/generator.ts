@@ -203,7 +203,7 @@ export class SchemaGenerator {
         name: `trg_${tableName}_updated_at`,
         when: 'BEFORE',
         event: 'UPDATE',
-        body: `UPDATE ${tableName} SET updated_at = datetime('now') WHERE id = NEW.id;`,
+        body: `UPDATE "${tableName}" SET "updated_at" = datetime('now') WHERE "id" = NEW."id";`,
         description: 'Automatically update updated_at timestamp',
       },
     ];
@@ -513,8 +513,8 @@ export class SchemaGenerator {
     for (const [columnName, columnDef] of Object.entries(columns)) {
       const parts: string[] = [];
 
-      // Column name and type
-      parts.push(`  ${columnName} ${columnDef.type}`);
+      // Column name and type - quote column name to handle SQL reserved keywords
+      parts.push(`  "${columnName}" ${columnDef.type}`);
 
       // Primary key
       if (columnDef.primaryKey) {
@@ -550,8 +550,9 @@ export class SchemaGenerator {
     // Add indexes
     for (const index of schema.indexes) {
       const indexType = index.unique ? 'UNIQUE INDEX' : 'INDEX';
-      const columnList = index.columns.join(', ');
-      sql += `\nCREATE ${indexType} IF NOT EXISTS ${index.name} ON ${tableName} (${columnList});`;
+      // Quote column names in index to handle SQL reserved keywords
+      const columnList = index.columns.map((col) => `"${col}"`).join(', ');
+      sql += `\nCREATE ${indexType} IF NOT EXISTS ${index.name} ON "${tableName}" (${columnList});`;
     }
 
     return sql;
