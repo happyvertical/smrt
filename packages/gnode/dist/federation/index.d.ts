@@ -15,9 +15,7 @@ export interface FederationConfig {
     peerExchange: boolean;
 }
 export declare class Federation {
-    private config;
-    constructor(config: FederationConfig);
     discoverPeers(): Promise<GnodePeer[]>;
-    exchangePeers(peer: GnodePeer): Promise<GnodePeer[]>;
+    exchangePeers(_peer: GnodePeer): Promise<GnodePeer[]>;
 }
 //# sourceMappingURL=index.d.ts.map

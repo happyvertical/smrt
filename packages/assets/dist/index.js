@@ -180,7 +180,7 @@ class Asset extends (_a = SmrtObject) {
    * @param slug - The slug to search for
    * @returns Asset instance or null
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
 }
@@ -232,7 +232,7 @@ class AssetMetafield extends (_b = SmrtObject) {
    * @param slug - The slug to search for
    * @returns AssetMetafield instance or null
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
 }
@@ -327,7 +327,7 @@ class AssetStatus extends (_c = SmrtObject) {
    * @param slug - The slug to search for
    * @returns AssetStatus instance or null
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
 }
@@ -403,7 +403,7 @@ class AssetType extends (_d = SmrtObject) {
    * @param slug - The slug to search for
    * @returns AssetType instance or null
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
 }

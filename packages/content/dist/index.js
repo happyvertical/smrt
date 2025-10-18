@@ -242,10 +242,6 @@ class Contents extends SmrtCollection {
    */
   contentDir;
   /**
-   * Cache of loaded content by key
-   */
-  loaded;
-  /**
    * Creates a new Contents collection
    *
    * Use the static `create()` method inherited from SmrtCollection for proper initialization.

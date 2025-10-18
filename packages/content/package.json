@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@smrt/core": "workspace:*",
+    "@have/ai": "*",
     "@have/documents": "*",
     "@have/files": "*",
     "@have/pdf": "*",

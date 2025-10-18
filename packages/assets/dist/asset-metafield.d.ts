@@ -23,6 +23,6 @@ export declare class AssetMetafield extends SmrtObject {
      * @param slug - The slug to search for
      * @returns AssetMetafield instance or null
      */
-    static getBySlug(slug: string): Promise<AssetMetafield | null>;
+    static getBySlug(_slug: string): Promise<AssetMetafield | null>;
 }
 //# sourceMappingURL=asset-metafield.d.ts.map

@@ -35,10 +35,6 @@ export declare class Contents extends SmrtCollection<Content> {
      */
     contentDir?: string;
     /**
-     * Cache of loaded content by key
-     */
-    private loaded;
-    /**
      * Creates a new Contents collection
      *
      * Use the static `create()` method inherited from SmrtCollection for proper initialization.

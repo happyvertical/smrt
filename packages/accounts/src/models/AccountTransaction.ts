@@ -87,7 +87,7 @@ export class AccountTransaction extends SmrtObject {
       '../collections/AccountTransactionEntryCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = await AccountTransactionEntryCollection.create({
+    const collection = await (AccountTransactionEntryCollection as any).create({
       persistence,
       db,
       ai,
@@ -106,7 +106,7 @@ export class AccountTransaction extends SmrtObject {
    */
   async getBalance(): Promise<number> {
     const entries = await this.getEntries();
-    return entries.reduce((sum, entry) => sum + entry.amount, 0);
+    return entries.reduce((sum: number, entry: any) => sum + entry.amount, 0);
   }
 
   /**
@@ -128,8 +128,8 @@ export class AccountTransaction extends SmrtObject {
   async getTotalDebits(): Promise<number> {
     const entries = await this.getEntries();
     return entries
-      .filter((entry) => entry.amount > 0)
-      .reduce((sum, entry) => sum + entry.amount, 0);
+      .filter((entry: any) => entry.amount > 0)
+      .reduce((sum: number, entry: any) => sum + entry.amount, 0);
   }
 
   /**
@@ -141,8 +141,8 @@ export class AccountTransaction extends SmrtObject {
     const entries = await this.getEntries();
     return Math.abs(
       entries
-        .filter((entry) => entry.amount < 0)
-        .reduce((sum, entry) => sum + entry.amount, 0),
+        .filter((entry: any) => entry.amount < 0)
+        .reduce((sum: number, entry: any) => sum + entry.amount, 0),
     );
   }
 

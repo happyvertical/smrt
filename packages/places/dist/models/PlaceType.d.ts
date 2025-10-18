@@ -11,6 +11,6 @@ export declare class PlaceType extends SmrtObject {
      * @param slug - The slug to search for
      * @returns PlaceType instance or null if not found
      */
-    static getBySlug(slug: string): Promise<PlaceType | null>;
+    static getBySlug(_slug: string): Promise<PlaceType | null>;
 }
 //# sourceMappingURL=PlaceType.d.ts.map

@@ -14,6 +14,6 @@ export declare class ProfileType extends SmrtObject {
      * @param slug - The slug to search for
      * @returns ProfileType instance or null if not found
      */
-    static getBySlug(slug: string): Promise<ProfileType | null>;
+    static getBySlug(_slug: string): Promise<ProfileType | null>;
 }
 //# sourceMappingURL=ProfileType.d.ts.map
