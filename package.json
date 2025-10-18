@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.41.0",
+  "version": "1.0.0",
   "scripts": {
     "format": "biome format --write .",
     "format-check": "biome ci --diagnostic-level=error .",
@@ -67,5 +67,24 @@
     "node": ">=24.0.0",
     "pnpm": ">=9.0.0"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "@have/ai": "workspace:*",
+      "@have/cache": "workspace:*",
+      "@have/config": "workspace:*",
+      "@have/documents": "workspace:*",
+      "@have/email": "workspace:*",
+      "@have/files": "workspace:*",
+      "@have/geo": "workspace:*",
+      "@have/languages": "workspace:*",
+      "@have/logger": "workspace:*",
+      "@have/ocr": "workspace:*",
+      "@have/pdf": "workspace:*",
+      "@have/spider": "workspace:*",
+      "@have/sql": "workspace:*",
+      "@have/translator": "workspace:*",
+      "@have/utils": "workspace:*"
+    }
+  }
 }
