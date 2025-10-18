@@ -1,6 +1,6 @@
 # Interface: EventSearchFilters
 
-Defined in: [events/src/types.ts:136](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L136)
+Defined in: events/src/types.ts:136
 
 Search filters for events
 
@@ -10,7 +10,7 @@ Search filters for events
 
 > `optional` **endDate**: `Date`
 
-Defined in: [events/src/types.ts:142](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L142)
+Defined in: events/src/types.ts:142
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [events/src/types.ts:142](https://github.com/happyvertical/smrt/blob
 
 > `optional` **organizerId**: `string`
 
-Defined in: [events/src/types.ts:143](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L143)
+Defined in: events/src/types.ts:143
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [events/src/types.ts:143](https://github.com/happyvertical/smrt/blob
 
 > `optional` **placeId**: `string`
 
-Defined in: [events/src/types.ts:139](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L139)
+Defined in: events/src/types.ts:139
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [events/src/types.ts:139](https://github.com/happyvertical/smrt/blob
 
 > `optional` **seriesId**: `string`
 
-Defined in: [events/src/types.ts:138](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L138)
+Defined in: events/src/types.ts:138
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [events/src/types.ts:138](https://github.com/happyvertical/smrt/blob
 
 > `optional` **startDate**: `Date`
 
-Defined in: [events/src/types.ts:141](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L141)
+Defined in: events/src/types.ts:141
 
 ***
 
@@ -50,7 +50,7 @@ Defined in: [events/src/types.ts:141](https://github.com/happyvertical/smrt/blob
 
 > `optional` **status**: [`EventStatus`](../type-aliases/EventStatus.md) \| [`EventStatus`](../type-aliases/EventStatus.md)[]
 
-Defined in: [events/src/types.ts:140](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L140)
+Defined in: events/src/types.ts:140
 
 ***
 
@@ -58,4 +58,4 @@ Defined in: [events/src/types.ts:140](https://github.com/happyvertical/smrt/blob
 
 > `optional` **typeId**: `string`
 
-Defined in: [events/src/types.ts:137](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L137)
+Defined in: events/src/types.ts:137

@@ -1,6 +1,6 @@
 # Class: MetricsAdapter
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:60](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L60)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:60
 
 Metrics Adapter - Tracks execution metrics for observability
 
@@ -40,7 +40,7 @@ console.log(snapshot.methods['Product.analyze']);
 
 > **getAverageDuration**(`className`, `methodName`): `number`
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:161](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L161)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:161
 
 Get average duration for a method
 
@@ -70,7 +70,7 @@ Average duration in ms, or 0 if no executions
 
 > **getErrorRate**(`className`, `methodName`): `number`
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:191](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L191)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:191
 
 Get error rate for a method
 
@@ -100,7 +100,7 @@ Error rate (0-1), or 0 if no executions
 
 > **getMethodMetrics**(`className`, `methodName`): [`MethodMetrics`](../interfaces/MethodMetrics.md) \| `undefined`
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:145](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L145)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:145
 
 Get metrics for a specific method
 
@@ -130,7 +130,7 @@ Metrics for the method, or undefined if not found
 
 > **getMetrics**(): [`MetricsSnapshot`](../interfaces/MetricsSnapshot.md)
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:124](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L124)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:124
 
 Get current metrics snapshot
 
@@ -146,7 +146,7 @@ Snapshot of all collected metrics
 
 > **getSuccessRate**(`className`, `methodName`): `number`
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:176](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L176)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:176
 
 Get success rate for a method
 
@@ -176,7 +176,7 @@ Success rate (0-1), or 0 if no executions
 
 > **handle**(`signal`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:70](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L70)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:70
 
 Handle a signal and update metrics
 
@@ -198,7 +198,7 @@ Signal to process
 
 > **reset**(): `void`
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:257](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L257)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:257
 
 Reset all metrics
 
@@ -214,7 +214,7 @@ Clears all collected metrics and resets counters.
 
 > **toPrometheusFormat**(): `string`
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:204](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/adapters/metrics.ts#L204)
+Defined in: smrt/packages/core/src/adapters/metrics.ts:204
 
 Export metrics in Prometheus text format
 

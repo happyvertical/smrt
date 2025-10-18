@@ -2,7 +2,7 @@
 
 > **parseCoordinates**(`coordString`): \{ `lat`: `number`; `lng`: `number`; \} \| `null`
 
-Defined in: [places/src/utils.ts:145](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/utils.ts#L145)
+Defined in: places/src/utils.ts:145
 
 Parse coordinate string to lat/lng
 

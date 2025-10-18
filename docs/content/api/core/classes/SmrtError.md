@@ -1,6 +1,6 @@
 # Abstract Class: SmrtError
 
-Defined in: [smrt/packages/core/src/errors.ts:11](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L11)
+Defined in: smrt/packages/core/src/errors.ts:11
 
 Base error class for all SMRT framework errors
 
@@ -24,7 +24,7 @@ Base error class for all SMRT framework errors
 
 > **new SmrtError**(`message`, `code`, `category`, `details?`, `cause?`): `SmrtError`
 
-Defined in: [smrt/packages/core/src/errors.ts:24](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L24)
+Defined in: smrt/packages/core/src/errors.ts:24
 
 #### Parameters
 
@@ -62,7 +62,7 @@ Defined in: [smrt/packages/core/src/errors.ts:24](https://github.com/happyvertic
 
 > `readonly` **category**: `"database"` \| `"ai"` \| `"filesystem"` \| `"validation"` \| `"network"` \| `"configuration"` \| `"runtime"`
 
-Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L13)
+Defined in: smrt/packages/core/src/errors.ts:13
 
 ***
 
@@ -70,7 +70,7 @@ Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertic
 
 > `readonly` `optional` **cause**: `Error`
 
-Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L22)
+Defined in: smrt/packages/core/src/errors.ts:22
 
 #### Overrides
 
@@ -82,7 +82,7 @@ Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertic
 
 > `readonly` **code**: `string`
 
-Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L12)
+Defined in: smrt/packages/core/src/errors.ts:12
 
 ***
 
@@ -90,7 +90,7 @@ Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertic
 
 > `readonly` `optional` **details**: `Record`\<`string`, `any`\>
 
-Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L21)
+Defined in: smrt/packages/core/src/errors.ts:21
 
 ***
 
@@ -156,7 +156,7 @@ not capture any frames.
 
 > **toJSON**(): `object`
 
-Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L47)
+Defined in: smrt/packages/core/src/errors.ts:47
 
 Converts error to a serializable object for logging/debugging
 

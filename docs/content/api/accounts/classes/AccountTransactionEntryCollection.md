@@ -1,6 +1,6 @@
 # Class: AccountTransactionEntryCollection
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:11](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L11)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:11
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:11](h
 
 > `protected` **new AccountTransactionEntryCollection**(`options?`): `AccountTransactionEntryCollection`
 
-Defined in: [core/dist/collection.d.ts:45](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L45)
+Defined in: core/dist/collection.d.ts:45
 
 Creates a new SmrtCollection instance
 
@@ -42,7 +42,7 @@ Use the static create() factory method instead
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: [core/dist/class.d.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L75)
+Defined in: core/dist/class.d.ts:75
 
 AI client instance for interacting with AI models
 
@@ -56,7 +56,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: [core/dist/class.d.ts:87](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L87)
+Defined in: core/dist/class.d.ts:87
 
 Class name used for identification
 
@@ -70,7 +70,7 @@ Class name used for identification
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:83](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L83)
+Defined in: core/dist/class.d.ts:83
 
 Database interface for data persistence
 
@@ -84,7 +84,7 @@ Database interface for data persistence
 
 > `protected` **\_db\_setup\_promise**: `Promise`\<`void`\> \| `null`
 
-Defined in: [core/dist/collection.d.ts:19](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L19)
+Defined in: core/dist/collection.d.ts:19
 
 Promise tracking the database setup operation
 
@@ -98,7 +98,7 @@ Promise tracking the database setup operation
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: [core/dist/class.d.ts:79](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L79)
+Defined in: core/dist/class.d.ts:79
 
 Filesystem adapter for file operations
 
@@ -112,7 +112,7 @@ Filesystem adapter for file operations
 
 > `protected` `optional` **\_signalBus**: `SignalBus`
 
-Defined in: [core/dist/class.d.ts:91](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L91)
+Defined in: core/dist/class.d.ts:91
 
 Signal bus for method execution tracking
 
@@ -126,7 +126,7 @@ Signal bus for method execution tracking
 
 > **\_tableName**: `string`
 
-Defined in: [core/dist/collection.d.ts:38](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L38)
+Defined in: core/dist/collection.d.ts:38
 
 Database table name for this collection
 
@@ -140,7 +140,7 @@ Database table name for this collection
 
 > `protected` **options**: `SmrtClassOptions`
 
-Defined in: [core/dist/class.d.ts:99](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L99)
+Defined in: core/dist/class.d.ts:99
 
 Configuration options provided to the class
 
@@ -154,7 +154,7 @@ Configuration options provided to the class
 
 > `readonly` `static` **\_itemClass**: *typeof* [`AccountTransactionEntry`](AccountTransactionEntry.md) = `AccountTransactionEntry`
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L12)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:12
 
 Static reference to the item class constructor
 
@@ -170,7 +170,7 @@ Static reference to the item class constructor
 
 > **get** `protected` **\_itemClass**(): (`options`) => `ModelType` & `object`
 
-Defined in: [core/dist/collection.d.ts:23](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L23)
+Defined in: core/dist/collection.d.ts:23
 
 Gets the class constructor for items in this collection
 
@@ -190,7 +190,7 @@ Gets the class constructor for items in this collection
 
 > **get** **ai**(): `AIClient`
 
-Defined in: [core/dist/class.d.ts:185](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L185)
+Defined in: core/dist/class.d.ts:185
 
 Gets the AI client instance
 
@@ -210,7 +210,7 @@ Gets the AI client instance
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:181](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L181)
+Defined in: core/dist/class.d.ts:181
 
 Gets the database interface instance
 
@@ -230,7 +230,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: [core/dist/class.d.ts:177](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L177)
+Defined in: core/dist/class.d.ts:177
 
 Gets the filesystem adapter instance
 
@@ -250,7 +250,7 @@ Gets the filesystem adapter instance
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: [core/dist/class.d.ts:191](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L191)
+Defined in: core/dist/class.d.ts:191
 
 Gets the signal bus instance
 
@@ -272,7 +272,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:142](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L142)
+Defined in: core/dist/class.d.ts:142
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -293,7 +293,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: [core/dist/collection.d.ts:217](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L217)
+Defined in: core/dist/collection.d.ts:217
 
 Gets the database table name for this collection
 
@@ -311,7 +311,7 @@ Gets the database table name for this collection
 
 > **calculateAccountTotal**(`accountId`): `Promise`\<`number`\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:91](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L91)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:91
 
 Calculate total for account
 
@@ -335,7 +335,7 @@ Sum of all entry amounts for the account
 
 > **calculateTransactionTotal**(`transactionId`): `Promise`\<`number`\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:102](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L102)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:102
 
 Calculate total for transaction
 
@@ -359,7 +359,7 @@ Sum of all entry amounts for the transaction
 
 > **count**(`options?`): `Promise`\<`number`\>
 
-Defined in: [core/dist/collection.d.ts:233](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L233)
+Defined in: core/dist/collection.d.ts:233
 
 Counts records in the collection matching the given filters
 
@@ -393,7 +393,7 @@ Promise resolving to the total count of matching records
 
 > **create**(`options`): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)\>
 
-Defined in: [core/dist/collection.d.ts:177](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L177)
+Defined in: core/dist/collection.d.ts:177
 
 Creates a new instance of the collection's item class
 
@@ -421,7 +421,7 @@ New item instance
 
 > **destroy**(): `void`
 
-Defined in: [core/dist/class.d.ts:207](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L207)
+Defined in: core/dist/class.d.ts:207
 
 Cleanup method to prevent memory leaks
 
@@ -452,7 +452,7 @@ product.destroy(); // Clean up when done
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: [core/dist/collection.d.ts:334](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L334)
+Defined in: core/dist/collection.d.ts:334
 
 Forget collection-level context
 
@@ -498,7 +498,7 @@ await documentCollection.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: [core/dist/collection.d.ts:354](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L354)
+Defined in: core/dist/collection.d.ts:354
 
 Forget all collection-level context in a scope
 
@@ -544,7 +544,7 @@ const count = await documentCollection.forgetScope({
 
 > **generateSchema**(): `string`
 
-Defined in: [core/dist/collection.d.ts:213](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L213)
+Defined in: core/dist/collection.d.ts:213
 
 Generates database schema for the collection's item class
 
@@ -566,7 +566,7 @@ Schema object for database setup
 
 > **generateTableName**(): `string`
 
-Defined in: [core/dist/collection.d.ts:223](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L223)
+Defined in: core/dist/collection.d.ts:223
 
 Generates a table name from the collection class name
 
@@ -586,7 +586,7 @@ Generated table name
 
 > **get**(`filter`): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md) \| `null`\>
 
-Defined in: [core/dist/collection.d.ts:84](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L84)
+Defined in: core/dist/collection.d.ts:84
 
 Retrieves a single object from the collection by ID, slug, or custom filter
 
@@ -614,7 +614,7 @@ Promise resolving to the object or null if not found
 
 > **getByAccountId**(`accountId`): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:32](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L32)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:32
 
 Get entries for a specific account
 
@@ -638,7 +638,7 @@ Array of AccountTransactionEntry instances
 
 > **getByAmountRange**(`minAmount`, `maxAmount`): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L75)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:75
 
 Get entries within amount range
 
@@ -668,7 +668,7 @@ Array of AccountTransactionEntry instances
 
 > **getByCurrency**(`currency`): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:42](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L42)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:42
 
 Get entries by currency
 
@@ -692,7 +692,7 @@ Array of AccountTransactionEntry instances
 
 > **getByTransactionId**(`transactionId`): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:20](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L20)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:20
 
 Get entries for a specific transaction
 
@@ -716,7 +716,7 @@ Array of AccountTransactionEntry instances
 
 > **getCredits**(): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:63](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L63)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:63
 
 Get credit entries only (negative amounts)
 
@@ -732,7 +732,7 @@ Array of credit AccountTransactionEntry instances
 
 > **getDebits**(): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:53](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L53)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:53
 
 Get debit entries only (positive amounts)
 
@@ -748,7 +748,7 @@ Array of debit AccountTransactionEntry instances
 
 > **getDiff**(`existing`, `data`): `Record`\<`string`, `any`\>
 
-Defined in: [core/dist/collection.d.ts:193](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L193)
+Defined in: core/dist/collection.d.ts:193
 
 Gets differences between an existing object and new data
 
@@ -782,7 +782,7 @@ Object containing only the changed fields
 
 > **getFields**(): `Record`\<`string`, `any`\>
 
-Defined in: [core/dist/collection.d.ts:205](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L205)
+Defined in: core/dist/collection.d.ts:205
 
 Gets field definitions for the collection's item class
 
@@ -802,7 +802,7 @@ Object containing field definitions
 
 > **getOrUpsert**(`data`, `defaults?`): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)\>
 
-Defined in: [core/dist/collection.d.ts:185](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L185)
+Defined in: core/dist/collection.d.ts:185
 
 Gets an existing item or creates a new one if it doesn't exist
 
@@ -836,7 +836,7 @@ Promise resolving to the existing or new object
 
 > **groupByAccount**(): `Promise`\<`Map`\<`string`, [`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:112](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L112)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:112
 
 Get entries grouped by account
 
@@ -852,7 +852,7 @@ Map of account IDs to arrays of entries
 
 > **groupByCurrency**(): `Promise`\<`Map`\<`string`, [`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>\>
 
-Defined in: [accounts/src/collections/AccountTransactionEntryCollection.ts:131](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/collections/AccountTransactionEntryCollection.ts#L131)
+Defined in: accounts/src/collections/AccountTransactionEntryCollection.ts:131
 
 Get entries grouped by currency
 
@@ -868,7 +868,7 @@ Map of currency codes to arrays of entries
 
 > **initialize**(): `Promise`\<`AccountTransactionEntryCollection`\>
 
-Defined in: [core/dist/collection.d.ts:77](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L77)
+Defined in: core/dist/collection.d.ts:77
 
 Initializes the collection, setting up database tables
 
@@ -888,7 +888,7 @@ Promise that resolves to this instance for chaining
 
 > **list**(`options`): `Promise`\<[`AccountTransactionEntry`](AccountTransactionEntry.md)[]\>
 
-Defined in: [core/dist/collection.d.ts:124](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L124)
+Defined in: core/dist/collection.d.ts:124
 
 Lists records from the collection with flexible filtering options
 
@@ -984,7 +984,7 @@ await users.list({
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: [core/dist/collection.d.ts:291](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L291)
+Defined in: core/dist/collection.d.ts:291
 
 Recall collection-level context
 
@@ -1039,7 +1039,7 @@ const strategy = await documentCollection.recall({
 
 > **recallAll**(`options?`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: [core/dist/collection.d.ts:313](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L313)
+Defined in: core/dist/collection.d.ts:313
 
 Recall all collection-level context in a scope
 
@@ -1089,7 +1089,7 @@ const strategies = await documentCollection.recallAll({
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: [core/dist/collection.d.ts:264](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L264)
+Defined in: core/dist/collection.d.ts:264
 
 Remember collection-level context
 
@@ -1171,7 +1171,7 @@ await documentCollection.remember({
 
 > **setupDb**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/collection.d.ts:199](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L199)
+Defined in: core/dist/collection.d.ts:199
 
 Sets up the database schema for this collection
 
@@ -1191,7 +1191,7 @@ Promise that resolves when setup is complete
 
 > `static` **create**\<`T`\>(`this`, `options?`): `Promise`\<`any`\>
 
-Defined in: [core/dist/collection.d.ts:71](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L71)
+Defined in: core/dist/collection.d.ts:71
 
 Static factory method for creating fully initialized collection instances
 
@@ -1249,7 +1249,7 @@ const collection = await (ProductCollection as any).create({
 
 > `static` **validate**(): `void`
 
-Defined in: [core/dist/collection.d.ts:34](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/collection.d.ts#L34)
+Defined in: core/dist/collection.d.ts:34
 
 Validates that the collection is properly configured
 Call this during development to catch configuration issues early
