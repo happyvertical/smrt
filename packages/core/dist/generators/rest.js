@@ -1,5 +1,5 @@
 import http from "node:http";
-import { O as ObjectRegistry } from "../chunks/registry-D9-wOwkq.js";
+import { O as ObjectRegistry } from "../chunks/registry-D0rgwiqH.js";
 class APIGenerator {
   config;
   collections = /* @__PURE__ */ new Map();
@@ -115,7 +115,7 @@ class APIGenerator {
         }
       }
     }
-    if (url.pathname.startsWith(this.config.basePath)) {
+    if (url.pathname.startsWith(this.config.basePath || "")) {
       const response = await this.handleObjectRoute(req, url);
       return this.addCorsHeaders(response);
     }
@@ -125,7 +125,7 @@ class APIGenerator {
    * Handle CRUD routes for SMRT objects
    */
   async handleObjectRoute(req, url) {
-    const pathParts = url.pathname.replace(this.config.basePath, "").split("/").filter(Boolean);
+    const pathParts = url.pathname.replace(this.config.basePath || "", "").split("/").filter(Boolean);
     if (pathParts.length === 0) {
       return this.createErrorResponse(400, "Object type required");
     }
@@ -133,6 +133,7 @@ class APIGenerator {
     const objectId = pathParts[1];
     if (this.collections.has(objectType)) {
       const collection2 = this.collections.get(objectType);
+      if (!collection2) throw new Error(`Collection ${objectType} not found`);
       if (this.config.authMiddleware) {
         const authCheck = this.config.authMiddleware(
           objectType,
@@ -331,13 +332,15 @@ class APIGenerator {
    */
   getCollection(classInfo) {
     if (!this.collections.has(classInfo.name)) {
-      const collection = new classInfo.collectionConstructor({
+      const collection2 = new classInfo.collectionConstructor({
         ai: this.context.ai,
         db: this.context.db
       });
-      this.collections.set(classInfo.name, collection);
+      this.collections.set(classInfo.name, collection2);
     }
-    return this.collections.get(classInfo.name);
+    const collection = this.collections.get(classInfo.name);
+    if (!collection) throw new Error(`Collection ${classInfo.name} not found`);
+    return collection;
   }
   /**
    * Create JSON response with proper headers

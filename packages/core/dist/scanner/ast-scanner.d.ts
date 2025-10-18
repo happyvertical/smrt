@@ -1,7 +1,6 @@
 import { ScanOptions, ScanResult } from './types';
 export declare class ASTScanner {
     private program;
-    private checker;
     private options;
     constructor(filePaths: string[], options?: ScanOptions);
     /**

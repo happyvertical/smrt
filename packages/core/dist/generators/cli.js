@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline";
 import { parseCliArgs } from "@have/utils";
-import { O as ObjectRegistry } from "../chunks/registry-D9-wOwkq.js";
+import { O as ObjectRegistry } from "../chunks/registry-D0rgwiqH.js";
 let _gnodeCommands = null;
 let _generateCommands = null;
 async function getGnodeCommands() {
@@ -620,14 +620,16 @@ class CLIGenerator {
           `Object ${objectName} not found or has no collection constructor`
         );
       }
-      const collection = new classInfo.collectionConstructor({
+      const collection2 = new classInfo.collectionConstructor({
         ai: this.context.ai,
         db: this.context.db
       });
-      await collection.initialize();
-      this.collections.set(objectName, collection);
+      await collection2.initialize();
+      this.collections.set(objectName, collection2);
     }
-    return this.collections.get(objectName);
+    const collection = this.collections.get(objectName);
+    if (!collection) throw new Error(`Collection ${objectName} not found`);
+    return collection;
   }
   /**
    * Interactive field prompts

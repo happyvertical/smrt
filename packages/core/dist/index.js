@@ -1,9 +1,9 @@
 import { MetricsAdapter } from "./chunks/metrics-ZuQBjcWk.js";
 import { PubSubAdapter } from "./chunks/pubsub-BJ1ZU6QU.js";
-import { a as SmrtClass } from "./chunks/collection-BG6k5OJZ.js";
-import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-BG6k5OJZ.js";
-import { ValidationError, RuntimeError, DatabaseError, ErrorUtils } from "./chunks/errors-Cl0_Kxat.js";
-import { AIError, ConfigurationError, FilesystemError, NetworkError, SmrtError, ValidationReport, ValidationUtils } from "./chunks/errors-Cl0_Kxat.js";
+import { a as SmrtClass } from "./chunks/collection-RhN_upWa.js";
+import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-RhN_upWa.js";
+import { ValidationError, RuntimeError, DatabaseError, ErrorUtils } from "./chunks/errors-D1u9UqLX.js";
+import { AIError, ConfigurationError, FilesystemError, NetworkError, SmrtError, ValidationReport, ValidationUtils } from "./chunks/errors-D1u9UqLX.js";
 import { Field } from "./fields.js";
 import { boolean, datetime, decimal, foreignKey, integer, json, manyToMany, oneToMany, text } from "./fields.js";
 import { CLIGenerator, main } from "./generators/cli.js";
@@ -11,12 +11,12 @@ import { MCPGenerator } from "./generators/mcp.js";
 import { APIGenerator, createRestServer, startRestServer } from "./generators/rest.js";
 import { generateOpenAPISpec, setupSwaggerUI } from "./generators/swagger.js";
 import { getManifest } from "./manifest.js";
-import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-D9-wOwkq.js";
-import { b as b2, b as b3 } from "./chunks/registry-D9-wOwkq.js";
+import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-D0rgwiqH.js";
+import { b as b2, b as b3 } from "./chunks/registry-D0rgwiqH.js";
 import { a, c as c2, b as b4 } from "./chunks/server-D6t1do0C.js";
 import { M, c as c3, a as a2, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
-import { s as s2 } from "./chunks/index-CSRxArtj.js";
-import { staticManifest } from "./chunks/static-manifest-BeU9jQOt.js";
+import { s as s2 } from "./chunks/index-C5h_a3cw.js";
+import { staticManifest } from "./chunks/static-manifest-DBn2vzLF.js";
 function validateToolCall(methodName, args, allowedMethods) {
   if (!allowedMethods.includes(methodName)) {
     throw ValidationError.invalidValue(

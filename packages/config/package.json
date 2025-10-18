@@ -1,0 +1,40 @@
+{
+  "name": "@smrt/config",
+  "version": "0.41.0",
+  "type": "module",
+  "description": "Centralized configuration management for SMRT modules",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "cosmiconfig": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "config",
+    "configuration",
+    "smrt",
+    "settings"
+  ]
+}

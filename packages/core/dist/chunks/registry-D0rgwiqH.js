@@ -1,5 +1,5 @@
+import { staticManifest } from "./static-manifest-DBn2vzLF.js";
 import { syncSchema } from "@have/sql";
-import { staticManifest } from "./static-manifest-BeU9jQOt.js";
 import { SchemaGenerator } from "./index-NeQe5WqD.js";
 function toSnakeCase(str) {
   return str.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "");
@@ -159,9 +159,57 @@ class ObjectRegistry {
     }
     const manifestEntry = staticManifest.objects[name];
     const fields = /* @__PURE__ */ new Map();
-    if (manifestEntry && manifestEntry.fields) {
-      for (const [fieldName, fieldDef] of Object.entries(manifestEntry.fields)) {
+    if (manifestEntry?.fields) {
+      for (const [fieldName, fieldDef] of Object.entries(
+        manifestEntry.fields
+      )) {
         fields.set(fieldName, fieldDef);
+      }
+    } else {
+      try {
+        const tempInstance = new ctor({
+          db: null,
+          ai: null,
+          fs: null,
+          _skipRegistration: true
+        });
+        for (const key of Object.getOwnPropertyNames(tempInstance)) {
+          if (key.startsWith("_") || key.startsWith("#") || key === "options") {
+            continue;
+          }
+          const value = tempInstance[key];
+          if (value && typeof value === "object" && value.type) {
+            fields.set(key, value);
+          }
+        }
+        if (fields.size === 0) {
+          for (const key of Object.getOwnPropertyNames(tempInstance)) {
+            if (key.startsWith("_") || key.startsWith("#") || key === "options") {
+              continue;
+            }
+            const value = tempInstance[key];
+            const valueType = typeof value;
+            let fieldType = "text";
+            if (valueType === "string") fieldType = "text";
+            else if (valueType === "number")
+              fieldType = Number.isInteger(value) ? "integer" : "decimal";
+            else if (valueType === "boolean") fieldType = "boolean";
+            else if (value instanceof Date) fieldType = "datetime";
+            else if (Array.isArray(value)) fieldType = "json";
+            else if (valueType === "object" && value !== null)
+              fieldType = "json";
+            else continue;
+            fields.set(key, {
+              type: fieldType,
+              options: {}
+            });
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `Warning: Could not extract fields from ${ctor.name}:`,
+          error
+        );
       }
     }
     const tableName = config.tableName || tableNameFromClass(ctor);
@@ -346,7 +394,7 @@ class ObjectRegistry {
     }
     let collectionConstructor = registered.collectionConstructor;
     if (!collectionConstructor) {
-      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-BG6k5OJZ.js").then((n) => n.i);
+      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-RhN_upWa.js").then((n) => n.i);
       class DefaultCollection extends SmrtCollectionClass {
         static _itemClass = registered?.constructor;
       }
@@ -379,7 +427,7 @@ class ObjectRegistry {
         validators.push(async (instance) => {
           const value = instance[fieldName];
           if (value === null || value === void 0 || value === "") {
-            const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+            const ValidationError = await import("./errors-D1u9UqLX.js").then(
               (m) => m.ValidationError
             );
             return ValidationError.requiredField(fieldName, className);
@@ -392,7 +440,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value !== null && value !== void 0 && value < options.min) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.rangeError(
@@ -409,7 +457,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value !== null && value !== void 0 && value > options.max) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.rangeError(
@@ -428,7 +476,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value && typeof value === "string" && value.length < options.minLength) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.invalidValue(
@@ -444,7 +492,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value && typeof value === "string" && value.length > options.maxLength) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.invalidValue(
@@ -461,7 +509,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value && typeof value === "string" && !regex.test(value)) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.invalidValue(
@@ -480,14 +528,14 @@ class ObjectRegistry {
           try {
             const isValid = await options.validate(value);
             if (!isValid) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               const message = options.customMessage || `Field ${fieldName} failed custom validation`;
               return ValidationError.invalidValue(fieldName, value, message);
             }
           } catch (error) {
-            const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+            const ValidationError = await import("./errors-D1u9UqLX.js").then(
               (m) => m.ValidationError
             );
             return ValidationError.invalidValue(
@@ -962,4 +1010,4 @@ export {
   setupTableFromClass as s,
   tableNameFromClass as t
 };
-//# sourceMappingURL=registry-D9-wOwkq.js.map
+//# sourceMappingURL=registry-D0rgwiqH.js.map
