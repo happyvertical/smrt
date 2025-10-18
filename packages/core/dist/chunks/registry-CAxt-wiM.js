@@ -1,6 +1,6 @@
-import { staticManifest } from "./static-manifest-CT-0DKlZ.js";
+import { staticManifest } from "./static-manifest-BcNbTN_a.js";
 import { syncSchema } from "@have/sql";
-import { SchemaGenerator } from "./index-NeQe5WqD.js";
+import { SchemaGenerator } from "./index-CAFfnhJA.js";
 function toSnakeCase(str) {
   return str.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "");
 }
@@ -394,7 +394,7 @@ class ObjectRegistry {
     }
     let collectionConstructor = registered.collectionConstructor;
     if (!collectionConstructor) {
-      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-DFqDPEjz.js").then((n) => n.i);
+      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-3BhwHXau.js").then((n) => n.i);
       class DefaultCollection extends SmrtCollectionClass {
         static _itemClass = registered?.constructor;
       }
@@ -1010,4 +1010,4 @@ export {
   setupTableFromClass as s,
   tableNameFromClass as t
 };
-//# sourceMappingURL=registry-msPWGPQg.js.map
+//# sourceMappingURL=registry-CAxt-wiM.js.map

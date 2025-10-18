@@ -124,9 +124,7 @@ class Profile extends (_b = SmrtObject) {
   async addMetadata(metafieldSlug, value) {
     const { ProfileMetafieldCollection: ProfileMetafieldCollection2 } = await Promise.resolve().then(() => ProfileMetafieldCollection$1);
     const { ProfileMetadataCollection: ProfileMetadataCollection2 } = await Promise.resolve().then(() => ProfileMetadataCollection$1);
-    const metafieldCollection = await ProfileMetafieldCollection2.create(
-      this.options
-    );
+    const metafieldCollection = await ProfileMetafieldCollection2.create(this.options);
     const metafield = await metafieldCollection.getBySlug(metafieldSlug);
     if (!metafield) {
       throw new Error(`Metafield '${metafieldSlug}' not found`);
@@ -182,9 +180,7 @@ class Profile extends (_b = SmrtObject) {
   async removeMetadata(metafieldSlug) {
     const { ProfileMetafieldCollection: ProfileMetafieldCollection2 } = await Promise.resolve().then(() => ProfileMetafieldCollection$1);
     const { ProfileMetadataCollection: ProfileMetadataCollection2 } = await Promise.resolve().then(() => ProfileMetadataCollection$1);
-    const metafieldCollection = await ProfileMetafieldCollection2.create(
-      this.options
-    );
+    const metafieldCollection = await ProfileMetafieldCollection2.create(this.options);
     const metafield = await metafieldCollection.getBySlug(metafieldSlug);
     if (!metafield) {
       throw new Error(`Metafield '${metafieldSlug}' not found`);
@@ -216,9 +212,7 @@ class Profile extends (_b = SmrtObject) {
     if (!relationshipType) {
       throw new Error(`Relationship type '${relationshipSlug}' not found`);
     }
-    const relationshipCollection = await ProfileRelationshipCollection2.create(
-      this.options
-    );
+    const relationshipCollection = await ProfileRelationshipCollection2.create(this.options);
     const exists = await relationshipCollection.exists(
       this.id,
       toProfile.id,
@@ -249,9 +243,7 @@ class Profile extends (_b = SmrtObject) {
   async getRelationships(options) {
     const { ProfileRelationshipCollection: ProfileRelationshipCollection2 } = await Promise.resolve().then(() => ProfileRelationshipCollection$1);
     const { ProfileRelationshipTypeCollection: ProfileRelationshipTypeCollection2 } = await Promise.resolve().then(() => ProfileRelationshipTypeCollection$1);
-    const relationshipCollection = await ProfileRelationshipCollection2.create(
-      this.options
-    );
+    const relationshipCollection = await ProfileRelationshipCollection2.create(this.options);
     const direction = options?.direction || "all";
     let typeId;
     if (options?.typeSlug) {
@@ -281,7 +273,9 @@ class Profile extends (_b = SmrtObject) {
       typeSlug: relationshipSlug,
       direction: "all"
     });
-    const profileCollection = await ProfileCollection2.create(this.options);
+    const profileCollection = await ProfileCollection2.create(
+      this.options
+    );
     const relatedProfiles = [];
     const seenIds = /* @__PURE__ */ new Set();
     for (const relationship of relationships) {
@@ -313,9 +307,7 @@ class Profile extends (_b = SmrtObject) {
     if (!relationshipType) {
       throw new Error(`Relationship type '${relationshipSlug}' not found`);
     }
-    const relationshipCollection = await ProfileRelationshipCollection2.create(
-      this.options
-    );
+    const relationshipCollection = await ProfileRelationshipCollection2.create(this.options);
     const relationships = await relationshipCollection.list({
       where: {
         fromProfileId: this.id,
@@ -772,9 +764,7 @@ class ProfileRelationship extends (_e = SmrtObject) {
    */
   async addTerm(startedAt, endedAt) {
     const { ProfileRelationshipTermCollection: ProfileRelationshipTermCollection2 } = await Promise.resolve().then(() => ProfileRelationshipTermCollection$1);
-    const termCollection = await ProfileRelationshipTermCollection2.create(
-      this.options
-    );
+    const termCollection = await ProfileRelationshipTermCollection2.create(this.options);
     const term = await termCollection.create({
       relationshipId: this.id,
       startedAt,
@@ -800,9 +790,7 @@ class ProfileRelationship extends (_e = SmrtObject) {
    */
   async getTerms() {
     const { ProfileRelationshipTermCollection: ProfileRelationshipTermCollection2 } = await Promise.resolve().then(() => ProfileRelationshipTermCollection$1);
-    const termCollection = await ProfileRelationshipTermCollection2.create(
-      this.options
-    );
+    const termCollection = await ProfileRelationshipTermCollection2.create(this.options);
     return await termCollection.getByRelationship(this.id);
   }
   /**
@@ -812,9 +800,7 @@ class ProfileRelationship extends (_e = SmrtObject) {
    */
   async getActiveTerm() {
     const { ProfileRelationshipTermCollection: ProfileRelationshipTermCollection2 } = await Promise.resolve().then(() => ProfileRelationshipTermCollection$1);
-    const termCollection = await ProfileRelationshipTermCollection2.create(
-      this.options
-    );
+    const termCollection = await ProfileRelationshipTermCollection2.create(this.options);
     return await termCollection.getActiveTerm(this.id);
   }
 }

@@ -37,9 +37,9 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
   it('should include timestamp columns for trigger support', () => {
     const schema = generateSchema(TestEvent);
 
-    // Verify both timestamp columns exist
-    expect(schema).toContain('created_at DATETIME');
-    expect(schema).toContain('updated_at DATETIME');
+    // Verify both timestamp columns exist (with quoted column names)
+    expect(schema).toContain('"created_at" DATETIME');
+    expect(schema).toContain('"updated_at" DATETIME');
   });
 
   it('should generate valid SQL without duplicate column errors', () => {
@@ -85,14 +85,14 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     // - CREATE INDEX statements
 
     expect(schema).toContain(`CREATE TABLE IF NOT EXISTS "${tableName}"`);
-    expect(schema).toContain('id TEXT PRIMARY KEY');
-    expect(schema).toContain('slug TEXT NOT NULL');
-    expect(schema).toContain('context TEXT NOT NULL');
-    expect(schema).toContain('title TEXT NOT NULL'); // required: true
-    expect(schema).toContain('description TEXT');
-    expect(schema).toContain('start_date TEXT');
-    expect(schema).toContain('created_at DATETIME');
-    expect(schema).toContain('updated_at DATETIME');
+    expect(schema).toContain('"id" TEXT PRIMARY KEY');
+    expect(schema).toContain('"slug" TEXT NOT NULL');
+    expect(schema).toContain('"context" TEXT NOT NULL');
+    expect(schema).toContain('"title" TEXT NOT NULL'); // required: true
+    expect(schema).toContain('"description" TEXT');
+    expect(schema).toContain('"start_date" TEXT');
+    expect(schema).toContain('"created_at" DATETIME');
+    expect(schema).toContain('"updated_at" DATETIME');
     // The new SchemaGenerator creates a UNIQUE INDEX instead of table constraint
     expect(schema).toContain('UNIQUE INDEX');
   });
@@ -125,16 +125,16 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
 
     const schema = generateSchema(Article);
 
-    // Verify all base SmrtObject fields are included
-    expect(schema).toContain('id TEXT PRIMARY KEY');
-    expect(schema).toContain('slug TEXT NOT NULL');
-    expect(schema).toContain('context TEXT NOT NULL');
-    expect(schema).toContain('created_at DATETIME');
-    expect(schema).toContain('updated_at DATETIME');
+    // Verify all base SmrtObject fields are included (with quoted column names)
+    expect(schema).toContain('"id" TEXT PRIMARY KEY');
+    expect(schema).toContain('"slug" TEXT NOT NULL');
+    expect(schema).toContain('"context" TEXT NOT NULL');
+    expect(schema).toContain('"created_at" DATETIME');
+    expect(schema).toContain('"updated_at" DATETIME');
 
-    // Verify custom fields
-    expect(schema).toContain('title TEXT NOT NULL');
-    expect(schema).toContain('body TEXT');
+    // Verify custom fields (with quoted column names)
+    expect(schema).toContain('"title" TEXT NOT NULL');
+    expect(schema).toContain('"body" TEXT');
 
     // Verify no duplicates
     const createdMatches = schema.match(/created_at/g) || [];
