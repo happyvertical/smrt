@@ -1,6 +1,6 @@
 # SMRT Framework
 
-**SMRT** (Smart, Multi-modal, Real-time Transformation) is a TypeScript framework for building vertical AI agents with built-in code generation, database persistence, and AI-powered operations.
+**SMRT** is a TypeScript framework for building vertical AI agents with built-in code generation, database persistence, and AI-powered operations.
 
 ## Core Philosophy
 
