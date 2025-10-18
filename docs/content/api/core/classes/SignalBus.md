@@ -1,6 +1,6 @@
 # Class: SignalBus
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:19](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/signals/bus.ts#L19)
+Defined in: smrt/packages/core/src/signals/bus.ts:19
 
 Central signal distribution bus
 
@@ -13,7 +13,7 @@ with fire-and-forget error handling.
 
 > **new SignalBus**(`options?`): `SignalBus`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:28](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/signals/bus.ts#L28)
+Defined in: smrt/packages/core/src/signals/bus.ts:28
 
 Create a new SignalBus
 
@@ -39,7 +39,7 @@ Configuration options
 
 > **get** **adapterCount**(): `number`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:132](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/signals/bus.ts#L132)
+Defined in: smrt/packages/core/src/signals/bus.ts:132
 
 Get count of registered adapters
 
@@ -55,7 +55,7 @@ Number of registered adapters
 
 > **clear**(): `void`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:65](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/signals/bus.ts#L65)
+Defined in: smrt/packages/core/src/signals/bus.ts:65
 
 Clear all registered adapters
 
@@ -71,7 +71,7 @@ Removes all adapters from the bus. Useful for cleanup or testing.
 
 > **emit**(`signal`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:78](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/signals/bus.ts#L78)
+Defined in: smrt/packages/core/src/signals/bus.ts:78
 
 Emit a signal to all registered adapters
 
@@ -97,7 +97,7 @@ Signal to emit
 
 > **generateExecutionId**(): `string`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:123](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/signals/bus.ts#L123)
+Defined in: smrt/packages/core/src/signals/bus.ts:123
 
 Generate unique execution ID for method invocations
 
@@ -113,7 +113,7 @@ Unique execution ID (CUID2)
 
 > **register**(`adapter`): `void`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:39](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/signals/bus.ts#L39)
+Defined in: smrt/packages/core/src/signals/bus.ts:39
 
 Register a signal adapter
 
@@ -135,7 +135,7 @@ Adapter to register
 
 > **unregister**(`adapter`): `boolean`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:51](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/signals/bus.ts#L51)
+Defined in: smrt/packages/core/src/signals/bus.ts:51
 
 Unregister a signal adapter
 

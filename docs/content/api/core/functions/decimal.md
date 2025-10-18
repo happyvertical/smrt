@@ -2,7 +2,7 @@
 
 > **decimal**(`options`): [`Field`](../classes/Field.md)
 
-Defined in: [smrt/packages/core/src/fields/index.ts:326](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L326)
+Defined in: smrt/packages/core/src/fields/index.ts:326
 
 Creates a decimal field for storing floating point numbers
 

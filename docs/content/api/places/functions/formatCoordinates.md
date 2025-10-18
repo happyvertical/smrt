@@ -2,7 +2,7 @@
 
 > **formatCoordinates**(`latitude`, `longitude`, `precision`): `string`
 
-Defined in: [places/src/utils.ts:126](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/utils.ts#L126)
+Defined in: places/src/utils.ts:126
 
 Format coordinates as string
 

@@ -2,7 +2,7 @@
 
 > **parseRecurrencePattern**(`pattern`): [`RecurrencePattern`](../interfaces/RecurrencePattern.md) \| `null`
 
-Defined in: [events/src/utils.ts:103](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/utils.ts#L103)
+Defined in: events/src/utils.ts:103
 
 Parse recurrence pattern from various formats
 

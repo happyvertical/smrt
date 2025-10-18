@@ -1,6 +1,6 @@
 # Interface: LookupOrCreateOptions
 
-Defined in: [places/src/types.ts:71](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L71)
+Defined in: places/src/types.ts:71
 
 Options for lookupOrCreate method
 
@@ -10,7 +10,7 @@ Options for lookupOrCreate method
 
 > `optional` **coords**: `object`
 
-Defined in: [places/src/types.ts:95](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L95)
+Defined in: places/src/types.ts:95
 
 Coordinates for reverse geocoding
 
@@ -28,7 +28,7 @@ Coordinates for reverse geocoding
 
 > `optional` **createIfNotFound**: `boolean`
 
-Defined in: [places/src/types.ts:90](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L90)
+Defined in: places/src/types.ts:90
 
 Whether to create if not found (default: true)
 
@@ -38,7 +38,7 @@ Whether to create if not found (default: true)
 
 > `optional` **geoProvider**: `"google"` \| `"openstreetmap"`
 
-Defined in: [places/src/types.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L75)
+Defined in: places/src/types.ts:75
 
 Which geo provider to use for lookups
 
@@ -48,7 +48,7 @@ Which geo provider to use for lookups
 
 > `optional` **parentId**: `string`
 
-Defined in: [places/src/types.ts:85](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L85)
+Defined in: places/src/types.ts:85
 
 Set parent place if known
 
@@ -58,6 +58,6 @@ Set parent place if known
 
 > `optional` **typeSlug**: `string`
 
-Defined in: [places/src/types.ts:80](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L80)
+Defined in: places/src/types.ts:80
 
 Force a specific place type

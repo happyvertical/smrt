@@ -1,6 +1,6 @@
 # Interface: ContentsOptions
 
-Defined in: [content/src/contents.ts:15](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/content/src/contents.ts#L15)
+Defined in: content/src/contents.ts:15
 
 Configuration options for Contents collection
 
@@ -14,7 +14,7 @@ Configuration options for Contents collection
 
 > `optional` **\_className**: `string`
 
-Defined in: [core/dist/class.d.ts:15](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L15)
+Defined in: core/dist/class.d.ts:15
 
 Optional custom class name override
 
@@ -28,7 +28,7 @@ Optional custom class name override
 
 > `optional` **ai**: `AIClientOptions`
 
-Defined in: [content/src/contents.ts:19](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/content/src/contents.ts#L19)
+Defined in: content/src/contents.ts:19
 
 AI client configuration options
 
@@ -42,7 +42,7 @@ AI client configuration options
 
 > `optional` **contentDir**: `string`
 
-Defined in: [content/src/contents.ts:24](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/content/src/contents.ts#L24)
+Defined in: content/src/contents.ts:24
 
 Directory to store content files
 
@@ -52,7 +52,7 @@ Directory to store content files
 
 > `optional` **db**: `string` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"`; `url?`: `string`; \} \| `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:24](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L24)
+Defined in: core/dist/class.d.ts:24
 
 Database configuration - unified approach matching @have/sql
 
@@ -71,7 +71,7 @@ Supports three formats:
 
 > `optional` **fs**: `FilesystemAdapterOptions`
 
-Defined in: [core/dist/class.d.ts:33](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L33)
+Defined in: core/dist/class.d.ts:33
 
 Filesystem adapter configuration options
 
@@ -85,7 +85,7 @@ Filesystem adapter configuration options
 
 > `optional` **logging**: `LoggerConfig`
 
-Defined in: [core/dist/class.d.ts:41](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L41)
+Defined in: core/dist/class.d.ts:41
 
 Logging configuration (overrides global default)
 
@@ -99,7 +99,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metrics**: `MetricsConfig`
 
-Defined in: [core/dist/class.d.ts:45](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L45)
+Defined in: core/dist/class.d.ts:45
 
 Metrics configuration (overrides global default)
 
@@ -113,7 +113,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **pubsub**: `PubSubConfig`
 
-Defined in: [core/dist/class.d.ts:49](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L49)
+Defined in: core/dist/class.d.ts:49
 
 Pub/Sub configuration (overrides global default)
 
@@ -127,7 +127,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **sanitization**: `false` \| `SanitizationConfig`
 
-Defined in: [core/dist/class.d.ts:53](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L53)
+Defined in: core/dist/class.d.ts:53
 
 Sanitization configuration (overrides global default)
 
@@ -141,7 +141,7 @@ Sanitization configuration (overrides global default)
 
 > `optional` **signals**: `object`
 
-Defined in: [core/dist/class.d.ts:57](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L57)
+Defined in: core/dist/class.d.ts:57
 
 Custom signal configuration (overrides global default)
 

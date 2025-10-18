@@ -1,6 +1,6 @@
 # Class: ValidationUtils
 
-Defined in: [smrt/packages/core/src/errors.ts:621](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L621)
+Defined in: smrt/packages/core/src/errors.ts:621
 
 Validation utility functions
 
@@ -20,7 +20,7 @@ Validation utility functions
 
 > `static` **validateField**(`fieldName`, `value`, `options`, `objectType`): `Promise`\<[`ValidationError`](ValidationError.md) \| `null`\>
 
-Defined in: [smrt/packages/core/src/errors.ts:630](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L630)
+Defined in: smrt/packages/core/src/errors.ts:630
 
 Validate a single field value
 
@@ -94,7 +94,7 @@ ValidationError if validation fails, null otherwise
 
 > `static` **validateLength**(`fieldName`, `value`, `minLength?`, `maxLength?`): [`ValidationError`](ValidationError.md) \| `null`
 
-Defined in: [smrt/packages/core/src/errors.ts:770](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L770)
+Defined in: smrt/packages/core/src/errors.ts:770
 
 Validate string length
 
@@ -126,7 +126,7 @@ Validate string length
 
 > `static` **validatePattern**(`fieldName`, `value`, `pattern`): [`ValidationError`](ValidationError.md) \| `null`
 
-Defined in: [smrt/packages/core/src/errors.ts:796](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L796)
+Defined in: smrt/packages/core/src/errors.ts:796
 
 Validate string pattern
 
@@ -154,7 +154,7 @@ Validate string pattern
 
 > `static` **validateRange**(`fieldName`, `value`, `min?`, `max?`): [`ValidationError`](ValidationError.md) \| `null`
 
-Defined in: [smrt/packages/core/src/errors.ts:752](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L752)
+Defined in: smrt/packages/core/src/errors.ts:752
 
 Validate numeric range
 
@@ -186,7 +186,7 @@ Validate numeric range
 
 > `static` **validateRequired**(`fieldName`, `value`, `objectType`): [`ValidationError`](ValidationError.md) \| `null`
 
-Defined in: [smrt/packages/core/src/errors.ts:738](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L738)
+Defined in: smrt/packages/core/src/errors.ts:738
 
 Validate required field
 

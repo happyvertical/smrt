@@ -1,6 +1,6 @@
 # Interface: APIContext
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:24](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L24)
+Defined in: smrt/packages/core/src/generators/rest.ts:24
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:24](https://github.com/ha
 
 > `optional` **ai**: `any`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:26](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L26)
+Defined in: smrt/packages/core/src/generators/rest.ts:26
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:26](https://github.com/ha
 
 > `optional` **db**: `any`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:25](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L25)
+Defined in: smrt/packages/core/src/generators/rest.ts:25
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:25](https://github.com/ha
 
 > `optional` **user**: `object`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:27](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L27)
+Defined in: smrt/packages/core/src/generators/rest.ts:27
 
 #### id
 
