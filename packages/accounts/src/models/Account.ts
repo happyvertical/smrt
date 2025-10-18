@@ -92,7 +92,7 @@ export class Account extends SmrtObject {
       '../collections/AccountCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = await AccountCollection.create({
+    const collection = await (AccountCollection as any).create({
       persistence,
       db,
       ai,
@@ -113,7 +113,7 @@ export class Account extends SmrtObject {
       '../collections/AccountCollection'
     );
     const { persistence, db, ai, fs, _className } = this.options;
-    const collection = await AccountCollection.create({
+    const collection = await (AccountCollection as any).create({
       persistence,
       db,
       ai,

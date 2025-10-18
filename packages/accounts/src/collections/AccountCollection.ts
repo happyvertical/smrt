@@ -75,9 +75,10 @@ export class AccountCollection extends SmrtCollection<Account> {
     const allAccounts = await this.list({});
     const lowerSearch = searchTerm.toLowerCase();
 
-    return allAccounts.filter((account) =>
-      account.name.toLowerCase().includes(lowerSearch),
-    );
+    return allAccounts.filter((account) => {
+      const name = typeof account.name === 'string' ? account.name : '';
+      return name && name.toLowerCase().includes(lowerSearch);
+    });
   }
 
   /**
@@ -88,19 +89,26 @@ export class AccountCollection extends SmrtCollection<Account> {
    */
   async getHierarchyTree(): Promise<unknown[]> {
     const allAccounts = await this.list({});
-    const accountMap = new Map<string, unknown>();
+    const accountMap = new Map<string, { account: Account; children: unknown[] }>();
     const roots: unknown[] = [];
 
     // Create map of accounts with children arrays
     for (const account of allAccounts) {
-      accountMap.set(account.id, { ...account, children: [] });
+      if (account.id) {
+        accountMap.set(account.id, { account, children: [] });
+      }
     }
 
     // Build tree structure
     for (const account of allAccounts) {
+      if (!account.id) continue;
+
       const node = accountMap.get(account.id);
       if (account.parentId && accountMap.has(account.parentId)) {
-        accountMap.get(account.parentId)?.children.push(node);
+        const parent = accountMap.get(account.parentId);
+        if (parent) {
+          parent.children.push(node);
+        }
       } else {
         roots.push(node);
       }

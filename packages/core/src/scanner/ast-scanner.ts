@@ -35,8 +35,6 @@ export class ASTScanner {
       skipLibCheck: true,
       strict: true,
     });
-
-    this.checker = this.program.getTypeChecker();
   }
 
   /**
