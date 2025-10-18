@@ -178,7 +178,7 @@ export class APIGenerator {
     }
 
     // Handle object routes
-    if (url.pathname.startsWith(this.config.basePath || "")) {
+    if (url.pathname.startsWith(this.config.basePath || '')) {
       const response = await this.handleObjectRoute(req, url);
       return this.addCorsHeaders(response);
     }
@@ -192,7 +192,7 @@ export class APIGenerator {
    */
   private async handleObjectRoute(req: Request, url: URL): Promise<Response> {
     const pathParts = url.pathname
-      .replace(this.config.basePath || "", '')
+      .replace(this.config.basePath || '', '')
       .split('/')
       .filter(Boolean);
 
