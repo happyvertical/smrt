@@ -155,7 +155,7 @@ class Account extends (_a = SmrtObject) {
   async getAncestors() {
     const ancestors = [];
     let currentAccount = this;
-    while (currentAccount && currentAccount.parentId) {
+    while (currentAccount?.parentId) {
       const parent = await currentAccount.getParent();
       if (!parent) break;
       ancestors.unshift(parent);
@@ -307,9 +307,10 @@ class AccountCollection extends SmrtCollection {
   async searchByName(searchTerm) {
     const allAccounts = await this.list({});
     const lowerSearch = searchTerm.toLowerCase();
-    return allAccounts.filter(
-      (account) => account.name.toLowerCase().includes(lowerSearch)
-    );
+    return allAccounts.filter((account) => {
+      const name = typeof account.name === "string" ? account.name : "";
+      return name && name.toLowerCase().includes(lowerSearch);
+    });
   }
   /**
    * Get account hierarchy tree structure
@@ -322,12 +323,18 @@ class AccountCollection extends SmrtCollection {
     const accountMap = /* @__PURE__ */ new Map();
     const roots = [];
     for (const account of allAccounts) {
-      accountMap.set(account.id, { ...account, children: [] });
+      if (account.id) {
+        accountMap.set(account.id, { account, children: [] });
+      }
     }
     for (const account of allAccounts) {
+      if (!account.id) continue;
       const node = accountMap.get(account.id);
       if (account.parentId && accountMap.has(account.parentId)) {
-        accountMap.get(account.parentId)?.children.push(node);
+        const parent = accountMap.get(account.parentId);
+        if (parent) {
+          parent.children.push(node);
+        }
       } else {
         roots.push(node);
       }

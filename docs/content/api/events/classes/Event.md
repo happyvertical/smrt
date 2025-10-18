@@ -1,6 +1,6 @@
 # Class: Event
 
-Defined in: [events/src/models/Event.ts:15](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L15)
+Defined in: [events/src/models/Event.ts:15](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L15)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: [events/src/models/Event.ts:15](https://github.com/happyvertical/smr
 
 > **new Event**(`options`): `Event`
 
-Defined in: [events/src/models/Event.ts:35](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L35)
+Defined in: [events/src/models/Event.ts:35](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L35)
 
 #### Parameters
 
@@ -34,7 +34,7 @@ Defined in: [events/src/models/Event.ts:35](https://github.com/happyvertical/smr
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: [core/dist/class.d.ts:75](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L75)
+Defined in: [core/dist/class.d.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L75)
 
 AI client instance for interacting with AI models
 
@@ -48,7 +48,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: [core/dist/class.d.ts:87](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L87)
+Defined in: [core/dist/class.d.ts:87](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L87)
 
 Class name used for identification
 
@@ -62,7 +62,7 @@ Class name used for identification
 
 > `protected` **\_context**: `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:79](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L79)
+Defined in: [core/dist/object.d.ts:79](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L79)
 
 Optional context to scope the slug
 
@@ -76,7 +76,7 @@ Optional context to scope the slug
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:83](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L83)
+Defined in: [core/dist/class.d.ts:83](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L83)
 
 Database interface for data persistence
 
@@ -90,7 +90,7 @@ Database interface for data persistence
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: [core/dist/class.d.ts:79](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L79)
+Defined in: [core/dist/class.d.ts:79](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L79)
 
 Filesystem adapter for file operations
 
@@ -104,7 +104,7 @@ Filesystem adapter for file operations
 
 > `protected` **\_id**: `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:71](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L71)
+Defined in: [core/dist/object.d.ts:71](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L71)
 
 Unique identifier for the object
 
@@ -118,7 +118,7 @@ Unique identifier for the object
 
 > `protected` `optional` **\_signalBus**: `SignalBus`
 
-Defined in: [core/dist/class.d.ts:91](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L91)
+Defined in: [core/dist/class.d.ts:91](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L91)
 
 Signal bus for method execution tracking
 
@@ -132,7 +132,7 @@ Signal bus for method execution tracking
 
 > `protected` **\_slug**: `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:75](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L75)
+Defined in: [core/dist/object.d.ts:75](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L75)
 
 URL-friendly identifier
 
@@ -146,7 +146,7 @@ URL-friendly identifier
 
 > **\_tableName**: `string`
 
-Defined in: [core/dist/object.d.ts:57](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L57)
+Defined in: [core/dist/object.d.ts:57](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L57)
 
 Database table name for this object
 
@@ -160,7 +160,7 @@ Database table name for this object
 
 > **created\_at**: `Date` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:88](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L88)
+Defined in: [core/dist/object.d.ts:88](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L88)
 
 Creation timestamp
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: [events/src/models/Event.ts:32](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L32)
+Defined in: [events/src/models/Event.ts:32](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L32)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: [events/src/models/Event.ts:32](https://github.com/happyvertical/smr
 
 > **description**: `string` = `''`
 
-Defined in: [events/src/models/Event.ts:22](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L22)
+Defined in: [events/src/models/Event.ts:22](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L22)
 
 ***
 
@@ -190,7 +190,7 @@ Defined in: [events/src/models/Event.ts:22](https://github.com/happyvertical/smr
 
 > **endDate**: `Date` \| `null` = `null`
 
-Defined in: [events/src/models/Event.ts:24](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L24)
+Defined in: [events/src/models/Event.ts:24](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L24)
 
 ***
 
@@ -198,7 +198,7 @@ Defined in: [events/src/models/Event.ts:24](https://github.com/happyvertical/smr
 
 > **externalId**: `string` = `''`
 
-Defined in: [events/src/models/Event.ts:28](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L28)
+Defined in: [events/src/models/Event.ts:28](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L28)
 
 ***
 
@@ -206,7 +206,7 @@ Defined in: [events/src/models/Event.ts:28](https://github.com/happyvertical/smr
 
 > **metadata**: `string` = `''`
 
-Defined in: [events/src/models/Event.ts:27](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L27)
+Defined in: [events/src/models/Event.ts:27](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L27)
 
 ***
 
@@ -214,7 +214,7 @@ Defined in: [events/src/models/Event.ts:27](https://github.com/happyvertical/smr
 
 > `optional` **name**: `string` \| `Field` \| `null`
 
-Defined in: [core/dist/object.d.ts:84](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L84)
+Defined in: [core/dist/object.d.ts:84](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L84)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -229,7 +229,7 @@ Can be a string value or a Field instance (for Field-based schema definition)
 
 > `protected` **options**: `SmrtObjectOptions`
 
-Defined in: [core/dist/object.d.ts:67](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L67)
+Defined in: [core/dist/object.d.ts:67](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L67)
 
 Override options with SmrtObjectOptions type for proper type narrowing.
 Initialized by parent constructor via super() call.
@@ -244,7 +244,7 @@ Initialized by parent constructor via super() call.
 
 > **parentEventId**: `string` = `''`
 
-Defined in: [events/src/models/Event.ts:19](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L19)
+Defined in: [events/src/models/Event.ts:19](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L19)
 
 ***
 
@@ -252,7 +252,7 @@ Defined in: [events/src/models/Event.ts:19](https://github.com/happyvertical/smr
 
 > **placeId**: `string` = `''`
 
-Defined in: [events/src/models/Event.ts:21](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L21)
+Defined in: [events/src/models/Event.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L21)
 
 ***
 
@@ -260,7 +260,7 @@ Defined in: [events/src/models/Event.ts:21](https://github.com/happyvertical/smr
 
 > **round**: `number` \| `null` = `null`
 
-Defined in: [events/src/models/Event.ts:26](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L26)
+Defined in: [events/src/models/Event.ts:26](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L26)
 
 ***
 
@@ -268,7 +268,7 @@ Defined in: [events/src/models/Event.ts:26](https://github.com/happyvertical/smr
 
 > **seriesId**: `string` = `''`
 
-Defined in: [events/src/models/Event.ts:18](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L18)
+Defined in: [events/src/models/Event.ts:18](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L18)
 
 ***
 
@@ -276,7 +276,7 @@ Defined in: [events/src/models/Event.ts:18](https://github.com/happyvertical/smr
 
 > **source**: `string` = `''`
 
-Defined in: [events/src/models/Event.ts:29](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L29)
+Defined in: [events/src/models/Event.ts:29](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L29)
 
 ***
 
@@ -284,7 +284,7 @@ Defined in: [events/src/models/Event.ts:29](https://github.com/happyvertical/smr
 
 > **startDate**: `Date` \| `null` = `null`
 
-Defined in: [events/src/models/Event.ts:23](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L23)
+Defined in: [events/src/models/Event.ts:23](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L23)
 
 ***
 
@@ -292,7 +292,7 @@ Defined in: [events/src/models/Event.ts:23](https://github.com/happyvertical/smr
 
 > **status**: [`EventStatus`](../type-aliases/EventStatus.md) = `'scheduled'`
 
-Defined in: [events/src/models/Event.ts:25](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L25)
+Defined in: [events/src/models/Event.ts:25](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L25)
 
 ***
 
@@ -300,7 +300,7 @@ Defined in: [events/src/models/Event.ts:25](https://github.com/happyvertical/smr
 
 > **typeId**: `string` = `''`
 
-Defined in: [events/src/models/Event.ts:20](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L20)
+Defined in: [events/src/models/Event.ts:20](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L20)
 
 ***
 
@@ -308,7 +308,7 @@ Defined in: [events/src/models/Event.ts:20](https://github.com/happyvertical/smr
 
 > **updated\_at**: `Date` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:92](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L92)
+Defined in: [core/dist/object.d.ts:92](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L92)
 
 Last update timestamp
 
@@ -322,7 +322,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: [events/src/models/Event.ts:33](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L33)
+Defined in: [events/src/models/Event.ts:33](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L33)
 
 ## Accessors
 
@@ -332,7 +332,7 @@ Defined in: [events/src/models/Event.ts:33](https://github.com/happyvertical/smr
 
 > **get** **ai**(): `AIClient`
 
-Defined in: [core/dist/class.d.ts:185](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L185)
+Defined in: [core/dist/class.d.ts:185](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L185)
 
 Gets the AI client instance
 
@@ -352,7 +352,7 @@ Gets the AI client instance
 
 > **get** **context**(): `string`
 
-Defined in: [core/dist/object.d.ts:130](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L130)
+Defined in: [core/dist/object.d.ts:130](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L130)
 
 Gets the context that scopes this object's slug
 
@@ -364,7 +364,7 @@ Gets the context that scopes this object's slug
 
 > **set** **context**(`value`): `void`
 
-Defined in: [core/dist/object.d.ts:137](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L137)
+Defined in: [core/dist/object.d.ts:137](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L137)
 
 Sets the context that scopes this object's slug
 
@@ -396,7 +396,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:181](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L181)
+Defined in: [core/dist/class.d.ts:181](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L181)
 
 Gets the database interface instance
 
@@ -416,7 +416,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: [core/dist/class.d.ts:177](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L177)
+Defined in: [core/dist/class.d.ts:177](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L177)
 
 Gets the filesystem adapter instance
 
@@ -436,7 +436,7 @@ Gets the filesystem adapter instance
 
 > **get** **id**(): `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:108](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L108)
+Defined in: [core/dist/object.d.ts:108](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L108)
 
 Gets the unique identifier for this object
 
@@ -448,7 +448,7 @@ Gets the unique identifier for this object
 
 > **set** **id**(`value`): `void`
 
-Defined in: [core/dist/object.d.ts:115](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L115)
+Defined in: [core/dist/object.d.ts:115](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L115)
 
 Sets the unique identifier for this object
 
@@ -480,7 +480,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: [core/dist/class.d.ts:191](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L191)
+Defined in: [core/dist/class.d.ts:191](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L191)
 
 Gets the signal bus instance
 
@@ -502,7 +502,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** **slug**(): `string` \| `null` \| `undefined`
 
-Defined in: [core/dist/object.d.ts:119](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L119)
+Defined in: [core/dist/object.d.ts:119](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L119)
 
 Gets the URL-friendly slug for this object
 
@@ -514,7 +514,7 @@ Gets the URL-friendly slug for this object
 
 > **set** **slug**(`value`): `void`
 
-Defined in: [core/dist/object.d.ts:126](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L126)
+Defined in: [core/dist/object.d.ts:126](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L126)
 
 Sets the URL-friendly slug for this object
 
@@ -546,7 +546,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: [core/dist/class.d.ts:142](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L142)
+Defined in: [core/dist/class.d.ts:142](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L142)
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -567,7 +567,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: [core/dist/object.d.ts:163](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L163)
+Defined in: [core/dist/object.d.ts:163](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L163)
 
 Gets the database table name for this object
 
@@ -585,7 +585,7 @@ Gets the database table name for this object
 
 > **allDescriptors**(): `object` & `object`
 
-Defined in: [core/dist/object.d.ts:155](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L155)
+Defined in: [core/dist/object.d.ts:155](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L155)
 
 Gets all property descriptors from this object's prototype
 
@@ -605,7 +605,7 @@ Object containing all property descriptors
 
 > **delete**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:271](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L271)
+Defined in: [core/dist/object.d.ts:271](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L271)
 
 Delete this object from the database
 
@@ -625,7 +625,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: [core/dist/class.d.ts:207](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/class.d.ts#L207)
+Defined in: [core/dist/class.d.ts:207](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L207)
 
 Cleanup method to prevent memory leaks
 
@@ -656,7 +656,7 @@ product.destroy(); // Clean up when done
 
 > **do**(`instructions`, `options?`): `Promise`\<`string`\>
 
-Defined in: [core/dist/object.d.ts:258](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L258)
+Defined in: [core/dist/object.d.ts:258](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L258)
 
 Performs actions on this object based on instructions using AI
 
@@ -690,7 +690,7 @@ Promise resolving to the AI response
 
 > **executeToolCall**(`toolCall`): `Promise`\<`ToolCallResult`\>
 
-Defined in: [core/dist/object.d.ts:374](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L374)
+Defined in: [core/dist/object.d.ts:374](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L374)
 
 Execute a tool call from AI on this object instance
 
@@ -737,7 +737,7 @@ console.log(result.success ? result.result : result.error);
 
 > `protected` **extractConstraintField**(`errorMessage`): `string`
 
-Defined in: [core/dist/object.d.ts:229](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L229)
+Defined in: [core/dist/object.d.ts:229](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L229)
 
 Extracts field name from database constraint error messages
 
@@ -761,7 +761,7 @@ Extracts field name from database constraint error messages
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:482](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L482)
+Defined in: [core/dist/object.d.ts:482](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L482)
 
 Forget specific remembered context for this object
 
@@ -808,7 +808,7 @@ await agent.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: [core/dist/object.d.ts:504](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L504)
+Defined in: [core/dist/object.d.ts:504](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L504)
 
 Forget all remembered context in a scope for this object
 
@@ -856,7 +856,7 @@ console.log(`Cleared ${count} cached strategies`);
 
 > **getAncestors**(): `Promise`\<`Event`[]\>
 
-Defined in: [events/src/models/Event.ts:192](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L192)
+Defined in: [events/src/models/Event.ts:192](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L192)
 
 Get all ancestor events (recursive)
 
@@ -872,7 +872,7 @@ Array of ancestor events from root to immediate parent
 
 > **getAvailableTools**(): `AITool`[]
 
-Defined in: [core/dist/object.d.ts:350](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L350)
+Defined in: [core/dist/object.d.ts:350](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L350)
 
 Get available AI-callable tools for this object
 
@@ -906,7 +906,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getChildren**(): `Promise`\<`Event`[]\>
 
-Defined in: [events/src/models/Event.ts:180](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L180)
+Defined in: [events/src/models/Event.ts:180](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L180)
 
 Get immediate child events
 
@@ -922,7 +922,7 @@ Array of child Event instances
 
 > **getDescendants**(): `Promise`\<`Event`[]\>
 
-Defined in: [events/src/models/Event.ts:211](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L211)
+Defined in: [events/src/models/Event.ts:211](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L211)
 
 Get all descendant events (recursive)
 
@@ -938,7 +938,7 @@ Array of all descendant events
 
 > **getFields**(): `Record`\<`string`, `any`\>
 
-Defined in: [core/dist/object.d.ts:169](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L169)
+Defined in: [core/dist/object.d.ts:169](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L169)
 
 Gets field definitions and current values for this object
 
@@ -958,7 +958,7 @@ Object containing field definitions with current values
 
 > `protected` **getFieldValue**(`fieldName`): `any`
 
-Defined in: [core/dist/object.d.ts:214](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L214)
+Defined in: [core/dist/object.d.ts:214](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L214)
 
 Gets the value of a field on this object
 
@@ -982,7 +982,7 @@ Gets the value of a field on this object
 
 > **getHierarchy**(): `Promise`\<\{ `ancestors`: `Event`[]; `current`: `Event`; `descendants`: `Event`[]; \}\>
 
-Defined in: [events/src/models/Event.ts:238](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L238)
+Defined in: [events/src/models/Event.ts:238](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L238)
 
 Get full hierarchy for this event
 
@@ -998,7 +998,7 @@ Object with ancestors, current, and descendants
 
 > **getId**(): `Promise`\<`string`\>
 
-Defined in: [core/dist/object.d.ts:181](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L181)
+Defined in: [core/dist/object.d.ts:181](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L181)
 
 Gets or generates a unique ID for this object
 
@@ -1018,7 +1018,7 @@ Promise resolving to the object's ID
 
 > **getMetadata**(): `Record`\<`string`, `any`\>
 
-Defined in: [events/src/models/Event.ts:71](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L71)
+Defined in: [events/src/models/Event.ts:71](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L71)
 
 Get metadata as parsed object
 
@@ -1034,7 +1034,7 @@ Parsed metadata object or empty object
 
 > **getParent**(): `Promise`\<`Event` \| `null`\>
 
-Defined in: [events/src/models/Event.ts:166](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L166)
+Defined in: [events/src/models/Event.ts:166](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L166)
 
 Get the parent event
 
@@ -1050,7 +1050,7 @@ Parent Event instance or null
 
 > **getParticipants**(): `Promise`\<`any`\>
 
-Defined in: [events/src/models/Event.ts:260](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L260)
+Defined in: [events/src/models/Event.ts:260](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L260)
 
 Get all participants for this event
 
@@ -1066,7 +1066,7 @@ Array of EventParticipant instances
 
 > **getPlace**(): `Promise`\<`any`\>
 
-Defined in: [events/src/models/Event.ts:147](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L147)
+Defined in: [events/src/models/Event.ts:147](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L147)
 
 Get the place for this event
 
@@ -1082,7 +1082,7 @@ Place instance or null
 
 > `protected` **getPropertyValue**(`key`): `any`
 
-Defined in: [core/dist/object.d.ts:225](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L225)
+Defined in: [core/dist/object.d.ts:225](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L225)
 
 Gets the actual value from a property, whether it's a plain value or a Field instance
 
@@ -1114,7 +1114,7 @@ The actual value (unwrapped from Field if necessary)
 
 > **getRelated**(`fieldName`): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:336](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L336)
+Defined in: [core/dist/object.d.ts:336](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L336)
 
 Get a related object, loading it if not already loaded
 
@@ -1155,7 +1155,7 @@ const orders = await customer.getRelated('orders');
 
 > **getRootEvent**(): `Promise`\<`Event`\>
 
-Defined in: [events/src/models/Event.ts:228](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L228)
+Defined in: [events/src/models/Event.ts:228](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L228)
 
 Get root event (top-level event with no parent)
 
@@ -1171,7 +1171,7 @@ Root event instance
 
 > **getSavedId**(): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:193](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L193)
+Defined in: [core/dist/object.d.ts:193](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L193)
 
 Gets the ID of this object if it's already saved in the database
 
@@ -1191,7 +1191,7 @@ Promise resolving to the saved ID or null if not saved
 
 > **getSeries**(): `Promise`\<`any`\>
 
-Defined in: [events/src/models/Event.ts:115](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L115)
+Defined in: [events/src/models/Event.ts:115](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L115)
 
 Get the series for this event
 
@@ -1207,7 +1207,7 @@ EventSeries instance or null
 
 > **getSlug**(): `Promise`\<`string` \| `null` \| `undefined`\>
 
-Defined in: [core/dist/object.d.ts:187](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L187)
+Defined in: [core/dist/object.d.ts:187](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L187)
 
 Gets or generates a slug for this object based on its name
 
@@ -1227,7 +1227,7 @@ Promise resolving to the object's slug
 
 > **getType**(): `Promise`\<`any`\>
 
-Defined in: [events/src/models/Event.ts:131](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L131)
+Defined in: [events/src/models/Event.ts:131](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L131)
 
 Get the event type
 
@@ -1243,7 +1243,7 @@ EventType instance or null
 
 > **initialize**(): `Promise`\<`Event`\>
 
-Defined in: [core/dist/object.d.ts:143](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L143)
+Defined in: [core/dist/object.d.ts:143](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L143)
 
 Initializes this object, setting up database tables and loading data if identifiers are provided
 
@@ -1263,7 +1263,7 @@ Promise that resolves to this instance for chaining
 
 > **is**(`criteria`, `options?`): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:250](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L250)
+Defined in: [core/dist/object.d.ts:250](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L250)
 
 Evaluates whether this object meets given criteria using AI
 
@@ -1301,7 +1301,7 @@ Error if the AI response is invalid
 
 > **isInProgress**(): `boolean`
 
-Defined in: [events/src/models/Event.ts:274](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L274)
+Defined in: [events/src/models/Event.ts:274](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L274)
 
 Check if event is currently in progress
 
@@ -1317,7 +1317,7 @@ True if current time is between start and end
 
 > **isRelatedLoaded**(`fieldName`): `boolean`
 
-Defined in: [core/dist/object.d.ts:284](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L284)
+Defined in: [core/dist/object.d.ts:284](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L284)
 
 Check if a relationship has been loaded
 
@@ -1353,7 +1353,7 @@ if (order.isRelatedLoaded('customer')) {
 
 > **isRoot**(): `boolean`
 
-Defined in: [events/src/models/Event.ts:289](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L289)
+Defined in: [events/src/models/Event.ts:289](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L289)
 
 Check if event is a root event (no parent)
 
@@ -1369,7 +1369,7 @@ True if parentEventId is empty
 
 > **isSaved**(): `Promise`\<`boolean`\>
 
-Defined in: [core/dist/object.d.ts:199](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L199)
+Defined in: [core/dist/object.d.ts:199](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L199)
 
 Checks if this object is already saved in the database
 
@@ -1389,7 +1389,7 @@ Promise resolving to true if saved, false otherwise
 
 > **loadDataFromDb**(`data`): `void`
 
-Defined in: [core/dist/object.d.ts:149](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L149)
+Defined in: [core/dist/object.d.ts:149](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L149)
 
 Loads data from a database row into this object's properties
 
@@ -1415,7 +1415,7 @@ Database row data
 
 > **loadFromId**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:235](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L235)
+Defined in: [core/dist/object.d.ts:235](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L235)
 
 Loads this object's data from the database using its ID
 
@@ -1435,7 +1435,7 @@ Promise that resolves when loading is complete
 
 > **loadFromSlug**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:241](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L241)
+Defined in: [core/dist/object.d.ts:241](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L241)
 
 Loads this object's data from the database using its slug and context
 
@@ -1455,7 +1455,7 @@ Promise that resolves when loading is complete
 
 > **loadRelated**(`fieldName`): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:301](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L301)
+Defined in: [core/dist/object.d.ts:301](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L301)
 
 Load a related object for a foreignKey field (lazy loading)
 
@@ -1498,7 +1498,7 @@ console.log(customer.name); // Access customer properties
 
 > **loadRelatedMany**(`fieldName`): `Promise`\<`any`[]\>
 
-Defined in: [core/dist/object.d.ts:318](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L318)
+Defined in: [core/dist/object.d.ts:318](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L318)
 
 Load related objects for oneToMany or manyToMany fields (lazy loading)
 
@@ -1541,7 +1541,7 @@ console.log(`${orders.length} orders found`);
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: [core/dist/object.d.ts:433](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L433)
+Defined in: [core/dist/object.d.ts:433](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L433)
 
 Recall remembered context for this object
 
@@ -1598,7 +1598,7 @@ const strategy = await agent.recall({
 
 > **recallAll**(`options?`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: [core/dist/object.d.ts:460](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L460)
+Defined in: [core/dist/object.d.ts:460](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L460)
 
 Recall all remembered context for this object in a scope
 
@@ -1653,7 +1653,7 @@ for (const [url, pattern] of strategies) {
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:404](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L404)
+Defined in: [core/dist/object.d.ts:404](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L404)
 
 Remember context about this object
 
@@ -1736,7 +1736,7 @@ await agent.remember({
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:265](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L265)
+Defined in: [core/dist/object.d.ts:265](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L265)
 
 Runs a lifecycle hook if it's defined in the object's configuration
 
@@ -1764,7 +1764,7 @@ Promise that resolves when the hook completes
 
 > **save**(): `Promise`\<`Event`\>
 
-Defined in: [core/dist/object.d.ts:205](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L205)
+Defined in: [core/dist/object.d.ts:205](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L205)
 
 Saves this object to the database
 
@@ -1784,7 +1784,7 @@ Promise resolving to this object
 
 > **setMetadata**(`data`): `void`
 
-Defined in: [events/src/models/Event.ts:85](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L85)
+Defined in: [events/src/models/Event.ts:85](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L85)
 
 Set metadata from object
 
@@ -1806,7 +1806,7 @@ Metadata object to store
 
 > **toJSON**(): `any`
 
-Defined in: [core/dist/object.d.ts:175](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L175)
+Defined in: [core/dist/object.d.ts:175](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L175)
 
 Custom JSON serialization
 Returns a plain object with all field values for proper JSON.stringify() behavior
@@ -1826,7 +1826,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateMetadata**(`updates`): `void`
 
-Defined in: [events/src/models/Event.ts:94](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L94)
+Defined in: [events/src/models/Event.ts:94](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L94)
 
 Update metadata by merging with existing values
 
@@ -1848,7 +1848,7 @@ Partial metadata to merge
 
 > **updateStatus**(`newStatus`): `Promise`\<`void`\>
 
-Defined in: [events/src/models/Event.ts:104](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/events/src/models/Event.ts#L104)
+Defined in: [events/src/models/Event.ts:104](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/models/Event.ts#L104)
 
 Update event status
 
@@ -1870,7 +1870,7 @@ New status to set
 
 > `protected` **validateBeforeSave**(): `Promise`\<`void`\>
 
-Defined in: [core/dist/object.d.ts:210](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/dist/object.d.ts#L210)
+Defined in: [core/dist/object.d.ts:210](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L210)
 
 Validates object state before saving
 Override in subclasses to add custom validation logic

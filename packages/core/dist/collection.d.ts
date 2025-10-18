@@ -59,10 +59,10 @@ export declare class SmrtCollection<ModelType extends SmrtObject> extends SmrtCl
      * @example
      * ```typescript
      * // Create collection from object options
-     * const collection = await ProductCollection.create(smrtObject.options);
+     * const collection = await (ProductCollection as any).create(smrtObject.options);
      *
      * // Create collection with specific config
-     * const collection = await ProductCollection.create({
+     * const collection = await (ProductCollection as any).create({
      *   persistence: { type: 'sql', url: 'products.db' },
      *   ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
      * });

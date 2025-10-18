@@ -1,6 +1,6 @@
 # Interface: Signal
 
-Defined in: [signals.ts:21](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L21)
+Defined in: [signals.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L21)
 
 Signal emitted during SMRT method execution
 
@@ -14,7 +14,7 @@ without requiring manual instrumentation.
 
 > `optional` **args**: `any`[]
 
-Defined in: [signals.ts:62](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L62)
+Defined in: [signals.ts:62](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L62)
 
 Sanitized method arguments (sensitive data removed)
 Objects with
@@ -29,7 +29,7 @@ JSDoc tags are excluded
 
 > **className**: `string`
 
-Defined in: [signals.ts:36](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L36)
+Defined in: [signals.ts:36](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L36)
 
 Name of the SMRT class
 
@@ -39,7 +39,7 @@ Name of the SMRT class
 
 > `optional` **duration**: `number`
 
-Defined in: [signals.ts:78](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L78)
+Defined in: [signals.ts:78](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L78)
 
 Method execution duration in milliseconds
 Only present on 'end' and 'error' signals
@@ -50,7 +50,7 @@ Only present on 'end' and 'error' signals
 
 > `optional` **error**: `Error`
 
-Defined in: [signals.ts:72](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L72)
+Defined in: [signals.ts:72](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L72)
 
 Error that was thrown (only present on 'error' signals)
 
@@ -60,7 +60,7 @@ Error that was thrown (only present on 'error' signals)
 
 > **id**: `string`
 
-Defined in: [signals.ts:26](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L26)
+Defined in: [signals.ts:26](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L26)
 
 Unique identifier for this specific execution
 Generated once per method invocation
@@ -71,7 +71,7 @@ Generated once per method invocation
 
 > `optional` **metadata**: `Record`\<`string`, `any`\>
 
-Defined in: [signals.ts:89](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L89)
+Defined in: [signals.ts:89](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L89)
 
 Optional additional context
 Can include tracing IDs, user context, request metadata, etc.
@@ -82,7 +82,7 @@ Can include tracing IDs, user context, request metadata, etc.
 
 > **method**: `string`
 
-Defined in: [signals.ts:41](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L41)
+Defined in: [signals.ts:41](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L41)
 
 Name of the method being executed
 
@@ -92,7 +92,7 @@ Name of the method being executed
 
 > **objectId**: `string`
 
-Defined in: [signals.ts:31](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L31)
+Defined in: [signals.ts:31](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L31)
 
 ID of the SMRT object instance
 
@@ -102,7 +102,7 @@ ID of the SMRT object instance
 
 > `optional` **result**: `any`
 
-Defined in: [signals.ts:67](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L67)
+Defined in: [signals.ts:67](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L67)
 
 Method result (only present on 'end' signals)
 
@@ -112,7 +112,7 @@ Method result (only present on 'end' signals)
 
 > `optional` **step**: `string`
 
-Defined in: [signals.ts:56](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L56)
+Defined in: [signals.ts:56](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L56)
 
 Optional step label for manual progress tracking
 Developers can emit custom steps within methods using bus.emit()
@@ -123,7 +123,7 @@ Developers can emit custom steps within methods using bus.emit()
 
 > **timestamp**: `Date`
 
-Defined in: [signals.ts:83](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L83)
+Defined in: [signals.ts:83](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L83)
 
 Timestamp when signal was emitted
 
@@ -133,7 +133,7 @@ Timestamp when signal was emitted
 
 > **type**: [`SignalType`](../type-aliases/SignalType.md)
 
-Defined in: [signals.ts:50](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/types/src/signals.ts#L50)
+Defined in: [signals.ts:50](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L50)
 
 Signal type indicating lifecycle stage:
 - 'start': Method execution started

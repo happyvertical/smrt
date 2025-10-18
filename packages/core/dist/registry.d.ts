@@ -299,10 +299,6 @@ export declare class ObjectRegistry {
      */
     static getCollection<T extends SmrtObject>(className: string, options?: any): Promise<SmrtCollection<T>>;
     /**
-     * Extract field definitions from a class constructor
-     */
-    static extractFields(ctor: typeof SmrtObject): Map<string, any>;
-    /**
      * Compile validation functions from field definitions
      *
      * Extracts validation rules from field options and compiles them into

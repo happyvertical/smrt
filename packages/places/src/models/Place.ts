@@ -158,7 +158,7 @@ export class Place extends SmrtObject {
     const { PlaceTypeCollection } = await import(
       '../collections/PlaceTypeCollection'
     );
-    const collection = await PlaceTypeCollection.create(this.options);
+    const collection = await (PlaceTypeCollection as any).create(this.options);
 
     return await collection.get({ id: this.typeId });
   }
@@ -172,7 +172,7 @@ export class Place extends SmrtObject {
     if (!this.parentId) return null;
 
     const { PlaceCollection } = await import('../collections/PlaceCollection');
-    const collection = await PlaceCollection.create(this.options);
+    const collection = await (PlaceCollection as any).create(this.options);
 
     return await collection.get({ id: this.parentId });
   }
@@ -184,7 +184,7 @@ export class Place extends SmrtObject {
    */
   async getChildren(): Promise<Place[]> {
     const { PlaceCollection } = await import('../collections/PlaceCollection');
-    const collection = await PlaceCollection.create(this.options);
+    const collection = await (PlaceCollection as any).create(this.options);
 
     return await collection.list({ where: { parentId: this.id } });
   }

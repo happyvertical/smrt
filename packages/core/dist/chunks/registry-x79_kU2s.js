@@ -1,5 +1,6 @@
+import { staticManifest } from "./static-manifest-BaddRsdM.js";
 import { syncSchema } from "@have/sql";
-import { SchemaGenerator } from "./index-9WZDN6n7.js";
+import { SchemaGenerator } from "./index-NeQe5WqD.js";
 function toSnakeCase(str) {
   return str.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "");
 }
@@ -78,36 +79,33 @@ function classnameToTablename(className) {
   const tableName = className.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().replace(/([^s])$/, "$1s").replace(/y$/, "ies");
   return tableName;
 }
-const _setup_table_from_class_promises = {};
+const _setupTableFromClassPromises = {};
 async function setupTableFromClass(db, ClassType) {
   const tableName = classnameToTablename(ClassType.name);
-  if (_setup_table_from_class_promises[tableName] !== void 0 && _setup_table_from_class_promises[tableName] !== null) {
-    return _setup_table_from_class_promises[tableName];
+  if (_setupTableFromClassPromises[tableName] !== void 0 && _setupTableFromClassPromises[tableName] !== null) {
+    return _setupTableFromClassPromises[tableName];
   }
-  _setup_table_from_class_promises[tableName] = (async () => {
+  _setupTableFromClassPromises[tableName] = (async () => {
     try {
       const className = ClassType.name;
-      let cachedFields = ObjectRegistry.getFields(className);
-      if (cachedFields.size === 0) {
-        cachedFields = ObjectRegistry.extractFields(ClassType);
-      }
+      const cachedFields = ObjectRegistry.getFields(className);
       const schema = generateSchema(ClassType, cachedFields);
-      let primaryKeyColumn = "id";
+      let _primaryKeyColumn = "id";
       if (cachedFields.size > 0) {
         for (const [key, field] of cachedFields.entries()) {
           if (field.options?.primaryKey) {
-            primaryKeyColumn = toSnakeCase(key);
+            _primaryKeyColumn = toSnakeCase(key);
             break;
           }
         }
       }
       await syncSchema({ db, schema });
     } catch (error) {
-      _setup_table_from_class_promises[tableName] = null;
+      _setupTableFromClassPromises[tableName] = null;
       throw error;
     }
   })();
-  return _setup_table_from_class_promises[tableName];
+  return _setupTableFromClassPromises[tableName];
 }
 function formatDataJs(data) {
   const normalizedData = {};
@@ -159,7 +157,61 @@ class ObjectRegistry {
     if (ObjectRegistry.classes.has(name)) {
       return;
     }
-    const fields = ObjectRegistry.extractFields(ctor);
+    const manifestEntry = staticManifest.objects[name];
+    const fields = /* @__PURE__ */ new Map();
+    if (manifestEntry?.fields) {
+      for (const [fieldName, fieldDef] of Object.entries(
+        manifestEntry.fields
+      )) {
+        fields.set(fieldName, fieldDef);
+      }
+    } else {
+      try {
+        const tempInstance = new ctor({
+          db: null,
+          ai: null,
+          fs: null,
+          _skipRegistration: true
+        });
+        for (const key of Object.getOwnPropertyNames(tempInstance)) {
+          if (key.startsWith("_") || key.startsWith("#") || key === "options") {
+            continue;
+          }
+          const value = tempInstance[key];
+          if (value && typeof value === "object" && value.type) {
+            fields.set(key, value);
+          }
+        }
+        if (fields.size === 0) {
+          for (const key of Object.getOwnPropertyNames(tempInstance)) {
+            if (key.startsWith("_") || key.startsWith("#") || key === "options") {
+              continue;
+            }
+            const value = tempInstance[key];
+            const valueType = typeof value;
+            let fieldType = "text";
+            if (valueType === "string") fieldType = "text";
+            else if (valueType === "number")
+              fieldType = Number.isInteger(value) ? "integer" : "decimal";
+            else if (valueType === "boolean") fieldType = "boolean";
+            else if (value instanceof Date) fieldType = "datetime";
+            else if (Array.isArray(value)) fieldType = "json";
+            else if (valueType === "object" && value !== null)
+              fieldType = "json";
+            else continue;
+            fields.set(key, {
+              type: fieldType,
+              options: {}
+            });
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `Warning: Could not extract fields from ${ctor.name}:`,
+          error
+        );
+      }
+    }
     const tableName = config.tableName || tableNameFromClass(ctor);
     const schemaDDL = generateSchema(ctor, fields);
     const indexes = [];
@@ -342,9 +394,9 @@ class ObjectRegistry {
     }
     let collectionConstructor = registered.collectionConstructor;
     if (!collectionConstructor) {
-      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-CMrud5qH.js").then((n) => n.i);
+      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-C4IjmVDp.js").then((n) => n.i);
       class DefaultCollection extends SmrtCollectionClass {
-        static _itemClass = registered.constructor;
+        static _itemClass = registered?.constructor;
       }
       collectionConstructor = DefaultCollection;
       registered.collectionConstructor = DefaultCollection;
@@ -355,67 +407,6 @@ class ObjectRegistry {
     );
     ObjectRegistry.collectionCache.set(cacheKey, collection);
     return collection;
-  }
-  /**
-   * Extract field definitions from a class constructor
-   */
-  static extractFields(ctor) {
-    const fields = /* @__PURE__ */ new Map();
-    try {
-      const tempInstance = new ctor({
-        db: null,
-        ai: null,
-        fs: null,
-        _skipRegistration: true
-        // Prevent infinite recursion
-      });
-      for (const key of Object.getOwnPropertyNames(tempInstance)) {
-        const value = tempInstance[key];
-        if (value && typeof value === "object" && value.type) {
-          fields.set(key, value);
-        }
-      }
-      const proto = Object.getPrototypeOf(tempInstance);
-      const descriptors = Object.getOwnPropertyDescriptors(
-        proto.constructor.prototype
-      );
-      for (const [key, descriptor] of Object.entries(descriptors)) {
-        if (descriptor.value && typeof descriptor.value === "object" && descriptor.value.type) {
-          fields.set(key, descriptor.value);
-        }
-      }
-      if (ctor.fields) {
-        for (const [key, field] of Object.entries(ctor.fields)) {
-          fields.set(key, field);
-        }
-      }
-      if (fields.size === 0) {
-        for (const key of Object.getOwnPropertyNames(tempInstance)) {
-          if (key.startsWith("_") || key.startsWith("#")) continue;
-          const value = tempInstance[key];
-          const valueType = typeof value;
-          let fieldType = "text";
-          if (valueType === "string") fieldType = "text";
-          else if (valueType === "number")
-            fieldType = Number.isInteger(value) ? "integer" : "decimal";
-          else if (valueType === "boolean") fieldType = "boolean";
-          else if (value instanceof Date) fieldType = "datetime";
-          else if (Array.isArray(value)) fieldType = "json";
-          else if (valueType === "object" && value !== null) fieldType = "json";
-          else continue;
-          fields.set(key, {
-            type: fieldType,
-            options: {}
-          });
-        }
-      }
-    } catch (error) {
-      console.warn(
-        `Warning: Could not extract fields from ${ctor.name}:`,
-        error
-      );
-    }
-    return fields;
   }
   /**
    * Compile validation functions from field definitions
@@ -436,7 +427,7 @@ class ObjectRegistry {
         validators.push(async (instance) => {
           const value = instance[fieldName];
           if (value === null || value === void 0 || value === "") {
-            const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+            const ValidationError = await import("./errors-D1u9UqLX.js").then(
               (m) => m.ValidationError
             );
             return ValidationError.requiredField(fieldName, className);
@@ -449,7 +440,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value !== null && value !== void 0 && value < options.min) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.rangeError(
@@ -466,7 +457,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value !== null && value !== void 0 && value > options.max) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.rangeError(
@@ -485,7 +476,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value && typeof value === "string" && value.length < options.minLength) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.invalidValue(
@@ -501,7 +492,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value && typeof value === "string" && value.length > options.maxLength) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.invalidValue(
@@ -518,7 +509,7 @@ class ObjectRegistry {
           validators.push(async (instance) => {
             const value = instance[fieldName];
             if (value && typeof value === "string" && !regex.test(value)) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               return ValidationError.invalidValue(
@@ -537,14 +528,14 @@ class ObjectRegistry {
           try {
             const isValid = await options.validate(value);
             if (!isValid) {
-              const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+              const ValidationError = await import("./errors-D1u9UqLX.js").then(
                 (m) => m.ValidationError
               );
               const message = options.customMessage || `Field ${fieldName} failed custom validation`;
               return ValidationError.invalidValue(fieldName, value, message);
             }
           } catch (error) {
-            const ValidationError = await import("./errors-Cl0_Kxat.js").then(
+            const ValidationError = await import("./errors-D1u9UqLX.js").then(
               (m) => m.ValidationError
             );
             return ValidationError.invalidValue(
@@ -1019,4 +1010,4 @@ export {
   setupTableFromClass as s,
   tableNameFromClass as t
 };
-//# sourceMappingURL=registry-C37C3qXd.js.map
+//# sourceMappingURL=registry-x79_kU2s.js.map

@@ -2,7 +2,6 @@ import * as ts from "typescript";
 import { M, g } from "./manifest-generator-Bb3IuFsV.js";
 class ASTScanner {
   program;
-  checker;
   options;
   constructor(filePaths, options = {}) {
     this.options = {
@@ -21,7 +20,6 @@ class ASTScanner {
       skipLibCheck: true,
       strict: true
     });
-    this.checker = this.program.getTypeChecker();
   }
   /**
    * Scan files for SMRT object definitions
@@ -413,4 +411,4 @@ export {
   scanFile,
   scanFiles
 };
-//# sourceMappingURL=index-CS2JxlF_.js.map
+//# sourceMappingURL=index-vnWPj8WQ.js.map

@@ -274,7 +274,7 @@ class SmrtServer {
         const request = await this.nodeRequestToWebRequest(req);
         const response = await this.handleRequest(request);
         await this.webResponseToNodeResponse(response, res);
-      } catch (error) {
+      } catch (_error) {
         res.statusCode = 500;
         res.end("Internal Server Error");
       }
@@ -510,4 +510,4 @@ export {
   createSmrtServer as b,
   createSmrtClient as c
 };
-//# sourceMappingURL=server-DwHneUSW.js.map
+//# sourceMappingURL=server-D6t1do0C.js.map

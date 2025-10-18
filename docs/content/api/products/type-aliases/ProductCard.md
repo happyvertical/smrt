@@ -2,7 +2,7 @@
 
 > **ProductCard** = `SvelteComponent`
 
-Defined in: node\_modules/.pnpm/svelte@5.40.1/node\_modules/svelte/types/index.d.ts:3104
+Defined in: node\_modules/.pnpm/svelte@5.40.2/node\_modules/svelte/types/index.d.ts:3104
 
 SMRT Template UI Components
 

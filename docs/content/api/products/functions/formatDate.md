@@ -2,7 +2,7 @@
 
 > **formatDate**(`date`): `string`
 
-Defined in: [packages/products/src/lib/utils/index.ts:14](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/products/src/lib/utils/index.ts#L14)
+Defined in: [packages/products/src/lib/utils/index.ts:14](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/products/src/lib/utils/index.ts#L14)
 
 ## Parameters
 

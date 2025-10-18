@@ -57,7 +57,7 @@ export declare class SchemaGenerator {
      * @param fields - Map of Field definitions from ObjectRegistry
      * @returns Schema definition object
      */
-    generateSchemaFromRegistry(className: string, tableName: string, fields: Map<string, Field>): SchemaDefinition;
+    generateSchemaFromRegistry(_className: string, tableName: string, fields: Map<string, Field>): SchemaDefinition;
     /**
      * Convert camelCase to snake_case
      */

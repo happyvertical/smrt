@@ -25,8 +25,8 @@
   },
   "dependencies": {
     "@smrt/core": "workspace:*",
-    "@have/geo": "*",
-    "@have/cache": "*"
+    "@have/geo": "workspace:*",
+    "@have/cache": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -1,21 +1,18 @@
 class Federation {
-  constructor(config) {
-    this.config = config;
-  }
   async discoverPeers() {
     return [];
   }
-  async exchangePeers(peer) {
+  async exchangePeers(_peer) {
     return [];
   }
 }
 class WebFingerProtocol {
-  static async discover(domain) {
+  static async discover(_domain) {
     return null;
   }
 }
 class PeerExchangeProtocol {
-  static async exchange(peerUrl) {
+  static async exchange(_peerUrl) {
     return [];
   }
 }

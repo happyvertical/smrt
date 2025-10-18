@@ -149,7 +149,8 @@ class MetricsAdapter {
         `smrt_method_duration_seconds{${labels},quantile="1.0"} ${maxDuration}`
       );
     }
-    return lines.join("\n") + "\n";
+    return `${lines.join("\n")}
+`;
   }
   /**
    * Reset all metrics
@@ -165,4 +166,4 @@ class MetricsAdapter {
 export {
   MetricsAdapter
 };
-//# sourceMappingURL=metrics-uRpAh6uk.js.map
+//# sourceMappingURL=metrics-ZuQBjcWk.js.map

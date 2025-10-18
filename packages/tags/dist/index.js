@@ -189,7 +189,7 @@ class Tag extends (_a = SmrtObject) {
    * @param context - Optional context filter
    * @returns Tag instance or null if not found
    */
-  static async getBySlug(slug, context) {
+  static async getBySlug(_slug, _context) {
     return null;
   }
   /**
@@ -198,7 +198,7 @@ class Tag extends (_a = SmrtObject) {
    * @param context - The context to filter by
    * @returns Array of root tags
    */
-  static async getRootTags(context = "global") {
+  static async getRootTags(_context = "global") {
     return [];
   }
 }
@@ -253,7 +253,7 @@ class TagAlias extends (_b = SmrtObject) {
    * @param language - Optional language filter
    * @returns Array of matching tags
    */
-  static async searchByAlias(alias, language) {
+  static async searchByAlias(_alias, _language) {
     return [];
   }
   /**
@@ -262,7 +262,7 @@ class TagAlias extends (_b = SmrtObject) {
    * @param tagSlug - The tag slug to get aliases for
    * @returns Array of TagAlias instances
    */
-  static async getAliasesForTag(tagSlug) {
+  static async getAliasesForTag(_tagSlug) {
     return [];
   }
 }

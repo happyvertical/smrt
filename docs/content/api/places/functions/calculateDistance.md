@@ -2,7 +2,7 @@
 
 > **calculateDistance**(`lat1`, `lng1`, `lat2`, `lng2`): `number`
 
-Defined in: [places/src/utils.ts:90](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/places/src/utils.ts#L90)
+Defined in: [places/src/utils.ts:90](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/utils.ts#L90)
 
 Calculate distance between two coordinates using Haversine formula
 

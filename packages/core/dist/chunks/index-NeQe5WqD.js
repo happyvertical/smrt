@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 class SchemaGenerator {
   /**
    * Generate schema definition from SMRT object definition
@@ -86,10 +86,10 @@ class SchemaGenerator {
         column.defaultValue = "";
       }
       if (fieldDef.type === "foreignKey" && fieldDef.related) {
-        const [table, column_name = "id"] = fieldDef.related.split(".");
+        const [table, columnName = "id"] = fieldDef.related.split(".");
         column.foreignKey = {
           table,
-          column: column_name,
+          column: columnName,
           onDelete: "CASCADE",
           // Default behavior
           onUpdate: "CASCADE"
@@ -137,7 +137,7 @@ class SchemaGenerator {
   /**
    * Generate trigger definitions for automatic timestamp updates
    */
-  generateTriggers(objectDef, tableName) {
+  generateTriggers(_objectDef, tableName) {
     return [
       {
         name: `trg_${tableName}_updated_at`,
@@ -200,7 +200,7 @@ class SchemaGenerator {
    * Convert class name to table name (camelCase to snake_case, pluralized)
    */
   classNameToTableName(className) {
-    return className.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "").replace(/s$/, "") + "s";
+    return `${className.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "").replace(/s$/, "")}s`;
   }
   /**
    * Extract package name from file path
@@ -220,10 +220,10 @@ class SchemaGenerator {
    * @param fields - Map of Field definitions from ObjectRegistry
    * @returns Schema definition object
    */
-  generateSchemaFromRegistry(className, tableName, fields) {
+  generateSchemaFromRegistry(_className, tableName, fields) {
     const columns = {};
     let hasCustomPK = false;
-    for (const [fieldName, field] of fields.entries()) {
+    for (const [_fieldName, field] of fields.entries()) {
       if (field.options?.primaryKey) {
         hasCustomPK = true;
         break;
@@ -388,9 +388,11 @@ class SchemaGenerator {
         );
         parts.push(`DEFAULT ${defaultSQL}`);
       }
-      sql += parts.join(" ") + ",\n";
+      sql += `${parts.join(" ")},
+`;
     }
-    sql = sql.slice(0, -2) + "\n);";
+    sql = `${sql.slice(0, -2)}
+);`;
     for (const index of schema.indexes) {
       const indexType = index.unique ? "UNIQUE INDEX" : "INDEX";
       const columnList = index.columns.join(", ");
@@ -434,4 +436,4 @@ CREATE ${indexType} IF NOT EXISTS ${index.name} ON ${tableName} (${columnList});
 export {
   SchemaGenerator
 };
-//# sourceMappingURL=index-9WZDN6n7.js.map
+//# sourceMappingURL=index-NeQe5WqD.js.map

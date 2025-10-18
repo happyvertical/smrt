@@ -8,41 +8,8 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const staticManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1760711672864,
-  "objects": {
-    "pleb": {
-      "name": "pleb",
-      "className": "Pleb",
-      "collection": "plebs",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/pleb.ts",
-      "fields": {},
-      "methods": {
-        "create": {
-          "name": "create",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "PlebOptions",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": true,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<this>",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {}
-    }
-  }
+  "timestamp": 1760754050946,
+  "objects": {}
 } as const;
 
 export default staticManifest;

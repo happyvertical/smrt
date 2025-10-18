@@ -246,7 +246,7 @@ class ErrorUtils {
    * Wraps a function with error handling and automatic retry logic
    */
   static async withRetry(operation, maxRetries = 3, delay = 1e3, backoffMultiplier = 2) {
-    let lastError;
+    let lastError = new Error("Operation failed without error details");
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await operation();
@@ -530,4 +530,4 @@ export {
   ValidationReport,
   ValidationUtils
 };
-//# sourceMappingURL=errors-Cl0_Kxat.js.map
+//# sourceMappingURL=errors-D1u9UqLX.js.map

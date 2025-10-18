@@ -17,7 +17,7 @@ export declare class ProfileMetafield extends SmrtObject {
      * @param slug - The slug to search for
      * @returns ProfileMetafield instance or null if not found
      */
-    static getBySlug(slug: string): Promise<ProfileMetafield | null>;
+    static getBySlug(_slug: string): Promise<ProfileMetafield | null>;
     /**
      * Register a custom validator function
      *

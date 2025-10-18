@@ -30,12 +30,12 @@
     "./consumer-plugin": "./dist/consumer-plugin.js"
   },
   "dependencies": {
-    "@have/ai": "*",
-    "@have/files": "*",
-    "@have/logger": "*",
-    "@have/sql": "*",
+    "@have/ai": "workspace:*",
+    "@have/files": "workspace:*",
+    "@have/logger": "workspace:*",
+    "@have/sql": "workspace:*",
     "@smrt/types": "workspace:*",
-    "@have/utils": "*",
+    "@have/utils": "workspace:*",
     "@langchain/community": "^0.3.24",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "cheerio": "^1.0.0",

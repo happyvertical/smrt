@@ -1,6 +1,6 @@
 # Class: Field
 
-Defined in: [smrt/packages/core/src/fields/index.ts:125](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L125)
+Defined in: [smrt/packages/core/src/fields/index.ts:125](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L125)
 
 Base field class that all field types extend
 
@@ -16,7 +16,7 @@ of this class with specific type and options configurations.
 
 > **new Field**(`type`, `options`): `Field`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:130](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L130)
+Defined in: [smrt/packages/core/src/fields/index.ts:130](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L130)
 
 #### Parameters
 
@@ -38,7 +38,7 @@ Defined in: [smrt/packages/core/src/fields/index.ts:130](https://github.com/happ
 
 > `readonly` **options**: [`FieldOptions`](../interfaces/FieldOptions.md)
 
-Defined in: [smrt/packages/core/src/fields/index.ts:127](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L127)
+Defined in: [smrt/packages/core/src/fields/index.ts:127](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L127)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [smrt/packages/core/src/fields/index.ts:127](https://github.com/happ
 
 > `readonly` **type**: `string`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:126](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L126)
+Defined in: [smrt/packages/core/src/fields/index.ts:126](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L126)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [smrt/packages/core/src/fields/index.ts:126](https://github.com/happ
 
 > **value**: `any`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:128](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L128)
+Defined in: [smrt/packages/core/src/fields/index.ts:128](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L128)
 
 ## Methods
 
@@ -62,7 +62,7 @@ Defined in: [smrt/packages/core/src/fields/index.ts:128](https://github.com/happ
 
 > **getSqlConstraints**(): `string`[]
 
-Defined in: [smrt/packages/core/src/fields/index.ts:219](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L219)
+Defined in: [smrt/packages/core/src/fields/index.ts:219](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L219)
 
 Get field constraints for SQL DDL statements
 
@@ -88,7 +88,7 @@ console.log(slugField.getSqlConstraints()); // ['PRIMARY KEY']
 
 > **getSqlType**(): `string`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:185](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L185)
+Defined in: [smrt/packages/core/src/fields/index.ts:185](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L185)
 
 Get the SQL type for this field based on the field type
 
@@ -111,7 +111,7 @@ console.log(nameField.getSqlType()); // 'TEXT'
 
 > **toJSON**(): `any`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:171](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L171)
+Defined in: [smrt/packages/core/src/fields/index.ts:171](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L171)
 
 JSON serialization - returns the value for JSON.stringify()
 
@@ -134,7 +134,7 @@ JSON.stringify(data); // {"name":"John"} - toJSON() called automatically
 
 > **toString**(): `string`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:145](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L145)
+Defined in: [smrt/packages/core/src/fields/index.ts:145](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L145)
 
 String coercion - allows Field instances to be used naturally in string contexts
 
@@ -157,7 +157,7 @@ console.log(name.toLowerCase()); // 'john' - toString() called automatically
 
 > **valueOf**(): `any`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:158](https://github.com/happyvertical/smrt/blob/71a16025d52b026725fd522a392015e67e1d6489/packages/core/src/fields/index.ts#L158)
+Defined in: [smrt/packages/core/src/fields/index.ts:158](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L158)
 
 Value coercion - returns the actual value for comparisons and operations
 

@@ -242,7 +242,7 @@ class Contents extends SmrtCollection {
    */
   contentDir;
   /**
-   * Cache of loaded content by key
+   * Cache for loaded content
    */
   loaded;
   /**

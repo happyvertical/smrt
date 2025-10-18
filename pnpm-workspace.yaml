@@ -4,4 +4,4 @@ packages:
 
 # pnpm workspace configuration for SMRT Framework monorepo
 # All SMRT framework and module packages
-# SDK packages included for CI build compatibility
+# SDK packages temporarily included until published to npm

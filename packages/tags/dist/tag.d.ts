@@ -64,13 +64,13 @@ export declare class Tag extends SmrtObject {
      * @param context - Optional context filter
      * @returns Tag instance or null if not found
      */
-    static getBySlug(slug: string, context?: string): Promise<Tag | null>;
+    static getBySlug(_slug: string, _context?: string): Promise<Tag | null>;
     /**
      * Get root tags (no parent) for a context
      *
      * @param context - The context to filter by
      * @returns Array of root tags
      */
-    static getRootTags(context?: string): Promise<Tag[]>;
+    static getRootTags(_context?: string): Promise<Tag[]>;
 }
 //# sourceMappingURL=tag.d.ts.map

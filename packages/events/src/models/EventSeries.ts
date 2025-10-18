@@ -131,7 +131,7 @@ export class EventSeries extends SmrtObject {
     const { EventTypeCollection } = await import(
       '../collections/EventTypeCollection'
     );
-    const collection = await EventTypeCollection.create(this.options);
+    const collection = await (EventTypeCollection as any).create(this.options);
 
     return await collection.get({ id: this.typeId });
   }
@@ -147,7 +147,7 @@ export class EventSeries extends SmrtObject {
     // Import Profile from @smrt/profiles
     try {
       const { ProfileCollection } = await import('@smrt/profiles');
-      const collection = await ProfileCollection.create(this.options);
+      const collection = await (ProfileCollection as any).create(this.options);
 
       return await collection.get({ id: this.organizerId });
     } catch {
@@ -163,7 +163,7 @@ export class EventSeries extends SmrtObject {
    */
   async getEvents() {
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = await EventCollection.create(this.options);
+    const collection = await (EventCollection as any).create(this.options);
 
     return await collection.list({ where: { seriesId: this.id } });
   }
