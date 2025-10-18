@@ -2,7 +2,7 @@ import { getDatabase, buildWhere, syncSchema } from "@have/sql";
 import { getAI } from "@have/ai";
 import { FilesystemAdapter } from "@have/files";
 import { makeId } from "@have/utils";
-import { O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-Dg2mIESQ.js";
+import { O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-x79_kU2s.js";
 class SmrtConfig {
   static instance;
   config = {
@@ -688,10 +688,10 @@ class SmrtCollection extends SmrtClass {
    * @example
    * ```typescript
    * // Create collection from object options
-   * const collection = await ProductCollection.create(smrtObject.options);
+   * const collection = await (ProductCollection as any).create(smrtObject.options);
    *
    * // Create collection with specific config
-   * const collection = await ProductCollection.create({
+   * const collection = await (ProductCollection as any).create({
    *   persistence: { type: 'sql', url: 'products.db' },
    *   ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
    * });
@@ -1359,4 +1359,4 @@ export {
   SMRT_SCHEMA_VERSION as h,
   collection as i
 };
-//# sourceMappingURL=collection-9MTAhltA.js.map
+//# sourceMappingURL=collection-C4IjmVDp.js.map

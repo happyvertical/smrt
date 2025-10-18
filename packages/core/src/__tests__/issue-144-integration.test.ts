@@ -51,7 +51,7 @@ describe('Issue #144: Integration Test with Real Collections', () => {
 
   it('should create EventCollection without duplicate column errors', async () => {
     // This should not throw "duplicate column name: created_at" error
-    const events = await TestEventCollection.create({
+    const events = await (TestEventCollection as any).create({
       db: {
         type: 'sqlite',
         url: `file:${testDbPath}`,
@@ -63,7 +63,7 @@ describe('Issue #144: Integration Test with Real Collections', () => {
 
   it('should create ProfileCollection without duplicate column errors', async () => {
     // This should not throw duplicate column errors
-    const profiles = await TestProfileCollection.create({
+    const profiles = await (TestProfileCollection as any).create({
       db: {
         type: 'sqlite',
         url: `file:${testDbPath}`,

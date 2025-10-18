@@ -1,6 +1,7 @@
 packages:
   - 'packages/*'
+  - 'sdk/packages/*'
 
 # pnpm workspace configuration for SMRT Framework monorepo
 # All SMRT framework and module packages
-# SDK packages (@have/ai, @have/sql, etc.) are consumed as published npm packages
+# SDK packages temporarily included until published to npm
