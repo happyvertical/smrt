@@ -8,7 +8,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const staticManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1760754050946,
+  "timestamp": 1760758220637,
   "objects": {}
 } as const;
 
