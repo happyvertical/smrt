@@ -1,6 +1,6 @@
 # Interface: NoteMetadata
 
-Defined in: [smrt/packages/core/src/system/types.ts:29](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L29)
+Defined in: smrt/packages/core/src/system/types.ts:29
 
 Note metadata structure
 Optimized for storing AI-learned strategies
@@ -17,7 +17,7 @@ Allow any other properties
 
 > `optional` **aiConfidence**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:35](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L35)
+Defined in: smrt/packages/core/src/system/types.ts:35
 
 Original AI confidence
 
@@ -27,7 +27,7 @@ Original AI confidence
 
 > `optional` **aiModel**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:33](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L33)
+Defined in: smrt/packages/core/src/system/types.ts:33
 
 AI model used
 
@@ -37,7 +37,7 @@ AI model used
 
 > `optional` **aiProvider**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:31](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L31)
+Defined in: smrt/packages/core/src/system/types.ts:31
 
 AI provider used for learning
 
@@ -47,7 +47,7 @@ AI provider used for learning
 
 > `optional` **expectedCount**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:41](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L41)
+Defined in: smrt/packages/core/src/system/types.ts:41
 
 Expected result count
 
@@ -57,7 +57,7 @@ Expected result count
 
 > `optional` **humanReviewed**: `boolean`
 
-Defined in: [smrt/packages/core/src/system/types.ts:53](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L53)
+Defined in: smrt/packages/core/src/system/types.ts:53
 
 Whether human reviewed
 
@@ -67,7 +67,7 @@ Whether human reviewed
 
 > `optional` **importance**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L47)
+Defined in: smrt/packages/core/src/system/types.ts:47
 
 Importance score
 
@@ -77,7 +77,7 @@ Importance score
 
 > `optional` **pageHash**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:43](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L43)
+Defined in: smrt/packages/core/src/system/types.ts:43
 
 Hash of page HTML for change detection
 
@@ -87,7 +87,7 @@ Hash of page HTML for change detection
 
 > `optional` **patterns**: `string`[]
 
-Defined in: [smrt/packages/core/src/system/types.ts:37](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L37)
+Defined in: smrt/packages/core/src/system/types.ts:37
 
 Regex patterns
 
@@ -97,7 +97,7 @@ Regex patterns
 
 > `optional` **replacesVersion**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:51](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L51)
+Defined in: smrt/packages/core/src/system/types.ts:51
 
 Version this replaces
 
@@ -107,7 +107,7 @@ Version this replaces
 
 > `optional` **reviewedBy**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:55](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L55)
+Defined in: smrt/packages/core/src/system/types.ts:55
 
 Reviewer identifier
 
@@ -117,7 +117,7 @@ Reviewer identifier
 
 > `optional` **reviewNotes**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:57](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L57)
+Defined in: smrt/packages/core/src/system/types.ts:57
 
 Review notes
 
@@ -127,7 +127,7 @@ Review notes
 
 > `optional` **selectors**: `string`[]
 
-Defined in: [smrt/packages/core/src/system/types.ts:39](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L39)
+Defined in: smrt/packages/core/src/system/types.ts:39
 
 CSS selectors
 
@@ -137,7 +137,7 @@ CSS selectors
 
 > `optional` **source**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:49](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L49)
+Defined in: smrt/packages/core/src/system/types.ts:49
 
 Source of the strategy
 
@@ -147,6 +147,6 @@ Source of the strategy
 
 > `optional` **tags**: `string`[]
 
-Defined in: [smrt/packages/core/src/system/types.ts:45](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L45)
+Defined in: smrt/packages/core/src/system/types.ts:45
 
 Tags for categorization

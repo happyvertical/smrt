@@ -2,7 +2,7 @@ import { getDatabase, buildWhere, syncSchema } from "@have/sql";
 import { getAI } from "@have/ai";
 import { FilesystemAdapter } from "@have/files";
 import { makeId } from "@have/utils";
-import { O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-x79_kU2s.js";
+import { a as toSnakeCase, O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-msPWGPQg.js";
 class SmrtConfig {
   static instance;
   config = {
@@ -602,6 +602,31 @@ class SmrtCollection extends SmrtClass {
    */
   _db_setup_promise = null;
   /**
+   * Convert WHERE clause field names from camelCase to snake_case while preserving operators
+   *
+   * @param where - WHERE clause object with camelCase field names
+   * @returns WHERE clause object with snake_case field names
+   * @private
+   *
+   * @example
+   * ```typescript
+   * // Input: { 'typeId': 'foo', 'categoryId >': 100 }
+   * // Output: { 'type_id': 'foo', 'category_id >': 100 }
+   * ```
+   */
+  convertWhereKeys(where) {
+    const converted = {};
+    for (const [key, value] of Object.entries(where)) {
+      const parts = key.trim().split(/\s+/);
+      const fieldName = parts[0];
+      const operator = parts.slice(1).join(" ");
+      const snakeFieldName = toSnakeCase(fieldName);
+      const newKey = operator ? `${snakeFieldName} ${operator}` : snakeFieldName;
+      converted[newKey] = value;
+    }
+    return converted;
+  }
+  /**
    * Gets the class constructor for items in this collection
    */
   get _itemClass() {
@@ -746,7 +771,9 @@ class SmrtCollection extends SmrtClass {
     const where = typeof filter === "string" ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       filter
     ) ? { id: filter } : { slug: filter, context: "" } : filter;
-    const { sql: whereSql, values: whereValues } = buildWhere(where);
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(where)
+    );
     const { rows } = await this.db.query(
       `SELECT * FROM ${this.tableName} ${whereSql}`,
       whereValues
@@ -797,7 +824,9 @@ class SmrtCollection extends SmrtClass {
    */
   async list(options) {
     const { where, offset, limit, orderBy } = options;
-    const { sql: whereSql, values: whereValues } = buildWhere(where || {});
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(where || {})
+    );
     let orderBySql = "";
     if (orderBy) {
       orderBySql = " ORDER BY ";
@@ -813,7 +842,8 @@ class SmrtCollection extends SmrtClass {
             `Invalid sort direction: ${direction}. Must be ASC or DESC.`
           );
         }
-        return `${field} ${normalizedDirection}`;
+        const snakeField = toSnakeCase(field);
+        return `${snakeField} ${normalizedDirection}`;
       }).join(", ");
     }
     let limitOffsetSql = "";
@@ -1112,7 +1142,9 @@ class SmrtCollection extends SmrtClass {
    */
   async count(options = {}) {
     const { where } = options;
-    const { sql: whereSql, values: whereValues } = buildWhere(where || {});
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(where || {})
+    );
     const result = await this.db.query(
       `SELECT COUNT(*) as count FROM ${this.tableName} ${whereSql}`,
       whereValues
@@ -1359,4 +1391,4 @@ export {
   SMRT_SCHEMA_VERSION as h,
   collection as i
 };
-//# sourceMappingURL=collection-C4IjmVDp.js.map
+//# sourceMappingURL=collection-DFqDPEjz.js.map

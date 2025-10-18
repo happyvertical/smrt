@@ -129,7 +129,9 @@ export class EventParticipant extends SmrtObject {
     const { EventParticipantCollection } = await import(
       '../collections/EventParticipantCollection'
     );
-    const collection = await (EventParticipantCollection as any).create(this.options);
+    const collection = await (EventParticipantCollection as any).create(
+      this.options,
+    );
 
     const participants = await collection.list({
       where: { eventId: this.eventId, groupId: this.groupId },

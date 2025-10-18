@@ -1,6 +1,6 @@
 # Class: ManifestGenerator
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L12)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:12
 
 Static manifest module for runtime use
 Uses pre-generated manifest from build time instead of runtime scanning
@@ -21,7 +21,7 @@ Uses pre-generated manifest from build time instead of runtime scanning
 
 > **generateManifest**(`scanResults`): [`SmartObjectManifest`](../interfaces/SmartObjectManifest.md)
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:16](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L16)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:16
 
 Generate manifest from scan results
 
@@ -41,7 +41,7 @@ Generate manifest from scan results
 
 > **generateMCPTools**(`manifest`): `string`
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:271](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L271)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:271
 
 Generate simple MCP tool names for testing/documentation
 
@@ -61,7 +61,7 @@ Generate simple MCP tool names for testing/documentation
 
 > **generateMCPToolsCode**(`manifest`): `string`
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:287](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L287)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:287
 
 Generate MCP tool JSON definitions
 
@@ -81,7 +81,7 @@ Generate MCP tool JSON definitions
 
 > **generateRestEndpointCode**(`manifest`): `string`
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:119](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L119)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:119
 
 Generate REST endpoint code implementations
 
@@ -101,7 +101,7 @@ Generate REST endpoint code implementations
 
 > **generateRestEndpoints**(`manifest`): `string`
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:103](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L103)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:103
 
 Generate simple endpoint list for testing/documentation
 
@@ -121,7 +121,7 @@ Generate simple endpoint list for testing/documentation
 
 > **generateTypeDefinitions**(`manifest`): `string`
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:49](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L49)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:49
 
 Generate TypeScript interfaces from manifest
 
@@ -141,7 +141,7 @@ Generate TypeScript interfaces from manifest
 
 > **loadManifest**(`filePath`): [`SmartObjectManifest`](../interfaces/SmartObjectManifest.md)
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:463](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L463)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:463
 
 Load manifest from file
 
@@ -161,7 +161,7 @@ Load manifest from file
 
 > **saveManifest**(`manifest`, `filePath`): `void`
 
-Defined in: [smrt/packages/core/src/scanner/manifest-generator.ts:455](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/scanner/manifest-generator.ts#L455)
+Defined in: smrt/packages/core/src/scanner/manifest-generator.ts:455
 
 Save manifest to file
 

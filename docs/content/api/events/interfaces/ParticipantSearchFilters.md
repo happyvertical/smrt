@@ -1,6 +1,6 @@
 # Interface: ParticipantSearchFilters
 
-Defined in: [events/src/types.ts:159](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L159)
+Defined in: events/src/types.ts:159
 
 Search filters for participants
 
@@ -10,7 +10,7 @@ Search filters for participants
 
 > `optional` **eventId**: `string`
 
-Defined in: [events/src/types.ts:160](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L160)
+Defined in: events/src/types.ts:160
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [events/src/types.ts:160](https://github.com/happyvertical/smrt/blob
 
 > `optional` **groupId**: `string`
 
-Defined in: [events/src/types.ts:163](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L163)
+Defined in: events/src/types.ts:163
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [events/src/types.ts:163](https://github.com/happyvertical/smrt/blob
 
 > `optional` **profileId**: `string`
 
-Defined in: [events/src/types.ts:161](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L161)
+Defined in: events/src/types.ts:161
 
 ***
 
@@ -34,4 +34,4 @@ Defined in: [events/src/types.ts:161](https://github.com/happyvertical/smrt/blob
 
 > `optional` **role**: `string`
 
-Defined in: [events/src/types.ts:162](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/events/src/types.ts#L162)
+Defined in: events/src/types.ts:162

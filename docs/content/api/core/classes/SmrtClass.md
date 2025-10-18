@@ -1,6 +1,6 @@
 # Class: SmrtClass
 
-Defined in: [smrt/packages/core/src/class.ts:93](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L93)
+Defined in: smrt/packages/core/src/class.ts:93
 
 Foundation class providing core functionality for the SMRT framework
 
@@ -19,7 +19,7 @@ SMRT framework.
 
 > **new SmrtClass**(`options`): `SmrtClass`
 
-Defined in: [smrt/packages/core/src/class.ts:140](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L140)
+Defined in: smrt/packages/core/src/class.ts:140
 
 Creates a new SmrtClass instance
 
@@ -41,7 +41,7 @@ Configuration options for database, filesystem, and AI clients
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: [smrt/packages/core/src/class.ts:97](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L97)
+Defined in: smrt/packages/core/src/class.ts:97
 
 AI client instance for interacting with AI models
 
@@ -51,7 +51,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: [smrt/packages/core/src/class.ts:112](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L112)
+Defined in: smrt/packages/core/src/class.ts:112
 
 Class name used for identification
 
@@ -61,7 +61,7 @@ Class name used for identification
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:107](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L107)
+Defined in: smrt/packages/core/src/class.ts:107
 
 Database interface for data persistence
 
@@ -71,7 +71,7 @@ Database interface for data persistence
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: [smrt/packages/core/src/class.ts:102](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L102)
+Defined in: smrt/packages/core/src/class.ts:102
 
 Filesystem adapter for file operations
 
@@ -81,7 +81,7 @@ Filesystem adapter for file operations
 
 > `protected` `optional` **\_signalBus**: [`SignalBus`](SignalBus.md)
 
-Defined in: [smrt/packages/core/src/class.ts:117](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L117)
+Defined in: smrt/packages/core/src/class.ts:117
 
 Signal bus for method execution tracking
 
@@ -91,7 +91,7 @@ Signal bus for method execution tracking
 
 > `protected` **options**: [`SmrtClassOptions`](../interfaces/SmrtClassOptions.md)
 
-Defined in: [smrt/packages/core/src/class.ts:127](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L127)
+Defined in: smrt/packages/core/src/class.ts:127
 
 Configuration options provided to the class
 
@@ -103,7 +103,7 @@ Configuration options provided to the class
 
 > **get** **ai**(): `AIClient`
 
-Defined in: [smrt/packages/core/src/class.ts:388](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L388)
+Defined in: smrt/packages/core/src/class.ts:388
 
 Gets the AI client instance
 
@@ -119,7 +119,7 @@ Gets the AI client instance
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:381](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L381)
+Defined in: smrt/packages/core/src/class.ts:381
 
 Gets the database interface instance
 
@@ -135,7 +135,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: [smrt/packages/core/src/class.ts:374](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L374)
+Defined in: smrt/packages/core/src/class.ts:374
 
 Gets the filesystem adapter instance
 
@@ -151,7 +151,7 @@ Gets the filesystem adapter instance
 
 > **get** **signalBus**(): [`SignalBus`](SignalBus.md) \| `undefined`
 
-Defined in: [smrt/packages/core/src/class.ts:397](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L397)
+Defined in: smrt/packages/core/src/class.ts:397
 
 Gets the signal bus instance
 
@@ -169,7 +169,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:255](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L255)
+Defined in: smrt/packages/core/src/class.ts:255
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -184,7 +184,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **destroy**(): `void`
 
-Defined in: [smrt/packages/core/src/class.ts:416](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L416)
+Defined in: smrt/packages/core/src/class.ts:416
 
 Cleanup method to prevent memory leaks
 
@@ -211,7 +211,7 @@ product.destroy(); // Clean up when done
 
 > `protected` **initialize**(): `Promise`\<`SmrtClass`\>
 
-Defined in: [smrt/packages/core/src/class.ts:153](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/class.ts#L153)
+Defined in: smrt/packages/core/src/class.ts:153
 
 Initializes database, filesystem, and AI client connections
 

@@ -1,6 +1,6 @@
 # Interface: RelationshipFieldOptions
 
-Defined in: [smrt/packages/core/src/fields/index.ts:109](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L109)
+Defined in: smrt/packages/core/src/fields/index.ts:109
 
 Configuration options for relationship fields (foreign keys, associations)
 
@@ -16,7 +16,7 @@ Configuration options for relationship fields (foreign keys, associations)
 
 > `optional` **customMessage**: `string`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:70](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L70)
+Defined in: smrt/packages/core/src/fields/index.ts:70
 
 Custom error message to display when validation fails
 Works with both built-in validators and custom validate functions
@@ -31,7 +31,7 @@ Works with both built-in validators and custom validate functions
 
 > `optional` **default**: `any`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:45](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L45)
+Defined in: smrt/packages/core/src/fields/index.ts:45
 
 Default value for this field when creating new objects
 
@@ -45,7 +45,7 @@ Default value for this field when creating new objects
 
 > `optional` **description**: `string`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:51](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L51)
+Defined in: smrt/packages/core/src/fields/index.ts:51
 
 Human-readable description of the field's purpose
 
@@ -59,7 +59,7 @@ Human-readable description of the field's purpose
 
 > `optional` **index**: `boolean`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:49](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L49)
+Defined in: smrt/packages/core/src/fields/index.ts:49
 
 Whether to create a database index on this field for faster queries
 
@@ -73,7 +73,7 @@ Whether to create a database index on this field for faster queries
 
 > `optional` **onDelete**: `"cascade"` \| `"restrict"` \| `"set_null"`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:111](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L111)
+Defined in: smrt/packages/core/src/fields/index.ts:111
 
 What to do when the referenced object is deleted
 
@@ -83,7 +83,7 @@ What to do when the referenced object is deleted
 
 > `optional` **primaryKey**: `boolean`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:41](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L41)
+Defined in: smrt/packages/core/src/fields/index.ts:41
 
 Whether this field is the primary key (default: false, 'id' field is auto-generated)
 
@@ -97,7 +97,7 @@ Whether this field is the primary key (default: false, 'id' field is auto-genera
 
 > `optional` **related**: `string`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:113](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L113)
+Defined in: smrt/packages/core/src/fields/index.ts:113
 
 Name of the related class (automatically set by relationship functions)
 
@@ -107,7 +107,7 @@ Name of the related class (automatically set by relationship functions)
 
 > `optional` **required**: `boolean`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:43](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L43)
+Defined in: smrt/packages/core/src/fields/index.ts:43
 
 Whether this field is required (NOT NULL constraint)
 
@@ -121,7 +121,7 @@ Whether this field is required (NOT NULL constraint)
 
 > `optional` **unique**: `boolean`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L47)
+Defined in: smrt/packages/core/src/fields/index.ts:47
 
 Whether this field must have unique values (UNIQUE constraint)
 
@@ -135,7 +135,7 @@ Whether this field must have unique values (UNIQUE constraint)
 
 > `optional` **validate**: (`value`) => `boolean` \| `Promise`\<`boolean`\>
 
-Defined in: [smrt/packages/core/src/fields/index.ts:65](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L65)
+Defined in: smrt/packages/core/src/fields/index.ts:65
 
 Custom validation function (synchronous or asynchronous)
 Should return true if valid, false if invalid
