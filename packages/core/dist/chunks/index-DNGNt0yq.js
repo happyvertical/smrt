@@ -603,7 +603,7 @@ function smrtPlugin(options = {}) {
   async function scanAndGenerateManifest() {
     if (process.env.NODE_ENV === "production") {
       try {
-        const { staticManifest } = await import("./static-manifest-Bh8RjhyH.js");
+        const { staticManifest } = await import("./static-manifest-BQ5qBIPl.js");
         if (staticManifest && Object.keys(staticManifest.objects).length > 0) {
           console.log("[smrt] Using pre-generated static manifest");
           return staticManifest;
@@ -615,7 +615,7 @@ function smrtPlugin(options = {}) {
       }
     }
     try {
-      const [{ default: fg }, { ASTScanner, ManifestGenerator }] = await Promise.all([import("./index-D2SdCo8s.js").then((n) => n.i), import("./index-vnWPj8WQ.js")]);
+      const [{ default: fg }, { ASTScanner, ManifestGenerator }] = await Promise.all([import("./index-D2SdCo8s.js").then((n) => n.i), import("./index-CLjuxHjr.js")]);
       if (!manifestGenerator) {
         manifestGenerator = new ManifestGenerator();
       }
@@ -672,7 +672,7 @@ function smrtPlugin(options = {}) {
 }
 async function generateRoutesModule(manifest) {
   try {
-    const { ManifestGenerator } = await import("./index-vnWPj8WQ.js");
+    const { ManifestGenerator } = await import("./index-CLjuxHjr.js");
     const generator = new ManifestGenerator();
     const routes = generator.generateRestEndpoints(manifest);
     return `
@@ -738,7 +738,7 @@ export { createClient as default };
 }
 async function generateMCPModule(manifest) {
   try {
-    const { ManifestGenerator } = await import("./index-vnWPj8WQ.js");
+    const { ManifestGenerator } = await import("./index-CLjuxHjr.js");
     const generator = new ManifestGenerator();
     const tools = generator.generateMCPTools(manifest);
     return `
@@ -811,7 +811,7 @@ async function generateTypesModule(manifest, mode = "server") {
   let interfaces = "";
   try {
     if (mode !== "client") {
-      const { ManifestGenerator } = await import("./index-vnWPj8WQ.js");
+      const { ManifestGenerator } = await import("./index-CLjuxHjr.js");
       const generator = new ManifestGenerator();
       interfaces = generator.generateTypeDefinitions(manifest);
     } else {
@@ -1295,4 +1295,4 @@ export default {};`;
 export {
   smrtPlugin as s
 };
-//# sourceMappingURL=index-CV7eqlFU.js.map
+//# sourceMappingURL=index-DNGNt0yq.js.map
