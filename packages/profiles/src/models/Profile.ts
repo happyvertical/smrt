@@ -82,9 +82,9 @@ export class Profile extends SmrtObject {
     );
 
     // Get or create metafield collection
-    const metafieldCollection = await (ProfileMetafieldCollection as any).create(
-      this.options,
-    );
+    const metafieldCollection = await (
+      ProfileMetafieldCollection as any
+    ).create(this.options);
 
     // Find the metafield by slug
     const metafield = await metafieldCollection.getBySlug(metafieldSlug);
@@ -163,9 +163,9 @@ export class Profile extends SmrtObject {
       '../collections/ProfileMetadataCollection'
     );
 
-    const metafieldCollection = await (ProfileMetafieldCollection as any).create(
-      this.options,
-    );
+    const metafieldCollection = await (
+      ProfileMetafieldCollection as any
+    ).create(this.options);
 
     const metafield = await metafieldCollection.getBySlug(metafieldSlug);
     if (!metafield) {
@@ -209,8 +209,9 @@ export class Profile extends SmrtObject {
     );
 
     // Get relationship type
-    const relationshipTypeCollection =
-      await (ProfileRelationshipTypeCollection as any).create(this.options);
+    const relationshipTypeCollection = await (
+      ProfileRelationshipTypeCollection as any
+    ).create(this.options);
 
     const relationshipType =
       await relationshipTypeCollection.getBySlug(relationshipSlug);
@@ -219,9 +220,9 @@ export class Profile extends SmrtObject {
     }
 
     // Check if relationship already exists
-    const relationshipCollection = await (ProfileRelationshipCollection as any).create(
-      this.options,
-    );
+    const relationshipCollection = await (
+      ProfileRelationshipCollection as any
+    ).create(this.options);
 
     const exists = await relationshipCollection.exists(
       this.id,
@@ -267,17 +268,18 @@ export class Profile extends SmrtObject {
       '../collections/ProfileRelationshipTypeCollection'
     );
 
-    const relationshipCollection = await (ProfileRelationshipCollection as any).create(
-      this.options,
-    );
+    const relationshipCollection = await (
+      ProfileRelationshipCollection as any
+    ).create(this.options);
 
     const direction = options?.direction || 'all';
 
     // Get type ID if typeSlug is provided
     let typeId: string | undefined;
     if (options?.typeSlug) {
-      const relationshipTypeCollection =
-        await (ProfileRelationshipTypeCollection as any).create(this.options);
+      const relationshipTypeCollection = await (
+        ProfileRelationshipTypeCollection as any
+      ).create(this.options);
 
       const relationshipType = await relationshipTypeCollection.getBySlug(
         options.typeSlug,
@@ -311,7 +313,9 @@ export class Profile extends SmrtObject {
       direction: 'all',
     });
 
-    const profileCollection = await (ProfileCollection as any).create(this.options);
+    const profileCollection = await (ProfileCollection as any).create(
+      this.options,
+    );
 
     const relatedProfiles: Profile[] = [];
     const seenIds = new Set<string>();
@@ -354,8 +358,9 @@ export class Profile extends SmrtObject {
     );
 
     // Get relationship type
-    const relationshipTypeCollection =
-      await (ProfileRelationshipTypeCollection as any).create(this.options);
+    const relationshipTypeCollection = await (
+      ProfileRelationshipTypeCollection as any
+    ).create(this.options);
 
     const relationshipType =
       await relationshipTypeCollection.getBySlug(relationshipSlug);
@@ -364,9 +369,9 @@ export class Profile extends SmrtObject {
     }
 
     // Find and delete the relationship
-    const relationshipCollection = await (ProfileRelationshipCollection as any).create(
-      this.options,
-    );
+    const relationshipCollection = await (
+      ProfileRelationshipCollection as any
+    ).create(this.options);
 
     const relationships = await relationshipCollection.list({
       where: {

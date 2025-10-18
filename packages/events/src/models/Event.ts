@@ -118,7 +118,9 @@ export class Event extends SmrtObject {
     const { EventSeriesCollection } = await import(
       '../collections/EventSeriesCollection'
     );
-    const collection = await (EventSeriesCollection as any).create(this.options);
+    const collection = await (EventSeriesCollection as any).create(
+      this.options,
+    );
 
     return await collection.get({ id: this.seriesId });
   }
@@ -261,7 +263,9 @@ export class Event extends SmrtObject {
     const { EventParticipantCollection } = await import(
       '../collections/EventParticipantCollection'
     );
-    const collection = await (EventParticipantCollection as any).create(this.options);
+    const collection = await (EventParticipantCollection as any).create(
+      this.options,
+    );
 
     return await collection.list({ where: { eventId: this.id } });
   }
