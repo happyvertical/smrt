@@ -2,7 +2,7 @@ import { getDatabase, buildWhere, syncSchema } from "@have/sql";
 import { getAI } from "@have/ai";
 import { FilesystemAdapter } from "@have/files";
 import { makeId } from "@have/utils";
-import { O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-Cr7Ueogq.js";
+import { O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-CGrc2jl2.js";
 class SmrtConfig {
   static instance;
   config = {
@@ -1359,4 +1359,4 @@ export {
   SMRT_SCHEMA_VERSION as h,
   collection as i
 };
-//# sourceMappingURL=collection-Y5P0HG7i.js.map
+//# sourceMappingURL=collection-BCWdo6rh.js.map

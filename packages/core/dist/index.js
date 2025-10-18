@@ -1,7 +1,7 @@
 import { MetricsAdapter } from "./chunks/metrics-ZuQBjcWk.js";
 import { PubSubAdapter } from "./chunks/pubsub-BJ1ZU6QU.js";
-import { a as SmrtClass } from "./chunks/collection-Y5P0HG7i.js";
-import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-Y5P0HG7i.js";
+import { a as SmrtClass } from "./chunks/collection-BCWdo6rh.js";
+import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-BCWdo6rh.js";
 import { ValidationError, RuntimeError, DatabaseError, ErrorUtils } from "./chunks/errors-D1u9UqLX.js";
 import { AIError, ConfigurationError, FilesystemError, NetworkError, SmrtError, ValidationReport, ValidationUtils } from "./chunks/errors-D1u9UqLX.js";
 import { Field } from "./fields.js";
@@ -11,12 +11,12 @@ import { MCPGenerator } from "./generators/mcp.js";
 import { APIGenerator, createRestServer, startRestServer } from "./generators/rest.js";
 import { generateOpenAPISpec, setupSwaggerUI } from "./generators/swagger.js";
 import { getManifest } from "./manifest.js";
-import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-Cr7Ueogq.js";
-import { b as b2, b as b3 } from "./chunks/registry-Cr7Ueogq.js";
+import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-CGrc2jl2.js";
+import { b as b2, b as b3 } from "./chunks/registry-CGrc2jl2.js";
 import { a, c as c2, b as b4 } from "./chunks/server-D6t1do0C.js";
 import { M, c as c3, a as a2, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
-import { s as s2 } from "./chunks/index-CV7eqlFU.js";
-import { staticManifest } from "./chunks/static-manifest-Bh8RjhyH.js";
+import { s as s2 } from "./chunks/index-DNGNt0yq.js";
+import { staticManifest } from "./chunks/static-manifest-BQ5qBIPl.js";
 function validateToolCall(methodName, args, allowedMethods) {
   if (!allowedMethods.includes(methodName)) {
     throw ValidationError.invalidValue(
