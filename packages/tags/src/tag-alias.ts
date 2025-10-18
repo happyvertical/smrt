@@ -47,7 +47,7 @@ export class TagAlias extends SmrtObject {
    */
   async getTag(): Promise<Tag | null> {
     const { TagCollection } = await import('./tags');
-    const collection = await TagCollection.create(this.options);
+    const collection = await (TagCollection as any).create(this.options);
 
     return await collection.get({ slug: this.tagSlug });
   }

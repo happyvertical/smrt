@@ -118,7 +118,7 @@ export class Event extends SmrtObject {
     const { EventSeriesCollection } = await import(
       '../collections/EventSeriesCollection'
     );
-    const collection = await EventSeriesCollection.create(this.options);
+    const collection = await (EventSeriesCollection as any).create(this.options);
 
     return await collection.get({ id: this.seriesId });
   }
@@ -134,7 +134,7 @@ export class Event extends SmrtObject {
     const { EventTypeCollection } = await import(
       '../collections/EventTypeCollection'
     );
-    const collection = await EventTypeCollection.create(this.options);
+    const collection = await (EventTypeCollection as any).create(this.options);
 
     return await collection.get({ id: this.typeId });
   }
@@ -149,7 +149,7 @@ export class Event extends SmrtObject {
 
     try {
       const { PlaceCollection } = await import('@smrt/places');
-      const collection = await PlaceCollection.create(this.options);
+      const collection = await (PlaceCollection as any).create(this.options);
 
       return await collection.get({ id: this.placeId });
     } catch {
@@ -167,7 +167,7 @@ export class Event extends SmrtObject {
     if (!this.parentEventId) return null;
 
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = await EventCollection.create(this.options);
+    const collection = await (EventCollection as any).create(this.options);
 
     return await collection.get({ id: this.parentEventId });
   }
@@ -179,7 +179,7 @@ export class Event extends SmrtObject {
    */
   async getChildren(): Promise<Event[]> {
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = await EventCollection.create(this.options);
+    const collection = await (EventCollection as any).create(this.options);
 
     return await collection.list({ where: { parentEventId: this.id } });
   }
@@ -261,7 +261,7 @@ export class Event extends SmrtObject {
     const { EventParticipantCollection } = await import(
       '../collections/EventParticipantCollection'
     );
-    const collection = await EventParticipantCollection.create(this.options);
+    const collection = await (EventParticipantCollection as any).create(this.options);
 
     return await collection.list({ where: { eventId: this.id } });
   }
