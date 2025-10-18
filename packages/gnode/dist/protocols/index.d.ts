@@ -10,9 +10,9 @@ export interface WebFingerResponse {
     }>;
 }
 export declare class WebFingerProtocol {
-    static discover(domain: string): Promise<WebFingerResponse | null>;
+    static discover(_domain: string): Promise<WebFingerResponse | null>;
 }
 export declare class PeerExchangeProtocol {
-    static exchange(peerUrl: string): Promise<string[]>;
+    static exchange(_peerUrl: string): Promise<string[]>;
 }
 //# sourceMappingURL=index.d.ts.map

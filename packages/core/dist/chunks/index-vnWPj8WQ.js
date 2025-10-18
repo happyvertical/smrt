@@ -20,7 +20,6 @@ class ASTScanner {
       skipLibCheck: true,
       strict: true
     });
-    this.checker = this.program.getTypeChecker();
   }
   /**
    * Scan files for SMRT object definitions
@@ -412,4 +411,4 @@ export {
   scanFile,
   scanFiles
 };
-//# sourceMappingURL=index-Bbf5mQLx.js.map
+//# sourceMappingURL=index-vnWPj8WQ.js.map

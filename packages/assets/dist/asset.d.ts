@@ -61,6 +61,6 @@ export declare class Asset extends SmrtObject {
      * @param slug - The slug to search for
      * @returns Asset instance or null
      */
-    static getBySlug(slug: string): Promise<Asset | null>;
+    static getBySlug(_slug: string): Promise<Asset | null>;
 }
 //# sourceMappingURL=asset.d.ts.map

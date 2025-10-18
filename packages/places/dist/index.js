@@ -213,7 +213,7 @@ class Place extends (_a = SmrtObject) {
   async getAncestors() {
     const ancestors = [];
     let currentPlace = this;
-    while (currentPlace && currentPlace.parentId) {
+    while (currentPlace?.parentId) {
       const parent = await currentPlace.getParent();
       if (!parent) break;
       ancestors.unshift(parent);
@@ -281,7 +281,7 @@ class PlaceType extends (_b = SmrtObject) {
    * @param slug - The slug to search for
    * @returns PlaceType instance or null if not found
    */
-  static async getBySlug(slug) {
+  static async getBySlug(_slug) {
     return null;
   }
 }
@@ -579,8 +579,8 @@ class PlaceCollection extends SmrtCollection {
         place.longitude
       );
       return { place, distance };
-    }).filter((p) => p !== null && p.distance <= radiusKm).sort((a, b) => a.distance - b.distance);
-    return placesWithDistance.map((p) => p.place);
+    }).filter((p) => p !== null && p.distance <= radiusKm).sort((a, b) => a?.distance - b?.distance);
+    return placesWithDistance.map((p) => p?.place);
   }
   /**
    * Calculate distance between two coordinates using Haversine formula
@@ -672,7 +672,7 @@ function parseCoordinates(coordString) {
   if (parts.length !== 2) return null;
   const lat = parseFloat(parts[0]);
   const lng = parseFloat(parts[1]);
-  if (isNaN(lat) || isNaN(lng)) return null;
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
   const validation = validateCoordinates(lat, lng);
   if (!validation.valid) return null;
   return { lat, lng };
