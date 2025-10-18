@@ -483,7 +483,9 @@ class PlaceCollection extends SmrtCollection {
    * @returns Created Place instance
    */
   async createFromLocation(location, typeSlug, parentId) {
-    const typeCollection = await PlaceTypeCollection.create(this.options);
+    const typeCollection = await PlaceTypeCollection.create(
+      this.options
+    );
     const slug = typeSlug || location.type || "address";
     const placeType = await typeCollection.getOrCreate(slug);
     const components = location.addressComponents || {};
@@ -537,7 +539,9 @@ class PlaceCollection extends SmrtCollection {
    * @returns Array of places of that type
    */
   async getByType(typeSlug) {
-    const typeCollection = await PlaceTypeCollection.create(this.options);
+    const typeCollection = await PlaceTypeCollection.create(
+      this.options
+    );
     const placeType = await typeCollection.getBySlug(typeSlug);
     if (!placeType) return [];
     return await this.list({

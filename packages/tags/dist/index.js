@@ -518,7 +518,9 @@ class TagCollection extends SmrtCollection {
       await child.save();
     }
     const { TagAliasCollection: TagAliasCollection2 } = await Promise.resolve().then(() => tagAliases);
-    const aliasCollection = await TagAliasCollection2.create(this.options);
+    const aliasCollection = await TagAliasCollection2.create(
+      this.options
+    );
     const aliases = await aliasCollection.list({
       where: { tagSlug: fromSlug }
     });
@@ -541,7 +543,9 @@ class TagCollection extends SmrtCollection {
     if (context) where.context = context;
     const tags2 = await this.list({ where });
     const { TagAliasCollection: TagAliasCollection2 } = await Promise.resolve().then(() => tagAliases);
-    const aliasCollection = await TagAliasCollection2.create(this.options);
+    const aliasCollection = await TagAliasCollection2.create(
+      this.options
+    );
     let deletedCount = 0;
     for (const tag of tags2) {
       const children = await this.getChildren(tag.slug);

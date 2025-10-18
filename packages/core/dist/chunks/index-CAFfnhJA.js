@@ -143,7 +143,7 @@ class SchemaGenerator {
         name: `trg_${tableName}_updated_at`,
         when: "BEFORE",
         event: "UPDATE",
-        body: `UPDATE ${tableName} SET updated_at = datetime('now') WHERE id = NEW.id;`,
+        body: `UPDATE "${tableName}" SET "updated_at" = datetime('now') WHERE "id" = NEW."id";`,
         description: "Automatically update updated_at timestamp"
       }
     ];
@@ -371,7 +371,7 @@ class SchemaGenerator {
 `;
     for (const [columnName, columnDef] of Object.entries(columns)) {
       const parts = [];
-      parts.push(`  ${columnName} ${columnDef.type}`);
+      parts.push(`  "${columnName}" ${columnDef.type}`);
       if (columnDef.primaryKey) {
         parts.push("PRIMARY KEY");
       }
@@ -395,9 +395,9 @@ class SchemaGenerator {
 );`;
     for (const index of schema.indexes) {
       const indexType = index.unique ? "UNIQUE INDEX" : "INDEX";
-      const columnList = index.columns.join(", ");
+      const columnList = index.columns.map((col) => `"${col}"`).join(", ");
       sql += `
-CREATE ${indexType} IF NOT EXISTS ${index.name} ON ${tableName} (${columnList});`;
+CREATE ${indexType} IF NOT EXISTS ${index.name} ON "${tableName}" (${columnList});`;
     }
     return sql;
   }
@@ -436,4 +436,4 @@ CREATE ${indexType} IF NOT EXISTS ${index.name} ON ${tableName} (${columnList});
 export {
   SchemaGenerator
 };
-//# sourceMappingURL=index-NeQe5WqD.js.map
+//# sourceMappingURL=index-CAFfnhJA.js.map
