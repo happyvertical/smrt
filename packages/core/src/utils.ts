@@ -321,12 +321,8 @@ export async function setupTableFromClass(db: any, ClassType: any) {
     try {
       const className = ClassType.name;
 
-      // Get fields from registry, or extract if not registered
-      let cachedFields = ObjectRegistry.getFields(className);
-      if (cachedFields.size === 0) {
-        // Class not registered - extract fields at runtime for test classes
-        cachedFields = ObjectRegistry.extractFields(ClassType);
-      }
+      // Get fields from registry (from AST manifest)
+      const cachedFields = ObjectRegistry.getFields(className);
 
       // Always generate fresh schema to ensure latest field mapping is used
       const schema = generateSchema(ClassType, cachedFields);

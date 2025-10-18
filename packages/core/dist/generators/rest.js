@@ -1,5 +1,5 @@
 import http from "node:http";
-import { O as ObjectRegistry } from "../chunks/registry-C37C3qXd.js";
+import { O as ObjectRegistry } from "../chunks/registry-D9-wOwkq.js";
 class APIGenerator {
   config;
   collections = /* @__PURE__ */ new Map();
@@ -32,7 +32,7 @@ class APIGenerator {
         const request = await this.nodeRequestToWebRequest(req);
         const response = await this.handleRequest(request);
         await this.webResponseToNodeResponse(response, res);
-      } catch (error) {
+      } catch (_error) {
         res.statusCode = 500;
         res.end("Internal Server Error");
       }

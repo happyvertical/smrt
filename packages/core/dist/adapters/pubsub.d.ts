@@ -1,4 +1,4 @@
-import { SignalAdapter, Signal } from '@smrt/types';
+import { Signal, SignalAdapter } from '@smrt/types';
 /**
  * Signal filter function
  *

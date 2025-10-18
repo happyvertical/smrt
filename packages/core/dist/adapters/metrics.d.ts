@@ -1,4 +1,4 @@
-import { SignalAdapter, Signal } from '@smrt/types';
+import { Signal, SignalAdapter } from '@smrt/types';
 /**
  * Execution metrics for a specific method
  */
