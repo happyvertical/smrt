@@ -205,7 +205,10 @@ export class ASTScanner {
             baseClassName = expressionText?.split('.').pop()?.trim();
           }
 
-          if (baseClassName && this.options.baseClasses?.includes(baseClassName)) {
+          if (
+            baseClassName &&
+            this.options.baseClasses?.includes(baseClassName)
+          ) {
             return true;
           }
         }
