@@ -2,7 +2,7 @@
 
 > **config**(`options`): `void`
 
-Defined in: [smrt/packages/core/src/config.ts:146](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/config.ts#L146)
+Defined in: smrt/packages/core/src/config.ts:146
 
 Global configuration API
 

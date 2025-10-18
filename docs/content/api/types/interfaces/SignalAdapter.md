@@ -1,6 +1,6 @@
 # Interface: SignalAdapter
 
-Defined in: [signals.ts:104](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L104)
+Defined in: signals.ts:104
 
 Adapter interface for consuming signals
 
@@ -19,7 +19,7 @@ but don't interrupt the main execution flow.
 
 > **handle**(`signal`): `Promise`\<`void`\>
 
-Defined in: [signals.ts:115](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/types/src/signals.ts#L115)
+Defined in: signals.ts:115
 
 Handle a signal event
 

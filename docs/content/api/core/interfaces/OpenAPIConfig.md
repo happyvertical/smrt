@@ -1,6 +1,6 @@
 # Interface: OpenAPIConfig
 
-Defined in: [smrt/packages/core/src/generators/swagger.ts:9](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/swagger.ts#L9)
+Defined in: smrt/packages/core/src/generators/swagger.ts:9
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: [smrt/packages/core/src/generators/swagger.ts:9](https://github.com/
 
 > `optional` **basePath**: `string`
 
-Defined in: [smrt/packages/core/src/generators/swagger.ts:13](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/swagger.ts#L13)
+Defined in: smrt/packages/core/src/generators/swagger.ts:13
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: [smrt/packages/core/src/generators/swagger.ts:13](https://github.com
 
 > `optional` **description**: `string`
 
-Defined in: [smrt/packages/core/src/generators/swagger.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/swagger.ts#L12)
+Defined in: smrt/packages/core/src/generators/swagger.ts:12
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [smrt/packages/core/src/generators/swagger.ts:12](https://github.com
 
 > `optional` **serverUrl**: `string`
 
-Defined in: [smrt/packages/core/src/generators/swagger.ts:14](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/swagger.ts#L14)
+Defined in: smrt/packages/core/src/generators/swagger.ts:14
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [smrt/packages/core/src/generators/swagger.ts:14](https://github.com
 
 > `optional` **title**: `string`
 
-Defined in: [smrt/packages/core/src/generators/swagger.ts:10](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/swagger.ts#L10)
+Defined in: smrt/packages/core/src/generators/swagger.ts:10
 
 ***
 
@@ -40,4 +40,4 @@ Defined in: [smrt/packages/core/src/generators/swagger.ts:10](https://github.com
 
 > `optional` **version**: `string`
 
-Defined in: [smrt/packages/core/src/generators/swagger.ts:11](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/swagger.ts#L11)
+Defined in: smrt/packages/core/src/generators/swagger.ts:11

@@ -1,6 +1,6 @@
 # Interface: RecallAllOptions
 
-Defined in: [smrt/packages/core/src/system/types.ts:83](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L83)
+Defined in: smrt/packages/core/src/system/types.ts:83
 
 Options for recalling multiple notes
 
@@ -10,7 +10,7 @@ Options for recalling multiple notes
 
 > `optional` **includeDescendants**: `boolean`
 
-Defined in: [smrt/packages/core/src/system/types.ts:87](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L87)
+Defined in: smrt/packages/core/src/system/types.ts:87
 
 Search child scopes
 
@@ -20,7 +20,7 @@ Search child scopes
 
 > `optional` **latestVersionOnly**: `boolean`
 
-Defined in: [smrt/packages/core/src/system/types.ts:91](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L91)
+Defined in: smrt/packages/core/src/system/types.ts:91
 
 Only return highest versions
 
@@ -30,7 +30,7 @@ Only return highest versions
 
 > `optional` **minConfidence**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:89](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L89)
+Defined in: smrt/packages/core/src/system/types.ts:89
 
 Minimum confidence threshold
 
@@ -40,6 +40,6 @@ Minimum confidence threshold
 
 > `optional` **scope**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:85](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L85)
+Defined in: smrt/packages/core/src/system/types.ts:85
 
 Scope to search in (optional)

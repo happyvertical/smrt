@@ -2,7 +2,7 @@
 
 > **generateToolFromMethod**(`method`, `config?`): `AITool`
 
-Defined in: [smrt/packages/core/src/tools/tool-generator.ts:167](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/tools/tool-generator.ts#L167)
+Defined in: smrt/packages/core/src/tools/tool-generator.ts:167
 
 Generates an AITool definition from a method definition
 

@@ -1,6 +1,6 @@
 # Interface: SmartObjectConfig
 
-Defined in: [smrt/packages/core/src/registry.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L47)
+Defined in: smrt/packages/core/src/registry.ts:47
 
 Configuration options for SMRT objects registered in the system
 
@@ -15,7 +15,7 @@ Each section configures a different aspect of code generation and runtime behavi
 
 > `optional` **ai**: `object`
 
-Defined in: [smrt/packages/core/src/registry.ts:119](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L119)
+Defined in: smrt/packages/core/src/registry.ts:119
 
 AI callable configuration
 
@@ -46,7 +46,7 @@ Methods to exclude from AI calling (higher priority than callable)
 
 > `optional` **api**: `object`
 
-Defined in: [smrt/packages/core/src/registry.ts:62](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L62)
+Defined in: smrt/packages/core/src/registry.ts:62
 
 API configuration
 
@@ -80,7 +80,7 @@ Custom middleware for this object's endpoints
 
 > `optional` **cli**: `boolean` \| \{ `exclude?`: `string`[]; `include?`: `string`[]; \}
 
-Defined in: [smrt/packages/core/src/registry.ts:102](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L102)
+Defined in: smrt/packages/core/src/registry.ts:102
 
 CLI configuration
 
@@ -108,7 +108,7 @@ Include specific commands (supports both standard CRUD actions and custom method
 
 > `optional` **hooks**: `object`
 
-Defined in: [smrt/packages/core/src/registry.ts:142](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L142)
+Defined in: smrt/packages/core/src/registry.ts:142
 
 Lifecycle hooks
 
@@ -150,7 +150,7 @@ Lifecycle hooks
 
 > `optional` **mcp**: `object`
 
-Defined in: [smrt/packages/core/src/registry.ts:87](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L87)
+Defined in: smrt/packages/core/src/registry.ts:87
 
 MCP server configuration
 
@@ -172,7 +172,7 @@ Include specific tools (supports both standard CRUD actions and custom methods)
 
 > `optional` **name**: `string`
 
-Defined in: [smrt/packages/core/src/registry.ts:51](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L51)
+Defined in: smrt/packages/core/src/registry.ts:51
 
 Custom name for the object (defaults to class name)
 
@@ -182,7 +182,7 @@ Custom name for the object (defaults to class name)
 
 > `optional` **tableName**: `string`
 
-Defined in: [smrt/packages/core/src/registry.ts:57](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L57)
+Defined in: smrt/packages/core/src/registry.ts:57
 
 Custom table name for database storage (defaults to pluralized snake_case class name)
 Explicitly setting this ensures the table name survives code minification

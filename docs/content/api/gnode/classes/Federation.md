@@ -1,6 +1,6 @@
 # Class: Federation
 
-Defined in: [federation/index.ts:20](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/federation/index.ts#L20)
+Defined in: federation/index.ts:20
 
 ## Constructors
 
@@ -18,7 +18,7 @@ Defined in: [federation/index.ts:20](https://github.com/happyvertical/smrt/blob/
 
 > **discoverPeers**(): `Promise`\<[`GnodePeer`](../interfaces/GnodePeer.md)[]\>
 
-Defined in: [federation/index.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/federation/index.ts#L21)
+Defined in: federation/index.ts:21
 
 #### Returns
 
@@ -30,7 +30,7 @@ Defined in: [federation/index.ts:21](https://github.com/happyvertical/smrt/blob/
 
 > **exchangePeers**(`_peer`): `Promise`\<[`GnodePeer`](../interfaces/GnodePeer.md)[]\>
 
-Defined in: [federation/index.ts:26](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/gnode/src/federation/index.ts#L26)
+Defined in: federation/index.ts:26
 
 #### Parameters
 

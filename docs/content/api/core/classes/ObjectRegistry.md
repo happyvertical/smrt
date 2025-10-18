@@ -1,6 +1,6 @@
 # Class: ObjectRegistry
 
-Defined in: [smrt/packages/core/src/registry.ts:235](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L235)
+Defined in: smrt/packages/core/src/registry.ts:235
 
 Central registry for all SMRT objects
 
@@ -20,7 +20,7 @@ Central registry for all SMRT objects
 
 > `static` **clear**(): `void`
 
-Defined in: [smrt/packages/core/src/registry.ts:483](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L483)
+Defined in: smrt/packages/core/src/registry.ts:483
 
 Clear all registered classes (mainly for testing)
 
@@ -34,7 +34,7 @@ Clear all registered classes (mainly for testing)
 
 > `static` **getAllClasses**(): `Map`\<`string`, `RegisteredClass`\>
 
-Defined in: [smrt/packages/core/src/registry.ts:462](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L462)
+Defined in: smrt/packages/core/src/registry.ts:462
 
 Get all registered classes
 
@@ -59,7 +59,7 @@ for (const [name, info] of allClasses) {
 
 > `static` **getAllObjectMetadata**(): `object`[]
 
-Defined in: [smrt/packages/core/src/registry.ts:1149](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L1149)
+Defined in: smrt/packages/core/src/registry.ts:1149
 
 Get metadata for all registered objects (convenience method)
 
@@ -115,7 +115,7 @@ const schemaDoc = allMetadata.map(meta => ({
 
 > `static` **getClass**(`name`): `RegisteredClass` \| `undefined`
 
-Defined in: [smrt/packages/core/src/registry.ts:446](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L446)
+Defined in: smrt/packages/core/src/registry.ts:446
 
 Get a registered class by name (case-insensitive)
 
@@ -149,7 +149,7 @@ if (productInfo) {
 
 > `static` **getClassNames**(): `string`[]
 
-Defined in: [smrt/packages/core/src/registry.ts:469](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L469)
+Defined in: smrt/packages/core/src/registry.ts:469
 
 Get class names
 
@@ -163,7 +163,7 @@ Get class names
 
 > `static` **getCollection**\<`T`\>(`className`, `options`): `Promise`\<[`SmrtCollection`](SmrtCollection.md)\<`T`\>\>
 
-Defined in: [smrt/packages/core/src/registry.ts:533](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L533)
+Defined in: smrt/packages/core/src/registry.ts:533
 
 Get or create a cached collection instance (Singleton pattern - Phase 4 optimization)
 
@@ -242,7 +242,7 @@ console.log(orders1 === orders3); // false (different config)
 
 > `static` **getConfig**(`name`): [`SmartObjectConfig`](../interfaces/SmartObjectConfig.md)
 
-Defined in: [smrt/packages/core/src/registry.ts:776](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L776)
+Defined in: smrt/packages/core/src/registry.ts:776
 
 Get configuration for a registered class
 
@@ -262,7 +262,7 @@ Get configuration for a registered class
 
 > `static` **getDependencyGraph**(): `Map`\<`string`, `string`[]\>
 
-Defined in: [smrt/packages/core/src/registry.ts:863](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L863)
+Defined in: smrt/packages/core/src/registry.ts:863
 
 Build dependency graph from foreignKey relationships
 
@@ -288,7 +288,7 @@ const deps = ObjectRegistry.getDependencyGraph();
 
 > `static` **getFields**(`name`): `Map`\<`string`, `any`\>
 
-Defined in: [smrt/packages/core/src/registry.ts:768](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L768)
+Defined in: smrt/packages/core/src/registry.ts:768
 
 Get field definitions for a registered class
 
@@ -308,7 +308,7 @@ Get field definitions for a registered class
 
 > `static` **getInitializationOrder**(): `string`[]
 
-Defined in: [smrt/packages/core/src/registry.ts:906](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L906)
+Defined in: smrt/packages/core/src/registry.ts:906
 
 Get initialization order for classes based on dependency graph
 
@@ -339,7 +339,7 @@ const order = ObjectRegistry.getInitializationOrder();
 
 > `static` **getInverseRelationships**(`className`): [`RelationshipMetadata`](../interfaces/RelationshipMetadata.md)[]
 
-Defined in: [smrt/packages/core/src/registry.ts:1191](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L1191)
+Defined in: smrt/packages/core/src/registry.ts:1191
 
 Get inverse relationships (relationships where this class is the target)
 
@@ -370,7 +370,7 @@ const customerInverseRels = ObjectRegistry.getInverseRelationships('Customer');
 
 > `static` **getObjectMetadata**(`className`): \{ `collectionConstructor?`: (`options`) => [`SmrtCollection`](SmrtCollection.md)\<`any`\>; `config`: [`SmartObjectConfig`](../interfaces/SmartObjectConfig.md); `constructor`: *typeof* [`SmrtObject`](SmrtObject.md); `fields`: `Map`\<`string`, `any`\>; `inverseRelationships`: [`RelationshipMetadata`](../interfaces/RelationshipMetadata.md)[]; `name`: `string`; `relationships`: [`RelationshipMetadata`](../interfaces/RelationshipMetadata.md)[]; `schema`: `SchemaDefinition` \| `undefined`; `tools?`: `object`[]; `validators`: `ValidatorFunction`[]; \} \| `null`
 
-Defined in: [smrt/packages/core/src/registry.ts:1068](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L1068)
+Defined in: smrt/packages/core/src/registry.ts:1068
 
 Get complete metadata for a single object (convenience method)
 
@@ -419,7 +419,7 @@ if (productMeta) {
 
 > `static` **getRelationshipMap**(): `Map`\<`string`, [`RelationshipMetadata`](../interfaces/RelationshipMetadata.md)[]\>
 
-Defined in: [smrt/packages/core/src/registry.ts:971](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L971)
+Defined in: smrt/packages/core/src/registry.ts:971
 
 Build comprehensive relationship map from all field types
 
@@ -455,7 +455,7 @@ const relationships = ObjectRegistry.getRelationshipMap();
 
 > `static` **getRelationships**(`className`): [`RelationshipMetadata`](../interfaces/RelationshipMetadata.md)[]
 
-Defined in: [smrt/packages/core/src/registry.ts:1035](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L1035)
+Defined in: smrt/packages/core/src/registry.ts:1035
 
 Get relationships for a specific class
 
@@ -486,7 +486,7 @@ const orderRelationships = ObjectRegistry.getRelationships('Order');
 
 > `static` **getSchema**(`name`): `SchemaDefinition` \| `undefined`
 
-Defined in: [smrt/packages/core/src/registry.ts:793](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L793)
+Defined in: smrt/packages/core/src/registry.ts:793
 
 Get cached schema definition for a registered class
 
@@ -518,7 +518,7 @@ console.log(schema.ddl);       // 'CREATE TABLE...'
 
 > `static` **getSchemaDDL**(`name`): `string` \| `undefined`
 
-Defined in: [smrt/packages/core/src/registry.ts:809](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L809)
+Defined in: smrt/packages/core/src/registry.ts:809
 
 Get SQL DDL statement for a registered class
 
@@ -549,7 +549,7 @@ await db.query(ddl);
 
 > `static` **getTableName**(`name`): `string` \| `undefined`
 
-Defined in: [smrt/packages/core/src/registry.ts:824](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L824)
+Defined in: smrt/packages/core/src/registry.ts:824
 
 Get table name for a registered class
 
@@ -580,7 +580,7 @@ console.log(tableName); // 'products'
 
 > `static` **getValidators**(`name`): `ValidatorFunction`[] \| `undefined`
 
-Defined in: [smrt/packages/core/src/registry.ts:845](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L845)
+Defined in: smrt/packages/core/src/registry.ts:845
 
 Get compiled validation functions for a registered class
 
@@ -617,7 +617,7 @@ for (const validator of validators || []) {
 
 > `static` **hasClass**(`name`): `boolean`
 
-Defined in: [smrt/packages/core/src/registry.ts:476](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L476)
+Defined in: smrt/packages/core/src/registry.ts:476
 
 Check if a class is registered (case-insensitive)
 
@@ -637,7 +637,7 @@ Check if a class is registered (case-insensitive)
 
 > `static` **loadFromDatabase**(`db`): `Promise`\<`any`[]\>
 
-Defined in: [smrt/packages/core/src/registry.ts:1274](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L1274)
+Defined in: smrt/packages/core/src/registry.ts:1274
 
 Load registry metadata from system tables
 
@@ -675,7 +675,7 @@ for (const meta of metadata) {
 
 > `static` **persistToDatabase**(`db`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/registry.ts:1225](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L1225)
+Defined in: smrt/packages/core/src/registry.ts:1225
 
 Persist registry state to system tables
 
@@ -714,7 +714,7 @@ console.log('Registered classes:', rows.map(r => r.class_name));
 
 > `static` **register**(`ctor`, `config`): `void`
 
-Defined in: [smrt/packages/core/src/registry.ts:255](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L255)
+Defined in: smrt/packages/core/src/registry.ts:255
 
 Register a new SMRT object class with the global registry
 
@@ -754,7 +754,7 @@ ObjectRegistry.register(Product, {
 
 > `static` **registerCollection**(`objectName`, `collectionConstructor`): `void`
 
-Defined in: [smrt/packages/core/src/registry.ts:394](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/registry.ts#L394)
+Defined in: smrt/packages/core/src/registry.ts:394
 
 Register a collection class for an object
 

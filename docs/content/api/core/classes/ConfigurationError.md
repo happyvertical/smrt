@@ -1,6 +1,6 @@
 # Class: ConfigurationError
 
-Defined in: [smrt/packages/core/src/errors.ts:326](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L326)
+Defined in: smrt/packages/core/src/errors.ts:326
 
 Configuration and setup errors
 
@@ -14,7 +14,7 @@ Configuration and setup errors
 
 > **new ConfigurationError**(`message`, `code`, `details?`, `cause?`): `ConfigurationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:327](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L327)
+Defined in: smrt/packages/core/src/errors.ts:327
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: [smrt/packages/core/src/errors.ts:327](https://github.com/happyverti
 
 > `readonly` **category**: `"database"` \| `"ai"` \| `"filesystem"` \| `"validation"` \| `"network"` \| `"configuration"` \| `"runtime"`
 
-Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L13)
+Defined in: smrt/packages/core/src/errors.ts:13
 
 #### Inherited from
 
@@ -60,7 +60,7 @@ Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertic
 
 > `readonly` `optional` **cause**: `Error`
 
-Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L22)
+Defined in: smrt/packages/core/src/errors.ts:22
 
 #### Inherited from
 
@@ -72,7 +72,7 @@ Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertic
 
 > `readonly` **code**: `string`
 
-Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L12)
+Defined in: smrt/packages/core/src/errors.ts:12
 
 #### Inherited from
 
@@ -84,7 +84,7 @@ Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertic
 
 > `readonly` `optional` **details**: `Record`\<`string`, `any`\>
 
-Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L21)
+Defined in: smrt/packages/core/src/errors.ts:21
 
 #### Inherited from
 
@@ -154,7 +154,7 @@ not capture any frames.
 
 > **toJSON**(): `object`
 
-Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L47)
+Defined in: smrt/packages/core/src/errors.ts:47
 
 Converts error to a serializable object for logging/debugging
 
@@ -270,7 +270,7 @@ a();
 
 > `static` **initializationFailed**(`component`, `cause?`): `ConfigurationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:359](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L359)
+Defined in: smrt/packages/core/src/errors.ts:359
 
 #### Parameters
 
@@ -292,7 +292,7 @@ Defined in: [smrt/packages/core/src/errors.ts:359](https://github.com/happyverti
 
 > `static` **invalidConfiguration**(`configKey`, `value`, `expected`): `ConfigurationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:347](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L347)
+Defined in: smrt/packages/core/src/errors.ts:347
 
 #### Parameters
 
@@ -318,7 +318,7 @@ Defined in: [smrt/packages/core/src/errors.ts:347](https://github.com/happyverti
 
 > `static` **missingConfiguration**(`configKey`, `context?`): `ConfigurationError`
 
-Defined in: [smrt/packages/core/src/errors.ts:336](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L336)
+Defined in: smrt/packages/core/src/errors.ts:336
 
 #### Parameters
 

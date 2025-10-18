@@ -1,6 +1,6 @@
 # Interface: SystemTableConfig
 
-Defined in: [smrt/packages/core/src/system/types.ts:133](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L133)
+Defined in: smrt/packages/core/src/system/types.ts:133
 
 System table configuration
 
@@ -10,7 +10,7 @@ System table configuration
 
 > `optional` **archiveThreshold**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:141](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L141)
+Defined in: smrt/packages/core/src/system/types.ts:141
 
 Archive confidence threshold
 
@@ -20,7 +20,7 @@ Archive confidence threshold
 
 > `optional` **cleanupInterval**: `"hourly"` \| `"daily"` \| `"weekly"` \| `"never"`
 
-Defined in: [smrt/packages/core/src/system/types.ts:139](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L139)
+Defined in: smrt/packages/core/src/system/types.ts:139
 
 Cleanup interval
 
@@ -30,7 +30,7 @@ Cleanup interval
 
 > `optional` **noteRetentionDays**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:137](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L137)
+Defined in: smrt/packages/core/src/system/types.ts:137
 
 Note retention in days
 
@@ -40,6 +40,6 @@ Note retention in days
 
 > `optional` **persistSignalHistory**: `boolean`
 
-Defined in: [smrt/packages/core/src/system/types.ts:135](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L135)
+Defined in: smrt/packages/core/src/system/types.ts:135
 
 Enable signal history persistence

@@ -1,6 +1,6 @@
 # Class: DatabaseError
 
-Defined in: [smrt/packages/core/src/errors.ts:69](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L69)
+Defined in: smrt/packages/core/src/errors.ts:69
 
 Database-related errors
 
@@ -14,7 +14,7 @@ Database-related errors
 
 > **new DatabaseError**(`message`, `code`, `details?`, `cause?`): `DatabaseError`
 
-Defined in: [smrt/packages/core/src/errors.ts:70](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L70)
+Defined in: smrt/packages/core/src/errors.ts:70
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: [smrt/packages/core/src/errors.ts:70](https://github.com/happyvertic
 
 > `readonly` **category**: `"database"` \| `"ai"` \| `"filesystem"` \| `"validation"` \| `"network"` \| `"configuration"` \| `"runtime"`
 
-Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L13)
+Defined in: smrt/packages/core/src/errors.ts:13
 
 #### Inherited from
 
@@ -60,7 +60,7 @@ Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertic
 
 > `readonly` `optional` **cause**: `Error`
 
-Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L22)
+Defined in: smrt/packages/core/src/errors.ts:22
 
 #### Inherited from
 
@@ -72,7 +72,7 @@ Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertic
 
 > `readonly` **code**: `string`
 
-Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L12)
+Defined in: smrt/packages/core/src/errors.ts:12
 
 #### Inherited from
 
@@ -84,7 +84,7 @@ Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertic
 
 > `readonly` `optional` **details**: `Record`\<`string`, `any`\>
 
-Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L21)
+Defined in: smrt/packages/core/src/errors.ts:21
 
 #### Inherited from
 
@@ -154,7 +154,7 @@ not capture any frames.
 
 > **toJSON**(): `object`
 
-Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L47)
+Defined in: smrt/packages/core/src/errors.ts:47
 
 Converts error to a serializable object for logging/debugging
 
@@ -270,7 +270,7 @@ a();
 
 > `static` **connectionFailed**(`dbUrl`, `cause?`): `DatabaseError`
 
-Defined in: [smrt/packages/core/src/errors.ts:79](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L79)
+Defined in: smrt/packages/core/src/errors.ts:79
 
 #### Parameters
 
@@ -292,7 +292,7 @@ Defined in: [smrt/packages/core/src/errors.ts:79](https://github.com/happyvertic
 
 > `static` **constraintViolation**(`constraint`, `value`, `cause?`): `DatabaseError`
 
-Defined in: [smrt/packages/core/src/errors.ts:110](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L110)
+Defined in: smrt/packages/core/src/errors.ts:110
 
 #### Parameters
 
@@ -348,7 +348,7 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 > `static` **queryFailed**(`query`, `cause?`): `DatabaseError`
 
-Defined in: [smrt/packages/core/src/errors.ts:88](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L88)
+Defined in: smrt/packages/core/src/errors.ts:88
 
 #### Parameters
 
@@ -370,7 +370,7 @@ Defined in: [smrt/packages/core/src/errors.ts:88](https://github.com/happyvertic
 
 > `static` **schemaError**(`tableName`, `operation`, `cause?`): `DatabaseError`
 
-Defined in: [smrt/packages/core/src/errors.ts:97](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/errors.ts#L97)
+Defined in: smrt/packages/core/src/errors.ts:97
 
 #### Parameters
 

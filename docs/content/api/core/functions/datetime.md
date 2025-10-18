@@ -2,7 +2,7 @@
 
 > **datetime**(`options`): [`Field`](../classes/Field.md)
 
-Defined in: [smrt/packages/core/src/fields/index.ts:362](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/fields/index.ts#L362)
+Defined in: smrt/packages/core/src/fields/index.ts:362
 
 Creates a datetime field for storing timestamps
 

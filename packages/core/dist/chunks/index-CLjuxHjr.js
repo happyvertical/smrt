@@ -47,9 +47,18 @@ class ASTScanner {
     try {
       ts.forEachChild(sourceFile, (node) => {
         if (ts.isClassDeclaration(node)) {
-          const objectDef = this.parseClassDeclaration(node, sourceFile);
-          if (objectDef) {
-            result.objects.push(objectDef);
+          try {
+            const objectDef = this.parseClassDeclaration(node, sourceFile);
+            if (objectDef) {
+              result.objects.push(objectDef);
+            }
+          } catch (classError) {
+            result.errors.push({
+              message: classError instanceof Error ? `Error parsing class: ${classError.message}
+Stack: ${classError.stack}` : "Unknown class parsing error",
+              line: 0,
+              column: 0
+            });
           }
         }
       });
@@ -84,7 +93,7 @@ class ASTScanner {
     };
     for (const member of node.members) {
       if (ts.isPropertyDeclaration(member)) {
-        const field = this.parsePropertyDeclaration(member);
+        const field = this.parsePropertyDeclaration(member, sourceFile);
         if (field) {
           const fieldName = this.getPropertyName(member);
           if (fieldName) {
@@ -92,7 +101,7 @@ class ASTScanner {
           }
         }
       } else if (ts.isMethodDeclaration(member)) {
-        const method = this.parseMethodDeclaration(member);
+        const method = this.parseMethodDeclaration(member, sourceFile);
         if (method) {
           objectDef.methods[method.name] = method;
         }
@@ -127,11 +136,17 @@ class ASTScanner {
     for (const clause of node.heritageClauses) {
       if (clause.token === ts.SyntaxKind.ExtendsKeyword) {
         for (const type of clause.types) {
+          let baseClassName;
           if (ts.isIdentifier(type.expression)) {
-            const baseClassName = type.expression.text;
-            if (this.options.baseClasses?.includes(baseClassName)) {
-              return true;
-            }
+            baseClassName = type.expression.text;
+          } else if (ts.isPropertyAccessExpression(type.expression)) {
+            baseClassName = type.expression.name?.text;
+          } else if (type.expression) {
+            const expressionText = type.expression.getText?.();
+            baseClassName = expressionText?.split(".").pop()?.trim();
+          }
+          if (baseClassName && this.options.baseClasses?.includes(baseClassName)) {
+            return true;
           }
         }
       }
@@ -223,12 +238,12 @@ class ASTScanner {
   /**
    * Parse property declaration to field definition
    */
-  parsePropertyDeclaration(node) {
+  parsePropertyDeclaration(node, sourceFile) {
     if (node.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
       return null;
     }
-    const fieldType = this.inferFieldType(node);
-    const isRequired = !node.questionToken && !this.hasOptionalType(node);
+    const fieldType = this.inferFieldType(node, sourceFile);
+    const isRequired = !node.questionToken && !this.hasOptionalType(node, sourceFile);
     const field = {
       type: fieldType,
       required: isRequired
@@ -241,7 +256,7 @@ class ASTScanner {
   /**
    * Parse method declaration to method definition
    */
-  parseMethodDeclaration(node) {
+  parseMethodDeclaration(node, sourceFile) {
     const methodName = this.getPropertyName(node);
     if (!methodName) return null;
     const isStatic = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword) ?? false;
@@ -250,8 +265,8 @@ class ASTScanner {
     if (!this.options.includeStaticMethods && isStatic) return null;
     if (!this.options.includePrivateMethods && isPrivate) return null;
     const parameters = node.parameters.map((param) => ({
-      name: param.name.getText(),
-      type: param.type?.getText() ?? "any",
+      name: param.name.getText(sourceFile),
+      type: param.type?.getText(sourceFile) ?? "any",
       optional: !!param.questionToken,
       default: param.initializer ? this.extractDefaultValue(param.initializer) : void 0
     }));
@@ -259,7 +274,7 @@ class ASTScanner {
       name: methodName,
       async: node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ?? false,
       parameters,
-      returnType: node.type?.getText() ?? "void",
+      returnType: node.type?.getText(sourceFile) ?? "void",
       isStatic,
       isPublic
     };
@@ -280,9 +295,9 @@ class ASTScanner {
   /**
    * Infer field type from TypeScript AST with enhanced type preservation
    */
-  inferFieldType(node) {
+  inferFieldType(node, sourceFile) {
     if (node.type) {
-      return this.analyzeTypeNode(node.type);
+      return this.analyzeTypeNode(node.type, sourceFile);
     }
     if (node.initializer) {
       return this.inferTypeFromInitializer(node.initializer);
@@ -292,8 +307,8 @@ class ASTScanner {
   /**
    * Analyze TypeScript type node for enhanced type inference
    */
-  analyzeTypeNode(typeNode) {
-    const typeText = typeNode.getText().toLowerCase();
+  analyzeTypeNode(typeNode, sourceFile) {
+    const typeText = typeNode.getText(sourceFile).toLowerCase();
     if (typeText === "string") return "text";
     if (typeText === "number") return "decimal";
     if (typeText === "boolean") return "boolean";
@@ -303,7 +318,7 @@ class ASTScanner {
         (t) => t.kind !== ts.SyntaxKind.UndefinedKeyword && t.kind !== ts.SyntaxKind.NullKeyword
       );
       if (mainType) {
-        return this.analyzeTypeNode(mainType);
+        return this.analyzeTypeNode(mainType, sourceFile);
       }
     }
     if (ts.isArrayTypeNode(typeNode)) {
@@ -377,9 +392,9 @@ class ASTScanner {
   /**
    * Check if type annotation includes undefined or optional types
    */
-  hasOptionalType(node) {
+  hasOptionalType(node, sourceFile) {
     if (!node.type) return false;
-    const typeText = node.type.getText().toLowerCase();
+    const typeText = node.type.getText(sourceFile).toLowerCase();
     return typeText.includes("undefined") || typeText.includes("?");
   }
   /**
@@ -411,4 +426,4 @@ export {
   scanFile,
   scanFiles
 };
-//# sourceMappingURL=index-vnWPj8WQ.js.map
+//# sourceMappingURL=index-CLjuxHjr.js.map

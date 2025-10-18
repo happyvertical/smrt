@@ -1,6 +1,6 @@
 # Interface: SmrtServerOptions
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:5](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/runtime/types.ts#L5)
+Defined in: smrt/packages/core/src/runtime/types.ts:5
 
 Runtime type definitions for SMRT services
 
@@ -10,7 +10,7 @@ Runtime type definitions for SMRT services
 
 > `optional` **auth**: `object`
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:16](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/runtime/types.ts#L16)
+Defined in: smrt/packages/core/src/runtime/types.ts:16
 
 #### type
 
@@ -36,7 +36,7 @@ Defined in: [smrt/packages/core/src/runtime/types.ts:16](https://github.com/happ
 
 > `optional` **basePath**: `string`
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:8](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/runtime/types.ts#L8)
+Defined in: smrt/packages/core/src/runtime/types.ts:8
 
 ***
 
@@ -44,7 +44,7 @@ Defined in: [smrt/packages/core/src/runtime/types.ts:8](https://github.com/happy
 
 > `optional` **cors**: `boolean` \| \{ `headers?`: `string`[]; `methods?`: `string`[]; `origin?`: `string` \| `string`[]; \}
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:9](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/runtime/types.ts#L9)
+Defined in: smrt/packages/core/src/runtime/types.ts:9
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [smrt/packages/core/src/runtime/types.ts:9](https://github.com/happy
 
 > `optional` **hostname**: `string`
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:7](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/runtime/types.ts#L7)
+Defined in: smrt/packages/core/src/runtime/types.ts:7
 
 ***
 
@@ -60,4 +60,4 @@ Defined in: [smrt/packages/core/src/runtime/types.ts:7](https://github.com/happy
 
 > `optional` **port**: `number`
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:6](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/runtime/types.ts#L6)
+Defined in: smrt/packages/core/src/runtime/types.ts:6

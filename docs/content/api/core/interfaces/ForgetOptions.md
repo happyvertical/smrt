@@ -1,6 +1,6 @@
 # Interface: ForgetOptions
 
-Defined in: [smrt/packages/core/src/system/types.ts:97](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L97)
+Defined in: smrt/packages/core/src/system/types.ts:97
 
 Options for forgetting notes
 
@@ -10,7 +10,7 @@ Options for forgetting notes
 
 > **key**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:101](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L101)
+Defined in: smrt/packages/core/src/system/types.ts:101
 
 Key to delete
 
@@ -20,6 +20,6 @@ Key to delete
 
 > **scope**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:99](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/system/types.ts#L99)
+Defined in: smrt/packages/core/src/system/types.ts:99
 
 Scope to delete from

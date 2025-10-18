@@ -1,6 +1,6 @@
 # Interface: AccountTransactionEntryOptions
 
-Defined in: [accounts/src/types.ts:54](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L54)
+Defined in: accounts/src/types.ts:54
 
 Options for creating AccountTransactionEntry
 
@@ -20,7 +20,7 @@ Allow arbitrary field values to be passed
 
 > `optional` **\_className**: `string`
 
-Defined in: [core/dist/class.d.ts:15](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L15)
+Defined in: core/dist/class.d.ts:15
 
 Optional custom class name override
 
@@ -34,7 +34,7 @@ Optional custom class name override
 
 > `optional` **\_extractingFields**: `boolean`
 
-Defined in: [core/dist/object.d.ts:36](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L36)
+Defined in: core/dist/object.d.ts:36
 
 Flag to skip automatic field extraction (internal use)
 
@@ -48,7 +48,7 @@ Flag to skip automatic field extraction (internal use)
 
 > `optional` **\_skipLoad**: `boolean`
 
-Defined in: [core/dist/object.d.ts:40](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L40)
+Defined in: core/dist/object.d.ts:40
 
 Flag to skip database loading (internal use)
 
@@ -62,7 +62,7 @@ Flag to skip database loading (internal use)
 
 > `optional` **accountId**: `string`
 
-Defined in: [accounts/src/types.ts:57](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L57)
+Defined in: accounts/src/types.ts:57
 
 ***
 
@@ -70,7 +70,7 @@ Defined in: [accounts/src/types.ts:57](https://github.com/happyvertical/smrt/blo
 
 > `optional` **ai**: `AIClient` \| `AIClientOptions`
 
-Defined in: [core/dist/class.d.ts:37](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L37)
+Defined in: core/dist/class.d.ts:37
 
 AI client configuration options or instance
 
@@ -84,7 +84,7 @@ AI client configuration options or instance
 
 > `optional` **amount**: `number`
 
-Defined in: [accounts/src/types.ts:58](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L58)
+Defined in: accounts/src/types.ts:58
 
 ***
 
@@ -92,7 +92,7 @@ Defined in: [accounts/src/types.ts:58](https://github.com/happyvertical/smrt/blo
 
 > `optional` **context**: `string`
 
-Defined in: [core/dist/object.d.ts:24](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L24)
+Defined in: core/dist/object.d.ts:24
 
 Optional context to scope the slug (could be a path, domain, etc.)
 
@@ -106,7 +106,7 @@ Optional context to scope the slug (could be a path, domain, etc.)
 
 > `optional` **created\_at**: `Date`
 
-Defined in: [core/dist/object.d.ts:28](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L28)
+Defined in: core/dist/object.d.ts:28
 
 Creation timestamp
 
@@ -120,7 +120,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: [accounts/src/types.ts:61](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L61)
+Defined in: accounts/src/types.ts:61
 
 ***
 
@@ -128,7 +128,7 @@ Defined in: [accounts/src/types.ts:61](https://github.com/happyvertical/smrt/blo
 
 > `optional` **currency**: `string`
 
-Defined in: [accounts/src/types.ts:59](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L59)
+Defined in: accounts/src/types.ts:59
 
 ***
 
@@ -136,7 +136,7 @@ Defined in: [accounts/src/types.ts:59](https://github.com/happyvertical/smrt/blo
 
 > `optional` **db**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"`; `url?`: `string`; \}
 
-Defined in: [core/dist/class.d.ts:24](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L24)
+Defined in: core/dist/class.d.ts:24
 
 Database configuration - unified approach matching @have/sql
 
@@ -155,7 +155,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: [accounts/src/types.ts:60](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L60)
+Defined in: accounts/src/types.ts:60
 
 ***
 
@@ -163,7 +163,7 @@ Defined in: [accounts/src/types.ts:60](https://github.com/happyvertical/smrt/blo
 
 > `optional` **fs**: `FilesystemAdapterOptions`
 
-Defined in: [core/dist/class.d.ts:33](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L33)
+Defined in: core/dist/class.d.ts:33
 
 Filesystem adapter configuration options
 
@@ -177,7 +177,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: [accounts/src/types.ts:55](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L55)
+Defined in: accounts/src/types.ts:55
 
 Unique identifier for the object
 
@@ -191,7 +191,7 @@ Unique identifier for the object
 
 > `optional` **logging**: `LoggerConfig`
 
-Defined in: [core/dist/class.d.ts:41](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L41)
+Defined in: core/dist/class.d.ts:41
 
 Logging configuration (overrides global default)
 
@@ -205,7 +205,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metrics**: `MetricsConfig`
 
-Defined in: [core/dist/class.d.ts:45](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L45)
+Defined in: core/dist/class.d.ts:45
 
 Metrics configuration (overrides global default)
 
@@ -219,7 +219,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: [core/dist/object.d.ts:16](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L16)
+Defined in: core/dist/object.d.ts:16
 
 Human-readable name for the object
 
@@ -233,7 +233,7 @@ Human-readable name for the object
 
 > `optional` **pubsub**: `PubSubConfig`
 
-Defined in: [core/dist/class.d.ts:49](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L49)
+Defined in: core/dist/class.d.ts:49
 
 Pub/Sub configuration (overrides global default)
 
@@ -247,7 +247,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **sanitization**: `false` \| `SanitizationConfig`
 
-Defined in: [core/dist/class.d.ts:53](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L53)
+Defined in: core/dist/class.d.ts:53
 
 Sanitization configuration (overrides global default)
 
@@ -261,7 +261,7 @@ Sanitization configuration (overrides global default)
 
 > `optional` **signals**: `object`
 
-Defined in: [core/dist/class.d.ts:57](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/class.d.ts#L57)
+Defined in: core/dist/class.d.ts:57
 
 Custom signal configuration (overrides global default)
 
@@ -287,7 +287,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: [core/dist/object.d.ts:20](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L20)
+Defined in: core/dist/object.d.ts:20
 
 URL-friendly identifier
 
@@ -301,7 +301,7 @@ URL-friendly identifier
 
 > `optional` **transactionId**: `string`
 
-Defined in: [accounts/src/types.ts:56](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L56)
+Defined in: accounts/src/types.ts:56
 
 ***
 
@@ -309,7 +309,7 @@ Defined in: [accounts/src/types.ts:56](https://github.com/happyvertical/smrt/blo
 
 > `optional` **updated\_at**: `Date`
 
-Defined in: [core/dist/object.d.ts:32](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/dist/object.d.ts#L32)
+Defined in: core/dist/object.d.ts:32
 
 Last update timestamp
 
@@ -323,4 +323,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: [accounts/src/types.ts:62](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/accounts/src/types.ts#L62)
+Defined in: accounts/src/types.ts:62

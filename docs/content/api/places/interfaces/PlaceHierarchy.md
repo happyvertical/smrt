@@ -1,6 +1,6 @@
 # Interface: PlaceHierarchy
 
-Defined in: [places/src/types.ts:104](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L104)
+Defined in: places/src/types.ts:104
 
 Place hierarchy structure
 
@@ -10,7 +10,7 @@ Place hierarchy structure
 
 > **ancestors**: `any`[]
 
-Defined in: [places/src/types.ts:105](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L105)
+Defined in: places/src/types.ts:105
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [places/src/types.ts:105](https://github.com/happyvertical/smrt/blob
 
 > **current**: `any`
 
-Defined in: [places/src/types.ts:106](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L106)
+Defined in: places/src/types.ts:106
 
 ***
 
@@ -26,4 +26,4 @@ Defined in: [places/src/types.ts:106](https://github.com/happyvertical/smrt/blob
 
 > **descendants**: `any`[]
 
-Defined in: [places/src/types.ts:107](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/places/src/types.ts#L107)
+Defined in: places/src/types.ts:107

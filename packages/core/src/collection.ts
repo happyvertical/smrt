@@ -9,6 +9,7 @@ import {
   formatDataSql,
   generateSchema,
   tableNameFromClass,
+  toSnakeCase,
 } from './utils';
 
 /**
@@ -28,6 +29,40 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Promise tracking the database setup operation
    */
   protected _db_setup_promise: Promise<void> | null = null;
+
+  /**
+   * Convert WHERE clause field names from camelCase to snake_case while preserving operators
+   *
+   * @param where - WHERE clause object with camelCase field names
+   * @returns WHERE clause object with snake_case field names
+   * @private
+   *
+   * @example
+   * ```typescript
+   * // Input: { 'typeId': 'foo', 'categoryId >': 100 }
+   * // Output: { 'type_id': 'foo', 'category_id >': 100 }
+   * ```
+   */
+  private convertWhereKeys(where: Record<string, any>): Record<string, any> {
+    const converted: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(where)) {
+      // Split field name and operator (e.g., "typeId >" → ["typeId", ">"])
+      const parts = key.trim().split(/\s+/);
+      const fieldName = parts[0];
+      const operator = parts.slice(1).join(' ');
+
+      // Convert field name to snake_case
+      const snakeFieldName = toSnakeCase(fieldName);
+
+      // Reconstruct key with operator if present
+      const newKey = operator ? `${snakeFieldName} ${operator}` : snakeFieldName;
+
+      converted[newKey] = value;
+    }
+
+    return converted;
+  }
 
   /**
    * Gets the class constructor for items in this collection
@@ -225,7 +260,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           : { slug: filter, context: '' }
         : filter;
 
-    const { sql: whereSql, values: whereValues } = buildWhere(where);
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(where),
+    );
 
     const { rows } = await this.db.query(
       `SELECT * FROM ${this.tableName} ${whereSql}`,
@@ -297,7 +334,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     include?: string[];
   }) {
     const { where, offset, limit, orderBy } = options;
-    const { sql: whereSql, values: whereValues } = buildWhere(where || {});
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(where || {}),
+    );
 
     let orderBySql = '';
     if (orderBy) {
@@ -321,7 +360,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
             );
           }
 
-          return `${field} ${normalizedDirection}`;
+          // Convert field name to snake_case
+          const snakeField = toSnakeCase(field);
+          return `${snakeField} ${normalizedDirection}`;
         })
         .join(', ');
     }
@@ -703,7 +744,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async count(options: { where?: Record<string, any> } = {}) {
     const { where } = options;
-    const { sql: whereSql, values: whereValues } = buildWhere(where || {});
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(where || {}),
+    );
 
     const result = await this.db.query(
       `SELECT COUNT(*) as count FROM ${this.tableName} ${whereSql}`,

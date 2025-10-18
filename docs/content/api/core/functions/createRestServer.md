@@ -2,7 +2,7 @@
 
 > **createRestServer**(`objects`, `context`, `config`): `object`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:582](https://github.com/happyvertical/smrt/blob/3e10e04571f8229dee5c87ee2f9b9b06c6c49f12/packages/core/src/generators/rest.ts#L582)
+Defined in: smrt/packages/core/src/generators/rest.ts:582
 
 Create REST server with health checks using Bun
 

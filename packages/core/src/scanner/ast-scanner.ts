@@ -68,9 +68,20 @@ export class ASTScanner {
     try {
       ts.forEachChild(sourceFile, (node) => {
         if (ts.isClassDeclaration(node)) {
-          const objectDef = this.parseClassDeclaration(node, sourceFile);
-          if (objectDef) {
-            result.objects.push(objectDef);
+          try {
+            const objectDef = this.parseClassDeclaration(node, sourceFile);
+            if (objectDef) {
+              result.objects.push(objectDef);
+            }
+          } catch (classError) {
+            result.errors.push({
+              message:
+                classError instanceof Error
+                  ? `Error parsing class: ${classError.message}\nStack: ${classError.stack}`
+                  : 'Unknown class parsing error',
+              line: 0,
+              column: 0,
+            });
           }
         }
       });
@@ -126,7 +137,7 @@ export class ASTScanner {
     // Parse class members
     for (const member of node.members) {
       if (ts.isPropertyDeclaration(member)) {
-        const field = this.parsePropertyDeclaration(member);
+        const field = this.parsePropertyDeclaration(member, sourceFile);
         if (field) {
           const fieldName = this.getPropertyName(member);
           if (fieldName) {
@@ -134,7 +145,7 @@ export class ASTScanner {
           }
         }
       } else if (ts.isMethodDeclaration(member)) {
-        const method = this.parseMethodDeclaration(member);
+        const method = this.parseMethodDeclaration(member, sourceFile);
         if (method) {
           objectDef.methods[method.name] = method;
         }
@@ -180,11 +191,22 @@ export class ASTScanner {
     for (const clause of node.heritageClauses) {
       if (clause.token === ts.SyntaxKind.ExtendsKeyword) {
         for (const type of clause.types) {
+          // Handle both simple identifiers and complex expressions
+          let baseClassName: string | undefined;
+
           if (ts.isIdentifier(type.expression)) {
-            const baseClassName = type.expression.text;
-            if (this.options.baseClasses?.includes(baseClassName)) {
-              return true;
-            }
+            baseClassName = type.expression.text;
+          } else if (ts.isPropertyAccessExpression(type.expression)) {
+            // Handle cases like 'SmrtBase.SubClass'
+            baseClassName = type.expression.name?.text;
+          } else if (type.expression) {
+            // Try to extract text from any expression
+            const expressionText = type.expression.getText?.();
+            baseClassName = expressionText?.split('.').pop()?.trim();
+          }
+
+          if (baseClassName && this.options.baseClasses?.includes(baseClassName)) {
+            return true;
           }
         }
       }
@@ -302,6 +324,7 @@ export class ASTScanner {
    */
   private parsePropertyDeclaration(
     node: ts.PropertyDeclaration,
+    sourceFile: ts.SourceFile,
   ): FieldDefinition | null {
     // Skip static properties for now
     if (node.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
@@ -309,9 +332,10 @@ export class ASTScanner {
     }
 
     // Determine field type from initializer or type annotation
-    const fieldType = this.inferFieldType(node);
+    const fieldType = this.inferFieldType(node, sourceFile);
     // Required if no question token and no undefined/null type
-    const isRequired = !node.questionToken && !this.hasOptionalType(node);
+    const isRequired =
+      !node.questionToken && !this.hasOptionalType(node, sourceFile);
 
     const field: FieldDefinition = {
       type: fieldType,
@@ -331,6 +355,7 @@ export class ASTScanner {
    */
   private parseMethodDeclaration(
     node: ts.MethodDeclaration,
+    sourceFile: ts.SourceFile,
   ): MethodDefinition | null {
     const methodName = this.getPropertyName(node);
     if (!methodName) return null;
@@ -350,8 +375,8 @@ export class ASTScanner {
 
     // Parse parameters
     const parameters = node.parameters.map((param) => ({
-      name: param.name.getText(),
-      type: param.type?.getText() ?? 'any',
+      name: param.name.getText(sourceFile),
+      type: param.type?.getText(sourceFile) ?? 'any',
       optional: !!param.questionToken,
       default: param.initializer
         ? this.extractDefaultValue(param.initializer)
@@ -364,7 +389,7 @@ export class ASTScanner {
         node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ??
         false,
       parameters,
-      returnType: node.type?.getText() ?? 'void',
+      returnType: node.type?.getText(sourceFile) ?? 'void',
       isStatic,
       isPublic,
     };
@@ -392,10 +417,11 @@ export class ASTScanner {
    */
   private inferFieldType(
     node: ts.PropertyDeclaration,
+    sourceFile: ts.SourceFile,
   ): FieldDefinition['type'] {
     // Check type annotation first with enhanced detection
     if (node.type) {
-      return this.analyzeTypeNode(node.type);
+      return this.analyzeTypeNode(node.type, sourceFile);
     }
 
     // Infer from initializer with enhanced detection
@@ -409,8 +435,11 @@ export class ASTScanner {
   /**
    * Analyze TypeScript type node for enhanced type inference
    */
-  private analyzeTypeNode(typeNode: ts.TypeNode): FieldDefinition['type'] {
-    const typeText = typeNode.getText().toLowerCase();
+  private analyzeTypeNode(
+    typeNode: ts.TypeNode,
+    sourceFile: ts.SourceFile,
+  ): FieldDefinition['type'] {
+    const typeText = typeNode.getText(sourceFile).toLowerCase();
 
     // Handle primitive types
     if (typeText === 'string') return 'text';
@@ -427,7 +456,7 @@ export class ASTScanner {
           t.kind !== ts.SyntaxKind.NullKeyword,
       );
       if (mainType) {
-        return this.analyzeTypeNode(mainType);
+        return this.analyzeTypeNode(mainType, sourceFile);
       }
     }
 
@@ -527,10 +556,13 @@ export class ASTScanner {
   /**
    * Check if type annotation includes undefined or optional types
    */
-  private hasOptionalType(node: ts.PropertyDeclaration): boolean {
+  private hasOptionalType(
+    node: ts.PropertyDeclaration,
+    sourceFile: ts.SourceFile,
+  ): boolean {
     if (!node.type) return false;
 
-    const typeText = node.type.getText().toLowerCase();
+    const typeText = node.type.getText(sourceFile).toLowerCase();
     return typeText.includes('undefined') || typeText.includes('?');
   }
 
