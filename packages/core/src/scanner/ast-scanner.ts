@@ -14,7 +14,6 @@ import type {
 
 export class ASTScanner {
   private program: ts.Program;
-  private checker: ts.TypeChecker;
   private options: ScanOptions;
 
   constructor(filePaths: string[], options: ScanOptions = {}) {

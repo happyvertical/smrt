@@ -66,7 +66,7 @@ async function generateRegistrationFile(
         options.objectsDir,
         className,
       );
-      const actualClassName = importPath.split('/').pop()!;
+      const actualClassName = importPath.split('/').pop() || className;
       return `import { ${actualClassName} } from '${importPath}';`;
     })
     .join('\n');
