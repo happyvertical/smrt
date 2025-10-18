@@ -3,6 +3,11 @@
 
 # Validate commit messages using commitlint
 commit-msg:
+  # Skip in CI to allow semantic-release commits
+  skip:
+    - ref: main
+      env:
+        - CI
   commands:
     commitlint:
       run: npx commitlint --edit {1}
