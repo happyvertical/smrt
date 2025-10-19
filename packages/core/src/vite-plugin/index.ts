@@ -322,7 +322,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     };
   }
 
-  async function scanAndGenerateManifest(rootDir: string): Promise<SmartObjectManifest> {
+  async function scanAndGenerateManifest(
+    rootDir: string,
+  ): Promise<SmartObjectManifest> {
     // In production build, try to use static manifest first
     if (process.env.NODE_ENV === 'production') {
       try {
@@ -360,11 +362,15 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       });
 
       if (sourceFiles.length === 0) {
-        console.warn(`[smrt] No source files found matching patterns in ${rootDir}`);
+        console.warn(
+          `[smrt] No source files found matching patterns in ${rootDir}`,
+        );
         return createEmptyManifest();
       }
 
-      console.log(`[smrt] Scanning ${sourceFiles.length} files from ${rootDir}`);
+      console.log(
+        `[smrt] Scanning ${sourceFiles.length} files from ${rootDir}`,
+      );
 
       // Scan files with AST scanner
       const scanner = new ASTScanner(sourceFiles, {
