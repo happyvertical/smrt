@@ -325,24 +325,16 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   async function scanAndGenerateManifest(
     rootDir: string,
   ): Promise<SmartObjectManifest> {
-    // In production build, try to use static manifest first
-    if (process.env.NODE_ENV === 'production') {
-      try {
-        const { staticManifest } = await import(
-          '../manifest/static-manifest.js'
-        );
-        if (staticManifest && Object.keys(staticManifest.objects).length > 0) {
-          console.log('[smrt] Using pre-generated static manifest');
-          return staticManifest;
-        }
-      } catch (_error) {
-        console.warn(
-          '[smrt] Static manifest not found, falling back to dynamic scanning',
-        );
-      }
-    }
+    // NOTE: We do NOT use the framework's static manifest here
+    // The static manifest at packages/core/src/manifest/static-manifest.ts
+    // contains framework objects (like 'pleb') which should not be included
+    // when scanning user code in consuming applications.
+    //
+    // smrtPlugin is designed to scan USER code dynamically, not load
+    // framework objects. For consuming apps that need framework objects,
+    // they should use smrtConsumer plugin instead.
 
-    // Development mode or fallback: use dynamic scanning
+    // Always use dynamic scanning to respect project boundaries
     try {
       // Conditionally import Node.js dependencies
       const [{ default: fg }, { ASTScanner, ManifestGenerator }] =

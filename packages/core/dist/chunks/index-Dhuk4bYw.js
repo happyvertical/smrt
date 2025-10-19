@@ -603,19 +603,6 @@ function smrtPlugin(options = {}) {
     };
   }
   async function scanAndGenerateManifest(rootDir) {
-    if (process.env.NODE_ENV === "production") {
-      try {
-        const { staticManifest } = await import("./static-manifest-CUc8mSu-.js");
-        if (staticManifest && Object.keys(staticManifest.objects).length > 0) {
-          console.log("[smrt] Using pre-generated static manifest");
-          return staticManifest;
-        }
-      } catch (_error) {
-        console.warn(
-          "[smrt] Static manifest not found, falling back to dynamic scanning"
-        );
-      }
-    }
     try {
       const [{ default: fg }, { ASTScanner, ManifestGenerator }] = await Promise.all([import("./index-D2SdCo8s.js").then((n) => n.i), import("./index-CLjuxHjr.js")]);
       if (!manifestGenerator) {
@@ -627,10 +614,14 @@ function smrtPlugin(options = {}) {
         cwd: rootDir
       });
       if (sourceFiles.length === 0) {
-        console.warn(`[smrt] No source files found matching patterns in ${rootDir}`);
+        console.warn(
+          `[smrt] No source files found matching patterns in ${rootDir}`
+        );
         return createEmptyManifest();
       }
-      console.log(`[smrt] Scanning ${sourceFiles.length} files from ${rootDir}`);
+      console.log(
+        `[smrt] Scanning ${sourceFiles.length} files from ${rootDir}`
+      );
       const scanner = new ASTScanner(sourceFiles, {
         baseClasses,
         includePrivateMethods: false,
@@ -1299,4 +1290,4 @@ export default {};`;
 export {
   smrtPlugin as s
 };
-//# sourceMappingURL=index-CCALtnDJ.js.map
+//# sourceMappingURL=index-Dhuk4bYw.js.map

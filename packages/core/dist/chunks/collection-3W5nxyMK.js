@@ -2,7 +2,7 @@ import { getDatabase, buildWhere, syncSchema } from "@have/sql";
 import { getAI } from "@have/ai";
 import { FilesystemAdapter } from "@have/files";
 import { makeId } from "@have/utils";
-import { a as toSnakeCase, O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-DuH55C5z.js";
+import { a as toSnakeCase, O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-bX3hfNLc.js";
 class SmrtConfig {
   static instance;
   config = {
@@ -1380,8 +1380,8 @@ const collection = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.definePr
 export {
   ALL_SYSTEM_TABLES as A,
   CREATE_SMRT_CONTEXTS_TABLE as C,
-  SmrtCollection as S,
-  SmrtClass as a,
+  SmrtClass as S,
+  SmrtCollection as a,
   SignalBus as b,
   config as c,
   SignalSanitizer as d,
@@ -1391,4 +1391,4 @@ export {
   SMRT_SCHEMA_VERSION as h,
   collection as i
 };
-//# sourceMappingURL=collection-CqNUNayb.js.map
+//# sourceMappingURL=collection-3W5nxyMK.js.map
