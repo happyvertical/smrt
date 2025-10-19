@@ -1,17 +1,17 @@
 # Lefthook Git Hooks Configuration
 # https://lefthook.dev/configuration/
 
-# Auto-fix formatting issues before commit
+# Auto-fix formatting and linting issues before commit
 pre-commit:
   commands:
     format:
       glob: "*.{ts,js,json,md}"
-      run: npx biome format --write {staged_files}
+      run: npx biome check --write --unsafe {staged_files}
       stage_fixed: true
       fail_text: |
-        ❌ Formatting failed!
+        ❌ Formatting/linting failed!
 
-        Could not format staged files. Please check the error above.
+        Could not fix issues in staged files. Please check the error above and fix manually.
 
 # Check formatting before push
 pre-push:
