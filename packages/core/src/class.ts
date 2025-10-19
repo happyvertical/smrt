@@ -171,11 +171,42 @@ export class SmrtClass {
     if (this.options.fs) {
       this._fs = await FilesystemAdapter.create(this.options.fs);
     }
-    if (this.options.ai) {
-      // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
-      // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
-      this._ai = (await getAI(this.options.ai as any)) as any as AIClient;
+
+    // Initialize AI client with environment variable support
+    // Priority: instance options > env vars > global config > defaults
+    const globalConfig = config.toJSON();
+    if (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER) {
+      const { loadEnvConfig } = await import('@have/utils');
+
+      // Start with global defaults
+      const baseConfig = globalConfig.ai || {};
+
+      // Merge with instance options (takes priority over global)
+      const userConfig = { ...baseConfig, ...this.options.ai };
+
+      // Load environment variables and merge (user options take priority)
+      const aiConfig = loadEnvConfig<any>(userConfig, {
+        packageName: 'ai',
+        prefix: 'SMRT',
+        schema: {
+          provider: 'string',
+          model: 'string',
+          apiKey: 'string',
+          timeout: 'number',
+          maxRetries: 'number',
+          temperature: 'number',
+          maxTokens: 'number',
+        },
+      });
+
+      // Only initialize if we have a provider configured
+      if (aiConfig.provider || aiConfig.apiKey) {
+        // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
+        // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
+        this._ai = (await getAI(aiConfig as any)) as any as AIClient;
+      }
     }
+
     await this.initializeSignals();
     return this;
   }
