@@ -452,9 +452,11 @@ function smrtPlugin(options = {}) {
   let manifest = null;
   let manifestGenerator = null;
   let pluginMode = "server";
+  let projectRoot = process.cwd();
   return {
     name: "smrt-auto-service",
     async configResolved(config) {
+      projectRoot = config.root;
       if (mode === "auto") {
         const isSSRBuild = config.build?.ssr;
         const isFederationBuild = config.plugins.some(
@@ -466,7 +468,7 @@ function smrtPlugin(options = {}) {
         pluginMode = mode;
       }
       console.log(`[smrt] Running in ${pluginMode} mode`);
-      manifest = await scanAndGenerateManifest();
+      manifest = await scanAndGenerateManifest(projectRoot);
       if (svelteKit.enabled && manifest) {
         await generateSvelteKitRoutes(config.root, manifest, {
           enabled: svelteKit.enabled,
@@ -478,7 +480,7 @@ function smrtPlugin(options = {}) {
       }
     },
     async buildStart() {
-      manifest = await scanAndGenerateManifest();
+      manifest = await scanAndGenerateManifest(projectRoot);
     },
     configureServer(devServer) {
       server = devServer;
@@ -487,8 +489,8 @@ function smrtPlugin(options = {}) {
           try {
             const { existsSync: existsSync2 } = await import("node:fs");
             const { join: join2 } = await import("node:path");
-            const projectRoot = devServer.config.root;
-            const indexPath = join2(projectRoot, "index.html");
+            const projectRoot2 = devServer.config.root;
+            const indexPath = join2(projectRoot2, "index.html");
             if (existsSync2(indexPath)) {
               return next();
             }
@@ -510,7 +512,7 @@ function smrtPlugin(options = {}) {
         watcher.on("change", async (file) => {
           if (await shouldRescan(file)) {
             console.log(`[smrt] Rescanning due to change in ${file}`);
-            manifest = await scanAndGenerateManifest();
+            manifest = await scanAndGenerateManifest(projectRoot);
             if (svelteKit.enabled && manifest && server) {
               await generateSvelteKitRoutes(server.config.root, manifest, {
                 enabled: svelteKit.enabled,
@@ -531,7 +533,7 @@ function smrtPlugin(options = {}) {
         watcher.on("add", async (file) => {
           if (await shouldRescan(file)) {
             console.log(`[smrt] Rescanning due to new file ${file}`);
-            manifest = await scanAndGenerateManifest();
+            manifest = await scanAndGenerateManifest(projectRoot);
           }
         });
       }
@@ -548,7 +550,7 @@ function smrtPlugin(options = {}) {
     async load(id) {
       const cleanId = id.startsWith("\0") ? id.slice(1) : id;
       if (!manifest) {
-        manifest = await scanAndGenerateManifest();
+        manifest = await scanAndGenerateManifest(projectRoot);
       }
       switch (cleanId) {
         case "smrt:routes":
@@ -580,8 +582,8 @@ function smrtPlugin(options = {}) {
         try {
           const { existsSync: existsSync2 } = await import("node:fs");
           const { join: join2 } = await import("node:path");
-          const projectRoot = server.config.root;
-          const indexPath = join2(projectRoot, "index.html");
+          const projectRoot2 = server.config.root;
+          const indexPath = join2(projectRoot2, "index.html");
           if (existsSync2(indexPath)) {
             return html;
           }
@@ -600,10 +602,10 @@ function smrtPlugin(options = {}) {
       objects: {}
     };
   }
-  async function scanAndGenerateManifest() {
+  async function scanAndGenerateManifest(rootDir) {
     if (process.env.NODE_ENV === "production") {
       try {
-        const { staticManifest } = await import("./static-manifest-BcNbTN_a.js");
+        const { staticManifest } = await import("./static-manifest-CUc8mSu-.js");
         if (staticManifest && Object.keys(staticManifest.objects).length > 0) {
           console.log("[smrt] Using pre-generated static manifest");
           return staticManifest;
@@ -621,12 +623,14 @@ function smrtPlugin(options = {}) {
       }
       const sourceFiles = fg.sync(include, {
         ignore: exclude,
-        absolute: true
+        absolute: true,
+        cwd: rootDir
       });
       if (sourceFiles.length === 0) {
-        console.warn("[smrt] No source files found matching patterns");
+        console.warn(`[smrt] No source files found matching patterns in ${rootDir}`);
         return createEmptyManifest();
       }
+      console.log(`[smrt] Scanning ${sourceFiles.length} files from ${rootDir}`);
       const scanner = new ASTScanner(sourceFiles, {
         baseClasses,
         includePrivateMethods: false,
@@ -645,7 +649,7 @@ function smrtPlugin(options = {}) {
       if (generateTypes && server) {
         await generateTypeDeclarationFile(
           newManifest,
-          server.config.root,
+          rootDir,
           typeDeclarationsPath
         );
       }
@@ -1295,4 +1299,4 @@ export default {};`;
 export {
   smrtPlugin as s
 };
-//# sourceMappingURL=index-BjCB-M1X.js.map
+//# sourceMappingURL=index-CCALtnDJ.js.map
