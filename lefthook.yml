@@ -1,6 +1,28 @@
 # Lefthook Git Hooks Configuration
 # https://lefthook.dev/configuration/
 
+# Auto-fix formatting issues before commit
+pre-commit:
+  commands:
+    format:
+      glob: "*.{ts,js,json,md}"
+      run: npx biome format --write {staged_files}
+      stage_fixed: true
+      fail_text: |
+        ❌ Formatting failed!
+
+        Could not format staged files. Please check the error above.
+
+# Check formatting before push
+pre-push:
+  commands:
+    format-check:
+      run: npx biome ci --diagnostic-level=error .
+      fail_text: |
+        ❌ Format check failed!
+
+        Your code has formatting issues. Run `npm run format` to fix them.
+
 # Validate commit messages using commitlint
 commit-msg:
   # Skip in CI to allow semantic-release commits
