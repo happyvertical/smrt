@@ -1,7 +1,7 @@
 import { MetricsAdapter } from "./chunks/metrics-ZuQBjcWk.js";
 import { PubSubAdapter } from "./chunks/pubsub-BJ1ZU6QU.js";
-import { a as SmrtClass } from "./chunks/collection-CqNUNayb.js";
-import { A, C, e, f, g, h, b, d, S, c } from "./chunks/collection-CqNUNayb.js";
+import { S as SmrtClass } from "./chunks/collection-3W5nxyMK.js";
+import { A, C, e, f, g, h, b, d, a, c } from "./chunks/collection-3W5nxyMK.js";
 import { ValidationError, RuntimeError, DatabaseError, ErrorUtils } from "./chunks/errors-D1u9UqLX.js";
 import { AIError, ConfigurationError, FilesystemError, NetworkError, SmrtError, ValidationReport, ValidationUtils } from "./chunks/errors-D1u9UqLX.js";
 import { Field } from "./fields.js";
@@ -11,12 +11,12 @@ import { MCPGenerator } from "./generators/mcp.js";
 import { APIGenerator, createRestServer, startRestServer } from "./generators/rest.js";
 import { generateOpenAPISpec, setupSwaggerUI } from "./generators/swagger.js";
 import { getManifest } from "./manifest.js";
-import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-DuH55C5z.js";
-import { b as b2, b as b3 } from "./chunks/registry-DuH55C5z.js";
-import { a, c as c2, b as b4 } from "./chunks/server-D6t1do0C.js";
-import { M, c as c3, a as a2, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
-import { s as s2 } from "./chunks/index-CCALtnDJ.js";
-import { staticManifest } from "./chunks/static-manifest-CUc8mSu-.js";
+import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-bX3hfNLc.js";
+import { b as b2, b as b3 } from "./chunks/registry-bX3hfNLc.js";
+import { a as a2, c as c2, b as b4 } from "./chunks/server-D6t1do0C.js";
+import { M, c as c3, a as a3, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
+import { s as s2 } from "./chunks/index-Dhuk4bYw.js";
+import { staticManifest } from "./chunks/static-manifest-DPL-KuO8.js";
 function validateToolCall(methodName, args, allowedMethods) {
   if (!allowedMethods.includes(methodName)) {
     throw ValidationError.invalidValue(
@@ -1144,42 +1144,6 @@ Based on the content body, please follow the instructions and provide a response
     return rowCount || 0;
   }
 }
-class Pleb extends SmrtObject {
-  /**
-   * Creates a new Pleb instance
-   *
-   * @param options - Configuration options for the Pleb object
-   */
-  constructor(options = {}) {
-    super(options);
-  }
-  /**
-   * Creates and initializes a new Pleb instance
-   *
-   * @param options - Configuration options for the Pleb object
-   * @returns Promise resolving to the initialized Pleb instance
-   * @example
-   * ```typescript
-   * const pleb = await Pleb.create({
-   *   name: 'Sample Object',
-   *   db: { url: 'sqlite://data.db' }
-   * });
-   * ```
-   */
-  static async create(options) {
-    const pleb = new Pleb(options);
-    await pleb.initialize();
-    return pleb;
-  }
-  /**
-   * Initializes the Pleb instance and sets up database connections
-   *
-   * @returns Promise that resolves to this instance for chaining
-   */
-  async initialize() {
-    return await super.initialize();
-  }
-}
 export {
   AIError,
   A as ALL_SYSTEM_TABLES,
@@ -1199,14 +1163,13 @@ export {
   MetricsAdapter,
   NetworkError,
   ObjectRegistry,
-  Pleb,
   PubSubAdapter,
   RuntimeError,
   h as SMRT_SCHEMA_VERSION,
   b as SignalBus,
   d as SignalSanitizer,
   SmrtClass,
-  S as SmrtCollection,
+  a as SmrtCollection,
   SmrtError,
   SmrtObject,
   ValidationError,
@@ -1215,7 +1178,7 @@ export {
   boolean,
   c as config,
   c3 as convertTypeToJsonSchema,
-  a as createMCPServer,
+  a2 as createMCPServer,
   createRestServer,
   c2 as createSmrtClient,
   b4 as createSmrtServer,
@@ -1226,7 +1189,7 @@ export {
   foreignKey,
   formatToolResults,
   generateOpenAPISpec,
-  a2 as generateToolFromMethod,
+  a3 as generateToolFromMethod,
   b5 as generateToolManifest,
   getManifest,
   integer,

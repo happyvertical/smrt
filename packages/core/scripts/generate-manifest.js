@@ -37,6 +37,7 @@ async function runScanner() {
       'src/**/*.d.ts',
       'src/scanner/**/*.ts',
       'src/vite-plugin/**/*.ts',
+      'src/pleb.ts',  // Test/prototype class - not a real framework object
     ],
   });
 

@@ -35,7 +35,6 @@ export * from './generators/index';
 // Static manifest (generated at build time)
 export * from './manifest/index';
 export * from './object';
-export * from './pleb';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities
