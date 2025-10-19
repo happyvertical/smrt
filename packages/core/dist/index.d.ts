@@ -25,7 +25,6 @@ export * from './fields/index';
 export * from './generators/index';
 export * from './manifest/index';
 export * from './object';
-export * from './pleb';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 export * from './runtime/index';
