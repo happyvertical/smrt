@@ -30,6 +30,37 @@ export interface PubSubConfig {
 }
 
 /**
+ * AI provider configuration
+ *
+ * Global defaults for AI client initialization.
+ * Provides fallback values when AI options are not specified per-instance.
+ */
+export interface AIConfig {
+  /**
+   * Default AI provider to use
+   * Examples: 'openai', 'anthropic', 'claude-cli', 'gemini', etc.
+   */
+  provider?: string;
+
+  /**
+   * Default model to use with the provider
+   * Examples: 'gpt-4', 'claude-3-opus', 'sonnet', etc.
+   */
+  model?: string;
+
+  /**
+   * Default API key for the provider
+   * Can be overridden by environment variables or instance options
+   */
+  apiKey?: string;
+
+  /**
+   * Additional provider-specific options
+   */
+  [key: string]: any;
+}
+
+/**
  * Global signal configuration
  *
  * Application-level defaults for signal adapters.
@@ -44,6 +75,12 @@ export interface GlobalSignalConfig {
 
   /** Pub/Sub configuration (default: undefined/disabled) */
   pubsub?: PubSubConfig;
+
+  /**
+   * AI provider configuration (default: undefined)
+   * Provides global defaults for AI client initialization
+   */
+  ai?: AIConfig;
 
   /**
    * Signal sanitization configuration (default: enabled with standard redactions)
@@ -122,7 +159,11 @@ class SmrtConfig {
  * config({
  *   logging: { level: 'debug' },
  *   metrics: { enabled: true },
- *   pubsub: { enabled: false }
+ *   pubsub: { enabled: false },
+ *   ai: {
+ *     provider: 'claude-cli',
+ *     model: 'sonnet'
+ *   }
  * });
  *
  * // Reset to defaults
@@ -140,7 +181,7 @@ class SmrtConfig {
  * // All SmrtClass instances now use these defaults
  * const product = new Product({ name: 'Widget' });
  * await product.initialize();
- * // product has logging at debug level and metrics enabled
+ * // product has logging at debug level, metrics enabled, and uses claude-cli by default
  * ```
  */
 function config(options: GlobalSignalConfig): void {
@@ -172,3 +213,12 @@ config.toString = (): string =>
   JSON.stringify(SmrtConfig.getInstance().getConfig(), null, 2);
 
 export { config };
+
+// Re-export env-config utilities from @have/utils
+export {
+  type ConfigOptions,
+  convertType,
+  loadEnvConfig,
+  toCamelCase,
+  toScreamingSnakeCase,
+} from '@have/utils';

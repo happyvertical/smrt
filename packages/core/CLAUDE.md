@@ -65,6 +65,276 @@ await collection.initialize();
 
 **Symmetry**: `Collection.create()` (static factory) creates collections, `collection.create()` (instance method) creates objects.
 
+### AI Provider Configuration
+
+The SMRT framework supports flexible AI provider configuration through both global defaults and per-instance options. This allows you to use any AI provider (OpenAI, Anthropic, Claude CLI, Gemini, etc.) without code changes.
+
+#### Global Configuration
+
+Set application-wide AI defaults using the global config system:
+
+```typescript
+import { config } from '@smrt/core';
+
+// Configure global AI provider
+config({
+  ai: {
+    provider: 'claude-cli',
+    model: 'sonnet',
+    // apiKey: 'your-key' (optional - can also use environment variables)
+  }
+});
+
+// All SMRT objects now use claude-cli by default
+const product = new Product({ name: 'Widget' });
+await product.initialize(); // Uses claude-cli
+```
+
+#### Per-Instance Configuration
+
+Override global defaults for specific instances:
+
+```typescript
+// This instance uses anthropic, overriding global claude-cli config
+const document = new Document({
+  name: 'My Document',
+  ai: {
+    provider: 'anthropic',
+    model: 'claude-3-opus',
+    apiKey: process.env.ANTHROPIC_API_KEY
+  }
+});
+await document.initialize();
+
+// AI methods use the configured provider
+const summary = await document.do('Summarize this document');
+```
+
+#### Configuration Priority
+
+The framework merges configurations with instance options taking priority:
+
+1. **Instance options** (`new Object({ ai: {...} })`) - Highest priority
+2. **Global config** (`config({ ai: {...} })`) - Fallback defaults
+3. **Provider defaults** - Each provider has built-in defaults
+
+Example:
+```typescript
+// Global config sets provider and model
+config({
+  ai: {
+    provider: 'claude-cli',
+    model: 'sonnet',
+    temperature: 0.7
+  }
+});
+
+// Instance overrides provider but keeps model and temperature
+const doc = new Document({
+  ai: {
+    provider: 'openai',  // Override: use OpenAI instead
+    apiKey: process.env.OPENAI_API_KEY
+    // Inherits: model: 'sonnet', temperature: 0.7 from global config
+  }
+});
+await doc.initialize();
+// Result: Uses OpenAI with model='sonnet', temperature=0.7
+```
+
+#### Supported Providers
+
+The framework supports all providers from `@have/ai`:
+
+- **openai** - OpenAI models (GPT-4, GPT-3.5, etc.)
+- **anthropic** - Anthropic models (Claude 3 Opus, Sonnet, Haiku)
+- **claude-cli** - Claude CLI integration (requires claude-cli installed)
+- **gemini** - Google Gemini models
+- **bedrock** - AWS Bedrock models
+
+#### Environment Variables
+
+AI configuration can also be set via environment variables, especially useful for MCP servers.
+
+The framework uses `loadEnvConfig()` to automatically load environment variables with:
+- **Automatic type conversion**: Converts strings to numbers, booleans, JSON
+- **Case conversion**: `SMRT_AI_PROVIDER` → `provider` (camelCase)
+- **Schema validation**: Type-safe conversion based on schema definition
+
+**Supported Environment Variables:**
+```bash
+# Generic configuration (works for all providers)
+export SMRT_AI_PROVIDER=claude-cli    # Provider name
+export SMRT_AI_MODEL=sonnet            # Model name
+export SMRT_AI_API_KEY=your-key        # API key
+export SMRT_AI_TIMEOUT=30000           # Timeout in ms (converted to number)
+export SMRT_AI_MAX_RETRIES=3           # Max retries (converted to number)
+export SMRT_AI_TEMPERATURE=0.7         # Temperature (converted to number)
+export SMRT_AI_MAX_TOKENS=4000         # Max tokens (converted to number)
+
+# Provider-specific (backward compatibility)
+export OPENAI_API_KEY=your-openai-key
+export ANTHROPIC_API_KEY=your-anthropic-key
+export CLAUDE_API_KEY=your-claude-key
+```
+
+**Using loadEnvConfig Directly:**
+```typescript
+// Import from @smrt/core/config (re-exported from @have/utils)
+import { loadEnvConfig } from '@smrt/core/config';
+
+// Or import directly from @have/utils
+// import { loadEnvConfig } from '@have/utils';
+
+// Load SMRT_AI_* environment variables
+const aiConfig = loadEnvConfig({}, {
+  packageName: 'ai',
+  prefix: 'SMRT',
+  schema: {
+    provider: 'string',
+    model: 'string',
+    apiKey: 'string',
+    timeout: 'number',
+    maxRetries: 'number',
+  }
+});
+
+// Result: {
+//   provider: 'claude-cli',  // from SMRT_AI_PROVIDER
+//   model: 'sonnet',          // from SMRT_AI_MODEL
+//   timeout: 30000            // from SMRT_AI_TIMEOUT (converted to number)
+// }
+```
+
+#### Troubleshooting
+
+**Issue**: "Missing credentials" error for OpenAI when using different provider
+
+**Cause**: AI config not properly set or passed through
+
+**Solution**:
+1. Verify global config: `console.log(config.toJSON().ai)`
+2. Verify instance config: `console.log(object.options.ai)`
+3. Ensure `initialize()` is called after setting options
+4. Check that provider name matches exactly (e.g., 'claude-cli' not 'claude')
+
+**Issue**: MCP server still uses OpenAI despite configuration
+
+**Cause**: Generated MCP servers use environment variables
+
+**Solution**: Set `SMRT_AI_PROVIDER`, `SMRT_AI_MODEL`, and `SMRT_AI_API_KEY` environment variables before running MCP server:
+```bash
+export SMRT_AI_PROVIDER=claude-cli
+export SMRT_AI_MODEL=sonnet
+node dist/mcp-server.js
+```
+
+### Environment Variable Configuration
+
+The SMRT framework uses `loadEnvConfig()` from `@have/utils` (SDK package) for loading configuration from environment variables with automatic type conversion and validation. This utility is re-exported by `@smrt/core/config` for convenience.
+
+#### Features
+
+- **Configurable Prefix**: Default `SMRT_`, customizable to any prefix
+- **Package Namespacing**: `SMRT_{PACKAGE}_` pattern (e.g., `SMRT_AI_PROVIDER`)
+- **Automatic Type Conversion**: String env vars → typed values (number, boolean, JSON)
+- **Case Conversion**: `SMRT_AI_MAX_RETRIES` → `maxRetries` (camelCase)
+- **Schema Validation**: Type-safe conversion based on schema definition
+- **Precedence**: User options > Environment variables > Defaults
+
+#### Source
+
+`loadEnvConfig()` is implemented in `@have/utils` (SDK) and re-exported by `@smrt/core/config` for convenience. See [SDK env-config documentation](https://github.com/happyvertical/sdk/blob/main/packages/utils/src/config/env-config.ts) for the full implementation.
+
+#### API
+
+```typescript
+// Import from @smrt/core/config (re-exported)
+import { loadEnvConfig } from '@smrt/core/config';
+
+// Or import directly from @have/utils
+// import { loadEnvConfig } from '@have/utils';
+
+interface MyConfig {
+  provider: string;
+  timeout: number;
+  enabled: boolean;
+  metadata: object;
+}
+
+const config = loadEnvConfig<MyConfig>(
+  { provider: 'default' }, // User options (highest priority)
+  {
+    packageName: 'ai',     // Creates SMRT_AI_* prefix
+    prefix: 'SMRT',        // Default prefix
+    schema: {
+      provider: 'string',  // Type conversion rules
+      timeout: 'number',
+      enabled: 'boolean',
+      metadata: 'json'
+    },
+    allowUnknown: true     // Allow env vars not in schema
+  }
+);
+```
+
+#### Type Conversion
+
+| Schema Type | Example Input | Converted Output |
+|-------------|---------------|------------------|
+| `'string'` | `"hello"` | `"hello"` |
+| `'number'` | `"123"` | `123` |
+| `'boolean'` | `"true"`, `"1"`, `"yes"` | `true` |
+| `'json'` | `'{"foo":"bar"}'` | `{ foo: "bar" }` |
+
+#### Case Conversion
+
+```typescript
+// Environment variable → Config property
+SMRT_AI_PROVIDER       → aiProvider (if no packageName)
+SMRT_AI_MAX_RETRIES    → maxRetries
+SMRT_AI_API_KEY        → apiKey
+SMRT_SQL_DATABASE_URL  → databaseUrl (with packageName: 'sql')
+```
+
+#### Custom Transformations
+
+For advanced use cases, provide custom transform functions:
+
+```typescript
+const config = loadEnvConfig({}, {
+  packageName: 'ai',
+  schema: {
+    timeout: 'number',
+    models: 'string'
+  },
+  transform: {
+    // Custom transformation for models field
+    models: (value: string) => value.split(',').map(m => m.trim())
+  }
+});
+
+// SMRT_AI_MODELS="gpt-4,claude-3" → models: ['gpt-4', 'claude-3']
+```
+
+#### Utility Functions
+
+**Case Conversion:**
+```typescript
+import { toCamelCase, toScreamingSnakeCase } from '@smrt/core/config';
+
+toCamelCase('max_retries');           // → 'maxRetries'
+toScreamingSnakeCase('maxRetries');   // → 'MAX_RETRIES'
+```
+
+**Type Conversion:**
+```typescript
+import { convertType } from '@smrt/core/config';
+
+convertType('123', 'number');          // → 123
+convertType('true', 'boolean');        // → true
+convertType('{"foo":"bar"}', 'json');  // → { foo: 'bar' }
+```
+
 ### Field System (packages/smrt/src/fields/index.ts)
 
 The framework provides a typed field definition system for schema generation:

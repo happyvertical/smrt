@@ -6,6 +6,21 @@ settings:
 
 overrides:
   '@types/node': 24.0.0
+  '@have/ai': workspace:*
+  '@have/cache': workspace:*
+  '@have/config': workspace:*
+  '@have/documents': workspace:*
+  '@have/email': workspace:*
+  '@have/files': workspace:*
+  '@have/geo': workspace:*
+  '@have/languages': workspace:*
+  '@have/logger': workspace:*
+  '@have/ocr': workspace:*
+  '@have/pdf': workspace:*
+  '@have/spider': workspace:*
+  '@have/sql': workspace:*
+  '@have/translator': workspace:*
+  '@have/utils': workspace:*
 
 importers:
 
