@@ -83,11 +83,15 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let manifest: SmartObjectManifest | null = null;
   let manifestGenerator: any = null; // Will be lazily created in server mode
   let pluginMode: 'server' | 'client' = 'server';
+  let projectRoot: string = process.cwd();
 
   return {
     name: 'smrt-auto-service',
 
     async configResolved(config) {
+      // Store project root for file scanning
+      projectRoot = config.root;
+
       // Detect plugin mode based on build configuration
       if (mode === 'auto') {
         const isSSRBuild = config.build?.ssr;
@@ -106,7 +110,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       console.log(`[smrt] Running in ${pluginMode} mode`);
 
       // Scan files and generate initial manifest in all modes
-      manifest = await scanAndGenerateManifest();
+      manifest = await scanAndGenerateManifest(projectRoot);
 
       // Generate SvelteKit routes if enabled
       if (svelteKit.enabled && manifest) {
@@ -122,7 +126,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
     async buildStart() {
       // Rescan files on build start in all modes
-      manifest = await scanAndGenerateManifest();
+      manifest = await scanAndGenerateManifest(projectRoot);
     },
 
     configureServer(devServer) {
@@ -169,7 +173,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         watcher.on('change', async (file) => {
           if (await shouldRescan(file)) {
             console.log(`[smrt] Rescanning due to change in ${file}`);
-            manifest = await scanAndGenerateManifest();
+            manifest = await scanAndGenerateManifest(projectRoot);
 
             // Generate SvelteKit routes if enabled
             if (svelteKit.enabled && manifest && server) {
@@ -195,7 +199,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         watcher.on('add', async (file) => {
           if (await shouldRescan(file)) {
             console.log(`[smrt] Rescanning due to new file ${file}`);
-            manifest = await scanAndGenerateManifest();
+            manifest = await scanAndGenerateManifest(projectRoot);
           }
         });
       }
@@ -220,7 +224,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
       if (!manifest) {
-        manifest = await scanAndGenerateManifest();
+        manifest = await scanAndGenerateManifest(projectRoot);
       }
 
       switch (cleanId) {
@@ -318,7 +322,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     };
   }
 
-  async function scanAndGenerateManifest(): Promise<SmartObjectManifest> {
+  async function scanAndGenerateManifest(rootDir: string): Promise<SmartObjectManifest> {
     // In production build, try to use static manifest first
     if (process.env.NODE_ENV === 'production') {
       try {
@@ -348,15 +352,19 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
 
       // Find all TypeScript files matching patterns
+      // IMPORTANT: Set cwd to project root to avoid scanning workspace packages
       const sourceFiles = fg.sync(include, {
         ignore: exclude,
         absolute: true,
+        cwd: rootDir,
       });
 
       if (sourceFiles.length === 0) {
-        console.warn('[smrt] No source files found matching patterns');
+        console.warn(`[smrt] No source files found matching patterns in ${rootDir}`);
         return createEmptyManifest();
       }
+
+      console.log(`[smrt] Scanning ${sourceFiles.length} files from ${rootDir}`);
 
       // Scan files with AST scanner
       const scanner = new ASTScanner(sourceFiles, {
@@ -382,7 +390,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       if (generateTypes && server) {
         await generateTypeDeclarationFile(
           newManifest,
-          server.config.root,
+          rootDir,
           typeDeclarationsPath,
         );
       }
