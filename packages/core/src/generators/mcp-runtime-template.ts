@@ -63,6 +63,7 @@ import {
   type ListToolsRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 import { MCPGenerator } from '@smrt/core/generators/mcp';
+import { loadEnvConfig } from '@smrt/core/config';
 import { getDatabase } from '@have/sql';
 import { getAI } from '@have/ai';
 
@@ -81,12 +82,38 @@ async function initializeGenerator() {
     ? await getDatabase({ url: process.env.DATABASE_URL })
     : undefined;
 
-  // Setup AI client (optional)
-  const ai = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY
-    ? await getAI({
-        provider: process.env.OPENAI_API_KEY ? 'openai' : 'anthropic',
-        apiKey: process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY,
-      })
+  // Setup AI client with environment variable support
+  // Loads SMRT_AI_* environment variables automatically
+  const aiConfig = loadEnvConfig({}, {
+    packageName: 'ai',
+    prefix: 'SMRT',
+    schema: {
+      provider: 'string',
+      model: 'string',
+      apiKey: 'string',
+      timeout: 'number',
+      maxRetries: 'number',
+    },
+  });
+
+  // Fallback to provider-specific environment variables if SMRT_AI_* not set
+  if (!aiConfig.provider && !aiConfig.apiKey) {
+    if (process.env.OPENAI_API_KEY) {
+      aiConfig.provider = 'openai';
+      aiConfig.apiKey = process.env.OPENAI_API_KEY;
+    } else if (process.env.ANTHROPIC_API_KEY) {
+      aiConfig.provider = 'anthropic';
+      aiConfig.apiKey = process.env.ANTHROPIC_API_KEY;
+    } else if (process.env.CLAUDE_API_KEY) {
+      aiConfig.provider = 'claude-cli';
+      aiConfig.apiKey = process.env.CLAUDE_API_KEY;
+      aiConfig.model = aiConfig.model || process.env.CLAUDE_MODEL || 'sonnet';
+    }
+  }
+
+  // Initialize AI client if configuration is available
+  const ai = (aiConfig.provider || aiConfig.apiKey)
+    ? await getAI(aiConfig)
     : undefined;
 
   // Create generator with context
@@ -330,7 +357,31 @@ In Claude Code, you can now use the auto-generated tools. For example:
 The MCP server supports optional environment variables:
 
 - \`DATABASE_URL\` - Database connection string
-- \`OPENAI_API_KEY\` or \`ANTHROPIC_API_KEY\` - AI provider API key
+
+**AI Provider Configuration (in priority order):**
+1. **Generic configuration** (supports any provider):
+   - \`SMRT_AI_PROVIDER\` - Provider name (e.g., 'openai', 'anthropic', 'claude-cli', 'gemini')
+   - \`SMRT_AI_API_KEY\` - API key for the provider
+   - \`SMRT_AI_MODEL\` - Model to use (optional)
+
+2. **Provider-specific fallbacks**:
+   - \`OPENAI_API_KEY\` - OpenAI API key (auto-detects provider as 'openai')
+   - \`ANTHROPIC_API_KEY\` - Anthropic API key (auto-detects provider as 'anthropic')
+   - \`CLAUDE_API_KEY\` + \`CLAUDE_MODEL\` - Claude CLI provider (defaults to 'sonnet')
+
+**Examples:**
+\`\`\`bash
+# Using generic configuration (recommended)
+export SMRT_AI_PROVIDER=claude-cli
+export SMRT_AI_MODEL=sonnet
+
+# Using provider-specific configuration
+export CLAUDE_API_KEY=your-key
+export CLAUDE_MODEL=sonnet
+
+# Using OpenAI
+export OPENAI_API_KEY=your-openai-key
+\`\`\`
 
 ## Troubleshooting
 
