@@ -5,6 +5,7 @@ const MODULE_NAME = 'smrt';
 
 // Singleton cache
 let cachedConfig: SmrtConfig | null = null;
+let explorer: ReturnType<typeof cosmiconfig> | null = null;
 
 /**
  * Load and parse configuration from project root
@@ -20,17 +21,19 @@ export async function loadConfig(
     return cachedConfig;
   }
 
-  // Initialize cosmiconfig
-  const explorer = cosmiconfig(MODULE_NAME, {
-    searchPlaces: [
-      `${MODULE_NAME}.config.js`,
-      `${MODULE_NAME}.config.mjs`,
-      `${MODULE_NAME}.config.cjs`,
-      `${MODULE_NAME}.config.json`,
-    ],
-    stopDir: searchParents ? undefined : process.cwd(),
-    cache: cache, // Respect cache option
-  });
+  // Initialize or reuse cosmiconfig explorer
+  if (!explorer || !cache) {
+    explorer = cosmiconfig(MODULE_NAME, {
+      searchPlaces: [
+        `${MODULE_NAME}.config.js`,
+        `${MODULE_NAME}.config.mjs`,
+        `${MODULE_NAME}.config.cjs`,
+        `${MODULE_NAME}.config.json`,
+      ],
+      stopDir: searchParents ? undefined : process.cwd(),
+      cache: cache, // Respect cache option
+    });
+  }
 
   let result: Awaited<ReturnType<typeof explorer.load>> = null;
 
@@ -63,13 +66,10 @@ export async function loadConfig(
 export function clearConfigCache(): void {
   cachedConfig = null;
 
-  // Clear Node's require cache for config files
-  // This is necessary for testing when config files are modified
-  const cacheKeys = Object.keys(require.cache);
-  for (const key of cacheKeys) {
-    if (key.includes('smrt.config')) {
-      delete require.cache[key];
-    }
+  // Clear cosmiconfig's cache
+  if (explorer) {
+    explorer.clearCaches();
+    explorer = null;
   }
 }
 
