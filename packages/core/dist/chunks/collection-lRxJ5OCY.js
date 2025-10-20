@@ -2,7 +2,7 @@ import { getDatabase, buildWhere, syncSchema } from "@have/sql";
 import { getAI } from "@have/ai";
 import { FilesystemAdapter } from "@have/files";
 import { makeId } from "@have/utils";
-import { a as toSnakeCase, O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-HZ4tQdM1.js";
+import { a as toSnakeCase, O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-WAOlIyLp.js";
 class SmrtConfig {
   static instance;
   config = {
@@ -376,14 +376,39 @@ class SmrtClass {
     this._className = this.constructor.name;
   }
   /**
+   * Determines whether this class requires a database to function
+   *
+   * Override this method in subclasses that require database access
+   * to enable early validation during initialization.
+   *
+   * @returns True if database is required, false otherwise
+   * @example
+   * ```typescript
+   * class MyDataModel extends SmrtClass {
+   *   protected requiresDatabase(): boolean {
+   *     return true; // This class needs database access
+   *   }
+   * }
+   * ```
+   */
+  requiresDatabase() {
+    return false;
+  }
+  /**
    * Initializes database, filesystem, and AI client connections
    *
    * This method sets up all required services based on the provided options.
    * It should be called before using any of the service interfaces.
    *
    * @returns Promise that resolves to this instance for chaining
+   * @throws {Error} If database is required but not provided in options
    */
   async initialize() {
+    if (this.requiresDatabase() && !this.options.db) {
+      throw new Error(
+        `${this._className} requires a database configuration. Please provide 'db' in options: { db: { url: '...' } } or { db: 'database.db' }`
+      );
+    }
     if (this.options.db) {
       if (typeof this.options.db === "string") {
         this._db = await getDatabase({ url: this.options.db });
@@ -1245,23 +1270,31 @@ class SmrtCollection extends SmrtClass {
     if (!this.systemDb) {
       throw new Error("Database not initialized. Call initialize() first.");
     }
-    let query = `
-      SELECT value, confidence
-      FROM _smrt_contexts
-      WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?
-    `;
-    const params = [
-      this._itemClass.name,
-      "__collection__",
-      options.scope,
-      options.key
-    ];
+    let result;
     if (options.minConfidence !== void 0) {
-      query += ` AND confidence >= ?`;
-      params.push(options.minConfidence);
+      result = await this.systemDb.single`
+        SELECT value, confidence
+        FROM _smrt_contexts
+        WHERE owner_class = ${this._itemClass.name}
+          AND owner_id = ${"__collection__"}
+          AND scope = ${options.scope}
+          AND key = ${options.key}
+          AND confidence >= ${options.minConfidence}
+        ORDER BY confidence DESC, version DESC
+        LIMIT 1
+      `;
+    } else {
+      result = await this.systemDb.single`
+        SELECT value, confidence
+        FROM _smrt_contexts
+        WHERE owner_class = ${this._itemClass.name}
+          AND owner_id = ${"__collection__"}
+          AND scope = ${options.scope}
+          AND key = ${options.key}
+        ORDER BY confidence DESC, version DESC
+        LIMIT 1
+      `;
     }
-    query += ` ORDER BY confidence DESC, version DESC LIMIT 1`;
-    const result = await this.systemDb.get(query, params);
     if (result) {
       return JSON.parse(result.value);
     }
@@ -1410,4 +1443,4 @@ export {
   SMRT_SCHEMA_VERSION as h,
   collection as i
 };
-//# sourceMappingURL=collection-DoSTCWvk.js.map
+//# sourceMappingURL=collection-lRxJ5OCY.js.map
