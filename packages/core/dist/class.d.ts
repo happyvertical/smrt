@@ -109,12 +109,30 @@ export declare class SmrtClass {
      */
     constructor(options?: SmrtClassOptions);
     /**
+     * Determines whether this class requires a database to function
+     *
+     * Override this method in subclasses that require database access
+     * to enable early validation during initialization.
+     *
+     * @returns True if database is required, false otherwise
+     * @example
+     * ```typescript
+     * class MyDataModel extends SmrtClass {
+     *   protected requiresDatabase(): boolean {
+     *     return true; // This class needs database access
+     *   }
+     * }
+     * ```
+     */
+    protected requiresDatabase(): boolean;
+    /**
      * Initializes database, filesystem, and AI client connections
      *
      * This method sets up all required services based on the provided options.
      * It should be called before using any of the service interfaces.
      *
      * @returns Promise that resolves to this instance for chaining
+     * @throws {Error} If database is required but not provided in options
      */
     protected initialize(): Promise<this>;
     /**
