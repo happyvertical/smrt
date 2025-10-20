@@ -20,7 +20,7 @@ export declare abstract class SmrtError extends Error {
         name: string;
         message: string;
         code: string;
-        category: "database" | "ai" | "filesystem" | "validation" | "network" | "configuration" | "runtime";
+        category: "ai" | "database" | "filesystem" | "validation" | "network" | "configuration" | "runtime";
         details: Record<string, any> | undefined;
         stack: string | undefined;
         cause: {
