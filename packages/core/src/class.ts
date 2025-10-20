@@ -263,23 +263,33 @@ export class SmrtClass {
       return;
     }
 
-    // Create all system tables
-    for (const createTableSQL of ALL_SYSTEM_TABLES) {
-      // Execute as raw SQL (not a parameterized query)
-      await this._db.query(createTableSQL);
+    try {
+      // Create all system tables
+      for (const createTableSQL of ALL_SYSTEM_TABLES) {
+        // Execute as raw SQL (not a parameterized query)
+        await this._db.query(createTableSQL);
+      }
+
+      // Record current schema version
+      // Use ON CONFLICT for DuckDB compatibility (not INSERT OR IGNORE)
+      const id = crypto.randomUUID();
+      const version = SMRT_SCHEMA_VERSION;
+      const description = 'Initial SMRT system tables';
+      await this._db.execute`
+        INSERT INTO _smrt_migrations (id, version, description)
+        VALUES (${id}, ${version}, ${description})
+        ON CONFLICT(version) DO NOTHING
+      `;
+
+      // Mark this database as initialized
+      SmrtClass._systemTablesInitialized.add(dbKey);
+    } catch (error) {
+      // DO NOT SWALLOW ERRORS - fail loudly so we know what's wrong
+      throw new Error(
+        `Failed to create system tables for database ${dbKey}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
     }
-
-    // Record current schema version
-    const id = crypto.randomUUID();
-    const version = SMRT_SCHEMA_VERSION;
-    const description = 'Initial SMRT system tables';
-    await this._db.execute`
-      INSERT OR IGNORE INTO _smrt_migrations (id, version, description)
-      VALUES (${id}, ${version}, ${description})
-    `;
-
-    // Mark this database as initialized
-    SmrtClass._systemTablesInitialized.add(dbKey);
   }
 
   /**
