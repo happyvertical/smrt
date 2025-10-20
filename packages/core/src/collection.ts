@@ -851,35 +851,49 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
-    // Use single() with template literals for custom SQL query
-    let result: Record<string, any> | null;
-    if (options.minConfidence !== undefined) {
-      result = await this.systemDb.single`
-        SELECT value, confidence
-        FROM _smrt_contexts
-        WHERE owner_class = ${this._itemClass.name}
-          AND owner_id = ${'__collection__'}
-          AND scope = ${options.scope}
-          AND key = ${options.key}
-          AND confidence >= ${options.minConfidence}
-        ORDER BY confidence DESC, version DESC
-        LIMIT 1
-      `;
-    } else {
-      result = await this.systemDb.single`
-        SELECT value, confidence
-        FROM _smrt_contexts
-        WHERE owner_class = ${this._itemClass.name}
-          AND owner_id = ${'__collection__'}
-          AND scope = ${options.scope}
-          AND key = ${options.key}
-        ORDER BY confidence DESC, version DESC
-        LIMIT 1
-      `;
-    }
+    try {
+      // Use single() with template literals for custom SQL query
+      let result: Record<string, any> | null;
+      if (options.minConfidence !== undefined) {
+        result = await this.systemDb.single`
+          SELECT value, confidence
+          FROM _smrt_contexts
+          WHERE owner_class = ${this._itemClass.name}
+            AND owner_id = ${'__collection__'}
+            AND scope = ${options.scope}
+            AND key = ${options.key}
+            AND confidence >= ${options.minConfidence}
+          ORDER BY confidence DESC, version DESC
+          LIMIT 1
+        `;
+      } else {
+        result = await this.systemDb.single`
+          SELECT value, confidence
+          FROM _smrt_contexts
+          WHERE owner_class = ${this._itemClass.name}
+            AND owner_id = ${'__collection__'}
+            AND scope = ${options.scope}
+            AND key = ${options.key}
+          ORDER BY confidence DESC, version DESC
+          LIMIT 1
+        `;
+      }
 
-    if (result) {
-      return JSON.parse(result.value);
+      if (result) {
+        return JSON.parse(result.value);
+      }
+    } catch (error) {
+      // Gracefully handle missing _smrt_contexts table
+      // This can happen in DuckDB JSON mode or when system tables aren't initialized
+      if (
+        error instanceof Error &&
+        error.message.includes('_smrt_contexts does not exist')
+      ) {
+        // Return null - no context found (table doesn't exist)
+        return null;
+      }
+      // Re-throw other errors
+      throw error;
     }
 
     // Hierarchical fallback to parent scopes
