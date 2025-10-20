@@ -8,6 +8,40 @@ import {
   loadConfig,
   setConfig,
 } from './index.js';
+import { mergeConfigs } from './merge.js';
+
+describe('mergeConfigs', () => {
+  it('should not merge null values', () => {
+    const result = mergeConfigs(
+      { db: { url: ':memory:' }, enabled: true },
+      { db: null, enabled: null },
+      {},
+    );
+    expect(result.db).toEqual({ url: ':memory:' });
+    expect(result.enabled).toBe(true);
+  });
+
+  it('should merge non-null values', () => {
+    const result = mergeConfigs(
+      { maxItems: 100, enabled: true },
+      { maxItems: 200 },
+      {},
+    );
+    expect(result.maxItems).toBe(200);
+    expect(result.enabled).toBe(true);
+  });
+
+  it('should merge falsy values that are not null', () => {
+    const result = mergeConfigs(
+      { enabled: true, count: 100, name: 'default' },
+      { enabled: false, count: 0, name: '' },
+      {},
+    );
+    expect(result.enabled).toBe(false);
+    expect(result.count).toBe(0);
+    expect(result.name).toBe('');
+  });
+});
 
 describe('@smrt/config', () => {
   const testDir = join(process.cwd(), '.test-config');
@@ -247,6 +281,97 @@ describe('@smrt/config', () => {
       clearCache();
       const config3 = await loadConfig({ configPath, cache: false });
       expect(config3.smrt?.logLevel).toBe('error');
+    });
+  });
+
+  describe('null value handling', () => {
+    it('should not override defaults with null values from config', async () => {
+      const testConfigPath = join(testDir, 'smrt-null-test1.config.js');
+      const configContent = `
+        export default {
+          modules: {
+            'test-module': {
+              db: null,
+              enabled: null
+            }
+          }
+        };
+      `;
+
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
+
+      const config = getModuleConfig('test-module', {
+        db: { url: 'file:./test.db' },
+        enabled: true,
+        maxItems: 100,
+      });
+
+      // null values should be ignored, defaults should remain
+      expect(config.db).toEqual({ url: 'file:./test.db' });
+      expect(config.enabled).toBe(true);
+      expect(config.maxItems).toBe(100);
+    });
+
+    it('should not override defaults with null values in nested config', async () => {
+      const testConfigPath = join(testDir, 'smrt-null-test2.config.js');
+      const configContent = `
+        export default {
+          smrt: {
+            db: null
+          },
+          modules: {
+            'test-module': {
+              maxItems: 200
+            }
+          }
+        };
+      `;
+
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
+
+      const config = getModuleConfig('test-module', {
+        db: { url: ':memory:' },
+        maxItems: 100,
+      });
+
+      // null in global config should not override module defaults
+      expect(config.db).toEqual({ url: ':memory:' });
+      // But non-null values should still merge
+      expect(config.maxItems).toBe(200);
+    });
+
+    it('should allow explicit false, 0, and empty string values', async () => {
+      const testConfigPath = join(testDir, 'smrt-null-test3.config.js');
+      const configContent = `
+        export default {
+          modules: {
+            'test-module': {
+              enabled: false,
+              maxItems: 0,
+              name: ''
+            }
+          }
+        };
+      `;
+
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
+
+      const config = getModuleConfig('test-module', {
+        enabled: true,
+        maxItems: 100,
+        name: 'default',
+      });
+
+      // Falsy values that are not null/undefined should override
+      expect(config.enabled).toBe(false);
+      expect(config.maxItems).toBe(0);
+      expect(config.name).toBe('');
     });
   });
 });

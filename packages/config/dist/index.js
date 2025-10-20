@@ -1,22 +1,25 @@
 import { cosmiconfig } from "cosmiconfig";
 const MODULE_NAME = "smrt";
 let cachedConfig = null;
+let explorer = null;
 async function loadConfig$1(options = {}) {
   const { configPath, searchParents = true, cache = true } = options;
   if (cache && cachedConfig) {
     return cachedConfig;
   }
-  const explorer = cosmiconfig(MODULE_NAME, {
-    searchPlaces: [
-      `${MODULE_NAME}.config.js`,
-      `${MODULE_NAME}.config.mjs`,
-      `${MODULE_NAME}.config.cjs`,
-      `${MODULE_NAME}.config.json`
-    ],
-    stopDir: searchParents ? void 0 : process.cwd(),
-    cache
-    // Respect cache option
-  });
+  if (!explorer || !cache) {
+    explorer = cosmiconfig(MODULE_NAME, {
+      searchPlaces: [
+        `${MODULE_NAME}.config.js`,
+        `${MODULE_NAME}.config.mjs`,
+        `${MODULE_NAME}.config.cjs`,
+        `${MODULE_NAME}.config.json`
+      ],
+      stopDir: searchParents ? void 0 : process.cwd(),
+      cache
+      // Respect cache option
+    });
+  }
   let result = null;
   try {
     if (configPath) {
@@ -35,11 +38,9 @@ async function loadConfig$1(options = {}) {
 }
 function clearConfigCache() {
   cachedConfig = null;
-  const cacheKeys = Object.keys(require.cache);
-  for (const key of cacheKeys) {
-    if (key.includes("smrt.config")) {
-      delete require.cache[key];
-    }
+  if (explorer) {
+    explorer.clearCaches();
+    explorer = null;
   }
 }
 let runtimeConfig = {};
@@ -53,7 +54,7 @@ function deepMerge(target, source) {
         targetValue,
         sourceValue
       );
-    } else if (sourceValue !== void 0) {
+    } else if (sourceValue !== void 0 && sourceValue !== null) {
       result[key] = sourceValue;
     }
   }
