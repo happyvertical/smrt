@@ -1,4 +1,4 @@
-import { staticManifest } from "./static-manifest-DPL-KuO8.js";
+import { staticManifest } from "./static-manifest-DJQiSQx6.js";
 import { syncSchema } from "@have/sql";
 import { SchemaGenerator } from "./index-CAFfnhJA.js";
 function toSnakeCase(str) {
@@ -394,7 +394,7 @@ class ObjectRegistry {
     }
     let collectionConstructor = registered.collectionConstructor;
     if (!collectionConstructor) {
-      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-3W5nxyMK.js").then((n) => n.i);
+      const { SmrtCollection: SmrtCollectionClass } = await import("./collection-DoSTCWvk.js").then((n) => n.i);
       class DefaultCollection extends SmrtCollectionClass {
         static _itemClass = registered?.constructor;
       }
@@ -1010,4 +1010,4 @@ export {
   setupTableFromClass as s,
   tableNameFromClass as t
 };
-//# sourceMappingURL=registry-bX3hfNLc.js.map
+//# sourceMappingURL=registry-HZ4tQdM1.js.map

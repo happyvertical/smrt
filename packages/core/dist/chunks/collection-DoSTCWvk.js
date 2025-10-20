@@ -2,7 +2,7 @@ import { getDatabase, buildWhere, syncSchema } from "@have/sql";
 import { getAI } from "@have/ai";
 import { FilesystemAdapter } from "@have/files";
 import { makeId } from "@have/utils";
-import { a as toSnakeCase, O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-bX3hfNLc.js";
+import { a as toSnakeCase, O as ObjectRegistry, c as formatDataJs, d as formatDataSql, f as fieldsFromClass, g as generateSchema, t as tableNameFromClass } from "./registry-HZ4tQdM1.js";
 class SmrtConfig {
   static instance;
   config = {
@@ -397,8 +397,27 @@ class SmrtClass {
     if (this.options.fs) {
       this._fs = await FilesystemAdapter.create(this.options.fs);
     }
-    if (this.options.ai) {
-      this._ai = await getAI(this.options.ai);
+    const globalConfig = config.toJSON();
+    if (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER) {
+      const { loadEnvConfig } = await import("@have/utils");
+      const baseConfig = globalConfig.ai || {};
+      const userConfig = { ...baseConfig, ...this.options.ai };
+      const aiConfig = loadEnvConfig(userConfig, {
+        packageName: "ai",
+        prefix: "SMRT",
+        schema: {
+          provider: "string",
+          model: "string",
+          apiKey: "string",
+          timeout: "number",
+          maxRetries: "number",
+          temperature: "number",
+          maxTokens: "number"
+        }
+      });
+      if (aiConfig.provider || aiConfig.apiKey) {
+        this._ai = await getAI(aiConfig);
+      }
     }
     await this.initializeSignals();
     return this;
@@ -1391,4 +1410,4 @@ export {
   SMRT_SCHEMA_VERSION as h,
   collection as i
 };
-//# sourceMappingURL=collection-3W5nxyMK.js.map
+//# sourceMappingURL=collection-DoSTCWvk.js.map
