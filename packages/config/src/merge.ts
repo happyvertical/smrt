@@ -29,7 +29,7 @@ function deepMerge<T extends Record<string, any>>(
         targetValue as Record<string, any>,
         sourceValue as Record<string, any>,
       ) as T[Extract<keyof T, string>];
-    } else if (sourceValue !== undefined) {
+    } else if (sourceValue !== undefined && sourceValue !== null) {
       result[key] = sourceValue as T[Extract<keyof T, string>];
     }
   }
