@@ -1,7 +1,7 @@
 import { MetricsAdapter } from "./chunks/metrics-ZuQBjcWk.js";
 import { PubSubAdapter } from "./chunks/pubsub-BJ1ZU6QU.js";
-import { S as SmrtClass } from "./chunks/collection-DoSTCWvk.js";
-import { A, C, e, f, g, h, b, d, a, c } from "./chunks/collection-DoSTCWvk.js";
+import { S as SmrtClass } from "./chunks/collection-lRxJ5OCY.js";
+import { A, C, e, f, g, h, b, d, a, c } from "./chunks/collection-lRxJ5OCY.js";
 import { ValidationError, RuntimeError, DatabaseError, ErrorUtils } from "./chunks/errors-D1u9UqLX.js";
 import { AIError, ConfigurationError, FilesystemError, NetworkError, SmrtError, ValidationReport, ValidationUtils } from "./chunks/errors-D1u9UqLX.js";
 import { Field } from "./fields.js";
@@ -11,12 +11,12 @@ import { MCPGenerator } from "./generators/mcp.js";
 import { APIGenerator, createRestServer, startRestServer } from "./generators/rest.js";
 import { generateOpenAPISpec, setupSwaggerUI } from "./generators/swagger.js";
 import { getManifest } from "./manifest.js";
-import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-HZ4tQdM1.js";
-import { b as b2, b as b3 } from "./chunks/registry-HZ4tQdM1.js";
+import { O as ObjectRegistry, f as fieldsFromClass, s as setupTableFromClass, t as tableNameFromClass, a as toSnakeCase } from "./chunks/registry-WAOlIyLp.js";
+import { b as b2, b as b3 } from "./chunks/registry-WAOlIyLp.js";
 import { a as a2, c as c2, b as b4 } from "./chunks/server-D6t1do0C.js";
 import { M, c as c3, a as a3, b as b5, s } from "./chunks/manifest-generator-Bb3IuFsV.js";
 import { s as s2 } from "./chunks/index-Dhuk4bYw.js";
-import { staticManifest } from "./chunks/static-manifest-DJQiSQx6.js";
+import { staticManifest } from "./chunks/static-manifest-CUPANOg7.js";
 function validateToolCall(methodName, args, allowedMethods) {
   if (!allowedMethods.includes(methodName)) {
     throw ValidationError.invalidValue(
@@ -989,23 +989,31 @@ Based on the content body, please follow the instructions and provide a response
     if (!this.systemDb) {
       throw new Error("Database not initialized. Call initialize() first.");
     }
-    let query = `
-      SELECT value, confidence
-      FROM _smrt_contexts
-      WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?
-    `;
-    const params = [
-      this._className,
-      this.id,
-      options.scope,
-      options.key
-    ];
+    let result;
     if (options.minConfidence !== void 0) {
-      query += ` AND confidence >= ?`;
-      params.push(options.minConfidence);
+      result = await this.systemDb.single`
+        SELECT value, confidence
+        FROM _smrt_contexts
+        WHERE owner_class = ${this._className}
+          AND owner_id = ${this.id}
+          AND scope = ${options.scope}
+          AND key = ${options.key}
+          AND confidence >= ${options.minConfidence}
+        ORDER BY confidence DESC, version DESC
+        LIMIT 1
+      `;
+    } else {
+      result = await this.systemDb.single`
+        SELECT value, confidence
+        FROM _smrt_contexts
+        WHERE owner_class = ${this._className}
+          AND owner_id = ${this.id}
+          AND scope = ${options.scope}
+          AND key = ${options.key}
+        ORDER BY confidence DESC, version DESC
+        LIMIT 1
+      `;
     }
-    query += ` ORDER BY confidence DESC, version DESC LIMIT 1`;
-    const result = await this.systemDb.get(query, params);
     if (result) {
       return JSON.parse(result.value);
     }

@@ -119,5 +119,5 @@ declare namespace config {
     var toString: () => string;
 }
 export { config };
-export { loadEnvConfig, toCamelCase, toScreamingSnakeCase, convertType, type ConfigOptions, } from '@have/utils';
+export { type ConfigOptions, convertType, loadEnvConfig, toCamelCase, toScreamingSnakeCase, } from '@have/utils';
 //# sourceMappingURL=config.d.ts.map

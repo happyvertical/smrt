@@ -1124,26 +1124,32 @@ export class SmrtObject extends SmrtClass {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
-    let query = `
-      SELECT value, confidence
-      FROM _smrt_contexts
-      WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?
-    `;
-    const params: any[] = [
-      this._className,
-      this.id,
-      options.scope,
-      options.key,
-    ];
-
+    // Use single() with template literals for custom SQL query
+    let result: Record<string, any> | null;
     if (options.minConfidence !== undefined) {
-      query += ` AND confidence >= ?`;
-      params.push(options.minConfidence);
+      result = await this.systemDb.single`
+        SELECT value, confidence
+        FROM _smrt_contexts
+        WHERE owner_class = ${this._className}
+          AND owner_id = ${this.id}
+          AND scope = ${options.scope}
+          AND key = ${options.key}
+          AND confidence >= ${options.minConfidence}
+        ORDER BY confidence DESC, version DESC
+        LIMIT 1
+      `;
+    } else {
+      result = await this.systemDb.single`
+        SELECT value, confidence
+        FROM _smrt_contexts
+        WHERE owner_class = ${this._className}
+          AND owner_id = ${this.id}
+          AND scope = ${options.scope}
+          AND key = ${options.key}
+        ORDER BY confidence DESC, version DESC
+        LIMIT 1
+      `;
     }
-
-    query += ` ORDER BY confidence DESC, version DESC LIMIT 1`;
-
-    const result = await this.systemDb.get(query, params);
 
     if (result) {
       return JSON.parse(result.value);
