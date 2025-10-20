@@ -64,4 +64,64 @@ describe('SmrtClass', () => {
       expect(base).toBeInstanceOf(SmrtClass);
     });
   });
+
+  describe('Database Requirement Validation', () => {
+    it('should allow initialization without database when not required', async () => {
+      // Base SmrtClass doesn't require database by default
+      const base = new SmrtClass({});
+
+      // Should initialize successfully without database
+      await expect((base as any).initialize()).resolves.toBeDefined();
+    });
+
+    it('should throw error when database required but not provided', async () => {
+      // Create subclass that requires database
+      class DatabaseRequiredClass extends SmrtClass {
+        protected requiresDatabase(): boolean {
+          return true;
+        }
+      }
+
+      const instance = new DatabaseRequiredClass({});
+
+      // Should throw clear error about missing database
+      await expect((instance as any).initialize()).rejects.toThrow(
+        /requires a database configuration/,
+      );
+      await expect((instance as any).initialize()).rejects.toThrow(
+        /DatabaseRequiredClass/,
+      );
+    });
+
+    it('should initialize successfully when database is provided and required', async () => {
+      class DatabaseRequiredClass extends SmrtClass {
+        protected requiresDatabase(): boolean {
+          return true;
+        }
+      }
+
+      const instance = new DatabaseRequiredClass({
+        db: ':memory:', // Provide in-memory database
+      });
+
+      // Should initialize successfully with database provided
+      await expect((instance as any).initialize()).resolves.toBeDefined();
+    });
+
+    it('should have requiresDatabase() return false by default', () => {
+      const base = new SmrtClass({});
+      expect((base as any).requiresDatabase()).toBe(false);
+    });
+
+    it('should allow subclasses to override requiresDatabase()', () => {
+      class CustomClass extends SmrtClass {
+        protected requiresDatabase(): boolean {
+          return true;
+        }
+      }
+
+      const instance = new CustomClass({});
+      expect((instance as any).requiresDatabase()).toBe(true);
+    });
+  });
 });
