@@ -16,7 +16,7 @@ export class EventSeries extends SmrtObject {
   // id, slug, name inherited from SmrtObject
 
   typeId = ''; // FK to EventType
-  organizerId = ''; // FK to Profile (from @smrt/profiles)
+  organizerId = ''; // FK to Profile (from @happyvertical/smrt-profiles)
   description = '';
   startDate: Date | null = null;
   endDate: Date | null = null;
@@ -144,14 +144,16 @@ export class EventSeries extends SmrtObject {
   async getOrganizer() {
     if (!this.organizerId) return null;
 
-    // Import Profile from @smrt/profiles
+    // Import Profile from @happyvertical/smrt-profiles
     try {
-      const { ProfileCollection } = await import('@smrt/profiles');
+      const { ProfileCollection } = await import(
+        '@happyvertical/smrt-profiles'
+      );
       const collection = await (ProfileCollection as any).create(this.options);
 
       return await collection.get({ id: this.organizerId });
     } catch {
-      // @smrt/profiles not available
+      // @happyvertical/smrt-profiles not available
       return null;
     }
   }
