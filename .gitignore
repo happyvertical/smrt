@@ -16,6 +16,9 @@ smrt/*/node_modules
 
 # Build outputs
 build/
+dist/
+packages/*/dist/
+smrt/*/dist/
 docs/manual/
 
 # Docusaurus
