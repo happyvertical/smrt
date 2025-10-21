@@ -100,8 +100,20 @@ jobs:
           node-version: '24'
           install-deps: 'true'
 
+      - name: Build SDK packages
+        run: |
+          cd sdk
+          pnpm run build
+          cd ..
+
       - name: Build packages
         run: pnpm run build
+
+      - name: Install docs dependencies
+        run: |
+          cd docs
+          npm install
+          cd ..
 
       - name: Build documentation site
         run: pnpm run docs:site:build
