@@ -17,12 +17,11 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @param tagSlug - The tag slug from @smrt/tags
    */
   async addTag(assetId: string, tagSlug: string): Promise<void> {
-    const db = await this.getDb();
-    await db
-      .prepare(
-        'INSERT OR IGNORE INTO asset_tags (asset_id, tag_slug, created_at) VALUES (?, ?, ?)',
-      )
-      .run(assetId, tagSlug, new Date().toISOString());
+    const db = this.db;
+    await db.query(
+      'INSERT OR IGNORE INTO asset_tags (asset_id, tag_slug, created_at) VALUES (?, ?, ?)',
+      [assetId, tagSlug, new Date().toISOString()],
+    );
   }
 
   /**
@@ -32,10 +31,11 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @param tagSlug - The tag slug to remove
    */
   async removeTag(assetId: string, tagSlug: string): Promise<void> {
-    const db = await this.getDb();
-    await db
-      .prepare('DELETE FROM asset_tags WHERE asset_id = ? AND tag_slug = ?')
-      .run(assetId, tagSlug);
+    const db = this.db;
+    await db.query(
+      'DELETE FROM asset_tags WHERE asset_id = ? AND tag_slug = ?',
+      [assetId, tagSlug],
+    );
   }
 
   /**
@@ -45,13 +45,14 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @returns Array of assets with this tag
    */
   async getByTag(tagSlug: string): Promise<Asset[]> {
-    const db = await this.getDb();
-    const rows = (await db
-      .prepare('SELECT asset_id FROM asset_tags WHERE tag_slug = ?')
-      .all(tagSlug)) as { asset_id: string }[];
+    const db = this.db;
+    const { rows } = await db.query(
+      'SELECT asset_id FROM asset_tags WHERE tag_slug = ?',
+      [tagSlug],
+    );
 
     const assets: Asset[] = [];
-    for (const row of rows) {
+    for (const row of rows as { asset_id: string }[]) {
       const asset = await this.get({ id: row.asset_id });
       if (asset) assets.push(asset as Asset);
     }
@@ -149,16 +150,15 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @returns Array of all asset versions, ordered by version number
    */
   async listVersions(primaryVersionId: string): Promise<Asset[]> {
-    const db = await this.getDb();
+    const db = this.db;
 
     // Query for all assets with this primary version ID or ID matching primary version ID
-    const rows = (await db
-      .prepare(
-        'SELECT * FROM assets WHERE primary_version_id = ? OR id = ? ORDER BY version ASC',
-      )
-      .all(primaryVersionId, primaryVersionId)) as any[];
+    const { rows } = await db.query(
+      'SELECT * FROM assets WHERE primary_version_id = ? OR id = ? ORDER BY version ASC',
+      [primaryVersionId, primaryVersionId],
+    );
 
-    return rows.map((row) => {
+    return (rows as any[]).map((row) => {
       const asset = new Asset();
       Object.assign(asset, row);
       return asset;
@@ -182,14 +182,15 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @returns Array of matching assets
    */
   async getByMimeType(mimePattern: string): Promise<Asset[]> {
-    const db = await this.getDb();
+    const db = this.db;
     const pattern = mimePattern.replace('*', '%');
 
-    const rows = (await db
-      .prepare('SELECT * FROM assets WHERE mime_type LIKE ?')
-      .all(pattern)) as any[];
+    const { rows } = await db.query(
+      'SELECT * FROM assets WHERE mime_type LIKE ?',
+      [pattern],
+    );
 
-    return rows.map((row) => {
+    return (rows as any[]).map((row) => {
       const asset = new Asset();
       Object.assign(asset, row);
       return asset;

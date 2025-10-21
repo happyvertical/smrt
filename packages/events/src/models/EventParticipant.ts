@@ -138,7 +138,7 @@ export class EventParticipant extends SmrtObject {
     });
 
     // Exclude self from results
-    return participants.filter((p) => p.id !== this.id);
+    return participants.filter((p: EventParticipant) => p.id !== this.id);
   }
 
   /**

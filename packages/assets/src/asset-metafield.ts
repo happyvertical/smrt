@@ -13,7 +13,7 @@ import type { AssetMetafieldOptions } from './types';
   cli: true,
 })
 export class AssetMetafield extends SmrtObject {
-  slug = ''; // Primary key (human-readable identifier, e.g., 'width', 'height')
+  // slug is inherited as an accessor from SmrtObject
   name = ''; // Display name (e.g., 'Width', 'Height')
   validation = ''; // JSON validation rules stored as text
 

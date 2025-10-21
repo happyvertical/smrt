@@ -18,7 +18,7 @@ import type { AssetOptions } from './types';
 export class Asset extends SmrtObject {
   // Core fields
   name = ''; // User-friendly name
-  slug = ''; // URL-friendly identifier
+  // slug is inherited as an accessor from SmrtObject
   sourceUri = ''; // URI to the actual file (e.g., 's3://bucket/key', 'file:///path')
   mimeType = ''; // MIME type (e.g., 'image/jpeg', 'video/mp4')
   description = ''; // Optional description
@@ -61,19 +61,17 @@ export class Asset extends SmrtObject {
    */
   async getTags(): Promise<Tag[]> {
     // Query asset_tags join table and retrieve Tag instances
-    const collection = this.getCollection();
-    if (!collection) return [];
-
-    const db = await collection.getDb();
-    const rows = (await db
-      .prepare('SELECT tag_slug FROM asset_tags WHERE asset_id = ?')
-      .all(this.id)) as { tag_slug: string }[];
+    const db = this.db;
+    const { rows } = await db.query(
+      'SELECT tag_slug FROM asset_tags WHERE asset_id = ?',
+      [this.id],
+    );
 
     // Import Tag dynamically to avoid circular dependencies
     const { Tag } = await import('@smrt/tags');
     const tags: Tag[] = [];
 
-    for (const row of rows) {
+    for (const row of rows as { tag_slug: string }[]) {
       const tag = await Tag.getBySlug(row.tag_slug);
       if (tag) tags.push(tag);
     }
@@ -88,17 +86,14 @@ export class Asset extends SmrtObject {
    * @returns True if the asset has this tag
    */
   async hasTag(tagSlug: string): Promise<boolean> {
-    const collection = this.getCollection();
-    if (!collection) return false;
+    const db = this.db;
+    const { rows } = await db.query(
+      'SELECT COUNT(*) as count FROM asset_tags WHERE asset_id = ? AND tag_slug = ?',
+      [this.id, tagSlug],
+    );
 
-    const db = await collection.getDb();
-    const result = (await db
-      .prepare(
-        'SELECT COUNT(*) as count FROM asset_tags WHERE asset_id = ? AND tag_slug = ?',
-      )
-      .get(this.id, tagSlug)) as { count: number };
-
-    return result.count > 0;
+    const result = rows?.[0] as { count: number } | undefined;
+    return result ? result.count > 0 : false;
   }
 
   /**
@@ -109,10 +104,15 @@ export class Asset extends SmrtObject {
   async getParent(): Promise<Asset | null> {
     if (!this.parentId) return null;
 
-    const collection = this.getCollection();
-    if (!collection) return null;
+    const { rows } = await this.db.query('SELECT * FROM assets WHERE id = ?', [
+      this.parentId,
+    ]);
 
-    return (await collection.get({ id: this.parentId })) as Asset | null;
+    if (!rows?.[0]) return null;
+
+    const asset = new Asset();
+    Object.assign(asset, rows[0]);
+    return asset;
   }
 
   /**
@@ -121,12 +121,16 @@ export class Asset extends SmrtObject {
    * @returns Array of child Asset instances
    */
   async getChildren(): Promise<Asset[]> {
-    const collection = this.getCollection();
-    if (!collection) return [];
+    const { rows } = await this.db.query(
+      'SELECT * FROM assets WHERE parent_id = ?',
+      [this.id],
+    );
 
-    return (await collection.list({
-      where: { parentId: this.id },
-    })) as Asset[];
+    return (rows as any[]).map((row) => {
+      const asset = new Asset();
+      Object.assign(asset, row);
+      return asset;
+    });
   }
 
   /**
