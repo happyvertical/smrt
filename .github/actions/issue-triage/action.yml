@@ -1,0 +1,26 @@
+name: 'Issue Triage'
+description: 'AI-powered issue triage using @have/github-actions package'
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        registry-url: 'https://npm.pkg.github.com'
+
+    - name: Configure npm for GitHub Packages
+      shell: bash
+      run: |
+        echo "@have:registry=https://npm.pkg.github.com" >> ~/.npmrc
+        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-token }}" >> ~/.npmrc
+
+    - name: Run issue triage
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: npx --yes @have/github-actions@latest triage
