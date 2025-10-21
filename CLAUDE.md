@@ -774,6 +774,38 @@ refactor/issue-XXX-short-description  # Code refactoring
 test/issue-XXX-short-description      # Test additions/updates
 ```
 
+## Recent Infrastructure Changes
+
+Important PRs that modified development workflow, tooling, or publishing:
+
+### PR #44 - GitHub Packages Publishing & Testing Standard (Oct 2024)
+**Issues**: #43, #42, #38
+**Branch**: `feat/issue-38-42-43-github-packages-testing`
+
+**Changes**:
+- Configured automated publishing to GitHub Packages via semantic-release
+- Added `.npmrc` and `publishConfig` to all packages for GitHub Packages registry
+- Updated GitHub Actions workflow with `packages:write` permission
+- Created comprehensive testing standard adoption plan (TESTING_ADOPTION_PLAN.md)
+- Removed build artifacts from git tracking (439 files, 38K deletions)
+
+**Impact**: Packages now publish to `npm.pkg.github.com` automatically on main branch merges. Users need `GITHUB_TOKEN` with `read:packages` scope to install packages.
+
+**Reference**: https://github.com/happyvertical/smrt/pull/44
+
+### PR #41 - Workflow SOPs and Code Review Agent (Oct 2024)
+**Issues**: #39, #40
+
+**Changes**:
+- Added "Start Work on Issue" SOP to CLAUDE.md
+- Added "Create Pull Request" SOP to CLAUDE.md
+- Created automated code review agent (`.claude/agents/code-reviewer.md`)
+- Integrated Gemini MCP for AI-powered code review
+
+**Impact**: Standardized development workflow with automated quality checks before PR creation.
+
+**Reference**: https://github.com/happyvertical/smrt/pull/41
+
 ## Release Management
 
 The framework uses semantic-release for automated versioning and publishing:
