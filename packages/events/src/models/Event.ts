@@ -18,7 +18,7 @@ export class Event extends SmrtObject {
   seriesId = ''; // FK to EventSeries (nullable for standalone events)
   parentEventId = ''; // FK to Event (nullable, self-referencing for hierarchy)
   typeId = ''; // FK to EventType
-  placeId = ''; // FK to Place (from @smrt/places)
+  placeId = ''; // FK to Place (from @happyvertical/smrt-places)
   description = '';
   startDate: Date | null = null;
   endDate: Date | null = null;
@@ -150,12 +150,12 @@ export class Event extends SmrtObject {
     if (!this.placeId) return null;
 
     try {
-      const { PlaceCollection } = await import('@smrt/places');
+      const { PlaceCollection } = await import('@happyvertical/smrt-places');
       const collection = await (PlaceCollection as any).create(this.options);
 
       return await collection.get({ id: this.placeId });
     } catch {
-      // @smrt/places not available
+      // @happyvertical/smrt-places not available
       return null;
     }
   }

@@ -16,7 +16,7 @@ export class EventParticipant extends SmrtObject {
   // id inherited from SmrtObject
 
   eventId = ''; // FK to Event
-  profileId = ''; // FK to Profile (from @smrt/profiles)
+  profileId = ''; // FK to Profile (from @happyvertical/smrt-profiles)
   role: string = ''; // Participant role (ParticipantRole or custom)
   placement: number | null = null; // Numeric position/placement
   groupId = ''; // Optional grouping (e.g., team ID for individual players)
@@ -108,12 +108,14 @@ export class EventParticipant extends SmrtObject {
     if (!this.profileId) return null;
 
     try {
-      const { ProfileCollection } = await import('@smrt/profiles');
+      const { ProfileCollection } = await import(
+        '@happyvertical/smrt-profiles'
+      );
       const collection = await (ProfileCollection as any).create(this.options);
 
       return await collection.get({ id: this.profileId });
     } catch {
-      // @smrt/profiles not available
+      // @happyvertical/smrt-profiles not available
       return null;
     }
   }
