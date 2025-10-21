@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/happyvertical/smrt/compare/v1.0.0...v1.1.0) (2025-10-21)
+
+
+### Features
+
+* **ci:** add AI-powered issue triage automation ([a7f0991](https://github.com/happyvertical/smrt/commit/a7f09910b3f12a30016163261d4dec65baa5f77b))
+
 # 1.0.0 (2025-10-21)
 
 
