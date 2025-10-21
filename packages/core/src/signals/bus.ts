@@ -6,7 +6,7 @@
  */
 
 import type { Signal, SignalAdapter } from '@happyvertical/smrt-types';
-import { makeId } from '@have/utils';
+import { makeId } from '@happyvertical/utils';
 import type { SanitizationConfig } from './sanitizer.js';
 import { SignalSanitizer } from './sanitizer.js';
 

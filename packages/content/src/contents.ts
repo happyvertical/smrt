@@ -1,11 +1,11 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { AIClientOptions } from '@happyvertical/ai';
+import { fetchDocument } from '@happyvertical/documents';
+import { ensureDirectoryExists } from '@happyvertical/files';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import type { AIClientOptions } from '@have/ai';
-import { fetchDocument } from '@have/documents';
-import { ensureDirectoryExists } from '@have/files';
-import { makeSlug } from '@have/utils';
+import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { Content } from './content';
 
@@ -120,7 +120,7 @@ export class Contents extends SmrtCollection<Content> {
       return existing;
     }
 
-    // Fetch and process the document using @have/documents
+    // Fetch and process the document using @happyvertical/documents
     const doc = await fetchDocument(options.url, {
       cacheDir: options?.mirrorDir,
     });
