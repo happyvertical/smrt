@@ -1,6 +1,6 @@
 # Interface: ToolCall
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:14
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:14](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L14)
 
 Tool call structure from AI response
 
@@ -10,7 +10,7 @@ Tool call structure from AI response
 
 > **function**: `object`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:28
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L28)
 
 Function details
 
@@ -32,7 +32,7 @@ Name of the method to call
 
 > **id**: `string`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:18
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L18)
 
 Unique identifier for this tool call
 
@@ -42,6 +42,6 @@ Unique identifier for this tool call
 
 > **type**: `"function"`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:23
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L23)
 
 Type of tool (always 'function' for now)

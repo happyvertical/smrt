@@ -4,7 +4,10 @@
  */
 
 import { resolve } from 'node:path';
-import { ASTScanner, ManifestGenerator } from '@smrt/core/scanner';
+import {
+  ASTScanner,
+  ManifestGenerator,
+} from '@happyvertical/smrt-core/scanner';
 
 async function testAST() {
   console.log('🔍 Testing AST Scanner...');

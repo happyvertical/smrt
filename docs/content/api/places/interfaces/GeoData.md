@@ -1,6 +1,6 @@
 # Interface: GeoData
 
-Defined in: places/src/types.ts:11
+Defined in: [places/src/types.ts:11](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L11)
 
 Geographic data structure
 All fields optional to support both real-world and abstract places
@@ -11,7 +11,7 @@ All fields optional to support both real-world and abstract places
 
 > `optional` **city**: `string`
 
-Defined in: places/src/types.ts:16
+Defined in: [places/src/types.ts:16](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L16)
 
 ***
 
@@ -19,7 +19,7 @@ Defined in: places/src/types.ts:16
 
 > `optional` **country**: `string`
 
-Defined in: places/src/types.ts:18
+Defined in: [places/src/types.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L18)
 
 ***
 
@@ -27,7 +27,7 @@ Defined in: places/src/types.ts:18
 
 > `optional` **countryCode**: `string`
 
-Defined in: places/src/types.ts:20
+Defined in: [places/src/types.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L20)
 
 ***
 
@@ -35,7 +35,7 @@ Defined in: places/src/types.ts:20
 
 > **latitude**: `number` \| `null`
 
-Defined in: places/src/types.ts:12
+Defined in: [places/src/types.ts:12](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L12)
 
 ***
 
@@ -43,7 +43,7 @@ Defined in: places/src/types.ts:12
 
 > **longitude**: `number` \| `null`
 
-Defined in: places/src/types.ts:13
+Defined in: [places/src/types.ts:13](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L13)
 
 ***
 
@@ -51,7 +51,7 @@ Defined in: places/src/types.ts:13
 
 > `optional` **postalCode**: `string`
 
-Defined in: places/src/types.ts:19
+Defined in: [places/src/types.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L19)
 
 ***
 
@@ -59,7 +59,7 @@ Defined in: places/src/types.ts:19
 
 > `optional` **region**: `string`
 
-Defined in: places/src/types.ts:17
+Defined in: [places/src/types.ts:17](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L17)
 
 ***
 
@@ -67,7 +67,7 @@ Defined in: places/src/types.ts:17
 
 > `optional` **streetName**: `string`
 
-Defined in: places/src/types.ts:15
+Defined in: [places/src/types.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L15)
 
 ***
 
@@ -75,7 +75,7 @@ Defined in: places/src/types.ts:15
 
 > `optional` **streetNumber**: `string`
 
-Defined in: places/src/types.ts:14
+Defined in: [places/src/types.ts:14](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L14)
 
 ***
 
@@ -83,4 +83,4 @@ Defined in: places/src/types.ts:14
 
 > `optional` **timezone**: `string`
 
-Defined in: places/src/types.ts:21
+Defined in: [places/src/types.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L21)

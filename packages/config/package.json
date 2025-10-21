@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/config",
+  "name": "@happyvertical/smrt-config",
   "version": "0.41.0",
   "type": "module",
   "description": "Centralized configuration management for SMRT modules",

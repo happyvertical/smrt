@@ -2,7 +2,7 @@
 
 > **boolean**(`options`): [`Field`](../classes/Field.md)
 
-Defined in: smrt/packages/core/src/fields/index.ts:344
+Defined in: [smrt/packages/core/src/fields/index.ts:344](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L344)
 
 Creates a boolean field for storing true/false values
 

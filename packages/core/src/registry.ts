@@ -8,7 +8,7 @@
  *
  * @example Registering a class manually
  * ```typescript
- * import { ObjectRegistry } from '@smrt/core';
+ * import { ObjectRegistry } from '@happyvertical/smrt-core';
  *
  * ObjectRegistry.register(MyClass, {
  *   api: { exclude: ['delete'] },
@@ -18,7 +18,7 @@
  *
  * @example Using the decorator (recommended)
  * ```typescript
- * import { smrt } from '@smrt/core';
+ * import { smrt } from '@happyvertical/smrt-core';
  *
  * @smrt({ api: { exclude: ['delete'] } })
  * class Product extends SmrtObject {

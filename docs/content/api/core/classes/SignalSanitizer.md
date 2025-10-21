@@ -1,6 +1,6 @@
 # Class: SignalSanitizer
 
-Defined in: smrt/packages/core/src/signals/sanitizer.ts:75
+Defined in: [smrt/packages/core/src/signals/sanitizer.ts:75](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/sanitizer.ts#L75)
 
 Signal sanitizer
 
@@ -13,7 +13,7 @@ they are processed by adapters.
 
 > **new SignalSanitizer**(`config`): `SignalSanitizer`
 
-Defined in: smrt/packages/core/src/signals/sanitizer.ts:78
+Defined in: [smrt/packages/core/src/signals/sanitizer.ts:78](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/sanitizer.ts#L78)
 
 #### Parameters
 
@@ -31,7 +31,7 @@ Defined in: smrt/packages/core/src/signals/sanitizer.ts:78
 
 > **sanitize**(`signal`): `Signal`
 
-Defined in: smrt/packages/core/src/signals/sanitizer.ts:166
+Defined in: [smrt/packages/core/src/signals/sanitizer.ts:166](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/sanitizer.ts#L166)
 
 Sanitize a signal payload
 

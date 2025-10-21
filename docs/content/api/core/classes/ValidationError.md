@@ -1,6 +1,6 @@
 # Class: ValidationError
 
-Defined in: smrt/packages/core/src/errors.ts:217
+Defined in: [smrt/packages/core/src/errors.ts:217](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L217)
 
 Data validation errors
 
@@ -14,7 +14,7 @@ Data validation errors
 
 > **new ValidationError**(`message`, `code`, `details?`, `cause?`): `ValidationError`
 
-Defined in: smrt/packages/core/src/errors.ts:218
+Defined in: [smrt/packages/core/src/errors.ts:218](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L218)
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: smrt/packages/core/src/errors.ts:218
 
 > `readonly` **category**: `"database"` \| `"ai"` \| `"filesystem"` \| `"validation"` \| `"network"` \| `"configuration"` \| `"runtime"`
 
-Defined in: smrt/packages/core/src/errors.ts:13
+Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L13)
 
 #### Inherited from
 
@@ -60,7 +60,7 @@ Defined in: smrt/packages/core/src/errors.ts:13
 
 > `readonly` `optional` **cause**: `Error`
 
-Defined in: smrt/packages/core/src/errors.ts:22
+Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L22)
 
 #### Inherited from
 
@@ -72,7 +72,7 @@ Defined in: smrt/packages/core/src/errors.ts:22
 
 > `readonly` **code**: `string`
 
-Defined in: smrt/packages/core/src/errors.ts:12
+Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L12)
 
 #### Inherited from
 
@@ -84,7 +84,7 @@ Defined in: smrt/packages/core/src/errors.ts:12
 
 > `readonly` `optional` **details**: `Record`\<`string`, `any`\>
 
-Defined in: smrt/packages/core/src/errors.ts:21
+Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L21)
 
 #### Inherited from
 
@@ -154,7 +154,7 @@ not capture any frames.
 
 > **toJSON**(): `object`
 
-Defined in: smrt/packages/core/src/errors.ts:47
+Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L47)
 
 Converts error to a serializable object for logging/debugging
 
@@ -270,7 +270,7 @@ a();
 
 > `static` **invalidValue**(`fieldName`, `value`, `expectedType`): `ValidationError`
 
-Defined in: smrt/packages/core/src/errors.ts:235
+Defined in: [smrt/packages/core/src/errors.ts:235](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L235)
 
 #### Parameters
 
@@ -326,7 +326,7 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 > `static` **rangeError**(`fieldName`, `value`, `min?`, `max?`): `ValidationError`
 
-Defined in: smrt/packages/core/src/errors.ts:255
+Defined in: [smrt/packages/core/src/errors.ts:255](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L255)
 
 #### Parameters
 
@@ -356,7 +356,7 @@ Defined in: smrt/packages/core/src/errors.ts:255
 
 > `static` **requiredField**(`fieldName`, `objectType`): `ValidationError`
 
-Defined in: smrt/packages/core/src/errors.ts:227
+Defined in: [smrt/packages/core/src/errors.ts:227](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L227)
 
 #### Parameters
 
@@ -378,7 +378,7 @@ Defined in: smrt/packages/core/src/errors.ts:227
 
 > `static` **uniqueConstraint**(`fieldName`, `value`): `ValidationError`
 
-Defined in: smrt/packages/core/src/errors.ts:247
+Defined in: [smrt/packages/core/src/errors.ts:247](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L247)
 
 #### Parameters
 

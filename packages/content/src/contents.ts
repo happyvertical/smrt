@@ -1,11 +1,11 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import type { AIClientOptions } from '@have/ai';
 import { fetchDocument } from '@have/documents';
 import { ensureDirectoryExists } from '@have/files';
 import { makeSlug } from '@have/utils';
-import type { SmrtCollectionOptions } from '@smrt/core';
-import { SmrtCollection } from '@smrt/core';
 import YAML from 'yaml';
 import { Content } from './content';
 

@@ -8,8 +8,8 @@
  * 3. Runtime behavior (from merged config)
  */
 
+import type { SignalAdapter } from '@happyvertical/smrt-types';
 import type { LoggerConfig } from '@have/logger';
-import type { SignalAdapter } from '@smrt/types';
 import type { SignalBus } from './signals/bus.js';
 import type { SanitizationConfig } from './signals/sanitizer.js';
 
@@ -153,7 +153,7 @@ class SmrtConfig {
  *
  * @example
  * ```typescript
- * import { config } from '@smrt/core';
+ * import { config } from '@happyvertical/smrt-core';
  *
  * // Set application-level defaults
  * config({

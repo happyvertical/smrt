@@ -2,7 +2,7 @@
 
 > **json**(`options`): [`Field`](../classes/Field.md)
 
-Defined in: smrt/packages/core/src/fields/index.ts:380
+Defined in: [smrt/packages/core/src/fields/index.ts:380](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L380)
 
 Creates a JSON field for storing structured data objects
 

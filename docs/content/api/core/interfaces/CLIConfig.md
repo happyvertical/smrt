@@ -1,8 +1,8 @@
 # Interface: CLIConfig
 
-Defined in: smrt/packages/core/src/generators/cli.ts:33
+Defined in: [smrt/packages/core/src/generators/cli.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L33)
 
-@smrt/core generators - Create CLIs, REST APIs, and MCP servers from SMRT objects
+@happyvertical/smrt-core generators - Create CLIs, REST APIs, and MCP servers from SMRT objects
 
 ## Properties
 
@@ -10,7 +10,7 @@ Defined in: smrt/packages/core/src/generators/cli.ts:33
 
 > `optional` **colors**: `boolean`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:38
+Defined in: [smrt/packages/core/src/generators/cli.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L38)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: smrt/packages/core/src/generators/cli.ts:38
 
 > `optional` **description**: `string`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:36
+Defined in: [smrt/packages/core/src/generators/cli.ts:36](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L36)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: smrt/packages/core/src/generators/cli.ts:36
 
 > `optional` **name**: `string`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:34
+Defined in: [smrt/packages/core/src/generators/cli.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L34)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: smrt/packages/core/src/generators/cli.ts:34
 
 > `optional` **prompt**: `boolean`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:37
+Defined in: [smrt/packages/core/src/generators/cli.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L37)
 
 ***
 
@@ -42,4 +42,4 @@ Defined in: smrt/packages/core/src/generators/cli.ts:37
 
 > `optional` **version**: `string`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:35
+Defined in: [smrt/packages/core/src/generators/cli.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L35)

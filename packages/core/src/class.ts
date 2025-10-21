@@ -1,3 +1,4 @@
+import type { SignalAdapter } from '@happyvertical/smrt-types';
 import type { AIClientOptions } from '@have/ai';
 import { type AIClient, getAI } from '@have/ai';
 import type { FilesystemAdapterOptions } from '@have/files';
@@ -5,7 +6,6 @@ import { FilesystemAdapter } from '@have/files';
 import type { LoggerConfig } from '@have/logger';
 import type { DatabaseInterface } from '@have/sql';
 import { getDatabase } from '@have/sql';
-import type { SignalAdapter } from '@smrt/types';
 import type {
   GlobalSignalConfig,
   MetricsConfig,

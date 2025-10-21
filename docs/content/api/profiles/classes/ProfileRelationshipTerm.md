@@ -1,6 +1,6 @@
 # Class: ProfileRelationshipTerm
 
-Defined in: profiles/src/models/ProfileRelationshipTerm.ts:27
+Defined in: [profiles/src/models/ProfileRelationshipTerm.ts:27](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipTerm.ts#L27)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: profiles/src/models/ProfileRelationshipTerm.ts:27
 
 > **new ProfileRelationshipTerm**(`options`): `ProfileRelationshipTerm`
 
-Defined in: profiles/src/models/ProfileRelationshipTerm.ts:33
+Defined in: [profiles/src/models/ProfileRelationshipTerm.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipTerm.ts#L33)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **endedAt**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationshipTerm.ts:31
+Defined in: [profiles/src/models/ProfileRelationshipTerm.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipTerm.ts#L31)
 
 ***
 
@@ -212,7 +212,7 @@ Initialized by parent constructor via super() call.
 
 > **relationshipId**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationshipTerm.ts:29
+Defined in: [profiles/src/models/ProfileRelationshipTerm.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipTerm.ts#L29)
 
 ***
 
@@ -220,7 +220,7 @@ Defined in: profiles/src/models/ProfileRelationshipTerm.ts:29
 
 > **startedAt**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationshipTerm.ts:30
+Defined in: [profiles/src/models/ProfileRelationshipTerm.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipTerm.ts#L30)
 
 ***
 
@@ -244,7 +244,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -308,7 +308,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -328,7 +328,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -392,7 +392,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -458,7 +458,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -537,7 +537,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -602,7 +602,7 @@ Promise resolving to the AI response
 
 > **end**(`endedAt`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/ProfileRelationshipTerm.ts:59
+Defined in: [profiles/src/models/ProfileRelationshipTerm.ts:59](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipTerm.ts#L59)
 
 End this term
 
@@ -824,7 +824,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getDurationDays**(): `number`
 
-Defined in: profiles/src/models/ProfileRelationshipTerm.ts:70
+Defined in: [profiles/src/models/ProfileRelationshipTerm.ts:70](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipTerm.ts#L70)
 
 Get the duration of this term in days
 
@@ -1075,7 +1075,7 @@ Error if the AI response is invalid
 
 > **isActive**(): `boolean`
 
-Defined in: profiles/src/models/ProfileRelationshipTerm.ts:44
+Defined in: [profiles/src/models/ProfileRelationshipTerm.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipTerm.ts#L44)
 
 Check if this term is currently active
 
@@ -1487,6 +1487,39 @@ await agent.remember({
 #### Inherited from
 
 `SmrtObject.remember`
+
+***
+
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
 
 ***
 

@@ -1,6 +1,6 @@
 # Class: ProfileRelationshipType
 
-Defined in: profiles/src/models/ProfileRelationshipType.ts:64
+Defined in: [profiles/src/models/ProfileRelationshipType.ts:64](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipType.ts#L64)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: profiles/src/models/ProfileRelationshipType.ts:64
 
 > **new ProfileRelationshipType**(`options`): `ProfileRelationshipType`
 
-Defined in: profiles/src/models/ProfileRelationshipType.ts:70
+Defined in: [profiles/src/models/ProfileRelationshipType.ts:70](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipType.ts#L70)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **name**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationshipType.ts:67
+Defined in: [profiles/src/models/ProfileRelationshipType.ts:67](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipType.ts#L67)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -204,7 +204,7 @@ Initialized by parent constructor via super() call.
 
 > **reciprocal**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationshipType.ts:68
+Defined in: [profiles/src/models/ProfileRelationshipType.ts:68](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipType.ts#L68)
 
 ***
 
@@ -228,7 +228,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -292,7 +292,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -312,7 +312,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -376,7 +376,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -442,7 +442,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -521,7 +521,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -1420,6 +1420,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1511,7 +1544,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **getBySlug**(`_slug`): `Promise`\<`ProfileRelationshipType` \| `null`\>
 
-Defined in: profiles/src/models/ProfileRelationshipType.ts:82
+Defined in: [profiles/src/models/ProfileRelationshipType.ts:82](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipType.ts#L82)
 
 Convenience method for slug-based lookup
 
@@ -1533,7 +1566,7 @@ ProfileRelationshipType instance or null if not found
 
 > `static` **getReciprocalHandler**(`slug`): [`ReciprocalHandler`](../type-aliases/ReciprocalHandler.md) \| `undefined`
 
-Defined in: profiles/src/models/ProfileRelationshipType.ts:108
+Defined in: [profiles/src/models/ProfileRelationshipType.ts:108](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipType.ts#L108)
 
 Get the reciprocal handler for a relationship type
 
@@ -1557,7 +1590,7 @@ The handler function or undefined
 
 > `static` **isReciprocal**(`slug`): `Promise`\<`boolean`\>
 
-Defined in: profiles/src/models/ProfileRelationshipType.ts:118
+Defined in: [profiles/src/models/ProfileRelationshipType.ts:118](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipType.ts#L118)
 
 Check if a relationship type is reciprocal
 
@@ -1581,7 +1614,7 @@ True if reciprocal, false otherwise
 
 > `static` **registerReciprocalHandler**(`slug`, `handler`): `void`
 
-Defined in: profiles/src/models/ProfileRelationshipType.ts:95
+Defined in: [profiles/src/models/ProfileRelationshipType.ts:95](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationshipType.ts#L95)
 
 Register a custom reciprocal handler for a relationship type
 

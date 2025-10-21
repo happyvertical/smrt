@@ -2,7 +2,7 @@
  * Type definitions for @have/events
  */
 
-import type { SmrtObjectOptions } from '@smrt/core';
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 
 /**
  * Event status lifecycle

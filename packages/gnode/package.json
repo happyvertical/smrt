@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/gnode",
+  "name": "@happyvertical/smrt-gnode",
   "version": "0.41.0",
   "description": "SMRT federation library for building federated local knowledge bases (gnodes)",
   "author": "Will Griffin <willgriffin@gmail.com>",
@@ -16,7 +16,7 @@
     "./protocols": "./dist/protocols/index.js"
   },
   "dependencies": {
-    "@smrt/core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*"
   },
   "scripts": {
     "test": "npx vitest run",

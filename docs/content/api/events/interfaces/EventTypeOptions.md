@@ -1,6 +1,6 @@
 # Interface: EventTypeOptions
 
-Defined in: events/src/types.ts:62
+Defined in: [events/src/types.ts:62](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L62)
 
 Options for creating EventType
 
@@ -104,7 +104,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: events/src/types.ts:69
+Defined in: [events/src/types.ts:69](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L69)
 
 ***
 
@@ -114,7 +114,7 @@ Defined in: events/src/types.ts:69
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -131,7 +131,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: events/src/types.ts:66
+Defined in: [events/src/types.ts:66](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L66)
 
 ***
 
@@ -153,7 +153,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: events/src/types.ts:63
+Defined in: [events/src/types.ts:63](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L63)
 
 Unique identifier for the object
 
@@ -195,7 +195,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: events/src/types.ts:65
+Defined in: [events/src/types.ts:65](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L65)
 
 Human-readable name for the object
 
@@ -209,7 +209,7 @@ Human-readable name for the object
 
 > `optional` **participantSchema**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: events/src/types.ts:68
+Defined in: [events/src/types.ts:68](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L68)
 
 ***
 
@@ -245,7 +245,7 @@ Sanitization configuration (overrides global default)
 
 > `optional` **schema**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: events/src/types.ts:67
+Defined in: [events/src/types.ts:67](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L67)
 
 ***
 
@@ -279,7 +279,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: events/src/types.ts:64
+Defined in: [events/src/types.ts:64](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L64)
 
 URL-friendly identifier
 
@@ -307,4 +307,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: events/src/types.ts:70
+Defined in: [events/src/types.ts:70](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L70)

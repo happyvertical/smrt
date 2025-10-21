@@ -11,7 +11,7 @@ import {
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
-} from '@smrt/core';
+} from '@happyvertical/smrt-core';
 import type { ProfileRelationshipTerm } from './ProfileRelationshipTerm';
 
 export interface ProfileRelationshipOptions extends SmrtObjectOptions {

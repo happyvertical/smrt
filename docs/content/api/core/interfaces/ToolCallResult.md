@@ -1,6 +1,6 @@
 # Interface: ToolCallResult
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:44
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L44)
 
 Result of executing a tool call
 
@@ -10,7 +10,7 @@ Result of executing a tool call
 
 > **arguments**: `Record`\<`string`, `any`\>
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:58
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:58](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L58)
 
 Parsed arguments that were used
 
@@ -20,7 +20,7 @@ Parsed arguments that were used
 
 > `optional` **duration**: `number`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:78
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:78](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L78)
 
 Execution time in milliseconds
 
@@ -30,7 +30,7 @@ Execution time in milliseconds
 
 > `optional` **error**: `string`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:73
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:73](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L73)
 
 Error message if call failed
 
@@ -40,7 +40,7 @@ Error message if call failed
 
 > **id**: `string`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:48
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:48](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L48)
 
 Tool call ID for correlation
 
@@ -50,7 +50,7 @@ Tool call ID for correlation
 
 > **methodName**: `string`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:53
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L53)
 
 Method name that was called
 
@@ -60,7 +60,7 @@ Method name that was called
 
 > **result**: `any`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:63
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:63](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L63)
 
 Result returned from the method
 
@@ -70,6 +70,6 @@ Result returned from the method
 
 > **success**: `boolean`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:68
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:68](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L68)
 
 Whether the call succeeded

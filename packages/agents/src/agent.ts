@@ -1,5 +1,5 @@
+import { SmrtObject, type SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { createLogger, type Logger } from '@have/logger';
-import { SmrtObject, type SmrtObjectOptions } from '@smrt/core';
 import type { AgentStatusType } from './types.js';
 
 /**
@@ -21,7 +21,7 @@ import type { AgentStatusType } from './types.js';
  * ```typescript
  * import { Agent } from '@have/agents';
  * import { getModuleConfig } from '@have/config';
- * import { smrt } from '@smrt/core';
+ * import { smrt } from '@happyvertical/smrt-core';
  *
  * @smrt()
  * class MyAgent extends Agent {

@@ -4,7 +4,7 @@
  * Tracks who participated in an event with role and placement
  */
 
-import { SmrtObject, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { EventParticipantOptions } from '../types';
 
 @smrt({

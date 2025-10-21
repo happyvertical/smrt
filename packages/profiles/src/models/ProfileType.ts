@@ -5,7 +5,12 @@
  * Uses UUID primary key with unique slug for human-readable lookups.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt, text } from '@smrt/core';
+import {
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+  text,
+} from '@happyvertical/smrt-core';
 
 export interface ProfileTypeOptions extends SmrtObjectOptions {
   slug?: string;

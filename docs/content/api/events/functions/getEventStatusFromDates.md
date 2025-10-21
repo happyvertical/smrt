@@ -2,7 +2,7 @@
 
 > **getEventStatusFromDates**(`startDate`, `endDate?`, `currentStatus?`): [`EventStatus`](../type-aliases/EventStatus.md)
 
-Defined in: events/src/utils.ts:220
+Defined in: [events/src/utils.ts:220](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/utils.ts#L220)
 
 Get event status based on dates
 

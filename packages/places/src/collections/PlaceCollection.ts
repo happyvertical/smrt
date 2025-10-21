@@ -5,9 +5,9 @@
  * lookupOrCreate method that integrates with @have/geo.
  */
 
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import type { Location } from '@have/geo';
 import { getGeoAdapter } from '@have/geo';
-import { SmrtCollection } from '@smrt/core';
 import { Place } from '../models/Place';
 import type { LookupOrCreateOptions } from '../types';
 import { PlaceTypeCollection } from './PlaceTypeCollection';

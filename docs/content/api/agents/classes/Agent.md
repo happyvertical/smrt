@@ -1,6 +1,6 @@
 # Abstract Class: Agent
 
-Defined in: agents/src/agent.ts:55
+Defined in: [agents/src/agent.ts:55](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L55)
 
 Base Agent class for building autonomous actors in the SMRT ecosystem
 
@@ -21,7 +21,7 @@ SmrtObject, any properties defined will be automatically persisted to the databa
 ```typescript
 import { Agent } from '@have/agents';
 import { getModuleConfig } from '@have/config';
-import { smrt } from '@smrt/core';
+import { smrt } from '@happyvertical/smrt-core';
 
 @smrt()
 class MyAgent extends Agent {
@@ -62,7 +62,7 @@ await agent.execute();
 
 > **new Agent**(`options`): `Agent`
 
-Defined in: agents/src/agent.ts:91
+Defined in: [agents/src/agent.ts:91](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L91)
 
 Creates a new Agent instance
 
@@ -214,7 +214,7 @@ Database table name for this object
 
 > `abstract` `protected` **config**: `unknown`
 
-Defined in: agents/src/agent.ts:79
+Defined in: [agents/src/agent.ts:79](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L79)
 
 Agent configuration
 Must be defined by extending classes using getModuleConfig()
@@ -248,7 +248,7 @@ Creation timestamp
 
 > `protected` **logger**: `Logger`
 
-Defined in: agents/src/agent.ts:65
+Defined in: [agents/src/agent.ts:65](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L65)
 
 Structured logger instance
 Created with agent's class name as context
@@ -289,7 +289,7 @@ Initialized by parent constructor via super() call.
 
 > **status**: [`AgentStatusType`](../type-aliases/AgentStatusType.md) = `'idle'`
 
-Defined in: agents/src/agent.ts:59
+Defined in: [agents/src/agent.ts:59](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L59)
 
 Current agent status
 
@@ -315,7 +315,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -379,7 +379,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -399,7 +399,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -463,7 +463,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -529,7 +529,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -608,7 +608,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -673,7 +673,7 @@ Promise resolving to the AI response
 
 > **execute**(): `Promise`\<`void`\>
 
-Defined in: agents/src/agent.ts:246
+Defined in: [agents/src/agent.ts:246](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L246)
 
 Execute agent with lifecycle management
 
@@ -1087,7 +1087,7 @@ Promise resolving to the object's slug
 
 > **initialize**(): `Promise`\<`Agent`\>
 
-Defined in: agents/src/agent.ts:110
+Defined in: [agents/src/agent.ts:110](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L110)
 
 Initialize the agent
 Sets status to 'initializing' and sets up signal handlers
@@ -1554,11 +1554,44 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### run()
 
 > `abstract` **run**(): `Promise`\<`void`\>
 
-Defined in: agents/src/agent.ts:198
+Defined in: [agents/src/agent.ts:198](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L198)
 
 Main agent logic
 Must be implemented by extending class
@@ -1640,7 +1673,7 @@ Promise resolving to this object
 
 > **shutdown**(): `Promise`\<`void`\>
 
-Defined in: agents/src/agent.ts:215
+Defined in: [agents/src/agent.ts:215](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L215)
 
 Cleanup and shutdown
 Override to perform graceful shutdown
@@ -1687,7 +1720,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **validate**(): `Promise`\<`void`\>
 
-Defined in: agents/src/agent.ts:171
+Defined in: [agents/src/agent.ts:171](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/agents/src/agent.ts#L171)
 
 Validate configuration and dependencies
 Override to check agent-specific requirements

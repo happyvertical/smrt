@@ -1,11 +1,11 @@
 ---
 id: "content"
-title: "@smrt/content: Content Processing Module"
-sidebar_label: "@smrt/content"
+title: "@happyvertical/smrt-content: Content Processing Module"
+sidebar_label: "@happyvertical/smrt-content"
 sidebar_position: 6
 ---
 
-# @smrt/content
+# @happyvertical/smrt-content
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,7 +13,7 @@ Content processing module for SMRT framework - handles documents, web content, a
 
 ## Overview
 
-The `@smrt/content` package is a SMRT-specific module that provides comprehensive content processing capabilities. It handles document extraction (PDFs, text files, web content), content management with metadata, AI-powered content analysis, and filesystem synchronization. Built on top of the SMRT framework, it automatically generates REST APIs, AI tools (MCP), and CLI commands for all content operations.
+The `@happyvertical/smrt-content` package is a SMRT-specific module that provides comprehensive content processing capabilities. It handles document extraction (PDFs, text files, web content), content management with metadata, AI-powered content analysis, and filesystem synchronization. Built on top of the SMRT framework, it automatically generates REST APIs, AI tools (MCP), and CLI commands for all content operations.
 
 The package provides:
 
@@ -46,13 +46,13 @@ The package provides:
 
 ```bash
 # Install with pnpm (recommended for monorepo)
-pnpm add @smrt/content
+pnpm add @happyvertical/smrt-content
 
 # Or with npm
-npm install @smrt/content
+npm install @happyvertical/smrt-content
 
 # Or with bun
-bun add @smrt/content
+bun add @happyvertical/smrt-content
 ```
 
 ## Quick Start
@@ -60,7 +60,7 @@ bun add @smrt/content
 ### Basic Content Management
 
 ```typescript
-import { Content, Contents } from '@smrt/content';
+import { Content, Contents } from '@happyvertical/smrt-content';
 
 // Initialize collection with database configuration
 const contents = await Contents.create({
@@ -93,7 +93,7 @@ const topics = await article.do('Extract key topics as JSON array');
 ### Web Content Mirroring
 
 ```typescript
-import { Contents } from '@smrt/content';
+import { Contents } from '@happyvertical/smrt-content';
 
 const contents = await Contents.create({
   db: { url: 'sqlite:./mirrors.db' }
@@ -115,7 +115,7 @@ console.log(mirrored.type);  // 'mirror'
 
 ```typescript
 import { fetchDocument } from '@have/documents';
-import { Content } from '@smrt/content';
+import { Content } from '@happyvertical/smrt-content';
 
 // Process a PDF document
 const doc = await fetchDocument('https://example.com/paper.pdf', {
@@ -141,7 +141,7 @@ await content.save();
 ### Content Export and Sync
 
 ```typescript
-import { Contents } from '@smrt/content';
+import { Contents } from '@happyvertical/smrt-content';
 
 const contents = await Contents.create({
   db: { url: 'sqlite:./content.db' },
@@ -166,7 +166,7 @@ await contents.writeContentFile({
 ### Creating and Managing Content
 
 ```typescript
-import { Content, Contents } from '@smrt/content';
+import { Content, Contents } from '@happyvertical/smrt-content';
 
 // Initialize collection
 const contents = await Contents.create({
@@ -315,7 +315,7 @@ await contents.getOrUpsert({
 ### Markdown Utilities
 
 ```typescript
-import { contentToString, stringToContent } from '@smrt/content';
+import { contentToString, stringToContent } from '@happyvertical/smrt-content';
 
 // Convert content to markdown with YAML frontmatter
 const markdown = contentToString(article);
@@ -410,8 +410,8 @@ The package includes auto-generated REST API endpoints via the SMRT framework.
 ### Starting the Server
 
 ```typescript
-import { startRestServer } from '@smrt/core';
-import { Content } from '@smrt/content';
+import { startRestServer } from '@happyvertical/smrt-core';
+import { Content } from '@happyvertical/smrt-content';
 
 // Start server with Content endpoints
 const shutdown = await startRestServer(
@@ -582,7 +582,7 @@ import type {
   ContentOptions,
   Contents,
   ContentsOptions
-} from '@smrt/content';
+} from '@happyvertical/smrt-content';
 ```
 
 ## Development
@@ -617,7 +617,7 @@ Tests use Vitest with unique database instances to avoid conflicts:
 ```typescript
 import os from 'node:os';
 import path from 'node:path';
-import { Contents } from '@smrt/content';
+import { Contents } from '@happyvertical/smrt-content';
 
 const TMP_DIR = path.resolve(`${os.tmpdir()}/.smrt-tests/content`);
 
@@ -636,7 +636,7 @@ const contents = await Contents.create({
 ## Dependencies
 
 ### Internal SMRT Dependencies
-- **@smrt/core**: Core SMRT framework with ORM and code generation
+- **@happyvertical/smrt-core**: Core SMRT framework with ORM and code generation
 
 ### External Dependencies
 - **@have/documents**: Document fetching and processing

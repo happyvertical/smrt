@@ -4,7 +4,7 @@
  * This module handles runtime execution of AI tool calls on SMRT object instances.
  */
 
-import type { Signal } from '@smrt/types';
+import type { Signal } from '@happyvertical/smrt-types';
 import { RuntimeError, ValidationError } from '../errors.js';
 import type { SignalBus } from '../signals/bus.js';
 

@@ -5,7 +5,7 @@
  * No manual route definitions needed - everything is generated from @smrt() decorated classes.
  */
 
-import { startRestServer } from '@smrt/core';
+import { startRestServer } from '@happyvertical/smrt-core';
 import { Content } from './content';
 
 async function startServer() {

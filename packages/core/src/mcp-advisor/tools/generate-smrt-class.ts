@@ -33,7 +33,7 @@ export async function generateSmrtClass(
 
     // Generate imports
     const imports = [
-      `import { ${baseClass}, type SmrtObjectOptions, smrt } from '@smrt/core';`,
+      `import { ${baseClass}, type SmrtObjectOptions, smrt } from '@happyvertical/smrt-core';`,
     ];
 
     // Determine which field types are used
@@ -46,7 +46,7 @@ export async function generateSmrtClass(
 
     if (fieldImports.length > 0) {
       imports.push(
-        `import { ${fieldImports.join(', ')} } from '@smrt/core/fields';`,
+        `import { ${fieldImports.join(', ')} } from '@happyvertical/smrt-core/fields';`,
       );
     }
 

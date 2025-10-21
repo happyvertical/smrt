@@ -1,6 +1,6 @@
 # Class: PeerExchangeProtocol
 
-Defined in: protocols/index.ts:22
+Defined in: [protocols/index.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/protocols/index.ts#L22)
 
 ## Constructors
 
@@ -18,7 +18,7 @@ Defined in: protocols/index.ts:22
 
 > `static` **exchange**(`_peerUrl`): `Promise`\<`string`[]\>
 
-Defined in: protocols/index.ts:23
+Defined in: [protocols/index.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/protocols/index.ts#L23)
 
 #### Parameters
 

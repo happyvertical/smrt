@@ -1175,7 +1175,7 @@ async function generateCLIModule(
 // Auto-generated CLI module from SMRT objects
 // This file is generated automatically - do not edit
 
-import { CLIGenerator } from '@smrt/core/generators/cli';
+import { CLIGenerator } from '@happyvertical/smrt-core/generators/cli';
 
 /**
  * @typedef {import('@smrt/core/generators/cli').CLIConfig} CLIConfig

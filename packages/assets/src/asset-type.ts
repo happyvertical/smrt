@@ -4,7 +4,7 @@
  * Lookup table for asset type classification (e.g., 'image', 'video', 'document')
  */
 
-import { SmrtObject, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AssetTypeOptions } from './types';
 
 @smrt({

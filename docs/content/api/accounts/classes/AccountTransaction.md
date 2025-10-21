@@ -1,6 +1,6 @@
 # Class: AccountTransaction
 
-Defined in: accounts/src/models/AccountTransaction.ts:15
+Defined in: [accounts/src/models/AccountTransaction.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L15)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: accounts/src/models/AccountTransaction.ts:15
 
 > **new AccountTransaction**(`options`): `AccountTransaction`
 
-Defined in: accounts/src/models/AccountTransaction.ts:27
+Defined in: [accounts/src/models/AccountTransaction.ts:27](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L27)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: accounts/src/models/AccountTransaction.ts:24
+Defined in: [accounts/src/models/AccountTransaction.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L24)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: accounts/src/models/AccountTransaction.ts:24
 
 > **date**: `Date`
 
-Defined in: accounts/src/models/AccountTransaction.ts:19
+Defined in: [accounts/src/models/AccountTransaction.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L19)
 
 ***
 
@@ -190,7 +190,7 @@ Defined in: accounts/src/models/AccountTransaction.ts:19
 
 > **description**: `string` = `''`
 
-Defined in: accounts/src/models/AccountTransaction.ts:20
+Defined in: [accounts/src/models/AccountTransaction.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L20)
 
 ***
 
@@ -198,7 +198,7 @@ Defined in: accounts/src/models/AccountTransaction.ts:20
 
 > **metadata**: `string` = `''`
 
-Defined in: accounts/src/models/AccountTransaction.ts:21
+Defined in: [accounts/src/models/AccountTransaction.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L21)
 
 ***
 
@@ -250,7 +250,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: accounts/src/models/AccountTransaction.ts:25
+Defined in: [accounts/src/models/AccountTransaction.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L25)
 
 ## Accessors
 
@@ -260,7 +260,7 @@ Defined in: accounts/src/models/AccountTransaction.ts:25
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -324,7 +324,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -344,7 +344,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -408,7 +408,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -474,7 +474,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -553,7 +553,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -818,7 +818,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getBalance**(): `Promise`\<`number`\>
 
-Defined in: accounts/src/models/AccountTransaction.ts:107
+Defined in: [accounts/src/models/AccountTransaction.ts:107](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L107)
 
 Calculate the total balance of all entries
 For balanced transactions, this should be zero
@@ -835,7 +835,7 @@ Sum of all entry amounts (debits positive, credits negative)
 
 > **getEntries**(): `Promise`\<`any`\>
 
-Defined in: accounts/src/models/AccountTransaction.ts:85
+Defined in: [accounts/src/models/AccountTransaction.ts:85](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L85)
 
 Get all entries for this transaction
 
@@ -851,7 +851,7 @@ Array of AccountTransactionEntry instances
 
 > **getEntriesByCurrency**(): `Promise`\<`Map`\<`string`, `unknown`[]\>\>
 
-Defined in: accounts/src/models/AccountTransaction.ts:154
+Defined in: [accounts/src/models/AccountTransaction.ts:154](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L154)
 
 Get entries grouped by currency
 
@@ -931,7 +931,7 @@ Promise resolving to the object's ID
 
 > **getMetadata**(): `Record`\<`string`, `unknown`\>
 
-Defined in: accounts/src/models/AccountTransaction.ts:52
+Defined in: [accounts/src/models/AccountTransaction.ts:52](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L52)
 
 Get metadata as parsed object
 
@@ -1060,7 +1060,7 @@ Promise resolving to the object's slug
 
 > **getTotalCredits**(): `Promise`\<`number`\>
 
-Defined in: accounts/src/models/AccountTransaction.ts:140
+Defined in: [accounts/src/models/AccountTransaction.ts:140](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L140)
 
 Get total credits (negative amounts, returned as positive)
 
@@ -1076,7 +1076,7 @@ Sum of all negative entry amounts (as positive number)
 
 > **getTotalDebits**(): `Promise`\<`number`\>
 
-Defined in: accounts/src/models/AccountTransaction.ts:128
+Defined in: [accounts/src/models/AccountTransaction.ts:128](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L128)
 
 Get total debits (positive amounts)
 
@@ -1150,7 +1150,7 @@ Error if the AI response is invalid
 
 > **isBalanced**(): `Promise`\<`boolean`\>
 
-Defined in: accounts/src/models/AccountTransaction.ts:118
+Defined in: [accounts/src/models/AccountTransaction.ts:118](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L118)
 
 Check if this transaction is balanced
 In double-entry accounting, balanced means debits = credits (sum = 0)
@@ -1566,6 +1566,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1618,7 +1651,7 @@ Promise resolving to this object
 
 > **setMetadata**(`data`): `void`
 
-Defined in: accounts/src/models/AccountTransaction.ts:66
+Defined in: [accounts/src/models/AccountTransaction.ts:66](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L66)
 
 Set metadata from object
 
@@ -1660,7 +1693,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateMetadata**(`updates`): `void`
 
-Defined in: accounts/src/models/AccountTransaction.ts:75
+Defined in: [accounts/src/models/AccountTransaction.ts:75](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/AccountTransaction.ts#L75)
 
 Update metadata by merging with existing values
 

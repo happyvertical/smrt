@@ -4,7 +4,7 @@
  * Provides simple lookup and creation for place types.
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { PlaceType } from '../models/PlaceType';
 
 export class PlaceTypeCollection extends SmrtCollection<PlaceType> {

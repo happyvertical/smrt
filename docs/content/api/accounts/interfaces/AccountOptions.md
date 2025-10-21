@@ -1,6 +1,6 @@
 # Interface: AccountOptions
 
-Defined in: accounts/src/types.ts:26
+Defined in: [accounts/src/types.ts:26](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L26)
 
 Options for creating Account
 
@@ -104,7 +104,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: accounts/src/types.ts:35
+Defined in: [accounts/src/types.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L35)
 
 ***
 
@@ -112,7 +112,7 @@ Defined in: accounts/src/types.ts:35
 
 > `optional` **currency**: `string`
 
-Defined in: accounts/src/types.ts:31
+Defined in: [accounts/src/types.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L31)
 
 ***
 
@@ -122,7 +122,7 @@ Defined in: accounts/src/types.ts:31
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -139,7 +139,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: accounts/src/types.ts:33
+Defined in: [accounts/src/types.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L33)
 
 ***
 
@@ -161,7 +161,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: accounts/src/types.ts:27
+Defined in: [accounts/src/types.ts:27](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L27)
 
 Unique identifier for the object
 
@@ -189,7 +189,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metadata**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: accounts/src/types.ts:34
+Defined in: [accounts/src/types.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L34)
 
 ***
 
@@ -211,7 +211,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: accounts/src/types.ts:28
+Defined in: [accounts/src/types.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L28)
 
 Human-readable name for the object
 
@@ -225,7 +225,7 @@ Human-readable name for the object
 
 > `optional` **parentId**: `string`
 
-Defined in: accounts/src/types.ts:32
+Defined in: [accounts/src/types.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L32)
 
 ***
 
@@ -287,7 +287,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: accounts/src/types.ts:29
+Defined in: [accounts/src/types.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L29)
 
 URL-friendly identifier
 
@@ -301,7 +301,7 @@ URL-friendly identifier
 
 > `optional` **type**: [`AccountType`](../type-aliases/AccountType.md)
 
-Defined in: accounts/src/types.ts:30
+Defined in: [accounts/src/types.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L30)
 
 ***
 
@@ -323,4 +323,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: accounts/src/types.ts:36
+Defined in: [accounts/src/types.ts:36](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L36)

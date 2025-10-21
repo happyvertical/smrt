@@ -7,13 +7,13 @@
  * Usage examples:
  *
  * // Import models
- * import { Product, Category } from '@smrt/core-template';
+ * import { Product, Category } from '@happyvertical/core-template';
  *
  * // Import UI components
- * import { ProductCard, ProductForm } from '@smrt/core-template/components';
+ * import { ProductCard, ProductForm } from '@happyvertical/core-template/components';
  *
  * // Import stores
- * import { ProductStoreClass } from '@smrt/core-template/stores';
+ * import { ProductStoreClass } from '@happyvertical/core-template/stores';
  */
 
 export { demonstrateClient } from './client';

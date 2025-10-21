@@ -1,6 +1,6 @@
 # Interface: AssetMetafieldOptions
 
-Defined in: assets/src/types.ts:28
+Defined in: [assets/src/types.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L28)
 
 Options for creating an AssetMetafield instance
 
@@ -106,7 +106,7 @@ Creation timestamp
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -179,7 +179,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: assets/src/types.ts:30
+Defined in: [assets/src/types.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L30)
 
 Human-readable name for the object
 
@@ -247,7 +247,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: assets/src/types.ts:29
+Defined in: [assets/src/types.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L29)
 
 URL-friendly identifier
 
@@ -275,4 +275,4 @@ Last update timestamp
 
 > `optional` **validation**: `string`
 
-Defined in: assets/src/types.ts:31
+Defined in: [assets/src/types.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L31)

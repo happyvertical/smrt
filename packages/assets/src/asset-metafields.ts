@@ -4,7 +4,7 @@
  * Manages asset metafield definitions with validation rules
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { AssetMetafield } from './asset-metafield';
 
 export class AssetMetafieldCollection extends SmrtCollection<AssetMetafield> {

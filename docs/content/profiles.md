@@ -1,11 +1,11 @@
 ---
 id: "profiles"
-title: "@smrt/profiles: Profile Management System"
-sidebar_label: "@smrt/profiles"
+title: "@happyvertical/smrt-profiles: Profile Management System"
+sidebar_label: "@happyvertical/smrt-profiles"
 sidebar_position: 9
 ---
 
-# @smrt/profiles
+# @happyvertical/smrt-profiles
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,7 +13,7 @@ Profile management system with relationships, metadata, and reciprocal associati
 
 ## Overview
 
-The `@smrt/profiles` package provides a comprehensive profile management system built on the SMRT framework. It enables you to manage profiles of any type (people, organizations, robots) with flexible metadata, complex relationships, and time-based relationship tracking. The system supports reciprocal relationships, custom validation, and hierarchical profile types.
+The `@happyvertical/smrt-profiles` package provides a comprehensive profile management system built on the SMRT framework. It enables you to manage profiles of any type (people, organizations, robots) with flexible metadata, complex relationships, and time-based relationship tracking. The system supports reciprocal relationships, custom validation, and hierarchical profile types.
 
 Key capabilities include:
 - **Flexible Profile Types**: Define custom profile types with unique characteristics
@@ -40,13 +40,13 @@ Key capabilities include:
 
 ```bash
 # Install with pnpm (recommended for SMRT projects)
-pnpm add @smrt/profiles
+pnpm add @happyvertical/smrt-profiles
 
 # Or with npm
-npm install @smrt/profiles
+npm install @happyvertical/smrt-profiles
 
 # Or with bun
-bun add @smrt/profiles
+bun add @happyvertical/smrt-profiles
 ```
 
 ## Quick Start
@@ -54,7 +54,7 @@ bun add @smrt/profiles
 ### Creating Profile Types
 
 ```typescript
-import { ProfileType } from '@smrt/profiles';
+import { ProfileType } from '@happyvertical/smrt-profiles';
 
 // Create a profile type for humans
 const humanType = new ProfileType({
@@ -74,7 +74,7 @@ await orgType.save();
 ### Creating Profiles
 
 ```typescript
-import { Profile } from '@smrt/profiles';
+import { Profile } from '@happyvertical/smrt-profiles';
 
 // Create a person profile
 const person = new Profile({
@@ -92,7 +92,7 @@ await person.setTypeBySlug('human');
 ### Managing Metadata
 
 ```typescript
-import { ProfileMetafield } from '@smrt/profiles';
+import { ProfileMetafield } from '@happyvertical/smrt-profiles';
 
 // Define a metadata field with validation
 const locationField = new ProfileMetafield({
@@ -123,7 +123,7 @@ await person.updateMetadata({
 ### Creating Relationships
 
 ```typescript
-import { ProfileRelationshipType } from '@smrt/profiles';
+import { ProfileRelationshipType } from '@happyvertical/smrt-profiles';
 
 // Define a relationship type
 const friendType = new ProfileRelationshipType({
@@ -187,7 +187,7 @@ await employment.addTerm(new Date('2024-06-01'));
 ### Custom Validation
 
 ```typescript
-import { ProfileMetafield } from '@smrt/profiles';
+import { ProfileMetafield } from '@happyvertical/smrt-profiles';
 
 // Register a custom validator
 ProfileMetafield.registerValidator('isEmail', (value) => {
@@ -213,7 +213,7 @@ await person.addMetadata('secondary-email', 'valid@example.com'); // Succeeds
 ### Custom Reciprocal Handlers
 
 ```typescript
-import { ProfileRelationshipType, type Profile } from '@smrt/profiles';
+import { ProfileRelationshipType, type Profile } from '@happyvertical/smrt-profiles';
 
 // Register a custom reciprocal handler for asymmetric relationships
 ProfileRelationshipType.registerReciprocalHandler(
@@ -261,7 +261,7 @@ console.log(isMedical); // false
 ### Using Collections
 
 ```typescript
-import { ProfileCollection } from '@smrt/profiles';
+import { ProfileCollection } from '@happyvertical/smrt-profiles';
 
 // Get or create a profile collection
 const profileCollection = await ProfileCollection.create();
@@ -458,7 +458,7 @@ import {
   ProfileCollection,
   ProfileTypeCollection,
   ProfileMetafieldCollection
-} from '@smrt/profiles';
+} from '@happyvertical/smrt-profiles';
 
 // Initialize collections
 const profileCollection = await ProfileCollection.create();
@@ -509,12 +509,12 @@ import type {
   ValidationSchema,
   ValidatorFunction,
   ReciprocalHandler
-} from '@smrt/profiles';
+} from '@happyvertical/smrt-profiles';
 ```
 
 ## Auto-Generated Features
 
-As a SMRT package, `@smrt/profiles` automatically generates:
+As a SMRT package, `@happyvertical/smrt-profiles` automatically generates:
 
 ### REST API Endpoints
 - `GET /api/profiles` - List profiles

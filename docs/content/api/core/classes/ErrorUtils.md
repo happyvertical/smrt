@@ -1,6 +1,6 @@
 # Class: ErrorUtils
 
-Defined in: smrt/packages/core/src/errors.ts:417
+Defined in: [smrt/packages/core/src/errors.ts:417](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L417)
 
 Utility functions for error handling
 
@@ -20,7 +20,7 @@ Utility functions for error handling
 
 > `static` **isRetryable**(`error`): `boolean`
 
-Defined in: smrt/packages/core/src/errors.ts:460
+Defined in: [smrt/packages/core/src/errors.ts:460](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L460)
 
 Checks if an error is retryable
 
@@ -40,7 +40,7 @@ Checks if an error is retryable
 
 > `static` **sanitizeError**(`error`): `Record`\<`string`, `any`\>
 
-Defined in: smrt/packages/core/src/errors.ts:483
+Defined in: [smrt/packages/core/src/errors.ts:483](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L483)
 
 Sanitizes an error for safe logging (removes sensitive information)
 
@@ -60,7 +60,7 @@ Sanitizes an error for safe logging (removes sensitive information)
 
 > `static` **withRetry**\<`T`\>(`operation`, `maxRetries`, `delay`, `backoffMultiplier`): `Promise`\<`T`\>
 
-Defined in: smrt/packages/core/src/errors.ts:421
+Defined in: [smrt/packages/core/src/errors.ts:421](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L421)
 
 Wraps a function with error handling and automatic retry logic
 
