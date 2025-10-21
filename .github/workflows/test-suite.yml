@@ -49,6 +49,8 @@ jobs:
       - name: Build SDK packages
         run: |
           cd sdk
+          # Remove sql dist to prevent circular dependency with SMRT
+          rm -rf packages/sql/dist
           pnpm -r --workspace-concurrency=4 --filter='!@have/docs' --filter='!@have/products' --filter='!@have/sql' run build
           cd ..
 
