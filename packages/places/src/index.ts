@@ -1,5 +1,5 @@
 /**
- * @have/places
+ * @happyvertical/places
  *
  * Hierarchical place management with geo integration and SMRT framework support
  *

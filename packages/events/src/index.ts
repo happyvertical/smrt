@@ -1,5 +1,5 @@
 /**
- * @have/events
+ * @happyvertical/events
  *
  * Hierarchical event management with participant tracking and SMRT framework support
  *

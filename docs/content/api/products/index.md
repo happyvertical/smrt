@@ -41,13 +41,13 @@ import ProductCatalog from 'productService/ProductCatalog';
 Traditional build-time imports for maximum optimization.
 
 ```bash
-npm install @have/smrt-template
+npm install @happyvertical/smrt-template
 ```
 
 ```javascript
 // Consumer application  
-import { Product, ProductCard } from '@have/smrt-template';
-import { productStore } from '@have/smrt-template/stores';
+import { Product, ProductCard } from '@happyvertical/smrt-template';
+import { productStore } from '@happyvertical/smrt-template/stores';
 ```
 
 ## ✨ What's Auto-Generated
@@ -109,7 +109,7 @@ The SMRT Vite plugin scans your TypeScript files at build time and extracts meta
 
 ```typescript
 // vite.config.ts
-import { smrtPlugin } from '@have/smrt';
+import { smrtPlugin } from '@happyvertical/smrt';
 
 export default defineConfig({
   plugins: [
@@ -258,7 +258,7 @@ Define your domain objects with decorators:
 
 ```typescript
 // src/lib/models/Product.ts
-import { SmrtObject } from '@have/smrt';
+import { SmrtObject } from '@happyvertical/smrt';
 
 @smrt({
   api: { exclude: ['delete'] },

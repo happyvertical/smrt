@@ -1,8 +1,8 @@
-# @have/tags SPEC.md
+# @happyvertical/tags SPEC.md
 
 ## Design Notes
 
-This document outlines the database schema for the `@have/tags` package. The architecture is designed for flexibility, reusability, and multi-language support across all SMRT-based packages.
+This document outlines the database schema for the `@happyvertical/tags` package. The architecture is designed for flexibility, reusability, and multi-language support across all SMRT-based packages.
 
 The key architectural decisions are:
 
@@ -97,15 +97,15 @@ CREATE TABLE content_tags (
 
 ## SMRT Integration
 
-The `@have/tags` package will be built on the `@have/smrt` framework, leveraging its AI-first object model, ORM capabilities, and code generation tools.
+The `@happyvertical/tags` package will be built on the `@happyvertical/smrt` framework, leveraging its AI-first object model, ORM capabilities, and code generation tools.
 
 ### 1. SMRT Object Implementation
 
 The database tables will be represented as `SmrtObject` classes.
 
 ```typescript
-import { SmrtObject, SmrtCollection } from '@have/smrt';
-import { text, integer, datetime, foreignKey, oneToMany } from '@have/smrt/fields';
+import { SmrtObject, SmrtCollection } from '@happyvertical/smrt';
+import { text, integer, datetime, foreignKey, oneToMany } from '@happyvertical/smrt/fields';
 
 // Tag Model
 class Tag extends SmrtObject {
@@ -165,7 +165,7 @@ class TagAlias extends SmrtObject {
 ### 2. Tag Collection with Context Support
 
 ```typescript
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@happyvertical/smrt';
 
 class TagCollection extends SmrtCollection<Tag> {
   static readonly _itemClass = Tag;
@@ -302,7 +302,7 @@ class TagAliasCollection extends SmrtCollection<TagAlias> {
 
 ### 4. Code Generation
 
-The `@have/smrt` code generators will automatically create:
+The `@happyvertical/smrt` code generators will automatically create:
 
 -   **A REST API**: For managing tags from web applications.
 -   **A CLI**: For administrative tasks and batch operations.
@@ -329,9 +329,9 @@ The `@have/smrt` code generators will automatically create:
 ### Example: Assets Package Integration
 
 ```typescript
-// In @have/assets package
+// In @happyvertical/assets package
 
-import { Tag, TagCollection } from '@have/tags';
+import { Tag, TagCollection } from '@happyvertical/tags';
 import { Asset } from './models/Asset';
 
 class Asset extends SmrtObject {

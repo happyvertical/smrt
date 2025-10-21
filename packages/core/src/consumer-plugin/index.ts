@@ -156,7 +156,7 @@ async function discoverSmrtPackages(projectRoot: string): Promise<string[]> {
         if (
           typeof version === 'string' &&
           (name.includes('smrt') ||
-            name.includes('@have/') ||
+            name.includes('@happyvertical/') ||
             (await hasSmrtManifest(nodeModulesPath, name)))
         ) {
           packages.push(name);

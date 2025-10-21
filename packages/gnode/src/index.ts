@@ -1,5 +1,5 @@
 /**
- * @have/gnode - SMRT Federation Library
+ * @happyvertical/gnode - SMRT Federation Library
  *
  * Federated local knowledge bases (gnodes) with P2P discovery and protocols.
  * Built on top of @smrt/core for SMRT object federation.

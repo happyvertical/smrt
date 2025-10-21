@@ -4,7 +4,7 @@
 
 Defined in: places/src/utils.ts:14
 
-Map Location type from @have/geo to PlaceType slug
+Map Location type from @happyvertical/geo to PlaceType slug
 
 ## Parameters
 

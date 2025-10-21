@@ -1,5 +1,5 @@
 /**
- * TypeScript type definitions for @have/profiles package
+ * TypeScript type definitions for @happyvertical/profiles package
  */
 
 /**

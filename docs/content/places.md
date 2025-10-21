@@ -13,7 +13,7 @@ Hierarchical place management with geo integration and SMRT framework support.
 
 ## Overview
 
-The `@smrt/places` package provides a comprehensive place management system with support for hierarchical relationships, geographic data integration, and automatic database growth through geocoding. It seamlessly integrates with `@have/geo` for location lookups and supports both real-world places (with coordinates) and abstract places (virtual worlds, game zones).
+The `@smrt/places` package provides a comprehensive place management system with support for hierarchical relationships, geographic data integration, and automatic database growth through geocoding. It seamlessly integrates with `@happyvertical/geo` for location lookups and supports both real-world places (with coordinates) and abstract places (virtual worlds, game zones).
 
 Key capabilities:
 
@@ -28,7 +28,7 @@ Key capabilities:
 
 - **Place Hierarchy Management**: Parent-child relationships with recursive ancestor/descendant traversal
 - **Place Types**: Categorize places (country, city, building, zone, room, etc.) with slug-based lookup
-- **Geo Integration**: Seamless integration with `@have/geo` for geocoding and reverse geocoding
+- **Geo Integration**: Seamless integration with `@happyvertical/geo` for geocoding and reverse geocoding
 - **Coordinate Validation**: Validate and normalize geographic coordinates
 - **Distance Calculations**: Haversine formula for accurate distance calculations
 - **Proximity Search**: Find places within a radius of given coordinates
@@ -420,19 +420,19 @@ Places are persisted with the following schema:
 - `description`: Optional description
 - `createdAt`, `updatedAt`: Timestamps
 
-## Integration with @have/geo
+## Integration with @happyvertical/geo
 
-This package seamlessly integrates with `@have/geo` for geocoding:
+This package seamlessly integrates with `@happyvertical/geo` for geocoding:
 
 ```typescript
-import { getGeoAdapter } from '@have/geo';
+import { getGeoAdapter } from '@happyvertical/geo';
 
-// The PlaceCollection uses @have/geo internally
+// The PlaceCollection uses @happyvertical/geo internally
 const place = await placeCollection.lookupOrCreate('Address', {
   geoProvider: 'openstreetmap'
 });
 
-// Or use @have/geo directly
+// Or use @happyvertical/geo directly
 const geo = await getGeoAdapter({
   provider: 'openstreetmap',
   userAgent: 'my-app'

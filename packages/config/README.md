@@ -1,11 +1,11 @@
 ---
 id: config
-title: "@have/config: Configuration Management"
-sidebar_label: "@have/config"
+title: "@happyvertical/config: Configuration Management"
+sidebar_label: "@happyvertical/config"
 sidebar_position: 2
 ---
 
-# @have/config
+# @happyvertical/config
 
 Centralized configuration management for SMRT modules and applications with support for multiple file formats, environment variables, remote sources, and powerful orchestration via top-level await.
 
@@ -23,11 +23,11 @@ Centralized configuration management for SMRT modules and applications with supp
 ## Installation
 
 ```bash
-npm install @have/config
+npm install @happyvertical/config
 # or
-pnpm add @have/config
+pnpm add @happyvertical/config
 # or
-bun add @have/config
+bun add @happyvertical/config
 ```
 
 ## Quick Start
@@ -69,7 +69,7 @@ export default {
 ### 2. Use config in your code
 
 ```typescript
-import { getPackageConfig, getModuleConfig } from '@have/config';
+import { getPackageConfig, getModuleConfig } from '@happyvertical/config';
 
 // Get package configuration
 const aiConfig = getPackageConfig('ai', {
@@ -86,7 +86,7 @@ const scraperConfig = getModuleConfig('town-scraper', {
 
 ## Configuration File Formats
 
-`@have/config` automatically detects and loads configuration from these files (in order of precedence):
+`@happyvertical/config` automatically detects and loads configuration from these files (in order of precedence):
 
 - `smrt.config.ts` - TypeScript
 - `smrt.config.js` - JavaScript (ESM)
@@ -101,7 +101,7 @@ const scraperConfig = getModuleConfig('town-scraper', {
 Load and parse configuration from the project root.
 
 ```typescript
-import { loadConfig } from '@have/config';
+import { loadConfig } from '@happyvertical/config';
 
 const config = await loadConfig({
   // Custom config file path (default: auto-detect in cwd)
@@ -129,7 +129,7 @@ const config = await loadConfig({
 Get configuration for a specific package with optional defaults.
 
 ```typescript
-import { getPackageConfig } from '@have/config';
+import { getPackageConfig } from '@happyvertical/config';
 
 interface AIConfig {
   defaultProvider: string;
@@ -148,7 +148,7 @@ const config = getPackageConfig<AIConfig>('ai', {
 Get configuration for a specific SMRT module.
 
 ```typescript
-import { getModuleConfig } from '@have/config';
+import { getModuleConfig } from '@happyvertical/config';
 
 const config = getModuleConfig('my-module', {
   enabled: true,
@@ -161,7 +161,7 @@ const config = getModuleConfig('my-module', {
 Set configuration at runtime (merged with file config).
 
 ```typescript
-import { setConfig } from '@have/config';
+import { setConfig } from '@happyvertical/config';
 
 setConfig({
   packages: {
@@ -177,7 +177,7 @@ setConfig({
 Watch configuration file for changes. Returns an unwatch function.
 
 ```typescript
-import { watchConfig } from '@have/config';
+import { watchConfig } from '@happyvertical/config';
 
 const unwatch = watchConfig((newConfig) => {
   console.log('Config updated:', newConfig);
@@ -192,7 +192,7 @@ unwatch();
 Validate configuration against a schema.
 
 ```typescript
-import { validateConfig } from '@have/config';
+import { validateConfig } from '@happyvertical/config';
 
 const result = validateConfig(config, schema);
 
@@ -263,7 +263,7 @@ Configuration merging follows this priority (highest to lowest):
 ### Type-safe Configuration
 
 ```typescript
-import { defineConfig } from '@have/config';
+import { defineConfig } from '@happyvertical/config';
 
 export default defineConfig({
   smrt: {
@@ -283,7 +283,7 @@ export default defineConfig({
 
 ```typescript
 // types/config.d.ts
-declare module '@have/config' {
+declare module '@happyvertical/config' {
   interface CustomPackageConfig {
     myPackage: {
       apiUrl: string;
@@ -312,8 +312,8 @@ export default {
 ### Using in Packages
 
 ```typescript
-// In @have/ai
-import { getPackageConfig } from '@have/config';
+// In @happyvertical/ai
+import { getPackageConfig } from '@happyvertical/config';
 
 export async function getAI(options?: Partial<AIConfig>) {
   const config = getPackageConfig('ai', {
@@ -331,7 +331,7 @@ export async function getAI(options?: Partial<AIConfig>) {
 ### Using in SMRT Modules
 
 ```typescript
-import { getModuleConfig } from '@have/config';
+import { getModuleConfig } from '@happyvertical/config';
 
 @smrt()
 export class TownScraper {
@@ -601,7 +601,7 @@ export default {
 Packages can export configuration schemas for validation:
 
 ```typescript
-// @have/ai exports schema
+// @happyvertical/ai exports schema
 export const aiConfigSchema = {
   type: 'object',
   properties: {
@@ -628,7 +628,7 @@ const config = await loadConfig({ validate: true });
 Watch for configuration changes in development:
 
 ```typescript
-import { watchConfig } from '@have/config';
+import { watchConfig } from '@happyvertical/config';
 
 const unwatch = watchConfig((newConfig) => {
   console.log('Configuration reloaded');
@@ -649,9 +649,9 @@ process.on('SIGINT', () => {
 ### Unit Tests
 
 ```typescript
-import { loadConfig, setConfig } from '@have/config';
+import { loadConfig, setConfig } from '@happyvertical/config';
 
-describe('@have/config', () => {
+describe('@happyvertical/config', () => {
   it('should load config from file', async () => {
     const config = await loadConfig({
       configPath: './test-config.js',
@@ -676,11 +676,11 @@ describe('@have/config', () => {
 ### Integration Tests
 
 ```typescript
-import { getPackageConfig } from '@have/config';
+import { getPackageConfig } from '@happyvertical/config';
 
 describe('Package Integration', () => {
   it('should use config in package', async () => {
-    const { getAI } = await import('@have/ai');
+    const { getAI } = await import('@happyvertical/ai');
 
     const client = await getAI();
 
@@ -814,7 +814,7 @@ AI__DEFAULT_MODEL=gpt-4       # ❌ Missing prefix
 
 ```typescript
 // Use defineConfig for type safety
-import { defineConfig } from '@have/config';
+import { defineConfig } from '@happyvertical/config';
 
 export default defineConfig({
   // Full type checking and auto-completion

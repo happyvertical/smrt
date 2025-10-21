@@ -4,7 +4,7 @@
 
 Defined in: places/src/utils.ts:42
 
-Convert Location from @have/geo to GeoData
+Convert Location from @happyvertical/geo to GeoData
 
 ## Parameters
 

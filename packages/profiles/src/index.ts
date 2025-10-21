@@ -1,5 +1,5 @@
 /**
- * @have/profiles
+ * @happyvertical/profiles
  *
  * Profile management system with relationships, metadata, and reciprocal associations
  *

@@ -1,4 +1,4 @@
-companion along the same lines as the other smrt modules in the sdk (content, tags, '@have/content', '@have/tags', '@have/products', '@have/assets', '@have/profiles')
+companion along the same lines as the other smrt modules in the sdk (content, tags, '@happyvertical/content', '@happyvertical/tags', '@happyvertical/products', '@happyvertical/assets', '@happyvertical/profiles')
 
 uses assets, tags, contents, profiles
 

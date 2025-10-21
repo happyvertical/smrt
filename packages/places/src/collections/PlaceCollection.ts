@@ -2,11 +2,11 @@
  * PlaceCollection - Collection manager for Place objects
  *
  * Provides hierarchy traversal and organic place database growth via
- * lookupOrCreate method that integrates with @have/geo.
+ * lookupOrCreate method that integrates with @happyvertical/geo.
  */
 
-import type { Location } from '@have/geo';
-import { getGeoAdapter } from '@have/geo';
+import type { Location } from '@happyvertical/geo';
+import { getGeoAdapter } from '@happyvertical/geo';
 import { SmrtCollection } from '@smrt/core';
 import { Place } from '../models/Place';
 import type { LookupOrCreateOptions } from '../types';
@@ -20,7 +20,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
    *
    * This is the key method for organic database growth:
    * 1. Search local database first
-   * 2. If not found, query @have/geo
+   * 2. If not found, query @happyvertical/geo
    * 3. Create place from geocoding result
    * 4. Return place
    *
@@ -62,7 +62,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
       return null;
     }
 
-    // Step 3: Query @have/geo for location data
+    // Step 3: Query @happyvertical/geo for location data
     const locations = await this.geocode(
       query,
       coords,
@@ -155,7 +155,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
   }
 
   /**
-   * Geocode query or coordinates using @have/geo
+   * Geocode query or coordinates using @happyvertical/geo
    *
    * @param query - Address query
    * @param coords - Optional coordinates for reverse geocoding
@@ -176,7 +176,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
           }
         : {
             provider: 'openstreetmap' as const,
-            userAgent: '@have/places',
+            userAgent: '@happyvertical/places',
           };
 
     const geo = await getGeoAdapter(geoOptions);
@@ -190,7 +190,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
   }
 
   /**
-   * Create place from @have/geo Location data
+   * Create place from @happyvertical/geo Location data
    *
    * @param location - Location from geocoding
    * @param typeSlug - Optional type slug override

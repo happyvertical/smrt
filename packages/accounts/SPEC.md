@@ -1,10 +1,10 @@
-# @have/accounts Specification
+# @happyvertical/accounts Specification
 
 ## 1. Overview
 
-This document outlines the specification for the `@have/accounts` module. The goal is to create a generic and extensible ledger system that can be used to track financial transactions, such as income and expenses, for any type of account.
+This document outlines the specification for the `@happyvertical/accounts` module. The goal is to create a generic and extensible ledger system that can be used to track financial transactions, such as income and expenses, for any type of account.
 
-The `@have/accounts` module will be built upon the `@have/smrt` core framework, and it will provide a set of `SmrtObject` classes for representing accounts, transactions, and other ledger-related data.
+The `@happyvertical/accounts` module will be built upon the `@happyvertical/smrt` core framework, and it will provide a set of `SmrtObject` classes for representing accounts, transactions, and other ledger-related data.
 
 **Location:** `packages/accounts/` (SMRT modules are located in `packages/` following the monorepo structure)
 
@@ -12,7 +12,7 @@ The `@have/accounts` module will be built upon the `@have/smrt` core framework, 
 
 ### 2.1. Flexible Transaction Recording
 
-The `@have/accounts` module supports flexible transaction recording inspired by double-entry accounting principles but does not enforce strict balancing. This allows recording purchases, expenses, and other financial events without requiring corresponding balancing entries. Applications can implement their own validation logic as needed, but the core library focuses on flexible data capture.
+The `@happyvertical/accounts` module supports flexible transaction recording inspired by double-entry accounting principles but does not enforce strict balancing. This allows recording purchases, expenses, and other financial events without requiring corresponding balancing entries. Applications can implement their own validation logic as needed, but the core library focuses on flexible data capture.
 
 ### 2.2. Accounts
 
@@ -24,7 +24,7 @@ A `AccountTransaction` represents a financial event. Each transaction will have 
 
 ## 3. Data Models
 
-The data models will be implemented as `SmrtObject` classes, extending the base classes provided by the `@have/smrt` framework.
+The data models will be implemented as `SmrtObject` classes, extending the base classes provided by the `@happyvertical/smrt` framework.
 
 ### 3.1. Account
 
@@ -74,7 +74,7 @@ The table name will be `AccountTransactionEntries`.
 
 ### 4.1. Account Management
 
-The `@have/accounts` module will provide functionality for creating, retrieving, updating, and deleting accounts. It will also provide methods for traversing the account hierarchy.
+The `@happyvertical/accounts` module will provide functionality for creating, retrieving, updating, and deleting accounts. It will also provide methods for traversing the account hierarchy.
 
 ### 4.2. Transaction Processing
 
@@ -131,4 +131,4 @@ The module will provide a simple and flexible way to record transactions and the
 
 ## 6. Use Case: Praeco
 
-Praeco will use the `@have/accounts` module to track the spending of councils. For each council, a set of accounts will be created to represent their budget and expenses. When Praeco identifies a spending event in a meeting's minutes, it will create a transaction in the ledger to record the expenditure.
+Praeco will use the `@happyvertical/accounts` module to track the spending of councils. For each council, a set of accounts will be created to represent their budget and expenses. When Praeco identifies a spending event in a meeting's minutes, it will create a transaction in the ledger to record the expenditure.

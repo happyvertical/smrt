@@ -1487,19 +1487,19 @@ The package uses:
 - Schema generation based on class properties
 - SQLite triggers for automatic timestamp management
 - A consistent pattern for database operations
-- Integration with AI models via the `@have/ai` package
+- Integration with AI models via the `@happyvertical/ai` package
 
 ## Dependencies
 
 The SMRT framework integrates with multiple packages to provide comprehensive agent capabilities:
 
 ### Internal HAVE SDK Dependencies
-- **@have/ai**: AI model interactions and completions across multiple providers
-- **@have/files**: File system operations and content management
-- **@have/pdf**: PDF document processing and text extraction
-- **@have/sql**: Database operations with SQLite and PostgreSQL support
-- **@have/spider**: Web content extraction and processing
-- **@have/utils**: Shared utility functions and type definitions
+- **@happyvertical/ai**: AI model interactions and completions across multiple providers
+- **@happyvertical/files**: File system operations and content management
+- **@happyvertical/pdf**: PDF document processing and text extraction
+- **@happyvertical/sql**: Database operations with SQLite and PostgreSQL support
+- **@happyvertical/spider**: Web content extraction and processing
+- **@happyvertical/utils**: Shared utility functions and type definitions
 
 ### External Dependencies
 - **@langchain/community**: Third-party integrations for LLM applications
@@ -1761,10 +1761,10 @@ npm run docs              # Generate API documentation
 - Cache expensive AI operations appropriately
 
 **Cross-Package Integration**
-- Leverage @have/spider for content ingestion
-- Use @have/pdf for document processing workflows
-- Integrate @have/files for asset management
-- Apply @have/sql for complex querying needs
+- Leverage @happyvertical/spider for content ingestion
+- Use @happyvertical/pdf for document processing workflows
+- Integrate @happyvertical/files for asset management
+- Apply @happyvertical/sql for complex querying needs
 
 **Code Generation**
 - Use AST scanning for automatic service discovery
@@ -1844,12 +1844,12 @@ Always reference the latest documentation when developing AI agents with the SMR
   - Critical for configuration management in agent deployments
 
 ### HAVE SDK Integration Points
-- **@have/ai**: AI model interactions and completions
-- **@have/files**: File system operations and content management
-- **@have/pdf**: PDF processing and document analysis
-- **@have/sql**: Database operations and schema management
-- **@have/spider**: Web content extraction and processing
-- **@have/utils**: Utility functions and type definitions
+- **@happyvertical/ai**: AI model interactions and completions
+- **@happyvertical/files**: File system operations and content management
+- **@happyvertical/pdf**: PDF processing and document analysis
+- **@happyvertical/sql**: Database operations and schema management
+- **@happyvertical/spider**: Web content extraction and processing
+- **@happyvertical/utils**: Utility functions and type definitions
 
 ### Expert Agent Instructions
 

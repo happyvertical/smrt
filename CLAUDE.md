@@ -37,12 +37,12 @@ The SMRT framework is organized as a pnpm workspace with the following packages:
 - **tags**: Hierarchical tagging system
 
 **External SDK Dependencies:**
-The framework depends on these infrastructure packages from @have/sdk:
-- **@have/ai**: Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
-- **@have/files**: File system operations and utilities
-- **@have/sql**: Database operations (SQLite, Postgres, DuckDB)
-- **@have/utils**: Shared utility functions
-- **@have/logger**: Logging infrastructure
+The framework depends on these infrastructure packages from @happyvertical/sdk:
+- **@happyvertical/ai**: Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
+- **@happyvertical/files**: File system operations and utilities
+- **@happyvertical/sql**: Database operations (SQLite, Postgres, DuckDB)
+- **@happyvertical/utils**: Shared utility functions
+- **@happyvertical/logger**: Logging infrastructure
 
 ## Development Patterns
 
@@ -62,7 +62,7 @@ The build process follows a specific order to respect internal dependencies:
 2. `@smrt/core` (core framework - depends on types)
 3. Domain modules (depend on core): accounts, agents, assets, content, events, gnode, places, products, profiles, tags
 
-External dependencies from @have/sdk are installed from npm.
+External dependencies from @happyvertical/sdk are installed from npm.
 
 ### TypeScript Project References
 
@@ -731,13 +731,13 @@ The packages have these dependency relationships:
 
 **Within SMRT framework:**
 - `@smrt/types`: No internal dependencies
-- `@smrt/core`: Depends on `@smrt/types` and external SDK packages (`@have/*`)
+- `@smrt/core`: Depends on `@smrt/types` and external SDK packages (`@happyvertical/*`)
 - Domain modules: All depend on `@smrt/core`, some have cross-dependencies:
   - `@smrt/assets` → depends on `@smrt/tags`
   - `@smrt/events` → depends on `@smrt/places`, `@smrt/profiles`
 
 **External dependencies:**
-All SMRT packages can depend on SDK infrastructure packages (`@have/ai`, `@have/files`, `@have/sql`, `@have/utils`, `@have/logger`) which are installed from npm.
+All SMRT packages can depend on SDK infrastructure packages (`@happyvertical/ai`, `@happyvertical/files`, `@happyvertical/sql`, `@happyvertical/utils`, `@happyvertical/logger`) which are installed from npm.
 
 When adding new features, maintain this dependency hierarchy to avoid circular dependencies within the SMRT framework.
 

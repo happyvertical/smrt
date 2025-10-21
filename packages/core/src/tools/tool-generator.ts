@@ -5,7 +5,7 @@
  * into AI tool format at build time for use with LLM function calling.
  */
 
-import type { AITool } from '@have/ai';
+import type { AITool } from '@happyvertical/ai';
 import type { MethodDefinition } from '../scanner/types';
 
 /**

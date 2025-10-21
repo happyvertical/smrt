@@ -14,7 +14,7 @@ find_sdk_root() {
 
     # Check if we're inside the SDK repo
     while [[ "$current_dir" != "/" ]]; do
-        if [[ -f "$current_dir/package.json" ]] && grep -q "@have/sdk" "$current_dir/package.json" 2>/dev/null; then
+        if [[ -f "$current_dir/package.json" ]] && grep -q "@happyvertical/sdk" "$current_dir/package.json" 2>/dev/null; then
             echo "$current_dir"
             return 0
         fi
@@ -22,22 +22,22 @@ find_sdk_root() {
     done
 
     # Check node_modules
-    if [[ -d "$PROJECT_ROOT/node_modules/@have/sdk" ]]; then
-        echo "$PROJECT_ROOT/node_modules/@have/sdk"
+    if [[ -d "$PROJECT_ROOT/node_modules/@happyvertical/sdk" ]]; then
+        echo "$PROJECT_ROOT/node_modules/@happyvertical/sdk"
         return 0
     fi
 
     # Check parent directories for node_modules
     current_dir="$PROJECT_ROOT"
     while [[ "$current_dir" != "/" ]]; do
-        if [[ -d "$current_dir/node_modules/@have/sdk" ]]; then
-            echo "$current_dir/node_modules/@have/sdk"
+        if [[ -d "$current_dir/node_modules/@happyvertical/sdk" ]]; then
+            echo "$current_dir/node_modules/@happyvertical/sdk"
             return 0
         fi
         current_dir="$(dirname "$current_dir")"
     done
 
-    echo "ERROR: HAVE SDK not found. Please install with: npm install @have/sdk" >&2
+    echo "ERROR: HAVE SDK not found. Please install with: npm install @happyvertical/sdk" >&2
     return 1
 }
 

@@ -21,9 +21,9 @@ async function validateBuild() {
     }
 
     // Extract package names from build script using regex
-    const packageMatches = buildScript.match(/--filter @have\/\w+/g) || [];
+    const packageMatches = buildScript.match(/--filter @happyvertical\/\w+/g) || [];
     const referencedPackages = packageMatches.map((match) =>
-      match.replace('--filter @have/', ''),
+      match.replace('--filter @happyvertical/', ''),
     );
 
     console.log('📦 Packages referenced in build script:', referencedPackages);

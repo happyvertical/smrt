@@ -1,6 +1,6 @@
 # @smrt/agents
 
-@have/agents - Agent framework for building autonomous actors
+@happyvertical/agents - Agent framework for building autonomous actors
 
 Provides a base Agent class that extends SmrtObject with:
 - Status tracking
@@ -15,8 +15,8 @@ SmrtObject, any properties defined will be automatically persisted to the databa
 ## Example
 
 ```typescript
-import { Agent } from '@have/agents';
-import { getModuleConfig } from '@have/config';
+import { Agent } from '@happyvertical/agents';
+import { getModuleConfig } from '@happyvertical/config';
 import { smrt } from '@smrt/core';
 
 @smrt()

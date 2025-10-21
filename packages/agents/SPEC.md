@@ -1,18 +1,18 @@
-# @have/agents Specification
+# @happyvertical/agents Specification
 
 ## 1. Overview
 
-This document outlines the specification for the `@have/agents` module. The goal is to create a framework for building agents that operate within the `@have/smrt` ecosystem. This module will provide a base `Agent` class that other agents can extend, abstracting away common functionalities and providing a consistent structure for agent development.
+This document outlines the specification for the `@happyvertical/agents` module. The goal is to create a framework for building agents that operate within the `@happyvertical/smrt` ecosystem. This module will provide a base `Agent` class that other agents can extend, abstracting away common functionalities and providing a consistent structure for agent development.
 
 ## 2. Core Concepts
 
 ### 2.1. Agent
 
-An `Agent` is a `SmrtObject` that is designed to perform a specific set of tasks. Agents are configurable, observable, and can be run as a service. They are the primary actors in the `@have/smrt` ecosystem, responsible for orchestrating the various modules and libraries to achieve a specific goal. By extending `SmrtObject`, each agent instance is a persistent object in the database, allowing it to maintain state and have a memory.
+An `Agent` is a `SmrtObject` that is designed to perform a specific set of tasks. Agents are configurable, observable, and can be run as a service. They are the primary actors in the `@happyvertical/smrt` ecosystem, responsible for orchestrating the various modules and libraries to achieve a specific goal. By extending `SmrtObject`, each agent instance is a persistent object in the database, allowing it to maintain state and have a memory.
 
 ### 2.2. Configuration
 
-Agents use the `@have/config` module for configuration management. Each agent's configuration is loaded from `smrt.config.js` (or other supported formats) under the `modules` key. Configuration is hierarchical and can be overridden by environment variables.
+Agents use the `@happyvertical/config` module for configuration management. Each agent's configuration is loaded from `smrt.config.js` (or other supported formats) under the `modules` key. Configuration is hierarchical and can be overridden by environment variables.
 
 ## 3. The `Agent` Class
 
@@ -20,10 +20,10 @@ The `Agent` class will be a `SmrtObject` with the following features:
 
 ### 3.1. Configuration Loading
 
-Agents load their configuration using `getModuleConfig()` from `@have/config`:
+Agents load their configuration using `getModuleConfig()` from `@happyvertical/config`:
 
 ```typescript
-import { getModuleConfig } from '@have/config';
+import { getModuleConfig } from '@happyvertical/config';
 
 @smrt()
 export class MyAgent extends Agent {
@@ -60,7 +60,7 @@ This allows monitoring and prevents duplicate runs.
 
 ### 3.3. Logging
 
-The `Agent` class will have a pre-configured logger from the `@have/logger` module. This will provide a standardized way to log messages and errors.
+The `Agent` class will have a pre-configured logger from the `@happyvertical/logger` module. This will provide a standardized way to log messages and errors.
 
 ### 3.4. Lifecycle Methods
 
@@ -74,9 +74,9 @@ The `Agent` class will have a set of lifecycle methods that can be overridden by
 ## 4. Agent Class Structure
 
 ```typescript
-import { SmrtObject, smrt } from '@have/smrt';
-import { getModuleConfig } from '@have/config';
-import { createLogger } from '@have/logger';
+import { SmrtObject, smrt } from '@happyvertical/smrt';
+import { getModuleConfig } from '@happyvertical/config';
+import { createLogger } from '@happyvertical/logger';
 
 export type AgentStatusType = 'idle' | 'initializing' | 'running' | 'error' | 'shutdown';
 
@@ -175,9 +175,9 @@ export abstract class Agent extends SmrtObject {
 ### Example Implementation
 
 ```typescript
-import { Agent } from '@have/agents';
-import { getModuleConfig } from '@have/config';
-import { smrt } from '@have/smrt';
+import { Agent } from '@happyvertical/agents';
+import { getModuleConfig } from '@happyvertical/config';
+import { smrt } from '@happyvertical/smrt';
 
 interface PraecoConfig {
   sources: string[];

@@ -57,8 +57,8 @@ function validatePackageJson(filePath) {
     }
 
     // Validate package name format
-    if (pkg.name && !pkg.name.startsWith('@have/') && packageName !== 'sdk') {
-      errors.push(`Package name should start with @have/ (got: ${pkg.name})`);
+    if (pkg.name && !pkg.name.startsWith('@happyvertical/') && packageName !== 'sdk') {
+      errors.push(`Package name should start with @happyvertical/ (got: ${pkg.name})`);
     }
 
     // Check required scripts
@@ -92,7 +92,7 @@ function validatePackageJson(filePath) {
     // Validate workspace dependencies format
     if (pkg.dependencies) {
       for (const [dep, version] of Object.entries(pkg.dependencies)) {
-        if (dep.startsWith('@have/') && version !== 'workspace:*') {
+        if (dep.startsWith('@happyvertical/') && version !== 'workspace:*') {
           errors.push(
             `Internal dependency ${dep} should use "workspace:*" (got: ${version})`,
           );

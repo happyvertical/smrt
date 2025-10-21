@@ -1,18 +1,18 @@
-# @have/places
+# @happyvertical/places
 
 ## Package Overview
 
-The `@have/places` package provides a robust and flexible system for managing hierarchical, geographical, and abstract locations. It is designed as a **SMRT-specific module**, integrating seamlessly with other SMRT framework packages like `@have/content`, `@have/tags`, `@have/assets`, and `@have/profiles`.
+The `@happyvertical/places` package provides a robust and flexible system for managing hierarchical, geographical, and abstract locations. It is designed as a **SMRT-specific module**, integrating seamlessly with other SMRT framework packages like `@happyvertical/content`, `@happyvertical/tags`, `@happyvertical/assets`, and `@happyvertical/profiles`.
 
 **Package Type**: SMRT-specific module
 **Location**: `packages/places/`
 **Build Tool**: Vite with smrtPlugin
 **Target**: Node.js only
-**Dependencies**: `@have/smrt`, `@have/utils`
+**Dependencies**: `@happyvertical/smrt`, `@happyvertical/utils`
 
 ## Design Notes
 
-This document outlines the database schema and API architecture for the `@have/places` package. The design prioritizes flexibility, consistency, and extensibility.
+This document outlines the database schema and API architecture for the `@happyvertical/places` package. The design prioritizes flexibility, consistency, and extensibility.
 
 The key architectural decisions are:
 
@@ -80,15 +80,15 @@ const assetsInBuilding = await AssetCollection.create().find({ placeId: empireSt
 
 ## SMRT Integration
 
-The `@have/places` data model can be seamlessly integrated with the `@have/smrt` framework, leveraging its powerful features.
+The `@happyvertical/places` data model can be seamlessly integrated with the `@happyvertical/smrt` framework, leveraging its powerful features.
 
 ### SMRT Object Definitions
 
 Here's how the core tables can be represented as `SmrtObject` classes:
 
 ```typescript
-import { SmrtObject, SmrtCollection } from '@have/smrt';
-import { text, foreignKey, oneToMany, json } from '@have/smrt/fields';
+import { SmrtObject, SmrtCollection } from '@happyvertical/smrt';
+import { text, foreignKey, oneToMany, json } from '@happyvertical/smrt/fields';
 
 // Represents the place_types table
 class PlaceType extends SmrtObject {
@@ -264,7 +264,7 @@ const nearby = await Place.findByLocation({lat: 40.7, lng: -73.9}, {radius: 1000
 Standalone helpers in `utils.ts`:
 
 ```typescript
-import { getPlaceAncestors, findPlacesByLocation } from '@have/places/utils';
+import { getPlaceAncestors, findPlacesByLocation } from '@happyvertical/places/utils';
 
 const ancestors = await getPlaceAncestors('place-123');
 const nearby = await findPlacesByLocation({lat: 40.7, lng: -73.9}, {radius: 1000});
@@ -290,11 +290,11 @@ await places.batchUpdate(
 
 ## Dependencies & SDK Integration
 
-The `@have/places` package is designed to be a central hub for location data, integrating with multiple other SDK packages.
+The `@happyvertical/places` package is designed to be a central hub for location data, integrating with multiple other SDK packages.
 
--   **@have/smrt (Required)**: Provides the core `SmrtObject` and `SmrtCollection` framework.
--   **@have/utils (Required)**: Used for common utilities like slug generation.
--   **@have/assets, @have/profiles, @have/content, @have/tags (Integration)**: These packages can link to `places` by adding a `placeId` foreign key to their main objects, establishing a one-to-many relationship where one place can have many assets, profiles, etc.
+-   **@happyvertical/smrt (Required)**: Provides the core `SmrtObject` and `SmrtCollection` framework.
+-   **@happyvertical/utils (Required)**: Used for common utilities like slug generation.
+-   **@happyvertical/assets, @happyvertical/profiles, @happyvertical/content, @happyvertical/tags (Integration)**: These packages can link to `places` by adding a `placeId` foreign key to their main objects, establishing a one-to-many relationship where one place can have many assets, profiles, etc.
 
 ---
 

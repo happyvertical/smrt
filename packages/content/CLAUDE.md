@@ -1,8 +1,8 @@
-# @have/content: Content Processing Module
+# @happyvertical/content: Content Processing Module
 
 ## Purpose and Responsibilities
 
-The `@have/content` package is a SMRT-specific module that provides comprehensive content processing capabilities for the HAVE SDK. It is **not part of the main build pipeline** and is designed specifically for use with the SMRT framework. The package handles:
+The `@happyvertical/content` package is a SMRT-specific module that provides comprehensive content processing capabilities for the HAVE SDK. It is **not part of the main build pipeline** and is designed specifically for use with the SMRT framework. The package handles:
 
 - **Document Processing**: Unified interface for working with documents (PDFs, text files, web content)
 - **Content Management**: Structured content objects with metadata, versioning, and references
@@ -127,7 +127,7 @@ Use this instead of direct instantiation to ensure proper initialization.
 Specialized handler for extracting text from various document types.
 
 **Supported File Types**:
-- **PDFs**: Via @have/pdf package with OCR fallback
+- **PDFs**: Via @happyvertical/pdf package with OCR fallback
 - **Text files**: .txt, .md, .json, .xml, .html, .css, .js, .ts, .yaml, .yml
 - **Web content**: Remote URLs via Spider package
 - **Detection**: Automatic MIME type detection or file extension fallback
@@ -161,7 +161,7 @@ Handles initialization and downloads remote files automatically.
 **`getText()`**
 - Extracts text content from document
 - Uses caching (`.extracted_text` suffix) to avoid reprocessing
-- PDF extraction via @have/pdf's getPDFReader()
+- PDF extraction via @happyvertical/pdf's getPDFReader()
 - Text file reading via fs.readFile
 - Throws error for unsupported types
 - Returns extracted text string
@@ -174,15 +174,15 @@ Handles initialization and downloads remote files automatically.
 
 **`initialize()`**
 - Downloads remote files to cache directory
-- Uses downloadFileWithCache from @have/files
+- Uses downloadFileWithCache from @happyvertical/files
 - No-op for local files
 - Called automatically by static create()
 
 **Important Implementation Details**:
 - Remote file paths: `{cacheDir}/{hostname-slug}/{pathname}`
 - Local file paths: Direct from file:// URL pathname
-- Caching uses @have/files getCached/setCached with `.extracted_text` suffix
-- MIME type detection via getMimeType from @have/files
+- Caching uses @happyvertical/files getCached/setCached with `.extracted_text` suffix
+- MIME type detection via getMimeType from @happyvertical/files
 - PDF processing may involve OCR for scanned documents
 
 **Gotchas**:
@@ -215,11 +215,11 @@ Content serialization utilities for markdown/YAML interoperability.
 ## Dependencies
 
 ### Internal HAVE SDK Dependencies
-- **@have/smrt**: Core framework (SmrtObject, SmrtCollection, decorators)
-- **@have/pdf**: PDF text extraction capabilities
-- **@have/spider**: Web content scraping (via Document class)
-- **@have/files**: File system operations, caching, download management
-- **@have/utils**: Utility functions (makeSlug, etc.)
+- **@happyvertical/smrt**: Core framework (SmrtObject, SmrtCollection, decorators)
+- **@happyvertical/pdf**: PDF text extraction capabilities
+- **@happyvertical/spider**: Web content scraping (via Document class)
+- **@happyvertical/files**: File system operations, caching, download management
+- **@happyvertical/utils**: Utility functions (makeSlug, etc.)
 
 ### External Dependencies
 - **yaml**: YAML parsing and stringification for frontmatter handling
@@ -236,7 +236,7 @@ Content serialization utilities for markdown/YAML interoperability.
 ### Basic Content Management
 
 ```typescript
-import { Content, Contents } from '@have/content';
+import { Content, Contents } from '@happyvertical/content';
 
 // Initialize collection with database and AI config
 const contents = await Contents.create({
@@ -277,7 +277,7 @@ await contents.add(article);
 ### Document Processing Workflow
 
 ```typescript
-import { Document, Content, Contents } from '@have/content';
+import { Document, Content, Contents } from '@happyvertical/content';
 
 // Process PDF document
 const doc = await Document.create({
@@ -305,7 +305,7 @@ await content.save();
 ### Web Content Mirroring
 
 ```typescript
-import { Contents } from '@have/content';
+import { Contents } from '@happyvertical/content';
 
 const contents = await Contents.create({
   db: { url: 'sqlite:./mirrors.db' }
@@ -326,7 +326,7 @@ console.log(mirrored.body);  // Extracted text content
 ### Content Export and Synchronization
 
 ```typescript
-import { Contents } from '@have/content';
+import { Contents } from '@happyvertical/content';
 
 const contents = await Contents.create({
   db: { url: 'sqlite:./content.db' },
@@ -348,7 +348,7 @@ await contents.writeContentFile({
 ### Content Utilities
 
 ```typescript
-import { contentToString, stringToContent } from '@have/content';
+import { contentToString, stringToContent } from '@happyvertical/content';
 
 // Serialize content to markdown with YAML frontmatter
 const markdownString = contentToString(article);
@@ -407,7 +407,7 @@ const content = await contents.getOrUpsert({
 
 ## Integration with SMRT Framework
 
-The @have/content package is a full SMRT module with:
+The @happyvertical/content package is a full SMRT module with:
 
 ### SMRT Decorators
 ```typescript
@@ -690,7 +690,7 @@ tsx packages/content/src/server.ts
 ### Server Configuration
 
 ```typescript
-import { startRestServer } from '@have/smrt';
+import { startRestServer } from '@happyvertical/smrt';
 import { Content } from './content';
 
 const shutdown = await startRestServer(
@@ -840,7 +840,7 @@ const text1 = await doc.getText(); // Extracts and caches
 
 **Solution**: Be aware of cache locations and clear when needed:
 - Document text cache: `{localPath}.extracted_text`
-- Uses @have/files `getCached/setCached` functions
+- Uses @happyvertical/files `getCached/setCached` functions
 
 ### 6. Title vs Name Field
 **Problem**: Confusion between `title` and `name` properties
@@ -938,7 +938,7 @@ function getTestDbUrl(testName: string): string {
 ✅ **Web Content**: URL mirroring with automatic text extraction and caching
 ✅ **Filesystem Export**: Markdown generation with YAML frontmatter in organized directory structure
 ✅ **Reference System**: In-memory content linking and relationship management
-✅ **Caching**: Automatic extraction result caching with @have/files integration
+✅ **Caching**: Automatic extraction result caching with @happyvertical/files integration
 ✅ **Collection Operations**: Batch processing, advanced querying, and getOrUpsert patterns
 ✅ **Context Organization**: Namespace isolation for multi-project/multi-source content
 ✅ **TypeScript**: Full type safety and IntelliSense support with comprehensive interfaces
@@ -963,7 +963,7 @@ import {
   // Utils
   contentToString,   // Serialize to markdown + frontmatter
   stringToContent    // Parse markdown + frontmatter
-} from '@have/content';
+} from '@happyvertical/content';
 ```
 
 ## Quick Reference

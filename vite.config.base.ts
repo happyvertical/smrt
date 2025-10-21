@@ -8,7 +8,7 @@ import dts from 'vite-plugin-dts';
  * Creates a standardized build configuration for Node.js-only packages
  * with TypeScript declaration generation.
  *
- * Adapted from @have/sdk vite.config.base.ts pattern (PR 238)
+ * Adapted from @happyvertical/sdk vite.config.base.ts pattern (PR 238)
  */
 export function createPackageConfig(packageName: string) {
   const packageDir = resolve(__dirname, 'packages', packageName);

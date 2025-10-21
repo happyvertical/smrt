@@ -1,5 +1,5 @@
 /**
- * @have/accounts
+ * @happyvertical/accounts
  *
  * Flexible accounting ledger with multi-currency support and SMRT framework integration
  *

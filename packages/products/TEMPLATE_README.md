@@ -47,7 +47,7 @@ A GitHub template for building AI-powered applications with the HAVE SDK ecosyst
 ### 1. Define SMRT Objects
 
 ```typescript
-import { SmrtObject, smrt, text, decimal, boolean } from '@have/smrt';
+import { SmrtObject, smrt, text, decimal, boolean } from '@happyvertical/smrt';
 
 @smrt({
   api: { exclude: ['delete'] },
@@ -65,7 +65,7 @@ class Product extends SmrtObject {
 ### 2. Create Smart Microservice
 
 ```typescript
-import { SmartMicroservice } from '@have/smrt-template';
+import { SmartMicroservice } from '@happyvertical/smrt-template';
 
 const app = new SmartMicroservice([Product], {
   name: 'my-api',
@@ -81,7 +81,7 @@ const services = await app.start();
 
 ```typescript
 // Auto-generate Svelte forms from SMRT objects
-import { generateFromTemplate } from '@have/svelte';
+import { generateFromTemplate } from '@happyvertical/svelte';
 
 await generateFromTemplate('./src/objects', './src/components');
 ```

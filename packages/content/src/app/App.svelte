@@ -426,7 +426,7 @@ function _getStateBadge(state) {
         </div>
         <div class="feature">
           <h3>📚 Library</h3>
-          <p>Install as NPM package: npm install @have/content</p>
+          <p>Install as NPM package: npm install @happyvertical/content</p>
         </div>
       </div>
     </div>

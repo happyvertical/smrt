@@ -864,7 +864,7 @@ Look up a place by query or coordinates, creating it if not found
 
 This is the key method for organic database growth:
 1. Search local database first
-2. If not found, query @have/geo
+2. If not found, query @happyvertical/geo
 3. Create place from geocoding result
 4. Return place
 

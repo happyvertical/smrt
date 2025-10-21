@@ -1,4 +1,4 @@
-# @have/events - Event Management SMRT Module
+# @happyvertical/events - Event Management SMRT Module
 
 ## Overview
 
@@ -10,19 +10,19 @@ A generalizable event management system designed to work with any type of event:
 ```
 EventType → EventSeries → Event
                     ↓           ↓
-            EventParticipant  Place (from @have/places)
+            EventParticipant  Place (from @happyvertical/places)
                     ↓
-            Profile (from @have/profiles)
+            Profile (from @happyvertical/profiles)
 ```
 
 ## Integration with Existing Packages
 
-### @have/places
+### @happyvertical/places
 - `Event.placeId` references a Place
 - Supports venues, rooms, virtual locations
 - Full geographic data and hierarchical places
 
-### @have/profiles
+### @happyvertical/profiles
 - `EventSeries.organizerId` references a Profile (organizer)
 - `EventParticipant.profileId` references a Profile (participant)
 - Unified system for people, teams, organizations
@@ -54,7 +54,7 @@ A collection of related events (season, tournament, tour, annual conference, etc
 **Fields:**
 - `id`: UUID
 - `typeId`: FK to EventType
-- `organizerId`: FK to Profile (from @have/profiles) - the organizing entity
+- `organizerId`: FK to Profile (from @happyvertical/profiles) - the organizing entity
 - `name`: Series name (e.g., '2024 NBA Finals', 'Summer Concert Series')
 - `slug`: URL-friendly identifier
 - `description`: Optional description
@@ -81,7 +81,7 @@ Individual event instance with hierarchical nesting
 - `seriesId`: FK to EventSeries (nullable for standalone events)
 - `parentEventId`: FK to Event (nullable, self-referencing for hierarchy)
 - `typeId`: FK to EventType
-- `placeId`: FK to Place (from @have/places) - where event occurs
+- `placeId`: FK to Place (from @happyvertical/places) - where event occurs
 - `name`: Event name (e.g., 'Game 7', 'Opening Night', 'Q1 Town Hall')
 - `slug`: URL-friendly identifier
 - `description`: Optional description
@@ -105,7 +105,7 @@ Individual event instance with hierarchical nesting
 
 **Key Design Decisions:**
 - `seriesId` is nullable - supports both series events and standalone events
-- `parentEventId` enables infinite nesting (like @have/places and @have/tags)
+- `parentEventId` enables infinite nesting (like @happyvertical/places and @happyvertical/tags)
 - `status` field enables lifecycle tracking
 - `round` for ordering within series
 - Flexible metadata for event-specific information (scores, attendance, etc.)
@@ -117,7 +117,7 @@ Links participants (teams, players, speakers, performers) to events
 **Fields:**
 - `id`: UUID
 - `eventId`: FK to Event (required)
-- `profileId`: FK to Profile (from @have/profiles) - the participant
+- `profileId`: FK to Profile (from @happyvertical/profiles) - the participant
 - `role`: Participant role ('competitor', 'home', 'away', 'performer', 'speaker', 'attendee', 'organizer')
 - `placement`: Numeric placement/position (0 = home/first, 1 = away/second, etc.)
 - `groupId`: Optional grouping identifier (for team sports with individual tracking)
@@ -157,9 +157,9 @@ Event (top-level, parentEventId: null)
     │   └─ Event (grandchild, parentEventId: child.id)
     └─ Event (child, parentEventId: parent.id)
         ↓
-    EventParticipant → Profile (@have/profiles)
+    EventParticipant → Profile (@happyvertical/profiles)
         ↓
-    Place (@have/places)
+    Place (@happyvertical/places)
 ```
 
 **Hierarchy Examples:**
@@ -376,14 +376,14 @@ const meetings = await generateRecurringEvents(councilSeries);
 ## Technical Requirements
 
 ### Dependencies
-- `@have/smrt` - Core SMRT framework
-- `@have/utils` - Shared utilities
-- `@have/places` - Venue/location management
-- `@have/profiles` - Participant/organizer profiles
+- `@happyvertical/smrt` - Core SMRT framework
+- `@happyvertical/utils` - Shared utilities
+- `@happyvertical/places` - Venue/location management
+- `@happyvertical/profiles` - Participant/organizer profiles
 
 ### Optional Integration
-- `@have/cache` - Event data caching
-- `@have/ai` - Event description generation, conflict detection
+- `@happyvertical/cache` - Event data caching
+- `@happyvertical/ai` - Event description generation, conflict detection
 
 ### Database Schema
 All models use SMRT auto-generated schemas with:
@@ -396,7 +396,7 @@ All models use SMRT auto-generated schemas with:
 ## Success Criteria
 
 ✅ Can model any type of event (sports, entertainment, professional, community)
-✅ Integrates seamlessly with @have/places and @have/profiles
+✅ Integrates seamlessly with @happyvertical/places and @happyvertical/profiles
 ✅ Supports both one-time and recurring events
 ✅ Tracks participants with flexible roles and metadata
 ✅ Provides full SMRT framework capabilities (API, MCP, CLI)

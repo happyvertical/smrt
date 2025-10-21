@@ -6,8 +6,8 @@ Base Agent class for building autonomous actors in the SMRT ecosystem
 
 Agents are SmrtObjects that perform specific tasks with:
 - Status tracking (idle, initializing, running, error, shutdown)
-- Configuration management via @have/config
-- Structured logging via @have/logger
+- Configuration management via @happyvertical/config
+- Structured logging via @happyvertical/logger
 - Lifecycle hooks (initialize, validate, run, shutdown)
 - Automatic signal handling for graceful shutdown
 
@@ -19,8 +19,8 @@ SmrtObject, any properties defined will be automatically persisted to the databa
 ## Example
 
 ```typescript
-import { Agent } from '@have/agents';
-import { getModuleConfig } from '@have/config';
+import { Agent } from '@happyvertical/agents';
+import { getModuleConfig } from '@happyvertical/config';
 import { smrt } from '@smrt/core';
 
 @smrt()

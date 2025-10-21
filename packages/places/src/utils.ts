@@ -1,12 +1,12 @@
 /**
- * Utility functions for @have/places package
+ * Utility functions for @happyvertical/places package
  */
 
-import type { Location } from '@have/geo';
+import type { Location } from '@happyvertical/geo';
 import type { GeoData } from './types';
 
 /**
- * Map Location type from @have/geo to PlaceType slug
+ * Map Location type from @happyvertical/geo to PlaceType slug
  *
  * @param locationType - Location type from geocoding provider
  * @returns PlaceType slug
@@ -34,7 +34,7 @@ export function mapLocationTypeToPlaceType(locationType: string): string {
 }
 
 /**
- * Convert Location from @have/geo to GeoData
+ * Convert Location from @happyvertical/geo to GeoData
  *
  * @param location - Location from geocoding
  * @returns GeoData object

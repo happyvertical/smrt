@@ -126,7 +126,7 @@ Creation timestamp
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)

@@ -3,7 +3,7 @@
  * Coordinates schema initialization across multiple SMRT objects
  */
 
-import type { DatabaseInterface } from '@have/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { SchemaDefinition } from './types';
 
 export interface SchemaInitializationOptions {

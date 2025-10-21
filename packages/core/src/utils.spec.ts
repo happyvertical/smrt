@@ -4,9 +4,9 @@ import { SmrtObject } from './object';
 import { smrt } from './registry';
 import { fieldsFromClass } from './utils';
 
-// import { contentToString, stringToContent } from '@have/content';
+// import { contentToString, stringToContent } from '@happyvertical/content';
 // import { faker } from '@faker-js/faker';
-// import { Content } from '@have/content';
+// import { Content } from '@happyvertical/content';
 
 // Test class with various field types
 // Phase 2: Must use @smrt() decorator for fieldsFromClass() to work

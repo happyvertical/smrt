@@ -1,5 +1,5 @@
 /**
- * Utility functions for @have/events package
+ * Utility functions for @happyvertical/events package
  */
 
 import type { EventStatus, RecurrencePattern } from './types';

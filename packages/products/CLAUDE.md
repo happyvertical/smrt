@@ -1,8 +1,8 @@
-# @have/products: Triple-Purpose SMRT Microservice Template
+# @happyvertical/products: Triple-Purpose SMRT Microservice Template
 
 ## Purpose and Responsibilities
 
-The `@have/products` package is a comprehensive reference implementation demonstrating the SMRT framework's code generation capabilities. It serves as both a working example and a template for building production-ready microservices that leverage auto-generation from `@smrt()` decorated classes.
+The `@happyvertical/products` package is a comprehensive reference implementation demonstrating the SMRT framework's code generation capabilities. It serves as both a working example and a template for building production-ready microservices that leverage auto-generation from `@smrt()` decorated classes.
 
 ### Three Consumption Patterns
 
@@ -15,7 +15,7 @@ This package demonstrates how to create a single codebase that can be consumed i
 ### What Gets Auto-Generated
 
 The `@smrt()` decorator on model classes automatically generates:
-- **REST APIs**: Full CRUD endpoints (list, get, create, update, delete) via `@have/smrt`'s `startRestServer()`
+- **REST APIs**: Full CRUD endpoints (list, get, create, update, delete) via `@happyvertical/smrt`'s `startRestServer()`
 - **TypeScript Client**: Type-safe API client with IntelliSense support (via `@smrt/client` virtual module)
 - **MCP Tools**: Model Context Protocol tools for AI agent integration (via `@smrt/mcp` virtual module)
 - **Type Definitions**: Complete TypeScript types for all models and API responses (via `@smrt/types` virtual module)
@@ -116,14 +116,14 @@ The most common and production-ready usage pattern:
 
 ```typescript
 // Import models
-import { Product, Category } from '@have/products';
-import type { ProductData, CategoryData } from '@have/products';
+import { Product, Category } from '@happyvertical/products';
+import type { ProductData, CategoryData } from '@happyvertical/products';
 
 // Import auto-generated client
-import { createClient } from '@have/products';
+import { createClient } from '@happyvertical/products';
 
 // Import stores (Svelte 5 runes)
-import { productStore } from '@have/products/stores';
+import { productStore } from '@happyvertical/products/stores';
 
 // Create model instances
 const product = new Product({
@@ -157,7 +157,7 @@ await client.products.update('product-id', {
 Start the auto-generated REST API server:
 
 ```typescript
-import { startServer } from '@have/products';
+import { startServer } from '@happyvertical/products';
 
 // Starts Express server with auto-generated routes
 const { shutdown } = await startServer();
@@ -178,7 +178,7 @@ const { shutdown } = await startServer();
 Enable AI agents to interact with your models:
 
 ```typescript
-import { startMCPServer } from '@have/products';
+import { startMCPServer } from '@happyvertical/products';
 
 // Starts Model Context Protocol server
 const mcp = await startMCPServer();
@@ -196,7 +196,7 @@ Use the reactive store for state management:
 
 ```svelte
 <script>
-  import { productStore } from '@have/products/stores';
+  import { productStore } from '@happyvertical/products/stores';
 
   // Load products on mount
   $effect(() => {
@@ -243,7 +243,7 @@ Use the reactive store for state management:
 The Product model demonstrates all SMRT decorator capabilities:
 
 ```typescript
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@happyvertical/smrt';
 
 export interface ProductOptions extends SmrtObjectOptions {
   name?: string;
@@ -564,7 +564,7 @@ import { manifest } from '@smrt/manifest';
 
 ```typescript
 // server.ts - Start REST API with auto-generated routes
-import { createRestServer, startRestServer } from '@have/smrt';
+import { createRestServer, startRestServer } from '@happyvertical/smrt';
 import { Product, Category } from './lib/models';
 
 const shutdown = await startRestServer(
@@ -604,8 +604,8 @@ The package uses a sophisticated Vite configuration that supports three build mo
 ### Key Configuration Points
 
 ```typescript
-import { smrtPlugin } from '@have/smrt/vite-plugin';
-import { smrtConsumer } from '@have/smrt/consumer-plugin';
+import { smrtPlugin } from '@happyvertical/smrt/vite-plugin';
+import { smrtConsumer } from '@happyvertical/smrt/consumer-plugin';
 import federation from '@originjs/vite-plugin-federation';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
@@ -777,7 +777,7 @@ The package uses a prebuild script to generate TypeScript types:
 
 ```json
 {
-  "@have/smrt": "workspace:*"  // Core SMRT framework
+  "@happyvertical/smrt": "workspace:*"  // Core SMRT framework
 }
 ```
 
@@ -801,7 +801,7 @@ The package uses a prebuild script to generate TypeScript types:
 ### Peer Dependencies
 
 When using this package as a library, consuming applications should have:
-- `@have/smrt` - Core SMRT framework
+- `@happyvertical/smrt` - Core SMRT framework
 - `svelte` (if using Svelte components)
 - Node.js 20+ or Bun 1.0+
 
@@ -842,13 +842,13 @@ The package provides multiple entry points for different use cases:
 
 ```typescript
 // Import from main entry point
-import { Product, Category, createClient } from '@have/products';
+import { Product, Category, createClient } from '@happyvertical/products';
 
 // Import specific exports
-import { Product } from '@have/products/models';
-import { productStore } from '@have/products/stores';
-import { createClient } from '@have/products';
-import type { ProductData } from '@have/products';
+import { Product } from '@happyvertical/products/models';
+import { productStore } from '@happyvertical/products/stores';
+import { createClient } from '@happyvertical/products';
+import type { ProductData } from '@happyvertical/products';
 ```
 
 ## Common Coding Patterns and Conventions
@@ -859,7 +859,7 @@ When adding a new model to this package, follow this pattern:
 
 ```typescript
 // src/lib/models/YourModel.ts
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@happyvertical/smrt';
 
 // 1. Define options interface extending SmrtObjectOptions
 export interface YourModelOptions extends SmrtObjectOptions {
@@ -1272,16 +1272,16 @@ const data = $state({ items: [] });
 
 #### Build and Configuration Issues
 
-**Issue**: Build fails with "Cannot find module @have/smrt"
+**Issue**: Build fails with "Cannot find module @happyvertical/smrt"
 ```bash
-# Solution: Make sure @have/smrt is built first
+# Solution: Make sure @happyvertical/smrt is built first
 cd ../smrt
 npm run build
 cd ../products
 npm run build
 ```
 
-**Cause**: The products package depends on @have/smrt. Build order matters in monorepos.
+**Cause**: The products package depends on @happyvertical/smrt. Build order matters in monorepos.
 
 **Issue**: Module federation build fails
 ```bash
@@ -1568,7 +1568,7 @@ export const itemCount = derived(items, $items => $items.length);
 Reference these when working with the package:
 
 ### SMRT Framework
-- **@have/smrt package**: Core framework documentation (see `/packages/smrt/CLAUDE.md`)
+- **@happyvertical/smrt package**: Core framework documentation (see `/packages/smrt/CLAUDE.md`)
 - **SMRT Vite Plugin**: Virtual module generation (see `/packages/smrt/src/vite-plugin/`)
 - **SMRT Consumer Plugin**: External package consumption (see `/packages/smrt/src/consumer-plugin/`)
 
@@ -1603,7 +1603,7 @@ Reference these when working with the package:
 2. **Update package.json**:
    ```json
    {
-     "name": "@have/your-service",
+     "name": "@happyvertical/your-service",
      "description": "Your service description"
    }
    ```
@@ -1611,7 +1611,7 @@ Reference these when working with the package:
 3. **Create your models**:
    ```typescript
    // src/lib/models/YourModel.ts
-   import { SmrtObject, smrt } from '@have/smrt';
+   import { SmrtObject, smrt } from '@happyvertical/smrt';
 
    @smrt({ api: { include: ['list', 'get', 'create'] } })
    export class YourModel extends SmrtObject {
@@ -1634,12 +1634,12 @@ Reference these when working with the package:
 ### For Library Consumers (Using as NPM Package)
 
 ```bash
-npm install @have/products
+npm install @happyvertical/products
 ```
 
 ```typescript
-import { Product, createClient } from '@have/products';
-import { productStore } from '@have/products/stores';
+import { Product, createClient } from '@happyvertical/products';
+import { productStore } from '@happyvertical/products/stores';
 
 // Use models
 const product = new Product({ name: 'Test', price: 29.99 });
@@ -1649,7 +1649,7 @@ const api = createClient('/api/v1');
 const products = await api.products.list();
 
 // Use store in Svelte components
-import { productStore } from '@have/products/stores';
+import { productStore } from '@happyvertical/products/stores';
 ```
 
 ## Quick Reference Cheat Sheet
@@ -1731,9 +1731,9 @@ import setupRoutes from '@smrt/routes';
 import createMCPServer, { tools } from '@smrt/mcp';
 
 // Real modules (always available)
-import { Product, Category } from '@have/products/models';
-import { productStore } from '@have/products/stores';
-import { ProductCard } from '@have/products/components';
+import { Product, Category } from '@happyvertical/products/models';
+import { productStore } from '@happyvertical/products/stores';
+import { ProductCard } from '@happyvertical/products/components';
 ```
 
 ### Svelte 5 Runes Quick Reference
@@ -1783,7 +1783,7 @@ Error: Port 3000 already in use
 Error: Cannot find name '$state'
 → Check file extension is .svelte.ts (not just .ts)
 
-Error: Module not found: @have/smrt
+Error: Module not found: @happyvertical/smrt
 → Build smrt package first: cd ../smrt && npm run build
 
 Type error: Property 'price' may be undefined
@@ -1792,7 +1792,7 @@ Type error: Property 'price' may be undefined
 
 ## Summary
 
-The `@have/products` package is a **reference implementation** and **template** demonstrating:
+The `@happyvertical/products` package is a **reference implementation** and **template** demonstrating:
 
 1. **SMRT Framework Capabilities**: Auto-generation of REST APIs, TypeScript clients, and MCP tools from decorated classes
 2. **Svelte 5 Patterns**: Modern reactive state management using runes (`$state`, `$derived`, `$effect`, `$props`)

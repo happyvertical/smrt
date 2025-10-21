@@ -1,5 +1,5 @@
 /**
- * MCP Server Generator Script for @have/products
+ * MCP Server Generator Script for @happyvertical/products
  *
  * This script generates a complete MCP server with stdio transport
  * from the Product and Category SMRT objects.
@@ -13,7 +13,7 @@ import { MCPGenerator } from '@smrt/core/generators/mcp';
  * Generate MCP server for products package
  */
 async function generateMCPServer() {
-  console.log('🤖 Generating MCP Server for @have/products...\n');
+  console.log('🤖 Generating MCP Server for @happyvertical/products...\n');
 
   // Create generator instance
   const generator = new MCPGenerator(

@@ -65,7 +65,7 @@ function extractSections(content) {
       // Skip certain headings
       if (heading.toLowerCase() === 'license') continue;
       if (heading.startsWith('@smrt/')) continue;
-      if (heading.startsWith('@have/')) continue;
+      if (heading.startsWith('@happyvertical/')) continue;
 
       // Remove emojis for both label and anchor
       const cleanHeading = heading

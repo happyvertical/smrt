@@ -113,9 +113,9 @@ function validateWorkspacePackages() {
         // Check if package is publishable (has name and not private)
         if (pkg.name && !pkg.private) {
           // Validate package name format for publishing
-          if (!pkg.name.startsWith('@have/')) {
+          if (!pkg.name.startsWith('@happyvertical/')) {
             errors.push(
-              `Package ${pkg.name} should use @have/ namespace for publishing`,
+              `Package ${pkg.name} should use @happyvertical/ namespace for publishing`,
             );
           }
 

@@ -1,5 +1,5 @@
 /**
- * @have/tags
+ * @happyvertical/tags
  *
  * Reusable tagging system with hierarchies, contexts, and multi-language support
  *

@@ -44,7 +44,7 @@ AI client configuration options or instance
 
 Defined in: smrt/packages/core/src/class.ts:35
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)

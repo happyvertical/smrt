@@ -114,7 +114,7 @@ console.log(mirrored.type);  // 'mirror'
 ### Document Processing
 
 ```typescript
-import { fetchDocument } from '@have/documents';
+import { fetchDocument } from '@happyvertical/documents';
 import { Content } from '@smrt/content';
 
 // Process a PDF document
@@ -639,12 +639,12 @@ const contents = await Contents.create({
 - **@smrt/core**: Core SMRT framework with ORM and code generation
 
 ### External Dependencies
-- **@have/documents**: Document fetching and processing
-- **@have/files**: File system operations and caching
-- **@have/pdf**: PDF text extraction
-- **@have/spider**: Web content scraping
-- **@have/ocr**: Optical Character Recognition
-- **@have/utils**: Utility functions
+- **@happyvertical/documents**: Document fetching and processing
+- **@happyvertical/files**: File system operations and caching
+- **@happyvertical/pdf**: PDF text extraction
+- **@happyvertical/spider**: Web content scraping
+- **@happyvertical/ocr**: Optical Character Recognition
+- **@happyvertical/utils**: Utility functions
 - **yaml**: YAML parsing and stringification
 
 ## License

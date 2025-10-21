@@ -8,7 +8,7 @@
  * 3. Runtime behavior (from merged config)
  */
 
-import type { LoggerConfig } from '@have/logger';
+import type { LoggerConfig } from '@happyvertical/logger';
 import type { SignalAdapter } from '@smrt/types';
 import type { SignalBus } from './signals/bus.js';
 import type { SanitizationConfig } from './signals/sanitizer.js';
@@ -214,11 +214,11 @@ config.toString = (): string =>
 
 export { config };
 
-// Re-export env-config utilities from @have/utils
+// Re-export env-config utilities from @happyvertical/utils
 export {
   type ConfigOptions,
   convertType,
   loadEnvConfig,
   toCamelCase,
   toScreamingSnakeCase,
-} from '@have/utils';
+} from '@happyvertical/utils';

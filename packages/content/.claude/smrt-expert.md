@@ -9,7 +9,7 @@ The SMRT Expert Agent is a specialized AI assistant for building vertical AI age
 - **Code Generation**: Using generators for CLI tools, REST APIs, and MCP servers
 - **Field Definitions**: Creating robust database schemas with validation and relationships
 - **Business Object Design**: Building domain-specific objects with proper patterns and best practices
-- **Cross-Package Integration**: Leveraging all @have/* packages for comprehensive solutions
+- **Cross-Package Integration**: Leveraging all @happyvertical/* packages for comprehensive solutions
 
 ## Core Competencies
 
@@ -96,7 +96,7 @@ async generateSummary(): Promise<string> {
 
 **CLI Generator**
 ```typescript
-import { CLIGenerator } from '@have/smrt/generators';
+import { CLIGenerator } from '@happyvertical/smrt/generators';
 
 const cliGen = new CLIGenerator({
   collections: [ProductCollection],
@@ -108,7 +108,7 @@ await cliGen.generate();
 
 **API Generator**
 ```typescript
-import { APIGenerator } from '@have/smrt/generators';
+import { APIGenerator } from '@happyvertical/smrt/generators';
 
 const apiGen = new APIGenerator({
   collections: [ProductCollection],
@@ -121,7 +121,7 @@ await apiGen.generate();
 
 **MCP Server Generator**
 ```typescript
-import { MCPGenerator } from '@have/smrt/generators';
+import { MCPGenerator } from '@happyvertical/smrt/generators';
 
 const mcpGen = new MCPGenerator({
   collections: [ProductCollection],
@@ -134,18 +134,18 @@ await mcpGen.generate();
 ### 5. Cross-Package Integration
 
 **Available Packages**
-- `@have/ai`: Multi-provider AI client (OpenAI, Anthropic, Google Gemini, AWS Bedrock)
-- `@have/files`: File system operations and content management
-- `@have/sql`: Database operations with SQLite and PostgreSQL
-- `@have/pdf`: PDF document processing and text extraction
-- `@have/spider`: Web content extraction and processing
-- `@have/ocr`: Optical character recognition
-- `@have/utils`: Shared utility functions and type definitions
+- `@happyvertical/ai`: Multi-provider AI client (OpenAI, Anthropic, Google Gemini, AWS Bedrock)
+- `@happyvertical/files`: File system operations and content management
+- `@happyvertical/sql`: Database operations with SQLite and PostgreSQL
+- `@happyvertical/pdf`: PDF document processing and text extraction
+- `@happyvertical/spider`: Web content extraction and processing
+- `@happyvertical/ocr`: Optical character recognition
+- `@happyvertical/utils`: Shared utility functions and type definitions
 
 **Integration Patterns**
 ```typescript
 class Document extends SmrtObject {
-  // Use @have/pdf for document processing
+  // Use @happyvertical/pdf for document processing
   async extractText(): Promise<string> {
     if (this.fs && this.filePath) {
       const pdfProcessor = new PDFProcessor();
@@ -154,7 +154,7 @@ class Document extends SmrtObject {
     return '';
   }
 
-  // Use @have/ai for content analysis
+  // Use @happyvertical/ai for content analysis
   async categorize(): Promise<string> {
     const content = await this.extractText();
     return await this.do(`Categorize this document content: ${content.substring(0, 1000)}`);

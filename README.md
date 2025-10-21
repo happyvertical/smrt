@@ -155,15 +155,15 @@ import { tools } from '@smrt/mcp';
 - `@smrt/profiles` - Profile management with relationships
 - `@smrt/tags` - Hierarchical tagging system
 
-### SDK Infrastructure (`@have/*`)
+### SDK Infrastructure (`@happyvertical/*`)
 
 External dependencies provided by the HAppyVertical SDK:
 
-- `@have/ai` - Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
-- `@have/files` - File system operations and utilities
-- `@have/sql` - Database operations (SQLite, Postgres, DuckDB)
-- `@have/utils` - Shared utility functions
-- `@have/logger` - Logging infrastructure
+- `@happyvertical/ai` - Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
+- `@happyvertical/files` - File system operations and utilities
+- `@happyvertical/sql` - Database operations (SQLite, Postgres, DuckDB)
+- `@happyvertical/utils` - Shared utility functions
+- `@happyvertical/logger` - Logging infrastructure
 
 ## Documentation
 

@@ -36,7 +36,7 @@
           
           <div class="info-card">
             <h3>📚 Library</h3>
-            <p>Install as NPM package: npm install @have/smrt-template</p>
+            <p>Install as NPM package: npm install @happyvertical/smrt-template</p>
           </div>
         </div>
       </div>

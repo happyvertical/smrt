@@ -1,8 +1,8 @@
-# @have/config Specification
+# @happyvertical/config Specification
 
 ## Overview
 
-`@have/config` provides centralized configuration management for SMRT modules and applications. It allows module options to be declared throughout the codebase while maintaining a single source of truth in project-level configuration files.
+`@happyvertical/config` provides centralized configuration management for SMRT modules and applications. It allows module options to be declared throughout the codebase while maintaining a single source of truth in project-level configuration files.
 
 ## Core Concepts
 
@@ -161,7 +161,7 @@ SMRT_MODULES__MY_MODULE__OPTION=value
 
 ```typescript
 // Auto-generate types from config
-import type { defineConfig } from '@have/config';
+import type { defineConfig } from '@happyvertical/config';
 
 export default defineConfig({
   smrt: {
@@ -307,7 +307,7 @@ export default {
 ### Using Config in Code
 
 ```typescript
-import { getPackageConfig, getModuleConfig } from '@have/config';
+import { getPackageConfig, getModuleConfig } from '@happyvertical/config';
 
 // In a package
 export async function createAIClient() {
@@ -340,7 +340,7 @@ export class TownScraper {
 ### Runtime Configuration
 
 ```typescript
-import { setConfig, watchConfig } from '@have/config';
+import { setConfig, watchConfig } from '@happyvertical/config';
 
 // Override config at runtime
 setConfig({
@@ -372,7 +372,7 @@ unwatch();
 ## Package Structure
 
 ```
-@have/config/
+@happyvertical/config/
 ├── src/
 │   ├── index.ts          # Main exports
 │   ├── loader.ts         # Config file loading

@@ -1,5 +1,5 @@
 /**
- * Type definitions for @have/places package
+ * Type definitions for @happyvertical/places package
  */
 
 import type { SmrtObjectOptions } from '@smrt/core';

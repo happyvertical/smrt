@@ -1,5 +1,5 @@
 /**
- * Type definitions for @have/tags package
+ * Type definitions for @happyvertical/tags package
  */
 
 import type { SmrtObjectOptions } from '@smrt/core';

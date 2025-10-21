@@ -1,4 +1,4 @@
-import { getDatabase } from '@have/sql';
+import { getDatabase } from '@happyvertical/sql';
 import { smrt } from '@smrt/core';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Agent } from './agent.js';
@@ -33,7 +33,7 @@ class TestAgent extends Agent {
   }
 }
 
-describe('@have/agents', () => {
+describe('@happyvertical/agents', () => {
   // Create a SINGLE shared database instance for all tests
   // This ensures all agents share the same in-memory database and tables persist
   let sharedDb: any;

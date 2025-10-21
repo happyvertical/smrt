@@ -1,15 +1,15 @@
-# @have/assets SPEC.md
+# @happyvertical/assets SPEC.md
 
 ## Design Notes
 
-This document outlines the database schema for the `@have/assets` package. The architecture is designed for consistency, extensibility, and robust management of digital assets.
+This document outlines the database schema for the `@happyvertical/assets` package. The architecture is designed for consistency, extensibility, and robust management of digital assets.
 
 The key architectural decisions are:
 1.  **A Central `assets` Table**: A single table holds all primary asset records, which are logical pointers to digital files. This table is linked to lookup tables to define an asset's nature and status.
 2.  **Controlled EAV for Metadata**: We use a controlled Entity-Attribute-Value model. The `asset_metafields` table defines a vocabulary of allowed keys (e.g., 'width', 'duration'), ensuring data consistency, while the `asset_metadata` table stores the corresponding values.
 3.  **Slug-Based Primary Keys**: For all lookup tables (`asset_types`, `asset_statuses`, `asset_metafields`), we use a human-readable `slug` as the primary key. This improves database readability and simplifies queries.
-4.  **Tagging via @have/tags**: Assets use the reusable `@have/tags` package for tagging. The `asset_tags` join table connects assets to tags.
-5.  **Ownership & Permissions**: Every asset has an `owner_profile_id` (nullable), linking it to the `@have/profiles` package. For more granular control, an `asset_permissions` table can be used to grant access to specific profiles or groups, though this is not a default requirement.
+4.  **Tagging via @happyvertical/tags**: Assets use the reusable `@happyvertical/tags` package for tagging. The `asset_tags` join table connects assets to tags.
+5.  **Ownership & Permissions**: Every asset has an `owner_profile_id` (nullable), linking it to the `@happyvertical/profiles` package. For more granular control, an `asset_permissions` table can be used to grant access to specific profiles or groups, though this is not a default requirement.
 6.  **Lifecycle and Versioning**: Assets have a `status_slug` (e.g., 'draft', 'published') to manage their lifecycle. A comprehensive versioning system is included to track an asset's history.
 7.  **Derivatives**: The `parent_id` field allows for linking derivative assets (e.g., a thumbnail) to their original source asset.
 
@@ -32,9 +32,9 @@ Defines the lifecycle status of an asset.
 -   `description`: (Text, Nullable).
 
 #### Tagging Integration
-Assets use the `@have/tags` package for tagging functionality. See `@have/tags` SPEC.md for full details.
+Assets use the `@happyvertical/tags` package for tagging functionality. See `@happyvertical/tags` SPEC.md for full details.
 
-Tags are referenced via the `tag_slug` field in the `asset_tags` join table, which references `tags.slug` from the `@have/tags` package.
+Tags are referenced via the `tag_slug` field in the `asset_tags` join table, which references `tags.slug` from the `@happyvertical/tags` package.
 
 #### `asset_metafields`
 Defines the controlled vocabulary for metadata keys.
@@ -62,9 +62,9 @@ The core table for storing asset records.
 -   `updated_at`: (Datetime).
 
 #### `asset_tags`
-The join table connecting assets to tags from `@have/tags`.
+The join table connecting assets to tags from `@happyvertical/tags`.
 -   `asset_id`: (UUID, FK to `assets.id`, ON DELETE CASCADE) - The asset being tagged.
--   `tag_slug`: (String, FK to `tags.slug` from `@have/tags`, ON DELETE CASCADE) - The tag applied to the asset.
+-   `tag_slug`: (String, FK to `tags.slug` from `@happyvertical/tags`, ON DELETE CASCADE) - The tag applied to the asset.
 -   `created_at`: (Datetime) - Timestamp when tag was applied.
 -   **Primary Key**: Composite on `(asset_id, tag_slug)` to prevent duplicates.
 
@@ -87,15 +87,15 @@ A join table for managing granular asset permissions for profiles.
 
 ## SMRT Integration
 
-The `@have/assets` package will be built on the `@have/smrt` framework, leveraging its AI-first object model, ORM capabilities, and code generation tools. This section outlines how the database schema and core functions translate into a SMRT implementation.
+The `@happyvertical/assets` package will be built on the `@happyvertical/smrt` framework, leveraging its AI-first object model, ORM capabilities, and code generation tools. This section outlines how the database schema and core functions translate into a SMRT implementation.
 
 ### 1. SMRT Object Implementation
 
 The database tables will be represented as `SmrtObject` classes, with table columns mapped to typed fields.
 
 ```typescript
-import { SmrtObject, SmrtCollection, smrt, type SmrtObjectOptions } from '@have/smrt';
-import type { Tag } from '@have/tags';
+import { SmrtObject, SmrtCollection, smrt, type SmrtObjectOptions } from '@happyvertical/smrt';
+import type { Tag } from '@happyvertical/tags';
 
 /**
  * Options for AssetType initialization
@@ -245,9 +245,9 @@ export class Asset extends SmrtObject {
   }
 
   /**
-   * Get all tags for this asset from @have/tags
+   * Get all tags for this asset from @happyvertical/tags
    *
-   * @returns Array of Tag instances from @have/tags package
+   * @returns Array of Tag instances from @happyvertical/tags package
    */
   async getTags(): Promise<Tag[]> {
     // Query asset_tags join table and retrieve Tag instances
@@ -260,7 +260,7 @@ export class Asset extends SmrtObject {
     ).all(this.id);
 
     // Import Tag and TagCollection dynamically to avoid circular dependencies
-    const { Tag } = await import('@have/tags');
+    const { Tag } = await import('@happyvertical/tags');
     const tags: Tag[] = [];
 
     for (const row of rows as { tag_slug: string }[]) {
@@ -293,20 +293,20 @@ export class Asset extends SmrtObject {
 
 ### 2. Collection Implementation
 
-The `AssetCollection` extends `SmrtCollection` to provide collection-level operations including tag management from `@have/tags`.
+The `AssetCollection` extends `SmrtCollection` to provide collection-level operations including tag management from `@happyvertical/tags`.
 
 ```typescript
-import { SmrtCollection } from '@have/smrt';
+import { SmrtCollection } from '@happyvertical/smrt';
 import { Asset } from './asset';
 
 export class AssetCollection extends SmrtCollection<Asset> {
   static readonly objectClass = Asset;
 
   /**
-   * Add a tag to an asset (uses @have/tags)
+   * Add a tag to an asset (uses @happyvertical/tags)
    *
    * @param assetId - The asset ID to tag
-   * @param tagSlug - The tag slug from @have/tags
+   * @param tagSlug - The tag slug from @happyvertical/tags
    */
   async addTag(assetId: string, tagSlug: string): Promise<void> {
     const db = await this.getDb();
@@ -371,7 +371,7 @@ export class AssetCollection extends SmrtCollection<Asset> {
 }
 ```
 
-**Filesystem Integration Note**: The `sourceUri` field can reference any storage backend via `@have/files` package (local filesystem, S3, Google Cloud Storage, etc.). Applications should use `@have/files` adapters for all file operations, keeping the Asset model storage-agnostic.
+**Filesystem Integration Note**: The `sourceUri` field can reference any storage backend via `@happyvertical/files` package (local filesystem, S3, Google Cloud Storage, etc.). Applications should use `@happyvertical/files` adapters for all file operations, keeping the Asset model storage-agnostic.
 
 ### 3. AI-Powered Operations
 
@@ -460,13 +460,13 @@ export class Asset extends SmrtObject {
 -   `getAssetMetadata(version_id)`: Retrieves all metadata for a specific asset version.
 -   `setAssetMetadata(version_id, metafieldSlug, value)`: Sets a single metadata value on a specific asset version.
 
-### Tagging (via @have/tags integration)
--   `addTag(tagSlug)`: Associates a tag with this asset (uses `@have/tags` package).
+### Tagging (via @happyvertical/tags integration)
+-   `addTag(tagSlug)`: Associates a tag with this asset (uses `@happyvertical/tags` package).
 -   `removeTag(tagSlug)`: Removes a tag from this asset.
 -   `getTags()`: Retrieves all tags for this asset as Tag objects.
 -   `hasTag(tagSlug)`: Checks if asset has a specific tag.
 
-**Note**: Tags are managed through the `@have/tags` package. The `asset_tags` join table connects assets to tags. See `@have/tags` SPEC.md for tag hierarchy, aliases, and multi-language support.
+**Note**: Tags are managed through the `@happyvertical/tags` package. The `asset_tags` join table connects assets to tags. See `@happyvertical/tags` SPEC.md for tag hierarchy, aliases, and multi-language support.
 
 ### Permissions
 -   `grantPermission(primary_version_id, profile_id, permission_level)`: Grants a profile permission to an asset.

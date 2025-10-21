@@ -1,5 +1,5 @@
 /**
- * Type definitions for @have/accounts
+ * Type definitions for @happyvertical/accounts
  */
 
 import type { SmrtObjectOptions } from '@smrt/core';

@@ -1,4 +1,4 @@
-import { createLogger, type Logger } from '@have/logger';
+import { createLogger, type Logger } from '@happyvertical/logger';
 import { SmrtObject, type SmrtObjectOptions } from '@smrt/core';
 import type { AgentStatusType } from './types.js';
 
@@ -7,8 +7,8 @@ import type { AgentStatusType } from './types.js';
  *
  * Agents are SmrtObjects that perform specific tasks with:
  * - Status tracking (idle, initializing, running, error, shutdown)
- * - Configuration management via @have/config
- * - Structured logging via @have/logger
+ * - Configuration management via @happyvertical/config
+ * - Structured logging via @happyvertical/logger
  * - Lifecycle hooks (initialize, validate, run, shutdown)
  * - Automatic signal handling for graceful shutdown
  *
@@ -19,8 +19,8 @@ import type { AgentStatusType } from './types.js';
  *
  * @example
  * ```typescript
- * import { Agent } from '@have/agents';
- * import { getModuleConfig } from '@have/config';
+ * import { Agent } from '@happyvertical/agents';
+ * import { getModuleConfig } from '@happyvertical/config';
  * import { smrt } from '@smrt/core';
  *
  * @smrt()

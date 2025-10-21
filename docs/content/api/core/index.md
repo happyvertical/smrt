@@ -406,7 +406,7 @@ For more details, see the [full CLAUDE.md documentation](_media/CLAUDE.md#eager-
 
 ### Direct SQL Access
 
-All SMRT objects have public `db` property for direct database access via @have/sql. This enables custom queries, transactions, and advanced database operations:
+All SMRT objects have public `db` property for direct database access via @happyvertical/sql. This enables custom queries, transactions, and advanced database operations:
 
 ```typescript
 import { SmrtObject, SmrtCollection } from '@smrt/core';
@@ -449,7 +449,7 @@ const results = await products.db.query`
 **Key Benefits**:
 - **Direct database access**: Use any SQL query, not limited to ORM methods
 - **Template literal safety**: Automatic SQL injection protection via tagged templates
-- **Full @have/sql power**: Access all DatabaseInterface methods (many, single, pluck, execute)
+- **Full @happyvertical/sql power**: Access all DatabaseInterface methods (many, single, pluck, execute)
 - **Transaction support**: Use `db.transaction()` for atomic operations
 - **Performance**: Direct queries can be more efficient for complex operations
 
@@ -469,7 +469,7 @@ const collection = await ProductCollection.create({
 });
 
 // DatabaseInterface instance (pre-configured)
-import { getDatabase } from '@have/sql';
+import { getDatabase } from '@happyvertical/sql';
 const db = await getDatabase({ type: 'postgres', url: 'postgres://...' });
 const collection = await ProductCollection.create({ db });
 ```
@@ -830,8 +830,8 @@ The system table is automatically created when you initialize any SMRT object wi
 SMRT integrates seamlessly with other HAVE SDK packages:
 
 ```typescript
-// With @have/spider for web content
-import { SpiderAdapter } from '@have/spider';
+// With @happyvertical/spider for web content
+import { SpiderAdapter } from '@happyvertical/spider';
 
 class WebDocument extends SmrtObject {
   url = text({ required: true });
@@ -844,8 +844,8 @@ class WebDocument extends SmrtObject {
   }
 }
 
-// With @have/pdf for document processing
-import { PDFProcessor } from '@have/pdf';
+// With @happyvertical/pdf for document processing
+import { PDFProcessor } from '@happyvertical/pdf';
 
 class PDFDocument extends SmrtObject {
   filePath = text({ required: true });
@@ -858,7 +858,7 @@ class PDFDocument extends SmrtObject {
   }
 }
 
-// With @have/files for file management
+// With @happyvertical/files for file management
 class FileDocument extends SmrtObject {
   async saveToFile(filename: string) {
     await this.fs.writeText(filename, this.content);

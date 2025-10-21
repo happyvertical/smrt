@@ -1,5 +1,5 @@
 /**
- * @have/assets
+ * @happyvertical/assets
  *
  * Asset management system with versioning, metadata, and AI-powered operations
  *

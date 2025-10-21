@@ -1,18 +1,18 @@
-# @have/profiles
+# @happyvertical/profiles
 
 ## Package Overview
 
-The `@have/profiles` package provides a comprehensive, flexible system for managing profiles, relationships, and metadata. It is designed as a **SMRT-specific module** (similar to `@have/content` and `@have/products`), excluded from the main SDK build pipeline but deeply integrated with the SMRT framework and other SDK packages.
+The `@happyvertical/profiles` package provides a comprehensive, flexible system for managing profiles, relationships, and metadata. It is designed as a **SMRT-specific module** (similar to `@happyvertical/content` and `@happyvertical/products`), excluded from the main SDK build pipeline but deeply integrated with the SMRT framework and other SDK packages.
 
 **Package Type**: SMRT-specific module
 **Location**: `packages/profiles/`
 **Build Tool**: Vite with smrtPlugin
 **Target**: Node.js only
-**Dependencies**: `@have/smrt`, `@have/utils`, and potentially extends `@have/sql`
+**Dependencies**: `@happyvertical/smrt`, `@happyvertical/utils`, and potentially extends `@happyvertical/sql`
 
 ## Design Notes
 
-This document outlines the database schema for the `@have/profiles` package. The architecture is designed to be flexible, consistent, and extensible.
+This document outlines the database schema for the `@happyvertical/profiles` package. The architecture is designed to be flexible, consistent, and extensible.
 
 The key architectural decisions are:
 
@@ -88,15 +88,15 @@ await addRelationship(dad.id, mom.id, 'spouse');
 
 ## SMRT Integration
 
-The `@have/profiles` data model can be seamlessly integrated with the `@have/smrt` framework. By modeling the schema as `SmrtObject`s, we can leverage AI-powered operations, automatic code generation, and a rich object-oriented interface.
+The `@happyvertical/profiles` data model can be seamlessly integrated with the `@happyvertical/smrt` framework. By modeling the schema as `SmrtObject`s, we can leverage AI-powered operations, automatic code generation, and a rich object-oriented interface.
 
 ### SMRT Object Definitions
 
 Here's how the core tables can be represented as `SmrtObject` classes using UUID primary keys:
 
 ```typescript
-import { SmrtObject, SmrtCollection } from '@have/smrt';
-import { text, foreignKey, oneToMany, boolean, datetime, json } from '@have/smrt/fields';
+import { SmrtObject, SmrtCollection } from '@happyvertical/smrt';
+import { text, foreignKey, oneToMany, boolean, datetime, json } from '@happyvertical/smrt/fields';
 
 // Represents the profile_types table
 class ProfileType extends SmrtObject {
@@ -348,7 +348,7 @@ To ensure data consistency and optimal query performance, the following consider
 
 ## Reciprocal Relationship System
 
-The `@have/profiles` package provides a flexible system for handling reciprocal (two-way) relationships. Each `ProfileRelationshipType` can define whether it's reciprocal, and optionally specify a custom handler function for creating the inverse relationship.
+The `@happyvertical/profiles` package provides a flexible system for handling reciprocal (two-way) relationships. Each `ProfileRelationshipType` can define whether it's reciprocal, and optionally specify a custom handler function for creating the inverse relationship.
 
 ### Handler Function Interface
 
@@ -397,7 +397,7 @@ const DEFAULT_HANDLERS: Record<string, ReciprocalHandler> = {
 Applications can register custom reciprocal handlers:
 
 ```typescript
-import { ProfileRelationshipType } from '@have/profiles';
+import { ProfileRelationshipType } from '@happyvertical/profiles';
 
 // Register a custom handler
 ProfileRelationshipType.registerReciprocalHandler(
@@ -499,7 +499,7 @@ import {
   findProfilesByMeta,
   createReciprocalRelationship,
   validateMetadataValue,
-} from '@have/profiles/utils';
+} from '@happyvertical/profiles/utils';
 
 // Metadata utilities
 const metadata = await getProfileMetadata('profile-123');
@@ -602,7 +602,7 @@ await profile.addMetadata('email', 'invalid-email');     // ✗ ValidationError:
 Applications can register custom validation functions:
 
 ```typescript
-import { ProfileMetadata } from '@have/profiles';
+import { ProfileMetadata } from '@happyvertical/profiles';
 
 // Register a custom validator
 ProfileMetadata.registerValidator('us-phone', (value: any) => {
@@ -626,11 +626,11 @@ const phoneField = await ProfileMetafield.create({
 
 ## Dependencies & SDK Integration
 
-The `@have/profiles` package maximizes integration with existing SDK packages while potentially extending them for specialized needs.
+The `@happyvertical/profiles` package maximizes integration with existing SDK packages while potentially extending them for specialized needs.
 
 ### Core Dependencies
 
-#### @have/smrt (Required)
+#### @happyvertical/smrt (Required)
 - **Purpose**: Core SMRT framework
 - **Usage**:
   - `SmrtObject` base class for all profile models
@@ -640,14 +640,14 @@ The `@have/profiles` package maximizes integration with existing SDK packages wh
   - AI-powered methods (`do()`, `is()`)
   - Automatic schema generation and database triggers
 
-#### @have/utils (Required)
+#### @happyvertical/utils (Required)
 - **Purpose**: Shared utilities
 - **Usage**:
   - `makeSlug()` for generating URL-friendly identifiers
   - `generateId()` for UUID generation (if needed)
   - Type utilities and helper functions
 
-#### @have/sql (Potential Extension)
+#### @happyvertical/sql (Potential Extension)
 - **Purpose**: Database operations
 - **Potential Extensions**:
   - Enhanced query builders for complex relationship queries
@@ -657,7 +657,7 @@ The `@have/profiles` package maximizes integration with existing SDK packages wh
 
 **Proposed Extensions**:
 ```typescript
-// Potential additions to @have/sql
+// Potential additions to @happyvertical/sql
 export function buildGraphQuery(
   fromTable: string,
   relationshipTable: string,
@@ -675,7 +675,7 @@ export function buildBatchUpsert(
 }
 ```
 
-#### @have/ai (Indirect)
+#### @happyvertical/ai (Indirect)
 - **Purpose**: AI model interactions
 - **Usage**: Inherited via `SmrtObject` for AI-powered profile operations:
   - `profile.generateBio()` - Generate professional bios
@@ -685,14 +685,14 @@ export function buildBatchUpsert(
 
 ### Optional Integration Points
 
-#### @have/files
+#### @happyvertical/files
 - **Use Case**: Profile avatar/photo management
 - **Potential Features**:
   - Upload and store profile photos
   - Generate thumbnails
   - Manage document attachments (resumes, portfolios)
 
-#### @have/content
+#### @happyvertical/content
 - **Use Case**: Profile content management
 - **Potential Features**:
   - Rich-text profile descriptions

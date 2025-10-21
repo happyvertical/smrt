@@ -1,5 +1,5 @@
 /**
- * Type definitions for @have/events
+ * Type definitions for @happyvertical/events
  */
 
 import type { SmrtObjectOptions } from '@smrt/core';

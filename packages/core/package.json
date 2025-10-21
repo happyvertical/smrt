@@ -30,11 +30,11 @@
     "./consumer-plugin": "./dist/consumer-plugin.js"
   },
   "dependencies": {
-    "@have/ai": "workspace:*",
-    "@have/files": "workspace:*",
-    "@have/logger": "workspace:*",
-    "@have/sql": "workspace:*",
-    "@have/utils": "workspace:*",
+    "@happyvertical/ai": "workspace:*",
+    "@happyvertical/files": "workspace:*",
+    "@happyvertical/logger": "workspace:*",
+    "@happyvertical/sql": "workspace:*",
+    "@happyvertical/utils": "workspace:*",
     "@smrt/types": "workspace:*",
     "@langchain/community": "^0.3.24",
     "@modelcontextprotocol/sdk": "^1.0.4",

@@ -1,5 +1,5 @@
 /**
- * Type definitions for @have/assets package
+ * Type definitions for @happyvertical/assets package
  */
 
 import type { SmrtObjectOptions } from '@smrt/core';
