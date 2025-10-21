@@ -49,7 +49,7 @@ jobs:
       - name: Build SDK packages
         run: |
           cd sdk
-          pnpm run build
+          pnpm -r --workspace-concurrency=4 --filter='!@have/docs' run build
           cd ..
 
       - name: Build packages
