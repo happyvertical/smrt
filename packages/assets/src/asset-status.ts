@@ -13,7 +13,7 @@ import type { AssetStatusOptions } from './types';
   cli: true,
 })
 export class AssetStatus extends SmrtObject {
-  slug = ''; // Primary key (human-readable identifier, e.g., 'draft', 'published')
+  // slug is inherited as an accessor from SmrtObject
   name = ''; // Display name (e.g., 'Draft', 'Published')
   description = ''; // Optional description
 

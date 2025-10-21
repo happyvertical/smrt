@@ -99,14 +99,12 @@ export class EventSeriesCollection extends SmrtCollection<EventSeries> {
         series = series.filter((s) => s.organizerId === filters.organizerId);
       }
       if (filters.startDate) {
-        series = series.filter(
-          (s) => s.startDate && s.startDate >= filters.startDate,
-        );
+        const startDate = filters.startDate;
+        series = series.filter((s) => s.startDate && s.startDate >= startDate);
       }
       if (filters.endDate) {
-        series = series.filter(
-          (s) => s.endDate && s.endDate <= filters.endDate,
-        );
+        const endDate = filters.endDate;
+        series = series.filter((s) => s.endDate && s.endDate <= endDate);
       }
     }
 

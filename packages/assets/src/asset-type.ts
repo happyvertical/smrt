@@ -13,7 +13,7 @@ import type { AssetTypeOptions } from './types';
   cli: true,
 })
 export class AssetType extends SmrtObject {
-  slug = ''; // Primary key (human-readable identifier, e.g., 'image', 'video')
+  // slug is inherited as an accessor from SmrtObject
   name = ''; // Display name (e.g., 'Image', 'Video')
   description = ''; // Optional description
 
