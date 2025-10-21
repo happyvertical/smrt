@@ -55,6 +55,8 @@ export class ProfileMetadataCollection extends SmrtCollection<ProfileMetadata> {
       where: { metafieldId, value: String(value) },
     });
 
-    return matches.map((m) => m.profileId);
+    return matches
+      .map((m) => m.profileId)
+      .filter((id) => typeof id === 'string') as string[];
   }
 }
