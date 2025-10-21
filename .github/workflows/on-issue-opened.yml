@@ -1,0 +1,20 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened, reopened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run issue triage
+        uses: ./.github/actions/issue-triage
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
