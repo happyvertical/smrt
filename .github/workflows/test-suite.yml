@@ -46,6 +46,12 @@ jobs:
           node-version: '24'
           install-deps: 'true'
 
+      - name: Build SDK packages
+        run: |
+          cd sdk
+          pnpm run build
+          cd ..
+
       - name: Build packages
         run: pnpm run build
 
