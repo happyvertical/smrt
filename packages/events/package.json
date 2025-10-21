@@ -47,5 +47,9 @@
     "type": "git",
     "url": "https://github.com/happyvertical/sdk.git",
     "directory": "packages/events"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   }
 }

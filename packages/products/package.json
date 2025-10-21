@@ -81,5 +81,9 @@
     "svelte",
     "typescript",
     "auto-generation"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
 }
