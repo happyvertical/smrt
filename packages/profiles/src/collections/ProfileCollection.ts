@@ -117,7 +117,7 @@ export class ProfileCollection extends SmrtCollection<Profile> {
       if (current.depth < maxDepth) {
         const related = await this.findRelated(current.id);
         for (const profile of related) {
-          if (!visited.has(profile.id)) {
+          if (profile.id && !visited.has(profile.id)) {
             queue.push({ id: profile.id, depth: current.depth + 1 });
           }
         }
