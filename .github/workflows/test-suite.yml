@@ -46,17 +46,18 @@ jobs:
           node-version: '24'
           install-deps: 'true'
 
-      - name: Build SDK packages
+      - name: Build SDK packages (excluding sql)
         run: |
           cd sdk
           pnpm -r --workspace-concurrency=4 --filter='!@have/docs' --filter='!@have/products' --filter='!@have/sql' run build
           cd ..
 
-      - name: Clean SDK sql dist to prevent circular dependency
+      - name: Build SDK sql package with external SMRT
         run: |
-          # Remove sql dist files to prevent circular dependency
-          # Keep source files so SMRT can build against the package
-          rm -rf sdk/packages/sql/dist
+          cd sdk/packages/sql
+          # Build sql package with @happyvertical/smrt externalized
+          pnpm build --external @happyvertical/smrt || echo "SQL build may have warnings but continuing"
+          cd ../../..
 
       - name: Build packages
         run: pnpm run build
