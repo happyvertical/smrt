@@ -2,7 +2,7 @@
  * Tests for PubSubAdapter
  */
 
-import type { Signal } from '@smrt/types';
+import type { Signal } from '@happyvertical/smrt-types';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { PubSubAdapter } from './pubsub.js';
 

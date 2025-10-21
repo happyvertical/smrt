@@ -1,6 +1,6 @@
 # Interface: RestServerConfig
 
-Defined in: smrt/packages/core/src/generators/rest.ts:571
+Defined in: [smrt/packages/core/src/generators/rest.ts:571](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L571)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: smrt/packages/core/src/generators/rest.ts:571
 
 > `optional` **authMiddleware**: (`objectName`, `action`) => (`req`) => `Promise`\<`Request` \| `Response`\>
 
-Defined in: smrt/packages/core/src/generators/rest.ts:16
+Defined in: [smrt/packages/core/src/generators/rest.ts:16](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L16)
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: smrt/packages/core/src/generators/rest.ts:16
 
 > `optional` **basePath**: `string`
 
-Defined in: smrt/packages/core/src/generators/rest.ts:13
+Defined in: [smrt/packages/core/src/generators/rest.ts:13](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L13)
 
 #### Inherited from
 
@@ -60,7 +60,7 @@ Defined in: smrt/packages/core/src/generators/rest.ts:13
 
 > `optional` **customRoutes**: `Record`\<`string`, (`req`) => `Promise`\<`Response`\>\>
 
-Defined in: smrt/packages/core/src/generators/rest.ts:15
+Defined in: [smrt/packages/core/src/generators/rest.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L15)
 
 #### Inherited from
 
@@ -72,7 +72,7 @@ Defined in: smrt/packages/core/src/generators/rest.ts:15
 
 > `optional` **enableCors**: `boolean`
 
-Defined in: smrt/packages/core/src/generators/rest.ts:14
+Defined in: [smrt/packages/core/src/generators/rest.ts:14](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L14)
 
 #### Inherited from
 
@@ -84,7 +84,7 @@ Defined in: smrt/packages/core/src/generators/rest.ts:14
 
 > `optional` **healthCheck**: `object`
 
-Defined in: smrt/packages/core/src/generators/rest.ts:572
+Defined in: [smrt/packages/core/src/generators/rest.ts:572](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L572)
 
 #### customChecks?
 
@@ -108,7 +108,7 @@ Defined in: smrt/packages/core/src/generators/rest.ts:572
 
 > `optional` **hostname**: `string`
 
-Defined in: smrt/packages/core/src/generators/rest.ts:21
+Defined in: [smrt/packages/core/src/generators/rest.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L21)
 
 #### Inherited from
 
@@ -120,7 +120,7 @@ Defined in: smrt/packages/core/src/generators/rest.ts:21
 
 > `optional` **port**: `number`
 
-Defined in: smrt/packages/core/src/generators/rest.ts:20
+Defined in: [smrt/packages/core/src/generators/rest.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L20)
 
 #### Inherited from
 

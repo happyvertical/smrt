@@ -5,7 +5,7 @@
  * Supports multiple subscriber types (callbacks, WebSocket, SSE).
  */
 
-import type { Signal, SignalAdapter } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@happyvertical/smrt-types';
 
 /**
  * Signal filter function

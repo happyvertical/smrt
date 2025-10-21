@@ -62,8 +62,8 @@ import {
   type CallToolRequest,
   type ListToolsRequest,
 } from '@modelcontextprotocol/sdk/types.js';
-import { MCPGenerator } from '@smrt/core/generators/mcp';
-import { loadEnvConfig } from '@smrt/core/config';
+import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
+import { loadEnvConfig } from '@happyvertical/smrt-core/config';
 import { getDatabase } from '@have/sql';
 import { getAI } from '@have/ai';
 

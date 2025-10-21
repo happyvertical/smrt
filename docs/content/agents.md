@@ -1,11 +1,11 @@
 ---
 id: "agents"
-title: "@smrt/agents: Autonomous Agent Framework"
-sidebar_label: "@smrt/agents"
+title: "@happyvertical/smrt-agents: Autonomous Agent Framework"
+sidebar_label: "@happyvertical/smrt-agents"
 sidebar_position: 4
 ---
 
-# @smrt/agents
+# @happyvertical/smrt-agents
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,7 +13,7 @@ Agent framework for building autonomous actors in the SMRT ecosystem.
 
 ## Overview
 
-The `@smrt/agents` package provides a base `Agent` class for building autonomous actors that perform specific tasks with full lifecycle management, status tracking, and database persistence. Agents extend `SmrtObject`, inheriting all SMRT framework capabilities including automatic database persistence, AI-powered methods, and code generation.
+The `@happyvertical/smrt-agents` package provides a base `Agent` class for building autonomous actors that perform specific tasks with full lifecycle management, status tracking, and database persistence. Agents extend `SmrtObject`, inheriting all SMRT framework capabilities including automatic database persistence, AI-powered methods, and code generation.
 
 Agents are designed for long-running processes, scheduled tasks, and autonomous operations that require state management, graceful shutdown, and structured logging. Each agent manages its own lifecycle with configurable hooks for initialization, validation, execution, and shutdown.
 
@@ -32,13 +32,13 @@ Agents are designed for long-running processes, scheduled tasks, and autonomous 
 
 ```bash
 # Install with pnpm (recommended for monorepo)
-pnpm add @smrt/agents
+pnpm add @happyvertical/smrt-agents
 
 # Or with npm
-npm install @smrt/agents
+npm install @happyvertical/smrt-agents
 
 # Or with bun
-bun add @smrt/agents
+bun add @happyvertical/smrt-agents
 ```
 
 ## Usage
@@ -46,8 +46,8 @@ bun add @smrt/agents
 ### Basic Agent
 
 ```typescript
-import { Agent } from '@smrt/agents';
-import { smrt } from '@smrt/core';
+import { Agent } from '@happyvertical/smrt-agents';
+import { smrt } from '@happyvertical/smrt-core';
 
 @smrt()
 class HelloAgent extends Agent {
@@ -67,8 +67,8 @@ await agent.execute();
 ### Scheduled Data Processing Agent
 
 ```typescript
-import { Agent } from '@smrt/agents';
-import { smrt, text, integer, datetime } from '@smrt/core';
+import { Agent } from '@happyvertical/smrt-agents';
+import { smrt, text, integer, datetime } from '@happyvertical/smrt-core';
 
 @smrt()
 class DataProcessorAgent extends Agent {
@@ -143,8 +143,8 @@ await agent.execute();
 ### Web Scraping Agent
 
 ```typescript
-import { Agent } from '@smrt/agents';
-import { smrt, text, integer, datetime, json } from '@smrt/core';
+import { Agent } from '@happyvertical/smrt-agents';
+import { smrt, text, integer, datetime, json } from '@happyvertical/smrt-core';
 
 @smrt()
 class ScraperAgent extends Agent {
@@ -247,8 +247,8 @@ await agent.execute();
 ### Agent with Custom Shutdown Logic
 
 ```typescript
-import { Agent } from '@smrt/agents';
-import { smrt, text } from '@smrt/core';
+import { Agent } from '@happyvertical/smrt-agents';
+import { smrt, text } from '@happyvertical/smrt-core';
 
 @smrt()
 class DatabaseSyncAgent extends Agent {
@@ -329,8 +329,8 @@ await agent.execute();
 ### Error Handling and Recovery
 
 ```typescript
-import { Agent } from '@smrt/agents';
-import { smrt, integer, datetime } from '@smrt/core';
+import { Agent } from '@happyvertical/smrt-agents';
+import { smrt, integer, datetime } from '@happyvertical/smrt-core';
 
 @smrt()
 class ResilientAgent extends Agent {
@@ -402,8 +402,8 @@ try {
 ### Agent Collections
 
 ```typescript
-import { Agent } from '@smrt/agents';
-import { SmrtCollection } from '@smrt/core';
+import { Agent } from '@happyvertical/smrt-agents';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 
 // Define agent collection for managing multiple agent instances
 class AgentCollection extends SmrtCollection<Agent> {

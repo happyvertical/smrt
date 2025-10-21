@@ -1,6 +1,6 @@
 # Class: CLIGenerator
 
-Defined in: smrt/packages/core/src/generators/cli.ts:59
+Defined in: [smrt/packages/core/src/generators/cli.ts:59](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L59)
 
 Generate CLI commands for smrt objects
 
@@ -10,7 +10,7 @@ Generate CLI commands for smrt objects
 
 > **new CLIGenerator**(`config`, `context`): `CLIGenerator`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:64
+Defined in: [smrt/packages/core/src/generators/cli.ts:64](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L64)
 
 #### Parameters
 
@@ -32,7 +32,7 @@ Defined in: smrt/packages/core/src/generators/cli.ts:64
 
 > **executeCommand**(`parsed`, `commands`): `Promise`\<`void`\>
 
-Defined in: smrt/packages/core/src/generators/cli.ts:294
+Defined in: [smrt/packages/core/src/generators/cli.ts:294](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L294)
 
 Execute a parsed command
 
@@ -56,7 +56,7 @@ Execute a parsed command
 
 > **generateHandler**(): (`argv`) => `Promise`\<`void`\>
 
-Defined in: smrt/packages/core/src/generators/cli.ts:102
+Defined in: [smrt/packages/core/src/generators/cli.ts:102](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L102)
 
 Generate CLI handler function
 
@@ -80,7 +80,7 @@ Generate CLI handler function
 
 > **generateUtilityCommands**(): `Command`[]
 
-Defined in: smrt/packages/core/src/generators/cli.ts:388
+Defined in: [smrt/packages/core/src/generators/cli.ts:388](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L388)
 
 Generate utility commands
 
@@ -94,7 +94,7 @@ Generate utility commands
 
 > **showHelp**(`commands`): `Promise`\<`void`\>
 
-Defined in: smrt/packages/core/src/generators/cli.ts:478
+Defined in: [smrt/packages/core/src/generators/cli.ts:478](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L478)
 
 Show help information
 

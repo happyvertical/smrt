@@ -1,8 +1,8 @@
 # Interface: CLIContext
 
-Defined in: smrt/packages/core/src/generators/cli.ts:41
+Defined in: [smrt/packages/core/src/generators/cli.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L41)
 
-@smrt/core generators - Create CLIs, REST APIs, and MCP servers from SMRT objects
+@happyvertical/smrt-core generators - Create CLIs, REST APIs, and MCP servers from SMRT objects
 
 ## Properties
 
@@ -10,7 +10,7 @@ Defined in: smrt/packages/core/src/generators/cli.ts:41
 
 > `optional` **ai**: `any`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:43
+Defined in: [smrt/packages/core/src/generators/cli.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L43)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: smrt/packages/core/src/generators/cli.ts:43
 
 > `optional` **db**: `any`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:42
+Defined in: [smrt/packages/core/src/generators/cli.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L42)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: smrt/packages/core/src/generators/cli.ts:42
 
 > `optional` **user**: `object`
 
-Defined in: smrt/packages/core/src/generators/cli.ts:44
+Defined in: [smrt/packages/core/src/generators/cli.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/cli.ts#L44)
 
 #### id
 

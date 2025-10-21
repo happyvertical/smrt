@@ -4,7 +4,11 @@
  * SMRT auto-generates REST APIs, MCP tools, and TypeScript clients from this class.
  */
 
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
+import {
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 
 /**
  * Options for Category initialization

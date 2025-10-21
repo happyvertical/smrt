@@ -1,6 +1,6 @@
 # Class: Contents
 
-Defined in: content/src/contents.ts:34
+Defined in: [content/src/contents.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L34)
 
 Collection for managing Content objects
 
@@ -18,7 +18,7 @@ mirroring content from remote URLs.
 
 > **new Contents**(`options`): `Contents`
 
-Defined in: content/src/contents.ts:62
+Defined in: [content/src/contents.ts:62](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L62)
 
 Creates a new Contents collection
 
@@ -130,7 +130,7 @@ Signal bus for method execution tracking
 
 > **\_tableName**: `string`
 
-Defined in: core/dist/collection.d.ts:38
+Defined in: core/dist/collection.d.ts:52
 
 Database table name for this collection
 
@@ -144,7 +144,7 @@ Database table name for this collection
 
 > `optional` **contentDir**: `string`
 
-Defined in: content/src/contents.ts:48
+Defined in: [content/src/contents.ts:48](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L48)
 
 Directory to store content files
 
@@ -154,7 +154,7 @@ Directory to store content files
 
 > **loaded**: `Map`\<`string`, [`Content`](Content.md)\>
 
-Defined in: content/src/contents.ts:53
+Defined in: [content/src/contents.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L53)
 
 Cache for loaded content
 
@@ -164,7 +164,7 @@ Cache for loaded content
 
 > **options**: [`ContentsOptions`](../interfaces/ContentsOptions.md)
 
-Defined in: content/src/contents.ts:43
+Defined in: [content/src/contents.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L43)
 
 Configuration options
 
@@ -178,7 +178,7 @@ Configuration options
 
 > `static` **\_itemClass**: *typeof* [`Content`](Content.md) = `Content`
 
-Defined in: content/src/contents.ts:38
+Defined in: [content/src/contents.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L38)
 
 Class constructor for collection items
 
@@ -194,7 +194,7 @@ Class constructor for collection items
 
 > **get** `protected` **\_itemClass**(): (`options`) => `ModelType` & `object`
 
-Defined in: core/dist/collection.d.ts:23
+Defined in: core/dist/collection.d.ts:37
 
 Gets the class constructor for items in this collection
 
@@ -214,7 +214,7 @@ Gets the class constructor for items in this collection
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -234,7 +234,7 @@ Gets the AI client instance
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -254,7 +254,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -274,7 +274,7 @@ Gets the filesystem adapter instance
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -296,7 +296,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -317,7 +317,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: core/dist/collection.d.ts:217
+Defined in: core/dist/collection.d.ts:231
 
 Gets the database table name for this collection
 
@@ -335,7 +335,7 @@ Gets the database table name for this collection
 
 > **count**(`options?`): `Promise`\<`number`\>
 
-Defined in: core/dist/collection.d.ts:233
+Defined in: core/dist/collection.d.ts:247
 
 Counts records in the collection matching the given filters
 
@@ -369,7 +369,7 @@ Promise resolving to the total count of matching records
 
 > **create**(`options`): `Promise`\<[`Content`](Content.md)\>
 
-Defined in: core/dist/collection.d.ts:177
+Defined in: core/dist/collection.d.ts:191
 
 Creates a new instance of the collection's item class
 
@@ -397,7 +397,7 @@ New item instance
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -428,7 +428,7 @@ product.destroy(); // Clean up when done
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:334
+Defined in: core/dist/collection.d.ts:348
 
 Forget collection-level context
 
@@ -474,7 +474,7 @@ await documentCollection.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: core/dist/collection.d.ts:354
+Defined in: core/dist/collection.d.ts:368
 
 Forget all collection-level context in a scope
 
@@ -520,7 +520,7 @@ const count = await documentCollection.forgetScope({
 
 > **generateSchema**(): `string`
 
-Defined in: core/dist/collection.d.ts:213
+Defined in: core/dist/collection.d.ts:227
 
 Generates database schema for the collection's item class
 
@@ -542,7 +542,7 @@ Schema object for database setup
 
 > **generateTableName**(): `string`
 
-Defined in: core/dist/collection.d.ts:223
+Defined in: core/dist/collection.d.ts:237
 
 Generates a table name from the collection class name
 
@@ -562,7 +562,7 @@ Generated table name
 
 > **get**(`filter`): `Promise`\<[`Content`](Content.md) \| `null`\>
 
-Defined in: core/dist/collection.d.ts:84
+Defined in: core/dist/collection.d.ts:98
 
 Retrieves a single object from the collection by ID, slug, or custom filter
 
@@ -590,7 +590,7 @@ Promise resolving to the object or null if not found
 
 > **getDb**(): `DatabaseInterface`
 
-Defined in: content/src/contents.ts:73
+Defined in: [content/src/contents.ts:73](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L73)
 
 Gets the database interface
 
@@ -606,7 +606,7 @@ Database interface
 
 > **getDiff**(`existing`, `data`): `Record`\<`string`, `any`\>
 
-Defined in: core/dist/collection.d.ts:193
+Defined in: core/dist/collection.d.ts:207
 
 Gets differences between an existing object and new data
 
@@ -640,7 +640,7 @@ Object containing only the changed fields
 
 > **getFields**(): `Record`\<`string`, `any`\>
 
-Defined in: core/dist/collection.d.ts:205
+Defined in: core/dist/collection.d.ts:219
 
 Gets field definitions for the collection's item class
 
@@ -660,7 +660,7 @@ Object containing field definitions
 
 > **getOrUpsert**(`data`, `defaults?`): `Promise`\<[`Content`](Content.md)\>
 
-Defined in: core/dist/collection.d.ts:185
+Defined in: core/dist/collection.d.ts:199
 
 Gets an existing item or creates a new one if it doesn't exist
 
@@ -694,7 +694,7 @@ Promise resolving to the existing or new object
 
 > **initialize**(): `Promise`\<`Contents`\>
 
-Defined in: content/src/contents.ts:82
+Defined in: [content/src/contents.ts:82](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L82)
 
 Initializes the collection
 
@@ -714,7 +714,7 @@ Promise that resolves to this instance
 
 > **list**(`options`): `Promise`\<[`Content`](Content.md)[]\>
 
-Defined in: core/dist/collection.d.ts:124
+Defined in: core/dist/collection.d.ts:138
 
 Lists records from the collection with flexible filtering options
 
@@ -810,7 +810,7 @@ await users.list({
 
 > **mirror**(`options`): `Promise`\<[`Content`](Content.md) \| `undefined`\>
 
-Defined in: content/src/contents.ts:100
+Defined in: [content/src/contents.ts:100](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L100)
 
 Mirrors content from a remote URL
 
@@ -857,7 +857,7 @@ Error if URL is invalid or missing
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: core/dist/collection.d.ts:291
+Defined in: core/dist/collection.d.ts:305
 
 Recall collection-level context
 
@@ -912,7 +912,7 @@ const strategy = await documentCollection.recall({
 
 > **recallAll**(`options?`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: core/dist/collection.d.ts:313
+Defined in: core/dist/collection.d.ts:327
 
 Recall all collection-level context in a scope
 
@@ -962,7 +962,7 @@ const strategies = await documentCollection.recallAll({
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:264
+Defined in: core/dist/collection.d.ts:278
 
 Remember collection-level context
 
@@ -1040,11 +1040,44 @@ await documentCollection.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtCollection.requiresDatabase`
+
+***
+
 ### setupDb()
 
 > **setupDb**(): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:199
+Defined in: core/dist/collection.d.ts:213
 
 Sets up the database schema for this collection
 
@@ -1064,7 +1097,7 @@ Promise that resolves when setup is complete
 
 > **syncContentDir**(`options`): `Promise`\<`void`\>
 
-Defined in: content/src/contents.ts:250
+Defined in: [content/src/contents.ts:250](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L250)
 
 Synchronizes content to the filesystem
 
@@ -1095,7 +1128,7 @@ Promise that resolves when synchronization is complete
 
 > **writeContentFile**(`options`): `Promise`\<`void`\>
 
-Defined in: content/src/contents.ts:159
+Defined in: [content/src/contents.ts:159](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L159)
 
 Writes a Content object to the filesystem as a markdown file
 
@@ -1133,7 +1166,7 @@ Error if contentDir is not provided
 
 > `static` **create**\<`T`\>(`this`, `options?`): `Promise`\<`any`\>
 
-Defined in: core/dist/collection.d.ts:71
+Defined in: core/dist/collection.d.ts:85
 
 Static factory method for creating fully initialized collection instances
 
@@ -1191,7 +1224,7 @@ const collection = await (ProductCollection as any).create({
 
 > `static` **validate**(): `void`
 
-Defined in: core/dist/collection.d.ts:34
+Defined in: core/dist/collection.d.ts:48
 
 Validates that the collection is properly configured
 Call this during development to catch configuration issues early

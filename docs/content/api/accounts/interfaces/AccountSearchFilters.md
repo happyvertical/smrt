@@ -1,6 +1,6 @@
 # Interface: AccountSearchFilters
 
-Defined in: accounts/src/types.ts:68
+Defined in: [accounts/src/types.ts:68](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L68)
 
 Search filters for accounts
 
@@ -10,7 +10,7 @@ Search filters for accounts
 
 > `optional` **currency**: `string` \| `string`[]
 
-Defined in: accounts/src/types.ts:70
+Defined in: [accounts/src/types.ts:70](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L70)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: accounts/src/types.ts:70
 
 > `optional` **hasParent**: `boolean`
 
-Defined in: accounts/src/types.ts:72
+Defined in: [accounts/src/types.ts:72](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L72)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: accounts/src/types.ts:72
 
 > `optional` **parentId**: `string`
 
-Defined in: accounts/src/types.ts:71
+Defined in: [accounts/src/types.ts:71](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L71)
 
 ***
 
@@ -34,4 +34,4 @@ Defined in: accounts/src/types.ts:71
 
 > `optional` **type**: [`AccountType`](../type-aliases/AccountType.md) \| [`AccountType`](../type-aliases/AccountType.md)[]
 
-Defined in: accounts/src/types.ts:69
+Defined in: [accounts/src/types.ts:69](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L69)

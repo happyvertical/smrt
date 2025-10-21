@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/assets",
+  "name": "@happyvertical/smrt-assets",
   "version": "0.41.0",
   "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
   "type": "module",
@@ -20,8 +20,8 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@smrt/core": "workspace:*",
-    "@smrt/tags": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tags": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

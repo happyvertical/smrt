@@ -2,7 +2,7 @@
 
 > **text**(`options`): [`Field`](../classes/Field.md)
 
-Defined in: smrt/packages/core/src/fields/index.ts:290
+Defined in: [smrt/packages/core/src/fields/index.ts:290](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L290)
 
 Creates a text field for storing string values
 

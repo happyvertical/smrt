@@ -1,6 +1,6 @@
 # Class: Place
 
-Defined in: places/src/models/Place.ts:16
+Defined in: [places/src/models/Place.ts:16](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L16)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: places/src/models/Place.ts:16
 
 > **new Place**(`options`): `Place`
 
-Defined in: places/src/models/Place.ts:46
+Defined in: [places/src/models/Place.ts:46](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L46)
 
 #### Parameters
 
@@ -160,7 +160,7 @@ Database table name for this object
 
 > **city**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:30
+Defined in: [places/src/models/Place.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L30)
 
 ***
 
@@ -168,7 +168,7 @@ Defined in: places/src/models/Place.ts:30
 
 > **country**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:32
+Defined in: [places/src/models/Place.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L32)
 
 ***
 
@@ -176,7 +176,7 @@ Defined in: places/src/models/Place.ts:32
 
 > **countryCode**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:34
+Defined in: [places/src/models/Place.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L34)
 
 ***
 
@@ -198,7 +198,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: places/src/models/Place.ts:43
+Defined in: [places/src/models/Place.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L43)
 
 ***
 
@@ -206,7 +206,7 @@ Defined in: places/src/models/Place.ts:43
 
 > **description**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:23
+Defined in: [places/src/models/Place.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L23)
 
 ***
 
@@ -214,7 +214,7 @@ Defined in: places/src/models/Place.ts:23
 
 > **externalId**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:38
+Defined in: [places/src/models/Place.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L38)
 
 ***
 
@@ -222,7 +222,7 @@ Defined in: places/src/models/Place.ts:38
 
 > **latitude**: `number` \| `null` = `null`
 
-Defined in: places/src/models/Place.ts:26
+Defined in: [places/src/models/Place.ts:26](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L26)
 
 ***
 
@@ -230,7 +230,7 @@ Defined in: places/src/models/Place.ts:26
 
 > **longitude**: `number` \| `null` = `null`
 
-Defined in: places/src/models/Place.ts:27
+Defined in: [places/src/models/Place.ts:27](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L27)
 
 ***
 
@@ -238,7 +238,7 @@ Defined in: places/src/models/Place.ts:27
 
 > **metadata**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:40
+Defined in: [places/src/models/Place.ts:40](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L40)
 
 ***
 
@@ -246,7 +246,7 @@ Defined in: places/src/models/Place.ts:40
 
 > **name**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:22
+Defined in: [places/src/models/Place.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L22)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -276,7 +276,7 @@ Initialized by parent constructor via super() call.
 
 > **parentId**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:21
+Defined in: [places/src/models/Place.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L21)
 
 ***
 
@@ -284,7 +284,7 @@ Defined in: places/src/models/Place.ts:21
 
 > **postalCode**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:33
+Defined in: [places/src/models/Place.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L33)
 
 ***
 
@@ -292,7 +292,7 @@ Defined in: places/src/models/Place.ts:33
 
 > **region**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:31
+Defined in: [places/src/models/Place.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L31)
 
 ***
 
@@ -300,7 +300,7 @@ Defined in: places/src/models/Place.ts:31
 
 > **source**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:39
+Defined in: [places/src/models/Place.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L39)
 
 ***
 
@@ -308,7 +308,7 @@ Defined in: places/src/models/Place.ts:39
 
 > **streetName**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:29
+Defined in: [places/src/models/Place.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L29)
 
 ***
 
@@ -316,7 +316,7 @@ Defined in: places/src/models/Place.ts:29
 
 > **streetNumber**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:28
+Defined in: [places/src/models/Place.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L28)
 
 ***
 
@@ -324,7 +324,7 @@ Defined in: places/src/models/Place.ts:28
 
 > **timezone**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:35
+Defined in: [places/src/models/Place.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L35)
 
 ***
 
@@ -332,7 +332,7 @@ Defined in: places/src/models/Place.ts:35
 
 > **typeId**: `string` = `''`
 
-Defined in: places/src/models/Place.ts:20
+Defined in: [places/src/models/Place.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L20)
 
 ***
 
@@ -354,7 +354,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: places/src/models/Place.ts:44
+Defined in: [places/src/models/Place.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L44)
 
 ## Accessors
 
@@ -364,7 +364,7 @@ Defined in: places/src/models/Place.ts:44
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -428,7 +428,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -448,7 +448,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -512,7 +512,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -578,7 +578,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -657,7 +657,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -888,7 +888,7 @@ console.log(`Cleared ${count} cached strategies`);
 
 > **getAncestors**(): `Promise`\<`Place`[]\>
 
-Defined in: places/src/models/Place.ts:197
+Defined in: [places/src/models/Place.ts:197](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L197)
 
 Get all ancestor places (recursive)
 
@@ -938,7 +938,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getChildren**(): `Promise`\<`Place`[]\>
 
-Defined in: places/src/models/Place.ts:185
+Defined in: [places/src/models/Place.ts:185](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L185)
 
 Get immediate child places
 
@@ -954,7 +954,7 @@ Array of child Place instances
 
 > **getDescendants**(): `Promise`\<`Place`[]\>
 
-Defined in: places/src/models/Place.ts:216
+Defined in: [places/src/models/Place.ts:216](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L216)
 
 Get all descendant places (recursive)
 
@@ -1014,7 +1014,7 @@ Gets the value of a field on this object
 
 > **getGeoData**(): [`GeoData`](../interfaces/GeoData.md)
 
-Defined in: places/src/models/Place.ts:93
+Defined in: [places/src/models/Place.ts:93](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L93)
 
 Get geographic data for this place
 
@@ -1030,7 +1030,7 @@ GeoData object with all geo fields
 
 > **getHierarchy**(): `Promise`\<\{ `ancestors`: `Place`[]; `current`: `Place`; `descendants`: `Place`[]; \}\>
 
-Defined in: places/src/models/Place.ts:233
+Defined in: [places/src/models/Place.ts:233](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L233)
 
 Get full hierarchy for this place
 
@@ -1066,7 +1066,7 @@ Promise resolving to the object's ID
 
 > **getMetadata**(): `Record`\<`string`, `any`\>
 
-Defined in: places/src/models/Place.ts:122
+Defined in: [places/src/models/Place.ts:122](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L122)
 
 Get metadata as parsed object
 
@@ -1082,7 +1082,7 @@ Parsed metadata object or empty object if no metadata
 
 > **getParent**(): `Promise`\<`Place` \| `null`\>
 
-Defined in: places/src/models/Place.ts:171
+Defined in: [places/src/models/Place.ts:171](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L171)
 
 Get the parent place
 
@@ -1211,7 +1211,7 @@ Promise resolving to the object's slug
 
 > **getType**(): `Promise`\<`any`\>
 
-Defined in: places/src/models/Place.ts:155
+Defined in: [places/src/models/Place.ts:155](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L155)
 
 Get the place type
 
@@ -1227,7 +1227,7 @@ PlaceType instance or null if not found
 
 > **hasCoordinates**(): `boolean`
 
-Defined in: places/src/models/Place.ts:113
+Defined in: [places/src/models/Place.ts:113](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L113)
 
 Check if this place has geographic coordinates
 
@@ -1700,6 +1700,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1752,7 +1785,7 @@ Promise resolving to this object
 
 > **setMetadata**(`data`): `void`
 
-Defined in: places/src/models/Place.ts:136
+Defined in: [places/src/models/Place.ts:136](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L136)
 
 Set metadata from object
 
@@ -1794,7 +1827,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateMetadata**(`updates`): `void`
 
-Defined in: places/src/models/Place.ts:145
+Defined in: [places/src/models/Place.ts:145](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/Place.ts#L145)
 
 Update metadata by merging with existing values
 

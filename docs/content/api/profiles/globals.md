@@ -1,4 +1,4 @@
-# @smrt/profiles
+# @happyvertical/smrt-profiles
 
 @have/profiles
 

@@ -4,7 +4,7 @@
  * Examples: 'basketball-game', 'concert', 'conference', 'goal', 'period'
  */
 
-import { SmrtObject, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { EventTypeOptions } from '../types';
 
 @smrt({

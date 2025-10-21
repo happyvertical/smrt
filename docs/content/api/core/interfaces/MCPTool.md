@@ -1,6 +1,6 @@
 # Interface: MCPTool
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:39
+Defined in: [smrt/packages/core/src/generators/mcp.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L39)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: smrt/packages/core/src/generators/mcp.ts:39
 
 > **description**: `string`
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:41
+Defined in: [smrt/packages/core/src/generators/mcp.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L41)
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: smrt/packages/core/src/generators/mcp.ts:41
 
 > **inputSchema**: `object`
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:42
+Defined in: [smrt/packages/core/src/generators/mcp.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L42)
 
 #### properties
 
@@ -36,4 +36,4 @@ Defined in: smrt/packages/core/src/generators/mcp.ts:42
 
 > **name**: `string`
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:40
+Defined in: [smrt/packages/core/src/generators/mcp.ts:40](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L40)

@@ -4,7 +4,7 @@
  * Tests the complete signal flow from SmrtClass → SignalBus → Adapters
  */
 
-import type { Signal, SignalAdapter } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@happyvertical/smrt-types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtClass } from '../class.js';
 import { config } from '../config.js';

@@ -4,7 +4,7 @@
  * Provides alias management, multi-language search, and bulk operations.
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import type { Tag } from './tag';
 import { TagAlias } from './tag-alias';
 

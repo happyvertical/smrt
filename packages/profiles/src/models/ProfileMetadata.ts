@@ -11,7 +11,7 @@ import {
   type SmrtObjectOptions,
   smrt,
   text,
-} from '@smrt/core';
+} from '@happyvertical/smrt-core';
 
 export interface ProfileMetadataOptions extends SmrtObjectOptions {
   profileId?: string;

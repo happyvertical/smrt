@@ -4,7 +4,7 @@
  * Manages asset type lookup table with common type initialization
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { AssetType } from './asset-type';
 
 export class AssetTypeCollection extends SmrtCollection<AssetType> {

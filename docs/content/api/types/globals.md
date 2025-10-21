@@ -1,4 +1,4 @@
-# @smrt/types
+# @happyvertical/smrt-types
 
 ## Interfaces
 

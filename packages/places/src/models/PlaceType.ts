@@ -4,7 +4,7 @@
  * Examples: 'country', 'city', 'building', 'zone', 'room', 'region'
  */
 
-import { SmrtObject, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { PlaceTypeOptions } from '../types';
 
 @smrt({

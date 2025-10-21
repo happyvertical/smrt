@@ -15,7 +15,7 @@
  * ```typescript
  * import { Agent } from '@have/agents';
  * import { getModuleConfig } from '@have/config';
- * import { smrt } from '@smrt/core';
+ * import { smrt } from '@happyvertical/smrt-core';
  *
  * @smrt()
  * class MyAgent extends Agent {

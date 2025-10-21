@@ -1,6 +1,6 @@
 # Class: ProfileRelationship
 
-Defined in: profiles/src/models/ProfileRelationship.ts:29
+Defined in: [profiles/src/models/ProfileRelationship.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L29)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: profiles/src/models/ProfileRelationship.ts:29
 
 > **new ProfileRelationship**(`options`): `ProfileRelationship`
 
-Defined in: profiles/src/models/ProfileRelationship.ts:39
+Defined in: [profiles/src/models/ProfileRelationship.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L39)
 
 #### Parameters
 
@@ -160,7 +160,7 @@ Database table name for this object
 
 > **contextProfileId**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationship.ts:34
+Defined in: [profiles/src/models/ProfileRelationship.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L34)
 
 ***
 
@@ -182,7 +182,7 @@ Creation timestamp
 
 > **fromProfileId**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationship.ts:31
+Defined in: [profiles/src/models/ProfileRelationship.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L31)
 
 ***
 
@@ -220,7 +220,7 @@ Initialized by parent constructor via super() call.
 
 > **terms**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationship.ts:37
+Defined in: [profiles/src/models/ProfileRelationship.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L37)
 
 ***
 
@@ -228,7 +228,7 @@ Defined in: profiles/src/models/ProfileRelationship.ts:37
 
 > **toProfileId**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationship.ts:32
+Defined in: [profiles/src/models/ProfileRelationship.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L32)
 
 ***
 
@@ -236,7 +236,7 @@ Defined in: profiles/src/models/ProfileRelationship.ts:32
 
 > **typeId**: `Field`
 
-Defined in: profiles/src/models/ProfileRelationship.ts:33
+Defined in: [profiles/src/models/ProfileRelationship.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L33)
 
 ***
 
@@ -260,7 +260,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -324,7 +324,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -344,7 +344,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -408,7 +408,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -474,7 +474,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -513,7 +513,7 @@ Gets the database table name for this object
 
 > **addTerm**(`startedAt`, `endedAt?`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/ProfileRelationship.ts:61
+Defined in: [profiles/src/models/ProfileRelationship.ts:61](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L61)
 
 Add a term (time period) to this relationship
 
@@ -581,7 +581,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -646,7 +646,7 @@ Promise resolving to the AI response
 
 > **endCurrentTerm**(`endedAt`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/ProfileRelationship.ts:84
+Defined in: [profiles/src/models/ProfileRelationship.ts:84](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L84)
 
 End the current active term
 
@@ -834,7 +834,7 @@ console.log(`Cleared ${count} cached strategies`);
 
 > **getActiveTerm**(): `Promise`\<[`ProfileRelationshipTerm`](ProfileRelationshipTerm.md) \| `null`\>
 
-Defined in: profiles/src/models/ProfileRelationship.ts:113
+Defined in: [profiles/src/models/ProfileRelationship.ts:113](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L113)
 
 Get the active term (no end date)
 
@@ -1061,7 +1061,7 @@ Promise resolving to the object's slug
 
 > **getTerms**(): `Promise`\<[`ProfileRelationshipTerm`](ProfileRelationshipTerm.md)[]\>
 
-Defined in: profiles/src/models/ProfileRelationship.ts:96
+Defined in: [profiles/src/models/ProfileRelationship.ts:96](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L96)
 
 Get all terms for this relationship
 
@@ -1077,7 +1077,7 @@ Array of ProfileRelationshipTerm instances
 
 > **getTypeSlug**(): `Promise`\<`string`\>
 
-Defined in: profiles/src/models/ProfileRelationship.ts:50
+Defined in: [profiles/src/models/ProfileRelationship.ts:50](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileRelationship.ts#L50)
 
 Get the relationship type slug
 
@@ -1547,6 +1547,39 @@ await agent.remember({
 #### Inherited from
 
 `SmrtObject.remember`
+
+***
+
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
 
 ***
 

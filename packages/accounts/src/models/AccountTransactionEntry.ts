@@ -4,7 +4,7 @@
  * Represents a debit or credit to a specific account
  */
 
-import { SmrtObject, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AccountTransactionEntryOptions, CurrencyCode } from '../types';
 
 @smrt({

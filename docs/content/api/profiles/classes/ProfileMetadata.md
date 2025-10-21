@@ -1,6 +1,6 @@
 # Class: ProfileMetadata
 
-Defined in: profiles/src/models/ProfileMetadata.ts:27
+Defined in: [profiles/src/models/ProfileMetadata.ts:27](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetadata.ts#L27)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: profiles/src/models/ProfileMetadata.ts:27
 
 > **new ProfileMetadata**(`options`): `ProfileMetadata`
 
-Defined in: profiles/src/models/ProfileMetadata.ts:33
+Defined in: [profiles/src/models/ProfileMetadata.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetadata.ts#L33)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **metafieldId**: `Field`
 
-Defined in: profiles/src/models/ProfileMetadata.ts:30
+Defined in: [profiles/src/models/ProfileMetadata.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetadata.ts#L30)
 
 ***
 
@@ -212,7 +212,7 @@ Initialized by parent constructor via super() call.
 
 > **profileId**: `Field`
 
-Defined in: profiles/src/models/ProfileMetadata.ts:29
+Defined in: [profiles/src/models/ProfileMetadata.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetadata.ts#L29)
 
 ***
 
@@ -234,7 +234,7 @@ Last update timestamp
 
 > **value**: `Field`
 
-Defined in: profiles/src/models/ProfileMetadata.ts:31
+Defined in: [profiles/src/models/ProfileMetadata.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetadata.ts#L31)
 
 ## Accessors
 
@@ -244,7 +244,7 @@ Defined in: profiles/src/models/ProfileMetadata.ts:31
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -308,7 +308,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -328,7 +328,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -392,7 +392,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -458,7 +458,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -537,7 +537,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -866,7 +866,7 @@ Promise resolving to the object's ID
 
 > **getMetafieldSlug**(): `Promise`\<`string`\>
 
-Defined in: profiles/src/models/ProfileMetadata.ts:58
+Defined in: [profiles/src/models/ProfileMetadata.ts:58](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetadata.ts#L58)
 
 Get the metafield slug for this metadata
 
@@ -1452,6 +1452,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1524,7 +1557,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **validate**(): `Promise`\<`boolean`\>
 
-Defined in: profiles/src/models/ProfileMetadata.ts:44
+Defined in: [profiles/src/models/ProfileMetadata.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetadata.ts#L44)
 
 Validate this metadata value against the metafield's validation schema
 

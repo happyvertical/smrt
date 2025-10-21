@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/core",
+  "name": "@happyvertical/smrt-core",
   "version": "0.41.0",
   "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
   "author": "Will Griffin <willgriffin@gmail.com>",
@@ -30,12 +30,12 @@
     "./consumer-plugin": "./dist/consumer-plugin.js"
   },
   "dependencies": {
-    "@have/ai": "workspace:*",
-    "@have/files": "workspace:*",
-    "@have/logger": "workspace:*",
-    "@have/sql": "workspace:*",
-    "@have/utils": "workspace:*",
-    "@smrt/types": "workspace:*",
+    "@happyvertical/ai": "workspace:*",
+    "@happyvertical/files": "workspace:*",
+    "@happyvertical/logger": "workspace:*",
+    "@happyvertical/sql": "workspace:*",
+    "@happyvertical/utils": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@langchain/community": "^0.3.24",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "cheerio": "^1.0.0",

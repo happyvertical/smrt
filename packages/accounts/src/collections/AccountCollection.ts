@@ -4,7 +4,7 @@
  * Provides account hierarchy traversal, filtering by type and currency.
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Account } from '../models/Account';
 import type { AccountType, CurrencyCode } from '../types';
 
@@ -77,7 +77,7 @@ export class AccountCollection extends SmrtCollection<Account> {
 
     return allAccounts.filter((account) => {
       const name = typeof account.name === 'string' ? account.name : '';
-      return name && name.toLowerCase().includes(lowerSearch);
+      return name?.toLowerCase().includes(lowerSearch);
     });
   }
 

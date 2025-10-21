@@ -1,6 +1,6 @@
 # Class: ValidationReport
 
-Defined in: smrt/packages/core/src/errors.ts:539
+Defined in: [smrt/packages/core/src/errors.ts:539](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L539)
 
 Validation report that collects multiple validation errors
 
@@ -29,7 +29,7 @@ if (report.hasErrors()) {
 
 > **new ValidationReport**(`objectType`): `ValidationReport`
 
-Defined in: smrt/packages/core/src/errors.ts:543
+Defined in: [smrt/packages/core/src/errors.ts:543](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L543)
 
 #### Parameters
 
@@ -47,7 +47,7 @@ Defined in: smrt/packages/core/src/errors.ts:543
 
 > **addError**(`error`): `void`
 
-Defined in: smrt/packages/core/src/errors.ts:550
+Defined in: [smrt/packages/core/src/errors.ts:550](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L550)
 
 Add a validation error to the report
 
@@ -67,7 +67,7 @@ Add a validation error to the report
 
 > **clear**(): `void`
 
-Defined in: smrt/packages/core/src/errors.ts:613
+Defined in: [smrt/packages/core/src/errors.ts:613](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L613)
 
 Clear all errors
 
@@ -81,7 +81,7 @@ Clear all errors
 
 > **getErrorCount**(): `number`
 
-Defined in: smrt/packages/core/src/errors.ts:571
+Defined in: [smrt/packages/core/src/errors.ts:571](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L571)
 
 Get the number of validation errors
 
@@ -95,7 +95,7 @@ Get the number of validation errors
 
 > **getErrors**(): [`ValidationError`](ValidationError.md)[]
 
-Defined in: smrt/packages/core/src/errors.ts:564
+Defined in: [smrt/packages/core/src/errors.ts:564](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L564)
 
 Get all validation errors
 
@@ -109,7 +109,7 @@ Get all validation errors
 
 > **hasErrors**(): `boolean`
 
-Defined in: smrt/packages/core/src/errors.ts:557
+Defined in: [smrt/packages/core/src/errors.ts:557](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L557)
 
 Check if there are any validation errors
 
@@ -123,7 +123,7 @@ Check if there are any validation errors
 
 > **throwIfErrors**(): `void`
 
-Defined in: smrt/packages/core/src/errors.ts:604
+Defined in: [smrt/packages/core/src/errors.ts:604](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L604)
 
 Throw the first error if there are any errors
 
@@ -137,7 +137,7 @@ Throw the first error if there are any errors
 
 > **toJSON**(): `object`
 
-Defined in: smrt/packages/core/src/errors.ts:593
+Defined in: [smrt/packages/core/src/errors.ts:593](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L593)
 
 Convert to JSON format
 
@@ -151,7 +151,7 @@ Convert to JSON format
 
 > **toString**(): `string`
 
-Defined in: smrt/packages/core/src/errors.ts:578
+Defined in: [smrt/packages/core/src/errors.ts:578](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L578)
 
 Convert to a human-readable string
 

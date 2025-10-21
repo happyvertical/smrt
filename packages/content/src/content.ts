@@ -1,5 +1,5 @@
-import type { SmrtObjectOptions } from '@smrt/core';
-import { SmrtObject, smrt } from '@smrt/core';
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
  * Options for Content initialization

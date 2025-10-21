@@ -1,6 +1,6 @@
 # Class: Category
 
-Defined in: packages/products/src/lib/models/Category.ts:33
+Defined in: [packages/products/src/lib/models/Category.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L33)
 
 Product knowledge base category for organizing product information
 
@@ -14,7 +14,7 @@ Product knowledge base category for organizing product information
 
 > **new Category**(`options`): `Category`
 
-Defined in: packages/products/src/lib/models/Category.ts:41
+Defined in: [packages/products/src/lib/models/Category.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L41)
 
 #### Parameters
 
@@ -162,7 +162,7 @@ Database table name for this object
 
 > **active**: `boolean` = `true`
 
-Defined in: packages/products/src/lib/models/Category.ts:39
+Defined in: [packages/products/src/lib/models/Category.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L39)
 
 ***
 
@@ -184,7 +184,7 @@ Creation timestamp
 
 > **description**: `string` = `''`
 
-Defined in: packages/products/src/lib/models/Category.ts:35
+Defined in: [packages/products/src/lib/models/Category.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L35)
 
 ***
 
@@ -192,7 +192,7 @@ Defined in: packages/products/src/lib/models/Category.ts:35
 
 > **level**: `number` = `0`
 
-Defined in: packages/products/src/lib/models/Category.ts:37
+Defined in: [packages/products/src/lib/models/Category.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L37)
 
 ***
 
@@ -200,7 +200,7 @@ Defined in: packages/products/src/lib/models/Category.ts:37
 
 > **name**: `string` = `''`
 
-Defined in: packages/products/src/lib/models/Category.ts:34
+Defined in: [packages/products/src/lib/models/Category.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L34)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -230,7 +230,7 @@ Initialized by parent constructor via super() call.
 
 > `optional` **parentId**: `string`
 
-Defined in: packages/products/src/lib/models/Category.ts:36
+Defined in: [packages/products/src/lib/models/Category.ts:36](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L36)
 
 ***
 
@@ -238,7 +238,7 @@ Defined in: packages/products/src/lib/models/Category.ts:36
 
 > **productCount**: `number` = `0`
 
-Defined in: packages/products/src/lib/models/Category.ts:38
+Defined in: [packages/products/src/lib/models/Category.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L38)
 
 ***
 
@@ -262,7 +262,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: packages/core/dist/class.d.ts:185
+Defined in: packages/core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -326,7 +326,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: packages/core/dist/class.d.ts:181
+Defined in: packages/core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -346,7 +346,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: packages/core/dist/class.d.ts:177
+Defined in: packages/core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -410,7 +410,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: packages/core/dist/class.d.ts:191
+Defined in: packages/core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -476,7 +476,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: packages/core/dist/class.d.ts:142
+Defined in: packages/core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -555,7 +555,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: packages/core/dist/class.d.ts:207
+Defined in: packages/core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -884,7 +884,7 @@ Promise resolving to the object's ID
 
 > **getProducts**(): `Promise`\<`never`[]\>
 
-Defined in: packages/products/src/lib/models/Category.ts:51
+Defined in: [packages/products/src/lib/models/Category.ts:51](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L51)
 
 #### Returns
 
@@ -1009,7 +1009,7 @@ Promise resolving to the object's slug
 
 > **getSubcategories**(): `Promise`\<`never`[]\>
 
-Defined in: packages/products/src/lib/models/Category.ts:56
+Defined in: [packages/products/src/lib/models/Category.ts:56](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L56)
 
 #### Returns
 
@@ -1478,6 +1478,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: packages/core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1550,7 +1583,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateProductCount**(): `Promise`\<`void`\>
 
-Defined in: packages/products/src/lib/models/Category.ts:61
+Defined in: [packages/products/src/lib/models/Category.ts:61](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L61)
 
 #### Returns
 
@@ -1581,7 +1614,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **getRootCategories**(): `Promise`\<`Category`[]\>
 
-Defined in: packages/products/src/lib/models/Category.ts:66
+Defined in: [packages/products/src/lib/models/Category.ts:66](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Category.ts#L66)
 
 #### Returns
 

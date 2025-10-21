@@ -1,4 +1,4 @@
-# @smrt/products
+# @happyvertical/smrt-products
 
 ## Classes
 

@@ -1,4 +1,4 @@
-# @smrt/tags
+# @happyvertical/smrt-tags
 
 @have/tags
 

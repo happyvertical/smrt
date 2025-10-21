@@ -1,6 +1,6 @@
 # Interface: MCPContext
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:30
+Defined in: [smrt/packages/core/src/generators/mcp.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L30)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: smrt/packages/core/src/generators/mcp.ts:30
 
 > `optional` **ai**: `any`
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:32
+Defined in: [smrt/packages/core/src/generators/mcp.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L32)
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: smrt/packages/core/src/generators/mcp.ts:32
 
 > `optional` **db**: `any`
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:31
+Defined in: [smrt/packages/core/src/generators/mcp.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L31)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: smrt/packages/core/src/generators/mcp.ts:31
 
 > `optional` **user**: `object`
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:33
+Defined in: [smrt/packages/core/src/generators/mcp.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L33)
 
 #### id
 

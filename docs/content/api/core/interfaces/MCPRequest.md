@@ -1,6 +1,6 @@
 # Interface: MCPRequest
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:49
+Defined in: [smrt/packages/core/src/generators/mcp.ts:49](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L49)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: smrt/packages/core/src/generators/mcp.ts:49
 
 > **method**: `string`
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:50
+Defined in: [smrt/packages/core/src/generators/mcp.ts:50](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L50)
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: smrt/packages/core/src/generators/mcp.ts:50
 
 > **params**: `object`
 
-Defined in: smrt/packages/core/src/generators/mcp.ts:51
+Defined in: [smrt/packages/core/src/generators/mcp.ts:51](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L51)
 
 #### arguments
 

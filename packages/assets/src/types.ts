@@ -2,7 +2,7 @@
  * Type definitions for @have/assets package
  */
 
-import type { SmrtObjectOptions } from '@smrt/core';
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 
 /**
  * Options for creating an AssetType instance

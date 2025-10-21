@@ -1,6 +1,6 @@
 # Interface: AccountTransactionOptions
 
-Defined in: accounts/src/types.ts:42
+Defined in: [accounts/src/types.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L42)
 
 Options for creating AccountTransaction
 
@@ -104,7 +104,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: accounts/src/types.ts:47
+Defined in: [accounts/src/types.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L47)
 
 ***
 
@@ -112,7 +112,7 @@ Defined in: accounts/src/types.ts:47
 
 > `optional` **date**: `Date`
 
-Defined in: accounts/src/types.ts:44
+Defined in: [accounts/src/types.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L44)
 
 ***
 
@@ -122,7 +122,7 @@ Defined in: accounts/src/types.ts:44
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -139,7 +139,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: accounts/src/types.ts:45
+Defined in: [accounts/src/types.ts:45](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L45)
 
 ***
 
@@ -161,7 +161,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: accounts/src/types.ts:43
+Defined in: [accounts/src/types.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L43)
 
 Unique identifier for the object
 
@@ -189,7 +189,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metadata**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: accounts/src/types.ts:46
+Defined in: [accounts/src/types.ts:46](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L46)
 
 ***
 
@@ -307,4 +307,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: accounts/src/types.ts:48
+Defined in: [accounts/src/types.ts:48](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L48)
