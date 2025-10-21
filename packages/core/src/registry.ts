@@ -1223,7 +1223,7 @@ export class ObjectRegistry {
    * ```
    */
   static async persistToDatabase(
-    db: import('@have/sql').DatabaseInterface,
+    db: import('@happyvertical/sql').DatabaseInterface,
   ): Promise<void> {
     for (const [className, registered] of ObjectRegistry.classes.entries()) {
       const fieldsData: any = {};
@@ -1272,7 +1272,7 @@ export class ObjectRegistry {
    * ```
    */
   static async loadFromDatabase(
-    db: import('@have/sql').DatabaseInterface,
+    db: import('@happyvertical/sql').DatabaseInterface,
   ): Promise<any[]> {
     const { rows } = await db.query(
       'SELECT * FROM _smrt_registry ORDER BY class_name',

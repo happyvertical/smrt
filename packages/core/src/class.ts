@@ -1,11 +1,11 @@
+import type { AIClientOptions } from '@happyvertical/ai';
+import { type AIClient, getAI } from '@happyvertical/ai';
+import type { FilesystemAdapterOptions } from '@happyvertical/files';
+import { FilesystemAdapter } from '@happyvertical/files';
+import type { LoggerConfig } from '@happyvertical/logger';
 import type { SignalAdapter } from '@happyvertical/smrt-types';
-import type { AIClientOptions } from '@have/ai';
-import { type AIClient, getAI } from '@have/ai';
-import type { FilesystemAdapterOptions } from '@have/files';
-import { FilesystemAdapter } from '@have/files';
-import type { LoggerConfig } from '@have/logger';
-import type { DatabaseInterface } from '@have/sql';
-import { getDatabase } from '@have/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { getDatabase } from '@happyvertical/sql';
 import type {
   GlobalSignalConfig,
   MetricsConfig,
@@ -25,7 +25,7 @@ export interface SmrtClassOptions {
   _className?: string;
 
   /**
-   * Database configuration - unified approach matching @have/sql
+   * Database configuration - unified approach matching @happyvertical/sql
    *
    * Supports three formats:
    * - String shortcut: 'products.db' (auto-detects database type)
@@ -205,7 +205,7 @@ export class SmrtClass {
     // Priority: instance options > env vars > global config > defaults
     const globalConfig = config.toJSON();
     if (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER) {
-      const { loadEnvConfig } = await import('@have/utils');
+      const { loadEnvConfig } = await import('@happyvertical/utils');
 
       // Start with global defaults
       const baseConfig = globalConfig.ai || {};
@@ -406,7 +406,9 @@ export class SmrtClass {
 
     // Logging adapter (default: enabled with console)
     if (config.logging !== false) {
-      const { createLogger, LoggerAdapter } = await import('@have/logger');
+      const { createLogger, LoggerAdapter } = await import(
+        '@happyvertical/logger'
+      );
       const logger = createLogger(config.logging ?? true);
       const adapter = new LoggerAdapter(logger);
       this._signalBus.register(adapter);
