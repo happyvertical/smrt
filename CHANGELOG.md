@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/happyvertical/smrt/compare/v1.1.1...v1.1.2) (2025-10-21)
+
+
+### Bug Fixes
+
+* resolve TypeScript compilation errors across packages ([67bf729](https://github.com/happyvertical/smrt/commit/67bf7294014d045b1ab5a93b7bd7023d2d1cbfdb))
+
 ## [1.1.1](https://github.com/happyvertical/smrt/compare/v1.1.0...v1.1.1) (2025-10-21)
 
 
