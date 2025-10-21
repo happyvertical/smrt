@@ -3,6 +3,11 @@
 
 # Auto-fix formatting and linting issues before commit
 pre-commit:
+  # Skip in CI to allow semantic-release commits
+  skip:
+    - ref: main
+      env:
+        - CI
   commands:
     format:
       glob: "*.{ts,js,json,md}"
