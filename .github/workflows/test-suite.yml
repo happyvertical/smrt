@@ -52,12 +52,11 @@ jobs:
           pnpm -r --workspace-concurrency=4 --filter='!@have/docs' --filter='!@have/products' --filter='!@have/sql' run build
           cd ..
 
-      - name: Remove SDK sql package to prevent circular dependency
+      - name: Clean SDK sql dist to prevent circular dependency
         run: |
-          # Temporarily remove sql package from workspace to prevent circular dependency
-          rm -rf sdk/packages/sql
-          # Reinstall to update workspace links
-          pnpm install --prefer-offline
+          # Remove sql dist files to prevent circular dependency
+          # Keep source files so SMRT can build against the package
+          rm -rf sdk/packages/sql/dist
 
       - name: Build packages
         run: pnpm run build
