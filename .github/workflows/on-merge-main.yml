@@ -31,6 +31,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      packages: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,7 +49,7 @@ jobs:
         with:
           node-version: '24'
           install-deps: 'true'
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: 'https://npm.pkg.github.com'
 
       - name: Build packages
         run: pnpm run build
