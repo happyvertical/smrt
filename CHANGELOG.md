@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/happyvertical/smrt/compare/v1.1.0...v1.1.1) (2025-10-21)
+
+
+### Bug Fixes
+
+* **ci:** install dependencies and build SDK for docs deployment ([9aa36f7](https://github.com/happyvertical/smrt/commit/9aa36f7dc6eb066e65f6e9f6dd1277302bd3df56))
+
 # [1.1.0](https://github.com/happyvertical/smrt/compare/v1.0.0...v1.1.0) (2025-10-21)
 
 
