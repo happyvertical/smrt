@@ -39,5 +39,9 @@
     "smrt"
   ],
   "author": "HAVE Team",
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
 }
