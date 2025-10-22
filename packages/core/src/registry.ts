@@ -30,11 +30,7 @@
 import type { SmrtCollection } from './collection';
 import { staticManifest } from './manifest/static-manifest';
 import type { SmrtObject } from './object';
-import {
-  classnameToTablename,
-  generateSchema,
-  tableNameFromClass,
-} from './utils';
+import { classnameToTablename, tableNameFromClass } from './utils';
 
 /**
  * Configuration options for SMRT objects registered in the system
@@ -352,27 +348,14 @@ export class ObjectRegistry {
       }
     }
 
-    // Generate and cache schema definition
-    // Use tableName from config if provided (captured by @smrt() decorator)
+    // Defer schema generation until needed (generateSchema now uses dynamic import)
+    // Store table name for lazy schema generation
     const tableName = config.tableName || tableNameFromClass(ctor);
-    // Pass extracted fields to avoid circular dependency (class isn't registered yet)
-    const schemaDDL = generateSchema(ctor, fields);
 
-    // Parse schema DDL to extract indexes
-    const indexes: string[] = [];
-    const ddlLines = schemaDDL.split('\n');
-    const tableEndIndex = ddlLines.findIndex((line) => line.includes(');'));
-    const indexLines = ddlLines.slice(tableEndIndex + 1);
-    for (const line of indexLines) {
-      if (line.trim().startsWith('CREATE INDEX')) {
-        indexes.push(line.trim());
-      }
-    }
-
-    // Store complete schema definition
+    // Placeholder schema - will be generated lazily when first needed
     const schema: SchemaDefinition = {
-      ddl: schemaDDL,
-      indexes,
+      ddl: '', // Generated lazily
+      indexes: [], // Parsed from DDL lazily
       triggers: [], // No longer using database triggers - timestamps managed by application
       tableName,
     };
