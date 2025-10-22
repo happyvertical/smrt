@@ -1,6 +1,4 @@
-import { syncSchema } from '@happyvertical/sql';
 import { ObjectRegistry } from './registry';
-import { SchemaGenerator } from './schema/generator';
 
 /**
  * Converts a camelCase string to snake_case
@@ -162,63 +160,9 @@ export function fieldsFromClass(
   return fields;
 }
 
-/**
- * Generates a complete database schema SQL statement for a class
- *
- * This is now a thin wrapper around SchemaGenerator that provides the
- * single source of truth for schema generation. Uses ObjectRegistry
- * cached fields from AST manifest for consistent schema generation.
- *
- * @param ClassType - Class constructor to generate schema for
- * @param providedFields - Optional fields map (used during registration)
- * @returns SQL schema creation statement with CREATE TABLE and CREATE INDEX statements
- * @example
- * ```typescript
- * const schema = generateSchema(Product);
- * console.log(schema);
- * // Output:
- * // CREATE TABLE IF NOT EXISTS products (
- * //   id TEXT PRIMARY KEY,
- * //   slug TEXT NOT NULL,
- * //   context TEXT NOT NULL DEFAULT CAST('' AS TEXT),
- * //   name TEXT,
- * //   price INTEGER,
- * //   UNIQUE(slug, context)
- * // );
- * ```
- */
-export function generateSchema(
-  ClassType: new (...args: any[]) => any,
-  providedFields?: Map<string, any>,
-) {
-  const className = ClassType.name;
-  const tableName = tableNameFromClass(ClassType);
-
-  // Use provided fields if available AND non-empty (during registration), otherwise get from registry
-  const cachedFields =
-    providedFields && providedFields.size > 0
-      ? providedFields
-      : ObjectRegistry.getFields(className);
-
-  // Throw error if class is not registered AND no fields provided
-  if (cachedFields.size === 0) {
-    throw new Error(
-      `Cannot generate schema for unregistered class '${className}'. ` +
-        `Ensure the class is decorated with @smrt() for schema generation to work. ` +
-        `Runtime introspection has been removed in Phase 2 of the schema management refactor.`,
-    );
-  }
-
-  // Use SchemaGenerator for consistent SQL generation
-  const generator = new SchemaGenerator();
-  const schemaDefinition = generator.generateSchemaFromRegistry(
-    className,
-    tableName,
-    cachedFields,
-  );
-
-  return generator.generateSQL(schemaDefinition);
-}
+// NOTE: generateSchema and setupTableFromClass moved to schema/utils.ts
+// to prevent bundling Node.js-only code (SchemaGenerator with node:crypto) in browser builds.
+// Import from './schema/utils' in Node.js code that needs schema generation.
 
 /**
  * Generates a table name from a class constructor
@@ -283,68 +227,6 @@ export function classnameToTablename(className: string) {
     .replace(/y$/, 'ies');
 
   return tableName;
-}
-
-/**
- * Cache of table setup promises to avoid duplicate setup operations
- */
-const _setupTableFromClassPromises: Record<string, Promise<void> | null> = {};
-
-/**
- * Sets up database tables for a class with caching to prevent duplicate operations
- *
- * Creates the database table, indexes, and triggers for a SMRT class.
- * Uses promise caching to ensure each table is only set up once.
- * Now leverages ObjectRegistry's cached schema for instant retrieval.
- *
- * @param db - Database connection interface
- * @param ClassType - Class constructor to create tables for
- * @returns Promise that resolves when setup is complete
- * @throws {Error} If schema creation or trigger setup fails
- * @example
- * ```typescript
- * await setupTableFromClass(db, Product);
- * // Table 'products' is now ready for use
- * ```
- */
-export async function setupTableFromClass(db: any, ClassType: any) {
-  const tableName = classnameToTablename(ClassType.name);
-
-  if (
-    _setupTableFromClassPromises[tableName] !== undefined &&
-    _setupTableFromClassPromises[tableName] !== null
-  ) {
-    return _setupTableFromClassPromises[tableName];
-  }
-
-  _setupTableFromClassPromises[tableName] = (async () => {
-    try {
-      const className = ClassType.name;
-
-      // Get fields from registry (from AST manifest)
-      const cachedFields = ObjectRegistry.getFields(className);
-
-      // Always generate fresh schema to ensure latest field mapping is used
-      const schema = generateSchema(ClassType, cachedFields);
-      let _primaryKeyColumn = 'id'; // default
-
-      if (cachedFields.size > 0) {
-        for (const [key, field] of cachedFields.entries()) {
-          if (field.options?.primaryKey) {
-            _primaryKeyColumn = toSnakeCase(key);
-            break;
-          }
-        }
-      }
-
-      await syncSchema({ db, schema });
-    } catch (error) {
-      _setupTableFromClassPromises[tableName] = null; // Allow retry on failure
-      throw error;
-    }
-  })();
-
-  return _setupTableFromClassPromises[tableName];
 }
 
 /**
