@@ -136,6 +136,20 @@ npm run format
 
 ## Development Workflows
 
+### ⚠️ Pre-Work Checklist (READ FIRST)
+
+**BEFORE MAKING ANY CHANGES, VERIFY:**
+
+- [ ] **Am I on main branch?** → If YES, **STOP!** Create a feature branch first
+- [ ] **Do I have an issue number?** → If NO, create one or work without (for minor changes)
+- [ ] **Am I on a feature branch?** → If NO, create one following the naming convention below
+
+**⚠️ NEVER PUSH DIRECTLY TO MAIN** - Always use feature branches and pull requests.
+
+**Feature branch naming**: `{type}/issue-{number}-{short-description}`
+- Examples: `feat/issue-123-new-feature`, `fix/issue-45-bug-fix`, `docs/issue-89-update-readme`
+- Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+
 ### SOP: Starting Work on an Issue
 
 **IMPORTANT**: This SOP should be followed automatically whenever beginning implementation work, whether explicitly asked or implied.
