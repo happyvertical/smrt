@@ -1,6 +1,6 @@
 # Interface: EventSeriesSearchFilters
 
-Defined in: events/src/types.ts:149
+Defined in: [events/src/types.ts:149](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L149)
 
 Search filters for event series
 
@@ -10,7 +10,7 @@ Search filters for event series
 
 > `optional` **endDate**: `Date`
 
-Defined in: events/src/types.ts:153
+Defined in: [events/src/types.ts:153](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L153)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: events/src/types.ts:153
 
 > `optional` **organizerId**: `string`
 
-Defined in: events/src/types.ts:151
+Defined in: [events/src/types.ts:151](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L151)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: events/src/types.ts:151
 
 > `optional` **startDate**: `Date`
 
-Defined in: events/src/types.ts:152
+Defined in: [events/src/types.ts:152](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L152)
 
 ***
 
@@ -34,4 +34,4 @@ Defined in: events/src/types.ts:152
 
 > `optional` **typeId**: `string`
 
-Defined in: events/src/types.ts:150
+Defined in: [events/src/types.ts:150](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L150)

@@ -2,7 +2,7 @@
 
 > **foreignKey**(`relatedClass`, `options`): [`Field`](../classes/Field.md)
 
-Defined in: smrt/packages/core/src/fields/index.ts:410
+Defined in: [smrt/packages/core/src/fields/index.ts:410](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L410)
 
 Creates a foreign key field that references another SMRT object
 

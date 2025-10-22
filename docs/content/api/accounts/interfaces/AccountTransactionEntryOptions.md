@@ -1,6 +1,6 @@
 # Interface: AccountTransactionEntryOptions
 
-Defined in: accounts/src/types.ts:54
+Defined in: [accounts/src/types.ts:54](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L54)
 
 Options for creating AccountTransactionEntry
 
@@ -62,7 +62,7 @@ Flag to skip database loading (internal use)
 
 > `optional` **accountId**: `string`
 
-Defined in: accounts/src/types.ts:57
+Defined in: [accounts/src/types.ts:57](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L57)
 
 ***
 
@@ -84,7 +84,7 @@ AI client configuration options or instance
 
 > `optional` **amount**: `number`
 
-Defined in: accounts/src/types.ts:58
+Defined in: [accounts/src/types.ts:58](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L58)
 
 ***
 
@@ -120,7 +120,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: accounts/src/types.ts:61
+Defined in: [accounts/src/types.ts:61](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L61)
 
 ***
 
@@ -128,7 +128,7 @@ Defined in: accounts/src/types.ts:61
 
 > `optional` **currency**: `string`
 
-Defined in: accounts/src/types.ts:59
+Defined in: [accounts/src/types.ts:59](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L59)
 
 ***
 
@@ -138,7 +138,7 @@ Defined in: accounts/src/types.ts:59
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -155,7 +155,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: accounts/src/types.ts:60
+Defined in: [accounts/src/types.ts:60](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L60)
 
 ***
 
@@ -177,7 +177,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: accounts/src/types.ts:55
+Defined in: [accounts/src/types.ts:55](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L55)
 
 Unique identifier for the object
 
@@ -301,7 +301,7 @@ URL-friendly identifier
 
 > `optional` **transactionId**: `string`
 
-Defined in: accounts/src/types.ts:56
+Defined in: [accounts/src/types.ts:56](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L56)
 
 ***
 
@@ -323,4 +323,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: accounts/src/types.ts:62
+Defined in: [accounts/src/types.ts:62](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L62)

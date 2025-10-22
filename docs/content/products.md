@@ -130,7 +130,7 @@ import setupRoutes from '@smrt/routes';      // Auto-generated REST routes
 import createClient from '@smrt/client';     // Auto-generated TypeScript client
 import createMCPServer from '@smrt/mcp';     // Auto-generated MCP tools
 import { manifest } from '@smrt/manifest';   // Object metadata
-import type * from '@smrt/types';            // Auto-generated TypeScript types
+import type * from '@happyvertical/smrt-types';            // Auto-generated TypeScript types
 ```
 
 ### 3. Live Updates
@@ -211,7 +211,7 @@ Built with **Svelte 5** using the new runes system:
 ### ProductCard.svelte
 ```svelte
 <script lang="ts">
-  import type { ProductData } from '@smrt/types';
+  import type { ProductData } from '@happyvertical/smrt-types';
   
   interface Props {
     product: ProductData;

@@ -1,6 +1,6 @@
 # Class: Profile
 
-Defined in: profiles/src/models/Profile.ts:30
+Defined in: [profiles/src/models/Profile.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L30)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: profiles/src/models/Profile.ts:30
 
 > **new Profile**(`options`): `Profile`
 
-Defined in: profiles/src/models/Profile.ts:42
+Defined in: [profiles/src/models/Profile.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L42)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **description**: `Field`
 
-Defined in: profiles/src/models/Profile.ts:35
+Defined in: [profiles/src/models/Profile.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L35)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: profiles/src/models/Profile.ts:35
 
 > **email**: `Field`
 
-Defined in: profiles/src/models/Profile.ts:33
+Defined in: [profiles/src/models/Profile.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L33)
 
 ***
 
@@ -190,7 +190,7 @@ Defined in: profiles/src/models/Profile.ts:33
 
 > **metadata**: `Field`
 
-Defined in: profiles/src/models/Profile.ts:38
+Defined in: [profiles/src/models/Profile.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L38)
 
 ***
 
@@ -198,7 +198,7 @@ Defined in: profiles/src/models/Profile.ts:38
 
 > **name**: `Field`
 
-Defined in: profiles/src/models/Profile.ts:34
+Defined in: [profiles/src/models/Profile.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L34)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -228,7 +228,7 @@ Initialized by parent constructor via super() call.
 
 > **relationshipsFrom**: `Field`
 
-Defined in: profiles/src/models/Profile.ts:39
+Defined in: [profiles/src/models/Profile.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L39)
 
 ***
 
@@ -236,7 +236,7 @@ Defined in: profiles/src/models/Profile.ts:39
 
 > **relationshipsTo**: `Field`
 
-Defined in: profiles/src/models/Profile.ts:40
+Defined in: [profiles/src/models/Profile.ts:40](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L40)
 
 ***
 
@@ -244,7 +244,7 @@ Defined in: profiles/src/models/Profile.ts:40
 
 > **typeId**: `Field`
 
-Defined in: profiles/src/models/Profile.ts:32
+Defined in: [profiles/src/models/Profile.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L32)
 
 ***
 
@@ -268,7 +268,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -332,7 +332,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -352,7 +352,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -416,7 +416,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -482,7 +482,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -521,7 +521,7 @@ Gets the database table name for this object
 
 > **addMetadata**(`metafieldSlug`, `value`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/Profile.ts:76
+Defined in: [profiles/src/models/Profile.ts:76](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L76)
 
 Add metadata to this profile
 
@@ -549,7 +549,7 @@ The value to set
 
 > **addRelationship**(`toProfile`, `relationshipSlug`, `contextProfile?`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/Profile.ts:196
+Defined in: [profiles/src/models/Profile.ts:196](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L196)
 
 Add a relationship to another profile
 
@@ -623,7 +623,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -854,7 +854,7 @@ console.log(`Cleared ${count} cached strategies`);
 
 > **generateBio**(): `Promise`\<`string`\>
 
-Defined in: profiles/src/models/Profile.ts:404
+Defined in: [profiles/src/models/Profile.ts:409](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L409)
 
 AI-powered: Generate a professional bio for this profile
 
@@ -968,7 +968,7 @@ Promise resolving to the object's ID
 
 > **getMetadata**(): `Promise`\<`Record`\<`string`, `any`\>\>
 
-Defined in: profiles/src/models/Profile.ts:130
+Defined in: [profiles/src/models/Profile.ts:130](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L130)
 
 Get all metadata for this profile as key-value object
 
@@ -1057,7 +1057,7 @@ const orders = await customer.getRelated('orders');
 
 > **getRelatedProfiles**(`relationshipSlug?`): `Promise`\<`Profile`[]\>
 
-Defined in: profiles/src/models/Profile.ts:304
+Defined in: [profiles/src/models/Profile.ts:306](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L306)
 
 Get related profiles
 
@@ -1081,7 +1081,7 @@ Array of related Profile instances
 
 > **getRelationships**(`options?`): `Promise`\<`ProfileRelationship`[]\>
 
-Defined in: profiles/src/models/Profile.ts:259
+Defined in: [profiles/src/models/Profile.ts:260](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L260)
 
 Get all relationships for this profile
 
@@ -1151,7 +1151,7 @@ Promise resolving to the object's slug
 
 > **getTypeSlug**(): `Promise`\<`string`\>
 
-Defined in: profiles/src/models/Profile.ts:53
+Defined in: [profiles/src/models/Profile.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L53)
 
 Get the profile type slug for this profile
 
@@ -1433,7 +1433,7 @@ console.log(`${orders.length} orders found`);
 
 > **matches**(`criteria`): `Promise`\<`boolean`\>
 
-Defined in: profiles/src/models/Profile.ts:414
+Defined in: [profiles/src/models/Profile.ts:419](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L419)
 
 AI-powered: Check if profile matches criteria
 
@@ -1652,7 +1652,7 @@ await agent.remember({
 
 > **removeMetadata**(`metafieldSlug`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/Profile.ts:158
+Defined in: [profiles/src/models/Profile.ts:158](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L158)
 
 Remove metadata by metafield slug
 
@@ -1674,7 +1674,7 @@ The slug of the metafield to remove
 
 > **removeRelationship**(`toProfile`, `relationshipSlug`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/Profile.ts:345
+Defined in: [profiles/src/models/Profile.ts:349](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L349)
 
 Remove a relationship to another profile
 
@@ -1695,6 +1695,39 @@ The type of relationship to remove
 #### Returns
 
 `Promise`\<`void`\>
+
+***
+
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
 
 ***
 
@@ -1750,7 +1783,7 @@ Promise resolving to this object
 
 > **setTypeBySlug**(`slug`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/Profile.ts:64
+Defined in: [profiles/src/models/Profile.ts:64](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L64)
 
 Set the profile type by slug
 
@@ -1796,7 +1829,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateMetadata**(`metadata`): `Promise`\<`void`\>
 
-Defined in: profiles/src/models/Profile.ts:147
+Defined in: [profiles/src/models/Profile.ts:147](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L147)
 
 Update multiple metadata values
 
@@ -1837,7 +1870,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **findByMetadata**(`_metafieldSlug`, `_value`): `Promise`\<`Profile`[]\>
 
-Defined in: profiles/src/models/Profile.ts:425
+Defined in: [profiles/src/models/Profile.ts:430](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L430)
 
 Find profiles by metadata key-value pair
 
@@ -1863,7 +1896,7 @@ Array of matching profiles
 
 > `static` **findByType**(`_typeSlug`): `Promise`\<`Profile`[]\>
 
-Defined in: profiles/src/models/Profile.ts:439
+Defined in: [profiles/src/models/Profile.ts:444](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L444)
 
 Find profiles by type slug
 
@@ -1885,7 +1918,7 @@ Array of matching profiles
 
 > `static` **findRelated**(`_profileId`, `_relationshipSlug?`): `Promise`\<`Profile`[]\>
 
-Defined in: profiles/src/models/Profile.ts:451
+Defined in: [profiles/src/models/Profile.ts:456](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L456)
 
 Find related profiles for a given profile
 
@@ -1911,7 +1944,7 @@ Array of related profiles
 
 > `static` **searchByEmail**(`_email`): `Promise`\<`Profile` \| `null`\>
 
-Defined in: profiles/src/models/Profile.ts:465
+Defined in: [profiles/src/models/Profile.ts:470](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/Profile.ts#L470)
 
 Search profiles by email
 

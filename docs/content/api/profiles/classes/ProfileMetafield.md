@@ -1,6 +1,6 @@
 # Class: ProfileMetafield
 
-Defined in: profiles/src/models/ProfileMetafield.ts:34
+Defined in: [profiles/src/models/ProfileMetafield.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L34)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: profiles/src/models/ProfileMetafield.ts:34
 
 > **new ProfileMetafield**(`options`): `ProfileMetafield`
 
-Defined in: profiles/src/models/ProfileMetafield.ts:41
+Defined in: [profiles/src/models/ProfileMetafield.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L41)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **description**: `Field`
 
-Defined in: profiles/src/models/ProfileMetafield.ts:38
+Defined in: [profiles/src/models/ProfileMetafield.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L38)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: profiles/src/models/ProfileMetafield.ts:38
 
 > **name**: `Field`
 
-Defined in: profiles/src/models/ProfileMetafield.ts:37
+Defined in: [profiles/src/models/ProfileMetafield.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L37)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -226,7 +226,7 @@ Last update timestamp
 
 > **validation**: `Field`
 
-Defined in: profiles/src/models/ProfileMetafield.ts:39
+Defined in: [profiles/src/models/ProfileMetafield.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L39)
 
 ## Accessors
 
@@ -236,7 +236,7 @@ Defined in: profiles/src/models/ProfileMetafield.ts:39
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -300,7 +300,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -320,7 +320,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -384,7 +384,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -450,7 +450,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -529,7 +529,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -1428,6 +1428,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1519,7 +1552,7 @@ Override in subclasses to add custom validation logic
 
 > **validateValue**(`value`): `Promise`\<`boolean`\>
 
-Defined in: profiles/src/models/ProfileMetafield.ts:84
+Defined in: [profiles/src/models/ProfileMetafield.ts:84](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L84)
 
 Validate a value against this metafield's validation schema
 
@@ -1543,7 +1576,7 @@ True if valid, throws ValidationError if invalid
 
 > `static` **getBySlug**(`_slug`): `Promise`\<`ProfileMetafield` \| `null`\>
 
-Defined in: profiles/src/models/ProfileMetafield.ts:53
+Defined in: [profiles/src/models/ProfileMetafield.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L53)
 
 Convenience method for slug-based lookup
 
@@ -1565,7 +1598,7 @@ ProfileMetafield instance or null if not found
 
 > `static` **getValidator**(`name`): [`ValidatorFunction`](../type-aliases/ValidatorFunction.md) \| `undefined`
 
-Defined in: profiles/src/models/ProfileMetafield.ts:74
+Defined in: [profiles/src/models/ProfileMetafield.ts:74](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L74)
 
 Get a registered custom validator
 
@@ -1589,7 +1622,7 @@ The validator function or undefined
 
 > `static` **registerValidator**(`name`, `validator`): `void`
 
-Defined in: profiles/src/models/ProfileMetafield.ts:64
+Defined in: [profiles/src/models/ProfileMetafield.ts:64](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/models/ProfileMetafield.ts#L64)
 
 Register a custom validator function
 

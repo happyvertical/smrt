@@ -1,4 +1,4 @@
-import { buildWhere, syncSchema } from '@have/sql';
+import { buildWhere, syncSchema } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import type { SmrtObject } from './object';

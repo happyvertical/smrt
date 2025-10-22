@@ -2,7 +2,7 @@
  * Tests for SignalSanitizer
  */
 
-import type { Signal } from '@smrt/types';
+import type { Signal } from '@happyvertical/smrt-types';
 import { describe, expect, it } from 'vitest';
 import { SignalSanitizer } from './sanitizer.js';
 

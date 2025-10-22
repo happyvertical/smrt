@@ -1,4 +1,4 @@
-# @smrt/assets
+# @happyvertical/smrt-assets
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -6,13 +6,13 @@ Asset management system with versioning, metadata, and AI-powered operations for
 
 ## Overview
 
-The `@smrt/assets` package provides a comprehensive asset management system built on the SMRT framework. It enables storage, versioning, and organization of digital assets with rich metadata, tagging integration, and automatic REST API, CLI, and MCP tool generation.
+The `@happyvertical/smrt-assets` package provides a comprehensive asset management system built on the SMRT framework. It enables storage, versioning, and organization of digital assets with rich metadata, tagging integration, and automatic REST API, CLI, and MCP tool generation.
 
 **Key capabilities:**
 - **Asset Storage**: Track digital assets with URI-based references to files
 - **Versioning**: Built-in version control with parent-child relationships for derivatives
 - **Metadata Management**: Flexible metadata with controlled vocabulary and validation
-- **Tagging Integration**: Full integration with `@smrt/tags` for hierarchical organization
+- **Tagging Integration**: Full integration with `@happyvertical/smrt-tags` for hierarchical organization
 - **Type & Status**: Extensible asset type and lifecycle status classification
 - **AI-Powered Operations**: Leverage SMRT's AI methods for intelligent asset operations
 - **Auto-Generated Interfaces**: REST APIs, CLI commands, and MCP tools created automatically
@@ -25,7 +25,7 @@ The `@smrt/assets` package provides a comprehensive asset management system buil
 - **Type Classification**: Extensible asset types (image, video, document, etc.)
 - **Lifecycle Status**: Track asset status (draft, published, archived, etc.)
 - **Metadata System**: Controlled vocabulary for metadata with JSON validation rules
-- **Tag Integration**: Full support for hierarchical tagging via `@smrt/tags`
+- **Tag Integration**: Full support for hierarchical tagging via `@happyvertical/smrt-tags`
 - **Owner Tracking**: Associate assets with profile owners
 - **Automatic APIs**: REST endpoints auto-generated for all CRUD operations
 - **CLI Tools**: Command-line interface auto-generated for asset management
@@ -36,13 +36,13 @@ The `@smrt/assets` package provides a comprehensive asset management system buil
 
 ```bash
 # Install with pnpm (recommended)
-pnpm add @smrt/assets
+pnpm add @happyvertical/smrt-assets
 
 # Or with npm
-npm install @smrt/assets
+npm install @happyvertical/smrt-assets
 
 # Or with yarn
-yarn add @smrt/assets
+yarn add @happyvertical/smrt-assets
 ```
 
 ## Quick Start
@@ -50,7 +50,7 @@ yarn add @smrt/assets
 ### Basic Asset Creation
 
 ```typescript
-import { Asset, AssetType, AssetStatus } from '@smrt/assets';
+import { Asset, AssetType, AssetStatus } from '@happyvertical/smrt-assets';
 
 // Create an asset type
 const imageType = new AssetType({
@@ -135,7 +135,7 @@ console.log(`Parent asset: ${parent?.name}`);
 ### Working with Tags
 
 ```typescript
-import { Tag } from '@smrt/tags';
+import { Tag } from '@happyvertical/smrt-tags';
 
 // Create and tag an asset
 const asset = await Asset.getBySlug('product-photo-001');
@@ -152,7 +152,7 @@ console.log(`Is featured: ${hasTag}`);
 ### Metadata Management
 
 ```typescript
-import { AssetMetafield } from '@smrt/assets';
+import { AssetMetafield } from '@happyvertical/smrt-assets';
 
 // Define a metadata field with validation
 const widthField = new AssetMetafield({
@@ -182,7 +182,7 @@ await widthField.save();
 ### Querying Assets
 
 ```typescript
-import { AssetCollection } from '@smrt/assets';
+import { AssetCollection } from '@happyvertical/smrt-assets';
 
 // List all assets
 const allAssets = await AssetCollection.list();
@@ -224,7 +224,7 @@ console.log(`Asset description: ${description}`);
 ### Asset Types and Statuses
 
 ```typescript
-import { AssetTypeCollection, AssetStatusCollection } from '@smrt/assets';
+import { AssetTypeCollection, AssetStatusCollection } from '@happyvertical/smrt-assets';
 
 // Create common asset types
 const types = [
@@ -358,7 +358,7 @@ smrt assets delete <id>     # Delete asset
 ### Owner Integration with Profiles
 
 ```typescript
-// Associate asset with owner (requires @smrt/profiles)
+// Associate asset with owner (requires @happyvertical/smrt-profiles)
 const asset = new Asset({
   name: 'User Avatar',
   slug: 'user-avatar-123',
@@ -445,7 +445,7 @@ import type {
   AssetTypeOptions,
   AssetStatusOptions,
   AssetMetafieldOptions
-} from '@smrt/assets';
+} from '@happyvertical/smrt-assets';
 
 import {
   Asset,
@@ -456,7 +456,7 @@ import {
   AssetTypeCollection,
   AssetStatusCollection,
   AssetMetafieldCollection
-} from '@smrt/assets';
+} from '@happyvertical/smrt-assets';
 ```
 
 ## API Reference

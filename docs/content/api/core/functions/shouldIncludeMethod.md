@@ -2,7 +2,7 @@
 
 > **shouldIncludeMethod**(`method`, `config?`): `boolean`
 
-Defined in: smrt/packages/core/src/tools/tool-generator.ts:118
+Defined in: [smrt/packages/core/src/tools/tool-generator.ts:118](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-generator.ts#L118)
 
 Determines if a method should be included as an AI-callable tool
 

@@ -4,7 +4,7 @@
  * Provides queries for series by organizer, status, and date ranges.
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { EventSeries } from '../models/EventSeries';
 import type { EventSeriesSearchFilters } from '../types';
 

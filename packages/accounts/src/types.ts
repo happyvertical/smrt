@@ -2,7 +2,7 @@
  * Type definitions for @have/accounts
  */
 
-import type { SmrtObjectOptions } from '@smrt/core';
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 
 /**
  * Account types based on standard accounting classifications

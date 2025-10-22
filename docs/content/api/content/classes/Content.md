@@ -1,6 +1,6 @@
 # Class: Content
 
-Defined in: content/src/content.ts:107
+Defined in: [content/src/content.ts:107](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L107)
 
 Structured content object with metadata and body text
 
@@ -18,7 +18,7 @@ referencing related content objects.
 
 > **new Content**(`options`): `Content`
 
-Defined in: content/src/content.ts:198
+Defined in: [content/src/content.ts:198](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L198)
 
 Creates a new Content instance
 
@@ -168,7 +168,7 @@ Database table name for this object
 
 > **author**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:133
+Defined in: [content/src/content.ts:133](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L133)
 
 Author of the content
 
@@ -178,7 +178,7 @@ Author of the content
 
 > **body**: `string` = `''`
 
-Defined in: content/src/content.ts:148
+Defined in: [content/src/content.ts:148](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L148)
 
 Main content body text
 
@@ -202,7 +202,7 @@ Creation timestamp
 
 > **description**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:143
+Defined in: [content/src/content.ts:143](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L143)
 
 Short description or summary
 
@@ -212,7 +212,7 @@ Short description or summary
 
 > **fileKey**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:128
+Defined in: [content/src/content.ts:128](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L128)
 
 Reference to file storage key
 
@@ -222,7 +222,7 @@ Reference to file storage key
 
 > **language**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:173
+Defined in: [content/src/content.ts:173](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L173)
 
 Content language
 
@@ -232,7 +232,7 @@ Content language
 
 > **metadata**: `Record`\<`string`, `any`\> = `{}`
 
-Defined in: content/src/content.ts:193
+Defined in: [content/src/content.ts:193](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L193)
 
 Additional JSON metadata for flexible schema extension
 
@@ -272,7 +272,7 @@ Initialized by parent constructor via super() call.
 
 > **original\_url**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:168
+Defined in: [content/src/content.ts:168](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L168)
 
 Original URL of the content
 
@@ -282,7 +282,7 @@ Original URL of the content
 
 > **publish\_date**: `Date` \| `null` = `null`
 
-Defined in: content/src/content.ts:153
+Defined in: [content/src/content.ts:153](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L153)
 
 Date when content was published
 
@@ -292,7 +292,7 @@ Date when content was published
 
 > `protected` **references**: `Content`[] = `[]`
 
-Defined in: content/src/content.ts:111
+Defined in: [content/src/content.ts:111](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L111)
 
 Array of referenced content objects
 
@@ -302,7 +302,7 @@ Array of referenced content objects
 
 > **source**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:163
+Defined in: [content/src/content.ts:163](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L163)
 
 Original source identifier
 
@@ -312,7 +312,7 @@ Original source identifier
 
 > **state**: `"deprecated"` \| `"active"` \| `"highlighted"` = `'active'`
 
-Defined in: content/src/content.ts:188
+Defined in: [content/src/content.ts:188](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L188)
 
 Content state flag
 
@@ -322,7 +322,7 @@ Content state flag
 
 > **status**: `"published"` \| `"draft"` \| `"archived"` \| `"deleted"` = `'draft'`
 
-Defined in: content/src/content.ts:183
+Defined in: [content/src/content.ts:183](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L183)
 
 Publication status
 
@@ -332,7 +332,7 @@ Publication status
 
 > **tags**: `string`[] = `[]`
 
-Defined in: content/src/content.ts:178
+Defined in: [content/src/content.ts:178](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L178)
 
 Content tags
 
@@ -342,7 +342,7 @@ Content tags
 
 > **title**: `string` = `''`
 
-Defined in: content/src/content.ts:138
+Defined in: [content/src/content.ts:138](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L138)
 
 Content title
 
@@ -352,7 +352,7 @@ Content title
 
 > **type**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:116
+Defined in: [content/src/content.ts:116](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L116)
 
 Content type classification
 
@@ -376,7 +376,7 @@ Last update timestamp
 
 > **url**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:158
+Defined in: [content/src/content.ts:158](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L158)
 
 URL source of the content
 
@@ -386,7 +386,7 @@ URL source of the content
 
 > **variant**: `string` \| `null` = `null`
 
-Defined in: content/src/content.ts:123
+Defined in: [content/src/content.ts:123](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L123)
 
 Content variant for namespaced classification within types
 Format: generator:domain:specific-type
@@ -400,7 +400,7 @@ Example: "praeco:meeting:upcoming"
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -464,7 +464,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -484,7 +484,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -548,7 +548,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -614,7 +614,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -653,7 +653,7 @@ Gets the database table name for this object
 
 > **addReference**(`content`): `Promise`\<`void`\>
 
-Defined in: content/src/content.ts:244
+Defined in: [content/src/content.ts:244](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L244)
 
 Adds a reference to another content object
 
@@ -717,7 +717,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -1078,7 +1078,7 @@ The actual value (unwrapped from Field if necessary)
 
 > **getReferences**(): `Promise`\<`Content`[]\>
 
-Defined in: content/src/content.ts:259
+Defined in: [content/src/content.ts:259](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L259)
 
 Gets all referenced content objects
 
@@ -1175,7 +1175,7 @@ Promise resolving to the object's slug
 
 > **initialize**(): `Promise`\<`Content`\>
 
-Defined in: content/src/content.ts:222
+Defined in: [content/src/content.ts:222](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L222)
 
 Initializes this content object
 
@@ -1355,7 +1355,7 @@ Promise that resolves when loading is complete
 
 > **loadReferences**(): `Promise`\<`void`\>
 
-Defined in: content/src/content.ts:236
+Defined in: [content/src/content.ts:236](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L236)
 
 Loads referenced content objects
 
@@ -1648,6 +1648,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1700,7 +1733,7 @@ Promise resolving to this object
 
 > **toJSON**(): `object`
 
-Defined in: content/src/content.ts:268
+Defined in: [content/src/content.ts:268](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L268)
 
 Converts this content object to a plain JSON object
 

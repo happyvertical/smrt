@@ -1,11 +1,11 @@
 ---
 id: accounts
-title: "@smrt/accounts: Accounting Ledger System"
-sidebar_label: "@smrt/accounts"
+title: "@happyvertical/smrt-accounts: Accounting Ledger System"
+sidebar_label: "@happyvertical/smrt-accounts"
 sidebar_position: 3
 ---
 
-# @smrt/accounts
+# @happyvertical/smrt-accounts
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,7 +13,7 @@ Flexible accounting ledger with multi-currency support and SMRT framework integr
 
 ## Overview
 
-The `@smrt/accounts` package provides a complete double-entry accounting system built on the SMRT framework. It supports multi-currency transactions, hierarchical account organization, and automatic balance calculation with type-safe operations and database persistence.
+The `@happyvertical/smrt-accounts` package provides a complete double-entry accounting system built on the SMRT framework. It supports multi-currency transactions, hierarchical account organization, and automatic balance calculation with type-safe operations and database persistence.
 
 The package follows standard accounting principles with five account types: **assets**, **liabilities**, **equity**, **revenue**, and **expense**. Each transaction consists of multiple entries that must balance (total debits equal total credits), ensuring data integrity through double-entry bookkeeping.
 
@@ -33,13 +33,13 @@ The package follows standard accounting principles with five account types: **as
 
 ```bash
 # Install with pnpm (recommended)
-pnpm add @smrt/accounts
+pnpm add @happyvertical/smrt-accounts
 
 # Or with npm
-npm install @smrt/accounts
+npm install @happyvertical/smrt-accounts
 
 # Or with yarn
-yarn add @smrt/accounts
+yarn add @happyvertical/smrt-accounts
 ```
 
 ## Usage
@@ -47,7 +47,7 @@ yarn add @smrt/accounts
 ### Creating Accounts
 
 ```typescript
-import { Account, AccountCollection } from '@smrt/accounts';
+import { Account, AccountCollection } from '@happyvertical/smrt-accounts';
 
 // Create a collection
 const accounts = await AccountCollection.create({
@@ -91,7 +91,7 @@ import {
   AccountTransactionCollection,
   AccountTransactionEntry,
   AccountTransactionEntryCollection
-} from '@smrt/accounts';
+} from '@happyvertical/smrt-accounts';
 
 // Create transaction collections
 const transactions = await AccountTransactionCollection.create({

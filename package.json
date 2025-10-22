@@ -1,5 +1,5 @@
 {
-  "name": "@have/smrt",
+  "name": "@happyvertical/smrt",
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
@@ -15,7 +15,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --apply .",
     "clean": "rm -rf packages/*/dist packages/*/docs packages/*/tsconfig.*.tsbuildinfo .tsbuildinfo dist /*.js /*.d.ts /*.js.map /*.d.ts.map",
-    "build": "pnpm -r --workspace-concurrency=4 --filter='!@smrt/products' --filter='!@have/docs' --filter='!@have/sql' run build",
+    "build": "pnpm -r --workspace-concurrency=4 --filter='!@happyvertical/smrt-products' --filter='!@happyvertical/docs' --filter='!@happyvertical/smrt-docs' --filter='!@happyvertical/sql' --filter='!@have/docs' run build",
     "build:clean": "pnpm run clean && pnpm run build",
     "typecheck": "tsc --noEmit",
     "validate-build": "node scripts/validate-build.js",
@@ -70,21 +70,21 @@
   "packageManager": "pnpm@9.15.0",
   "pnpm": {
     "overrides": {
-      "@have/ai": "workspace:*",
-      "@have/cache": "workspace:*",
-      "@have/config": "workspace:*",
-      "@have/documents": "workspace:*",
-      "@have/email": "workspace:*",
-      "@have/files": "workspace:*",
-      "@have/geo": "workspace:*",
-      "@have/languages": "workspace:*",
-      "@have/logger": "workspace:*",
-      "@have/ocr": "workspace:*",
-      "@have/pdf": "workspace:*",
-      "@have/spider": "workspace:*",
-      "@have/sql": "workspace:*",
-      "@have/translator": "workspace:*",
-      "@have/utils": "workspace:*"
+      "@happyvertical/ai": "workspace:*",
+      "@happyvertical/cache": "workspace:*",
+      "@happyvertical/smrt-config": "workspace:*",
+      "@happyvertical/documents": "workspace:*",
+      "@happyvertical/email": "workspace:*",
+      "@happyvertical/files": "workspace:*",
+      "@happyvertical/geo": "workspace:*",
+      "@happyvertical/languages": "workspace:*",
+      "@happyvertical/logger": "workspace:*",
+      "@happyvertical/ocr": "workspace:*",
+      "@happyvertical/pdf": "workspace:*",
+      "@happyvertical/spider": "workspace:*",
+      "@happyvertical/sql": "workspace:*",
+      "@happyvertical/translator": "workspace:*",
+      "@happyvertical/utils": "workspace:*"
     }
   }
 }

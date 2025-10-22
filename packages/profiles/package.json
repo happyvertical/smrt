@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/profiles",
+  "name": "@happyvertical/smrt-profiles",
   "version": "0.41.0",
   "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
   "type": "module",
@@ -24,7 +24,7 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@smrt/core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*"
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",

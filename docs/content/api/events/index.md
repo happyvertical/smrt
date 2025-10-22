@@ -1,4 +1,4 @@
-# @smrt/events
+# @happyvertical/smrt-events
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -6,11 +6,11 @@ Hierarchical event management with participant tracking and SMRT framework suppo
 
 ## Overview
 
-The `@smrt/events` package provides a comprehensive event management system with support for hierarchical events, recurring series, and participant tracking. Built on the SMRT framework, it automatically generates REST APIs, CLI commands, and MCP tools for all event operations.
+The `@happyvertical/smrt-events` package provides a comprehensive event management system with support for hierarchical events, recurring series, and participant tracking. Built on the SMRT framework, it automatically generates REST APIs, CLI commands, and MCP tools for all event operations.
 
 Events in this system are **infinitely nestable**, enabling complex scenarios like sports games with periods, goals, and assists, or conferences with sessions, panels, and presentations. Events can be standalone or part of a series (e.g., "2024 NBA Finals", "Summer Tour 2024"), with full support for recurring patterns.
 
-The package integrates seamlessly with `@smrt/places` for location management and `@smrt/profiles` for participant tracking, providing a complete solution for managing events of any type.
+The package integrates seamlessly with `@happyvertical/smrt-places` for location management and `@happyvertical/smrt-profiles` for participant tracking, providing a complete solution for managing events of any type.
 
 ## Features
 
@@ -18,8 +18,8 @@ The package integrates seamlessly with `@smrt/places` for location management an
 - **Event Series**: Group related events with recurring patterns (daily, weekly, monthly, yearly)
 - **Event Types**: Define schemas and templates for different event categories
 - **Participant Tracking**: Link profiles to events with roles, placement, and grouping
-- **Place Integration**: Connect events to locations via `@smrt/places`
-- **Profile Integration**: Track participants via `@smrt/profiles`
+- **Place Integration**: Connect events to locations via `@happyvertical/smrt-places`
+- **Profile Integration**: Track participants via `@happyvertical/smrt-profiles`
 - **Status Lifecycle**: Managed transitions (scheduled → in_progress → completed)
 - **Recurrence Patterns**: Complex recurring event schedules with count and date limits
 - **Metadata Support**: Store custom JSON data on all entities
@@ -32,13 +32,13 @@ The package integrates seamlessly with `@smrt/places` for location management an
 
 ```bash
 # Install with pnpm (recommended)
-pnpm add @smrt/events
+pnpm add @happyvertical/smrt-events
 
 # Or with npm
-npm install @smrt/events
+npm install @happyvertical/smrt-events
 
 # Or with yarn
-yarn add @smrt/events
+yarn add @happyvertical/smrt-events
 ```
 
 ## Quick Start
@@ -46,7 +46,7 @@ yarn add @smrt/events
 ### Creating an Event
 
 ```typescript
-import { Event, EventCollection } from '@smrt/events';
+import { Event, EventCollection } from '@happyvertical/smrt-events';
 
 // Create an event collection
 const events = await EventCollection.create();
@@ -59,7 +59,7 @@ const meeting = await events.create({
   startDate: new Date('2024-01-15T19:00:00'),
   endDate: new Date('2024-01-15T21:00:00'),
   status: 'scheduled',
-  placeId: 'town-hall-id', // From @smrt/places
+  placeId: 'town-hall-id', // From @happyvertical/smrt-places
 });
 
 console.log(`Created event: ${meeting.name}`);
@@ -68,7 +68,7 @@ console.log(`Created event: ${meeting.name}`);
 ### Creating an Event Series
 
 ```typescript
-import { EventSeries, EventSeriesCollection } from '@smrt/events';
+import { EventSeries, EventSeriesCollection } from '@happyvertical/smrt-events';
 
 // Create a series for recurring meetings
 const series = await EventSeriesCollection.create();
@@ -137,14 +137,14 @@ console.log('Descendants:', hierarchy.descendants); // []
 ### Managing Participants
 
 ```typescript
-import { EventParticipant, EventParticipantCollection } from '@smrt/events';
+import { EventParticipant, EventParticipantCollection } from '@happyvertical/smrt-events';
 
 const participants = await EventParticipantCollection.create();
 
 // Add a speaker to a conference
 const speaker = await participants.create({
   eventId: conferenceId,
-  profileId: 'john-doe-id', // From @smrt/profiles
+  profileId: 'john-doe-id', // From @happyvertical/smrt-profiles
   role: 'speaker',
   placement: 0, // First speaker
 });
@@ -174,7 +174,7 @@ console.log(`${gameParticipants.length} participants`);
 ### Working with Event Types
 
 ```typescript
-import { EventType, EventTypeCollection } from '@smrt/events';
+import { EventType, EventTypeCollection } from '@happyvertical/smrt-events';
 
 const eventTypes = await EventTypeCollection.create();
 
@@ -244,7 +244,7 @@ import {
   sortEventsByDate,
   validateEventStatus,
   calculateNextOccurrence,
-} from '@smrt/events';
+} from '@happyvertical/smrt-events';
 
 // Format date ranges
 const dateStr = formatEventDateRange(

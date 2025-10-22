@@ -1,6 +1,6 @@
 # Interface: ContentOptions
 
-Defined in: content/src/content.ts:7
+Defined in: [content/src/content.ts:7](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L7)
 
 Options for Content initialization
 
@@ -76,7 +76,7 @@ AI client configuration options or instance
 
 > `optional` **author**: `string` \| `null`
 
-Defined in: content/src/content.ts:28
+Defined in: [content/src/content.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L28)
 
 Author of the content
 
@@ -86,7 +86,7 @@ Author of the content
 
 > `optional` **body**: `string` \| `null`
 
-Defined in: content/src/content.ts:43
+Defined in: [content/src/content.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L43)
 
 Main content body text
 
@@ -126,7 +126,7 @@ Creation timestamp
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -143,7 +143,7 @@ Supports three formats:
 
 > `optional` **description**: `string` \| `null`
 
-Defined in: content/src/content.ts:38
+Defined in: [content/src/content.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L38)
 
 Short description or summary
 
@@ -153,7 +153,7 @@ Short description or summary
 
 > `optional` **fileKey**: `string` \| `null`
 
-Defined in: content/src/content.ts:23
+Defined in: [content/src/content.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L23)
 
 Reference to file storage key
 
@@ -191,7 +191,7 @@ Unique identifier for the object
 
 > `optional` **language**: `string` \| `null`
 
-Defined in: content/src/content.ts:78
+Defined in: [content/src/content.ts:78](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L78)
 
 Content language
 
@@ -215,7 +215,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metadata**: `Record`\<`string`, `any`\>
 
-Defined in: content/src/content.ts:88
+Defined in: [content/src/content.ts:88](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L88)
 
 Additional metadata
 
@@ -253,7 +253,7 @@ Human-readable name for the object
 
 > `optional` **original\_url**: `string` \| `null`
 
-Defined in: content/src/content.ts:73
+Defined in: [content/src/content.ts:73](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L73)
 
 Original URL of the content
 
@@ -263,7 +263,7 @@ Original URL of the content
 
 > `optional` **publish\_date**: `Date` \| `null`
 
-Defined in: content/src/content.ts:48
+Defined in: [content/src/content.ts:48](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L48)
 
 Date when content was published
 
@@ -341,7 +341,7 @@ URL-friendly identifier
 
 > `optional` **source**: `string` \| `null`
 
-Defined in: content/src/content.ts:58
+Defined in: [content/src/content.ts:58](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L58)
 
 Original source identifier
 
@@ -351,7 +351,7 @@ Original source identifier
 
 > `optional` **state**: `"deprecated"` \| `"active"` \| `"highlighted"` \| `null`
 
-Defined in: content/src/content.ts:68
+Defined in: [content/src/content.ts:68](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L68)
 
 Content state flag
 
@@ -361,7 +361,7 @@ Content state flag
 
 > `optional` **status**: `"published"` \| `"draft"` \| `"archived"` \| `"deleted"` \| `null`
 
-Defined in: content/src/content.ts:63
+Defined in: [content/src/content.ts:63](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L63)
 
 Publication status
 
@@ -371,7 +371,7 @@ Publication status
 
 > `optional` **tags**: `string`[]
 
-Defined in: content/src/content.ts:83
+Defined in: [content/src/content.ts:83](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L83)
 
 Content tags
 
@@ -381,7 +381,7 @@ Content tags
 
 > `optional` **title**: `string` \| `null`
 
-Defined in: content/src/content.ts:33
+Defined in: [content/src/content.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L33)
 
 Content title
 
@@ -391,7 +391,7 @@ Content title
 
 > `optional` **type**: `string` \| `null`
 
-Defined in: content/src/content.ts:11
+Defined in: [content/src/content.ts:11](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L11)
 
 Content type classification
 
@@ -415,7 +415,7 @@ Last update timestamp
 
 > `optional` **url**: `string` \| `null`
 
-Defined in: content/src/content.ts:53
+Defined in: [content/src/content.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L53)
 
 URL source of the content
 
@@ -425,7 +425,7 @@ URL source of the content
 
 > `optional` **variant**: `string` \| `null`
 
-Defined in: content/src/content.ts:18
+Defined in: [content/src/content.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/content.ts#L18)
 
 Content variant for namespaced classification within types
 Format: generator:domain:specific-type

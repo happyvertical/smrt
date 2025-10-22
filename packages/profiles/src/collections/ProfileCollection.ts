@@ -4,7 +4,7 @@
  * Provides advanced querying and batch operations for Profile entities.
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Profile } from '../models/Profile';
 
 export class ProfileCollection extends SmrtCollection<Profile> {
@@ -117,7 +117,7 @@ export class ProfileCollection extends SmrtCollection<Profile> {
       if (current.depth < maxDepth) {
         const related = await this.findRelated(current.id);
         for (const profile of related) {
-          if (!visited.has(profile.id)) {
+          if (profile.id && !visited.has(profile.id)) {
             queue.push({ id: profile.id, depth: current.depth + 1 });
           }
         }

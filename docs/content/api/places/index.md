@@ -1,4 +1,4 @@
-# @smrt/places
+# @happyvertical/smrt-places
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -6,7 +6,7 @@ Hierarchical place management with geo integration and SMRT framework support.
 
 ## Overview
 
-The `@smrt/places` package provides a comprehensive place management system with support for hierarchical relationships, geographic data integration, and automatic database growth through geocoding. It seamlessly integrates with `@have/geo` for location lookups and supports both real-world places (with coordinates) and abstract places (virtual worlds, game zones).
+The `@happyvertical/smrt-places` package provides a comprehensive place management system with support for hierarchical relationships, geographic data integration, and automatic database growth through geocoding. It seamlessly integrates with `@have/geo` for location lookups and supports both real-world places (with coordinates) and abstract places (virtual worlds, game zones).
 
 Key capabilities:
 
@@ -33,16 +33,16 @@ Key capabilities:
 
 ```bash
 # Install with pnpm (recommended for monorepo)
-pnpm add @smrt/places
+pnpm add @happyvertical/smrt-places
 
 # Or with npm
-npm install @smrt/places
+npm install @happyvertical/smrt-places
 
 # Or with yarn
-yarn add @smrt/places
+yarn add @happyvertical/smrt-places
 
 # Or with bun
-bun add @smrt/places
+bun add @happyvertical/smrt-places
 ```
 
 ## Quick Start
@@ -50,7 +50,7 @@ bun add @smrt/places
 ### Basic Place Creation
 
 ```typescript
-import { PlaceCollection, PlaceTypeCollection } from '@smrt/places';
+import { PlaceCollection, PlaceTypeCollection } from '@happyvertical/smrt-places';
 
 // Create place type
 const typeCollection = await PlaceTypeCollection.create();
@@ -188,7 +188,7 @@ import {
   parseCoordinates,
   areCoordinatesNear,
   generateDisplayName
-} from '@smrt/places';
+} from '@happyvertical/smrt-places';
 
 // Validate coordinates
 const validation = validateCoordinates(37.7749, -122.4194);
@@ -369,7 +369,7 @@ import type {
   GeoData,
   PlaceHierarchy,
   LookupOrCreateOptions
-} from '@smrt/places';
+} from '@happyvertical/smrt-places';
 
 // Type-safe place creation
 const placeOptions: PlaceOptions = {

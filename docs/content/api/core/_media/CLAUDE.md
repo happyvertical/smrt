@@ -1,8 +1,8 @@
-# @smrt/core: AI Agent Framework Package
+# @happyvertical/smrt-core: AI Agent Framework Package
 
 ## Purpose and Responsibilities
 
-The `@smrt/core` package is the core framework for building vertical AI agents in the HAVE SDK. It provides a comprehensive foundation for creating intelligent agents with persistent storage, cross-package integration, and automatic code generation capabilities.
+The `@happyvertical/smrt-core` package is the core framework for building vertical AI agents in the HAVE SDK. It provides a comprehensive foundation for creating intelligent agents with persistent storage, cross-package integration, and automatic code generation capabilities.
 
 ### Core Framework Architecture
 - **Object-Relational Mapping**: Automatic schema generation from TypeScript class properties with application-level timestamp management
@@ -65,12 +65,282 @@ await collection.initialize();
 
 **Symmetry**: `Collection.create()` (static factory) creates collections, `collection.create()` (instance method) creates objects.
 
+### AI Provider Configuration
+
+The SMRT framework supports flexible AI provider configuration through both global defaults and per-instance options. This allows you to use any AI provider (OpenAI, Anthropic, Claude CLI, Gemini, etc.) without code changes.
+
+#### Global Configuration
+
+Set application-wide AI defaults using the global config system:
+
+```typescript
+import { config } from '@happyvertical/smrt-core';
+
+// Configure global AI provider
+config({
+  ai: {
+    provider: 'claude-cli',
+    model: 'sonnet',
+    // apiKey: 'your-key' (optional - can also use environment variables)
+  }
+});
+
+// All SMRT objects now use claude-cli by default
+const product = new Product({ name: 'Widget' });
+await product.initialize(); // Uses claude-cli
+```
+
+#### Per-Instance Configuration
+
+Override global defaults for specific instances:
+
+```typescript
+// This instance uses anthropic, overriding global claude-cli config
+const document = new Document({
+  name: 'My Document',
+  ai: {
+    provider: 'anthropic',
+    model: 'claude-3-opus',
+    apiKey: process.env.ANTHROPIC_API_KEY
+  }
+});
+await document.initialize();
+
+// AI methods use the configured provider
+const summary = await document.do('Summarize this document');
+```
+
+#### Configuration Priority
+
+The framework merges configurations with instance options taking priority:
+
+1. **Instance options** (`new Object({ ai: {...} })`) - Highest priority
+2. **Global config** (`config({ ai: {...} })`) - Fallback defaults
+3. **Provider defaults** - Each provider has built-in defaults
+
+Example:
+```typescript
+// Global config sets provider and model
+config({
+  ai: {
+    provider: 'claude-cli',
+    model: 'sonnet',
+    temperature: 0.7
+  }
+});
+
+// Instance overrides provider but keeps model and temperature
+const doc = new Document({
+  ai: {
+    provider: 'openai',  // Override: use OpenAI instead
+    apiKey: process.env.OPENAI_API_KEY
+    // Inherits: model: 'sonnet', temperature: 0.7 from global config
+  }
+});
+await doc.initialize();
+// Result: Uses OpenAI with model='sonnet', temperature=0.7
+```
+
+#### Supported Providers
+
+The framework supports all providers from `@have/ai`:
+
+- **openai** - OpenAI models (GPT-4, GPT-3.5, etc.)
+- **anthropic** - Anthropic models (Claude 3 Opus, Sonnet, Haiku)
+- **claude-cli** - Claude CLI integration (requires claude-cli installed)
+- **gemini** - Google Gemini models
+- **bedrock** - AWS Bedrock models
+
+#### Environment Variables
+
+AI configuration can also be set via environment variables, especially useful for MCP servers.
+
+The framework uses `loadEnvConfig()` to automatically load environment variables with:
+- **Automatic type conversion**: Converts strings to numbers, booleans, JSON
+- **Case conversion**: `SMRT_AI_PROVIDER` → `provider` (camelCase)
+- **Schema validation**: Type-safe conversion based on schema definition
+
+**Supported Environment Variables:**
+```bash
+# Generic configuration (works for all providers)
+export SMRT_AI_PROVIDER=claude-cli    # Provider name
+export SMRT_AI_MODEL=sonnet            # Model name
+export SMRT_AI_API_KEY=your-key        # API key
+export SMRT_AI_TIMEOUT=30000           # Timeout in ms (converted to number)
+export SMRT_AI_MAX_RETRIES=3           # Max retries (converted to number)
+export SMRT_AI_TEMPERATURE=0.7         # Temperature (converted to number)
+export SMRT_AI_MAX_TOKENS=4000         # Max tokens (converted to number)
+
+# Provider-specific (backward compatibility)
+export OPENAI_API_KEY=your-openai-key
+export ANTHROPIC_API_KEY=your-anthropic-key
+export CLAUDE_API_KEY=your-claude-key
+```
+
+**Using loadEnvConfig Directly:**
+```typescript
+// Import from @happyvertical/smrt-core/config (re-exported from @have/utils)
+import { loadEnvConfig } from '@happyvertical/smrt-core/config';
+
+// Or import directly from @have/utils
+// import { loadEnvConfig } from '@have/utils';
+
+// Load SMRT_AI_* environment variables
+const aiConfig = loadEnvConfig({}, {
+  packageName: 'ai',
+  prefix: 'SMRT',
+  schema: {
+    provider: 'string',
+    model: 'string',
+    apiKey: 'string',
+    timeout: 'number',
+    maxRetries: 'number',
+  }
+});
+
+// Result: {
+//   provider: 'claude-cli',  // from SMRT_AI_PROVIDER
+//   model: 'sonnet',          // from SMRT_AI_MODEL
+//   timeout: 30000            // from SMRT_AI_TIMEOUT (converted to number)
+// }
+```
+
+#### Troubleshooting
+
+**Issue**: "Missing credentials" error for OpenAI when using different provider
+
+**Cause**: AI config not properly set or passed through
+
+**Solution**:
+1. Verify global config: `console.log(config.toJSON().ai)`
+2. Verify instance config: `console.log(object.options.ai)`
+3. Ensure `initialize()` is called after setting options
+4. Check that provider name matches exactly (e.g., 'claude-cli' not 'claude')
+
+**Issue**: MCP server still uses OpenAI despite configuration
+
+**Cause**: Generated MCP servers use environment variables
+
+**Solution**: Set `SMRT_AI_PROVIDER`, `SMRT_AI_MODEL`, and `SMRT_AI_API_KEY` environment variables before running MCP server:
+```bash
+export SMRT_AI_PROVIDER=claude-cli
+export SMRT_AI_MODEL=sonnet
+node dist/mcp-server.js
+```
+
+### Environment Variable Configuration
+
+The SMRT framework uses `loadEnvConfig()` from `@have/utils` (SDK package) for loading configuration from environment variables with automatic type conversion and validation. This utility is re-exported by `@happyvertical/smrt-core/config` for convenience.
+
+#### Features
+
+- **Configurable Prefix**: Default `SMRT_`, customizable to any prefix
+- **Package Namespacing**: `SMRT_{PACKAGE}_` pattern (e.g., `SMRT_AI_PROVIDER`)
+- **Automatic Type Conversion**: String env vars → typed values (number, boolean, JSON)
+- **Case Conversion**: `SMRT_AI_MAX_RETRIES` → `maxRetries` (camelCase)
+- **Schema Validation**: Type-safe conversion based on schema definition
+- **Precedence**: User options > Environment variables > Defaults
+
+#### Source
+
+`loadEnvConfig()` is implemented in `@have/utils` (SDK) and re-exported by `@happyvertical/smrt-core/config` for convenience. See [SDK env-config documentation](https://github.com/happyvertical/sdk/blob/main/packages/utils/src/config/env-config.ts) for the full implementation.
+
+#### API
+
+```typescript
+// Import from @happyvertical/smrt-core/config (re-exported)
+import { loadEnvConfig } from '@happyvertical/smrt-core/config';
+
+// Or import directly from @have/utils
+// import { loadEnvConfig } from '@have/utils';
+
+interface MyConfig {
+  provider: string;
+  timeout: number;
+  enabled: boolean;
+  metadata: object;
+}
+
+const config = loadEnvConfig<MyConfig>(
+  { provider: 'default' }, // User options (highest priority)
+  {
+    packageName: 'ai',     // Creates SMRT_AI_* prefix
+    prefix: 'SMRT',        // Default prefix
+    schema: {
+      provider: 'string',  // Type conversion rules
+      timeout: 'number',
+      enabled: 'boolean',
+      metadata: 'json'
+    },
+    allowUnknown: true     // Allow env vars not in schema
+  }
+);
+```
+
+#### Type Conversion
+
+| Schema Type | Example Input | Converted Output |
+|-------------|---------------|------------------|
+| `'string'` | `"hello"` | `"hello"` |
+| `'number'` | `"123"` | `123` |
+| `'boolean'` | `"true"`, `"1"`, `"yes"` | `true` |
+| `'json'` | `'{"foo":"bar"}'` | `{ foo: "bar" }` |
+
+#### Case Conversion
+
+```typescript
+// Environment variable → Config property
+SMRT_AI_PROVIDER       → aiProvider (if no packageName)
+SMRT_AI_MAX_RETRIES    → maxRetries
+SMRT_AI_API_KEY        → apiKey
+SMRT_SQL_DATABASE_URL  → databaseUrl (with packageName: 'sql')
+```
+
+#### Custom Transformations
+
+For advanced use cases, provide custom transform functions:
+
+```typescript
+const config = loadEnvConfig({}, {
+  packageName: 'ai',
+  schema: {
+    timeout: 'number',
+    models: 'string'
+  },
+  transform: {
+    // Custom transformation for models field
+    models: (value: string) => value.split(',').map(m => m.trim())
+  }
+});
+
+// SMRT_AI_MODELS="gpt-4,claude-3" → models: ['gpt-4', 'claude-3']
+```
+
+#### Utility Functions
+
+**Case Conversion:**
+```typescript
+import { toCamelCase, toScreamingSnakeCase } from '@happyvertical/smrt-core/config';
+
+toCamelCase('max_retries');           // → 'maxRetries'
+toScreamingSnakeCase('maxRetries');   // → 'MAX_RETRIES'
+```
+
+**Type Conversion:**
+```typescript
+import { convertType } from '@happyvertical/smrt-core/config';
+
+convertType('123', 'number');          // → 123
+convertType('true', 'boolean');        // → true
+convertType('{"foo":"bar"}', 'json');  // → { foo: 'bar' }
+```
+
 ### Field System (packages/smrt/src/fields/index.ts)
 
 The framework provides a typed field definition system for schema generation:
 
 ```typescript
-import { text, integer, decimal, boolean, datetime, json, foreignKey } from '@smrt/core/fields';
+import { text, integer, decimal, boolean, datetime, json, foreignKey } from '@happyvertical/smrt-core/fields';
 
 class Product extends SmrtObject {
   name = text({ required: true, maxLength: 100 });
@@ -105,7 +375,7 @@ class Product extends SmrtObject {
 The `@smrt()` decorator automatically registers classes:
 
 ```typescript
-import { smrt } from '@smrt/core';
+import { smrt } from '@happyvertical/smrt-core';
 
 @smrt({
   api: { exclude: ['delete'] },
@@ -528,8 +798,8 @@ const orders = await orderCollection.list({
 ### Defining Custom SMRT Objects with Custom Actions
 
 ```typescript
-import { SmrtObject } from '@smrt/core';
-import { Field } from '@smrt/core/fields';
+import { SmrtObject } from '@happyvertical/smrt-core';
+import { Field } from '@happyvertical/smrt-core/fields';
 
 @smrt({
   api: {
@@ -626,7 +896,7 @@ This automatically generates:
 ### Advanced Collection Management
 
 ```typescript
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Document } from './document';
 
 class DocumentCollection extends SmrtCollection<Document> {
@@ -689,7 +959,7 @@ The SMRT framework supports automatic AI function calling, allowing LLMs to invo
 Configure which methods AI can call using the `ai` configuration in the `@smrt()` decorator:
 
 ```typescript
-import { smrt, SmrtObject } from '@smrt/core';
+import { smrt, SmrtObject } from '@happyvertical/smrt-core';
 
 @smrt({
   ai: {
@@ -825,7 +1095,7 @@ async analyze(options: {
 Execute tool calls manually using the `executeToolCall()` method:
 
 ```typescript
-import type { ToolCall } from '@smrt/core';
+import type { ToolCall } from '@happyvertical/smrt-core';
 
 const document = await documents.get('doc-123');
 
@@ -913,7 +1183,7 @@ if (tools.length > 0) {
 
 **Tool Call Batching:**
 ```typescript
-import { executeToolCalls } from '@smrt/core';
+import { executeToolCalls } from '@happyvertical/smrt-core';
 
 const toolCalls = [
   { id: '1', type: 'function', function: { name: 'analyze', arguments: '{}' } },
@@ -947,7 +1217,7 @@ console.log(`Executed ${results.length} tool calls`);
 ### Code Generation and Automation
 
 ```typescript
-import { CLIGenerator, APIGenerator, MCPGenerator } from '@smrt/core/generators';
+import { CLIGenerator, APIGenerator, MCPGenerator } from '@happyvertical/smrt-core/generators';
 import { DocumentCollection } from './documentCollection';
 
 // Generate CLI tools automatically
@@ -992,7 +1262,7 @@ Use `smrtPlugin` when creating SMRT objects in your project:
 
 ```typescript
 // vite.config.js - For projects defining SMRT objects
-import { smrtPlugin } from '@smrt/core/vite-plugin';
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
 
 export default {
   plugins: [
@@ -1019,7 +1289,7 @@ Use `smrtConsumer` when consuming packages that contain SMRT objects:
 
 ```typescript
 // vite.config.js - For projects consuming SMRT packages
-import { smrtConsumer } from '@smrt/core/consumer-plugin';
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
 
 export default {
   plugins: [
@@ -1036,7 +1306,7 @@ export default {
 // Resolves virtual modules from consumed SMRT packages:
 import { createClient } from '@smrt/client';       // Generated from consumed packages
 import { setupRoutes } from '@smrt/routes';        // Combined routes from all packages
-import type { ProductData } from '@smrt/types';    // Generated TypeScript types
+import type { ProductData } from '@happyvertical/smrt-types';    // Generated TypeScript types
 ```
 
 #### Dual Plugin Usage
@@ -1045,8 +1315,8 @@ For projects that both define and consume SMRT objects:
 
 ```typescript
 // vite.config.js - Using both plugins together
-import { smrtPlugin } from '@smrt/core/vite-plugin';
-import { smrtConsumer } from '@smrt/core/consumer-plugin';
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
 
 export default {
   plugins: [
@@ -1071,7 +1341,7 @@ export default {
 // Access both local and external virtual modules:
 import { setupRoutes as localRoutes } from '@smrt/routes';    // From local objects
 import { createClient } from '@smrt/client';                   // Combined client
-import type { LocalModel, ExternalModel } from '@smrt/types'; // All types
+import type { LocalModel, ExternalModel } from '@happyvertical/smrt-types'; // All types
 ```
 
 ### Advanced Querying and Relationships
@@ -1237,7 +1507,7 @@ The `smrtConsumer` plugin enables projects to consume SMRT packages without defi
 ### Consumer Plugin Options
 
 ```typescript
-import { smrtConsumer, type SmrtConsumerOptions } from '@smrt/core/consumer-plugin';
+import { smrtConsumer, type SmrtConsumerOptions } from '@happyvertical/smrt-core/consumer-plugin';
 
 interface SmrtConsumerOptions {
   /** SMRT packages to scan (e.g., ['@my-org/products', '@my-org/content']) */
@@ -1292,7 +1562,7 @@ The plugin generates comprehensive TypeScript declarations for consumed SMRT pac
 import { createClient } from '@smrt/client';
 import { setupRoutes } from '@smrt/routes';
 import { tools } from '@smrt/mcp';
-import type { ProductData, CategoryData } from '@smrt/types';
+import type { ProductData, CategoryData } from '@happyvertical/smrt-types';
 ```
 
 ### Pre-build Type Generation
@@ -1334,7 +1604,7 @@ smrtConsumer({
 ```typescript
 // vite.config.js for SvelteKit
 import { sveltekit } from '@sveltejs/kit/vite';
-import { smrtConsumer } from '@smrt/core/consumer-plugin';
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
 
 export default {
   plugins: [
@@ -1374,7 +1644,7 @@ const analytics = await client.analytics.query({});
 ```typescript
 // Creating a library that extends SMRT functionality
 smrtConsumer({
-  packages: ['@smrt/core-core-models'],
+  packages: ['@happyvertical/smrt-core-core-models'],
   staticTypes: true,
   typesDir: 'src/types/core',
   disableScanning: true  // Faster builds for libraries
@@ -1389,7 +1659,7 @@ The SMRT package follows industry standards (like AWS SDK) for distributing buil
 
 **Published Package Structure:**
 ```
-@smrt/core/
+@happyvertical/smrt-core/
 ├── dist/                           # Built artifacts (gitignored in development)
 │   ├── consumer-plugin/index.js    # Vite plugin for consumers
 │   ├── vite-plugin/index.js        # Vite plugin for SMRT creators
@@ -1415,7 +1685,7 @@ The SMRT package follows industry standards (like AWS SDK) for distributing buil
 **Published Package Usage** (Standard):
 ```typescript
 // Consuming from published npm package
-import { smrtConsumer } from '@smrt/core/consumer-plugin';
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
 
 export default defineConfig({
   plugins: [smrtConsumer({ packages: ['@my-org/products'] })]
@@ -1428,7 +1698,7 @@ export default defineConfig({
 npm run build
 
 # 2. Then use in consuming applications
-npm link @smrt/core  # or workspace linking
+npm link @happyvertical/smrt-core  # or workspace linking
 ```
 
 **Key Points:**
@@ -1455,13 +1725,13 @@ npm link
 **For Consumer Application Development:**
 ```bash
 # Link to local SMRT package (if developing SDK)
-npm link @smrt/core
+npm link @happyvertical/smrt-core
 
 # Or install published version (standard usage)
-npm install @smrt/core
+npm install @happyvertical/smrt-core
 
 # Use consumer plugin in vite.config.js
-import { smrtConsumer } from '@smrt/core/consumer-plugin';
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
 ```
 
 ### Tree-Shaking and Subpath Exports
@@ -1470,9 +1740,9 @@ The package supports efficient tree-shaking through granular exports:
 
 ```typescript
 // Import only what you need
-import { smrtConsumer } from '@smrt/core/consumer-plugin';        // ~8KB
-import { CLIGenerator } from '@smrt/core/generators/cli';         // ~22KB
-import { SmrtObject } from '@smrt/core';                          // Core framework
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';        // ~8KB
+import { CLIGenerator } from '@happyvertical/smrt-core/generators/cli';         // ~22KB
+import { SmrtObject } from '@happyvertical/smrt-core';                          // Core framework
 ```
 
 **Vite Configuration for Tree-Shaking:**
@@ -1664,7 +1934,7 @@ async analyze(options: any = {}) {
 **CLI Development**
 ```bash
 # Generate CLI tools from SMRT objects
-import { CLIGenerator } from '@smrt/core/generators';
+import { CLIGenerator } from '@happyvertical/smrt-core/generators';
 const generator = new CLIGenerator({
   collections: [MyCollection],
   outputDir: './cli'
@@ -1675,7 +1945,7 @@ await generator.generate();
 **API Generation**
 ```bash
 # Create REST APIs with OpenAPI documentation
-import { APIGenerator } from '@smrt/core/generators';
+import { APIGenerator } from '@happyvertical/smrt-core/generators';
 const generator = new APIGenerator({
   collections: [MyCollection],
   includeSwagger: true,
@@ -1687,7 +1957,7 @@ await generator.generate();
 **MCP Server Generation**
 ```bash
 # Generate Model Context Protocol servers
-import { MCPGenerator } from '@smrt/core/generators';
+import { MCPGenerator } from '@happyvertical/smrt-core/generators';
 const generator = new MCPGenerator({
   collections: [MyCollection],
   tools: ['list', 'search', 'analyze']
@@ -1785,7 +2055,7 @@ When building agents with the SMRT framework:
 
 ## API Documentation
 
-The @smrt/core package generates comprehensive API documentation in both HTML and markdown formats using TypeDoc:
+The @happyvertical/smrt-core package generates comprehensive API documentation in both HTML and markdown formats using TypeDoc:
 
 ### Generated Documentation Formats
 
@@ -1853,7 +2123,7 @@ Always reference the latest documentation when developing AI agents with the SMR
 
 ### Expert Agent Instructions
 
-When working with @smrt/core:
+When working with @happyvertical/smrt-core:
 
 1. **Always check latest documentation** before implementing agent solutions using WebFetch tool
 2. **Stay current with framework updates** - agent frameworks evolve rapidly with new AI capabilities
@@ -2069,7 +2339,7 @@ import { createClient } from '@smrt/client';
 **Consumer projects need smrtConsumer()**:
 ```typescript
 // vite.config.js in consuming project
-import { smrtConsumer } from '@smrt/core/consumer-plugin';
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
 
 export default {
   plugins: [

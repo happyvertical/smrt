@@ -1,5 +1,5 @@
-import { getDatabase } from '@have/sql';
-import { smrt } from '@smrt/core';
+import { smrt } from '@happyvertical/smrt-core';
+import { getDatabase } from '@happyvertical/sql';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Agent } from './agent.js';
 

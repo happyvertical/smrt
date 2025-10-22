@@ -1,6 +1,6 @@
 # Interface: SmartObjectDefinition
 
-Defined in: smrt/packages/core/src/scanner/types.ts:40
+Defined in: [smrt/packages/core/src/scanner/types.ts:40](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L40)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:40
 
 > **className**: `string`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:42
+Defined in: [smrt/packages/core/src/scanner/types.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L42)
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:42
 
 > **collection**: `string`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:43
+Defined in: [smrt/packages/core/src/scanner/types.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L43)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:43
 
 > **decoratorConfig**: `object`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:47
+Defined in: [smrt/packages/core/src/scanner/types.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L47)
 
 #### ai?
 
@@ -60,7 +60,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:47
 
 > `optional` **extends**: `string`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:72
+Defined in: [smrt/packages/core/src/scanner/types.ts:72](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L72)
 
 ***
 
@@ -68,7 +68,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:72
 
 > **fields**: `Record`\<`string`, `FieldDefinition`\>
 
-Defined in: smrt/packages/core/src/scanner/types.ts:45
+Defined in: [smrt/packages/core/src/scanner/types.ts:45](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L45)
 
 ***
 
@@ -76,7 +76,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:45
 
 > **filePath**: `string`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:44
+Defined in: [smrt/packages/core/src/scanner/types.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L44)
 
 ***
 
@@ -84,7 +84,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:44
 
 > **methods**: `Record`\<`string`, `MethodDefinition`\>
 
-Defined in: smrt/packages/core/src/scanner/types.ts:46
+Defined in: [smrt/packages/core/src/scanner/types.ts:46](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L46)
 
 ***
 
@@ -92,7 +92,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:46
 
 > **name**: `string`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:41
+Defined in: [smrt/packages/core/src/scanner/types.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L41)
 
 ***
 
@@ -100,7 +100,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:41
 
 > `optional` **tools**: `object`[]
 
-Defined in: smrt/packages/core/src/scanner/types.ts:73
+Defined in: [smrt/packages/core/src/scanner/types.ts:73](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L73)
 
 #### function
 

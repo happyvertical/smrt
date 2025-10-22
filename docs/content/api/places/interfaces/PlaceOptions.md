@@ -1,6 +1,6 @@
 # Interface: PlaceOptions
 
-Defined in: places/src/types.ts:27
+Defined in: [places/src/types.ts:27](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L27)
 
 Options for creating/updating a Place
 
@@ -76,7 +76,7 @@ AI client configuration options or instance
 
 > `optional` **city**: `string`
 
-Defined in: places/src/types.ts:39
+Defined in: [places/src/types.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L39)
 
 ***
 
@@ -98,7 +98,7 @@ Optional context to scope the slug (could be a path, domain, etc.)
 
 > `optional` **country**: `string`
 
-Defined in: places/src/types.ts:41
+Defined in: [places/src/types.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L41)
 
 ***
 
@@ -106,7 +106,7 @@ Defined in: places/src/types.ts:41
 
 > `optional` **countryCode**: `string`
 
-Defined in: places/src/types.ts:43
+Defined in: [places/src/types.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L43)
 
 ***
 
@@ -128,7 +128,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: places/src/types.ts:52
+Defined in: [places/src/types.ts:52](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L52)
 
 ***
 
@@ -138,7 +138,7 @@ Defined in: places/src/types.ts:52
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -155,7 +155,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: places/src/types.ts:32
+Defined in: [places/src/types.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L32)
 
 ***
 
@@ -163,7 +163,7 @@ Defined in: places/src/types.ts:32
 
 > `optional` **externalId**: `string`
 
-Defined in: places/src/types.ts:47
+Defined in: [places/src/types.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L47)
 
 ***
 
@@ -185,7 +185,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: places/src/types.ts:28
+Defined in: [places/src/types.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L28)
 
 Unique identifier for the object
 
@@ -199,7 +199,7 @@ Unique identifier for the object
 
 > `optional` **latitude**: `number` \| `null`
 
-Defined in: places/src/types.ts:35
+Defined in: [places/src/types.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L35)
 
 ***
 
@@ -221,7 +221,7 @@ Logging configuration (overrides global default)
 
 > `optional` **longitude**: `number` \| `null`
 
-Defined in: places/src/types.ts:36
+Defined in: [places/src/types.ts:36](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L36)
 
 ***
 
@@ -229,7 +229,7 @@ Defined in: places/src/types.ts:36
 
 > `optional` **metadata**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: places/src/types.ts:49
+Defined in: [places/src/types.ts:49](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L49)
 
 ***
 
@@ -251,7 +251,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: places/src/types.ts:31
+Defined in: [places/src/types.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L31)
 
 Human-readable name for the object
 
@@ -265,7 +265,7 @@ Human-readable name for the object
 
 > `optional` **parentId**: `string`
 
-Defined in: places/src/types.ts:30
+Defined in: [places/src/types.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L30)
 
 ***
 
@@ -273,7 +273,7 @@ Defined in: places/src/types.ts:30
 
 > `optional` **postalCode**: `string`
 
-Defined in: places/src/types.ts:42
+Defined in: [places/src/types.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L42)
 
 ***
 
@@ -295,7 +295,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **region**: `string`
 
-Defined in: places/src/types.ts:40
+Defined in: [places/src/types.ts:40](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L40)
 
 ***
 
@@ -357,7 +357,7 @@ URL-friendly identifier
 
 > `optional` **source**: `string`
 
-Defined in: places/src/types.ts:48
+Defined in: [places/src/types.ts:48](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L48)
 
 ***
 
@@ -365,7 +365,7 @@ Defined in: places/src/types.ts:48
 
 > `optional` **streetName**: `string`
 
-Defined in: places/src/types.ts:38
+Defined in: [places/src/types.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L38)
 
 ***
 
@@ -373,7 +373,7 @@ Defined in: places/src/types.ts:38
 
 > `optional` **streetNumber**: `string`
 
-Defined in: places/src/types.ts:37
+Defined in: [places/src/types.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L37)
 
 ***
 
@@ -381,7 +381,7 @@ Defined in: places/src/types.ts:37
 
 > `optional` **timezone**: `string`
 
-Defined in: places/src/types.ts:44
+Defined in: [places/src/types.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L44)
 
 ***
 
@@ -389,7 +389,7 @@ Defined in: places/src/types.ts:44
 
 > `optional` **typeId**: `string`
 
-Defined in: places/src/types.ts:29
+Defined in: [places/src/types.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L29)
 
 ***
 
@@ -411,4 +411,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: places/src/types.ts:53
+Defined in: [places/src/types.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L53)

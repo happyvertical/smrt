@@ -4,7 +4,7 @@
  * Provides querying for relationship terms (temporal data).
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { ProfileRelationshipTerm } from '../models/ProfileRelationshipTerm';
 
 export class ProfileRelationshipTermCollection extends SmrtCollection<ProfileRelationshipTerm> {

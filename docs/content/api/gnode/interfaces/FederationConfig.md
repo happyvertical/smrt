@@ -1,6 +1,6 @@
 # Interface: FederationConfig
 
-Defined in: federation/index.ts:12
+Defined in: [federation/index.ts:12](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/federation/index.ts#L12)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: federation/index.ts:12
 
 > **autodiscovery**: `boolean`
 
-Defined in: federation/index.ts:16
+Defined in: [federation/index.ts:16](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/federation/index.ts#L16)
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: federation/index.ts:16
 
 > **discoverability**: `"public"` \| `"private"`
 
-Defined in: federation/index.ts:14
+Defined in: [federation/index.ts:14](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/federation/index.ts#L14)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: federation/index.ts:14
 
 > **enabled**: `boolean`
 
-Defined in: federation/index.ts:13
+Defined in: [federation/index.ts:13](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/federation/index.ts#L13)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: federation/index.ts:13
 
 > **peerExchange**: `boolean`
 
-Defined in: federation/index.ts:17
+Defined in: [federation/index.ts:17](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/federation/index.ts#L17)
 
 ***
 
@@ -40,4 +40,4 @@ Defined in: federation/index.ts:17
 
 > **peers**: `string`[]
 
-Defined in: federation/index.ts:15
+Defined in: [federation/index.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/federation/index.ts#L15)

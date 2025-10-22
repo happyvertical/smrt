@@ -1,6 +1,6 @@
 # Class: PlaceType
 
-Defined in: places/src/models/PlaceType.ts:15
+Defined in: [places/src/models/PlaceType.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L15)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: places/src/models/PlaceType.ts:15
 
 > **new PlaceType**(`options`): `PlaceType`
 
-Defined in: places/src/models/PlaceType.ts:24
+Defined in: [places/src/models/PlaceType.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L24)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: places/src/models/PlaceType.ts:21
+Defined in: [places/src/models/PlaceType.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L21)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: places/src/models/PlaceType.ts:21
 
 > **description**: `string` = `''`
 
-Defined in: places/src/models/PlaceType.ts:18
+Defined in: [places/src/models/PlaceType.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L18)
 
 ***
 
@@ -234,7 +234,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: places/src/models/PlaceType.ts:22
+Defined in: [places/src/models/PlaceType.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L22)
 
 ## Accessors
 
@@ -244,7 +244,7 @@ Defined in: places/src/models/PlaceType.ts:22
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -308,7 +308,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -328,7 +328,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -392,7 +392,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -458,7 +458,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -537,7 +537,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -1436,6 +1436,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1527,7 +1560,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **getBySlug**(`_slug`): `Promise`\<`PlaceType` \| `null`\>
 
-Defined in: places/src/models/PlaceType.ts:38
+Defined in: [places/src/models/PlaceType.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L38)
 
 Convenience method for slug-based lookup
 

@@ -116,7 +116,7 @@ export function createPackageConfig(packageName: string) {
           '@libsql/client',
 
           // Internal SMRT packages - externalize to avoid cross-package bundling
-          /^@smrt\//,
+          /^@happyvertical\//,
 
           // External SDK packages
           /^@have\//,

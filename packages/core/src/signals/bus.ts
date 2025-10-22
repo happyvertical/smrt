@@ -5,8 +5,8 @@
  * to registered adapters (logging, metrics, pub/sub, etc.).
  */
 
-import { makeId } from '@have/utils';
-import type { Signal, SignalAdapter } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@happyvertical/smrt-types';
+import { makeId } from '@happyvertical/utils';
 import type { SanitizationConfig } from './sanitizer.js';
 import { SignalSanitizer } from './sanitizer.js';
 

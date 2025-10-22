@@ -2,7 +2,7 @@
 
 > **validateToolCall**(`methodName`, `args`, `allowedMethods`): `void`
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:89
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:89](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L89)
 
 Validates tool call arguments against method parameters
 

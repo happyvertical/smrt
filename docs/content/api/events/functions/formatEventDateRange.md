@@ -2,7 +2,7 @@
 
 > **formatEventDateRange**(`startDate`, `endDate?`): `string`
 
-Defined in: events/src/utils.ts:37
+Defined in: [events/src/utils.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/utils.ts#L37)
 
 Format event date range as string
 

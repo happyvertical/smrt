@@ -5,7 +5,7 @@
  * Collects counts, durations, error rates, and success rates.
  */
 
-import type { Signal, SignalAdapter } from '@smrt/types';
+import type { Signal, SignalAdapter } from '@happyvertical/smrt-types';
 
 /**
  * Execution metrics for a specific method

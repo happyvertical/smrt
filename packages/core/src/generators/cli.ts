@@ -6,7 +6,11 @@
  */
 
 import { createInterface } from 'node:readline';
-import { type Command, type ParsedArgs, parseCliArgs } from '@have/utils';
+import {
+  type Command,
+  type ParsedArgs,
+  parseCliArgs,
+} from '@happyvertical/utils';
 import type { SmrtCollection } from '../collection';
 import { ObjectRegistry } from '../registry';
 
@@ -51,7 +55,7 @@ export interface CLIContext {
 export type CLICommand = Command;
 
 // Re-export ParsedArgs from utils
-export type { ParsedArgs } from '@have/utils';
+export type { ParsedArgs } from '@happyvertical/utils';
 
 /**
  * Generate CLI commands for smrt objects

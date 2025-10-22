@@ -1,6 +1,6 @@
 # Interface: ContentsOptions
 
-Defined in: content/src/contents.ts:15
+Defined in: [content/src/contents.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L15)
 
 Configuration options for Contents collection
 
@@ -28,7 +28,7 @@ Optional custom class name override
 
 > `optional` **ai**: `AIClientOptions`
 
-Defined in: content/src/contents.ts:19
+Defined in: [content/src/contents.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L19)
 
 AI client configuration options
 
@@ -42,7 +42,7 @@ AI client configuration options
 
 > `optional` **contentDir**: `string`
 
-Defined in: content/src/contents.ts:24
+Defined in: [content/src/contents.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L24)
 
 Directory to store content files
 
@@ -54,7 +54,7 @@ Directory to store content files
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)

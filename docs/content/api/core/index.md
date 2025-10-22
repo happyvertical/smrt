@@ -1,4 +1,4 @@
-# @smrt/core
+# @happyvertical/smrt-core
 
 <p align="center">
   <img src="_media/smrt-homer.png" alt="SMRT Logo" width="400"/>
@@ -10,7 +10,7 @@ Core AI agent framework with standardized collections, object-relational mapping
 
 ## Overview
 
-The `@smrt/core` package provides the foundation for building vertical AI agents. It offers a comprehensive framework with object-relational mapping, AI-powered operations, code generation capabilities, and seamless integration with other HAVE SDK packages.
+The `@happyvertical/smrt-core` package provides the foundation for building vertical AI agents. It offers a comprehensive framework with object-relational mapping, AI-powered operations, code generation capabilities, and seamless integration with other HAVE SDK packages.
 
 ## Key Features
 
@@ -27,13 +27,13 @@ The `@smrt/core` package provides the foundation for building vertical AI agents
 
 ```bash
 # Install with npm
-npm install @smrt/core
+npm install @happyvertical/smrt-core
 
 # Or with yarn
-yarn add @smrt/core
+yarn add @happyvertical/smrt-core
 
 # Or with bun
-bun add @smrt/core
+bun add @happyvertical/smrt-core
 ```
 
 ## Usage
@@ -41,8 +41,8 @@ bun add @smrt/core
 ### Define SMRT Objects with Fields
 
 ```typescript
-import { SmrtObject } from '@smrt/core';
-import { text, integer, boolean, datetime } from '@smrt/core/fields';
+import { SmrtObject } from '@happyvertical/smrt-core';
+import { text, integer, boolean, datetime } from '@happyvertical/smrt-core/fields';
 
 // Define a document object with typed fields
 class Document extends SmrtObject {
@@ -79,7 +79,7 @@ class Document extends SmrtObject {
 ### Create and Manage Collections
 
 ```typescript
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 
 class DocumentCollection extends SmrtCollection<Document> {
   static readonly _itemClass = Document;
@@ -154,7 +154,7 @@ Generate CLI tools, REST APIs, and MCP servers automatically from your SMRT obje
 ### CLI Generation
 
 ```typescript
-import { CLIGenerator } from '@smrt/core/generators';
+import { CLIGenerator } from '@happyvertical/smrt-core/generators';
 
 const generator = new CLIGenerator({
   collections: [DocumentCollection],
@@ -169,7 +169,7 @@ await generator.generate();
 ### REST API Generation
 
 ```typescript
-import { APIGenerator } from '@smrt/core/generators';
+import { APIGenerator } from '@happyvertical/smrt-core/generators';
 
 const generator = new APIGenerator({
   collections: [DocumentCollection],
@@ -185,7 +185,7 @@ await generator.generate();
 ### MCP Server Generation
 
 ```typescript
-import { MCPGenerator } from '@smrt/core/generators';
+import { MCPGenerator } from '@happyvertical/smrt-core/generators';
 
 const generator = new MCPGenerator({
   collections: [DocumentCollection],
@@ -255,8 +255,8 @@ After restarting Claude Code, you can use the advisor tools directly in your dev
 "Generate a Book class with title, author, isbn, and price fields"
 
 // Claude Code uses generate-smrt-class tool to create:
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@smrt/core';
-import { text, decimal } from '@smrt/core/fields';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@happyvertical/smrt-core';
+import { text, decimal } from '@happyvertical/smrt-core/fields';
 
 export interface BookOptions extends SmrtObjectOptions {
   title?: string;
@@ -294,7 +294,7 @@ Use the Vite plugin for automatic service generation during development:
 
 ```typescript
 // vite.config.js
-import { smrtPlugin } from '@smrt/core/vite-plugin';
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
 
 export default {
   plugins: [
@@ -322,7 +322,7 @@ The field system provides type-safe database schema generation:
 import {
   text, integer, decimal, boolean, datetime, json,
   foreignKey, oneToMany, manyToMany
-} from '@smrt/core/fields';
+} from '@happyvertical/smrt-core/fields';
 
 class Product extends SmrtObject {
   name = text({ required: true, maxLength: 100 });
@@ -409,7 +409,7 @@ For more details, see the [full CLAUDE.md documentation](_media/CLAUDE.md#eager-
 All SMRT objects have public `db` property for direct database access via @have/sql. This enables custom queries, transactions, and advanced database operations:
 
 ```typescript
-import { SmrtObject, SmrtCollection } from '@smrt/core';
+import { SmrtObject, SmrtCollection } from '@happyvertical/smrt-core';
 
 class Product extends SmrtObject {
   name = text({ required: true });
@@ -495,8 +495,8 @@ When an AI agent discovers that a specific CSS selector works for extracting con
 Store and retrieve context specific to an individual object instance:
 
 ```typescript
-import { SmrtObject } from '@smrt/core';
-import { text } from '@smrt/core/fields';
+import { SmrtObject } from '@happyvertical/smrt-core';
+import { text } from '@happyvertical/smrt-core/fields';
 
 class WebScraper extends SmrtObject {
   url = text({ required: true });
@@ -871,7 +871,7 @@ class FileDocument extends SmrtObject {
 SMRT provides comprehensive error handling with specific error types:
 
 ```typescript
-import { ValidationError, DatabaseError, RuntimeError } from '@smrt/core';
+import { ValidationError, DatabaseError, RuntimeError } from '@happyvertical/smrt-core';
 
 try {
   await document.save();

@@ -1,6 +1,6 @@
 # Class: Account
 
-Defined in: accounts/src/models/Account.ts:15
+Defined in: [accounts/src/models/Account.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L15)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: accounts/src/models/Account.ts:15
 
 > **new Account**(`options`): `Account`
 
-Defined in: accounts/src/models/Account.ts:28
+Defined in: [accounts/src/models/Account.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L28)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: accounts/src/models/Account.ts:25
+Defined in: [accounts/src/models/Account.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L25)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: accounts/src/models/Account.ts:25
 
 > **currency**: `string` = `'USD'`
 
-Defined in: accounts/src/models/Account.ts:19
+Defined in: [accounts/src/models/Account.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L19)
 
 ***
 
@@ -190,7 +190,7 @@ Defined in: accounts/src/models/Account.ts:19
 
 > **description**: `string` = `''`
 
-Defined in: accounts/src/models/Account.ts:21
+Defined in: [accounts/src/models/Account.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L21)
 
 ***
 
@@ -198,7 +198,7 @@ Defined in: accounts/src/models/Account.ts:21
 
 > **metadata**: `string` = `''`
 
-Defined in: accounts/src/models/Account.ts:22
+Defined in: [accounts/src/models/Account.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L22)
 
 ***
 
@@ -236,7 +236,7 @@ Initialized by parent constructor via super() call.
 
 > **parentId**: `string` = `''`
 
-Defined in: accounts/src/models/Account.ts:20
+Defined in: [accounts/src/models/Account.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L20)
 
 ***
 
@@ -244,7 +244,7 @@ Defined in: accounts/src/models/Account.ts:20
 
 > **type**: [`AccountType`](../type-aliases/AccountType.md) = `'asset'`
 
-Defined in: accounts/src/models/Account.ts:18
+Defined in: [accounts/src/models/Account.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L18)
 
 ***
 
@@ -266,7 +266,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: accounts/src/models/Account.ts:26
+Defined in: [accounts/src/models/Account.ts:26](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L26)
 
 ## Accessors
 
@@ -276,7 +276,7 @@ Defined in: accounts/src/models/Account.ts:26
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -340,7 +340,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -360,7 +360,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -424,7 +424,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -490,7 +490,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -569,7 +569,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -800,7 +800,7 @@ console.log(`Cleared ${count} cached strategies`);
 
 > **getAncestors**(): `Promise`\<`Account`[]\>
 
-Defined in: accounts/src/models/Account.ts:132
+Defined in: [accounts/src/models/Account.ts:132](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L132)
 
 Get all ancestor accounts (recursive)
 
@@ -850,7 +850,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getBalance**(): `Promise`\<`number`\>
 
-Defined in: accounts/src/models/Account.ts:241
+Defined in: [accounts/src/models/Account.ts:241](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L241)
 
 Calculate the balance for this account
 Sum of all transaction entries (debits positive, credits negative)
@@ -867,7 +867,7 @@ Balance in smallest currency unit (e.g., cents)
 
 > **getChildren**(): `Promise`\<`Account`[]\>
 
-Defined in: accounts/src/models/Account.ts:111
+Defined in: [accounts/src/models/Account.ts:111](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L111)
 
 Get immediate child accounts
 
@@ -883,7 +883,7 @@ Array of child Account instances
 
 > **getDepth**(): `Promise`\<`number`\>
 
-Defined in: accounts/src/models/Account.ts:209
+Defined in: [accounts/src/models/Account.ts:209](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L209)
 
 Get the depth of this account in the hierarchy
 
@@ -899,7 +899,7 @@ Number of ancestors (0 for root accounts)
 
 > **getDescendants**(): `Promise`\<`Account`[]\>
 
-Defined in: accounts/src/models/Account.ts:151
+Defined in: [accounts/src/models/Account.ts:151](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L151)
 
 Get all descendant accounts (recursive)
 
@@ -959,7 +959,7 @@ Gets the value of a field on this object
 
 > **getHierarchy**(): `Promise`\<\{ `ancestors`: `Account`[]; `current`: `Account`; `descendants`: `Account`[]; \}\>
 
-Defined in: accounts/src/models/Account.ts:178
+Defined in: [accounts/src/models/Account.ts:178](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L178)
 
 Get full hierarchy for this account
 
@@ -995,7 +995,7 @@ Promise resolving to the object's ID
 
 > **getMetadata**(): `Record`\<`string`, `unknown`\>
 
-Defined in: accounts/src/models/Account.ts:55
+Defined in: [accounts/src/models/Account.ts:55](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L55)
 
 Get metadata as parsed object
 
@@ -1011,7 +1011,7 @@ Parsed metadata object or empty object
 
 > **getParent**(): `Promise`\<`Account` \| `null`\>
 
-Defined in: accounts/src/models/Account.ts:88
+Defined in: [accounts/src/models/Account.ts:88](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L88)
 
 Get the parent account
 
@@ -1100,7 +1100,7 @@ const orders = await customer.getRelated('orders');
 
 > **getRootAccount**(): `Promise`\<`Account`\>
 
-Defined in: accounts/src/models/Account.ts:168
+Defined in: [accounts/src/models/Account.ts:168](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L168)
 
 Get root account (top-level account with no parent)
 
@@ -1156,7 +1156,7 @@ Promise resolving to the object's slug
 
 > **getTransactionEntries**(): `Promise`\<`any`\>
 
-Defined in: accounts/src/models/Account.ts:219
+Defined in: [accounts/src/models/Account.ts:219](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L219)
 
 Get all transaction entries for this account
 
@@ -1266,7 +1266,7 @@ if (order.isRelatedLoaded('customer')) {
 
 > **isRoot**(): `boolean`
 
-Defined in: accounts/src/models/Account.ts:200
+Defined in: [accounts/src/models/Account.ts:200](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L200)
 
 Check if account is a root account (no parent)
 
@@ -1645,6 +1645,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1697,7 +1730,7 @@ Promise resolving to this object
 
 > **setMetadata**(`data`): `void`
 
-Defined in: accounts/src/models/Account.ts:69
+Defined in: [accounts/src/models/Account.ts:69](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L69)
 
 Set metadata from object
 
@@ -1739,7 +1772,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateMetadata**(`updates`): `void`
 
-Defined in: accounts/src/models/Account.ts:78
+Defined in: [accounts/src/models/Account.ts:78](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/models/Account.ts#L78)
 
 Update metadata by merging with existing values
 

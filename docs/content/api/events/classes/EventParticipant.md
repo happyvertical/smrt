@@ -1,6 +1,6 @@
 # Class: EventParticipant
 
-Defined in: events/src/models/EventParticipant.ts:15
+Defined in: [events/src/models/EventParticipant.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L15)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: events/src/models/EventParticipant.ts:15
 
 > **new EventParticipant**(`options`): `EventParticipant`
 
-Defined in: events/src/models/EventParticipant.ts:31
+Defined in: [events/src/models/EventParticipant.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L31)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: events/src/models/EventParticipant.ts:28
+Defined in: [events/src/models/EventParticipant.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L28)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: events/src/models/EventParticipant.ts:28
 
 > **eventId**: `string` = `''`
 
-Defined in: events/src/models/EventParticipant.ts:18
+Defined in: [events/src/models/EventParticipant.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L18)
 
 ***
 
@@ -190,7 +190,7 @@ Defined in: events/src/models/EventParticipant.ts:18
 
 > **externalId**: `string` = `''`
 
-Defined in: events/src/models/EventParticipant.ts:24
+Defined in: [events/src/models/EventParticipant.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L24)
 
 ***
 
@@ -198,7 +198,7 @@ Defined in: events/src/models/EventParticipant.ts:24
 
 > **groupId**: `string` = `''`
 
-Defined in: events/src/models/EventParticipant.ts:22
+Defined in: [events/src/models/EventParticipant.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L22)
 
 ***
 
@@ -206,7 +206,7 @@ Defined in: events/src/models/EventParticipant.ts:22
 
 > **metadata**: `string` = `''`
 
-Defined in: events/src/models/EventParticipant.ts:23
+Defined in: [events/src/models/EventParticipant.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L23)
 
 ***
 
@@ -244,7 +244,7 @@ Initialized by parent constructor via super() call.
 
 > **placement**: `number` \| `null` = `null`
 
-Defined in: events/src/models/EventParticipant.ts:21
+Defined in: [events/src/models/EventParticipant.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L21)
 
 ***
 
@@ -252,7 +252,7 @@ Defined in: events/src/models/EventParticipant.ts:21
 
 > **profileId**: `string` = `''`
 
-Defined in: events/src/models/EventParticipant.ts:19
+Defined in: [events/src/models/EventParticipant.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L19)
 
 ***
 
@@ -260,7 +260,7 @@ Defined in: events/src/models/EventParticipant.ts:19
 
 > **role**: `string` = `''`
 
-Defined in: events/src/models/EventParticipant.ts:20
+Defined in: [events/src/models/EventParticipant.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L20)
 
 ***
 
@@ -268,7 +268,7 @@ Defined in: events/src/models/EventParticipant.ts:20
 
 > **source**: `string` = `''`
 
-Defined in: events/src/models/EventParticipant.ts:25
+Defined in: [events/src/models/EventParticipant.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L25)
 
 ***
 
@@ -290,7 +290,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: events/src/models/EventParticipant.ts:29
+Defined in: [events/src/models/EventParticipant.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L29)
 
 ## Accessors
 
@@ -300,7 +300,7 @@ Defined in: events/src/models/EventParticipant.ts:29
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -364,7 +364,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -384,7 +384,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -448,7 +448,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -514,7 +514,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -593,7 +593,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -858,7 +858,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getEvent**(): `Promise`\<`any`\>
 
-Defined in: events/src/models/EventParticipant.ts:93
+Defined in: [events/src/models/EventParticipant.ts:93](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L93)
 
 Get the event for this participant
 
@@ -918,7 +918,7 @@ Gets the value of a field on this object
 
 > **getGroupParticipants**(): `Promise`\<`EventParticipant`[]\>
 
-Defined in: events/src/models/EventParticipant.ts:126
+Defined in: [events/src/models/EventParticipant.ts:126](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L126)
 
 Get group participants (others with same groupId)
 
@@ -954,7 +954,7 @@ Promise resolving to the object's ID
 
 > **getMetadata**(): `Record`\<`string`, `any`\>
 
-Defined in: events/src/models/EventParticipant.ts:60
+Defined in: [events/src/models/EventParticipant.ts:60](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L60)
 
 Get metadata as parsed object
 
@@ -970,7 +970,7 @@ Parsed metadata object or empty object
 
 > **getProfile**(): `Promise`\<`any`\>
 
-Defined in: events/src/models/EventParticipant.ts:107
+Defined in: [events/src/models/EventParticipant.ts:107](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L107)
 
 Get the profile for this participant
 
@@ -1157,7 +1157,7 @@ Error if the AI response is invalid
 
 > **isAway**(): `boolean`
 
-Defined in: events/src/models/EventParticipant.ts:156
+Defined in: [events/src/models/EventParticipant.ts:158](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L158)
 
 Check if this is an away participant (placement = 1)
 
@@ -1173,7 +1173,7 @@ True if placement is 1
 
 > **isHome**(): `boolean`
 
-Defined in: events/src/models/EventParticipant.ts:147
+Defined in: [events/src/models/EventParticipant.ts:149](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L149)
 
 Check if this is a home participant (placement = 0)
 
@@ -1588,6 +1588,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1640,7 +1673,7 @@ Promise resolving to this object
 
 > **setMetadata**(`data`): `void`
 
-Defined in: events/src/models/EventParticipant.ts:74
+Defined in: [events/src/models/EventParticipant.ts:74](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L74)
 
 Set metadata from object
 
@@ -1682,7 +1715,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateMetadata**(`updates`): `void`
 
-Defined in: events/src/models/EventParticipant.ts:83
+Defined in: [events/src/models/EventParticipant.ts:83](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventParticipant.ts#L83)
 
 Update metadata by merging with existing values
 

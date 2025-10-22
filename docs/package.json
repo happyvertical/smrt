@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/docs",
+  "name": "@happyvertical/smrt-docs",
   "version": "0.41.0",
   "private": true,
   "main": "docusaurus.config.ts",

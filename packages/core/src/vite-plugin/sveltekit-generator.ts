@@ -127,8 +127,8 @@ async function generateSmrtConfigFile(
 // Import SMRT objects to register them via @smrt() decorators
 import './smrt-register.js';
 
-import { ObjectRegistry } from '@smrt/core';
-import type { SmrtClassOptions } from '@smrt/core';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 
 /**
  * Per-object configuration overrides

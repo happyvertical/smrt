@@ -1,6 +1,6 @@
 # Class: ProfileTypeCollection
 
-Defined in: profiles/src/collections/ProfileTypeCollection.ts:10
+Defined in: [profiles/src/collections/ProfileTypeCollection.ts:10](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/collections/ProfileTypeCollection.ts#L10)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: profiles/src/collections/ProfileTypeCollection.ts:10
 
 > `protected` **new ProfileTypeCollection**(`options?`): `ProfileTypeCollection`
 
-Defined in: core/dist/collection.d.ts:45
+Defined in: core/dist/collection.d.ts:59
 
 Creates a new SmrtCollection instance
 
@@ -126,7 +126,7 @@ Signal bus for method execution tracking
 
 > **\_tableName**: `string`
 
-Defined in: core/dist/collection.d.ts:38
+Defined in: core/dist/collection.d.ts:52
 
 Database table name for this collection
 
@@ -154,7 +154,7 @@ Configuration options provided to the class
 
 > `readonly` `static` **\_itemClass**: *typeof* [`ProfileType`](ProfileType.md) = `ProfileType`
 
-Defined in: profiles/src/collections/ProfileTypeCollection.ts:11
+Defined in: [profiles/src/collections/ProfileTypeCollection.ts:11](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/collections/ProfileTypeCollection.ts#L11)
 
 Static reference to the item class constructor
 
@@ -170,7 +170,7 @@ Static reference to the item class constructor
 
 > **get** `protected` **\_itemClass**(): (`options`) => `ModelType` & `object`
 
-Defined in: core/dist/collection.d.ts:23
+Defined in: core/dist/collection.d.ts:37
 
 Gets the class constructor for items in this collection
 
@@ -190,7 +190,7 @@ Gets the class constructor for items in this collection
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -210,7 +210,7 @@ Gets the AI client instance
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -230,7 +230,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -250,7 +250,7 @@ Gets the filesystem adapter instance
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -272,7 +272,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -293,7 +293,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: core/dist/collection.d.ts:217
+Defined in: core/dist/collection.d.ts:231
 
 Gets the database table name for this collection
 
@@ -311,7 +311,7 @@ Gets the database table name for this collection
 
 > **count**(`options?`): `Promise`\<`number`\>
 
-Defined in: core/dist/collection.d.ts:233
+Defined in: core/dist/collection.d.ts:247
 
 Counts records in the collection matching the given filters
 
@@ -345,7 +345,7 @@ Promise resolving to the total count of matching records
 
 > **create**(`options`): `Promise`\<[`ProfileType`](ProfileType.md)\>
 
-Defined in: core/dist/collection.d.ts:177
+Defined in: core/dist/collection.d.ts:191
 
 Creates a new instance of the collection's item class
 
@@ -373,7 +373,7 @@ New item instance
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -404,7 +404,7 @@ product.destroy(); // Clean up when done
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:334
+Defined in: core/dist/collection.d.ts:348
 
 Forget collection-level context
 
@@ -450,7 +450,7 @@ await documentCollection.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: core/dist/collection.d.ts:354
+Defined in: core/dist/collection.d.ts:368
 
 Forget all collection-level context in a scope
 
@@ -496,7 +496,7 @@ const count = await documentCollection.forgetScope({
 
 > **generateSchema**(): `string`
 
-Defined in: core/dist/collection.d.ts:213
+Defined in: core/dist/collection.d.ts:227
 
 Generates database schema for the collection's item class
 
@@ -518,7 +518,7 @@ Schema object for database setup
 
 > **generateTableName**(): `string`
 
-Defined in: core/dist/collection.d.ts:223
+Defined in: core/dist/collection.d.ts:237
 
 Generates a table name from the collection class name
 
@@ -538,7 +538,7 @@ Generated table name
 
 > **get**(`filter`): `Promise`\<[`ProfileType`](ProfileType.md) \| `null`\>
 
-Defined in: core/dist/collection.d.ts:84
+Defined in: core/dist/collection.d.ts:98
 
 Retrieves a single object from the collection by ID, slug, or custom filter
 
@@ -566,7 +566,7 @@ Promise resolving to the object or null if not found
 
 > **getBySlug**(`slug`): `Promise`\<[`ProfileType`](ProfileType.md) \| `null`\>
 
-Defined in: profiles/src/collections/ProfileTypeCollection.ts:19
+Defined in: [profiles/src/collections/ProfileTypeCollection.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/collections/ProfileTypeCollection.ts#L19)
 
 Get profile type by slug
 
@@ -590,7 +590,7 @@ ProfileType instance or null
 
 > **getDiff**(`existing`, `data`): `Record`\<`string`, `any`\>
 
-Defined in: core/dist/collection.d.ts:193
+Defined in: core/dist/collection.d.ts:207
 
 Gets differences between an existing object and new data
 
@@ -624,7 +624,7 @@ Object containing only the changed fields
 
 > **getFields**(): `Record`\<`string`, `any`\>
 
-Defined in: core/dist/collection.d.ts:205
+Defined in: core/dist/collection.d.ts:219
 
 Gets field definitions for the collection's item class
 
@@ -644,7 +644,7 @@ Object containing field definitions
 
 > **getOrCreateBySlug**(`slug`, `defaults`): `Promise`\<[`ProfileType`](ProfileType.md)\>
 
-Defined in: profiles/src/collections/ProfileTypeCollection.ts:30
+Defined in: [profiles/src/collections/ProfileTypeCollection.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/collections/ProfileTypeCollection.ts#L30)
 
 Get or create a profile type by slug
 
@@ -680,7 +680,7 @@ ProfileType instance
 
 > **getOrUpsert**(`data`, `defaults?`): `Promise`\<[`ProfileType`](ProfileType.md)\>
 
-Defined in: core/dist/collection.d.ts:185
+Defined in: core/dist/collection.d.ts:199
 
 Gets an existing item or creates a new one if it doesn't exist
 
@@ -714,7 +714,7 @@ Promise resolving to the existing or new object
 
 > **initialize**(): `Promise`\<`ProfileTypeCollection`\>
 
-Defined in: core/dist/collection.d.ts:77
+Defined in: core/dist/collection.d.ts:91
 
 Initializes the collection, setting up database tables
 
@@ -734,7 +734,7 @@ Promise that resolves to this instance for chaining
 
 > **list**(`options`): `Promise`\<[`ProfileType`](ProfileType.md)[]\>
 
-Defined in: core/dist/collection.d.ts:124
+Defined in: core/dist/collection.d.ts:138
 
 Lists records from the collection with flexible filtering options
 
@@ -830,7 +830,7 @@ await users.list({
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: core/dist/collection.d.ts:291
+Defined in: core/dist/collection.d.ts:305
 
 Recall collection-level context
 
@@ -885,7 +885,7 @@ const strategy = await documentCollection.recall({
 
 > **recallAll**(`options?`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: core/dist/collection.d.ts:313
+Defined in: core/dist/collection.d.ts:327
 
 Recall all collection-level context in a scope
 
@@ -935,7 +935,7 @@ const strategies = await documentCollection.recallAll({
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:264
+Defined in: core/dist/collection.d.ts:278
 
 Remember collection-level context
 
@@ -1013,11 +1013,44 @@ await documentCollection.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtCollection.requiresDatabase`
+
+***
+
 ### setupDb()
 
 > **setupDb**(): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:199
+Defined in: core/dist/collection.d.ts:213
 
 Sets up the database schema for this collection
 
@@ -1037,7 +1070,7 @@ Promise that resolves when setup is complete
 
 > `static` **create**\<`T`\>(`this`, `options?`): `Promise`\<`any`\>
 
-Defined in: core/dist/collection.d.ts:71
+Defined in: core/dist/collection.d.ts:85
 
 Static factory method for creating fully initialized collection instances
 
@@ -1095,7 +1128,7 @@ const collection = await (ProductCollection as any).create({
 
 > `static` **validate**(): `void`
 
-Defined in: core/dist/collection.d.ts:34
+Defined in: core/dist/collection.d.ts:48
 
 Validates that the collection is properly configured
 Call this during development to catch configuration issues early
