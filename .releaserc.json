@@ -1,4 +1,6 @@
 {
+  "$comment": "SMRT Framework Release Configuration - Pre-1.0 Versioning Policy",
+  "$note": "This project intentionally stays in 0.x.x versioning until the API is stable and production-ready. Breaking changes should be treated as minor bumps (0.x.0) rather than major bumps (1.x.0) until we consciously decide to release 1.0.0.",
   "branches": [
     {"name": "main", "prerelease": false}
   ],
