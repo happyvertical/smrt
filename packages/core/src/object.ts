@@ -11,17 +11,13 @@ import {
 } from './errors';
 import { Field } from './fields/index';
 import { ObjectRegistry } from './registry';
+import { setupTableFromClass } from './schema/utils';
 import {
   executeToolCall as executeToolCallInternal,
   type ToolCall,
   type ToolCallResult,
 } from './tools/tool-executor';
-import {
-  fieldsFromClass,
-  setupTableFromClass,
-  tableNameFromClass,
-  toSnakeCase,
-} from './utils';
+import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
 
 /**
  * Options for SmrtObject initialization

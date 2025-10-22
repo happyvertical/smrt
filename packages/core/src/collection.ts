@@ -3,11 +3,11 @@ import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
+import { generateSchema } from './schema/utils';
 import {
   fieldsFromClass,
   formatDataJs,
   formatDataSql,
-  generateSchema,
   tableNameFromClass,
   toSnakeCase,
 } from './utils';
@@ -669,7 +669,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     this._db_setup_promise = (async () => {
       try {
-        const schema = this.generateSchema();
+        const schema = await this.generateSchema();
         console.log(
           `[Collection] Generated schema for ${this.tableName}:`,
           schema,
@@ -700,9 +700,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @returns Schema object for database setup
    */
-  generateSchema() {
+  async generateSchema() {
     // Always generate fresh schema to ensure latest field mapping is used
-    return generateSchema(this._itemClass);
+    return await generateSchema(this._itemClass);
   }
 
   /**

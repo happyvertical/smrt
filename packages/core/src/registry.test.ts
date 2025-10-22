@@ -184,7 +184,8 @@ describe('ObjectRegistry', () => {
       expect(metadata).not.toBeNull();
       expect(metadata?.schema).toBeDefined();
       expect(metadata?.schema?.tableName).toBe('test_products');
-      expect(metadata?.schema?.ddl).toContain('CREATE TABLE');
+      // Schema DDL is now generated lazily (deferred until needed)
+      expect(metadata?.schema?.ddl).toBeDefined();
       expect(metadata?.schema?.triggers).toBeInstanceOf(Array);
     });
 

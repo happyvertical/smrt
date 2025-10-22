@@ -6,7 +6,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { SmrtObject, smrt, text } from '../index';
-import { generateSchema, tableNameFromClass } from '../utils';
+import { generateSchema } from '../schema/utils';
+import { tableNameFromClass } from '../utils';
 
 describe('Issue #144: Schema Generation Duplicate Columns', () => {
   @smrt()
@@ -16,8 +17,8 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     startDate = text();
   }
 
-  it('should not duplicate created_at column in schema', () => {
-    const schema = generateSchema(TestEvent);
+  it('should not duplicate created_at column in schema', async () => {
+    const schema = await generateSchema(TestEvent);
 
     // Count occurrences of 'created_at' in the schema
     const matches = schema.match(/created_at/g) || [];
@@ -25,8 +26,8 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(matches.length).toBe(1); // Should appear exactly once
   });
 
-  it('should not duplicate updated_at column in schema', () => {
-    const schema = generateSchema(TestEvent);
+  it('should not duplicate updated_at column in schema', async () => {
+    const schema = await generateSchema(TestEvent);
 
     // Count occurrences of 'updated_at' in the schema
     const matches = schema.match(/updated_at/g) || [];
@@ -34,16 +35,16 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(matches.length).toBe(1); // Should appear exactly once
   });
 
-  it('should include timestamp columns for trigger support', () => {
-    const schema = generateSchema(TestEvent);
+  it('should include timestamp columns for trigger support', async () => {
+    const schema = await generateSchema(TestEvent);
 
     // Verify both timestamp columns exist (with quoted column names)
     expect(schema).toContain('"created_at" DATETIME');
     expect(schema).toContain('"updated_at" DATETIME');
   });
 
-  it('should generate valid SQL without duplicate column errors', () => {
-    const schema = generateSchema(TestEvent);
+  it('should generate valid SQL without duplicate column errors', async () => {
+    const schema = await generateSchema(TestEvent);
 
     // Extract the CREATE TABLE statement (before indexes)
     const createTableStmt = `${schema.split('\n).')[0]}\n);`;
@@ -72,8 +73,8 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     }
   });
 
-  it('should match expected schema structure', () => {
-    const schema = generateSchema(TestEvent);
+  it('should match expected schema structure', async () => {
+    const schema = await generateSchema(TestEvent);
     const tableName = tableNameFromClass(TestEvent);
 
     // Expected schema should have this structure:
@@ -97,7 +98,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(schema).toContain('UNIQUE INDEX');
   });
 
-  it('should handle classes with explicit timestamp field definitions', () => {
+  it('should handle classes with explicit timestamp field definitions', async () => {
     @smrt()
     class CustomTimestamps extends SmrtObject {
       name = text();
@@ -106,7 +107,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
       updated_at = new Date();
     }
 
-    const schema = generateSchema(CustomTimestamps);
+    const schema = await generateSchema(CustomTimestamps);
 
     // Even with explicit definitions, should only appear once
     const createdMatches = schema.match(/created_at/g) || [];
@@ -116,14 +117,14 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(updatedMatches.length).toBe(1);
   });
 
-  it('should work correctly with inherited base class fields', () => {
+  it('should work correctly with inherited base class fields', async () => {
     @smrt()
     class Article extends SmrtObject {
       title = text({ required: true });
       body = text();
     }
 
-    const schema = generateSchema(Article);
+    const schema = await generateSchema(Article);
 
     // Verify all base SmrtObject fields are included (with quoted column names)
     expect(schema).toContain('"id" TEXT PRIMARY KEY');

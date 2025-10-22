@@ -10,7 +10,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
-import { generateSchema } from '../utils';
+import { generateSchema } from '../schema/utils';
 
 // Test classes that mimic Event and Profile from their respective packages
 @smrt()
@@ -73,8 +73,8 @@ describe('Issue #144: Integration Test with Real Collections', () => {
     expect(profiles).toBeDefined();
   });
 
-  it('should generate valid schema for Event class', () => {
-    const schema = generateSchema(TestEvent);
+  it('should generate valid schema for Event class', async () => {
+    const schema = await generateSchema(TestEvent);
 
     // Verify no duplicate columns
     const createdMatches = schema.match(/created_at/g) || [];
@@ -88,8 +88,8 @@ describe('Issue #144: Integration Test with Real Collections', () => {
     expect(schema).toContain('"updated_at" DATETIME');
   });
 
-  it('should generate valid schema for Profile class', () => {
-    const schema = generateSchema(TestProfile);
+  it('should generate valid schema for Profile class', async () => {
+    const schema = await generateSchema(TestProfile);
 
     // Verify no duplicate columns
     const createdMatches = schema.match(/created_at/g) || [];
