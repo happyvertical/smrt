@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/happyvertical/smrt/compare/v1.2.0...v1.2.1) (2025-10-22)
+
+
+### Bug Fixes
+
+* **release:** correct version to 0.3.0 and prevent future 1.0+ bumps ([748dcc8](https://github.com/happyvertical/smrt/commit/748dcc88a66963b7006798abb8c3d6487dd16b31))
+
 # [1.2.0](https://github.com/happyvertical/smrt/compare/v1.1.2...v1.2.0) (2025-10-22)
 
 
