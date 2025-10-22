@@ -1,3 +1,18 @@
+# [1.2.0](https://github.com/happyvertical/smrt/compare/v1.1.2...v1.2.0) (2025-10-22)
+
+
+### Bug Fixes
+
+* **ci:** build SDK sql package with externalized SMRT dependency ([b2b870e](https://github.com/happyvertical/smrt/commit/b2b870eb062020cc566cb3a1dd6936967fce8d6a))
+* **core:** externalize @happyvertical/* packages in vite build ([e74ab29](https://github.com/happyvertical/smrt/commit/e74ab29e7aded985f709504b2d16dd0709847da2))
+* exclude SDK docs package (@have/docs) from build filters ([73f0efb](https://github.com/happyvertical/smrt/commit/73f0efbe21390240dc57508f67377e23f145a6a1))
+* exclude SDK docs package from workflow build step ([fc0e793](https://github.com/happyvertical/smrt/commit/fc0e79395f3808cc0505541e1bf4e1ac33c44257))
+* **profiles:** resolve TypeScript type errors in profiles package ([e2fec11](https://github.com/happyvertical/smrt/commit/e2fec111f5327b37a558d0f84df92a75869915f6))
+* rename docs to @happyvertical/smrt-docs ([fcd54c9](https://github.com/happyvertical/smrt/commit/fcd54c9d40eb3f004f259a45ecc821573d79d0ca))
+* **tests:** update test imports from @smrt/core to @happyvertical/smrt-core ([981ddd7](https://github.com/happyvertical/smrt/commit/981ddd730000db06d3e744434ff615cb97e78543))
+* update @smrt/places and @smrt/profiles imports to new package names ([1a753f7](https://github.com/happyvertical/smrt/commit/1a753f7c2c8d3ad2eaa669f1f98b18202c5c4a85))
+* update build script filters and SDK docs package name ([a4acefd](https://github.com/happyvertical/smrt/commit/a4acefdf36e8e3b230538f0cb01b7de7eaf767d5))
+
 ## [1.1.2](https://github.com/happyvertical/smrt/compare/v1.1.1...v1.1.2) (2025-10-21)
 
 
