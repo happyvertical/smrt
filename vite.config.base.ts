@@ -149,7 +149,7 @@ export function createPackageConfig(packageName: string) {
           '**/*.d.ts',
         ],
         insertTypesEntry: false, // We handle this in package.json
-        rollupTypes: false,
+        rollupTypes: true, // Bundle types to preserve type-only exports
         // Use package-specific tsconfig
         tsconfigPath: resolve(packageDir, 'tsconfig.json'),
       }),
