@@ -134,6 +134,7 @@ export default defineConfig({
 
         // External SDK packages
         /^@have\//,
+        /^@happyvertical\//,
 
         // Virtual modules
         '@smrt/routes',
