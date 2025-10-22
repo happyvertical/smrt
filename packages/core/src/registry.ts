@@ -284,7 +284,20 @@ export class ObjectRegistry {
           _skipRegistration: true,
         });
 
-        for (const key of Object.getOwnPropertyNames(tempInstance)) {
+        // Traverse prototype chain to collect inherited fields (Issue #50)
+        const allProperties = new Set<string>();
+        let currentProto = tempInstance;
+
+        while (currentProto && currentProto !== Object.prototype) {
+          // Get own properties from this level of the chain
+          for (const key of Object.getOwnPropertyNames(currentProto)) {
+            allProperties.add(key);
+          }
+          currentProto = Object.getPrototypeOf(currentProto);
+        }
+
+        // First pass: look for Field instances (from field helpers like text())
+        for (const key of allProperties) {
           // Skip protected properties - this fixes Issue #13
           if (key.startsWith('_') || key.startsWith('#') || key === 'options') {
             continue;
@@ -300,7 +313,7 @@ export class ObjectRegistry {
 
         // If no Field instances found, infer from primitive properties
         if (fields.size === 0) {
-          for (const key of Object.getOwnPropertyNames(tempInstance)) {
+          for (const key of allProperties) {
             // Skip protected properties
             if (
               key.startsWith('_') ||
