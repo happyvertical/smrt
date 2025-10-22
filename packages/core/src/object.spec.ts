@@ -103,4 +103,51 @@ describe('SmrtObject', () => {
       expect(obj.count).toBe(5);
     });
   });
+
+  describe('Readonly Property Handling (Issue #61)', () => {
+    // Test class with custom tableName in decorator
+    @smrt({ tableName: 'custom_councils' })
+    class Council extends SmrtObject {
+      name: string = '';
+      description?: string = '';
+    }
+
+    it('should not throw error when tableName is specified in decorator', async () => {
+      // This would previously throw:
+      // "TypeError: Cannot set property tableName of #<SmrtObject> which has only a getter"
+      expect(async () => {
+        const council = new Council({
+          name: 'Test Council',
+          description: 'A test council',
+          _skipLoad: true,
+        });
+        await council.initialize();
+      }).not.toThrow();
+    });
+
+    it('should allow accessing tableName getter after initialization', async () => {
+      const council = new Council({
+        name: 'Test Council',
+        _skipLoad: true,
+      });
+      await council.initialize();
+
+      // The tableName getter should return the value from the decorator
+      expect(council.tableName).toBe('custom_councils');
+    });
+
+    it('should handle object creation with property values', async () => {
+      const council = new Council({
+        name: 'City Council',
+        description: 'Main city governing body',
+        _skipLoad: true,
+      });
+      await council.initialize();
+
+      // Verify all properties were set correctly
+      expect(council.name).toBe('City Council');
+      expect(council.description).toBe('Main city governing body');
+      expect(council.tableName).toBe('custom_councils');
+    });
+  });
 });
