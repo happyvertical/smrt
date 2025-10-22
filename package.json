@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "scripts": {
     "format": "biome format --write .",
     "format-check": "biome ci --diagnostic-level=error .",
@@ -70,21 +70,21 @@
   "packageManager": "pnpm@9.15.0",
   "pnpm": {
     "overrides": {
-      "@happyvertical/ai": "workspace:*",
-      "@happyvertical/cache": "workspace:*",
-      "@happyvertical/smrt-config": "workspace:*",
-      "@happyvertical/documents": "workspace:*",
-      "@happyvertical/email": "workspace:*",
-      "@happyvertical/files": "workspace:*",
-      "@happyvertical/geo": "workspace:*",
-      "@happyvertical/languages": "workspace:*",
-      "@happyvertical/logger": "workspace:*",
-      "@happyvertical/ocr": "workspace:*",
-      "@happyvertical/pdf": "workspace:*",
-      "@happyvertical/spider": "workspace:*",
-      "@happyvertical/sql": "workspace:*",
-      "@happyvertical/translator": "workspace:*",
-      "@happyvertical/utils": "workspace:*"
+      "@have/ai": "workspace:*",
+      "@have/cache": "workspace:*",
+      "@have/config": "workspace:*",
+      "@have/documents": "workspace:*",
+      "@have/email": "workspace:*",
+      "@have/files": "workspace:*",
+      "@have/geo": "workspace:*",
+      "@have/languages": "workspace:*",
+      "@have/logger": "workspace:*",
+      "@have/ocr": "workspace:*",
+      "@have/pdf": "workspace:*",
+      "@have/spider": "workspace:*",
+      "@have/sql": "workspace:*",
+      "@have/translator": "workspace:*",
+      "@have/utils": "workspace:*"
     }
   }
 }
