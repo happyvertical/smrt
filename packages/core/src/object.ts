@@ -160,8 +160,49 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Smart clone helper to avoid array/object aliasing (Issue #22)
+   *
+   * Clones values to prevent shared references between options and instance properties:
+   * - Primitives (string, number, boolean, null, undefined): No clone needed
+   * - Dates: No clone needed (immutable)
+   * - Field instances: No clone needed (framework objects)
+   * - Arrays: Shallow clone
+   * - Plain objects: Shallow clone
+   * - Other objects: Pass through (class instances, etc.)
+   *
+   * @param value - Value to clone
+   * @returns Cloned value or original if no cloning needed
+   * @private
+   */
+  private cloneValue(value: any): any {
+    // Primitives and null/undefined - no clone needed
+    if (value === null || value === undefined) return value;
+    if (typeof value !== 'object') return value;
+
+    // Dates - immutable, no clone needed
+    if (value instanceof Date) return value;
+
+    // Field instances - framework objects, don't clone
+    if (value instanceof Field) return value;
+
+    // Arrays - shallow clone to avoid aliasing
+    if (Array.isArray(value)) return [...value];
+
+    // Plain objects - shallow clone to avoid aliasing
+    // Check if it's a plain object (created via {} or Object.create(null))
+    const proto = Object.getPrototypeOf(value);
+    if (proto === null || proto === Object.prototype) {
+      return { ...value };
+    }
+
+    // Other objects (class instances, etc.) - pass through
+    return value;
+  }
+
+  /**
    * Initialize properties from options after field initializers have run
    * This ensures option values take precedence over default field initializer values
+   * Uses smart cloning to prevent array/object aliasing (Issue #22)
    */
   private initializePropertiesFromOptions(): void {
     const options = this.options;
@@ -181,12 +222,15 @@ export class SmrtObject extends SmrtClass {
     // Apply option values to all fields
     for (const [key, field] of Object.entries(fields)) {
       if (options[key] !== undefined) {
+        // Clone value to avoid aliasing (Issue #22)
+        const clonedValue = this.cloneValue(options[key]);
+
         // Set the property value
-        this[key as keyof this] = options[key];
+        this[key as keyof this] = clonedValue;
 
         // If it's a Field instance, also update field.value
         if (field instanceof Field) {
-          field.value = options[key];
+          field.value = clonedValue;
         }
       }
     }
@@ -715,6 +759,40 @@ export class SmrtObject extends SmrtClass {
    */
   public async do(instructions: string, options: any = {}) {
     const prompt = `--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
+
+    // Get available tools for AI function calling
+    const tools = this.getAvailableTools();
+
+    const result = await this.ai.message(prompt, {
+      ...options,
+      tools: tools.length > 0 ? tools : undefined,
+    });
+
+    return result;
+  }
+
+  /**
+   * Generates a description of this object using AI (Issue #52)
+   *
+   * Creates a concise, human-readable description based on the object's content
+   * and properties. Useful for summaries, previews, and documentation.
+   *
+   * @param options - AI message options (can include style, length, focus, etc.)
+   * @returns Promise resolving to the AI-generated description
+   *
+   * @example
+   * ```typescript
+   * const product = await products.get('product-123');
+   * const description = await product.describe();
+   * // "A high-quality widget for home improvement..."
+   *
+   * // With custom options
+   * const shortDesc = await product.describe({ maxTokens: 50 });
+   * // "Premium widget, steel construction"
+   * ```
+   */
+  public async describe(options: any = {}) {
+    const prompt = `Generate a concise, professional description of this object based on its content and properties. The description should be clear, informative, and suitable for display to end users. Focus on the most important and distinctive characteristics.`;
 
     // Get available tools for AI function calling
     const tools = this.getAvailableTools();

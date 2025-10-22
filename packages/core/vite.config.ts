@@ -10,18 +10,30 @@ function getCoreEntries() {
   const entries: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(
-    pkg.exports as Record<string, string>,
+    pkg.exports as Record<string, string | Record<string, string>>,
   )) {
+    // Handle conditional exports (objects with browser/default keys)
+    let exportPath: string;
+    if (typeof value === 'object' && value !== null) {
+      // Use 'default' export for build (Node.js entry point)
+      exportPath = value.default || value.browser || '';
+    } else {
+      exportPath = value as string;
+    }
+
     // Convert export key to entry name: '.' → 'index', './fields' → 'fields'
     const entryName = key === '.' ? 'index' : key.replace(/^\.\//, '');
 
     // Convert dist path to source path: './dist/fields.js' → 'src/fields.ts'
-    const sourcePath = value
+    const sourcePath = exportPath
       .replace(/^\.\/dist\//, 'src/')
       .replace(/\.js$/, '.ts');
 
     entries[entryName] = resolve(__dirname, sourcePath);
   }
+
+  // Also add browser entry point
+  entries['browser'] = resolve(__dirname, 'src/browser.ts');
 
   return entries;
 }
