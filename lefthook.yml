@@ -10,7 +10,7 @@ pre-commit:
         - CI
   commands:
     format:
-      glob: "*.{ts,js,json,md}"
+      glob: "*.{ts,js,tsx,jsx,svelte}"
       run: npx biome check --write --unsafe {staged_files}
       stage_fixed: true
       fail_text: |
