@@ -221,8 +221,18 @@ export class SmrtObject extends SmrtClass {
         // Clone value to avoid aliasing (Issue #22)
         const clonedValue = this.cloneValue(options[key]);
 
-        // Set the property value
-        this[key as keyof this] = clonedValue;
+        // Check if property is writable before setting (Issue #61)
+        // Get descriptor from instance or prototype chain
+        const descriptor =
+          Object.getOwnPropertyDescriptor(this, key) ||
+          Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), key);
+
+        // Only set if property has a setter or is writable
+        // Skip readonly properties (e.g., tableName getter without setter)
+        if (!descriptor || descriptor.set || descriptor.writable !== false) {
+          // Set the property value
+          this[key as keyof this] = clonedValue;
+        }
 
         // If it's a Field instance, also update field.value
         if (field instanceof Field) {
