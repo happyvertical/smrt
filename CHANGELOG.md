@@ -1,3 +1,11 @@
+## [1.2.2](https://github.com/happyvertical/smrt/compare/v1.2.1...v1.2.2) (2025-10-22)
+
+
+### Bug Fixes
+
+* **core,profiles:** fix schema inheritance, browser exports, aliasing, and exports ([b8bd11e](https://github.com/happyvertical/smrt/commit/b8bd11e55eb95d66cde879f20a5ab1c542473724)), closes [#51](https://github.com/happyvertical/smrt/issues/51) [#22](https://github.com/happyvertical/smrt/issues/22) [#52](https://github.com/happyvertical/smrt/issues/52) [#50](https://github.com/happyvertical/smrt/issues/50) [#51](https://github.com/happyvertical/smrt/issues/51) [#22](https://github.com/happyvertical/smrt/issues/22) [#52](https://github.com/happyvertical/smrt/issues/52)
+* **core:** handle conditional exports in vite config ([3f7d200](https://github.com/happyvertical/smrt/commit/3f7d200590f9ccd38860319acae76bbbe2bf132b))
+
 ## [1.2.1](https://github.com/happyvertical/smrt/compare/v1.2.0...v1.2.1) (2025-10-22)
 
 
