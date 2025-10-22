@@ -5,6 +5,7 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { text } from '@happyvertical/smrt-core/fields';
 import type { PlaceTypeOptions } from '../types';
 
 @smrt({
@@ -14,7 +15,7 @@ import type { PlaceTypeOptions } from '../types';
 })
 export class PlaceType extends SmrtObject {
   // id and slug are inherited from SmrtObject
-  // name is also inherited from SmrtObject
+  name = text({ required: true }); // Type name (e.g., 'Town', 'City', 'Country')
   description = ''; // Optional description
 
   // Timestamps
