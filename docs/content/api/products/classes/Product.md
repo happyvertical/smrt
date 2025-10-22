@@ -1,6 +1,6 @@
 # Class: Product
 
-Defined in: packages/products/src/lib/models/Product.ts:36
+Defined in: [packages/products/src/lib/models/Product.ts:36](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L36)
 
 Product information for knowledge base queries
 
@@ -14,7 +14,7 @@ Product information for knowledge base queries
 
 > **new Product**(`options`): `Product`
 
-Defined in: packages/products/src/lib/models/Product.ts:47
+Defined in: [packages/products/src/lib/models/Product.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L47)
 
 #### Parameters
 
@@ -162,7 +162,7 @@ Database table name for this object
 
 > **category**: `string` = `''`
 
-Defined in: packages/products/src/lib/models/Product.ts:39
+Defined in: [packages/products/src/lib/models/Product.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L39)
 
 ***
 
@@ -184,7 +184,7 @@ Creation timestamp
 
 > **description**: `string` = `''`
 
-Defined in: packages/products/src/lib/models/Product.ts:38
+Defined in: [packages/products/src/lib/models/Product.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L38)
 
 ***
 
@@ -192,7 +192,7 @@ Defined in: packages/products/src/lib/models/Product.ts:38
 
 > **inStock**: `boolean` = `true`
 
-Defined in: packages/products/src/lib/models/Product.ts:43
+Defined in: [packages/products/src/lib/models/Product.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L43)
 
 ***
 
@@ -200,7 +200,7 @@ Defined in: packages/products/src/lib/models/Product.ts:43
 
 > **manufacturer**: `string` = `''`
 
-Defined in: packages/products/src/lib/models/Product.ts:40
+Defined in: [packages/products/src/lib/models/Product.ts:40](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L40)
 
 ***
 
@@ -208,7 +208,7 @@ Defined in: packages/products/src/lib/models/Product.ts:40
 
 > **model**: `string` = `''`
 
-Defined in: packages/products/src/lib/models/Product.ts:41
+Defined in: [packages/products/src/lib/models/Product.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L41)
 
 ***
 
@@ -216,7 +216,7 @@ Defined in: packages/products/src/lib/models/Product.ts:41
 
 > **name**: `string` = `''`
 
-Defined in: packages/products/src/lib/models/Product.ts:37
+Defined in: [packages/products/src/lib/models/Product.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L37)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -246,7 +246,7 @@ Initialized by parent constructor via super() call.
 
 > **price**: `number` = `0`
 
-Defined in: packages/products/src/lib/models/Product.ts:42
+Defined in: [packages/products/src/lib/models/Product.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L42)
 
 ***
 
@@ -254,7 +254,7 @@ Defined in: packages/products/src/lib/models/Product.ts:42
 
 > **specifications**: `Record`\<`string`, `any`\> = `{}`
 
-Defined in: packages/products/src/lib/models/Product.ts:44
+Defined in: [packages/products/src/lib/models/Product.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L44)
 
 ***
 
@@ -262,7 +262,7 @@ Defined in: packages/products/src/lib/models/Product.ts:44
 
 > **tags**: `string`[] = `[]`
 
-Defined in: packages/products/src/lib/models/Product.ts:45
+Defined in: [packages/products/src/lib/models/Product.ts:45](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L45)
 
 ***
 
@@ -286,7 +286,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: packages/core/dist/class.d.ts:185
+Defined in: packages/core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -350,7 +350,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: packages/core/dist/class.d.ts:181
+Defined in: packages/core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -370,7 +370,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: packages/core/dist/class.d.ts:177
+Defined in: packages/core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -434,7 +434,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: packages/core/dist/class.d.ts:191
+Defined in: packages/core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -500,7 +500,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: packages/core/dist/class.d.ts:142
+Defined in: packages/core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -579,7 +579,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: packages/core/dist/class.d.ts:207
+Defined in: packages/core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -1021,7 +1021,7 @@ Promise resolving to the object's slug
 
 > **getSpecification**(`key`): `Promise`\<`any`\>
 
-Defined in: packages/products/src/lib/models/Product.ts:60
+Defined in: [packages/products/src/lib/models/Product.ts:60](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L60)
 
 #### Parameters
 
@@ -1496,6 +1496,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: packages/core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1568,7 +1601,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateSpecification**(`key`, `value`): `Promise`\<`void`\>
 
-Defined in: packages/products/src/lib/models/Product.ts:64
+Defined in: [packages/products/src/lib/models/Product.ts:64](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L64)
 
 #### Parameters
 
@@ -1609,7 +1642,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **findByManufacturer**(`_manufacturer`): `Promise`\<`Product`[]\>
 
-Defined in: packages/products/src/lib/models/Product.ts:73
+Defined in: [packages/products/src/lib/models/Product.ts:73](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L73)
 
 #### Parameters
 
@@ -1627,7 +1660,7 @@ Defined in: packages/products/src/lib/models/Product.ts:73
 
 > `static` **searchByText**(`_query`): `Promise`\<`Product`[]\>
 
-Defined in: packages/products/src/lib/models/Product.ts:68
+Defined in: [packages/products/src/lib/models/Product.ts:68](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/models/Product.ts#L68)
 
 #### Parameters
 

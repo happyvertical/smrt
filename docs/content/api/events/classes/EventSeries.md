@@ -1,6 +1,6 @@
 # Class: EventSeries
 
-Defined in: events/src/models/EventSeries.ts:15
+Defined in: [events/src/models/EventSeries.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L15)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: events/src/models/EventSeries.ts:15
 
 > **new EventSeries**(`options`): `EventSeries`
 
-Defined in: events/src/models/EventSeries.ts:32
+Defined in: [events/src/models/EventSeries.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L32)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: events/src/models/EventSeries.ts:29
+Defined in: [events/src/models/EventSeries.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L29)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: events/src/models/EventSeries.ts:29
 
 > **description**: `string` = `''`
 
-Defined in: events/src/models/EventSeries.ts:20
+Defined in: [events/src/models/EventSeries.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L20)
 
 ***
 
@@ -190,7 +190,7 @@ Defined in: events/src/models/EventSeries.ts:20
 
 > **endDate**: `Date` \| `null` = `null`
 
-Defined in: events/src/models/EventSeries.ts:22
+Defined in: [events/src/models/EventSeries.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L22)
 
 ***
 
@@ -198,7 +198,7 @@ Defined in: events/src/models/EventSeries.ts:22
 
 > **externalId**: `string` = `''`
 
-Defined in: events/src/models/EventSeries.ts:25
+Defined in: [events/src/models/EventSeries.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L25)
 
 ***
 
@@ -206,7 +206,7 @@ Defined in: events/src/models/EventSeries.ts:25
 
 > **metadata**: `string` = `''`
 
-Defined in: events/src/models/EventSeries.ts:24
+Defined in: [events/src/models/EventSeries.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L24)
 
 ***
 
@@ -244,7 +244,7 @@ Initialized by parent constructor via super() call.
 
 > **organizerId**: `string` = `''`
 
-Defined in: events/src/models/EventSeries.ts:19
+Defined in: [events/src/models/EventSeries.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L19)
 
 ***
 
@@ -252,7 +252,7 @@ Defined in: events/src/models/EventSeries.ts:19
 
 > **recurrence**: `string` = `''`
 
-Defined in: events/src/models/EventSeries.ts:23
+Defined in: [events/src/models/EventSeries.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L23)
 
 ***
 
@@ -260,7 +260,7 @@ Defined in: events/src/models/EventSeries.ts:23
 
 > **source**: `string` = `''`
 
-Defined in: events/src/models/EventSeries.ts:26
+Defined in: [events/src/models/EventSeries.ts:26](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L26)
 
 ***
 
@@ -268,7 +268,7 @@ Defined in: events/src/models/EventSeries.ts:26
 
 > **startDate**: `Date` \| `null` = `null`
 
-Defined in: events/src/models/EventSeries.ts:21
+Defined in: [events/src/models/EventSeries.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L21)
 
 ***
 
@@ -276,7 +276,7 @@ Defined in: events/src/models/EventSeries.ts:21
 
 > **typeId**: `string` = `''`
 
-Defined in: events/src/models/EventSeries.ts:18
+Defined in: [events/src/models/EventSeries.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L18)
 
 ***
 
@@ -298,7 +298,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: events/src/models/EventSeries.ts:30
+Defined in: [events/src/models/EventSeries.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L30)
 
 ## Accessors
 
@@ -308,7 +308,7 @@ Defined in: events/src/models/EventSeries.ts:30
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -372,7 +372,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -392,7 +392,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -456,7 +456,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -522,7 +522,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -601,7 +601,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -866,7 +866,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getEvents**(): `Promise`\<`any`\>
 
-Defined in: events/src/models/EventSeries.ts:164
+Defined in: [events/src/models/EventSeries.ts:164](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L164)
 
 Get all events in this series
 
@@ -946,7 +946,7 @@ Promise resolving to the object's ID
 
 > **getMetadata**(): `Record`\<`string`, `any`\>
 
-Defined in: events/src/models/EventSeries.ts:95
+Defined in: [events/src/models/EventSeries.ts:95](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L95)
 
 Get metadata as parsed object
 
@@ -962,7 +962,7 @@ Parsed metadata object or empty object
 
 > **getOrganizer**(): `Promise`\<`any`\>
 
-Defined in: events/src/models/EventSeries.ts:144
+Defined in: [events/src/models/EventSeries.ts:144](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L144)
 
 Get the organizer profile for this series
 
@@ -1010,7 +1010,7 @@ The actual value (unwrapped from Field if necessary)
 
 > **getRecurrence**(): [`RecurrencePattern`](../interfaces/RecurrencePattern.md) \| `null`
 
-Defined in: events/src/models/EventSeries.ts:72
+Defined in: [events/src/models/EventSeries.ts:72](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L72)
 
 Get recurrence pattern as parsed object
 
@@ -1107,7 +1107,7 @@ Promise resolving to the object's slug
 
 > **getType**(): `Promise`\<`any`\>
 
-Defined in: events/src/models/EventSeries.ts:128
+Defined in: [events/src/models/EventSeries.ts:128](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L128)
 
 Get the event type for this series
 
@@ -1181,7 +1181,7 @@ Error if the AI response is invalid
 
 > **isActive**(): `boolean`
 
-Defined in: events/src/models/EventSeries.ts:176
+Defined in: [events/src/models/EventSeries.ts:176](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L176)
 
 Check if series is currently active
 
@@ -1596,6 +1596,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1648,7 +1681,7 @@ Promise resolving to this object
 
 > **setMetadata**(`data`): `void`
 
-Defined in: events/src/models/EventSeries.ts:109
+Defined in: [events/src/models/EventSeries.ts:109](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L109)
 
 Set metadata from object
 
@@ -1670,7 +1703,7 @@ Metadata object to store
 
 > **setRecurrence**(`pattern`): `void`
 
-Defined in: events/src/models/EventSeries.ts:86
+Defined in: [events/src/models/EventSeries.ts:86](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L86)
 
 Set recurrence pattern from object
 
@@ -1712,7 +1745,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > **updateMetadata**(`updates`): `void`
 
-Defined in: events/src/models/EventSeries.ts:118
+Defined in: [events/src/models/EventSeries.ts:118](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventSeries.ts#L118)
 
 Update metadata by merging with existing values
 

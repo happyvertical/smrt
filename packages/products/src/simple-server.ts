@@ -4,7 +4,10 @@
  */
 
 import { resolve } from 'node:path';
-import { ASTScanner, ManifestGenerator } from '@smrt/core/scanner';
+import {
+  ASTScanner,
+  ManifestGenerator,
+} from '@happyvertical/smrt-core/scanner';
 
 // Simple HTTP server using Bun
 const server = Bun.serve({

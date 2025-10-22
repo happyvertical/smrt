@@ -1,6 +1,6 @@
 # Interface: AccountTransactionEntrySearchFilters
 
-Defined in: accounts/src/types.ts:87
+Defined in: [accounts/src/types.ts:87](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L87)
 
 Search filters for transaction entries
 
@@ -10,7 +10,7 @@ Search filters for transaction entries
 
 > `optional` **accountId**: `string`
 
-Defined in: accounts/src/types.ts:89
+Defined in: [accounts/src/types.ts:89](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L89)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: accounts/src/types.ts:89
 
 > `optional` **currency**: `string` \| `string`[]
 
-Defined in: accounts/src/types.ts:90
+Defined in: [accounts/src/types.ts:90](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L90)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: accounts/src/types.ts:90
 
 > `optional` **maxAmount**: `number`
 
-Defined in: accounts/src/types.ts:92
+Defined in: [accounts/src/types.ts:92](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L92)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: accounts/src/types.ts:92
 
 > `optional` **minAmount**: `number`
 
-Defined in: accounts/src/types.ts:91
+Defined in: [accounts/src/types.ts:91](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L91)
 
 ***
 
@@ -42,4 +42,4 @@ Defined in: accounts/src/types.ts:91
 
 > `optional` **transactionId**: `string`
 
-Defined in: accounts/src/types.ts:88
+Defined in: [accounts/src/types.ts:88](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/accounts/src/types.ts#L88)

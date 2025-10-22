@@ -1,6 +1,6 @@
 # Interface: PlaceTypeOptions
 
-Defined in: places/src/types.ts:59
+Defined in: [places/src/types.ts:59](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L59)
 
 Options for creating/updating a PlaceType
 
@@ -104,7 +104,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: places/src/types.ts:64
+Defined in: [places/src/types.ts:64](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L64)
 
 ***
 
@@ -114,7 +114,7 @@ Defined in: places/src/types.ts:64
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -131,7 +131,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: places/src/types.ts:63
+Defined in: [places/src/types.ts:63](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L63)
 
 ***
 
@@ -153,7 +153,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: places/src/types.ts:60
+Defined in: [places/src/types.ts:60](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L60)
 
 Unique identifier for the object
 
@@ -195,7 +195,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: places/src/types.ts:62
+Defined in: [places/src/types.ts:62](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L62)
 
 Human-readable name for the object
 
@@ -263,7 +263,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: places/src/types.ts:61
+Defined in: [places/src/types.ts:61](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L61)
 
 URL-friendly identifier
 
@@ -291,4 +291,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: places/src/types.ts:65
+Defined in: [places/src/types.ts:65](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L65)

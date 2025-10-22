@@ -1,4 +1,4 @@
-# @smrt/content
+# @happyvertical/smrt-content
 
 ## Classes
 

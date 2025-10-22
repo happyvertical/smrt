@@ -4,7 +4,7 @@
  * Provides querying and batch operations for profile metadata.
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { ProfileMetadata } from '../models/ProfileMetadata';
 
 export class ProfileMetadataCollection extends SmrtCollection<ProfileMetadata> {
@@ -55,6 +55,8 @@ export class ProfileMetadataCollection extends SmrtCollection<ProfileMetadata> {
       where: { metafieldId, value: String(value) },
     });
 
-    return matches.map((m) => m.profileId);
+    return matches
+      .map((m) => m.profileId)
+      .filter((id) => typeof id === 'string') as string[];
   }
 }

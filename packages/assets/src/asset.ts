@@ -4,8 +4,8 @@
  * Represents a digital asset with versioning, metadata, and tag support
  */
 
-import { SmrtObject, smrt } from '@smrt/core';
-import type { Tag } from '@smrt/tags';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { Tag } from '@happyvertical/smrt-tags';
 import type { AssetStatus } from './asset-status';
 import type { AssetType } from './asset-type';
 import type { AssetOptions } from './types';
@@ -55,9 +55,9 @@ export class Asset extends SmrtObject {
   }
 
   /**
-   * Get all tags for this asset from @smrt/tags
+   * Get all tags for this asset from @happyvertical/smrt-tags
    *
-   * @returns Array of Tag instances from @smrt/tags package
+   * @returns Array of Tag instances from @happyvertical/smrt-tags package
    */
   async getTags(): Promise<Tag[]> {
     // Query asset_tags join table and retrieve Tag instances
@@ -68,7 +68,7 @@ export class Asset extends SmrtObject {
     );
 
     // Import Tag dynamically to avoid circular dependencies
-    const { Tag } = await import('@smrt/tags');
+    const { Tag } = await import('@happyvertical/smrt-tags');
     const tags: Tag[] = [];
 
     for (const row of rows as { tag_slug: string }[]) {

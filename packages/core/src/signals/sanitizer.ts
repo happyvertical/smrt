@@ -5,7 +5,7 @@
  * into logs, metrics, or other signal outputs.
  */
 
-import type { Signal } from '@smrt/types';
+import type { Signal } from '@happyvertical/smrt-types';
 
 /**
  * Sanitization configuration

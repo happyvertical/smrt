@@ -1,11 +1,11 @@
 ---
 id: types
-title: "@smrt/types: Shared Type Definitions"
-sidebar_label: "@smrt/types"
+title: "@happyvertical/smrt-types: Shared Type Definitions"
+sidebar_label: "@happyvertical/smrt-types"
 sidebar_position: 2
 ---
 
-# @smrt/types
+# @happyvertical/smrt-types
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,7 +13,7 @@ Shared TypeScript type definitions for the SMRT framework.
 
 ## Overview
 
-The `@smrt/types` package provides foundational type definitions and interfaces used across the SMRT framework. It prevents circular dependencies by centralizing shared types that multiple packages need to reference, particularly for the Universal Signaling System that enables automatic method tracking and observability.
+The `@happyvertical/smrt-types` package provides foundational type definitions and interfaces used across the SMRT framework. It prevents circular dependencies by centralizing shared types that multiple packages need to reference, particularly for the Universal Signaling System that enables automatic method tracking and observability.
 
 ## Features
 
@@ -27,13 +27,13 @@ The `@smrt/types` package provides foundational type definitions and interfaces 
 
 ```bash
 # Install with npm
-npm install @smrt/types
+npm install @happyvertical/smrt-types
 
 # Or with yarn
-yarn add @smrt/types
+yarn add @happyvertical/smrt-types
 
 # Or with bun
-bun add @smrt/types
+bun add @happyvertical/smrt-types
 ```
 
 ## Usage
@@ -43,7 +43,7 @@ bun add @smrt/types
 The package exports types for the Universal Signaling System, which provides automatic observability into SMRT method execution:
 
 ```typescript
-import type { Signal, SignalType, SignalAdapter } from '@smrt/types';
+import type { Signal, SignalType, SignalAdapter } from '@happyvertical/smrt-types';
 
 // Signal lifecycle types
 const signalType: SignalType = 'start'; // 'start' | 'step' | 'end' | 'error'
@@ -67,7 +67,7 @@ function logSignal(signal: Signal) {
 Implement the `SignalAdapter` interface to process signals for logging, metrics, pub/sub, or tracing:
 
 ```typescript
-import type { SignalAdapter, Signal } from '@smrt/types';
+import type { SignalAdapter, Signal } from '@happyvertical/smrt-types';
 
 class ConsoleLogAdapter implements SignalAdapter {
   async handle(signal: Signal): Promise<void> {
@@ -98,7 +98,7 @@ const adapter = new ConsoleLogAdapter();
 ### Metrics Adapter Example
 
 ```typescript
-import type { SignalAdapter, Signal } from '@smrt/types';
+import type { SignalAdapter, Signal } from '@happyvertical/smrt-types';
 
 class MetricsAdapter implements SignalAdapter {
   private metrics = new Map<string, { count: number; totalDuration: number }>();
@@ -130,7 +130,7 @@ class MetricsAdapter implements SignalAdapter {
 ### Pub/Sub Adapter Example
 
 ```typescript
-import type { SignalAdapter, Signal } from '@smrt/types';
+import type { SignalAdapter, Signal } from '@happyvertical/smrt-types';
 
 class PubSubAdapter implements SignalAdapter {
   constructor(private publishFn: (topic: string, data: any) => Promise<void>) {}
@@ -186,7 +186,7 @@ Signals are emitted at different stages of method execution:
 4. **`error`**: Method throws an error
 
 ```typescript
-import type { Signal } from '@smrt/types';
+import type { Signal } from '@happyvertical/smrt-types';
 
 function handleMethodLifecycle(signal: Signal) {
   switch (signal.type) {
@@ -218,7 +218,7 @@ function handleMethodLifecycle(signal: Signal) {
 This package is written in TypeScript and provides comprehensive type definitions for all exports. Import types using the `type` keyword:
 
 ```typescript
-import type { Signal, SignalAdapter, SignalType } from '@smrt/types';
+import type { Signal, SignalAdapter, SignalType } from '@happyvertical/smrt-types';
 ```
 
 ## API Reference

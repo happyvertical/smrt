@@ -5,7 +5,7 @@
  * (virtual worlds, game zones) by making all geo fields optional.
  */
 
-import { SmrtObject, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { GeoData, PlaceOptions } from '../types';
 
 @smrt({

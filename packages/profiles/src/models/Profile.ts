@@ -12,7 +12,8 @@ import {
   type SmrtObjectOptions,
   smrt,
   text,
-} from '@smrt/core';
+} from '@happyvertical/smrt-core';
+import type { ProfileRelationship } from './ProfileRelationship';
 import { ProfileType } from './ProfileType';
 
 export interface ProfileOptions extends SmrtObjectOptions {

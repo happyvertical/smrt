@@ -1,4 +1,4 @@
-import { syncSchema } from '@have/sql';
+import { syncSchema } from '@happyvertical/sql';
 import { ObjectRegistry } from './registry';
 import { SchemaGenerator } from './schema/generator';
 

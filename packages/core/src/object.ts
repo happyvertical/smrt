@@ -1,6 +1,6 @@
-// import type { AIMessageOptions } from '@have/ai';
+// import type { AIMessageOptions } from '@happyvertical/ai';
 
-import type { AITool } from '@have/ai';
+import type { AITool } from '@happyvertical/ai';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {

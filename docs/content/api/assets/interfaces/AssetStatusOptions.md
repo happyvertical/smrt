@@ -1,6 +1,6 @@
 # Interface: AssetStatusOptions
 
-Defined in: assets/src/types.ts:19
+Defined in: [assets/src/types.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L19)
 
 Options for creating an AssetStatus instance
 
@@ -106,7 +106,7 @@ Creation timestamp
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -123,7 +123,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: assets/src/types.ts:22
+Defined in: [assets/src/types.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L22)
 
 ***
 
@@ -187,7 +187,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: assets/src/types.ts:21
+Defined in: [assets/src/types.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L21)
 
 Human-readable name for the object
 
@@ -255,7 +255,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: assets/src/types.ts:20
+Defined in: [assets/src/types.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L20)
 
 URL-friendly identifier
 

@@ -6,7 +6,7 @@
  *
  * @example Basic field usage
  * ```typescript
- * import { text, decimal, boolean, foreignKey } from '@smrt/core/fields';
+ * import { text, decimal, boolean, foreignKey } from '@happyvertical/smrt-core/fields';
  *
  * class Product extends SmrtObject {
  *   name = text({ required: true, maxLength: 100 });

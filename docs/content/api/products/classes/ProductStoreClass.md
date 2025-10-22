@@ -1,6 +1,6 @@
 # Class: ProductStoreClass
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:17
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:17](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L17)
 
 SMRT Template Stores
 
@@ -25,7 +25,7 @@ These stores integrate with auto-generated SMRT clients.
 
 > **get** **categories**(): `string`[]
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:53
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L53)
 
 ##### Returns
 
@@ -39,7 +39,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:53
 
 > **get** **error**(): `string` \| `null`
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:34
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L34)
 
 ##### Returns
 
@@ -53,7 +53,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:34
 
 > **get** **inStockCount**(): `number`
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:42
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L42)
 
 ##### Returns
 
@@ -67,7 +67,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:42
 
 > **get** **items**(): `ProductData`[]
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:28
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L28)
 
 ##### Returns
 
@@ -81,7 +81,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:28
 
 > **get** **loading**(): `boolean`
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:31
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L31)
 
 ##### Returns
 
@@ -95,7 +95,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:31
 
 > **get** **selectedProduct**(): `ProductData` \| `null`
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:37
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L37)
 
 ##### Returns
 
@@ -109,7 +109,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:37
 
 > **get** **totalValue**(): `number`
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:46
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:46](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L46)
 
 ##### Returns
 
@@ -121,7 +121,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:46
 
 > **clearError**(): `void`
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:149
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:149](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L149)
 
 #### Returns
 
@@ -133,7 +133,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:149
 
 > **createProduct**(`productData`): `Promise`\<`ApiResponse`\<`ProductData`\>\>
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:78
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:78](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L78)
 
 #### Parameters
 
@@ -151,7 +151,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:78
 
 > **deleteProduct**(`id`): `Promise`\<`void`\>
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:124
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:124](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L124)
 
 #### Parameters
 
@@ -169,7 +169,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:124
 
 > **filterByCategory**(`category`): `ProductData`[]
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:154
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:154](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L154)
 
 #### Parameters
 
@@ -187,7 +187,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:154
 
 > **filterInStock**(): `ProductData`[]
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:158
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:158](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L158)
 
 #### Returns
 
@@ -199,7 +199,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:158
 
 > **loadProducts**(): `Promise`\<`void`\>
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:61
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:61](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L61)
 
 #### Returns
 
@@ -211,7 +211,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:61
 
 > **searchProducts**(`query`): `ProductData`[]
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:162
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:162](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L162)
 
 #### Parameters
 
@@ -229,7 +229,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:162
 
 > **selectProduct**(`product`): `void`
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:145
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:145](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L145)
 
 #### Parameters
 
@@ -247,7 +247,7 @@ Defined in: packages/products/src/lib/stores/product-store.svelte.ts:145
 
 > **updateProduct**(`id`, `updates`): `Promise`\<`ApiResponse`\<`ProductData`\>\>
 
-Defined in: packages/products/src/lib/stores/product-store.svelte.ts:97
+Defined in: [packages/products/src/lib/stores/product-store.svelte.ts:97](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/products/src/lib/stores/product-store.svelte.ts#L97)
 
 #### Parameters
 

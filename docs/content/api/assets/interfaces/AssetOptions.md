@@ -1,6 +1,6 @@
 # Interface: AssetOptions
 
-Defined in: assets/src/types.ts:37
+Defined in: [assets/src/types.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L37)
 
 Options for creating an Asset instance
 
@@ -104,7 +104,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: assets/src/types.ts:49
+Defined in: [assets/src/types.ts:49](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L49)
 
 ***
 
@@ -114,7 +114,7 @@ Defined in: assets/src/types.ts:49
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -131,7 +131,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: assets/src/types.ts:42
+Defined in: [assets/src/types.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L42)
 
 ***
 
@@ -195,7 +195,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **mimeType**: `string`
 
-Defined in: assets/src/types.ts:41
+Defined in: [assets/src/types.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L41)
 
 ***
 
@@ -203,7 +203,7 @@ Defined in: assets/src/types.ts:41
 
 > `optional` **name**: `string`
 
-Defined in: assets/src/types.ts:38
+Defined in: [assets/src/types.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L38)
 
 Human-readable name for the object
 
@@ -217,7 +217,7 @@ Human-readable name for the object
 
 > `optional` **ownerProfileId**: `string` \| `null`
 
-Defined in: assets/src/types.ts:47
+Defined in: [assets/src/types.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L47)
 
 ***
 
@@ -225,7 +225,7 @@ Defined in: assets/src/types.ts:47
 
 > `optional` **parentId**: `string` \| `null`
 
-Defined in: assets/src/types.ts:48
+Defined in: [assets/src/types.ts:48](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L48)
 
 ***
 
@@ -233,7 +233,7 @@ Defined in: assets/src/types.ts:48
 
 > `optional` **primaryVersionId**: `string` \| `null`
 
-Defined in: assets/src/types.ts:44
+Defined in: [assets/src/types.ts:44](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L44)
 
 ***
 
@@ -295,7 +295,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: assets/src/types.ts:39
+Defined in: [assets/src/types.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L39)
 
 URL-friendly identifier
 
@@ -309,7 +309,7 @@ URL-friendly identifier
 
 > `optional` **sourceUri**: `string`
 
-Defined in: assets/src/types.ts:40
+Defined in: [assets/src/types.ts:40](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L40)
 
 ***
 
@@ -317,7 +317,7 @@ Defined in: assets/src/types.ts:40
 
 > `optional` **statusSlug**: `string`
 
-Defined in: assets/src/types.ts:46
+Defined in: [assets/src/types.ts:46](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L46)
 
 ***
 
@@ -325,7 +325,7 @@ Defined in: assets/src/types.ts:46
 
 > `optional` **typeSlug**: `string`
 
-Defined in: assets/src/types.ts:45
+Defined in: [assets/src/types.ts:45](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L45)
 
 ***
 
@@ -347,7 +347,7 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: assets/src/types.ts:50
+Defined in: [assets/src/types.ts:50](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L50)
 
 ***
 
@@ -355,4 +355,4 @@ Defined in: assets/src/types.ts:50
 
 > `optional` **version**: `number`
 
-Defined in: assets/src/types.ts:43
+Defined in: [assets/src/types.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/types.ts#L43)

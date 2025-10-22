@@ -6,21 +6,21 @@ settings:
 
 overrides:
   '@types/node': 24.0.0
-  '@have/ai': workspace:*
-  '@have/cache': workspace:*
-  '@have/config': workspace:*
-  '@have/documents': workspace:*
-  '@have/email': workspace:*
-  '@have/files': workspace:*
-  '@have/geo': workspace:*
-  '@have/languages': workspace:*
-  '@have/logger': workspace:*
-  '@have/ocr': workspace:*
-  '@have/pdf': workspace:*
-  '@have/spider': workspace:*
-  '@have/sql': workspace:*
-  '@have/translator': workspace:*
-  '@have/utils': workspace:*
+  '@happyvertical/ai': workspace:*
+  '@happyvertical/cache': workspace:*
+  '@happyvertical/smrt-config': workspace:*
+  '@happyvertical/documents': workspace:*
+  '@happyvertical/email': workspace:*
+  '@happyvertical/files': workspace:*
+  '@happyvertical/geo': workspace:*
+  '@happyvertical/languages': workspace:*
+  '@happyvertical/logger': workspace:*
+  '@happyvertical/ocr': workspace:*
+  '@happyvertical/pdf': workspace:*
+  '@happyvertical/spider': workspace:*
+  '@happyvertical/sql': workspace:*
+  '@happyvertical/translator': workspace:*
+  '@happyvertical/utils': workspace:*
 
 importers:
 
@@ -107,7 +107,7 @@ importers:
 
   packages/accounts:
     dependencies:
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -126,14 +126,14 @@ importers:
 
   packages/agents:
     dependencies:
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@have/logger':
+      '@happyvertical/logger':
         specifier: workspace:*
         version: link:../../sdk/packages/logger
-      '@have/sql':
+      '@happyvertical/sql':
         specifier: workspace:*
         version: link:../../sdk/packages/sql
       '@types/node':
@@ -151,10 +151,10 @@ importers:
 
   packages/assets:
     dependencies:
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@smrt/tags':
+      '@happyvertical/smrt-tags':
         specifier: workspace:*
         version: link:../tags
     devDependencies:
@@ -192,30 +192,30 @@ importers:
 
   packages/content:
     dependencies:
-      '@have/ai':
+      '@happyvertical/ai':
         specifier: workspace:*
         version: link:../../sdk/packages/ai
-      '@have/documents':
+      '@happyvertical/documents':
         specifier: workspace:*
         version: link:../../sdk/packages/documents
-      '@have/files':
+      '@happyvertical/files':
         specifier: workspace:*
         version: link:../../sdk/packages/files
-      '@have/ocr':
+      '@happyvertical/ocr':
         specifier: workspace:*
         version: link:../../sdk/packages/ocr
-      '@have/pdf':
+      '@happyvertical/pdf':
         specifier: workspace:*
         version: link:../../sdk/packages/pdf
-      '@have/spider':
-        specifier: workspace:*
-        version: link:../../sdk/packages/spider
-      '@have/utils':
-        specifier: workspace:*
-        version: link:../../sdk/packages/utils
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/spider':
+        specifier: workspace:*
+        version: link:../../sdk/packages/spider
+      '@happyvertical/utils':
+        specifier: workspace:*
+        version: link:../../sdk/packages/utils
       yaml:
         specifier: ^2.8.1
         version: 2.8.1
@@ -244,19 +244,22 @@ importers:
 
   packages/core:
     dependencies:
-      '@have/ai':
+      '@happyvertical/ai':
         specifier: workspace:*
         version: link:../../sdk/packages/ai
-      '@have/files':
+      '@happyvertical/files':
         specifier: workspace:*
         version: link:../../sdk/packages/files
-      '@have/logger':
+      '@happyvertical/logger':
         specifier: workspace:*
         version: link:../../sdk/packages/logger
-      '@have/sql':
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
+      '@happyvertical/sql':
         specifier: workspace:*
         version: link:../../sdk/packages/sql
-      '@have/utils':
+      '@happyvertical/utils':
         specifier: workspace:*
         version: link:../../sdk/packages/utils
       '@langchain/community':
@@ -265,9 +268,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.4
         version: 1.20.1
-      '@smrt/types':
-        specifier: workspace:*
-        version: link:../types
       cheerio:
         specifier: ^1.0.0
         version: 1.1.2
@@ -308,13 +308,13 @@ importers:
 
   packages/events:
     dependencies:
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@smrt/places':
+      '@happyvertical/smrt-places':
         specifier: workspace:*
         version: link:../places
-      '@smrt/profiles':
+      '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
     devDependencies:
@@ -333,7 +333,7 @@ importers:
 
   packages/gnode:
     dependencies:
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -355,13 +355,13 @@ importers:
 
   packages/places:
     dependencies:
-      '@have/cache':
+      '@happyvertical/cache':
         specifier: workspace:*
         version: link:../../sdk/packages/cache
-      '@have/geo':
+      '@happyvertical/geo':
         specifier: workspace:*
         version: link:../../sdk/packages/geo
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -380,7 +380,7 @@ importers:
 
   packages/products:
     dependencies:
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -411,7 +411,7 @@ importers:
 
   packages/profiles:
     dependencies:
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -433,7 +433,7 @@ importers:
 
   packages/tags:
     dependencies:
-      '@smrt/core':
+      '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

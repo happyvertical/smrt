@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/accounts",
+  "name": "@happyvertical/smrt-accounts",
   "version": "0.41.0",
   "description": "Flexible accounting ledger with multi-currency support and SMRT framework integration",
   "type": "module",
@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@smrt/core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",

@@ -1,6 +1,6 @@
 # Interface: EventParticipantOptions
 
-Defined in: events/src/types.ts:119
+Defined in: [events/src/types.ts:119](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L119)
 
 Options for creating EventParticipant
 
@@ -104,7 +104,7 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: events/src/types.ts:129
+Defined in: [events/src/types.ts:129](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L129)
 
 ***
 
@@ -114,7 +114,7 @@ Defined in: events/src/types.ts:129
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -131,7 +131,7 @@ Supports three formats:
 
 > `optional` **eventId**: `string`
 
-Defined in: events/src/types.ts:121
+Defined in: [events/src/types.ts:121](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L121)
 
 ***
 
@@ -139,7 +139,7 @@ Defined in: events/src/types.ts:121
 
 > `optional` **externalId**: `string`
 
-Defined in: events/src/types.ts:127
+Defined in: [events/src/types.ts:127](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L127)
 
 ***
 
@@ -161,7 +161,7 @@ Filesystem adapter configuration options
 
 > `optional` **groupId**: `string`
 
-Defined in: events/src/types.ts:125
+Defined in: [events/src/types.ts:125](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L125)
 
 ***
 
@@ -169,7 +169,7 @@ Defined in: events/src/types.ts:125
 
 > `optional` **id**: `string`
 
-Defined in: events/src/types.ts:120
+Defined in: [events/src/types.ts:120](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L120)
 
 Unique identifier for the object
 
@@ -197,7 +197,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metadata**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: events/src/types.ts:126
+Defined in: [events/src/types.ts:126](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L126)
 
 ***
 
@@ -233,7 +233,7 @@ Human-readable name for the object
 
 > `optional` **placement**: `number` \| `null`
 
-Defined in: events/src/types.ts:124
+Defined in: [events/src/types.ts:124](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L124)
 
 ***
 
@@ -241,7 +241,7 @@ Defined in: events/src/types.ts:124
 
 > `optional` **profileId**: `string`
 
-Defined in: events/src/types.ts:122
+Defined in: [events/src/types.ts:122](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L122)
 
 ***
 
@@ -263,7 +263,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **role**: `string`
 
-Defined in: events/src/types.ts:123
+Defined in: [events/src/types.ts:123](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L123)
 
 ***
 
@@ -325,7 +325,7 @@ URL-friendly identifier
 
 > `optional` **source**: `string`
 
-Defined in: events/src/types.ts:128
+Defined in: [events/src/types.ts:128](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L128)
 
 ***
 
@@ -347,4 +347,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: events/src/types.ts:130
+Defined in: [events/src/types.ts:130](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L130)

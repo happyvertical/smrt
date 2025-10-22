@@ -1,4 +1,4 @@
-# @smrt/places
+# @happyvertical/smrt-places
 
 @have/places
 

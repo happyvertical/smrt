@@ -24,7 +24,7 @@ describe('NPM Loader', () => {
       // Note: require.resolve is hard to mock, so we'll test the actual behavior
       // In a real scenario, this would resolve to node_modules
       try {
-        const result = await resolveNpmPackage('@smrt/core');
+        const result = await resolveNpmPackage('@happyvertical/smrt-core');
         expect(typeof result).toBe('string');
         expect(result).toContain('smrt');
       } catch (error) {

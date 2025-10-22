@@ -23,13 +23,13 @@ slug: /
 ### Installation
 
 ```bash
-npm install @smrt/core @smrt/types
+npm install @happyvertical/smrt-core @happyvertical/smrt-types
 ```
 
 ### Create Your First SMRT Object
 
 ```typescript
-import { SmrtObject } from '@smrt/core';
+import { SmrtObject } from '@happyvertical/smrt-core';
 
 // No decorator needed - it's optional
 class Task extends SmrtObject {

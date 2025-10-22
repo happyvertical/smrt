@@ -1,4 +1,4 @@
-# @smrt/events
+# @happyvertical/smrt-events
 
 @have/events
 

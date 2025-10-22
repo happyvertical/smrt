@@ -1,6 +1,6 @@
 # Class: EventType
 
-Defined in: events/src/models/EventType.ts:15
+Defined in: [events/src/models/EventType.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L15)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: events/src/models/EventType.ts:15
 
 > **new EventType**(`options`): `EventType`
 
-Defined in: events/src/models/EventType.ts:25
+Defined in: [events/src/models/EventType.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L25)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: events/src/models/EventType.ts:22
+Defined in: [events/src/models/EventType.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L22)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: events/src/models/EventType.ts:22
 
 > **description**: `string` = `''`
 
-Defined in: events/src/models/EventType.ts:17
+Defined in: [events/src/models/EventType.ts:17](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L17)
 
 ***
 
@@ -220,7 +220,7 @@ Initialized by parent constructor via super() call.
 
 > **participantSchema**: `string` = `''`
 
-Defined in: events/src/models/EventType.ts:19
+Defined in: [events/src/models/EventType.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L19)
 
 ***
 
@@ -228,7 +228,7 @@ Defined in: events/src/models/EventType.ts:19
 
 > **schema**: `string` = `''`
 
-Defined in: events/src/models/EventType.ts:18
+Defined in: [events/src/models/EventType.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L18)
 
 ***
 
@@ -250,7 +250,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: events/src/models/EventType.ts:23
+Defined in: [events/src/models/EventType.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L23)
 
 ## Accessors
 
@@ -260,7 +260,7 @@ Defined in: events/src/models/EventType.ts:23
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -324,7 +324,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -344,7 +344,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -408,7 +408,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -474,7 +474,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -553,7 +553,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -882,7 +882,7 @@ Promise resolving to the object's ID
 
 > **getParticipantSchema**(): `Record`\<`string`, `any`\>
 
-Defined in: events/src/models/EventType.ts:80
+Defined in: [events/src/models/EventType.ts:80](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L80)
 
 Get participant schema as parsed object
 
@@ -991,7 +991,7 @@ Promise resolving to the saved ID or null if not saved
 
 > **getSchema**(): `Record`\<`string`, `any`\>
 
-Defined in: events/src/models/EventType.ts:57
+Defined in: [events/src/models/EventType.ts:57](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L57)
 
 Get schema as parsed object
 
@@ -1484,6 +1484,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1536,7 +1569,7 @@ Promise resolving to this object
 
 > **setParticipantSchema**(`data`): `void`
 
-Defined in: events/src/models/EventType.ts:94
+Defined in: [events/src/models/EventType.ts:94](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L94)
 
 Set participant schema from object
 
@@ -1558,7 +1591,7 @@ Participant schema object to store
 
 > **setSchema**(`data`): `void`
 
-Defined in: events/src/models/EventType.ts:71
+Defined in: [events/src/models/EventType.ts:71](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L71)
 
 Set schema from object
 
@@ -1619,7 +1652,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **getBySlug**(`_slug`): `Promise`\<`EventType` \| `null`\>
 
-Defined in: events/src/models/EventType.ts:104
+Defined in: [events/src/models/EventType.ts:104](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/models/EventType.ts#L104)
 
 Convenience method for slug-based lookup
 

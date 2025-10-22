@@ -1,6 +1,6 @@
 # Interface: SmartObjectManifest
 
-Defined in: smrt/packages/core/src/scanner/types.ts:83
+Defined in: [smrt/packages/core/src/scanner/types.ts:83](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L83)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:83
 
 > **objects**: `Record`\<`string`, [`SmartObjectDefinition`](SmartObjectDefinition.md)\>
 
-Defined in: smrt/packages/core/src/scanner/types.ts:87
+Defined in: [smrt/packages/core/src/scanner/types.ts:87](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L87)
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:87
 
 > `optional` **packageName**: `string`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:86
+Defined in: [smrt/packages/core/src/scanner/types.ts:86](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L86)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: smrt/packages/core/src/scanner/types.ts:86
 
 > **timestamp**: `number`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:85
+Defined in: [smrt/packages/core/src/scanner/types.ts:85](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L85)
 
 ***
 
@@ -32,4 +32,4 @@ Defined in: smrt/packages/core/src/scanner/types.ts:85
 
 > **version**: `string`
 
-Defined in: smrt/packages/core/src/scanner/types.ts:84
+Defined in: [smrt/packages/core/src/scanner/types.ts:84](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L84)

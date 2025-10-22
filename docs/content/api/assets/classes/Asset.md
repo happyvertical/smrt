@@ -1,6 +1,6 @@
 # Class: Asset
 
-Defined in: assets/src/asset.ts:18
+Defined in: [assets/src/asset.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L18)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: assets/src/asset.ts:18
 
 > **new Asset**(`options`): `Asset`
 
-Defined in: assets/src/asset.ts:38
+Defined in: [assets/src/asset.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L38)
 
 #### Parameters
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: assets/src/asset.ts:35
+Defined in: [assets/src/asset.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L35)
 
 ***
 
@@ -182,7 +182,7 @@ Defined in: assets/src/asset.ts:35
 
 > **description**: `string` = `''`
 
-Defined in: assets/src/asset.ts:24
+Defined in: [assets/src/asset.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L24)
 
 ***
 
@@ -190,7 +190,7 @@ Defined in: assets/src/asset.ts:24
 
 > **mimeType**: `string` = `''`
 
-Defined in: assets/src/asset.ts:23
+Defined in: [assets/src/asset.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L23)
 
 ***
 
@@ -198,7 +198,7 @@ Defined in: assets/src/asset.ts:23
 
 > **name**: `string` = `''`
 
-Defined in: assets/src/asset.ts:20
+Defined in: [assets/src/asset.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L20)
 
 Human-readable name, primarily for display purposes
 Can be a string value or a Field instance (for Field-based schema definition)
@@ -228,7 +228,7 @@ Initialized by parent constructor via super() call.
 
 > **ownerProfileId**: `string` \| `null` = `null`
 
-Defined in: assets/src/asset.ts:31
+Defined in: [assets/src/asset.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L31)
 
 ***
 
@@ -236,7 +236,7 @@ Defined in: assets/src/asset.ts:31
 
 > **parentId**: `string` \| `null` = `null`
 
-Defined in: assets/src/asset.ts:32
+Defined in: [assets/src/asset.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L32)
 
 ***
 
@@ -244,21 +244,7 @@ Defined in: assets/src/asset.ts:32
 
 > **primaryVersionId**: `string` \| `null` = `null`
 
-Defined in: assets/src/asset.ts:28
-
-***
-
-### slug
-
-> **slug**: `string` = `''`
-
-Defined in: assets/src/asset.ts:21
-
-Gets the URL-friendly slug for this object
-
-#### Overrides
-
-`SmrtObject.slug`
+Defined in: [assets/src/asset.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L28)
 
 ***
 
@@ -266,7 +252,7 @@ Gets the URL-friendly slug for this object
 
 > **sourceUri**: `string` = `''`
 
-Defined in: assets/src/asset.ts:22
+Defined in: [assets/src/asset.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L22)
 
 ***
 
@@ -274,7 +260,7 @@ Defined in: assets/src/asset.ts:22
 
 > **statusSlug**: `string` = `''`
 
-Defined in: assets/src/asset.ts:30
+Defined in: [assets/src/asset.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L30)
 
 ***
 
@@ -282,7 +268,7 @@ Defined in: assets/src/asset.ts:30
 
 > **typeSlug**: `string` = `''`
 
-Defined in: assets/src/asset.ts:29
+Defined in: [assets/src/asset.ts:29](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L29)
 
 ***
 
@@ -304,7 +290,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: assets/src/asset.ts:36
+Defined in: [assets/src/asset.ts:36](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L36)
 
 ***
 
@@ -312,7 +298,7 @@ Defined in: assets/src/asset.ts:36
 
 > **version**: `number` = `1`
 
-Defined in: assets/src/asset.ts:25
+Defined in: [assets/src/asset.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L25)
 
 ## Accessors
 
@@ -322,7 +308,7 @@ Defined in: assets/src/asset.ts:25
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:203
 
 Gets the AI client instance
 
@@ -386,7 +372,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:199
 
 Gets the database interface instance
 
@@ -406,7 +392,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:195
 
 Gets the filesystem adapter instance
 
@@ -470,7 +456,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:209
 
 Gets the signal bus instance
 
@@ -486,13 +472,57 @@ Signal bus if signals are enabled, undefined otherwise
 
 ***
 
+### slug
+
+#### Get Signature
+
+> **get** **slug**(): `string` \| `null` \| `undefined`
+
+Defined in: core/dist/object.d.ts:119
+
+Gets the URL-friendly slug for this object
+
+##### Returns
+
+`string` \| `null` \| `undefined`
+
+#### Set Signature
+
+> **set** **slug**(`value`): `void`
+
+Defined in: core/dist/object.d.ts:126
+
+Sets the URL-friendly slug for this object
+
+##### Throws
+
+Error if the value is invalid
+
+##### Parameters
+
+###### value
+
+The slug to set
+
+`string` | `null` | `undefined`
+
+##### Returns
+
+`void`
+
+#### Inherited from
+
+`SmrtObject.slug`
+
+***
+
 ### systemDb
 
 #### Get Signature
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:160
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -571,7 +601,7 @@ Promise that resolves when deletion is complete
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:225
 
 Cleanup method to prevent memory leaks
 
@@ -836,7 +866,7 @@ console.log(`${tools.length} AI-callable methods available`);
 
 > **getChildren**(): `Promise`\<`Asset`[]\>
 
-Defined in: assets/src/asset.ts:123
+Defined in: [assets/src/asset.ts:123](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L123)
 
 Get all derivative assets (children)
 
@@ -916,7 +946,7 @@ Promise resolving to the object's ID
 
 > **getParent**(): `Promise`\<`Asset` \| `null`\>
 
-Defined in: assets/src/asset.ts:109
+Defined in: [assets/src/asset.ts:104](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L104)
 
 Get the parent asset (if this is a derivative)
 
@@ -1045,7 +1075,7 @@ Promise resolving to the object's slug
 
 > **getStatus**(): `Promise`\<[`AssetStatus`](AssetStatus.md) \| `null`\>
 
-Defined in: assets/src/asset.ts:149
+Defined in: [assets/src/asset.ts:153](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L153)
 
 Get the status of this asset
 
@@ -1061,15 +1091,15 @@ AssetStatus instance or null
 
 > **getTags**(): `Promise`\<`Tag`[]\>
 
-Defined in: assets/src/asset.ts:62
+Defined in: [assets/src/asset.ts:62](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L62)
 
-Get all tags for this asset from @smrt/tags
+Get all tags for this asset from @happyvertical/smrt-tags
 
 #### Returns
 
 `Promise`\<`Tag`[]\>
 
-Array of Tag instances from @smrt/tags package
+Array of Tag instances from @happyvertical/smrt-tags package
 
 ***
 
@@ -1077,7 +1107,7 @@ Array of Tag instances from @smrt/tags package
 
 > **getType**(): `Promise`\<[`AssetType`](AssetType.md) \| `null`\>
 
-Defined in: assets/src/asset.ts:137
+Defined in: [assets/src/asset.ts:141](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L141)
 
 Get the type of this asset
 
@@ -1093,7 +1123,7 @@ AssetType instance or null
 
 > **hasTag**(`tagSlug`): `Promise`\<`boolean`\>
 
-Defined in: assets/src/asset.ts:90
+Defined in: [assets/src/asset.ts:88](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L88)
 
 Check if this asset has a specific tag
 
@@ -1574,6 +1604,39 @@ await agent.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:127
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtObject.requiresDatabase`
+
+***
+
 ### runHook()
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
@@ -1665,7 +1728,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **getBySlug**(`_slug`): `Promise`\<`Asset` \| `null`\>
 
-Defined in: assets/src/asset.ts:162
+Defined in: [assets/src/asset.ts:166](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/assets/src/asset.ts#L166)
 
 Get asset by slug
 

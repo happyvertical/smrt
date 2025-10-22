@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/types",
+  "name": "@happyvertical/smrt-types",
   "version": "0.41.0",
   "description": "Shared type definitions for the HAVE SDK",
   "type": "module",

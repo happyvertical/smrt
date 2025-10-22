@@ -9,7 +9,7 @@ export type {
   Signal,
   SignalAdapter,
   SignalType,
-} from '@smrt/types';
+} from '@happyvertical/smrt-types';
 export { SignalBus } from './bus.js';
 export type { SanitizationConfig } from './sanitizer.js';
 export { SignalSanitizer } from './sanitizer.js';

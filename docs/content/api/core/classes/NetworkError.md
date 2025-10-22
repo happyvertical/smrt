@@ -1,6 +1,6 @@
 # Class: NetworkError
 
-Defined in: smrt/packages/core/src/errors.ts:279
+Defined in: [smrt/packages/core/src/errors.ts:279](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L279)
 
 Network and external service errors
 
@@ -14,7 +14,7 @@ Network and external service errors
 
 > **new NetworkError**(`message`, `code`, `details?`, `cause?`): `NetworkError`
 
-Defined in: smrt/packages/core/src/errors.ts:280
+Defined in: [smrt/packages/core/src/errors.ts:280](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L280)
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: smrt/packages/core/src/errors.ts:280
 
 > `readonly` **category**: `"database"` \| `"ai"` \| `"filesystem"` \| `"validation"` \| `"network"` \| `"configuration"` \| `"runtime"`
 
-Defined in: smrt/packages/core/src/errors.ts:13
+Defined in: [smrt/packages/core/src/errors.ts:13](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L13)
 
 #### Inherited from
 
@@ -60,7 +60,7 @@ Defined in: smrt/packages/core/src/errors.ts:13
 
 > `readonly` `optional` **cause**: `Error`
 
-Defined in: smrt/packages/core/src/errors.ts:22
+Defined in: [smrt/packages/core/src/errors.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L22)
 
 #### Inherited from
 
@@ -72,7 +72,7 @@ Defined in: smrt/packages/core/src/errors.ts:22
 
 > `readonly` **code**: `string`
 
-Defined in: smrt/packages/core/src/errors.ts:12
+Defined in: [smrt/packages/core/src/errors.ts:12](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L12)
 
 #### Inherited from
 
@@ -84,7 +84,7 @@ Defined in: smrt/packages/core/src/errors.ts:12
 
 > `readonly` `optional` **details**: `Record`\<`string`, `any`\>
 
-Defined in: smrt/packages/core/src/errors.ts:21
+Defined in: [smrt/packages/core/src/errors.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L21)
 
 #### Inherited from
 
@@ -154,7 +154,7 @@ not capture any frames.
 
 > **toJSON**(): `object`
 
-Defined in: smrt/packages/core/src/errors.ts:47
+Defined in: [smrt/packages/core/src/errors.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L47)
 
 Converts error to a serializable object for logging/debugging
 
@@ -300,7 +300,7 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 > `static` **requestFailed**(`url`, `status?`, `responseBody?`): `NetworkError`
 
-Defined in: smrt/packages/core/src/errors.ts:289
+Defined in: [smrt/packages/core/src/errors.ts:289](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L289)
 
 #### Parameters
 
@@ -326,7 +326,7 @@ Defined in: smrt/packages/core/src/errors.ts:289
 
 > `static` **serviceUnavailable**(`service`, `reason?`): `NetworkError`
 
-Defined in: smrt/packages/core/src/errors.ts:312
+Defined in: [smrt/packages/core/src/errors.ts:312](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L312)
 
 #### Parameters
 
@@ -348,7 +348,7 @@ Defined in: smrt/packages/core/src/errors.ts:312
 
 > `static` **timeout**(`url`, `timeoutMs`): `NetworkError`
 
-Defined in: smrt/packages/core/src/errors.ts:304
+Defined in: [smrt/packages/core/src/errors.ts:304](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L304)
 
 #### Parameters
 

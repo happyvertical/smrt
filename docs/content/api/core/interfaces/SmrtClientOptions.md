@@ -1,6 +1,6 @@
 # Interface: SmrtClientOptions
 
-Defined in: smrt/packages/core/src/runtime/types.ts:22
+Defined in: [smrt/packages/core/src/runtime/types.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L22)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: smrt/packages/core/src/runtime/types.ts:22
 
 > `optional` **auth**: `object`
 
-Defined in: smrt/packages/core/src/runtime/types.ts:25
+Defined in: [smrt/packages/core/src/runtime/types.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L25)
 
 #### password?
 
@@ -32,7 +32,7 @@ Defined in: smrt/packages/core/src/runtime/types.ts:25
 
 > `optional` **basePath**: `string`
 
-Defined in: smrt/packages/core/src/runtime/types.ts:24
+Defined in: [smrt/packages/core/src/runtime/types.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L24)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: smrt/packages/core/src/runtime/types.ts:24
 
 > `optional` **baseUrl**: `string`
 
-Defined in: smrt/packages/core/src/runtime/types.ts:23
+Defined in: [smrt/packages/core/src/runtime/types.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L23)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: smrt/packages/core/src/runtime/types.ts:23
 
 > `optional` **fetch**: (`input`, `init?`) => `Promise`\<`Response`\>
 
-Defined in: smrt/packages/core/src/runtime/types.ts:31
+Defined in: [smrt/packages/core/src/runtime/types.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L31)
 
 #### Parameters
 

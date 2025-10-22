@@ -2,7 +2,7 @@
  * Type definitions for @have/places package
  */
 
-import type { SmrtObjectOptions } from '@smrt/core';
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 
 /**
  * Geographic data structure

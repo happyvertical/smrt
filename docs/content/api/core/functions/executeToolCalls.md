@@ -2,7 +2,7 @@
 
 > **executeToolCalls**(`instance`, `toolCalls`, `allowedMethods`, `signalBus?`): `Promise`\<[`ToolCallResult`](../interfaces/ToolCallResult.md)[]\>
 
-Defined in: smrt/packages/core/src/tools/tool-executor.ts:248
+Defined in: [smrt/packages/core/src/tools/tool-executor.ts:248](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L248)
 
 Executes multiple tool calls in sequence
 

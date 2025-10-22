@@ -1,4 +1,4 @@
-# @smrt/assets
+# @happyvertical/smrt-assets
 
 @have/assets
 

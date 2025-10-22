@@ -31,7 +31,7 @@ export async function generateCollection(
 
     // Generate imports
     const imports = [
-      `import { SmrtCollection } from '@smrt/core';`,
+      `import { SmrtCollection } from '@happyvertical/smrt-core';`,
       `import { ${itemClassName} } from '${itemClassPath}';`,
     ];
 

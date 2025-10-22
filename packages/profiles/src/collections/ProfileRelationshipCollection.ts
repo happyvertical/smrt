@@ -4,7 +4,7 @@
  * Provides querying for relationships between profiles.
  */
 
-import { SmrtCollection } from '@smrt/core';
+import { SmrtCollection } from '@happyvertical/smrt-core';
 import { ProfileRelationship } from '../models/ProfileRelationship';
 
 export class ProfileRelationshipCollection extends SmrtCollection<ProfileRelationship> {

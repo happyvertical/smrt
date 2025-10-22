@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { faker } from '@faker-js/faker';
-import { makeSlug } from '@have/utils';
+import { makeSlug } from '@happyvertical/utils';
 import { expect, it } from 'vitest';
 import { Contents } from './contents';
 

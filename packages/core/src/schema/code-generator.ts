@@ -36,7 +36,7 @@ export class SchemaCodeGenerator {
    * Generate import statements
    */
   private generateImports(): string {
-    return `import type { SchemaDefinition } from '@smrt/core/schema';`;
+    return `import type { SchemaDefinition } from '@happyvertical/smrt-core/schema';`;
   }
 
   /**
@@ -146,7 +146,7 @@ ${fkStrings.join(',\n')}
    * Generate TypeScript type definition file
    */
   generateTypeDefinitions(schemas: Record<string, SchemaDefinition>): string {
-    const imports = `import type { SchemaDefinition } from '@smrt/core/schema';`;
+    const imports = `import type { SchemaDefinition } from '@happyvertical/smrt-core/schema';`;
 
     const interfaces = Object.keys(schemas)
       .map(

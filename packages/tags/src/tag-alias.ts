@@ -5,7 +5,7 @@
  * Supports language-neutral aliases and context-scoped variations.
  */
 
-import { SmrtObject, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { Tag } from './tag';
 import type { TagAliasOptions } from './types';
 

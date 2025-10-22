@@ -1,5 +1,5 @@
 {
-  "name": "@smrt/tags",
+  "name": "@happyvertical/smrt-tags",
   "version": "0.41.0",
   "description": "Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework",
   "type": "module",
@@ -24,7 +24,7 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@smrt/core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

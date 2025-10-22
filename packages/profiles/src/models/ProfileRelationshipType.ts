@@ -11,7 +11,7 @@ import {
   type SmrtObjectOptions,
   smrt,
   text,
-} from '@smrt/core';
+} from '@happyvertical/smrt-core';
 import type { ReciprocalHandler } from '../types';
 
 export interface ProfileRelationshipTypeOptions extends SmrtObjectOptions {

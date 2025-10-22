@@ -1,4 +1,4 @@
-# @smrt/core
+# @happyvertical/smrt-core
 
 ## Classes
 
@@ -15,7 +15,6 @@
 - [MetricsAdapter](classes/MetricsAdapter.md)
 - [NetworkError](classes/NetworkError.md)
 - [ObjectRegistry](classes/ObjectRegistry.md)
-- [Pleb](classes/Pleb.md)
 - [PubSubAdapter](classes/PubSubAdapter.md)
 - [RuntimeError](classes/RuntimeError.md)
 - [SignalBus](classes/SignalBus.md)
@@ -53,7 +52,6 @@
 - [NumericFieldOptions](interfaces/NumericFieldOptions.md)
 - [OpenAPIConfig](interfaces/OpenAPIConfig.md)
 - [ParsedArgs](interfaces/ParsedArgs.md)
-- [PlebOptions](interfaces/PlebOptions.md)
 - [PubSubConfig](interfaces/PubSubConfig.md)
 - [RecallAllOptions](interfaces/RecallAllOptions.md)
 - [RecallOptions](interfaces/RecallOptions.md)

@@ -22,7 +22,7 @@ export async function generateFieldDefinitions(
     const imports = Array.from(fieldTypes);
 
     // Generate import statement
-    const importCode = `import { ${imports.join(', ')} } from '@smrt/core/fields';`;
+    const importCode = `import { ${imports.join(', ')} } from '@happyvertical/smrt-core/fields';`;
 
     // Generate field definitions
     const fieldDefinitions = fields

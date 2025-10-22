@@ -1,4 +1,4 @@
-# @smrt/gnode
+# @happyvertical/smrt-gnode
 
 ## Classes
 

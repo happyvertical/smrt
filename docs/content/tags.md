@@ -1,11 +1,11 @@
 ---
 id: tags
-title: "@smrt/tags: Hierarchical Tagging System"
-sidebar_label: "@smrt/tags"
+title: "@happyvertical/smrt-tags: Hierarchical Tagging System"
+sidebar_label: "@happyvertical/smrt-tags"
 sidebar_position: 10
 ---
 
-# @smrt/tags
+# @happyvertical/smrt-tags
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,7 +13,7 @@ Reusable tagging system with hierarchies, contexts, and multi-language support f
 
 ## Overview
 
-The `@smrt/tags` package provides a comprehensive tagging system for organizing and categorizing content in SMRT applications. Built on the SMRT framework, it offers hierarchical tag structures (parent-child relationships), context-based scoping for namespace isolation, multi-language aliases for internationalization, and flexible metadata storage for application-specific customization.
+The `@happyvertical/smrt-tags` package provides a comprehensive tagging system for organizing and categorizing content in SMRT applications. Built on the SMRT framework, it offers hierarchical tag structures (parent-child relationships), context-based scoping for namespace isolation, multi-language aliases for internationalization, and flexible metadata storage for application-specific customization.
 
 Tags are ideal for:
 - **Content Categorization**: Organize articles, documents, and media
@@ -38,13 +38,13 @@ Tags are ideal for:
 
 ```bash
 # Install with pnpm (recommended for SMRT projects)
-pnpm add @smrt/tags
+pnpm add @happyvertical/smrt-tags
 
 # Or with npm
-npm install @smrt/tags
+npm install @happyvertical/smrt-tags
 
 # Or with bun
-bun add @smrt/tags
+bun add @happyvertical/smrt-tags
 ```
 
 ## Usage
@@ -52,7 +52,7 @@ bun add @smrt/tags
 ### Basic Tag Creation
 
 ```typescript
-import { Tag, TagCollection } from '@smrt/tags';
+import { Tag, TagCollection } from '@happyvertical/smrt-tags';
 
 // Create a root tag
 const techTag = new Tag({
@@ -150,7 +150,7 @@ const forumTags = await collection.list({
 ### Multi-Language Aliases
 
 ```typescript
-import { TagAlias, TagAliasCollection } from '@smrt/tags';
+import { TagAlias, TagAliasCollection } from '@happyvertical/smrt-tags';
 
 // Create tag
 const devTag = new Tag({
@@ -234,7 +234,7 @@ import {
   generateUniqueSlug,
   calculateLevel,
   hasCircularReference,
-} from '@smrt/tags';
+} from '@happyvertical/smrt-tags';
 
 // Sanitize user input
 const cleanSlug = sanitizeSlug('My Cool Tag!');
@@ -274,7 +274,7 @@ if (isCircular) {
 ### Working with Collections
 
 ```typescript
-import { TagCollection } from '@smrt/tags';
+import { TagCollection } from '@happyvertical/smrt-tags';
 
 const collection = await TagCollection.create({
   database: './my-tags.db', // SQLite database path
@@ -314,7 +314,7 @@ await collection.delete({ slug: 'technology' });
 ### Integration Example: Blog Post Tagging
 
 ```typescript
-import { Tag, TagCollection } from '@smrt/tags';
+import { Tag, TagCollection } from '@happyvertical/smrt-tags';
 
 // Define your blog post interface
 interface BlogPost {

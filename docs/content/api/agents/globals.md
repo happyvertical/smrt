@@ -1,4 +1,4 @@
-# @smrt/agents
+# @happyvertical/smrt-agents
 
 @have/agents - Agent framework for building autonomous actors
 
@@ -17,7 +17,7 @@ SmrtObject, any properties defined will be automatically persisted to the databa
 ```typescript
 import { Agent } from '@have/agents';
 import { getModuleConfig } from '@have/config';
-import { smrt } from '@smrt/core';
+import { smrt } from '@happyvertical/smrt-core';
 
 @smrt()
 class MyAgent extends Agent {
