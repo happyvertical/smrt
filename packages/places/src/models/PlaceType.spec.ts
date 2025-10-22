@@ -1,7 +1,5 @@
-import {
-  fieldsFromClass,
-  generateSchema,
-} from '@happyvertical/smrt-core/utils';
+import { generateSchema } from '@happyvertical/smrt-core/schema/utils';
+import { fieldsFromClass } from '@happyvertical/smrt-core/utils';
 import { describe, expect, it } from 'vitest';
 import { PlaceType } from './PlaceType';
 
@@ -17,8 +15,8 @@ describe('PlaceType Schema Generation', () => {
     });
   });
 
-  it('should include name column in generated schema', () => {
-    const schema = generateSchema(PlaceType);
+  it('should include name column in generated schema', async () => {
+    const schema = await generateSchema(PlaceType);
 
     // Verify schema includes name column (with quoted column names)
     expect(schema).toContain('"name" TEXT NOT NULL');
