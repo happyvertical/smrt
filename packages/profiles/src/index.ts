@@ -14,15 +14,22 @@ export { ProfileRelationshipCollection } from './collections/ProfileRelationship
 export { ProfileRelationshipTermCollection } from './collections/ProfileRelationshipTermCollection';
 export { ProfileRelationshipTypeCollection } from './collections/ProfileRelationshipTypeCollection';
 export { ProfileTypeCollection } from './collections/ProfileTypeCollection';
+// Export model option types
+export type { ProfileOptions } from './models/Profile';
 // Export models
 export { Profile } from './models/Profile';
+export type { ProfileMetadataOptions } from './models/ProfileMetadata';
 export { ProfileMetadata } from './models/ProfileMetadata';
+export type { ProfileMetafieldOptions } from './models/ProfileMetafield';
 export { ProfileMetafield } from './models/ProfileMetafield';
+export type { ProfileRelationshipOptions } from './models/ProfileRelationship';
 export { ProfileRelationship } from './models/ProfileRelationship';
+export type { ProfileRelationshipTermOptions } from './models/ProfileRelationshipTerm';
 export { ProfileRelationshipTerm } from './models/ProfileRelationshipTerm';
+export type { ProfileRelationshipTypeOptions } from './models/ProfileRelationshipType';
 export { ProfileRelationshipType } from './models/ProfileRelationshipType';
+export type { ProfileTypeOptions } from './models/ProfileType';
 export { ProfileType } from './models/ProfileType';
-
 // Export types
 export type {
   ReciprocalHandler,
