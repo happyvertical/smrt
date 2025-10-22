@@ -1,3 +1,10 @@
+## [1.2.3](https://github.com/happyvertical/smrt/compare/v1.2.2...v1.2.3) (2025-10-22)
+
+
+### Bug Fixes
+
+* **ci:** exclude SDK docs from build in deploy-docs job ([0133604](https://github.com/happyvertical/smrt/commit/01336041adecb7b2552db8e5c1467cb2e9fd54c0))
+
 ## [1.2.2](https://github.com/happyvertical/smrt/compare/v1.2.1...v1.2.2) (2025-10-22)
 
 
