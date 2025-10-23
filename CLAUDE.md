@@ -788,6 +788,40 @@ refactor/issue-XXX-short-description  # Code refactoring
 test/issue-XXX-short-description      # Test additions/updates
 ```
 
+## Issue Triage and Management
+
+The SMRT repository uses automated AI-powered issue triage to ensure consistent handling of bugs, feature requests, and questions.
+
+### Triage System
+
+- **AI-Powered Triage**: Automatically analyzes, labels, and prioritizes issues using `@happyvertical/github-actions`
+- **Priority Levels**: P0 (Critical), P1 (High), P2 (Medium), P3 (Low)
+- **Issue Templates**: Structured bug reports and feature requests (.github/ISSUE_TEMPLATE/)
+- **Stale Management**: Automatic cleanup of inactive issues after 30+ days
+
+### Documentation
+
+- **Triage SOP**: [.github/TRIAGE_SOP.md](.github/TRIAGE_SOP.md) - Complete standard operating procedure
+- **Issue Templates**: [.github/ISSUE_TEMPLATE/](.github/ISSUE_TEMPLATE/) - Bug reports and feature requests
+- **Workflows**: [.github/workflows/](.github/workflows/) - Automated triage and stale issue management
+
+### Triage Workflow
+
+1. **Issue Opened**: AI analyzes content and suggests labels/priority
+2. **Manual Review**: Maintainers confirm or adjust AI suggestions within response time targets
+3. **Assignment**: Issues are assigned based on priority and component
+4. **Stale Detection**: Issues without activity for 30 days are marked stale
+5. **Auto-Close**: Stale issues without response for 14 additional days are closed
+
+### Response Time Targets
+
+- **P0-Critical**: < 1 hour (production outages, security issues)
+- **P1-High**: < 4 hours (major functionality broken)
+- **P2-Medium**: < 2 business days (non-blocking bugs, feature requests)
+- **P3-Low**: < 1 week (nice-to-have features, minor issues)
+
+See [.github/TRIAGE_SOP.md](.github/TRIAGE_SOP.md) for complete details.
+
 ## Recent Infrastructure Changes
 
 Important PRs that modified development workflow, tooling, or publishing:
