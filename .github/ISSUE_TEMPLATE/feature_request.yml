@@ -1,0 +1,157 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for the SMRT framework
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Thank you for suggesting a feature!
+
+        We appreciate your ideas for improving the SMRT framework. Please provide details to help us understand your use case and evaluate the proposal.
+
+        **Before submitting**, please check:
+        - [ ] I've searched existing issues and discussions
+        - [ ] This feature aligns with SMRT's goals (AI-first, type-safe, auto-generated)
+        - [ ] I've considered how this might affect existing functionality
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: What problem does this feature solve? What's the motivation?
+      placeholder: |
+        Example: When building vertical AI agents, I need to...
+        Currently, I have to manually...
+        This is frustrating because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How should this feature work? Describe your ideal implementation.
+      placeholder: |
+        Example:
+        - Add a new @smrt decorator option: `ai: { tools: ['custom-tool'] }`
+        - The smrtPlugin should generate MCP tools automatically
+        - The generated tools should include...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Code Example
+      description: Show how you'd like to use this feature (pseudocode is fine)
+      placeholder: |
+        ```typescript
+        @smrt({
+          ai: {
+            tools: ['analyze', 'summarize'],
+            callable: ['process']
+          }
+        })
+        class Document extends SmrtObject {
+          // ...
+        }
+        ```
+      render: typescript
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other solutions or workarounds have you considered?
+      placeholder: |
+        Example:
+        - Manually implementing MCP tools (too much boilerplate)
+        - Using a different framework (doesn't integrate with SMRT)
+        - Custom code generation script (not maintainable)
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected Package
+      description: Which package would this feature belong to?
+      options:
+        - "@happyvertical/smrt-core"
+        - "@happyvertical/smrt-agents"
+        - "@happyvertical/smrt-places"
+        - "@happyvertical/smrt-products"
+        - "@happyvertical/smrt-content"
+        - "@happyvertical/smrt-assets"
+        - "@happyvertical/smrt-events"
+        - "@happyvertical/smrt-accounts"
+        - "@happyvertical/smrt-profiles"
+        - "@happyvertical/smrt-tags"
+        - "@happyvertical/smrt-gnode"
+        - "New package"
+        - "Multiple packages"
+        - "Framework-wide"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Breaking Change?
+      description: Would this require breaking changes to existing code?
+      options:
+        - "No - Fully backward compatible"
+        - "Maybe - Needs discussion"
+        - "Yes - Breaking change required"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority (Your Perspective)
+      description: How important is this feature to you?
+      options:
+        - "Nice to have - Would improve my workflow"
+        - "Important - Significant productivity gain"
+        - "Critical - Blocking my use of SMRT"
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and Benefits
+      description: Who would benefit from this? How would it improve the framework?
+      placeholder: |
+        - **Users affected**: All developers using @smrt decorators
+        - **Benefits**: Reduces boilerplate by 50%, improves type safety
+        - **Use cases**: Building AI agents, creating MCP tools, generating APIs
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other relevant information, links, screenshots, etc.
+      placeholder: |
+        - Related discussions: #123
+        - Similar features in other frameworks: ...
+        - Proof of concept: ...
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Are you willing to help implement this feature?
+      options:
+        - label: I'm willing to submit a PR to implement this feature
+        - label: I'm willing to help test this feature
+        - label: I'm willing to help document this feature
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/happyvertical/smrt/blob/main/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

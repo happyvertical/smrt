@@ -1,0 +1,145 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in the SMRT framework
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Thank you for reporting a bug!
+
+        Please provide as much detail as possible to help us investigate and fix the issue quickly.
+
+        **Before submitting**, please check:
+        - [ ] I've searched existing issues to ensure this isn't a duplicate
+        - [ ] I've tested with the latest version
+        - [ ] I can reproduce the issue consistently
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: "Example: The smrtPlugin fails to generate manifests when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior
+      placeholder: |
+        1. Install @happyvertical/smrt-core@0.4.0
+        2. Create a class with nullable fields...
+        3. Run `npm run build`
+        4. Check dist/manifest.json
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: "Example: The manifest should include all nullable fields with correct types"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: "Example: Nullable fields are missing from the generated manifest"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: SMRT Version
+      description: Which version of the SMRT framework are you using?
+      placeholder: "0.4.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js Version
+      description: Which version of Node.js are you using?
+      placeholder: "24.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected Package
+      description: Which package is experiencing the issue?
+      options:
+        - "@happyvertical/smrt-core"
+        - "@happyvertical/smrt-agents"
+        - "@happyvertical/smrt-places"
+        - "@happyvertical/smrt-products"
+        - "@happyvertical/smrt-content"
+        - "@happyvertical/smrt-assets"
+        - "@happyvertical/smrt-events"
+        - "@happyvertical/smrt-accounts"
+        - "@happyvertical/smrt-profiles"
+        - "@happyvertical/smrt-tags"
+        - "@happyvertical/smrt-gnode"
+        - "Multiple packages"
+        - "Other"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: Where does this bug occur?
+      multiple: true
+      options:
+        - "Development"
+        - "Production"
+        - "CI/CD"
+        - "Testing"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Any relevant error messages or logs (please format with ```triple backticks```)
+      placeholder: |
+        ```
+        Error: Failed to generate manifest
+            at smrtPlugin.closeBundle (vite-plugin/index.ts:305)
+        ```
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other relevant information about the problem
+      placeholder: |
+        - Related issues: #123
+        - Workarounds attempted: ...
+        - Impact: ...
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/happyvertical/smrt/blob/main/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

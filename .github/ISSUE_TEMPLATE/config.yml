@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/happyvertical/smrt/discussions
+    about: Ask questions, share ideas, and discuss the SMRT framework with the community
+  - name: 📚 Documentation
+    url: https://github.com/happyvertical/smrt/blob/main/CLAUDE.md
+    about: Read the comprehensive framework documentation and development guide
+  - name: 🔒 Security Vulnerability
+    url: https://github.com/happyvertical/smrt/security/advisories/new
+    about: Report security vulnerabilities privately (DO NOT open public issues)
