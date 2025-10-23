@@ -1178,24 +1178,29 @@ export class SmrtObject extends SmrtClass {
     const id = options.id || crypto.randomUUID();
     const now = new Date();
 
-    await this.systemDb.query(
-      `INSERT OR REPLACE INTO _smrt_contexts (
-        id, owner_class, owner_id, scope, key, value, metadata,
-        version, confidence, created_at, updated_at, last_used_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id,
-      this._className,
-      this.id,
-      options.scope,
-      options.key,
-      JSON.stringify(options.value),
-      options.metadata ? JSON.stringify(options.metadata) : null,
-      options.version ?? 1,
-      options.confidence ?? 1.0,
-      now,
-      now,
-      now,
-      options.expiresAt ?? null,
+    // Ensure the object has an ID - generate one if it doesn't exist
+    if (!this.id) {
+      this._id = crypto.randomUUID();
+    }
+
+    await this.systemDb.upsert(
+      '_smrt_contexts',
+      ['owner_class', 'owner_id', 'scope', 'key', 'version'],
+      {
+        id,
+        owner_class: this._className,
+        owner_id: this.id,
+        scope: options.scope,
+        key: options.key,
+        value: JSON.stringify(options.value),
+        metadata: options.metadata ? JSON.stringify(options.metadata) : null,
+        version: options.version ?? 1,
+        confidence: options.confidence ?? 1.0,
+        created_at: now,
+        updated_at: now,
+        last_used_at: now,
+        expires_at: options.expiresAt ?? null,
+      },
     );
   }
 
