@@ -3,8 +3,8 @@
  *
  * This test verifies that:
  * 1. ApiResponse wrapper is NOT used (returns unwrapped data)
- * 2. Objects with custom methods use singular naming
- * 3. Custom methods are included in generated types
+ * 2. Plural collection names are always used (REST convention)
+ * 3. Custom methods are included in generated types with id parameter
  * 4. Search method is available in CrudOperations
  */
 
@@ -96,9 +96,9 @@ describe('Issue #66: Virtual Module Type Generation', () => {
     expect(createReturn).toBeDefined();
   });
 
-  it('should use singular naming for objects with custom methods', () => {
-    // Objects with custom methods should use singular className
-    // Objects without custom methods should use plural collection
+  it('should always use plural collection names (REST convention)', () => {
+    // All objects use plural collection names, regardless of custom methods
+    // This follows standard REST API conventions: /praecos, /praecos/{id}, /praecos/{id}/research
 
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
@@ -128,17 +128,15 @@ describe('Issue #66: Virtual Module Type Generation', () => {
       },
     };
 
-    // Praeco has custom methods, so should use singular "praeco"
+    // Both should use plural collection names
+    expect(manifest.objects.praeco.collection).toBe('praecos');
+    expect(manifest.objects.council.collection).toBe('councils');
+
+    // Adding custom methods doesn't change the collection name
     const hasCustomMethods =
       Object.keys(manifest.objects.praeco.methods).length > 0;
-    const praecoPropertyName = hasCustomMethods ? 'praeco' : 'praecos';
-    expect(praecoPropertyName).toBe('praeco'); // Singular for custom methods
-
-    // Council has no custom methods, so should use plural "councils"
-    const hasNoCustomMethods =
-      Object.keys(manifest.objects.council.methods).length === 0;
-    const councilPropertyName = hasNoCustomMethods ? 'councils' : 'council';
-    expect(councilPropertyName).toBe('councils'); // Plural for CRUD only
+    expect(hasCustomMethods).toBe(true);
+    // Still uses 'praecos' for API client property, not 'praeco'
   });
 
   it('should include search method in CrudOperations', () => {
@@ -171,7 +169,8 @@ describe('Issue #66: Virtual Module Type Generation', () => {
 
   it('should include custom methods alongside CRUD operations', () => {
     // Objects with custom methods should have:
-    // CrudOperations<T> & { customMethod1(): ..., customMethod2(): ... }
+    // CrudOperations<T> & { customMethod(id: string, options?: ...): ... }
+    // Custom methods are instance methods requiring id as first parameter
 
     interface MockCrudOperations<T> {
       list(): Promise<T[]>;
@@ -183,8 +182,8 @@ describe('Issue #66: Virtual Module Type Generation', () => {
     }
 
     interface CustomMethods {
-      research(options?: { topic?: string }): Promise<any>;
-      report(): Promise<any>;
+      research(id: string, options?: { topic?: string }): Promise<any>;
+      report(id: string): Promise<any>;
     }
 
     type ExpectedPraecoClient<T> = MockCrudOperations<T> & CustomMethods;
@@ -197,13 +196,18 @@ describe('Issue #66: Virtual Module Type Generation', () => {
       update: (_id, _data) => Promise.resolve({}),
       delete: (_id) => Promise.resolve(true),
       search: (_query) => Promise.resolve([]),
-      research: (_options) => Promise.resolve({}),
-      report: () => Promise.resolve({}),
+      research: (_id, _options) => Promise.resolve({}),
+      report: (_id) => Promise.resolve({}),
     };
 
     expect(mockClient.list).toBeDefined();
     expect(mockClient.research).toBeDefined();
     expect(mockClient.report).toBeDefined();
     expect(mockClient.search).toBeDefined();
+
+    // Verify custom methods require id parameter (REST: /praecos/{id}/research)
+    const testId = '123';
+    expect(() => mockClient.research(testId)).not.toThrow();
+    expect(() => mockClient.report(testId)).not.toThrow();
   });
 });

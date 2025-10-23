@@ -455,18 +455,15 @@ function generateClientModule(manifest: SmartObjectManifest): string {
   const objects = Object.entries(manifest.objects);
 
   const clientMethods = objects
-    .map(([name, obj]) => {
+    .map(([_name, obj]) => {
       const { collection, methods = {} } = obj;
       const customMethods = Object.entries(methods);
-      const hasCustomMethods = customMethods.length > 0;
-
-      // Determine property name: singular if custom methods, plural otherwise
-      const propertyName = hasCustomMethods ? name : collection;
 
       // Generate custom method implementations
+      // Custom methods are instance methods: POST /{collection}/{id}/{methodName}
       const customMethodImpls = customMethods
         .map(([methodName, _method]) => {
-          return `    ${methodName}: (options) => fetch(basePath + '/${propertyName}/${methodName}', {
+          return `    ${methodName}: (id, options) => fetch(basePath + '/${collection}/' + id + '/${methodName}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options || {})
@@ -474,12 +471,11 @@ function generateClientModule(manifest: SmartObjectManifest): string {
         })
         .join(',\n');
 
-      const customMethodsBlock = hasCustomMethods
-        ? `,\n${customMethodImpls}`
-        : '';
+      const customMethodsBlock =
+        customMethods.length > 0 ? `,\n${customMethodImpls}` : '';
 
       return `
-  ${propertyName}: {
+  ${collection}: {
     list: (params) => fetch(basePath + '/${collection}', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
@@ -733,35 +729,32 @@ ${fields}
       .join('\n\n');
 
     // Generate API client interface for each object
-    // Use singular className if object has custom methods, otherwise use plural collection
+    // Always use plural collection names (standard REST convention)
     const apiClientInterface = Object.entries(manifest.objects)
-      .map(([objectName, obj]) => {
+      .map(([_objectName, obj]) => {
         const { className, collection, methods = {} } = obj;
         const interfaceName = `${className}Data`;
         const customMethods = Object.entries(methods);
-        const hasCustomMethods = customMethods.length > 0;
-
-        // Determine property name: singular if custom methods, plural otherwise
-        const propertyName = hasCustomMethods ? objectName : collection;
 
         // Generate custom method signatures
+        // Custom methods are instance methods requiring id as first parameter
         const customMethodSignatures = customMethods
           .map(([methodName, method]) => {
             const params = method.parameters || [];
-            const paramSignature =
+            const optionsSignature =
               params.length > 0
-                ? `options?: { ${params.map((p) => `${p.name}?: ${mapTypeScriptType(p.type)}`).join('; ')} }`
+                ? `, options?: { ${params.map((p) => `${p.name}?: ${mapTypeScriptType(p.type)}`).join('; ')} }`
                 : '';
-            return `      ${methodName}(${paramSignature}): Promise<any>;`;
+            return `      ${methodName}(id: string${optionsSignature}): Promise<any>;`;
           })
           .join('\n');
 
-        if (hasCustomMethods) {
+        if (customMethods.length > 0) {
           // Object with custom methods: include both CRUD and custom methods
-          return `    ${propertyName}: CrudOperations<${interfaceName}> & {\n${customMethodSignatures}\n    };`;
+          return `    ${collection}: CrudOperations<${interfaceName}> & {\n${customMethodSignatures}\n    };`;
         } else {
           // Standard CRUD operations only
-          return `    ${propertyName}: CrudOperations<${interfaceName}>;`;
+          return `    ${collection}: CrudOperations<${interfaceName}>;`;
         }
       })
       .join('\n');
