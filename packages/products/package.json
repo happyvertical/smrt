@@ -36,7 +36,8 @@
     "./utils": {
       "types": "./dist/lib/utils/index.d.ts",
       "default": "./dist/lib/utils/index.js"
-    }
+    },
+    "./manifest": "./dist/lib/manifest.json"
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*"

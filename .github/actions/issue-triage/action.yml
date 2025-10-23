@@ -1,5 +1,5 @@
 name: 'Issue Triage'
-description: 'AI-powered issue triage using @have/github-actions package'
+description: 'AI-powered issue triage using @happyvertical/github-actions package'
 inputs:
   github-token:
     description: 'GitHub token for API access'
@@ -16,11 +16,11 @@ runs:
     - name: Configure npm for GitHub Packages
       shell: bash
       run: |
-        echo "@have:registry=https://npm.pkg.github.com" >> ~/.npmrc
+        echo "@happyvertical:registry=https://npm.pkg.github.com" >> ~/.npmrc
         echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-token }}" >> ~/.npmrc
 
     - name: Run issue triage
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
-      run: npx --yes @have/github-actions@latest triage
+      run: npx --yes @happyvertical/github-actions@latest triage
