@@ -293,10 +293,47 @@ export class ObjectRegistry {
           currentProto = Object.getPrototypeOf(currentProto);
         }
 
+        // Properties to exclude from schema (system/internal properties from base classes)
+        // These cause circular serialization errors when included
+        const BASE_CLASS_PROPERTIES = new Set([
+          'ai',
+          'db',
+          'fs',
+          'tableName',
+          'signalBus',
+          'systemDb', // Getters from base classes
+          '_ai',
+          '_db',
+          '_fs',
+          '_className',
+          '_signalBus',
+          '_tableName', // Private properties
+          '_id',
+          '_slug',
+          '_context',
+          '_loadedRelationships', // SmrtObject private properties
+          'options', // Configuration object
+        ]);
+
+        // Schema properties that should be persisted despite being on base class
+        const SCHEMA_PROPERTIES = new Set([
+          'id',
+          'slug',
+          'context',
+          'name',
+          'created_at',
+          'updated_at',
+        ]);
+
         // First pass: look for Field instances (from field helpers like text())
         for (const key of allProperties) {
           // Skip protected properties - this fixes Issue #13
-          if (key.startsWith('_') || key.startsWith('#') || key === 'options') {
+          if (key.startsWith('_') || key.startsWith('#')) {
+            continue;
+          }
+
+          // Skip base class properties (Issue #75) except whitelisted schema properties
+          if (BASE_CLASS_PROPERTIES.has(key) && !SCHEMA_PROPERTIES.has(key)) {
             continue;
           }
 
@@ -312,11 +349,12 @@ export class ObjectRegistry {
         if (fields.size === 0) {
           for (const key of allProperties) {
             // Skip protected properties
-            if (
-              key.startsWith('_') ||
-              key.startsWith('#') ||
-              key === 'options'
-            ) {
+            if (key.startsWith('_') || key.startsWith('#')) {
+              continue;
+            }
+
+            // Skip base class properties (Issue #75) except whitelisted schema properties
+            if (BASE_CLASS_PROPERTIES.has(key) && !SCHEMA_PROPERTIES.has(key)) {
               continue;
             }
 

@@ -15,6 +15,7 @@ import type {
 export class ASTScanner {
   private program: ts.Program;
   private options: ScanOptions;
+  private baseClassProperties: Set<string> = new Set();
 
   constructor(filePaths: string[], options: ScanOptions = {}) {
     this.options = {
@@ -35,6 +36,9 @@ export class ASTScanner {
       skipLibCheck: true,
       strict: true,
     });
+
+    // Extract properties defined on base classes to exclude from subclass schemas
+    this.baseClassProperties = this.extractBaseClassProperties();
   }
 
   /**
@@ -53,6 +57,40 @@ export class ASTScanner {
     }
 
     return results;
+  }
+
+  /**
+   * Extract properties defined on base classes
+   * These properties should be excluded from subclass schemas to avoid circular serialization
+   */
+  private extractBaseClassProperties(): Set<string> {
+    const baseProperties = new Set<string>();
+
+    for (const sourceFile of this.program.getSourceFiles()) {
+      // Skip declaration files - we only want actual source files
+      if (sourceFile.isDeclarationFile) continue;
+
+      ts.forEachChild(sourceFile, (node) => {
+        if (ts.isClassDeclaration(node)) {
+          const className = node.name?.text;
+
+          // Check if this is one of our base classes
+          if (className && this.options.baseClasses?.includes(className)) {
+            // Extract all property declarations from this base class
+            for (const member of node.members) {
+              if (ts.isPropertyDeclaration(member)) {
+                const propName = this.getPropertyName(member);
+                if (propName) {
+                  baseProperties.add(propName);
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    return baseProperties;
   }
 
   /**
@@ -332,6 +370,18 @@ export class ASTScanner {
     // Skip static properties for now
     if (node.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
       return null;
+    }
+
+    const propertyName = this.getPropertyName(node);
+    if (!propertyName) return null;
+
+    // Skip properties inherited from base classes to avoid circular serialization
+    if (this.baseClassProperties.has(propertyName)) {
+      // Exception: Allow specific SmrtObject schema properties that should be persisted
+      const SCHEMA_PROPERTIES = ['name', 'created_at', 'updated_at'];
+      if (!SCHEMA_PROPERTIES.includes(propertyName)) {
+        return null;
+      }
     }
 
     // Determine field type from initializer or type annotation
