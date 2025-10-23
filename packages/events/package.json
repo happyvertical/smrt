@@ -13,7 +13,8 @@
     "./utils": {
       "types": "./dist/utils.d.ts",
       "default": "./dist/utils.js"
-    }
+    },
+    "./manifest": "./dist/manifest.json"
   },
   "scripts": {
     "build": "VITE_BUILD_PACKAGE=events vite build --mode library",

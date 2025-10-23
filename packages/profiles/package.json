@@ -13,7 +13,8 @@
     "./utils": {
       "import": "./dist/utils.js",
       "types": "./dist/utils.d.ts"
-    }
+    },
+    "./manifest": "./dist/manifest.json"
   },
   "scripts": {
     "build": "vite build --mode library",

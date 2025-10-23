@@ -84,23 +84,27 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let manifestGenerator: any = null; // Will be lazily created in server mode
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
+  let config: any = null; // Store resolved config for closeBundle hook
 
   return {
     name: 'smrt-auto-service',
 
-    async configResolved(config) {
+    async configResolved(resolvedConfig) {
+      // Store config for closeBundle hook
+      config = resolvedConfig;
+
       // Store project root for file scanning
-      projectRoot = config.root;
+      projectRoot = resolvedConfig.root;
 
       // Detect plugin mode based on build configuration
       if (mode === 'auto') {
-        const isSSRBuild = config.build?.ssr;
-        const isFederationBuild = config.plugins.some((p) =>
+        const isSSRBuild = resolvedConfig.build?.ssr;
+        const isFederationBuild = resolvedConfig.plugins.some((p) =>
           p.name?.includes('federation'),
         );
         const isClientBuild =
           isFederationBuild ||
-          (!isSSRBuild && config.build?.target === 'esnext');
+          (!isSSRBuild && resolvedConfig.build?.target === 'esnext');
 
         pluginMode = isClientBuild ? 'client' : 'server';
       } else {
@@ -114,7 +118,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       // Generate SvelteKit routes if enabled
       if (svelteKit.enabled && manifest) {
-        await generateSvelteKitRoutes(config.root, manifest, {
+        await generateSvelteKitRoutes(resolvedConfig.root, manifest, {
           enabled: svelteKit.enabled,
           routesDir: svelteKit.routesDir || 'src/routes/api',
           objectsDir: svelteKit.objectsDir || 'src/lib/objects',
@@ -294,6 +298,39 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           return html;
         }
       },
+    },
+
+    async closeBundle() {
+      // Write manifest to disk during library builds
+      // This allows published packages to include their manifest
+      if (!manifest || !config.build?.lib) {
+        return;
+      }
+
+      try {
+        const { writeFileSync, mkdirSync } = await import('node:fs');
+        const { resolve, dirname } = await import('node:path');
+
+        // Determine output directory
+        const outDir =
+          config.build?.rollupOptions?.output?.dir ||
+          config.build?.outDir ||
+          'dist';
+        const manifestPath = resolve(projectRoot, outDir, 'manifest.json');
+
+        // Ensure directory exists
+        mkdirSync(dirname(manifestPath), { recursive: true });
+
+        // Write manifest file
+        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+
+        const objectCount = Object.keys(manifest.objects).length;
+        console.log(
+          `[smrt] Wrote manifest with ${objectCount} objects to ${manifestPath}`,
+        );
+      } catch (error) {
+        console.error('[smrt] Error writing manifest file:', error);
+      }
     },
   };
 
