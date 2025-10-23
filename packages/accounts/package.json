@@ -9,7 +9,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./manifest": "./dist/manifest.json"
   },
   "scripts": {
     "build": "VITE_BUILD_PACKAGE=accounts vite build --mode library",

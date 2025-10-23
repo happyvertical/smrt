@@ -28,6 +28,7 @@
  */
 
 import type { SmrtCollection } from './collection';
+import { Field } from './fields/index';
 import { staticManifest } from './manifest/static-manifest';
 import type { SmrtObject } from './object';
 import { classnameToTablename, tableNameFromClass } from './utils';
@@ -332,12 +333,33 @@ export class ObjectRegistry {
             else if (Array.isArray(value)) fieldType = 'json';
             else if (valueType === 'object' && value !== null)
               fieldType = 'json';
-            else continue; // Skip functions, undefined, null
+            else if (valueType === 'function')
+              continue; // Skip functions
+            // For null/undefined, infer type from field name pattern
+            // Issue #65: nullable fields (e.g., latitude: number | null = null)
+            // must be included in schema. Since we can't introspect TypeScript types
+            // at runtime, we infer from common naming patterns
+            else if (value === null || value === undefined) {
+              // Check field name for type hints
+              if (
+                key.endsWith('_at') ||
+                key.endsWith('_date') ||
+                key.endsWith('Date') ||
+                key.includes('date') ||
+                key.includes('time')
+              ) {
+                fieldType = 'datetime';
+              } else if (key.endsWith('Id') || key.endsWith('_id')) {
+                fieldType = 'text'; // Foreign keys are text (UUIDs)
+              } else {
+                // Default to decimal for coordinate fields and other numeric nullables
+                // This handles common cases like latitude, longitude, price, amount, etc.
+                fieldType = 'decimal';
+              }
+            }
 
-            fields.set(key, {
-              type: fieldType,
-              options: {},
-            });
+            // Create proper Field instances so getSqlType() works
+            fields.set(key, new Field(fieldType, {}));
           }
         }
       } catch (error) {
