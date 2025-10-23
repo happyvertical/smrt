@@ -158,6 +158,7 @@ describe('SmrtClass', () => {
       const instance = new SmrtClass({
         db: {
           type: 'json',
+          url: testDir, // SDK now requires url parameter
           dataDir: testDir,
         },
       });
@@ -187,6 +188,7 @@ describe('SmrtClass', () => {
       const instance = new SmrtClass({
         db: {
           type: 'json',
+          url: testDir, // SDK now requires url parameter
           dataDir: testDir,
         },
       });
