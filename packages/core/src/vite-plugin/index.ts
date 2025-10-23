@@ -492,36 +492,58 @@ function generateClientModule(manifest: SmartObjectManifest): string {
   const objects = Object.entries(manifest.objects);
 
   const clientMethods = objects
-    .map(([name, obj]) => {
-      const { collection } = obj;
+    .map(([_name, obj]) => {
+      const { collection, methods = {} } = obj;
+      const customMethods = Object.entries(methods);
+
+      // Generate custom method implementations
+      // Custom methods are instance methods: POST /{collection}/{id}/{methodName}
+      const customMethodImpls = customMethods
+        .map(([methodName, _method]) => {
+          return `    ${methodName}: (id, options) => fetch(basePath + '/${collection}/' + id + '/${methodName}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options || {})
+    }).then(r => r.json())`;
+        })
+        .join(',\n');
+
+      const customMethodsBlock =
+        customMethods.length > 0 ? `,\n${customMethodImpls}` : '';
+
       return `
-  ${name}: {
-    list: (params) => fetch(basePath + '/${collection}', { 
+  ${collection}: {
+    list: (params) => fetch(basePath + '/${collection}', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     }).then(r => r.json()),
-    
+
     get: (id) => fetch(basePath + '/${collection}/' + id, {
-      method: 'GET', 
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     }).then(r => r.json()),
-    
+
     create: (data) => fetch(basePath + '/${collection}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     }).then(r => r.json()),
-    
+
     update: (id, data) => fetch(basePath + '/${collection}/' + id, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     }).then(r => r.json()),
-    
+
     delete: (id) => fetch(basePath + '/${collection}/' + id, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' }
-    }).then(r => r.ok)
+    }).then(r => r.ok),
+
+    search: (query) => fetch(basePath + '/${collection}/search?q=' + encodeURIComponent(query), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    }).then(r => r.json())${customMethodsBlock}
   }`;
     })
     .join(',');
@@ -743,17 +765,34 @@ ${fields}
       })
       .join('\n\n');
 
-    // Generate CRUD operations interface for each collection
-    const collectionNames = [
-      ...new Set(Object.values(manifest.objects).map((obj) => obj.collection)),
-    ];
-    const apiClientInterface = collectionNames
-      .map((collection) => {
-        const dataType = Object.entries(manifest.objects).find(
-          ([, obj]) => obj.collection === collection,
-        )?.[1].className;
-        const interfaceName = dataType ? `${dataType}Data` : 'any';
-        return `    ${collection}: CrudOperations<${interfaceName}>;`;
+    // Generate API client interface for each object
+    // Always use plural collection names (standard REST convention)
+    const apiClientInterface = Object.entries(manifest.objects)
+      .map(([_objectName, obj]) => {
+        const { className, collection, methods = {} } = obj;
+        const interfaceName = `${className}Data`;
+        const customMethods = Object.entries(methods);
+
+        // Generate custom method signatures
+        // Custom methods are instance methods requiring id as first parameter
+        const customMethodSignatures = customMethods
+          .map(([methodName, method]) => {
+            const params = method.parameters || [];
+            const optionsSignature =
+              params.length > 0
+                ? `, options?: { ${params.map((p) => `${p.name}?: ${mapTypeScriptType(p.type)}`).join('; ')} }`
+                : '';
+            return `      ${methodName}(id: string${optionsSignature}): Promise<any>;`;
+          })
+          .join('\n');
+
+        if (customMethods.length > 0) {
+          // Object with custom methods: include both CRUD and custom methods
+          return `    ${collection}: CrudOperations<${interfaceName}> & {\n${customMethodSignatures}\n    };`;
+        } else {
+          // Standard CRUD operations only
+          return `    ${collection}: CrudOperations<${interfaceName}>;`;
+        }
       })
       .join('\n');
 
@@ -844,11 +883,12 @@ declare module '@smrt/client' {
   }
 
   export interface CrudOperations<T = any> {
-    list(params?: Record<string, any>): Promise<ApiResponse<T[]>>;
-    get(id: string): Promise<ApiResponse<T>>;
-    create(data: Partial<T>): Promise<ApiResponse<T>>;
-    update(id: string, data: Partial<T>): Promise<ApiResponse<T>>;
+    list(params?: Record<string, any>): Promise<T[]>;
+    get(id: string): Promise<T>;
+    create(data: Partial<T>): Promise<T>;
+    update(id: string, data: Partial<T>): Promise<T>;
     delete(id: string): Promise<boolean>;
+    search(query: string): Promise<T[]>;
   }
 
   export interface ApiClient {
