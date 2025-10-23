@@ -128,9 +128,11 @@ export class SmrtClass {
 
   /**
    * Track which databases have had system tables initialized
-   * Key is database connection identifier
+   * - WeakSet for :memory: databases (URL not unique, track by instance)
+   * - Set<string> for all others (URL is unique identifier)
    */
-  private static _systemTablesInitialized = new Set<string>();
+  private static _systemTablesInitialized = new WeakSet<DatabaseInterface>();
+  private static _systemTablesInitializedByUrl = new Set<string>();
 
   /**
    * Creates a new SmrtClass instance
@@ -255,12 +257,29 @@ export class SmrtClass {
   private async ensureSystemTables(): Promise<void> {
     if (!this._db) return;
 
-    // Generate unique key for this database connection
-    const dbKey = this.getDatabaseKey();
+    const dbUrl = this._db.url;
 
-    // Skip if already initialized for this database
-    if (SmrtClass._systemTablesInitialized.has(dbKey)) {
-      return;
+    // Some databases share URLs but are different instances:
+    // - :memory: databases (SQLite/DuckDB in-memory)
+    // - JSON databases (may have undefined or shared URLs)
+    // - Any database with undefined URL
+    // Use WeakSet for instance tracking, Set<string> for URL tracking
+    const dbConstructorName = this._db.constructor?.name || '';
+    const isMemoryDb = dbUrl === ':memory:';
+    const isJsonDb = dbConstructorName.toLowerCase().includes('json');
+    const hasUndefinedUrl = !dbUrl;
+    const useInstanceTracking = isMemoryDb || isJsonDb || hasUndefinedUrl;
+
+    if (useInstanceTracking) {
+      // Check WeakSet for databases that may share URLs (track by instance)
+      if (SmrtClass._systemTablesInitialized.has(this._db)) {
+        return;
+      }
+    } else {
+      // Check Set<string> for URL-based databases (track by URL)
+      if (SmrtClass._systemTablesInitializedByUrl.has(dbUrl)) {
+        return;
+      }
     }
 
     try {
@@ -281,41 +300,20 @@ export class SmrtClass {
         ON CONFLICT(version) DO NOTHING
       `;
 
-      // Mark this database as initialized
-      SmrtClass._systemTablesInitialized.add(dbKey);
+      // Mark as initialized using appropriate tracking mechanism
+      if (useInstanceTracking) {
+        SmrtClass._systemTablesInitialized.add(this._db);
+      } else {
+        SmrtClass._systemTablesInitializedByUrl.add(dbUrl);
+      }
     } catch (error) {
       // DO NOT SWALLOW ERRORS - fail loudly so we know what's wrong
+      const dbInfo = this._db.constructor?.name || 'unknown database';
       throw new Error(
-        `Failed to create system tables for database ${dbKey}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to create system tables for ${dbInfo}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error },
       );
     }
-  }
-
-  /**
-   * Generate unique identifier for database connection
-   * Used to track which databases have system tables initialized
-   */
-  private getDatabaseKey(): string {
-    if (!this.options.db) {
-      return 'default';
-    }
-
-    // Handle string shortcut
-    if (typeof this.options.db === 'string') {
-      return `sqlite:${this.options.db}`;
-    }
-
-    // Handle DatabaseInterface instance
-    if ('query' in this.options.db) {
-      // Use a generic key for instances (they share the same physical database)
-      return 'instance:database';
-    }
-
-    // Handle config object
-    const dbUrl = this.options.db.url || 'default';
-    const dbType = this.options.db.type || 'sqlite';
-    return `${dbType}:${dbUrl}`;
   }
 
   /**
