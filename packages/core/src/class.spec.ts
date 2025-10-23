@@ -126,10 +126,8 @@ describe('SmrtClass', () => {
   });
 
   describe('System Tables Creation', () => {
-    beforeEach(() => {
-      // Clear the static cache between tests
-      (SmrtClass as any)._systemTablesInitialized.clear();
-    });
+    // Note: WeakSet doesn't have a .clear() method
+    // Each test creates new database instances, so no manual cleanup needed
 
     it('should create system tables in SQLite', async () => {
       const instance = new SmrtClass({
@@ -160,6 +158,7 @@ describe('SmrtClass', () => {
       const instance = new SmrtClass({
         db: {
           type: 'json',
+          url: testDir, // SDK now requires url parameter
           dataDir: testDir,
         },
       });
@@ -189,6 +188,7 @@ describe('SmrtClass', () => {
       const instance = new SmrtClass({
         db: {
           type: 'json',
+          url: testDir, // SDK now requires url parameter
           dataDir: testDir,
         },
       });
