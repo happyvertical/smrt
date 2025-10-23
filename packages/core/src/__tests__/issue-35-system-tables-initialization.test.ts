@@ -111,12 +111,14 @@ describe('Issue #35: System Tables Initialization', () => {
       // Create two JSON databases with different dataDirs
       const db1 = await getDatabase({
         type: 'json',
+        url: dataDir1, // SDK now requires url parameter
         dataDir: dataDir1,
         writeStrategy: 'immediate',
       });
 
       const db2 = await getDatabase({
         type: 'json',
+        url: dataDir2, // SDK now requires url parameter
         dataDir: dataDir2,
         writeStrategy: 'immediate',
       });
