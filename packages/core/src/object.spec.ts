@@ -149,5 +149,37 @@ describe('SmrtObject', () => {
       expect(council.description).toBe('Main city governing body');
       expect(council.tableName).toBe('custom_councils');
     });
+
+    it('should not throw error in loadDataFromDb (Issue #63)', async () => {
+      // Test loadDataFromDb() directly - it should skip readonly properties
+      const council = new Council({
+        _skipLoad: true,
+      });
+      await council.initialize();
+
+      // Simulate database data with table_name field
+      const dbData = {
+        id: 'test-id',
+        name: 'Database Council',
+        description: 'Loaded from DB',
+        slug: 'database-council',
+        context: '',
+        tableName: 'custom_councils', // This would be in DB as table_name
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      // loadDataFromDb should not throw when encountering readonly tableName
+      expect(() => {
+        council.loadDataFromDb(dbData);
+      }).not.toThrow();
+
+      // Verify data was loaded correctly
+      expect(council.name).toBe('Database Council');
+      expect(council.description).toBe('Loaded from DB');
+
+      // tableName getter should still work
+      expect(council.tableName).toBe('custom_councils');
+    });
   });
 });

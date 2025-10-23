@@ -222,14 +222,19 @@ export class SmrtObject extends SmrtClass {
         const clonedValue = this.cloneValue(options[key]);
 
         // Check if property is writable before setting (Issue #61)
-        // Get descriptor from instance or prototype chain
-        const descriptor =
-          Object.getOwnPropertyDescriptor(this, key) ||
-          Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), key);
+        // Get descriptor from instance or entire prototype chain
+        let descriptor = Object.getOwnPropertyDescriptor(this, key);
+        if (!descriptor) {
+          let proto = Object.getPrototypeOf(this);
+          while (proto && !descriptor) {
+            descriptor = Object.getOwnPropertyDescriptor(proto, key);
+            proto = Object.getPrototypeOf(proto);
+          }
+        }
 
         // Only set if property has a setter or is writable
         // Skip readonly properties (e.g., tableName getter without setter)
-        if (!descriptor || descriptor.set || descriptor.writable !== false) {
+        if (!descriptor || descriptor.set || descriptor.writable === true) {
           // Set the property value
           this[key as keyof this] = clonedValue;
         }
@@ -342,7 +347,22 @@ export class SmrtObject extends SmrtClass {
     const fields = this.getFields();
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
-        this[field as keyof this] = data[field];
+        // Check if property is writable before setting (Issue #63)
+        // Get descriptor from instance or entire prototype chain
+        let descriptor = Object.getOwnPropertyDescriptor(this, field);
+        if (!descriptor) {
+          let proto = Object.getPrototypeOf(this);
+          while (proto && !descriptor) {
+            descriptor = Object.getOwnPropertyDescriptor(proto, field);
+            proto = Object.getPrototypeOf(proto);
+          }
+        }
+
+        // Only set if property has a setter or is writable
+        // Skip readonly properties (e.g., tableName getter without setter)
+        if (!descriptor || descriptor.set || descriptor.writable === true) {
+          this[field as keyof this] = data[field];
+        }
       }
     }
   }
