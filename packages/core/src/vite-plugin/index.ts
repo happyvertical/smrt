@@ -473,15 +473,35 @@ async function generateRoutesModule(
 // Auto-generated REST routes from SMRT objects
 // This file is generated automatically - do not edit
 
-export function setupRoutes(app) {
-${routes}
+/**
+ * Setup routes on an Express-like app
+ *
+ * NOTE: This virtual module function is for documentation only.
+ * For actual route registration, use:
+ * - import { startRestServer } from '@happyvertical/smrt-core'
+ * - Or APIGenerator from '@happyvertical/smrt-core/generators'
+ *
+ * @param app - Express-like app instance
+ * @param options - Route configuration options
+ * @param options.basePath - Base path for all routes (default: '/api/v1')
+ */
+export function setupRoutes(app, options = {}) {
+  const basePath = options.basePath || '/api/v1';
+
+  console.warn('[smrt] setupRoutes is a documentation function only.');
+  console.warn('[smrt] Use startRestServer() or APIGenerator for actual route registration.');
+  console.warn('[smrt] Available endpoints:');
+${routes
+  .split('\\n')
+  .map((line) => `  console.warn(\`  ${basePath}${line.trim()}\`);`)
+  .join('\\n')}
 }
 
 export { setupRoutes as default };
 `;
   } catch (error) {
     console.warn('[smrt] Error generating routes module:', error);
-    return 'export function setupRoutes() { console.warn("Routes generation failed"); }';
+    return 'export function setupRoutes(app, options = {}) { console.warn("Routes generation failed"); }';
   }
 }
 
@@ -573,24 +593,47 @@ async function generateMCPModule(
     const tools = generator.generateMCPTools(manifest);
 
     return `
-// Auto-generated MCP tools from SMRT objects  
+// Auto-generated MCP tools from SMRT objects
 // This file is generated automatically - do not edit
+
+import { SmrtMCPServer } from '@happyvertical/smrt-core/runtime';
 
 export const tools = ${tools};
 
-export function createMCPServer() {
-  return {
-    name: 'smrt-auto-generated',
-    version: '1.0.0',
-    tools
-  };
+export function createMCPServer(options = {}) {
+  const server = new SmrtMCPServer({
+    name: options.name || 'smrt-auto-generated',
+    version: options.version || '1.0.0',
+    ...options
+  });
+
+  // Add all generated tools to the server
+  for (const tool of tools) {
+    server.addTool(tool, async (params) => {
+      // Tool execution will be handled by the application
+      throw new Error(\`Tool '\${tool.name}' handler must be provided by application\`);
+    });
+  }
+
+  return server;
 }
 
 export { createMCPServer as default };
 `;
   } catch (error) {
     console.warn('[smrt] Error generating MCP module:', error);
-    return 'export const tools = []; export function createMCPServer() { console.warn("MCP generation failed"); return { name: "smrt-client", version: "1.0.0", tools: [] }; }';
+    return `
+import { SmrtMCPServer } from '@happyvertical/smrt-core/runtime';
+export const tools = [];
+export function createMCPServer(options = {}) {
+  console.warn("MCP generation failed");
+  return new SmrtMCPServer({
+    name: options.name || 'smrt-client',
+    version: options.version || '1.0.0',
+    ...options
+  });
+}
+`;
   }
 }
 
@@ -869,7 +912,12 @@ declare module '@smrt/routes' {
     delete(path: string, handler: (req: any, res: any) => void): void;
   }
 
-  export function setupRoutes(app: RouteApp): void;
+  export interface RouteOptions {
+    basePath?: string;
+    [key: string]: any;
+  }
+
+  export function setupRoutes(app: RouteApp, options?: RouteOptions): void;
   export default setupRoutes;
 }
 
@@ -901,6 +949,8 @@ ${apiClientInterface}
 
 // MCP module - Auto-generated Model Context Protocol tools
 declare module '@smrt/mcp' {
+  import type { SmrtMCPServer, MCPServerOptions } from '@happyvertical/smrt-core/runtime';
+
   export interface McpTool {
     name: string;
     description: string;
@@ -912,8 +962,8 @@ declare module '@smrt/mcp' {
   }
 
   export const tools: McpTool[];
-  export function createMCPServer(): { name: string; version: string; tools: McpTool[] };
-  export default tools;
+  export function createMCPServer(options?: MCPServerOptions): SmrtMCPServer;
+  export default createMCPServer;
 }
 
 // Types module - Auto-generated TypeScript interfaces

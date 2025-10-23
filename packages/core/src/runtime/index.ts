@@ -4,6 +4,7 @@
  */
 
 export { createSmrtClient } from './client';
-export { createMCPServer } from './mcp';
+export type { MCPServerOptions, MCPTool } from './mcp';
+export { createMCPServer, SmrtMCPServer } from './mcp';
 export { createSmrtServer } from './server';
 export type { SmrtClientOptions, SmrtServerOptions } from './types';
