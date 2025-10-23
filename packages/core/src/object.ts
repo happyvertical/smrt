@@ -442,11 +442,13 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise resolving to the object's ID
    */
   async getId() {
-    // lookup by slug and context
-    const saved = await this.db
-      .pluck`SELECT id FROM ${this.tableName} WHERE slug = ${this.slug} AND context = ${this.context} LIMIT 1`;
+    // lookup by slug and context using adapter method
+    const saved = await this.db.get(this.tableName, {
+      slug: this.slug,
+      context: this.context,
+    });
     if (saved) {
-      this.id = saved;
+      this.id = saved.id;
     }
 
     if (!this.id) {
@@ -481,10 +483,19 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise resolving to the saved ID or null if not saved
    */
   async getSavedId() {
-    const { pluck } = this.db;
-    const saved =
-      await pluck`SELECT id FROM ${this.tableName} WHERE id = ${this.id} OR slug = ${this.slug} LIMIT 1`;
-    return saved;
+    // Try to find by id first
+    if (this.id) {
+      const byId = await this.db.get(this.tableName, { id: this.id });
+      if (byId) return byId.id;
+    }
+
+    // Fall back to finding by slug
+    if (this.slug) {
+      const bySlug = await this.db.get(this.tableName, { slug: this.slug });
+      if (bySlug) return bySlug.id;
+    }
+
+    return null;
   }
 
   /**
@@ -695,20 +706,18 @@ export class SmrtObject extends SmrtClass {
         throw ValidationError.requiredField('id', this.constructor.name);
       }
 
-      const sql = `SELECT * FROM ${this.tableName} WHERE id = ?`;
-
       await ErrorUtils.withRetry(
         async () => {
           try {
-            const {
-              rows: [existing],
-            } = await this.db.query(sql, [this._id]);
+            const existing = await this.db.get(this.tableName, {
+              id: this._id,
+            });
             if (existing) {
               this.loadDataFromDb(existing);
             }
           } catch (error) {
             throw DatabaseError.queryFailed(
-              sql,
+              `get(${this.tableName}, { id: ${this._id} })`,
               error instanceof Error ? error : new Error(String(error)),
             );
           }
@@ -735,12 +744,10 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise that resolves when loading is complete
    */
   public async loadFromSlug() {
-    const {
-      rows: [existing],
-    } = await this.db.query(
-      `SELECT * FROM ${this.tableName} WHERE slug = ? AND context = ?`,
-      [this._slug, this._context || ''],
-    );
+    const existing = await this.db.get(this.tableName, {
+      slug: this._slug,
+      context: this._context || '',
+    });
     if (existing) {
       this.loadDataFromDb(existing);
     }
@@ -869,9 +876,7 @@ export class SmrtObject extends SmrtClass {
   public async delete(): Promise<void> {
     await this.runHook('beforeDelete');
 
-    await this.db.query(`DELETE FROM ${this.tableName} WHERE id = ?`, [
-      this.id,
-    ]);
+    await this.db.delete(this.tableName, { id: this.id });
 
     await this.runHook('afterDelete');
   }
@@ -1318,31 +1323,27 @@ export class SmrtObject extends SmrtClass {
 
     const results = new Map<string, any>();
 
-    let query = `
-      SELECT key, value, confidence
-      FROM _smrt_contexts
-      WHERE owner_class = ? AND owner_id = ?
-    `;
-    const params: any[] = [this._className, this.id];
+    // Build where clause for db.list()
+    const where: Record<string, any> = {
+      owner_class: this._className,
+      owner_id: this.id,
+    };
 
     if (options.scope) {
       if (options.includeDescendants) {
-        query += ` AND (scope = ? OR scope LIKE ?)`;
-        params.push(options.scope, `${options.scope}/%`);
+        // Use LIKE pattern to match scope and all descendants
+        // Pattern 'scope%' matches both 'scope' and 'scope/child'
+        where['scope like'] = `${options.scope}%`;
       } else {
-        query += ` AND scope = ?`;
-        params.push(options.scope);
+        where.scope = options.scope;
       }
     }
 
     if (options.minConfidence !== undefined) {
-      query += ` AND confidence >= ?`;
-      params.push(options.minConfidence);
+      where['confidence >='] = options.minConfidence;
     }
 
-    query += ` ORDER BY confidence DESC`;
-
-    const { rows } = await this.systemDb.query(query, ...params);
+    const rows = await this.systemDb.list('_smrt_contexts', where);
 
     for (const row of rows) {
       results.set(row.key, JSON.parse(row.value));
@@ -1373,14 +1374,12 @@ export class SmrtObject extends SmrtClass {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
-    await this.systemDb.query(
-      `DELETE FROM _smrt_contexts
-       WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?`,
-      this._className,
-      this.id,
-      options.scope,
-      options.key,
-    );
+    await this.systemDb.delete('_smrt_contexts', {
+      owner_class: this._className,
+      owner_id: this.id,
+      scope: options.scope,
+      key: options.key,
+    });
   }
 
   /**
@@ -1409,21 +1408,20 @@ export class SmrtObject extends SmrtClass {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
-    let query = `
-      DELETE FROM _smrt_contexts
-      WHERE owner_class = ? AND owner_id = ?
-    `;
-    const params: any[] = [this._className, this.id];
+    // Build where clause for db.delete()
+    const where: Record<string, any> = {
+      owner_class: this._className,
+      owner_id: this.id,
+    };
 
     if (options.includeDescendants) {
-      query += ` AND (scope = ? OR scope LIKE ?)`;
-      params.push(options.scope, `${options.scope}/%`);
+      // Use LIKE pattern to match scope and all descendants
+      where['scope like'] = `${options.scope}%`;
     } else {
-      query += ` AND scope = ?`;
-      params.push(options.scope);
+      where.scope = options.scope;
     }
 
-    const { rowCount } = await this.systemDb.query(query, ...params);
-    return rowCount || 0;
+    const result = await this.systemDb.delete('_smrt_contexts', where);
+    return result.affected || 0;
   }
 }
