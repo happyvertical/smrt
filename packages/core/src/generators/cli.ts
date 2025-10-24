@@ -557,7 +557,13 @@ export class CLIGenerator {
     succeed: (text?: string) => void;
     fail: (text?: string) => void;
   } {
-    if (this.config.colors) {
+    // Check if TTY is available AND clearLine/cursorTo methods exist
+    const isTTY =
+      process.stdout.isTTY &&
+      typeof process.stdout.clearLine === 'function' &&
+      typeof process.stdout.cursorTo === 'function';
+
+    if (this.config.colors && isTTY) {
       process.stdout.write(`⠋ ${text}`);
       return {
         succeed: (successText?: string) => {
@@ -572,6 +578,7 @@ export class CLIGenerator {
         },
       };
     }
+    // Non-TTY fallback: simple console.log
     console.log(text);
     return {
       succeed: (successText?: string) => console.log(successText || 'Done'),
