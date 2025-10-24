@@ -6,7 +6,7 @@
       "args": [
         "exec",
         "tsx",
-        "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/mcp-advisor/index.ts"
+        "/Users/will/Work/happyvertical/repos/smrt/packages/smrt-mcp/src/index.ts"
       ],
       "env": {
         "DEBUG": "false"

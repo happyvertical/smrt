@@ -1,0 +1,57 @@
+{
+  "name": "@happyvertical/smrt-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for SMRT framework - Routes queries to package experts using CLAUDE.md files",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "smrt-mcp": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/happyvertical/smrt/issues"
+  },
+  "homepage": "https://github.com/happyvertical/smrt/tree/main/packages/smrt-mcp#readme",
+  "license": "MIT",
+  "scripts": {
+    "test": "npx vitest run",
+    "test:watch": "npx vitest",
+    "build": "vite build",
+    "build:watch": "vite build --watch",
+    "clean": "rm -rf dist",
+    "dev": "npm run build:watch & npm run test:watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@happyvertical/ai": "workspace:*",
+    "@happyvertical/files": "workspace:*",
+    "@happyvertical/utils": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.3",
+    "vite-plugin-dts": "^4.3.0",
+    "vitest": "^3.2.4"
+  }
+}

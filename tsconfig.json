@@ -58,6 +58,9 @@
     { "path": "./packages/places" },
     { "path": "./packages/products" },
     { "path": "./packages/profiles" },
-    { "path": "./packages/tags" }
+    { "path": "./packages/tags" },
+
+    // Tools
+    { "path": "./packages/smrt-mcp" }
   ]
 }
