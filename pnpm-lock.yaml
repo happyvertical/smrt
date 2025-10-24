@@ -6,21 +6,21 @@ settings:
 
 overrides:
   '@types/node': 24.0.0
-  '@happyvertical/ai': workspace:*
-  '@happyvertical/cache': workspace:*
-  '@happyvertical/smrt-config': workspace:*
-  '@happyvertical/documents': workspace:*
-  '@happyvertical/email': workspace:*
-  '@happyvertical/files': workspace:*
-  '@happyvertical/geo': workspace:*
-  '@happyvertical/languages': workspace:*
-  '@happyvertical/logger': workspace:*
-  '@happyvertical/ocr': workspace:*
-  '@happyvertical/pdf': workspace:*
-  '@happyvertical/spider': workspace:*
-  '@happyvertical/sql': workspace:*
-  '@happyvertical/translator': workspace:*
-  '@happyvertical/utils': workspace:*
+  '@have/ai': workspace:*
+  '@have/cache': workspace:*
+  '@have/config': workspace:*
+  '@have/documents': workspace:*
+  '@have/email': workspace:*
+  '@have/files': workspace:*
+  '@have/geo': workspace:*
+  '@have/languages': workspace:*
+  '@have/logger': workspace:*
+  '@have/ocr': workspace:*
+  '@have/pdf': workspace:*
+  '@have/spider': workspace:*
+  '@have/sql': workspace:*
+  '@have/translator': workspace:*
+  '@have/utils': workspace:*
 
 importers:
 
@@ -430,6 +430,37 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.0.0)
+
+  packages/smrt-mcp:
+    dependencies:
+      '@happyvertical/ai':
+        specifier: workspace:*
+        version: link:../../sdk/packages/ai
+      '@happyvertical/files':
+        specifier: workspace:*
+        version: link:../../sdk/packages/files
+      '@happyvertical/utils':
+        specifier: workspace:*
+        version: link:../../sdk/packages/utils
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.0.4
+        version: 1.20.1
+    devDependencies:
+      '@types/node':
+        specifier: 24.0.0
+        version: 24.0.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.1.3
+        version: 7.1.7(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.20.6)(yaml@2.8.1)
+      vite-plugin-dts:
+        specifier: ^4.3.0
+        version: 4.5.4(@types/node@24.0.0)(rollup@4.52.4)(typescript@5.9.3)(vite@7.1.7(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.20.6)(yaml@2.8.1))
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.20.6)(yaml@2.8.1)
 
   packages/tags:
     dependencies:
@@ -7749,7 +7780,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.2
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.12.2)
+      retry-axios: 2.6.0(axios@1.12.2(debug@4.4.3))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -8739,7 +8770,7 @@ snapshots:
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
 
-  retry-axios@2.6.0(axios@1.12.2):
+  retry-axios@2.6.0(axios@1.12.2(debug@4.4.3)):
     dependencies:
       axios: 1.12.2(debug@4.4.3)
 
