@@ -2,9 +2,9 @@
  * Main browser entry point demonstrating auto-generated virtual modules
  */
 
-import createClient from '@smrt/client';
-import { manifest } from '@smrt/manifest';
-import { tools } from '@smrt/mcp';
+import createClient from '@happyvertical/smrt-virt-client';
+import { manifest } from '@happyvertical/smrt-virt-manifest';
+import { tools } from '@happyvertical/smrt-virt-mcp';
 
 // Display discovered objects
 function displayManifest() {

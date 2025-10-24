@@ -1,10 +1,10 @@
-# @happyvertical/smrt-mcp
+# @happyvertical/smrt-docs-mcp
 
-MCP server for the SMRT framework that acts as an orchestrator, routing developer queries to appropriate package experts using CLAUDE.md files.
+Documentation MCP server for the SMRT framework that acts as an orchestrator, routing developer queries to appropriate package experts using CLAUDE.md files.
 
 ## Overview
 
-The SMRT MCP Server implements a RAG (Retrieval-Augmented Generation) pattern where each SMRT package's CLAUDE.md file serves as domain expertise. When you ask a question, the server:
+The SMRT Documentation MCP Server implements a RAG (Retrieval-Augmented Generation) pattern where each SMRT package's CLAUDE.md file serves as domain expertise. When you ask a question, the server:
 
 1. Routes your query to relevant packages based on keyword matching
 2. Loads the CLAUDE.md documentation for those packages

@@ -60,7 +60,8 @@
     { "path": "./packages/profiles" },
     { "path": "./packages/tags" },
 
-    // Tools
-    { "path": "./packages/smrt-mcp" }
+    // MCP Servers
+    { "path": "./packages/smrt-docs-mcp" },
+    { "path": "./packages/smrt-dev-mcp" }
   ]
 }

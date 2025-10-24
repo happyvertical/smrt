@@ -63,7 +63,7 @@ import {
   type ListToolsRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
-import { loadEnvConfig } from '@happyvertical/smrt-core/config';
+import { config } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { getAI } from '@happyvertical/ai';
 
@@ -82,34 +82,13 @@ async function initializeGenerator() {
     ? await getDatabase({ url: process.env.DATABASE_URL })
     : undefined;
 
-  // Setup AI client with environment variable support
-  // Loads SMRT_AI_* environment variables automatically
-  const aiConfig = loadEnvConfig({}, {
-    packageName: 'ai',
-    prefix: 'SMRT',
-    schema: {
-      provider: 'string',
-      model: 'string',
-      apiKey: 'string',
-      timeout: 'number',
-      maxRetries: 'number',
-    },
-  });
-
-  // Fallback to provider-specific environment variables if SMRT_AI_* not set
-  if (!aiConfig.provider && !aiConfig.apiKey) {
-    if (process.env.OPENAI_API_KEY) {
-      aiConfig.provider = 'openai';
-      aiConfig.apiKey = process.env.OPENAI_API_KEY;
-    } else if (process.env.ANTHROPIC_API_KEY) {
-      aiConfig.provider = 'anthropic';
-      aiConfig.apiKey = process.env.ANTHROPIC_API_KEY;
-    } else if (process.env.CLAUDE_API_KEY) {
-      aiConfig.provider = 'claude-cli';
-      aiConfig.apiKey = process.env.CLAUDE_API_KEY;
-      aiConfig.model = aiConfig.model || process.env.CLAUDE_MODEL || 'sonnet';
-    }
-  }
+  // Load configuration from environment and .smrt.config files
+  // This loads from:
+  // - .smrt.config.js/ts/.json (cosmiconfig)
+  // - Environment variables (SMRT_AI_*)
+  // - Provider-specific variables (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
+  const appConfig = await config.load();
+  const aiConfig = appConfig?.ai || {};
 
   // Initialize AI client if configuration is available
   const ai = (aiConfig.provider || aiConfig.apiKey)

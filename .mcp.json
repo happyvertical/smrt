@@ -1,12 +1,25 @@
 {
   "mcpServers": {
-    "smrt-advisor": {
+    "smrt-docs-mcp": {
       "type": "stdio",
       "command": "pnpm",
       "args": [
         "exec",
         "tsx",
-        "/Users/will/Work/happyvertical/repos/smrt/packages/smrt-mcp/src/index.ts"
+        "/Users/will/Work/happyvertical/repos/smrt/packages/smrt-docs-mcp/src/index.ts"
+      ],
+      "env": {
+        "DEBUG": "false"
+      },
+      "cwd": "/Users/will/Work/happyvertical/repos/smrt"
+    },
+    "smrt-dev-mcp": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "tsx",
+        "/Users/will/Work/happyvertical/repos/smrt/packages/smrt-dev-mcp/src/index.ts"
       ],
       "env": {
         "DEBUG": "false"

@@ -3,7 +3,7 @@
  * Auto-generated dashboard for SMRT objects
  */
 
-import type { SmrtManifest } from '@smrt/manifest';
+import type { SmrtManifest } from '@happyvertical/smrt-virt-manifest';
 
 // Create the UI
 async function createUI() {
@@ -12,8 +12,8 @@ async function createUI() {
 
   try {
     // Import the manifest
-    const { manifest } = await import('@smrt/manifest');
-    const { createClient } = await import('@smrt/client');
+    const { manifest } = await import('@happyvertical/smrt-virt-manifest');
+    const { createClient } = await import('@happyvertical/smrt-virt-client');
 
     // Create API client
     const client = createClient('/api/v1');
