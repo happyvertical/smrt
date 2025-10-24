@@ -23,6 +23,7 @@ The SMRT framework is organized as a pnpm workspace with the following packages:
 **Core Framework:**
 - **core**: Core framework with ORM, code generation, and AI integration
 - **types**: Shared TypeScript type definitions
+- **config**: Configuration management with cosmiconfig integration
 
 **Domain Modules:**
 - **accounts**: Accounting ledger with multi-currency support
@@ -37,12 +38,12 @@ The SMRT framework is organized as a pnpm workspace with the following packages:
 - **tags**: Hierarchical tagging system
 
 **External SDK Dependencies:**
-The framework depends on these infrastructure packages from @have/sdk:
-- **@have/ai**: Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
-- **@have/files**: File system operations and utilities
-- **@have/sql**: Database operations (SQLite, Postgres, DuckDB)
-- **@have/utils**: Shared utility functions
-- **@have/logger**: Logging infrastructure
+The framework depends on these infrastructure packages from @happyvertical/sdk:
+- **@happyvertical/ai**: Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
+- **@happyvertical/files**: File system operations and utilities
+- **@happyvertical/sql**: Database operations (SQLite, Postgres, DuckDB)
+- **@happyvertical/utils**: Shared utility functions
+- **@happyvertical/logger**: Logging infrastructure
 
 ## Development Patterns
 
@@ -58,11 +59,12 @@ The framework depends on these infrastructure packages from @have/sdk:
 
 The build process follows a specific order to respect internal dependencies:
 
-1. `@smrt/types` (shared type definitions)
-2. `@smrt/core` (core framework - depends on types)
-3. Domain modules (depend on core): accounts, agents, assets, content, events, gnode, places, products, profiles, tags
+1. `@happyvertical/smrt-types` (shared type definitions)
+2. `@happyvertical/smrt-config` (configuration management)
+3. `@happyvertical/smrt-core` (core framework - depends on types and config)
+4. Domain modules (depend on core): accounts, agents, assets, content, events, gnode, places, products, profiles, tags
 
-External dependencies from @have/sdk are installed from npm.
+External dependencies from @happyvertical/sdk are installed from npm.
 
 ### TypeScript Project References
 
@@ -80,6 +82,7 @@ Each package must have:
 {
   "references": [
     { "path": "./packages/types" },
+    { "path": "./packages/config" },
     { "path": "./packages/core" },
     { "path": "./packages/accounts" },
     { "path": "./packages/agents" },
@@ -155,7 +158,7 @@ npm run format
 **IMPORTANT**: This SOP should be followed automatically whenever beginning implementation work, whether explicitly asked or implied.
 
 **Related Standards**:
-- [Organization-Wide Testing Standard](../../TESTING_STANDARD.md) - Must be followed for all test writing
+- [Organization-Wide Testing Standard](../TESTING_STANDARD.md) - Must be followed for all test writing
 - [Definition of Ready](https://github.com/happyvertical/sdk/blob/main/docs/workflow/DEFINITION_OF_READY.md) - Issue readiness criteria
 - [Definition of Done](https://github.com/happyvertical/sdk/blob/main/docs/workflow/DEFINITION_OF_DONE.md) - PR completion checklist
 
@@ -317,7 +320,7 @@ gh issue comment {issue-number} --body "$(cat <<'EOF'
 2. [Decision 2 and rationale]
 
 ### Test Strategy
-Following [Organization-Wide Testing Standard](../../TESTING_STANDARD.md):
+Following [Organization-Wide Testing Standard](../TESTING_STANDARD.md):
 
 **Test Types**:
 - [ ] Unit tests (`*.test.ts`) - [if needed, describe what]
@@ -423,7 +426,7 @@ For **all work**:
 **IMPORTANT**: This SOP should be followed automatically when work is complete, before pushing changes.
 
 **Related Standards**:
-- [Organization-Wide Testing Standard](../../TESTING_STANDARD.md) - Enforced by code reviewer
+- [Organization-Wide Testing Standard](../TESTING_STANDARD.md) - Enforced by code reviewer
 - [Definition of Done](https://github.com/happyvertical/sdk/blob/main/docs/workflow/DEFINITION_OF_DONE.md) - Verified before PR creation
 - [Code Reviewer Agent](./.claude/agents/code-reviewer.md) - Automated review process
 
@@ -617,7 +620,7 @@ Generate comprehensive PR description using this template:
 
 ## Testing
 
-Following [Organization-Wide Testing Standard](../../TESTING_STANDARD.md):
+Following [Organization-Wide Testing Standard](../TESTING_STANDARD.md):
 
 **Test Types Added**:
 - [x] Unit tests (`*.test.ts`) - {describe what}
@@ -744,14 +747,15 @@ echo "You can continue with other work or wait for review feedback"
 The packages have these dependency relationships:
 
 **Within SMRT framework:**
-- `@smrt/types`: No internal dependencies
-- `@smrt/core`: Depends on `@smrt/types` and external SDK packages (`@have/*`)
-- Domain modules: All depend on `@smrt/core`, some have cross-dependencies:
-  - `@smrt/assets` → depends on `@smrt/tags`
-  - `@smrt/events` → depends on `@smrt/places`, `@smrt/profiles`
+- `@happyvertical/smrt-types`: No internal dependencies
+- `@happyvertical/smrt-config`: No internal dependencies
+- `@happyvertical/smrt-core`: Depends on `@happyvertical/smrt-types`, `@happyvertical/smrt-config`, and external SDK packages (`@happyvertical/*`)
+- Domain modules: All depend on `@happyvertical/smrt-core`, some have cross-dependencies:
+  - `@happyvertical/smrt-assets` → depends on `@happyvertical/smrt-tags`
+  - `@happyvertical/smrt-events` → depends on `@happyvertical/smrt-places`, `@happyvertical/smrt-profiles`
 
 **External dependencies:**
-All SMRT packages can depend on SDK infrastructure packages (`@have/ai`, `@have/files`, `@have/sql`, `@have/utils`, `@have/logger`) which are installed from npm.
+All SMRT packages can depend on SDK infrastructure packages (`@happyvertical/ai`, `@happyvertical/files`, `@happyvertical/sql`, `@happyvertical/utils`, `@happyvertical/logger`) which are installed from npm.
 
 When adding new features, maintain this dependency hierarchy to avoid circular dependencies within the SMRT framework.
 
@@ -825,6 +829,45 @@ See [.github/TRIAGE_SOP.md](.github/TRIAGE_SOP.md) for complete details.
 ## Recent Infrastructure Changes
 
 Important PRs that modified development workflow, tooling, or publishing:
+
+### PR #81 - CLI Spinner TTY Detection (Oct 2024)
+**Issue**: #80
+
+**Changes**:
+- Fixed CLI crash in non-TTY environments (tsx, CI/CD, pipes)
+- Added TTY detection before using clearLine/cursorTo methods
+- Graceful fallback to console.log when TTY unavailable
+- Added regression test for non-TTY spinner behavior
+
+**Impact**: CLI commands (list, create, etc.) now work reliably in all environments including tsx, CI pipelines, and piped output.
+
+**Reference**: https://github.com/happyvertical/smrt/pull/81
+
+### PR #79 - Database Adapter Method Migration (Oct 2024)
+**Issue**: #78
+
+**Changes**:
+- Replaced raw SQL queries with semantic database adapter methods
+- Converted `db.pluck()`, `db.query()`, `db.execute()` to `db.get()`, `db.list()`, `db.delete()`
+- Improved cross-adapter compatibility (SQLite, Postgres, DuckDB, JSON)
+- Better type safety and maintainability
+- Simplified LIKE pattern handling
+
+**Impact**: Code is now more maintainable, type-safe, and works consistently across all database adapters.
+
+**Reference**: https://github.com/happyvertical/smrt/pull/79
+
+### PR #77 - System Tables Initialization Tracking (Oct 2024)
+**Issue**: #35
+
+**Changes**:
+- Simplified system tables initialization tracking
+- Fixed race conditions in concurrent initialization
+- Improved database setup reliability
+
+**Impact**: More reliable database initialization, especially for concurrent operations.
+
+**Reference**: https://github.com/happyvertical/smrt/pull/77
 
 ### PR #44 - GitHub Packages Publishing & Testing Standard (Oct 2024)
 **Issues**: #43, #42, #38

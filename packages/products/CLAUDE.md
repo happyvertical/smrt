@@ -1,8 +1,8 @@
-# @have/products: Triple-Purpose SMRT Microservice Template
+# @happyvertical/products: Triple-Purpose SMRT Microservice Template
 
 ## Purpose and Responsibilities
 
-The `@have/products` package is a comprehensive reference implementation demonstrating the SMRT framework's code generation capabilities. It serves as both a working example and a template for building production-ready microservices that leverage auto-generation from `@smrt()` decorated classes.
+The `@happyvertical/products` package is a comprehensive reference implementation demonstrating the SMRT framework's code generation capabilities. It serves as both a working example and a template for building production-ready microservices that leverage auto-generation from `@smrt()` decorated classes.
 
 ### Three Consumption Patterns
 
@@ -15,12 +15,12 @@ This package demonstrates how to create a single codebase that can be consumed i
 ### What Gets Auto-Generated
 
 The `@smrt()` decorator on model classes automatically generates:
-- **REST APIs**: Full CRUD endpoints (list, get, create, update, delete) via `@have/smrt`'s `startRestServer()`
-- **TypeScript Client**: Type-safe API client with IntelliSense support (via `@smrt/client` virtual module)
-- **MCP Tools**: Model Context Protocol tools for AI agent integration (via `@smrt/mcp` virtual module)
-- **Type Definitions**: Complete TypeScript types for all models and API responses (via `@smrt/types` virtual module)
-- **Route Setup**: Express route handlers (via `@smrt/routes` virtual module)
-- **Manifest**: Metadata about models and their configurations (via `@smrt/manifest` virtual module)
+- **REST APIs**: Full CRUD endpoints (list, get, create, update, delete) via `@happyvertical/smrt-core`'s `startRestServer()`
+- **TypeScript Client**: Type-safe API client with IntelliSense support (via `@happyvertical/smrt-client` virtual module)
+- **MCP Tools**: Model Context Protocol tools for AI agent integration (via `@happyvertical/smrt-mcp` virtual module)
+- **Type Definitions**: Complete TypeScript types for all models and API responses (via `@happyvertical/smrt-types` virtual module)
+- **Route Setup**: Express route handlers (via `@happyvertical/smrt-routes` virtual module)
+- **Manifest**: Metadata about models and their configurations (via `@happyvertical/smrt-manifest` virtual module)
 
 ### Current Status
 
@@ -41,11 +41,11 @@ The `@smrt()` decorator on model classes automatically generates:
 ### Key Implementation Details
 
 **Virtual Modules System**: The package relies heavily on Vite plugins (`smrtPlugin` and `smrtConsumer`) that generate "virtual modules" - modules that don't exist as physical files but are resolved at build/runtime. These include:
-- `@smrt/client` - Auto-generated TypeScript API client
-- `@smrt/types` - Auto-generated TypeScript type definitions
-- `@smrt/routes` - Auto-generated Express route handlers
-- `@smrt/mcp` - Auto-generated MCP tool definitions
-- `@smrt/manifest` - Metadata manifest with decorator configs
+- `@happyvertical/smrt-client` - Auto-generated TypeScript API client
+- `@happyvertical/smrt-types` - Auto-generated TypeScript type definitions
+- `@happyvertical/smrt-routes` - Auto-generated Express route handlers
+- `@happyvertical/smrt-mcp` - Auto-generated MCP tool definitions
+- `@happyvertical/smrt-manifest` - Metadata manifest with decorator configs
 
 **Mock Client**: Currently uses `src/lib/mock-smrt-client.ts` for development and testing since the virtual module generation is still in progress. This provides a working implementation that demonstrates the intended API structure.
 
@@ -75,7 +75,7 @@ packages/products/
 │   │   │   └── index.ts
 │   │   ├── utils/                   # Utility functions
 │   │   │   └── index.ts
-│   │   ├── mock-smrt-client.ts      # Mock client (temporary, replaces @smrt/client)
+│   │   ├── mock-smrt-client.ts      # Mock client (temporary, replaces @happyvertical/smrt-client)
 │   │   ├── types.ts                 # Core type definitions (ProductData, etc.)
 │   │   ├── federation-entry.ts      # Module federation entry point
 │   │   └── index.ts                 # Main library export (re-exports all modules)
@@ -116,14 +116,14 @@ The most common and production-ready usage pattern:
 
 ```typescript
 // Import models
-import { Product, Category } from '@have/products';
-import type { ProductData, CategoryData } from '@have/products';
+import { Product, Category } from '@happyvertical/products';
+import type { ProductData, CategoryData } from '@happyvertical/products';
 
 // Import auto-generated client
-import { createClient } from '@have/products';
+import { createClient } from '@happyvertical/products';
 
 // Import stores (Svelte 5 runes)
-import { productStore } from '@have/products/stores';
+import { productStore } from '@happyvertical/products/stores';
 
 // Create model instances
 const product = new Product({
@@ -157,7 +157,7 @@ await client.products.update('product-id', {
 Start the auto-generated REST API server:
 
 ```typescript
-import { startServer } from '@have/products';
+import { startServer } from '@happyvertical/products';
 
 // Starts Express server with auto-generated routes
 const { shutdown } = await startServer();
@@ -173,12 +173,49 @@ const { shutdown } = await startServer();
 // PUT    /api/v1/categories/:id  - Update category
 ```
 
+**Using `startRestServer` directly** (from `@happyvertical/smrt-core`):
+
+```typescript
+import { startRestServer } from '@happyvertical/smrt-core';
+import { Product, Category } from './lib/models';
+
+// API Signature:
+// startRestServer(
+//   objects: (typeof SmrtObject)[],    // Array of SMRT model classes
+//   context: APIContext = {},          // Shared context (db, ai, fs config)
+//   config: RestServerConfig = {}      // Server configuration
+// ): Promise<() => Promise<void>>      // Returns shutdown function
+
+const shutdown = await startRestServer(
+  [Product, Category],  // Models to expose via REST API
+  {},                   // Context (empty = use model defaults)
+  {
+    port: 3000,
+    hostname: 'localhost',
+    basePath: '/api/v1',
+    enableCors: true,
+  },
+);
+
+// Call shutdown() to stop the server
+// await shutdown();
+```
+
+**Parameters Explained**:
+- **`objects`**: Array of SMRT model classes (not instances) decorated with `@smrt()`
+- **`context`**: Shared configuration for db, ai, and fs - overrides model-level defaults
+- **`config`**: Server settings:
+  - `port` (number): Port to listen on (default: 3000)
+  - `hostname` (string): Host to bind to (default: 'localhost')
+  - `basePath` (string): API base path (default: '/api/v1')
+  - `enableCors` (boolean): Enable CORS (default: true)
+
 ### 3. MCP Server for AI Integration
 
 Enable AI agents to interact with your models:
 
 ```typescript
-import { startMCPServer } from '@have/products';
+import { startMCPServer } from '@happyvertical/products';
 
 // Starts Model Context Protocol server
 const mcp = await startMCPServer();
@@ -196,7 +233,7 @@ Use the reactive store for state management:
 
 ```svelte
 <script>
-  import { productStore } from '@have/products/stores';
+  import { productStore } from '@happyvertical/products/stores';
 
   // Load products on mount
   $effect(() => {
@@ -243,7 +280,7 @@ Use the reactive store for state management:
 The Product model demonstrates all SMRT decorator capabilities:
 
 ```typescript
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@happyvertical/smrt-core';
 
 export interface ProductOptions extends SmrtObjectOptions {
   name?: string;
@@ -530,33 +567,55 @@ export const productStore = new ProductStoreClass();
 
 ## Virtual Module System
 
-The SMRT framework uses Vite plugins to generate virtual modules that don't exist as physical files but are available at build time and runtime. These are auto-generated from your `@smrt()` decorated classes.
+**What are Virtual Modules?**
+
+Virtual modules are code modules that **don't exist as physical `.ts` or `.js` files** in your project, but are dynamically generated by Vite plugins during the build process. The SMRT framework uses this technique to automatically generate TypeScript client code, type definitions, API routes, and MCP tools based on your `@smrt()` decorated model classes.
+
+**Why Virtual Modules?**
+- **Auto-sync**: Client and types stay in sync with server models automatically
+- **Type Safety**: Full TypeScript IntelliSense without manual typing
+- **Zero Boilerplate**: No need to manually write API client code
+- **Single Source of Truth**: Your SMRT model classes define everything
+
+**How It Works**:
+1. You write SMRT model classes with `@smrt()` decorator (e.g., `Product`, `Category`)
+2. Vite plugins scan your code at build time
+3. Plugins generate virtual module code based on your models
+4. You import from virtual module names (e.g., `@happyvertical/smrt-client`)
+5. TypeScript gets generated `.d.ts` files for IntelliSense
+
+**Important**: Virtual modules require running `npm run prebuild` to generate TypeScript declarations. Your IDE will show errors until this runs.
 
 ### Available Virtual Modules
 
 ```typescript
 // Auto-generated TypeScript client for API calls
-import createClient from '@smrt/client';
+// Generated from: Your SMRT model classes decorated with @smrt()
+import createClient from '@happyvertical/smrt-client';
 
 // Auto-generated TypeScript type definitions
-import type { ProductData, CategoryData } from '@smrt/types';
+// Generated from: Model properties and Field decorators
+import type { ProductData, CategoryData } from '@happyvertical/smrt-types';
 
 // Auto-generated REST route setup (server-side)
-import setupRoutes from '@smrt/routes';
+// Generated from: @smrt() decorator api configuration
+import setupRoutes from '@happyvertical/smrt-routes';
 
 // Auto-generated MCP tools for AI integration
-import createMCPServer from '@smrt/mcp';
-import { tools } from '@smrt/mcp';
+// Generated from: @smrt() decorator mcp configuration
+import createMCPServer from '@happyvertical/smrt-mcp';
+import { tools } from '@happyvertical/smrt-mcp';
 
 // Metadata manifest (decorator configs, field info, etc.)
-import { manifest } from '@smrt/manifest';
+// Generated from: @smrt() decorator options and model metadata
+import { manifest } from '@happyvertical/smrt-manifest';
 ```
 
 ### How Virtual Modules Work
 
 1. **Build-Time Generation**: During `npm run prebuild`, the `scripts/generate-smrt-types.js` script scans your models and creates type declarations in `src/lib/types/smrt-generated/`
 
-2. **Vite Plugin Resolution**: The `smrtPlugin` and `smrtConsumer` plugins intercept imports of `@smrt/*` modules and provide the generated code
+2. **Vite Plugin Resolution**: The `smrtPlugin` and `smrtConsumer` plugins intercept imports of `@happyvertical/smrt-*` modules and provide the generated code
 
 3. **Type Safety**: TypeScript gets full IntelliSense support through the generated `.d.ts` files
 
@@ -564,7 +623,7 @@ import { manifest } from '@smrt/manifest';
 
 ```typescript
 // server.ts - Start REST API with auto-generated routes
-import { createRestServer, startRestServer } from '@have/smrt';
+import { createRestServer, startRestServer } from '@happyvertical/smrt-core';
 import { Product, Category } from './lib/models';
 
 const shutdown = await startRestServer(
@@ -579,8 +638,8 @@ const shutdown = await startRestServer(
 );
 
 // client.ts - Use auto-generated TypeScript client
-import createClient from '@smrt/client';
-import type { ProductData } from '@smrt/types';
+import createClient from '@happyvertical/smrt-client';
+import type { ProductData } from '@happyvertical/smrt-types';
 
 const api = createClient('http://localhost:3000/api/v1');
 
@@ -604,8 +663,8 @@ The package uses a sophisticated Vite configuration that supports three build mo
 ### Key Configuration Points
 
 ```typescript
-import { smrtPlugin } from '@have/smrt/vite-plugin';
-import { smrtConsumer } from '@have/smrt/consumer-plugin';
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
 import federation from '@originjs/vite-plugin-federation';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
@@ -777,7 +836,7 @@ The package uses a prebuild script to generate TypeScript types:
 
 ```json
 {
-  "@have/smrt": "workspace:*"  // Core SMRT framework
+  "@happyvertical/smrt-core": "workspace:*"  // Core SMRT framework
 }
 ```
 
@@ -801,7 +860,7 @@ The package uses a prebuild script to generate TypeScript types:
 ### Peer Dependencies
 
 When using this package as a library, consuming applications should have:
-- `@have/smrt` - Core SMRT framework
+- `@happyvertical/smrt-core` - Core SMRT framework
 - `svelte` (if using Svelte components)
 - Node.js 20+ or Bun 1.0+
 
@@ -842,13 +901,13 @@ The package provides multiple entry points for different use cases:
 
 ```typescript
 // Import from main entry point
-import { Product, Category, createClient } from '@have/products';
+import { Product, Category, createClient } from '@happyvertical/products';
 
 // Import specific exports
-import { Product } from '@have/products/models';
-import { productStore } from '@have/products/stores';
-import { createClient } from '@have/products';
-import type { ProductData } from '@have/products';
+import { Product } from '@happyvertical/products/models';
+import { productStore } from '@happyvertical/products/stores';
+import { createClient } from '@happyvertical/products';
+import type { ProductData } from '@happyvertical/products';
 ```
 
 ## Common Coding Patterns and Conventions
@@ -859,7 +918,7 @@ When adding a new model to this package, follow this pattern:
 
 ```typescript
 // src/lib/models/YourModel.ts
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@have/smrt';
+import { SmrtObject, type SmrtObjectOptions, smrt } from '@happyvertical/smrt-core';
 
 // 1. Define options interface extending SmrtObjectOptions
 export interface YourModelOptions extends SmrtObjectOptions {
@@ -939,12 +998,12 @@ This automatically generates:
 
 **Import Pattern**:
 ```typescript
-// Always import from @smrt/* for virtual modules
-import createClient from '@smrt/client';
-import type { ProductData, CategoryData } from '@smrt/types';
-import { manifest } from '@smrt/manifest';
-import setupRoutes from '@smrt/routes';
-import createMCPServer from '@smrt/mcp';
+// Always import from @happyvertical/smrt-* for virtual modules
+import createClient from '@happyvertical/smrt-client';
+import type { ProductData, CategoryData } from '@happyvertical/smrt-types';
+import { manifest } from '@happyvertical/smrt-manifest';
+import setupRoutes from '@happyvertical/smrt-routes';
+import createMCPServer from '@happyvertical/smrt-mcp';
 
 // Use the generated code
 const api = createClient('/api/v1');
@@ -952,7 +1011,7 @@ const products = await api.products.list();
 ```
 
 **Troubleshooting Virtual Modules**:
-- If TypeScript can't find `@smrt/*`, run `npm run prebuild`
+- If TypeScript can't find `@happyvertical/smrt-*`, run `npm run prebuild`
 - If changes to models aren't reflected, run `npm run clean && npm run build`
 - Virtual modules are resolved by `smrtPlugin` and `smrtConsumer` in vite.config.ts
 - Type declarations are generated in `src/lib/types/smrt-generated/`
@@ -1179,7 +1238,7 @@ export class BadStore {
 **Important Notes**:
 
 1. **Prebuild Required**: Always run `npm run prebuild` before building if types are missing
-2. **Virtual Module Imports**: Imports from `@smrt/*` don't exist as physical files
+2. **Virtual Module Imports**: Imports from `@happyvertical/smrt-*` don't exist as physical files
 3. **Type Generation**: Types are generated at build time, not runtime
 4. **Plugin Order Matters**: `smrtPlugin` must come before `smrtConsumer` in Vite config
 5. **Mode-Specific Behavior**: Different build modes use different plugin configurations
@@ -1188,7 +1247,7 @@ export class BadStore {
 
 #### Virtual Module Issues
 
-**Issue**: `Cannot find module '@smrt/client'` or other `@smrt/*` imports
+**Issue**: `Cannot find module '@happyvertical/smrt-client'` or other `@happyvertical/smrt-*` imports
 ```bash
 # Solution: Run prebuild to generate types
 npm run prebuild
@@ -1199,7 +1258,7 @@ npm run prebuild
 npm run build
 ```
 
-**Cause**: The `@smrt/*` virtual modules are generated by Vite plugins at build time. If the prebuild script hasn't run, TypeScript won't find the type declarations.
+**Cause**: The `@happyvertical/smrt-*` virtual modules are generated by Vite plugins at build time. If the prebuild script hasn't run, TypeScript won't find the type declarations.
 
 **Issue**: Virtual modules not resolving in IDE (red squiggles but builds fine)
 ```bash
@@ -1272,16 +1331,16 @@ const data = $state({ items: [] });
 
 #### Build and Configuration Issues
 
-**Issue**: Build fails with "Cannot find module @have/smrt"
+**Issue**: Build fails with "Cannot find module @happyvertical/smrt-core"
 ```bash
-# Solution: Make sure @have/smrt is built first
+# Solution: Make sure @happyvertical/smrt-core is built first
 cd ../smrt
 npm run build
 cd ../products
 npm run build
 ```
 
-**Cause**: The products package depends on @have/smrt. Build order matters in monorepos.
+**Cause**: The products package depends on @happyvertical/smrt-core. Build order matters in monorepos.
 
 **Issue**: Module federation build fails
 ```bash
@@ -1426,7 +1485,7 @@ static async findByName(_name: string): Promise<Product[]> {
 **Gotcha**: Virtual modules are only available after prebuild
 ```typescript
 // ❌ This will fail in tests/scripts without prebuild
-import createClient from '@smrt/client';
+import createClient from '@happyvertical/smrt-client';
 
 // ✅ Either run prebuild first, or use mock client
 import { createClient } from '../lib/mock-smrt-client';
@@ -1568,7 +1627,7 @@ export const itemCount = derived(items, $items => $items.length);
 Reference these when working with the package:
 
 ### SMRT Framework
-- **@have/smrt package**: Core framework documentation (see `/packages/smrt/CLAUDE.md`)
+- **@happyvertical/smrt-core package**: Core framework documentation (see `/packages/smrt/CLAUDE.md`)
 - **SMRT Vite Plugin**: Virtual module generation (see `/packages/smrt/src/vite-plugin/`)
 - **SMRT Consumer Plugin**: External package consumption (see `/packages/smrt/src/consumer-plugin/`)
 
@@ -1603,7 +1662,7 @@ Reference these when working with the package:
 2. **Update package.json**:
    ```json
    {
-     "name": "@have/your-service",
+     "name": "@happyvertical/your-service",
      "description": "Your service description"
    }
    ```
@@ -1611,7 +1670,7 @@ Reference these when working with the package:
 3. **Create your models**:
    ```typescript
    // src/lib/models/YourModel.ts
-   import { SmrtObject, smrt } from '@have/smrt';
+   import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
    @smrt({ api: { include: ['list', 'get', 'create'] } })
    export class YourModel extends SmrtObject {
@@ -1634,12 +1693,12 @@ Reference these when working with the package:
 ### For Library Consumers (Using as NPM Package)
 
 ```bash
-npm install @have/products
+npm install @happyvertical/products
 ```
 
 ```typescript
-import { Product, createClient } from '@have/products';
-import { productStore } from '@have/products/stores';
+import { Product, createClient } from '@happyvertical/products';
+import { productStore } from '@happyvertical/products/stores';
 
 // Use models
 const product = new Product({ name: 'Test', price: 29.99 });
@@ -1649,7 +1708,7 @@ const api = createClient('/api/v1');
 const products = await api.products.list();
 
 // Use store in Svelte components
-import { productStore } from '@have/products/stores';
+import { productStore } from '@happyvertical/products/stores';
 ```
 
 ## Quick Reference Cheat Sheet
@@ -1724,16 +1783,16 @@ Generated Files (don't edit):
 
 ```typescript
 // Virtual modules (require prebuild)
-import createClient from '@smrt/client';
-import type { ProductData, CategoryData } from '@smrt/types';
-import { manifest } from '@smrt/manifest';
-import setupRoutes from '@smrt/routes';
-import createMCPServer, { tools } from '@smrt/mcp';
+import createClient from '@happyvertical/smrt-client';
+import type { ProductData, CategoryData } from '@happyvertical/smrt-types';
+import { manifest } from '@happyvertical/smrt-manifest';
+import setupRoutes from '@happyvertical/smrt-routes';
+import createMCPServer, { tools } from '@happyvertical/smrt-mcp';
 
 // Real modules (always available)
-import { Product, Category } from '@have/products/models';
-import { productStore } from '@have/products/stores';
-import { ProductCard } from '@have/products/components';
+import { Product, Category } from '@happyvertical/products/models';
+import { productStore } from '@happyvertical/products/stores';
+import { ProductCard } from '@happyvertical/products/components';
 ```
 
 ### Svelte 5 Runes Quick Reference
@@ -1774,7 +1833,7 @@ PUT    /api/v1/categories/:id  # Update category
 ### Common Error Messages and Quick Fixes
 
 ```
-Error: Cannot find module '@smrt/client'
+Error: Cannot find module '@happyvertical/smrt-client'
 → Run: npm run prebuild
 
 Error: Port 3000 already in use
@@ -1783,7 +1842,7 @@ Error: Port 3000 already in use
 Error: Cannot find name '$state'
 → Check file extension is .svelte.ts (not just .ts)
 
-Error: Module not found: @have/smrt
+Error: Module not found: @happyvertical/smrt-core
 → Build smrt package first: cd ../smrt && npm run build
 
 Type error: Property 'price' may be undefined
@@ -1792,7 +1851,7 @@ Type error: Property 'price' may be undefined
 
 ## Summary
 
-The `@have/products` package is a **reference implementation** and **template** demonstrating:
+The `@happyvertical/products` package is a **reference implementation** and **template** demonstrating:
 
 1. **SMRT Framework Capabilities**: Auto-generation of REST APIs, TypeScript clients, and MCP tools from decorated classes
 2. **Svelte 5 Patterns**: Modern reactive state management using runes (`$state`, `$derived`, `$effect`, `$props`)

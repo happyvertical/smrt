@@ -1,8 +1,8 @@
-# @have/content: Content Processing Module
+# @happyvertical/content: Content Processing Module
 
 ## Purpose and Responsibilities
 
-The `@have/content` package is a SMRT-specific module that provides comprehensive content processing capabilities for the HAVE SDK. It is **not part of the main build pipeline** and is designed specifically for use with the SMRT framework. The package handles:
+The `@happyvertical/content` package is a SMRT-specific module that provides comprehensive content processing capabilities for the HAVE SDK. It is **not part of the main build pipeline** and is designed specifically for use with the SMRT framework. The package handles:
 
 - **Document Processing**: Unified interface for working with documents (PDFs, text files, web content)
 - **Content Management**: Structured content objects with metadata, versioning, and references
@@ -89,7 +89,7 @@ Use this instead of direct instantiation to ensure proper initialization.
 
 **`mirror(options: { url: string; mirrorDir?: string; context?: string })`**
 - Downloads and stores content from remote URL
-- Extracts text using Document class
+- Extracts text using fetchDocument from @happyvertical/documents
 - Auto-generates title/slug from filename
 - Checks for existing content by URL (won't duplicate)
 - Returns Content object with type='mirror'
@@ -123,72 +123,69 @@ Use this instead of direct instantiation to ensure proper initialization.
 - Loading cache (`loaded` Map) available for performance optimization
 - Access database via `getDb()` method
 
-### Document Class (`document.ts`)
-Specialized handler for extracting text from various document types.
+### Document Processing (`fetchDocument`)
+
+**⚠️ IMPORTANT**: The Document class has been removed from this package. Use `fetchDocument` from `@happyvertical/documents` instead.
+
+The content package uses `fetchDocument` for extracting text from various document types:
 
 **Supported File Types**:
-- **PDFs**: Via @have/pdf package with OCR fallback
+- **PDFs**: Via @happyvertical/pdf package with OCR fallback
 - **Text files**: .txt, .md, .json, .xml, .html, .css, .js, .ts, .yaml, .yml
-- **Web content**: Remote URLs via Spider package
+- **Web content**: Remote URLs via @happyvertical/spider package
 - **Detection**: Automatic MIME type detection or file extension fallback
+
+**Usage**:
+```typescript
+import { fetchDocument } from '@happyvertical/documents';
+
+// Fetch and extract text from a PDF
+const pdfText = await fetchDocument('https://example.com/document.pdf');
+
+// Fetch and extract text from a local file
+const localText = await fetchDocument('file:///path/to/document.txt');
+
+// Fetch and extract text from a web page
+const webText = await fetchDocument('https://example.com/article');
+```
+
+**Key Features**:
+- **Automatic caching**: Downloaded files are cached to avoid re-downloading
+- **Smart text extraction**: Automatically detects file type and uses appropriate extraction method
+- **PDF support**: Full PDF text extraction with OCR fallback for scanned documents
+- **Web scraping**: Extracts readable content from web pages
+- **MIME type detection**: Automatic detection with file extension fallback
 
 **Configuration**:
 ```typescript
-interface DocumentOptions {
-  fs?: FilesystemAdapter;
-  cacheDir?: string;           // Default: os.tmpdir()/.cache/have-sdk
-  url?: string;                // file://, http://, https:// URLs
-  localPath?: string;          // Override computed local path
-  type?: string;               // MIME type override
-}
+// fetchDocument accepts a URL string or file path
+// Caching is handled automatically via @happyvertical/files
+// Cache location: os.tmpdir()/.cache/have-sdk
+
+// Example with local file
+const text = await fetchDocument('file:///Users/me/Documents/report.pdf');
+
+// Example with remote file
+const text = await fetchDocument('https://example.com/whitepaper.pdf');
 ```
 
-**Static Factory**:
+**Migration from Document Class**:
 ```typescript
-static async create(options: DocumentOptions): Promise<Document>
+// ❌ OLD: Document class (removed)
+import { Document } from '@happyvertical/smrt-content';
+const doc = await Document.create({ url: 'https://example.com/doc.pdf' });
+const text = await doc.getText();
+
+// ✅ NEW: fetchDocument function
+import { fetchDocument } from '@happyvertical/documents';
+const text = await fetchDocument('https://example.com/doc.pdf');
 ```
-Handles initialization and downloads remote files automatically.
 
-**Key Properties**:
-- `url` (URL): Parsed URL object
-- `type` (string): MIME type
-- `localPath` (string, read-only): Local file path (computed or provided)
-- `cacheDir` (string, read-only): Cache directory location
-- `isRemote` (boolean, protected): Flag for remote vs local files
-
-**Key Methods**:
-
-**`getText()`**
-- Extracts text content from document
-- Uses caching (`.extracted_text` suffix) to avoid reprocessing
-- PDF extraction via @have/pdf's getPDFReader()
-- Text file reading via fs.readFile
-- Throws error for unsupported types
-- Returns extracted text string
-
-**`isTextFile()`**
-- Checks if file can be read as plain text
-- Checks MIME type patterns (text/*, application/json, etc.)
-- Checks file extension fallbacks
-- Returns boolean
-
-**`initialize()`**
-- Downloads remote files to cache directory
-- Uses downloadFileWithCache from @have/files
-- No-op for local files
-- Called automatically by static create()
-
-**Important Implementation Details**:
-- Remote file paths: `{cacheDir}/{hostname-slug}/{pathname}`
-- Local file paths: Direct from file:// URL pathname
-- Caching uses @have/files getCached/setCached with `.extracted_text` suffix
-- MIME type detection via getMimeType from @have/files
-- PDF processing may involve OCR for scanned documents
-
-**Gotchas**:
-- Must call initialize() or use static create() before getText()
-- Unsupported types throw "not yet implemented" error
-- Cache keys are based on localPath, so moving files breaks cache
+**Important Notes**:
+- The Document class is no longer available in this package
+- Use `@happyvertical/documents` for all document processing needs
+- The content package internally uses `fetchDocument` for PDF and document handling
+- Caching behavior and extraction methods remain the same
 
 ### Utility Functions (`utils.ts`)
 Content serialization utilities for markdown/YAML interoperability.
@@ -215,11 +212,11 @@ Content serialization utilities for markdown/YAML interoperability.
 ## Dependencies
 
 ### Internal HAVE SDK Dependencies
-- **@have/smrt**: Core framework (SmrtObject, SmrtCollection, decorators)
-- **@have/pdf**: PDF text extraction capabilities
-- **@have/spider**: Web content scraping (via Document class)
-- **@have/files**: File system operations, caching, download management
-- **@have/utils**: Utility functions (makeSlug, etc.)
+- **@happyvertical/smrt-core**: Core framework (SmrtObject, SmrtCollection, decorators)
+- **@happyvertical/pdf**: PDF text extraction capabilities
+- **@happyvertical/spider**: Web content scraping (via fetchDocument from @happyvertical/documents)
+- **@happyvertical/files**: File system operations, caching, download management
+- **@happyvertical/utils**: Utility functions (makeSlug, etc.)
 
 ### External Dependencies
 - **yaml**: YAML parsing and stringification for frontmatter handling
@@ -236,7 +233,7 @@ Content serialization utilities for markdown/YAML interoperability.
 ### Basic Content Management
 
 ```typescript
-import { Content, Contents } from '@have/content';
+import { Content, Contents } from '@happyvertical/content';
 
 // Initialize collection with database and AI config
 const contents = await Contents.create({
@@ -277,23 +274,17 @@ await contents.add(article);
 ### Document Processing Workflow
 
 ```typescript
-import { Document, Content, Contents } from '@have/content';
+import { fetchDocument } from '@happyvertical/documents';
+import { Content } from '@happyvertical/smrt-content';
 
 // Process PDF document
-const doc = await Document.create({
-  url: 'https://example.com/research.pdf',
-  cacheDir: './cache'
-});
-
-// Extract text content
-const extractedText = await doc.getText();
+const extractedText = await fetchDocument('https://example.com/research.pdf');
 
 // Create content from document
 const content = new Content({
   title: 'Extracted Research Paper',
   body: extractedText,
   type: 'document',
-  fileKey: doc.localPath,
   source: 'pdf_extraction',
   original_url: 'https://example.com/research.pdf'
 });
@@ -305,7 +296,7 @@ await content.save();
 ### Web Content Mirroring
 
 ```typescript
-import { Contents } from '@have/content';
+import { Contents } from '@happyvertical/content';
 
 const contents = await Contents.create({
   db: { url: 'sqlite:./mirrors.db' }
@@ -326,7 +317,7 @@ console.log(mirrored.body);  // Extracted text content
 ### Content Export and Synchronization
 
 ```typescript
-import { Contents } from '@have/content';
+import { Contents } from '@happyvertical/content';
 
 const contents = await Contents.create({
   db: { url: 'sqlite:./content.db' },
@@ -348,7 +339,7 @@ await contents.writeContentFile({
 ### Content Utilities
 
 ```typescript
-import { contentToString, stringToContent } from '@have/content';
+import { contentToString, stringToContent } from '@happyvertical/content';
 
 // Serialize content to markdown with YAML frontmatter
 const markdownString = contentToString(article);
@@ -407,7 +398,7 @@ const content = await contents.getOrUpsert({
 
 ## Integration with SMRT Framework
 
-The @have/content package is a full SMRT module with:
+The @happyvertical/content package is a full SMRT module with:
 
 ### SMRT Decorators
 ```typescript
@@ -438,7 +429,9 @@ Always use static factory methods for proper async initialization:
 ```typescript
 // ✅ Correct - use static create()
 const contents = await Contents.create({ db: { url: 'sqlite:./content.db' } });
-const doc = await Document.create({ url: 'https://example.com/file.pdf' });
+
+// ✅ Correct - use fetchDocument for document processing
+const text = await fetchDocument('https://example.com/file.pdf');
 
 // ❌ Incorrect - missing initialization
 const contents = new Contents({ db: { url: 'sqlite:./content.db' } });
@@ -493,12 +486,13 @@ try {
   // Handle other errors
 }
 
-// Document getText with type checking
-const doc = await Document.create({ url });
-if (doc.isTextFile() || doc.type === 'application/pdf') {
-  const text = await doc.getText();
-} else {
-  console.log('Unsupported file type:', doc.type);
+// Document text extraction with fetchDocument
+try {
+  const text = await fetchDocument(url);
+  // Successfully extracted text
+} catch (error) {
+  // fetchDocument throws for unsupported file types
+  console.error('Failed to extract text:', error.message);
 }
 ```
 
@@ -506,12 +500,12 @@ if (doc.isTextFile() || doc.type === 'application/pdf') {
 Leverage built-in caching to avoid reprocessing:
 
 ```typescript
-// Document getText caches extracted text automatically
-const doc = await Document.create({ url: 'large-file.pdf' });
-const text1 = await doc.getText(); // Extracts and caches
-const text2 = await doc.getText(); // Returns cached result instantly
+// fetchDocument caches extracted text automatically
+const text1 = await fetchDocument('large-file.pdf'); // Extracts and caches
+const text2 = await fetchDocument('large-file.pdf'); // Returns cached result instantly
 
-// Cache location: {localPath}.extracted_text
+// Caching is handled by @happyvertical/files
+// Cache location: os.tmpdir()/.cache/have-sdk
 ```
 
 ### AI Integration Patterns
@@ -690,7 +684,7 @@ tsx packages/content/src/server.ts
 ### Server Configuration
 
 ```typescript
-import { startRestServer } from '@have/smrt';
+import { startRestServer } from '@happyvertical/smrt-core';
 import { Content } from './content';
 
 const shutdown = await startRestServer(
@@ -811,18 +805,22 @@ try {
 ```
 
 ### 4. Document Type Support
-**Problem**: Calling `getText()` on unsupported file types
+**Problem**: Calling `fetchDocument` on unsupported file types
 
 ```typescript
-// ❌ Will throw "not yet implemented"
-const doc = await Document.create({ url: 'file:///path/to/video.mp4' });
-await doc.getText(); // Error!
+// ❌ Will throw error for unsupported types
+try {
+  const text = await fetchDocument('file:///path/to/video.mp4');
+} catch (error) {
+  console.error('Unsupported file type:', error.message);
+}
 
-// ✅ Check type first
-if (doc.isTextFile() || doc.type === 'application/pdf') {
-  const text = await doc.getText();
-} else {
-  console.log('Unsupported type:', doc.type);
+// ✅ Use try-catch to handle errors
+try {
+  const text = await fetchDocument(url);
+  console.log('Successfully extracted:', text.substring(0, 100));
+} catch (error) {
+  console.log('Could not extract text from:', url);
 }
 ```
 
@@ -830,17 +828,17 @@ if (doc.isTextFile() || doc.type === 'application/pdf') {
 **Problem**: Cached extraction results persist even when source changes
 
 ```typescript
-// Document extraction is cached by localPath
-const doc = await Document.create({ url: 'file:///path/to/file.pdf' });
-const text1 = await doc.getText(); // Extracts and caches
+// fetchDocument caches extracted text automatically
+const text1 = await fetchDocument('file:///path/to/file.pdf'); // Extracts and caches
 
-// If file changes on disk, cache is stale
-// Manual cache clearing needed
+// If file changes on disk, cache may be stale
+// Caching is managed by @happyvertical/files
+// Cache location: os.tmpdir()/.cache/have-sdk
 ```
 
 **Solution**: Be aware of cache locations and clear when needed:
 - Document text cache: `{localPath}.extracted_text`
-- Uses @have/files `getCached/setCached` functions
+- Uses @happyvertical/files `getCached/setCached` functions
 
 ### 6. Title vs Name Field
 **Problem**: Confusion between `title` and `name` properties
@@ -938,7 +936,7 @@ function getTestDbUrl(testName: string): string {
 ✅ **Web Content**: URL mirroring with automatic text extraction and caching
 ✅ **Filesystem Export**: Markdown generation with YAML frontmatter in organized directory structure
 ✅ **Reference System**: In-memory content linking and relationship management
-✅ **Caching**: Automatic extraction result caching with @have/files integration
+✅ **Caching**: Automatic extraction result caching with @happyvertical/files integration
 ✅ **Collection Operations**: Batch processing, advanced querying, and getOrUpsert patterns
 ✅ **Context Organization**: Namespace isolation for multi-project/multi-source content
 ✅ **TypeScript**: Full type safety and IntelliSense support with comprehensive interfaces
@@ -963,7 +961,7 @@ import {
   // Utils
   contentToString,   // Serialize to markdown + frontmatter
   stringToContent    // Parse markdown + frontmatter
-} from '@have/content';
+} from '@happyvertical/content';
 ```
 
 ## Quick Reference
@@ -988,9 +986,10 @@ import {
 - `writeContentFile(options)`: Export content to markdown file
 - `syncContentDir(options)`: Export all articles to directory
 
-### Document Methods
-- `Document.create(options)`: Factory method with auto-initialization
-- `getText()`: Extract text content (with caching)
-- `isTextFile()`: Check if file is text-based
+### Document Processing
+- `fetchDocument(url)`: Extract text from documents (from @happyvertical/documents)
+  - Supports PDFs, text files, and web content
+  - Automatic caching via @happyvertical/files
+  - Use try-catch to handle unsupported file types
 
 This package enables sophisticated content processing workflows while maintaining the modular architecture and AI-first design principles of the HAVE SDK.

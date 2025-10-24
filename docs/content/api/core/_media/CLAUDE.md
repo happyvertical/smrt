@@ -15,7 +15,7 @@ The `@happyvertical/smrt-core` package is the core framework for building vertic
 - **CLI Generators**: Create administrative command-line tools from SMRT objects
 - **REST API Generators**: Auto-generate complete REST APIs with OpenAPI documentation
 - **MCP Server Generators**: Generate Model Context Protocol servers for AI integration
-- **Vite Plugin Integration**: Automatic service generation with virtual modules (@smrt/routes, @smrt/client, @smrt/mcp)
+- **Vite Plugin Integration**: Automatic service generation with virtual modules (@happyvertical/smrt-routes, @happyvertical/smrt-client, @happyvertical/smrt-mcp)
 
 ### Runtime Environment Support
 - **Node.js Only**: Package now focused on Node.js for simplified deployment and better performance
@@ -143,7 +143,7 @@ await doc.initialize();
 
 #### Supported Providers
 
-The framework supports all providers from `@have/ai`:
+The framework supports all providers from `@happyvertical/ai`:
 
 - **openai** - OpenAI models (GPT-4, GPT-3.5, etc.)
 - **anthropic** - Anthropic models (Claude 3 Opus, Sonnet, Haiku)
@@ -179,11 +179,11 @@ export CLAUDE_API_KEY=your-claude-key
 
 **Using loadEnvConfig Directly:**
 ```typescript
-// Import from @happyvertical/smrt-core/config (re-exported from @have/utils)
+// Import from @happyvertical/smrt-core/config (re-exported from @happyvertical/utils)
 import { loadEnvConfig } from '@happyvertical/smrt-core/config';
 
-// Or import directly from @have/utils
-// import { loadEnvConfig } from '@have/utils';
+// Or import directly from @happyvertical/utils
+// import { loadEnvConfig } from '@happyvertical/utils';
 
 // Load SMRT_AI_* environment variables
 const aiConfig = loadEnvConfig({}, {
@@ -230,7 +230,7 @@ node dist/mcp-server.js
 
 ### Environment Variable Configuration
 
-The SMRT framework uses `loadEnvConfig()` from `@have/utils` (SDK package) for loading configuration from environment variables with automatic type conversion and validation. This utility is re-exported by `@happyvertical/smrt-core/config` for convenience.
+The SMRT framework uses `loadEnvConfig()` from `@happyvertical/utils` (SDK package) for loading configuration from environment variables with automatic type conversion and validation. This utility is re-exported by `@happyvertical/smrt-core/config` for convenience.
 
 #### Features
 
@@ -243,7 +243,7 @@ The SMRT framework uses `loadEnvConfig()` from `@have/utils` (SDK package) for l
 
 #### Source
 
-`loadEnvConfig()` is implemented in `@have/utils` (SDK) and re-exported by `@happyvertical/smrt-core/config` for convenience. See [SDK env-config documentation](https://github.com/happyvertical/sdk/blob/main/packages/utils/src/config/env-config.ts) for the full implementation.
+`loadEnvConfig()` is implemented in `@happyvertical/utils` (SDK) and re-exported by `@happyvertical/smrt-core/config` for convenience. See [SDK env-config documentation](https://github.com/happyvertical/sdk/blob/main/packages/utils/src/config/env-config.ts) for the full implementation.
 
 #### API
 
@@ -251,8 +251,8 @@ The SMRT framework uses `loadEnvConfig()` from `@have/utils` (SDK package) for l
 // Import from @happyvertical/smrt-core/config (re-exported)
 import { loadEnvConfig } from '@happyvertical/smrt-core/config';
 
-// Or import directly from @have/utils
-// import { loadEnvConfig } from '@have/utils';
+// Or import directly from @happyvertical/utils
+// import { loadEnvConfig } from '@happyvertical/utils';
 
 interface MyConfig {
   provider: string;
@@ -1277,10 +1277,10 @@ export default {
 };
 
 // Auto-generated virtual modules available:
-import { setupRoutes } from '@smrt/routes';        // REST routes
-import { createClient } from '@smrt/client';       // API client
-import { tools } from '@smrt/mcp';                 // MCP tools
-import { manifest } from '@smrt/manifest';         // Object manifest
+import { setupRoutes } from '@happyvertical/smrt-routes';        // REST routes
+import { createClient } from '@happyvertical/smrt-client';       // API client
+import { tools } from '@happyvertical/smrt-mcp';                 // MCP tools
+import { manifest } from '@happyvertical/smrt-manifest';         // Object manifest
 ```
 
 #### Consumer Plugin (for SMRT Package Users)
@@ -1304,8 +1304,8 @@ export default {
 };
 
 // Resolves virtual modules from consumed SMRT packages:
-import { createClient } from '@smrt/client';       // Generated from consumed packages
-import { setupRoutes } from '@smrt/routes';        // Combined routes from all packages
+import { createClient } from '@happyvertical/smrt-client';       // Generated from consumed packages
+import { setupRoutes } from '@happyvertical/smrt-routes';        // Combined routes from all packages
 import type { ProductData } from '@happyvertical/smrt-types';    // Generated TypeScript types
 ```
 
@@ -1339,8 +1339,8 @@ export default {
 };
 
 // Access both local and external virtual modules:
-import { setupRoutes as localRoutes } from '@smrt/routes';    // From local objects
-import { createClient } from '@smrt/client';                   // Combined client
+import { setupRoutes as localRoutes } from '@happyvertical/smrt-routes';    // From local objects
+import { createClient } from '@happyvertical/smrt-client';                   // Combined client
 import type { LocalModel, ExternalModel } from '@happyvertical/smrt-types'; // All types
 ```
 
@@ -1559,9 +1559,9 @@ The plugin generates comprehensive TypeScript declarations for consumed SMRT pac
 └── smrt-objects.d.ts    // Individual object interfaces
 
 // Auto-imported virtual modules:
-import { createClient } from '@smrt/client';
-import { setupRoutes } from '@smrt/routes';
-import { tools } from '@smrt/mcp';
+import { createClient } from '@happyvertical/smrt-client';
+import { setupRoutes } from '@happyvertical/smrt-routes';
+import { tools } from '@happyvertical/smrt-mcp';
 import type { ProductData, CategoryData } from '@happyvertical/smrt-types';
 ```
 
@@ -1631,7 +1631,7 @@ smrtConsumer({
 })
 
 // Access combined APIs from all services
-import { createClient } from '@smrt/client';
+import { createClient } from '@happyvertical/smrt-client';
 const client = createClient('/api/v1');
 
 // Type-safe access to all service APIs
@@ -1757,19 +1757,19 @@ The package uses:
 - Schema generation based on class properties
 - SQLite triggers for automatic timestamp management
 - A consistent pattern for database operations
-- Integration with AI models via the `@have/ai` package
+- Integration with AI models via the `@happyvertical/ai` package
 
 ## Dependencies
 
 The SMRT framework integrates with multiple packages to provide comprehensive agent capabilities:
 
 ### Internal HAVE SDK Dependencies
-- **@have/ai**: AI model interactions and completions across multiple providers
-- **@have/files**: File system operations and content management
-- **@have/pdf**: PDF document processing and text extraction
-- **@have/sql**: Database operations with SQLite and PostgreSQL support
-- **@have/spider**: Web content extraction and processing
-- **@have/utils**: Shared utility functions and type definitions
+- **@happyvertical/ai**: AI model interactions and completions across multiple providers
+- **@happyvertical/files**: File system operations and content management
+- **@happyvertical/pdf**: PDF document processing and text extraction
+- **@happyvertical/sql**: Database operations with SQLite and PostgreSQL support
+- **@happyvertical/spider**: Web content extraction and processing
+- **@happyvertical/utils**: Shared utility functions and type definitions
 
 ### External Dependencies
 - **@langchain/community**: Third-party integrations for LLM applications
@@ -2031,10 +2031,10 @@ npm run docs              # Generate API documentation
 - Cache expensive AI operations appropriately
 
 **Cross-Package Integration**
-- Leverage @have/spider for content ingestion
-- Use @have/pdf for document processing workflows
-- Integrate @have/files for asset management
-- Apply @have/sql for complex querying needs
+- Leverage @happyvertical/spider for content ingestion
+- Use @happyvertical/pdf for document processing workflows
+- Integrate @happyvertical/files for asset management
+- Apply @happyvertical/sql for complex querying needs
 
 **Code Generation**
 - Use AST scanning for automatic service discovery
@@ -2114,12 +2114,12 @@ Always reference the latest documentation when developing AI agents with the SMR
   - Critical for configuration management in agent deployments
 
 ### HAVE SDK Integration Points
-- **@have/ai**: AI model interactions and completions
-- **@have/files**: File system operations and content management
-- **@have/pdf**: PDF processing and document analysis
-- **@have/sql**: Database operations and schema management
-- **@have/spider**: Web content extraction and processing
-- **@have/utils**: Utility functions and type definitions
+- **@happyvertical/ai**: AI model interactions and completions
+- **@happyvertical/files**: File system operations and content management
+- **@happyvertical/pdf**: PDF processing and document analysis
+- **@happyvertical/sql**: Database operations and schema management
+- **@happyvertical/spider**: Web content extraction and processing
+- **@happyvertical/utils**: Utility functions and type definitions
 
 ### Expert Agent Instructions
 
@@ -2329,11 +2329,11 @@ class Document extends SmrtObject {
 **Virtual modules only work with Vite plugin**:
 ```typescript
 // ✅ WORKS - With smrtPlugin() in vite.config.js
-import { setupRoutes } from '@smrt/routes';
-import { createClient } from '@smrt/client';
+import { setupRoutes } from '@happyvertical/smrt-routes';
+import { createClient } from '@happyvertical/smrt-client';
 
 // ❌ DOESN'T WORK - Without Vite plugin configured
-// Will get "Cannot find module '@smrt/routes'" error
+// Will get "Cannot find module '@happyvertical/smrt-routes'" error
 ```
 
 **Consumer projects need smrtConsumer()**:
