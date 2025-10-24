@@ -84,6 +84,20 @@ export class MCPGenerator {
   }
 
   /**
+   * Get server name
+   */
+  get name(): string | undefined {
+    return this.config.name;
+  }
+
+  /**
+   * Get server version
+   */
+  get version(): string | undefined {
+    return this.config.version;
+  }
+
+  /**
    * Generate all available tools from registered objects
    */
   generateTools(): MCPTool[] {
@@ -175,7 +189,7 @@ export class MCPGenerator {
               description: 'URL-friendly identifier of the object',
             },
           },
-          required: [],
+          required: ['id'],
         },
       });
     }
@@ -272,7 +286,7 @@ export class MCPGenerator {
           );
 
           if (isValid) {
-            const toolName = `${lowerName}_${action}`;
+            const toolName = `${lowerName}_${action}`.toLowerCase();
             tools.push({
               name: toolName,
               description: `Execute ${action} action on ${objectName}`,
@@ -281,7 +295,7 @@ export class MCPGenerator {
                 properties: {
                   id: {
                     type: 'string',
-                    description: 'ID of the object (optional for some actions)',
+                    description: 'ID of the object to execute action on',
                   },
                   options: {
                     type: 'object',
@@ -289,7 +303,7 @@ export class MCPGenerator {
                     additionalProperties: true,
                   },
                 },
-                required: [],
+                required: ['id'],
               },
             });
           } else {
@@ -397,6 +411,14 @@ export class MCPGenerator {
     const { name, arguments: args } = request.params;
 
     try {
+      // Check if tool exists
+      const availableTools = this.generateTools();
+      const toolExists = availableTools.some((t) => t.name === name);
+
+      if (!toolExists) {
+        throw new Error(`Unknown tool: ${name}`);
+      }
+
       // Parse tool name: objectname_action
       const [objectName, action] = name.split('_');
 
@@ -422,7 +444,7 @@ export class MCPGenerator {
       }
 
       // Get or create collection
-      const collection = this.getCollection(actualObjectName, classInfo);
+      const collection = await this.getCollection(actualObjectName, classInfo);
 
       // Execute the action
       const result = await this.executeAction(collection, action, args);
@@ -450,10 +472,10 @@ export class MCPGenerator {
   /**
    * Get or create collection for an object
    */
-  private getCollection(
+  private async getCollection(
     objectName: string,
     classInfo: any,
-  ): SmrtCollection<any> {
+  ): Promise<SmrtCollection<any>> {
     if (!this.collections.has(objectName)) {
       // Ensure we have a valid collection constructor
       if (
@@ -476,6 +498,9 @@ export class MCPGenerator {
           `Collection for ${objectName} must extend SmrtCollection`,
         );
       }
+
+      // Initialize the collection (database setup, etc.)
+      await collection.initialize();
 
       this.collections.set(objectName, collection);
     }
@@ -713,8 +738,8 @@ export class MCPGenerator {
       serverName = this.config.name || 'smrt-mcp-server',
       serverVersion = this.config.version || '1.0.0',
       debug = false,
-      generateClaudeConfigFile = true,
-      generateReadme = true,
+      generateClaudeConfigFile = false,
+      generateReadme = false,
       modular = false,
     } = options;
 

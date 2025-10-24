@@ -771,6 +771,363 @@ The SMRT package provides:
 
 For detailed SMRT framework documentation, see [packages/core/CLAUDE.md](./packages/core/CLAUDE.md).
 
+## Three-Tier MCP Architecture
+
+The SMRT framework provides three tiers of Model Context Protocol (MCP) servers for AI integration:
+
+### Tier 1: Auto-Generated Project MCP Servers
+
+Project-specific MCP servers are automatically generated from your SMRT objects and deployed alongside your application.
+
+**Generation:**
+```bash
+# CLI command
+npx smrt generate-mcp \
+  --name my-project-mcp \
+  --version 1.0.0 \
+  --modular \
+  --debug
+
+# Programmatic API
+import { MCPGenerator } from '@happyvertical/smrt-core/generators';
+
+const generator = new MCPGenerator({
+  name: 'my-project-mcp',
+  version: '1.0.0'
+});
+
+await generator.generateServer({
+  outputPath: '.smrt/mcp-server/index.js',
+  modular: true,
+  debug: false,
+  generateClaudeConfigFile: true,
+  generateReadme: true
+});
+```
+
+**Output Structure:**
+
+Single-file (default):
+```
+.smrt/
+└── mcp-server/
+    ├── index.js                    # Complete MCP server
+    ├── claude-desktop-config.json  # Optional Claude Desktop config
+    └── README.md                   # Optional documentation
+```
+
+Modular (--modular flag):
+```
+.smrt/
+└── mcp-server/
+    ├── index.js                    # Main entry point
+    ├── config.ts                   # Server configuration
+    ├── tools/
+    │   └── index.ts               # Tool definitions
+    ├── handlers/
+    │   └── index.ts               # Tool call handlers
+    ├── claude-desktop-config.json
+    └── README.md
+```
+
+**Features:**
+- Auto-discovers SMRT objects via ObjectRegistry
+- Generates tools for all MCP-enabled actions (list, get, custom actions)
+- Uses @happyvertical/smrt-config for configuration loading
+- Supports both debug and production modes
+- Default output: `.smrt/mcp-server/index.js`
+
+**Configuration:**
+
+Generated servers use @happyvertical/smrt-config to load configuration from:
+- Environment variables (SMRT_AI_PROVIDER, SMRT_AI_MODEL, etc.)
+- Config files (.smrt-config.js, smrt.config.js, package.json)
+- Programmatic configuration via config.load()
+
+### Tier 2: SMRT Advisor MCP (@happyvertical/smrt-dev-mcp)
+
+Development-focused MCP server for code generation and project introspection during development.
+
+**Installation:**
+```bash
+# Add to Claude Desktop config
+{
+  "mcpServers": {
+    "smrt-dev-mcp": {
+      "command": "npx",
+      "args": ["-y", "@happyvertical/smrt-dev-mcp"]
+    }
+  }
+}
+```
+
+**Tools:**
+
+1. **generate-smrt-class**: Generate complete SMRT class code
+   ```typescript
+   // Input
+   {
+     className: "Product",
+     properties: [
+       { name: "name", type: "text", required: true },
+       { name: "price", type: "decimal", required: true }
+     ],
+     includeApiConfig: true,
+     includeMcpConfig: true,
+     includeCliConfig: true
+   }
+
+   // Output: Full TypeScript class with @smrt() decorator
+   ```
+
+2. **introspect-project**: Scan project for SMRT objects
+   ```typescript
+   // Input
+   {
+     directory: "./src",
+     includeFields: true,
+     includeRelationships: true
+   }
+
+   // Output: JSON with discovered objects, fields, methods, relationships
+   {
+     projectPath: "./src",
+     objectCount: 5,
+     objects: [
+       {
+         className: "Product",
+         filePath: "models/product.ts",
+         fields: "name: text, price: decimal",
+         methods: "async analyze()",
+         relationships: "categoryId -> Category (foreignKey)"
+       }
+     ]
+   }
+   ```
+
+**Use Cases:**
+- AI-assisted SMRT class creation
+- Project structure discovery
+- Codebase exploration and documentation
+- Rapid prototyping with AI guidance
+
+### Tier 3: SMRT Documentation MCP (@happyvertical/smrt-docs-mcp)
+
+Documentation-focused MCP server providing access to SMRT framework documentation, best practices, and examples.
+
+**Installation:**
+```bash
+{
+  "mcpServers": {
+    "smrt-docs-mcp": {
+      "command": "npx",
+      "args": ["-y", "@happyvertical/smrt-docs-mcp"]
+    }
+  }
+}
+```
+
+**Tools:**
+
+1. **search-docs**: Search SMRT framework documentation
+2. **get-example**: Retrieve code examples for specific patterns
+3. **explain-concept**: Get detailed explanations of SMRT concepts
+
+**Use Cases:**
+- Learning SMRT framework patterns
+- Looking up API documentation
+- Finding example implementations
+- Troubleshooting common issues
+
+### Architecture Benefits
+
+**Separation of Concerns:**
+- Tier 1: Runtime application data and operations
+- Tier 2: Development-time code generation and introspection
+- Tier 3: Framework knowledge and documentation
+
+**Layered Workflow:**
+```
+┌─────────────────────────────────────────────────┐
+│ Claude (AI Assistant)                           │
+└─────────────────────────────────────────────────┘
+         │
+         ├──────► Tier 3: smrt-docs-mcp
+         │        (Framework knowledge)
+         │
+         ├──────► Tier 2: smrt-dev-mcp
+         │        (Code generation)
+         │
+         └──────► Tier 1: my-project-mcp
+                  (Application data)
+```
+
+**Example Workflow:**
+
+1. **Learn** (Tier 3): "How do I create a SMRT object with relationships?"
+2. **Generate** (Tier 2): "Generate a Product class with a categoryId foreign key"
+3. **Develop**: Write business logic, add custom actions
+4. **Deploy** (Tier 1): Generate project MCP server for runtime AI integration
+5. **Operate** (Tier 1): AI interacts with live application data
+
+### Configuration Management
+
+All three tiers use @happyvertical/smrt-config for consistent configuration:
+
+**Environment Variables:**
+```bash
+export SMRT_AI_PROVIDER=claude-cli
+export SMRT_AI_MODEL=sonnet
+export SMRT_AI_API_KEY=your-key
+```
+
+**Config Files:**
+```typescript
+// .smrt-config.js or smrt.config.js
+export default {
+  ai: {
+    provider: 'claude-cli',
+    model: 'sonnet'
+  }
+};
+```
+
+**Programmatic:**
+```typescript
+import { config } from '@happyvertical/smrt-config';
+
+const appConfig = await config.load();
+const aiConfig = appConfig?.ai || {};
+```
+
+### Generated Server Customization
+
+**Modular Structure Benefits:**
+- Separate concerns into config.ts, tools/, handlers/
+- Easy to extend with custom tools
+- Better code organization for large projects
+- Easier to debug and maintain
+
+**Debug Mode:**
+```bash
+# Enable debug logging
+npx smrt generate-mcp --debug
+
+# Generated server includes:
+const DEBUG = true;
+if (DEBUG) {
+  console.error(`[server-name] Tool called: ${name}`);
+}
+```
+
+**Custom Actions:**
+
+SMRT objects define custom actions via methods + MCP configuration:
+
+```typescript
+@smrt({
+  mcp: { include: ['list', 'get', 'analyze', 'summarize'] }
+})
+class Document extends SmrtObject {
+  title = text();
+  content = text();
+
+  // Custom action: automatically generates 'document_analyze' MCP tool
+  async analyze(options: any = {}) {
+    return {
+      action: 'analyze',
+      wordCount: this.content.split(/\s+/).length,
+      sentiment: 'positive'
+    };
+  }
+
+  // Custom action: automatically generates 'document_summarize' MCP tool
+  async summarize(options: any = {}) {
+    return {
+      action: 'summarize',
+      summary: await this.do(`Summarize in ${options.length || 3} sentences`)
+    };
+  }
+}
+```
+
+**Generated Tools:**
+- `document_list` (CRUD)
+- `document_get` (CRUD)
+- `document_analyze` (custom action)
+- `document_summarize` (custom action)
+
+### Migration from Old Architecture
+
+**Before (SDK MCP Server):**
+- Single monolithic SDK MCP server
+- Mixed runtime and development tools
+- No project-specific customization
+
+**After (Three-Tier):**
+- Tier 1: Auto-generated project MCPs (runtime)
+- Tier 2: SMRT Advisor (development)
+- Tier 3: Documentation (learning)
+
+**Migration Steps:**
+
+1. Generate project MCP server:
+   ```bash
+   npx smrt generate-mcp --name my-project-mcp
+   ```
+
+2. Update Claude Desktop config:
+   ```json
+   {
+     "mcpServers": {
+       "my-project-mcp": {
+         "command": "node",
+         "args": ["/path/to/.smrt/mcp-server/index.js"]
+       },
+       "smrt-dev-mcp": {
+         "command": "npx",
+         "args": ["-y", "@happyvertical/smrt-dev-mcp"]
+       },
+       "smrt-docs-mcp": {
+         "command": "npx",
+         "args": ["-y", "@happyvertical/smrt-docs-mcp"]
+       }
+     }
+   }
+   ```
+
+3. Restart Claude Desktop
+
+### Best Practices
+
+**Development:**
+- Use Tier 2 (smrt-dev-mcp) for code generation during development
+- Use Tier 3 (smrt-docs-mcp) to learn framework patterns
+- Regenerate Tier 1 MCP server when adding new SMRT objects
+
+**Production:**
+- Deploy only Tier 1 (project MCP) to production
+- Use environment variables for configuration
+- Enable debug mode for troubleshooting, disable in production
+
+**Testing:**
+- Test generated MCP servers with real SMRT objects
+- Verify custom actions work correctly
+- Validate MCP protocol compliance
+
+**Gitignore:**
+```gitignore
+# Auto-generated SMRT files
+**/.smrt/
+```
+
+### Related Documentation
+
+- **MCP Generator API**: [packages/core/src/generators/mcp.ts](./packages/core/src/generators/mcp.ts)
+- **SMRT Dev MCP Tools**: [packages/smrt-dev-mcp/](./packages/smrt-dev-mcp/)
+- **Core Framework**: [packages/core/CLAUDE.md](./packages/core/CLAUDE.md)
+- **Configuration**: [packages/config/](./packages/config/)
+
 ## Contribution Guidelines
 
 1. Ensure code passes Biome linting (`npm run lint`)
