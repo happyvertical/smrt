@@ -84,6 +84,20 @@ export class MCPGenerator {
   }
 
   /**
+   * Get server name
+   */
+  get name(): string | undefined {
+    return this.config.name;
+  }
+
+  /**
+   * Get server version
+   */
+  get version(): string | undefined {
+    return this.config.version;
+  }
+
+  /**
    * Generate all available tools from registered objects
    */
   generateTools(): MCPTool[] {
@@ -175,7 +189,7 @@ export class MCPGenerator {
               description: 'URL-friendly identifier of the object',
             },
           },
-          required: [],
+          required: ['id'],
         },
       });
     }
@@ -272,7 +286,7 @@ export class MCPGenerator {
           );
 
           if (isValid) {
-            const toolName = `${lowerName}_${action}`;
+            const toolName = `${lowerName}_${action}`.toLowerCase();
             tools.push({
               name: toolName,
               description: `Execute ${action} action on ${objectName}`,
@@ -281,7 +295,7 @@ export class MCPGenerator {
                 properties: {
                   id: {
                     type: 'string',
-                    description: 'ID of the object (optional for some actions)',
+                    description: 'ID of the object to execute action on',
                   },
                   options: {
                     type: 'object',
@@ -289,7 +303,7 @@ export class MCPGenerator {
                     additionalProperties: true,
                   },
                 },
-                required: [],
+                required: ['id'],
               },
             });
           } else {
@@ -397,6 +411,14 @@ export class MCPGenerator {
     const { name, arguments: args } = request.params;
 
     try {
+      // Check if tool exists
+      const availableTools = this.generateTools();
+      const toolExists = availableTools.some((t) => t.name === name);
+
+      if (!toolExists) {
+        throw new Error(`Unknown tool: ${name}`);
+      }
+
       // Parse tool name: objectname_action
       const [objectName, action] = name.split('_');
 
@@ -422,7 +444,7 @@ export class MCPGenerator {
       }
 
       // Get or create collection
-      const collection = this.getCollection(actualObjectName, classInfo);
+      const collection = await this.getCollection(actualObjectName, classInfo);
 
       // Execute the action
       const result = await this.executeAction(collection, action, args);
@@ -450,10 +472,10 @@ export class MCPGenerator {
   /**
    * Get or create collection for an object
    */
-  private getCollection(
+  private async getCollection(
     objectName: string,
     classInfo: any,
-  ): SmrtCollection<any> {
+  ): Promise<SmrtCollection<any>> {
     if (!this.collections.has(objectName)) {
       // Ensure we have a valid collection constructor
       if (
@@ -476,6 +498,9 @@ export class MCPGenerator {
           `Collection for ${objectName} must extend SmrtCollection`,
         );
       }
+
+      // Initialize the collection (database setup, etc.)
+      await collection.initialize();
 
       this.collections.set(objectName, collection);
     }
@@ -678,7 +703,7 @@ export class MCPGenerator {
    * });
    *
    * await generator.generateServer({
-   *   outputPath: 'dist/mcp-server.js',
+   *   outputPath: '.smrt/mcp-server/index.js',
    *   serverName: 'my-app-mcp',
    *   debug: true
    * });
@@ -703,15 +728,19 @@ export class MCPGenerator {
 
       /** Generate README documentation */
       generateReadme?: boolean;
+
+      /** Generate modular directory structure (tools/, handlers/, config.ts) */
+      modular?: boolean;
     } = {},
   ): Promise<void> {
     const {
-      outputPath = 'dist/mcp-server.js',
+      outputPath = '.smrt/mcp-server/index.js',
       serverName = this.config.name || 'smrt-mcp-server',
       serverVersion = this.config.version || '1.0.0',
       debug = false,
-      generateClaudeConfigFile = true,
-      generateReadme = true,
+      generateClaudeConfigFile = false,
+      generateReadme = false,
+      modular = false,
     } = options;
 
     // Resolve output path
@@ -721,21 +750,34 @@ export class MCPGenerator {
     // Ensure output directory exists
     await mkdir(outputDir, { recursive: true });
 
-    // Generate server code
-    const runtimeOptions: RuntimeOptions = {
-      name: serverName,
-      version: serverVersion,
-      description: this.config.description,
-      config: this.config,
-      context: this.context,
-      debug,
-    };
+    if (modular) {
+      // Generate modular structure: tools/, handlers/, config.ts, index.js
+      await this.generateModularServer(
+        outputDir,
+        serverName,
+        serverVersion,
+        debug,
+      );
+    } else {
+      // Generate single-file server with static tools
+      const tools = this.generateTools();
 
-    const serverCode = generateRuntimeBootstrap(runtimeOptions);
+      const runtimeOptions: RuntimeOptions = {
+        name: serverName,
+        version: serverVersion,
+        description: this.config.description,
+        config: this.config,
+        context: this.context,
+        debug,
+        tools,
+      };
 
-    // Write server file
-    await writeFile(resolvedPath, serverCode, 'utf-8');
-    console.log(`✅ Generated MCP server: ${resolvedPath}`);
+      const serverCode = generateRuntimeBootstrap(runtimeOptions);
+
+      // Write server file
+      await writeFile(resolvedPath, serverCode, 'utf-8');
+      console.log(`✅ Generated MCP server: ${resolvedPath}`);
+    }
 
     // Generate Claude Desktop configuration example
     if (generateClaudeConfigFile) {
@@ -761,5 +803,401 @@ export class MCPGenerator {
     const mcpScript = generateMCPScript(outputPath);
     console.log(`\n📝 Add this to your package.json scripts:`);
     console.log(`   "mcp": "${mcpScript}"\n`);
+  }
+
+  /**
+   * Generate modular MCP server structure
+   *
+   * Creates separate files for tools, handlers, configuration, and main entry point.
+   * This makes the generated server easier to customize and extend.
+   *
+   * @param outputDir - Directory to generate files in
+   * @param serverName - Server name
+   * @param serverVersion - Server version
+   * @param debug - Enable debug logging
+   */
+  private async generateModularServer(
+    outputDir: string,
+    serverName: string,
+    serverVersion: string,
+    debug: boolean,
+  ): Promise<void> {
+    // Create subdirectories
+    const toolsDir = resolve(outputDir, 'tools');
+    const handlersDir = resolve(outputDir, 'handlers');
+
+    await mkdir(toolsDir, { recursive: true });
+    await mkdir(handlersDir, { recursive: true });
+
+    // Generate config.ts
+    const configPath = resolve(outputDir, 'config.ts');
+    const configCode = this.generateConfigFile(
+      serverName,
+      serverVersion,
+      debug,
+    );
+    await writeFile(configPath, configCode, 'utf-8');
+    console.log(`✅ Generated config: ${configPath}`);
+
+    // Generate tools/index.ts with tool definitions
+    const toolsPath = resolve(toolsDir, 'index.ts');
+    const toolsCode = this.generateToolsFile();
+    await writeFile(toolsPath, toolsCode, 'utf-8');
+    console.log(`✅ Generated tools: ${toolsPath}`);
+
+    // Generate handlers/index.ts with tool call handlers
+    const handlersPath = resolve(handlersDir, 'index.ts');
+    const handlersCode = this.generateHandlersFile();
+    await writeFile(handlersPath, handlersCode, 'utf-8');
+    console.log(`✅ Generated handlers: ${handlersPath}`);
+
+    // Generate main index.js entry point
+    const indexPath = resolve(outputDir, 'index.js');
+    const indexCode = this.generateModularIndex();
+    await writeFile(indexPath, indexCode, 'utf-8');
+    console.log(`✅ Generated MCP server: ${indexPath}`);
+  }
+
+  /**
+   * Generate configuration file for modular server
+   */
+  private generateConfigFile(
+    serverName: string,
+    serverVersion: string,
+    debug: boolean,
+  ): string {
+    return `/**
+ * MCP Server Configuration
+ * Auto-generated by @happyvertical/smrt-core
+ */
+
+export const SERVER_NAME = ${JSON.stringify(serverName)};
+export const SERVER_VERSION = ${JSON.stringify(serverVersion)};
+export const SERVER_DESCRIPTION = ${JSON.stringify(this.config.description)};
+export const DEBUG = ${debug};
+`;
+  }
+
+  /**
+   * Generate tools definitions file for modular server
+   */
+  private generateToolsFile(): string {
+    const tools = this.generateTools();
+
+    return `/**
+ * MCP Tools Definitions
+ * Auto-generated from SMRT objects
+ */
+
+export const tools: Array<{
+  name: string;
+  description: string;
+  inputSchema: any;
+}> = ${JSON.stringify(tools, null, 2)};
+`;
+  }
+
+  /**
+   * Generate switch cases for tool execution
+   */
+  private generateToolSwitchCases(indent: string = '    '): string {
+    const tools = this.generateTools();
+
+    const capitalize = (str: string) =>
+      str.charAt(0).toUpperCase() + str.slice(1);
+
+    const switchCases = tools
+      .map((tool) => {
+        const [objectName, action] = tool.name.split('_');
+
+        switch (action) {
+          case 'list':
+            return `${indent}case '${tool.name}': {
+${indent}  const limit = args.limit ?? 50;
+${indent}  const offset = args.offset ?? 0;
+${indent}  const where = args.where ?? {};
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const items = await collection.list({ where, limit, offset });
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(items) }] };
+${indent}}`;
+
+          case 'get':
+            return `${indent}case '${tool.name}': {
+${indent}  if (!args.id && !args.slug) {
+${indent}    throw new Error('Either id or slug is required');
+${indent}  }
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const filter = args.id || args.slug;
+${indent}  const item = await collection.get(filter);
+
+${indent}  if (!item) {
+${indent}    throw new Error('Object not found');
+${indent}  }
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(item) }] };
+${indent}}`;
+
+          case 'create':
+            return `${indent}case '${tool.name}': {
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const newItem = await collection.create(args);
+${indent}  await newItem.save();
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem) }] };
+${indent}}`;
+
+          case 'update':
+            return `${indent}case '${tool.name}': {
+${indent}  const { id, ...updateData } = args;
+${indent}  if (!id) {
+${indent}    throw new Error('ID is required for update');
+${indent}  }
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const existing = await collection.get(id);
+${indent}  if (!existing) {
+${indent}    throw new Error('Object not found');
+${indent}  }
+
+${indent}  Object.assign(existing, updateData);
+${indent}  await existing.save();
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing) }] };
+${indent}}`;
+
+          case 'delete':
+            return `${indent}case '${tool.name}': {
+${indent}  if (!args.id) {
+${indent}    throw new Error('ID is required for delete');
+${indent}  }
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const toDelete = await collection.get(args.id);
+${indent}  if (!toDelete) {
+${indent}    throw new Error('Object not found');
+${indent}  }
+
+${indent}  await toDelete.delete();
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Object deleted successfully' }) }] };
+${indent}}`;
+
+          default:
+            // Custom action
+            return `${indent}case '${tool.name}': {
+${indent}  const { id, options = {}, ...directArgs } = args;
+
+${indent}  if (!id) {
+${indent}    throw new Error('ID is required for custom action ${action}');
+${indent}  }
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const object = await collection.get(id);
+${indent}  if (!object) {
+${indent}    throw new Error('Object not found');
+${indent}  }
+
+${indent}  if (typeof object['${action}'] !== 'function') {
+${indent}    throw new Error('Method ${action} not found on object');
+${indent}  }
+
+${indent}  const methodArgs = Object.keys(options).length > 0 ? options : directArgs;
+${indent}  const result = await object['${action}'](methodArgs);
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+${indent}}`;
+        }
+      })
+      .join('\n\n');
+
+    return switchCases;
+  }
+
+  /**
+   * Generate handlers file for modular server
+   */
+  private generateHandlersFile(): string {
+    const switchCases = this.generateToolSwitchCases('      ');
+
+    return `/**
+ * MCP Tool Call Handlers
+ * Auto-generated from SMRT objects
+ */
+
+import { ObjectRegistry } from '@happyvertical/smrt-core/registry';
+
+/**
+ * Handle tool call request
+ */
+export async function handleToolCall(
+  name: string,
+  arguments: any = {},
+  aiConfig: any = {}
+) {
+  try {
+    let result;
+    const args = arguments;
+
+    switch (name) {
+${switchCases}
+
+      default:
+        throw new Error(\`Unknown tool: \${name}\`);
+    }
+
+    return result;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: \`Error executing tool \${name}: \${errorMessage}\`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+`;
+  }
+
+  /**
+   * Generate modular index file (main entry point)
+   */
+  private generateModularIndex(): string {
+    return `#!/usr/bin/env node
+/**
+ * Auto-generated MCP Server
+ * Generated by @happyvertical/smrt-core MCPGenerator
+ *
+ * This server exposes SMRT objects as MCP tools for AI integration.
+ */
+
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import { config } from '@happyvertical/smrt-config';
+import { getDatabase } from '@happyvertical/sql';
+import { getAI } from '@happyvertical/ai';
+
+import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config.js';
+import { tools } from './tools/index.js';
+import { handleToolCall } from './handlers/index.js';
+
+/**
+ * Main server startup function
+ */
+async function main() {
+  try {
+    if (DEBUG) {
+      console.error(\`[MCP] Starting server: \${SERVER_NAME} v\${SERVER_VERSION}\`);
+      console.error(\`[MCP] Available tools:\`, tools.map(t => t.name).join(', '));
+    }
+
+    // Load configuration from environment and .smrt.config files
+    const appConfig = await config.load();
+    const aiConfig = appConfig?.ai || {};
+
+    // Create MCP server
+    const server = new Server(
+      {
+        name: SERVER_NAME,
+        version: SERVER_VERSION,
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
+
+    // Register ListTools handler
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      if (DEBUG) {
+        console.error(\`[MCP] ListTools request received\`);
+      }
+
+      return {
+        tools: tools.map(tool => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        })),
+      };
+    });
+
+    // Register CallTool handler
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args = {} } = request.params;
+
+      if (DEBUG) {
+        console.error(\`[MCP] CallTool request: \${name}\`);
+        console.error(\`[MCP] Arguments:\`, JSON.stringify(args, null, 2));
+      }
+
+      return await handleToolCall(name, args, aiConfig);
+    });
+
+    // Setup stdio transport
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+
+    if (DEBUG) {
+      console.error(\`[MCP] Server connected and ready\`);
+    }
+
+    // Handle graceful shutdown
+    const shutdown = async () => {
+      if (DEBUG) {
+        console.error(\`[MCP] Shutting down gracefully\`);
+      }
+      await server.close();
+      process.exit(0);
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+  } catch (error) {
+    console.error('[MCP] Fatal error during server startup:', error);
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
+  console.error('[MCP] Unhandled error:', error);
+  process.exit(1);
+});
+`;
   }
 }

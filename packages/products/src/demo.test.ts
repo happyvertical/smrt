@@ -77,9 +77,13 @@ describe.skip('SMRT Template Integration', () => {
 
   it('should include auto-generated virtual modules', async () => {
     // These imports should work due to Vite plugin virtual modules
-    const { default: setupRoutes } = await import('@smrt/routes');
-    const { default: createClient } = await import('@smrt/client');
-    const { manifest } = await import('@smrt/manifest');
+    const { default: setupRoutes } = await import(
+      '@happyvertical/smrt-virt-routes'
+    );
+    const { default: createClient } = await import(
+      '@happyvertical/smrt-virt-client'
+    );
+    const { manifest } = await import('@happyvertical/smrt-virt-manifest');
 
     expect(typeof setupRoutes).toBe('function');
     expect(typeof createClient).toBe('function');
@@ -88,7 +92,7 @@ describe.skip('SMRT Template Integration', () => {
   });
 
   it('should discover SMRT objects in manifest', async () => {
-    const { manifest } = await import('@smrt/manifest');
+    const { manifest } = await import('@happyvertical/smrt-virt-manifest');
 
     // Should find our Product and Category objects
     expect(manifest.objects.product).toBeDefined();

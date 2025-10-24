@@ -1,12 +1,12 @@
 {
-  "name": "@happyvertical/smrt-mcp",
+  "name": "@happyvertical/smrt-dev-mcp",
   "version": "0.1.0",
-  "description": "MCP server for SMRT framework - Routes queries to package experts using CLAUDE.md files",
+  "description": "Development MCP server for SMRT framework - Code generation and project introspection",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "smrt-mcp": "./dist/index.js"
+    "smrt-dev-mcp": "./dist/index.js"
   },
   "exports": {
     ".": {
@@ -26,12 +26,12 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/happyvertical/smrt.git",
-    "directory": "packages/smrt-mcp"
+    "directory": "packages/smrt-dev-mcp"
   },
   "bugs": {
     "url": "https://github.com/happyvertical/smrt/issues"
   },
-  "homepage": "https://github.com/happyvertical/smrt/tree/main/packages/smrt-mcp#readme",
+  "homepage": "https://github.com/happyvertical/smrt/tree/main/packages/smrt-dev-mcp#readme",
   "license": "MIT",
   "scripts": {
     "test": "npx vitest run",
@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/ai": "workspace:*",
     "@happyvertical/files": "workspace:*",
     "@happyvertical/utils": "workspace:*"

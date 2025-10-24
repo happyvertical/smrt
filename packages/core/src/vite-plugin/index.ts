@@ -49,14 +49,14 @@ export interface SmrtPluginOptions {
 }
 
 const VIRTUAL_MODULES = {
-  '@smrt/routes': 'smrt:routes',
-  '@smrt/client': 'smrt:client',
-  '@smrt/mcp': 'smrt:mcp',
-  '@smrt/types': 'smrt:types',
-  '@smrt/manifest': 'smrt:manifest',
-  '@smrt/schema': 'smrt:schema',
-  '@smrt/ui': 'smrt:ui',
-  '@smrt/cli': 'smrt:cli',
+  '@happyvertical/smrt-virt-routes': 'smrt:routes',
+  '@happyvertical/smrt-virt-client': 'smrt:client',
+  '@happyvertical/smrt-virt-mcp': 'smrt:mcp',
+  '@happyvertical/smrt-virt-types': 'smrt:types',
+  '@happyvertical/smrt-virt-manifest': 'smrt:manifest',
+  '@happyvertical/smrt-virt-schema': 'smrt:schema',
+  '@happyvertical/smrt-virt-ui': 'smrt:ui',
+  '@happyvertical/smrt-virt-cli': 'smrt:cli',
 };
 
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
@@ -868,7 +868,7 @@ ${fields}
  */
 
 // Manifest module - Contains discovered SMRT objects metadata
-declare module '@smrt/manifest' {
+declare module '@happyvertical/smrt-virt-manifest' {
   export interface SmrtObjectField {
     type: string;
     required?: boolean;
@@ -904,7 +904,7 @@ declare module '@smrt/manifest' {
 }
 
 // Routes module - Auto-generated REST route setup
-declare module '@smrt/routes' {
+declare module '@happyvertical/smrt-virt-routes' {
   export interface RouteApp {
     get(path: string, handler: (req: any, res: any) => void): void;
     post(path: string, handler: (req: any, res: any) => void): void;
@@ -922,7 +922,7 @@ declare module '@smrt/routes' {
 }
 
 // Client module - Auto-generated API client  
-declare module '@smrt/client' {
+declare module '@happyvertical/smrt-virt-client' {
   export interface ApiResponse<T = any> {
     id?: string;
     data?: T;
@@ -948,7 +948,7 @@ ${apiClientInterface}
 }
 
 // MCP module - Auto-generated Model Context Protocol tools
-declare module '@smrt/mcp' {
+declare module '@happyvertical/smrt-virt-mcp' {
   import type { SmrtMCPServer, MCPServerOptions } from '@happyvertical/smrt-core/runtime';
 
   export interface McpTool {
@@ -967,7 +967,7 @@ declare module '@smrt/mcp' {
 }
 
 // Types module - Auto-generated TypeScript interfaces
-declare module '@smrt/types' {
+declare module '@happyvertical/smrt-virt-types' {
   export const types: string;
 
   // Auto-generated interfaces for discovered SMRT objects
@@ -977,7 +977,7 @@ ${objectInterfaces}
 }
 
 // CLI module - Auto-generated command-line interface
-declare module '@smrt/cli' {
+declare module '@happyvertical/smrt-virt-cli' {
   export interface CLIConfig {
     name?: string;
     version?: string;
@@ -1325,7 +1325,7 @@ export const cliCommands = {${commands.join(',\n')}
  * @returns {{run: function(string[]): Promise<void>, generator: *}}
  *
  * @example
- * import { setupCLI } from '@smrt/cli';
+ * import { setupCLI } from '@happyvertical/smrt-virt-cli';
  *
  * const cli = setupCLI({
  *   name: 'my-app',

@@ -1,5 +1,5 @@
 /**
- * Tests for @smrt/cli virtual module generation
+ * Tests for @happyvertical/smrt-virt-cli virtual module generation
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -74,7 +74,7 @@ class Article extends SmrtObject {
   }
 }
 
-describe('@smrt/cli virtual module generation', () => {
+describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
   // Note: Classes are registered at module load time via decorators
   // Registry persists across tests to allow checking different objects
 
