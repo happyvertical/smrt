@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
 import { decimal, integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object.js';
-import { smrt } from '../registry.js';
+import { ObjectRegistry, smrt } from '../registry.js';
 import { MCPGenerator } from './mcp.js';
 
 // Real SMRT object for integration testing
@@ -49,6 +49,9 @@ describe('MCPGenerator - Integration Tests', () => {
     tmpDir = join(tmpdir(), `smrt-mcp-integration-${Date.now()}`);
     await mkdir(tmpDir, { recursive: true });
 
+    // Register the collection for the test object
+    ObjectRegistry.registerCollection('TestProduct', TestProductCollection);
+
     generator = new MCPGenerator({
       name: 'test-integration-server',
       version: '1.0.0',
@@ -57,8 +60,8 @@ describe('MCPGenerator - Integration Tests', () => {
 
     // Create collection with in-memory database
     collection = await TestProductCollection.create({
-      persistence: {
-        type: 'sql',
+      db: {
+        type: 'sqlite',
         url: ':memory:',
       },
     });
@@ -158,15 +161,15 @@ describe('MCPGenerator - Integration Tests', () => {
     it('should handle collections with different persistence configs', async () => {
       // Create multiple collections
       const sqliteCollection = await TestProductCollection.create({
-        persistence: {
-          type: 'sql',
+        db: {
+          type: 'sqlite',
           url: join(tmpDir, 'test.db'),
         },
       });
 
       const memoryCollection = await TestProductCollection.create({
-        persistence: {
-          type: 'sql',
+        db: {
+          type: 'sqlite',
           url: ':memory:',
         },
       });
@@ -363,8 +366,8 @@ describe('MCPGenerator - Integration Tests', () => {
       expect(serverContent).toContain('testproduct_analyze');
 
       // 5. Verify optional files
-      const configPath = join(tmpDir, 'claude-desktop-config.json');
-      const readmePath = join(tmpDir, 'README.md');
+      const configPath = join(tmpDir, 'claude-config.example.json');
+      const readmePath = join(tmpDir, 'MCP-README.md');
 
       const configContent = await readFile(configPath, 'utf-8');
       const readmeContent = await readFile(readmePath, 'utf-8');

@@ -198,7 +198,7 @@ describe('MCPGenerator - Modular Generation', () => {
       // Verify usage
       expect(indexContent).toContain('name: SERVER_NAME');
       expect(indexContent).toContain('version: SERVER_VERSION');
-      expect(indexContent).toContain('handleToolCall(request)');
+      expect(indexContent).toContain('handleToolCall(name, args, aiConfig)');
     });
   });
 
