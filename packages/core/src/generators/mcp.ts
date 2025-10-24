@@ -759,7 +759,9 @@ export class MCPGenerator {
         debug,
       );
     } else {
-      // Generate single-file server (legacy behavior)
+      // Generate single-file server with static tools
+      const tools = this.generateTools();
+
       const runtimeOptions: RuntimeOptions = {
         name: serverName,
         version: serverVersion,
@@ -767,6 +769,7 @@ export class MCPGenerator {
         config: this.config,
         context: this.context,
         debug,
+        tools,
       };
 
       const serverCode = generateRuntimeBootstrap(runtimeOptions);
@@ -886,46 +889,187 @@ export const DEBUG = ${debug};
  * Auto-generated from SMRT objects
  */
 
-export const tools = ${JSON.stringify(tools, null, 2)};
+export const tools: Array<{
+  name: string;
+  description: string;
+  inputSchema: any;
+}> = ${JSON.stringify(tools, null, 2)};
 `;
+  }
+
+  /**
+   * Generate switch cases for tool execution
+   */
+  private generateToolSwitchCases(indent: string = '    '): string {
+    const tools = this.generateTools();
+
+    const capitalize = (str: string) =>
+      str.charAt(0).toUpperCase() + str.slice(1);
+
+    const switchCases = tools
+      .map((tool) => {
+        const [objectName, action] = tool.name.split('_');
+
+        switch (action) {
+          case 'list':
+            return `${indent}case '${tool.name}': {
+${indent}  const limit = args.limit ?? 50;
+${indent}  const offset = args.offset ?? 0;
+${indent}  const where = args.where ?? {};
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const items = await collection.list({ where, limit, offset });
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(items) }] };
+${indent}}`;
+
+          case 'get':
+            return `${indent}case '${tool.name}': {
+${indent}  if (!args.id && !args.slug) {
+${indent}    throw new Error('Either id or slug is required');
+${indent}  }
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const filter = args.id || args.slug;
+${indent}  const item = await collection.get(filter);
+
+${indent}  if (!item) {
+${indent}    throw new Error('Object not found');
+${indent}  }
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(item) }] };
+${indent}}`;
+
+          case 'create':
+            return `${indent}case '${tool.name}': {
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const newItem = await collection.create(args);
+${indent}  await newItem.save();
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem) }] };
+${indent}}`;
+
+          case 'update':
+            return `${indent}case '${tool.name}': {
+${indent}  const { id, ...updateData } = args;
+${indent}  if (!id) {
+${indent}    throw new Error('ID is required for update');
+${indent}  }
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const existing = await collection.get(id);
+${indent}  if (!existing) {
+${indent}    throw new Error('Object not found');
+${indent}  }
+
+${indent}  Object.assign(existing, updateData);
+${indent}  await existing.save();
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing) }] };
+${indent}}`;
+
+          case 'delete':
+            return `${indent}case '${tool.name}': {
+${indent}  if (!args.id) {
+${indent}    throw new Error('ID is required for delete');
+${indent}  }
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const toDelete = await collection.get(args.id);
+${indent}  if (!toDelete) {
+${indent}    throw new Error('Object not found');
+${indent}  }
+
+${indent}  await toDelete.delete();
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Object deleted successfully' }) }] };
+${indent}}`;
+
+          default:
+            // Custom action
+            return `${indent}case '${tool.name}': {
+${indent}  const { id, options = {}, ...directArgs } = args;
+
+${indent}  if (!id) {
+${indent}    throw new Error('ID is required for custom action ${action}');
+${indent}  }
+
+${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    ai: aiConfig
+${indent}  });
+
+${indent}  const object = await collection.get(id);
+${indent}  if (!object) {
+${indent}    throw new Error('Object not found');
+${indent}  }
+
+${indent}  if (typeof object['${action}'] !== 'function') {
+${indent}    throw new Error('Method ${action} not found on object');
+${indent}  }
+
+${indent}  const methodArgs = Object.keys(options).length > 0 ? options : directArgs;
+${indent}  const result = await object['${action}'](methodArgs);
+
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+${indent}}`;
+        }
+      })
+      .join('\n\n');
+
+    return switchCases;
   }
 
   /**
    * Generate handlers file for modular server
    */
   private generateHandlersFile(): string {
+    const switchCases = this.generateToolSwitchCases('      ');
+
     return `/**
  * MCP Tool Call Handlers
  * Auto-generated from SMRT objects
  */
 
-import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
-import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
-
-/**
- * Initialize MCP generator with context
- */
-export async function initializeGenerator(config: any, context: any) {
-  return new MCPGenerator(config, context);
-}
+import { ObjectRegistry } from '@happyvertical/smrt-core/registry';
 
 /**
  * Handle tool call request
  */
 export async function handleToolCall(
-  generator: MCPGenerator,
-  request: CallToolRequest
+  name: string,
+  arguments: any = {},
+  aiConfig: any = {}
 ) {
-  const { name: toolName, arguments: args } = request.params;
-
   try {
-    const result = await generator.handleToolCall({
-      method: 'tools/call',
-      params: {
-        name: toolName,
-        arguments: args || {},
-      },
-    });
+    let result;
+    const args = arguments;
+
+    switch (name) {
+${switchCases}
+
+      default:
+        throw new Error(\`Unknown tool: \${name}\`);
+    }
 
     return result;
   } catch (error) {
@@ -935,7 +1079,7 @@ export async function handleToolCall(
       content: [
         {
           type: 'text',
-          text: \`Error executing tool \${toolName}: \${errorMessage}\`,
+          text: \`Error executing tool \${name}: \${errorMessage}\`,
         },
       ],
       isError: true,
@@ -969,28 +1113,7 @@ import { getAI } from '@happyvertical/ai';
 
 import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config.js';
 import { tools } from './tools/index.js';
-import { initializeGenerator, handleToolCall } from './handlers/index.js';
-
-/**
- * Initialize context (database and AI client)
- */
-async function initializeContext() {
-  // Setup database connection (optional)
-  const db = process.env.DATABASE_URL
-    ? await getDatabase({ url: process.env.DATABASE_URL })
-    : undefined;
-
-  // Load configuration from environment and .smrt.config files
-  const appConfig = await config.load();
-  const aiConfig = appConfig?.ai || {};
-
-  // Initialize AI client if configuration is available
-  const ai = (aiConfig.provider || aiConfig.apiKey)
-    ? await getAI(aiConfig)
-    : undefined;
-
-  return { db, ai };
-}
+import { handleToolCall } from './handlers/index.js';
 
 /**
  * Main server startup function
@@ -1002,15 +1125,9 @@ async function main() {
       console.error(\`[MCP] Available tools:\`, tools.map(t => t.name).join(', '));
     }
 
-    // Initialize context and generator
-    const context = await initializeContext();
-    const generator = await initializeGenerator(
-      {
-        name: SERVER_NAME,
-        version: SERVER_VERSION,
-      },
-      context
-    );
+    // Load configuration from environment and .smrt.config files
+    const appConfig = await config.load();
+    const aiConfig = appConfig?.ai || {};
 
     // Create MCP server
     const server = new Server(
@@ -1042,11 +1159,14 @@ async function main() {
 
     // Register CallTool handler
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args = {} } = request.params;
+
       if (DEBUG) {
-        console.error(\`[MCP] CallTool request: \${request.params.name}\`);
+        console.error(\`[MCP] CallTool request: \${name}\`);
+        console.error(\`[MCP] Arguments:\`, JSON.stringify(args, null, 2));
       }
 
-      return await handleToolCall(generator, request);
+      return await handleToolCall(name, args, aiConfig);
     });
 
     // Setup stdio transport
