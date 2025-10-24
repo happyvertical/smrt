@@ -75,4 +75,69 @@ describe('CLI Generator - Simplified Tests', () => {
     expect(mockContext.db).toBeDefined();
     expect(mockContext.ai).toBeDefined();
   });
+
+  it('should not crash in non-TTY environments (Issue #80)', async () => {
+    // Mock non-TTY environment
+    const originalIsTTY = process.stdout.isTTY;
+    const originalClearLine = process.stdout.clearLine;
+    const originalCursorTo = process.stdout.cursorTo;
+
+    try {
+      // Simulate non-TTY environment (tsx, CI/CD, pipes)
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: false,
+        writable: true,
+        configurable: true,
+      });
+
+      // Remove clearLine and cursorTo to simulate non-TTY
+      delete (process.stdout as any).clearLine;
+      delete (process.stdout as any).cursorTo;
+
+      const { CLIGenerator } = await import('./cli.js');
+
+      const generator = new CLIGenerator({
+        name: 'test-cli',
+        version: '1.0.0',
+        description: 'Test CLI',
+        colors: true, // Enabled to trigger spinner path
+      });
+
+      // Mock console.log to capture output
+      const logs: string[] = [];
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation((msg) => {
+        logs.push(msg);
+      });
+
+      try {
+        // This tests that spinner creation doesn't crash
+        // by directly calling the private createSpinner method
+        const spinner = (generator as any).createSpinner('Testing...');
+
+        // In non-TTY, this should NOT throw an error
+        expect(() => spinner.succeed('Done')).not.toThrow();
+        expect(() => spinner.fail('Failed')).not.toThrow();
+
+        // Verify fallback to console.log was used
+        expect(logs.some((log) => log.includes('Testing'))).toBe(true);
+      } finally {
+        consoleSpy.mockRestore();
+      }
+    } finally {
+      // Restore original properties
+      if (originalIsTTY !== undefined) {
+        Object.defineProperty(process.stdout, 'isTTY', {
+          value: originalIsTTY,
+          writable: true,
+          configurable: true,
+        });
+      }
+      if (originalClearLine) {
+        (process.stdout as any).clearLine = originalClearLine;
+      }
+      if (originalCursorTo) {
+        (process.stdout as any).cursorTo = originalCursorTo;
+      }
+    }
+  });
 });
