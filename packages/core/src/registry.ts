@@ -50,6 +50,21 @@ export interface SmartObjectConfig {
   /**
    * Custom table name for database storage (defaults to pluralized snake_case class name)
    * Explicitly setting this ensures the table name survives code minification
+   *
+   * @remarks
+   * Both `table` and `tableName` are supported. If both are provided, `table` takes priority.
+   */
+  table?: string;
+
+  /**
+   * Custom table name for database storage (defaults to pluralized snake_case class name)
+   * Explicitly setting this ensures the table name survives code minification
+   *
+   * @remarks
+   * Alias for `table`. Kept for backward compatibility.
+   * If both `table` and `tableName` are provided, `table` takes priority.
+   *
+   * @deprecated Use `table` instead for consistency
    */
   tableName?: string;
 
@@ -1366,7 +1381,10 @@ export function smrt(config: SmartObjectConfig = {}) {
   return <T extends typeof SmrtObject>(ctor: T): T => {
     // Capture table name BEFORE minification (decorator runs at class definition time)
     // This ensures the table name survives code minification
-    const tableName = config.tableName || classnameToTablename(ctor.name);
+    //
+    // Priority: config.table > config.tableName > auto-generated from class name
+    const tableName =
+      config.table || config.tableName || classnameToTablename(ctor.name);
 
     // Store table name in a static property that survives minification
     Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
@@ -1377,7 +1395,8 @@ export function smrt(config: SmartObjectConfig = {}) {
     });
 
     // Register with the captured table name
-    ObjectRegistry.register(ctor, { ...config, tableName });
+    // Normalize both properties to tableName for consistency in the registry
+    ObjectRegistry.register(ctor, { ...config, table: tableName, tableName });
     return ctor;
   };
 }

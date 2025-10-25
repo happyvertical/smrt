@@ -203,10 +203,10 @@ export function tableNameFromClass(
       .replace(/([a-z])([A-Z])/g, '$1_$2')
       // Convert to lowercase
       .toLowerCase()
-      // Handle basic pluralization rules
-      .replace(/([^s])$/, '$1s')
-      // Handle special cases ending in 'y'
+      // Handle special cases ending in 'y' (must be before general pluralization)
       .replace(/y$/, 'ies')
+      // Handle basic pluralization rules (add 's' if not already ending in 's')
+      .replace(/([^s])$/, '$1s')
   );
 }
 
@@ -223,10 +223,10 @@ export function classnameToTablename(className: string) {
     .replace(/([a-z])([A-Z])/g, '$1_$2')
     // Convert to lowercase
     .toLowerCase()
-    // Handle basic pluralization rules
-    .replace(/([^s])$/, '$1s')
-    // Handle special cases ending in 'y'
-    .replace(/y$/, 'ies');
+    // Handle special cases ending in 'y' (must be before general pluralization)
+    .replace(/y$/, 'ies')
+    // Handle basic pluralization rules (add 's' if not already ending in 's')
+    .replace(/([^s])$/, '$1s');
 
   return tableName;
 }
