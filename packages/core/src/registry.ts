@@ -378,13 +378,13 @@ export class ObjectRegistry {
             // must be included in schema. Since we can't introspect TypeScript types
             // at runtime, we infer from common naming patterns
             else if (value === null || value === undefined) {
-              // Check field name for type hints
+              // Check field name for type hints using conventional naming patterns
+              // Issue #87: Support both snake_case and camelCase date field conventions
               if (
                 key.endsWith('_at') ||
+                key.endsWith('At') || // camelCase: issuedAt, createdAt, updatedAt
                 key.endsWith('_date') ||
-                key.endsWith('Date') ||
-                key.includes('date') ||
-                key.includes('time')
+                key.endsWith('Date') // camelCase: startDate, endDate, issueDate
               ) {
                 fieldType = 'datetime';
               } else if (key.endsWith('Id') || key.endsWith('_id')) {

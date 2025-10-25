@@ -274,7 +274,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return null;
     }
 
-    return this.create(formatDataJs(rows[0]));
+    const fields = this.getFields();
+    return this.create(formatDataJs(rows[0], fields));
   }
 
   /**
@@ -386,8 +387,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`,
       [...whereValues, ...limitOffsetValues],
     );
+    const fields = this.getFields();
     const instances = await Promise.all(
-      result.rows.map((item: object) => this.create(formatDataJs(item))),
+      result.rows.map((item: object) =>
+        this.create(formatDataJs(item, fields)),
+      ),
     );
 
     // Eager load specified relationships
