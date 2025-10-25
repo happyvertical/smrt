@@ -1,4 +1,8 @@
-import { buildWhere, syncSchema } from '@happyvertical/sql';
+import {
+  buildWhere,
+  convertUniqueIndexesToInlineConstraints,
+  syncSchema,
+} from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import type { SmrtObject } from './object';
@@ -594,7 +598,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   public async create(options: any) {
     const params = {
       ai: this.options.ai,
-      db: this.options.db,
+      // Pass the actual database instance, not options
+      // This ensures objects share the same connection as the collection
+      // Critical for in-memory databases like DuckDB :memory: where each
+      // connection gets a separate database
+      db: this.db,
       _skipLoad: true, // Don't try to load from DB - this is a new object
       ...options,
     };
@@ -673,11 +681,53 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     this._db_setup_promise = (async () => {
       try {
-        const schema = await this.generateSchema();
-        console.log(
-          `[Collection] Generated schema for ${this.tableName}:`,
-          schema,
-        );
+        let schema = await this.generateSchema();
+
+        // Issue #89: DuckDB and JSON adapters require inline UNIQUE constraints
+        // instead of separate CREATE UNIQUE INDEX statements for ON CONFLICT to work
+        //
+        // Detection strategy:
+        // - Both JSON and DuckDB adapters use DuckDB under the hood
+        // - Check if client is a DuckDB connection
+        const clientConstructorName = this.db.client?.constructor?.name || '';
+        const isDuckDbBased =
+          clientConstructorName.toLowerCase().includes('duck') ||
+          clientConstructorName.toLowerCase().includes('connection');
+
+        if (isDuckDbBased) {
+          // Split schema into DDL (CREATE TABLE) and index statements
+          // Schema format: "CREATE TABLE ...;\nCREATE INDEX ...;\nCREATE UNIQUE INDEX ...;"
+          const statements = schema.split(';').filter((s) => s.trim());
+
+          let ddl = '';
+          const indexStatements: string[] = [];
+
+          for (const stmt of statements) {
+            const trimmed = stmt.trim();
+            if (!trimmed) continue;
+
+            if (
+              trimmed.startsWith('CREATE INDEX') ||
+              trimmed.startsWith('CREATE UNIQUE INDEX')
+            ) {
+              // This is an index statement
+              indexStatements.push(trimmed);
+            } else if (trimmed.startsWith('CREATE TABLE')) {
+              // This is the DDL
+              ddl = trimmed;
+            }
+          }
+
+          // Apply transformation to convert UNIQUE indexes to inline constraints
+          const { ddl: transformedDDL, indexes: remainingIndexes } =
+            convertUniqueIndexesToInlineConstraints(ddl, indexStatements);
+
+          // Reconstruct schema with transformed DDL and remaining indexes
+          schema = remainingIndexes.length
+            ? `${transformedDDL};\n${remainingIndexes.map((idx) => `${idx};`).join('\n')}`
+            : `${transformedDDL};`;
+        }
+
         await syncSchema({ db: this.db, schema });
       } catch (error) {
         this._db_setup_promise = null; // Allow retry on failure
