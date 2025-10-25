@@ -79,6 +79,8 @@ export function keysToCamelCase(obj: Record<string, any>): Record<string, any> {
  * ```
  */
 export function isDateField(key: string) {
+  // Fallback pattern matching when schema is not available
+  // Primary date detection should use schema field types
   return key.endsWith('_date') || key.endsWith('_at') || key === 'date';
 }
 
@@ -234,9 +236,13 @@ export function classnameToTablename(className: string) {
  * and snake_case column names to camelCase properties
  *
  * @param data - Object with data to format (snake_case column names from DB)
+ * @param fields - Optional field definitions to determine types (from fieldsFromClass)
  * @returns Object with properly typed values and camelCase property names for JavaScript
  */
-export function formatDataJs(data: Record<string, any>) {
+export function formatDataJs(
+  data: Record<string, any>,
+  fields?: Record<string, { type?: string }>,
+) {
   const normalizedData: Record<string, any> = {};
   for (const [key, value] of Object.entries(data)) {
     // Convert snake_case to camelCase for JavaScript
@@ -244,8 +250,16 @@ export function formatDataJs(data: Record<string, any>) {
 
     if (value instanceof Date) {
       normalizedData[camelKey] = value;
-    } else if (isDateField(key) && typeof value === 'string') {
-      normalizedData[camelKey] = new Date(value);
+    } else if (typeof value === 'string') {
+      // Use field definitions if available, otherwise fall back to name patterns
+      const fieldType = fields?.[camelKey]?.type?.toLowerCase();
+      const isDate = fieldType === 'datetime' || isDateField(key);
+
+      if (isDate) {
+        normalizedData[camelKey] = new Date(value);
+      } else {
+        normalizedData[camelKey] = value;
+      }
     } else {
       normalizedData[camelKey] = value;
     }
