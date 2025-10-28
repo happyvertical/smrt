@@ -74,7 +74,7 @@ jobs:
 
       - name: Run tests
         id: tests
-        run: pnpm test
+        run: pnpm run test --filter="./packages/*"
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
