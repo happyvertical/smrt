@@ -1,0 +1,142 @@
+[
+  {
+    "day": "Sun",
+    "icon": "☁️",
+    "high": 8,
+    "low": 1,
+    "periods": [
+      {
+        "name": "Afternoon (12:00)",
+        "conditions": "overcast clouds",
+        "temperature": 8,
+        "windSpeed": 18,
+        "windDirection": 298,
+        "humidity": 61,
+        "precipProbability": 0,
+        "localHour": 12
+      },
+      {
+        "name": "Evening (19:00)",
+        "conditions": "overcast clouds",
+        "temperature": 2,
+        "windSpeed": 24,
+        "windDirection": 305,
+        "humidity": 51,
+        "precipProbability": 0,
+        "localHour": 19
+      }
+    ]
+  },
+  {
+    "day": "Mon",
+    "icon": "❄️",
+    "high": 4,
+    "low": -3,
+    "periods": [
+      {
+        "name": "Morning (10:00)",
+        "conditions": "light snow",
+        "temperature": 1,
+        "windSpeed": 34,
+        "windDirection": 300,
+        "humidity": 86,
+        "precipProbability": 0,
+        "localHour": 10
+      },
+      {
+        "name": "Evening night (20:00)",
+        "conditions": "overcast clouds",
+        "temperature": 2,
+        "windSpeed": 25,
+        "windDirection": 312,
+        "humidity": 68,
+        "precipProbability": 0,
+        "localHour": 20
+      }
+    ]
+  },
+  {
+    "day": "Tue",
+    "icon": "☀️",
+    "high": 7,
+    "low": -3,
+    "periods": [
+      {
+        "name": "Morning (09:00)",
+        "conditions": "clear sky",
+        "temperature": -3,
+        "windSpeed": 10,
+        "windDirection": 266,
+        "humidity": 73,
+        "precipProbability": 0,
+        "localHour": 9
+      },
+      {
+        "name": "Evening night (19:00)",
+        "conditions": "clear sky",
+        "temperature": 3,
+        "windSpeed": 28,
+        "windDirection": 315,
+        "humidity": 64,
+        "precipProbability": 0,
+        "localHour": 19
+      }
+    ]
+  },
+  {
+    "day": "Wed",
+    "icon": "🌧️",
+    "high": 5,
+    "low": 2,
+    "periods": [
+      {
+        "name": "Morning (09:00)",
+        "conditions": "rain and snow",
+        "temperature": 2,
+        "windSpeed": 38,
+        "windDirection": 310,
+        "humidity": 93,
+        "precipProbability": 0,
+        "localHour": 9
+      },
+      {
+        "name": "Evening night (20:00)",
+        "conditions": "overcast clouds",
+        "temperature": 4,
+        "windSpeed": 30,
+        "windDirection": 314,
+        "humidity": 60,
+        "precipProbability": 0,
+        "localHour": 20
+      }
+    ]
+  },
+  {
+    "day": "Thu",
+    "icon": "⛅",
+    "high": 12,
+    "low": -1,
+    "periods": [
+      {
+        "name": "Morning (10:00)",
+        "conditions": "broken clouds",
+        "temperature": 7,
+        "windSpeed": 14,
+        "windDirection": 240,
+        "humidity": 43,
+        "precipProbability": 0,
+        "localHour": 10
+      },
+      {
+        "name": "Evening night (19:00)",
+        "conditions": "broken clouds",
+        "temperature": 10,
+        "windSpeed": 25,
+        "windDirection": 165,
+        "humidity": 28,
+        "precipProbability": 0,
+        "localHour": 19
+      }
+    ]
+  }
+]
