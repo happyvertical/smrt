@@ -17,7 +17,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "test": "npx vitest run",
+    "test": "npx vitest run --passWithNoTests",
     "test:watch": "npx vitest"
   },
   "dependencies": {

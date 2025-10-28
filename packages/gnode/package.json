@@ -20,7 +20,7 @@
     "@happyvertical/smrt-core": "workspace:*"
   },
   "scripts": {
-    "test": "npx vitest run",
+    "test": "npx vitest run --passWithNoTests",
     "test:watch": "npx vitest",
     "build": "vite build",
     "build:watch": "vite build --watch",

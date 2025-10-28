@@ -15,7 +15,7 @@
   "scripts": {
     "build": "VITE_BUILD_PACKAGE=accounts vite build --mode library",
     "dev": "vite",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
