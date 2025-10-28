@@ -458,19 +458,35 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Gets or generates a slug for this object based on its name
+   * Gets or generates a slug for this object
+   *
+   * Fallback order: name → title → label → id
    *
    * @returns Promise resolving to the object's slug
    */
   async getSlug() {
-    if (!this.slug && this.name) {
-      // Generate slug from name if not set
-      // Explicitly convert Field to string for TypeScript
-      const nameStr = String(this.name);
-      this.slug = nameStr
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
+    if (!this.slug) {
+      // Try multiple fallback fields in order: name, title, label
+      let sourceField = null;
+
+      if (this.name) {
+        sourceField = String(this.name);
+      } else if ((this as any).title) {
+        sourceField = String((this as any).title);
+      } else if ((this as any).label) {
+        sourceField = String((this as any).label);
+      } else if (this.id) {
+        // Final fallback: use ID
+        sourceField = String(this.id);
+      }
+
+      if (sourceField) {
+        // Generate slug from source field
+        this.slug = sourceField
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '');
+      }
     }
 
     // check for existing slug and make unique?
