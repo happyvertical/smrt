@@ -188,7 +188,8 @@ const _selectedDayHourly = $derived(
 );
 
 // Scroll container reference and state
-const hourlyScrollContainer: HTMLElement | null = $state(null);
+// biome-ignore lint/style/useConst: Svelte bind:this requires let, not const
+let hourlyScrollContainer: HTMLElement | null = $state(null);
 let _canScrollLeft = $state(false);
 let _canScrollRight = $state(false);
 
