@@ -1,6 +1,6 @@
 # @happyvertical/smrt-svelte
 
-Svelte 5 component library with Histoire documentation for the SMRT framework.
+Svelte 5 component library for the SMRT framework with modern runes-based reactivity.
 
 ## Installation
 
