@@ -95,6 +95,238 @@ A small status indicator component.
 </Badge>
 ```
 
+## Layout Components
+
+### Container
+
+A responsive container component that centers content with configurable max widths.
+
+**Props:**
+- `maxWidth`: 'sm' | 'md' | 'lg' | 'xl' | 'full' (default: 'lg')
+
+**Usage:**
+
+```svelte
+<script>
+  import { Container } from '@happyvertical/smrt-svelte';
+</script>
+
+<Container maxWidth="lg">
+  <p>Centered content with max-width: 1024px</p>
+</Container>
+```
+
+### Grid
+
+A responsive grid layout component with automatic or fixed columns.
+
+**Props:**
+- `columns`: number | 'auto' (default: 'auto')
+- `gap`: 'sm' | 'md' | 'lg' | 'xl' (default: 'md')
+
+**Usage:**
+
+```svelte
+<script>
+  import { Grid } from '@happyvertical/smrt-svelte';
+</script>
+
+<!-- Auto-fill grid (responsive) -->
+<Grid columns="auto" gap="lg">
+  <div>Item 1</div>
+  <div>Item 2</div>
+  <div>Item 3</div>
+</Grid>
+
+<!-- Fixed 3-column grid -->
+<Grid columns={3} gap="md">
+  <div>Item 1</div>
+  <div>Item 2</div>
+  <div>Item 3</div>
+</Grid>
+```
+
+### Header
+
+A site header component with logo and navigation sections.
+
+**Props:**
+- `logo`: Snippet (optional)
+- `nav`: Snippet (optional)
+
+**Usage:**
+
+```svelte
+<script>
+  import { Header } from '@happyvertical/smrt-svelte';
+</script>
+
+<Header>
+  {#snippet logo()}
+    <h1><a href="/">Site Name</a></h1>
+  {/snippet}
+
+  {#snippet nav()}
+    <a href="/">Home</a>
+    <a href="/about">About</a>
+    <a href="/contact">Contact</a>
+  {/snippet}
+</Header>
+```
+
+### Footer
+
+A site footer component with copyright and optional links.
+
+**Usage:**
+
+```svelte
+<script>
+  import { Footer } from '@happyvertical/smrt-svelte';
+</script>
+
+<Footer>
+  {#snippet children()}
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+  {/snippet}
+</Footer>
+```
+
+### Masthead
+
+A newspaper-style masthead with date, location, and navigation.
+
+**Props:**
+- `date`: string (default: current date)
+- `location`: string (default: '')
+- `nav`: Snippet (optional)
+
+**Usage:**
+
+```svelte
+<script>
+  import { Masthead } from '@happyvertical/smrt-svelte';
+</script>
+
+<Masthead location="Bentley, Alberta">
+  {#snippet nav()}
+    <a href="/news">News</a>
+    <a href="/events">Events</a>
+  {/snippet}
+</Masthead>
+```
+
+## Content Components
+
+### Markdown
+
+A simple markdown renderer component.
+
+**Props:**
+- `content`: string (markdown content)
+
+**Usage:**
+
+```svelte
+<script>
+  import { Markdown } from '@happyvertical/smrt-svelte';
+
+  const markdownContent = `
+# Heading 1
+## Heading 2
+
+This is **bold** and this is *italic*.
+
+- List item 1
+- List item 2
+`;
+</script>
+
+<Markdown content={markdownContent} />
+```
+
+**Supported Markdown:**
+- Headings (H1-H3)
+- Bold (**text**)
+- Italic (*text*)
+- Lists (- item)
+- Paragraphs
+
+### ArticleCard
+
+A card component for displaying article previews.
+
+**Props:**
+- `article`: Article object
+- `showExcerpt`: boolean (default: true)
+- `showDate`: boolean (default: true)
+- `showAuthor`: boolean (default: true)
+- `showTags`: boolean (default: false)
+
+**Types:**
+```typescript
+interface Article {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  publish_date: string | null;
+  author: string | null;
+  tags: string;
+}
+```
+
+**Usage:**
+
+```svelte
+<script>
+  import { ArticleCard } from '@happyvertical/smrt-svelte';
+
+  const article = {
+    id: '1',
+    slug: 'my-article',
+    title: 'Article Title',
+    description: 'A brief description...',
+    publish_date: '2024-01-01',
+    author: 'John Doe',
+    tags: 'news,local'
+  };
+</script>
+
+<ArticleCard {article} showTags />
+```
+
+### ArticleList
+
+A grid layout for displaying multiple articles.
+
+**Props:**
+- `articles`: Article[] (array of articles)
+- `columns`: number | 'auto' (default: 'auto')
+- `showExcerpt`: boolean (default: true)
+- `showDate`: boolean (default: true)
+- `showAuthor`: boolean (default: true)
+- `showTags`: boolean (default: false)
+- `emptyMessage`: string (default message for empty state)
+
+**Usage:**
+
+```svelte
+<script>
+  import { ArticleList } from '@happyvertical/smrt-svelte';
+
+  const articles = [
+    { id: '1', slug: 'article-1', title: 'First Article', ... },
+    { id: '2', slug: 'article-2', title: 'Second Article', ... }
+  ];
+</script>
+
+<ArticleList {articles} columns={3} showTags />
+```
+
+## Weather Components
+
 ### WeatherHeader
 
 A horizontal multi-day weather forecast component with slide-down hourly details panel.

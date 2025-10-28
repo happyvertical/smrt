@@ -1,11 +1,20 @@
 // UI Components
 
+export { default as ArticleCard } from './components/content/ArticleCard.svelte';
+export { default as ArticleList } from './components/content/ArticleList.svelte';
+// Content Components
+export { default as Markdown } from './components/content/Markdown.svelte';
+// Layout Components
+export { default as Container } from './components/layout/Container.svelte';
+export { default as Footer } from './components/layout/Footer.svelte';
+export { default as Grid } from './components/layout/Grid.svelte';
+export { default as Header } from './components/layout/Header.svelte';
+export { default as Masthead } from './components/layout/Masthead.svelte';
 export type {
   BadgeSize,
   BadgeVariant,
 } from './components/ui/Badge.svelte';
 export { default as Badge } from './components/ui/Badge.svelte';
-// Re-export types
 export type {
   ButtonSize,
   ButtonVariant,
@@ -16,12 +25,14 @@ export type {
   CardVariant,
 } from './components/ui/Card.svelte';
 export { default as Card } from './components/ui/Card.svelte';
+
+// Weather Components
 export type {
   ForecastDay,
   ForecastPeriod,
 } from './components/weather/WeatherForecast.svelte';
-// Weather Components
 export { default as WeatherForecast } from './components/weather/WeatherForecast.svelte';
+
 export type {
   DayForecast,
   HourlyForecast,
