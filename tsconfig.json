@@ -62,6 +62,9 @@
 
     // MCP Servers
     { "path": "./packages/smrt-docs-mcp" },
-    { "path": "./packages/smrt-dev-mcp" }
+    { "path": "./packages/smrt-dev-mcp" },
+
+    // UI Components
+    { "path": "./packages/svelte" }
   ]
 }
