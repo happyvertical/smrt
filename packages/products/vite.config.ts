@@ -77,7 +77,7 @@ export default defineConfig(async () => {
 				include: [resolve(packageDir, 'src/**/*.ts')],
 				exclude: ['**/*.test.ts', '**/*.spec.ts', '**/*.config.ts', '**/*.d.ts'],
 				insertTypesEntry: false,
-				rollupTypes: true,
+				rollupTypes: false,
 				tsconfigPath: resolve(packageDir, 'tsconfig.json'),
 				aliasesExclude: [
 					'@smrt/routes',
