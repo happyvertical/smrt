@@ -19,7 +19,7 @@
 export { demonstrateClient } from './client';
 // Re-export everything from the lib directory
 export * from './lib/index';
-export { startMCPServer } from './mcp';
+export { generateMCPServer } from './mcp';
 // Legacy exports for backward compatibility
 export { startServer } from './server';
 
@@ -28,7 +28,7 @@ export { startServer } from './server';
  */
 export async function startAll() {
   const { startServer } = await import('./server');
-  const { startMCPServer } = await import('./mcp');
+  const { generateMCPServer } = await import('./mcp');
 
   console.log('🚀 Starting SMRT Template - Full Demo\n');
 
@@ -38,7 +38,7 @@ export async function startAll() {
 
   // Start MCP server
   console.log('\n2️⃣ Starting MCP Server...');
-  const mcp = await startMCPServer();
+  const mcp = await generateMCPServer();
 
   console.log('\n✨ All services running!');
   console.log('\n🎯 What was auto-generated:');

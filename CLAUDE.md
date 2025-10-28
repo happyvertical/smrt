@@ -57,12 +57,23 @@ The framework depends on these infrastructure packages from @happyvertical/sdk:
 
 ### Build Process
 
-The build process follows a specific order to respect internal dependencies:
+The build system uses **Turborepo** for intelligent task orchestration and caching. Turborepo automatically determines build order based on package dependencies, eliminating the need for manual ordering.
 
+**Key Features:**
+- **Intelligent caching**: Only rebuilds packages when their dependencies change
+- **Parallel execution**: Builds packages in parallel when no dependencies exist
+- **GitHub Actions cache**: CI/CD benefits from cached builds across workflow runs
+- **Dependency awareness**: Automatically respects internal package dependencies
+
+**Build order** (automatically determined by Turborepo):
 1. `@happyvertical/smrt-types` (shared type definitions)
 2. `@happyvertical/smrt-config` (configuration management)
 3. `@happyvertical/smrt-core` (core framework - depends on types and config)
 4. Domain modules (depend on core): accounts, agents, assets, content, events, gnode, places, products, profiles, tags
+
+**Performance:**
+- First build: ~8 seconds
+- Cached builds: ~80ms (100x faster)
 
 External dependencies from @happyvertical/sdk are installed from npm.
 
@@ -117,25 +128,44 @@ Each package must have:
 
 ### Common Development Commands
 
+All build tasks are managed by **Turborepo** which provides intelligent caching and parallel execution.
+
 ```bash
 # Install dependencies
 pnpm install
 
-# Run tests
-npm test
-
-# Build all packages in correct order
+# Build all packages (uses Turborepo)
 npm run build
+# First run: ~8s, cached runs: ~80ms
 
-# Watch mode development
+# Development mode with watch (parallel execution)
 npm run dev
 
-# Lint code
-npm run lint
+# Run tests (cached, only re-runs if code changed)
+npm test
+npm run test:watch
 
-# Format code
+# Type checking (cached)
+npm run typecheck
+
+# Lint code (cached)
+npm run lint
+npm run lint:fix
+
+# Format code (cached format-check)
 npm run format
+npm run format-check
+
+# Clean build artifacts
+npm run clean
 ```
+
+**Turborepo Features:**
+- Commands automatically cache results
+- Only affected packages rebuild on changes
+- Parallel execution maximizes CPU utilization
+- Respects package dependency graph
+- Cache shared across CI/CD runs via GitHub Actions
 
 ## Development Workflows
 

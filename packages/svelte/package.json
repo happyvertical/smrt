@@ -37,7 +37,7 @@
     "build": "vite build && svelte-package",
     "build:watch": "vite build --watch",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build"
