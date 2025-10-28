@@ -5,7 +5,6 @@ interface Props {
   children?: Snippet;
 }
 
-// biome-ignore lint/correctness/noUnusedVariables: Variables used in Svelte template
 const { children }: Props = $props();
 
 const _currentYear = new Date().getFullYear();

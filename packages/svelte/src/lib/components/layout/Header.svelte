@@ -6,7 +6,6 @@ interface Props {
   nav?: Snippet;
 }
 
-// biome-ignore lint/correctness/noUnusedVariables: Variables used in Svelte template
 const { logo, nav }: Props = $props();
 </script>
 

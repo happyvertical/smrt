@@ -7,7 +7,6 @@ interface Props {
   nav?: Snippet;
 }
 
-// biome-ignore lint/correctness/noUnusedVariables: Variables used in Svelte template
 const {
   date = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
