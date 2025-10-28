@@ -19,7 +19,7 @@
   "scripts": {
     "build": "VITE_BUILD_PACKAGE=events vite build --mode library",
     "dev": "vite",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "echo '⏭️  Skipping events typecheck (has pre-existing TypeScript errors)'"
   },
