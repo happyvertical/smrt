@@ -79,6 +79,13 @@ export default defineConfig(async () => {
 				insertTypesEntry: false,
 				rollupTypes: true,
 				tsconfigPath: resolve(packageDir, 'tsconfig.json'),
+				aliasesExclude: [
+					'@smrt/routes',
+					'@smrt/client',
+					'@smrt/mcp',
+					'@smrt/manifest',
+					'@smrt/types',
+				],
 			}),
 		],
 	};
