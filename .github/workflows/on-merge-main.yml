@@ -59,6 +59,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-turbo-
 
+      - name: Build SDK packages
+        run: |
+          cd sdk
+          npm run build
+          cd ..
+
       - name: Build packages
         run: pnpm run build
 
@@ -119,7 +125,7 @@ jobs:
       - name: Build SDK packages
         run: |
           cd sdk
-          pnpm -r --workspace-concurrency=4 --filter='!@have/docs' --filter='!@happyvertical/docs' run build
+          npm run build
           cd ..
 
       - name: Build packages

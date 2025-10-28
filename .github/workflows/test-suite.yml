@@ -57,7 +57,7 @@ jobs:
       - name: Build SDK packages
         run: |
           cd sdk
-          pnpm -r --workspace-concurrency=4 --filter='!@have/docs' run build
+          npm run build
           cd ..
 
       - name: Build packages
