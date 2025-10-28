@@ -167,7 +167,7 @@ function getMockData(): DayForecast[] {
 }
 
 // Handle day card click
-function _handleDayClick(index: number) {
+function handleDayClick(index: number) {
   if (selectedDayIndex === index) {
     // Toggle off if clicking the same day
     selectedDayIndex = null;
@@ -178,20 +178,20 @@ function _handleDayClick(index: number) {
 }
 
 // Handle close button click
-function _handleClose() {
+function handleClose() {
   selectedDayIndex = null;
 }
 
 // Get selected day's hourly data
-const _selectedDayHourly = $derived(
+const selectedDayHourly = $derived(
   selectedDayIndex !== null ? dayForecasts[selectedDayIndex].hourlyData : [],
 );
 
 // Scroll container reference and state
 // biome-ignore lint/style/useConst: Svelte bind:this requires let, not const
 let hourlyScrollContainer: HTMLElement | null = $state(null);
-let _canScrollLeft = $state(false);
-let _canScrollRight = $state(false);
+let canScrollLeft = $state(false);
+let canScrollRight = $state(false);
 
 // Update scroll button visibility
 function updateScrollButtons() {
@@ -199,19 +199,19 @@ function updateScrollButtons() {
 
   const { scrollLeft, scrollWidth, clientWidth } = hourlyScrollContainer;
 
-  _canScrollLeft = scrollLeft > 5; // 5px threshold
-  _canScrollRight = scrollLeft < scrollWidth - clientWidth - 5; // 5px threshold
+  canScrollLeft = scrollLeft > 5; // 5px threshold
+  canScrollRight = scrollLeft < scrollWidth - clientWidth - 5; // 5px threshold
 }
 
 // Scroll left
-function _scrollLeft() {
+function scrollLeft() {
   if (!hourlyScrollContainer) return;
   hourlyScrollContainer.scrollBy({ left: -300, behavior: 'smooth' });
   setTimeout(updateScrollButtons, 350);
 }
 
 // Scroll right
-function _scrollRight() {
+function scrollRight() {
   if (!hourlyScrollContainer) return;
   hourlyScrollContainer.scrollBy({ left: 300, behavior: 'smooth' });
   setTimeout(updateScrollButtons, 350);
@@ -253,8 +253,8 @@ $effect(() => {
     };
   } else {
     // Reset scroll state when panel closes
-    _canScrollLeft = false;
-    _canScrollRight = false;
+    canScrollLeft = false;
+    canScrollRight = false;
   }
 });
 </script>

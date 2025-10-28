@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import Container from './Container.svelte';
 
 interface Props {
   date?: string;
