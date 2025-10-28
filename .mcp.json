@@ -34,12 +34,12 @@
         "PLAYWRIGHT_MCP_ISOLATED": "true"
       }
     },
-    "mcp-svelte-docs": {
+    "svelte": {
       "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
-        "mcp-svelte-docs"
+        "@sveltejs/mcp"
       ],
       "env": {}
     },
