@@ -34,7 +34,7 @@
   "homepage": "https://github.com/happyvertical/smrt/tree/main/packages/smrt-docs-mcp#readme",
   "license": "MIT",
   "scripts": {
-    "test": "npx vitest run",
+    "test": "npx vitest run --passWithNoTests",
     "test:watch": "npx vitest",
     "build": "vite build",
     "build:watch": "vite build --watch",
