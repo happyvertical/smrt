@@ -219,10 +219,23 @@ export class RuntimeSchemaManager {
         // DuckDB infers ANY type without explicit casting, causing UPSERT failures
         const isTextColumn = columnDef.type === 'TEXT';
         const isEmptyOrNull =
-          columnDef.defaultValue === "''" || columnDef.defaultValue === 'NULL';
+          columnDef.defaultValue === '' ||
+          columnDef.defaultValue === "''" ||
+          columnDef.defaultValue === null ||
+          columnDef.defaultValue === 'NULL';
 
         if (isTextColumn && isEmptyOrNull) {
-          def += ` DEFAULT CAST(${columnDef.defaultValue} AS TEXT)`;
+          // Normalize the default value to SQL format
+          let sqlValue: string;
+          if (
+            columnDef.defaultValue === '' ||
+            columnDef.defaultValue === "''"
+          ) {
+            sqlValue = "''";
+          } else {
+            sqlValue = 'NULL';
+          }
+          def += ` DEFAULT CAST(${sqlValue} AS TEXT)`;
         } else {
           def += ` DEFAULT ${columnDef.defaultValue}`;
         }
