@@ -35,7 +35,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   protected _db_setup_promise: Promise<void> | null = null;
 
   /**
-   * Convert WHERE clause field names from camelCase to snake_case while preserving operators
+   * Convert WHERE clause field names from camelCase to snake_case while preserving operators.
+   * Validates operators and field names to prevent SQL injection and invalid queries.
    *
    * @param where - WHERE clause object with camelCase field names
    * @returns WHERE clause object with snake_case field names
@@ -48,21 +49,80 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * ```
    */
   private convertWhereKeys(where: Record<string, any>): Record<string, any> {
+    // Whitelist of allowed SQL operators
+    const VALID_OPERATORS = ['=', '>', '<', '>=', '<=', '!=', 'in', 'like'];
+
+    // Get schema fields for validation
+    const fields = this.getFields();
+    const validFieldNames = new Set(
+      Object.keys(fields).map((f) => toSnakeCase(f)),
+    );
+
+    // Add standard SMRT fields that are always valid
+    validFieldNames.add('id');
+    validFieldNames.add('slug');
+    validFieldNames.add('context');
+    validFieldNames.add('created_at');
+    validFieldNames.add('updated_at');
+
     const converted: Record<string, any> = {};
 
     for (const [key, value] of Object.entries(where)) {
       // Split field name and operator (e.g., "typeId >" → ["typeId", ">"])
       const parts = key.trim().split(/\s+/);
       const fieldName = parts[0];
-      const operator = parts.slice(1).join(' ');
+      const operator = parts.slice(1).join(' ') || '=';
+
+      // Check for dangerous prototype pollution field names
+      if (
+        fieldName === '__proto__' ||
+        fieldName === 'constructor' ||
+        fieldName === 'prototype'
+      ) {
+        throw new Error(
+          `Invalid WHERE clause field: '${fieldName}'. ` +
+            `Prototype pollution attempts are not allowed.`,
+        );
+      }
 
       // Convert field name to snake_case
       const snakeFieldName = toSnakeCase(fieldName);
 
-      // Reconstruct key with operator if present
-      const newKey = operator
-        ? `${snakeFieldName} ${operator}`
-        : snakeFieldName;
+      // Validate operator
+      if (!VALID_OPERATORS.includes(operator)) {
+        throw new Error(
+          `Invalid WHERE clause operator: '${operator}'. ` +
+            `Valid operators: ${VALID_OPERATORS.join(', ')}`,
+        );
+      }
+
+      // Validate field name exists in schema
+      if (!validFieldNames.has(snakeFieldName)) {
+        throw new Error(
+          `Invalid WHERE clause field: '${fieldName}'. ` +
+            `Field does not exist on ${this._itemClass.name}. ` +
+            `Valid fields: ${Array.from(validFieldNames).sort().join(', ')}`,
+        );
+      }
+
+      // Validate operator-specific value types
+      if (operator === 'in' && !Array.isArray(value)) {
+        throw new Error(
+          `WHERE clause operator 'in' requires an array value for field '${fieldName}', ` +
+            `got ${typeof value}`,
+        );
+      }
+
+      if (operator === 'like' && typeof value !== 'string') {
+        throw new Error(
+          `WHERE clause operator 'like' requires a string value for field '${fieldName}', ` +
+            `got ${typeof value}`,
+        );
+      }
+
+      // Reconstruct key with operator
+      const newKey =
+        operator === '=' ? snakeFieldName : `${snakeFieldName} ${operator}`;
 
       converted[newKey] = value;
     }

@@ -445,9 +445,15 @@ export class ErrorUtils {
         }
 
         // Wait before retrying with exponential backoff
-        await new Promise((resolve) =>
-          setTimeout(resolve, delay * backoffMultiplier ** attempt),
-        );
+        // Wrap in try-catch to handle any potential timer errors
+        try {
+          await new Promise<void>((resolve) => {
+            setTimeout(() => resolve(), delay * backoffMultiplier ** attempt);
+          });
+        } catch (timerError) {
+          // Log timer error but don't fail the retry
+          console.error('Timer error during retry:', timerError);
+        }
       }
     }
 

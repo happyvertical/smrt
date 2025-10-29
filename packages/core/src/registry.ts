@@ -32,6 +32,7 @@ import { Field } from './fields/index';
 import { staticManifest } from './manifest/static-manifest';
 import type { SmrtObject } from './object';
 import { classnameToTablename, tableNameFromClass } from './utils';
+import { LRUCache } from './utils/lru-cache';
 
 /**
  * Configuration options for SMRT objects registered in the system
@@ -232,7 +233,9 @@ interface RegisteredClass {
 export class ObjectRegistry {
   private static classes = new Map<string, RegisteredClass>();
   private static collections = new Map<string, typeof SmrtCollection>();
-  private static collectionCache = new Map<string, SmrtCollection<any>>();
+  private static collectionCache = new LRUCache<string, SmrtCollection<any>>(
+    100,
+  );
 
   /**
    * Register a new SMRT object class with the global registry
