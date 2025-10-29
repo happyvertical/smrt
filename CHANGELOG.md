@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/happyvertical/smrt/compare/v1.3.0...v1.3.1) (2025-10-29)
+
+
+### Bug Fixes
+
+* **core:** replace SQLite-specific INSERT OR REPLACE with portable upsert ([#100](https://github.com/happyvertical/smrt/issues/100)) ([e37b706](https://github.com/happyvertical/smrt/commit/e37b706bb4c840ca1d9f76362490a32d924f6292)), closes [#99](https://github.com/happyvertical/smrt/issues/99)
+
 # [1.3.0](https://github.com/happyvertical/smrt/compare/v1.2.4...v1.3.0) (2025-10-28)
 
 
