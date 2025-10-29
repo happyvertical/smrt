@@ -62,10 +62,9 @@ export class Asset extends SmrtObject {
   async getTags(): Promise<Tag[]> {
     // Query asset_tags join table and retrieve Tag instances
     const db = this.db;
-    const { rows } = await db.query(
-      'SELECT tag_slug FROM asset_tags WHERE asset_id = ?',
-      [this.id],
-    );
+    const rows = await db.list('asset_tags', {
+      where: { asset_id: this.id },
+    });
 
     // Import Tag dynamically to avoid circular dependencies
     const { Tag } = await import('@happyvertical/smrt-tags');
@@ -87,13 +86,11 @@ export class Asset extends SmrtObject {
    */
   async hasTag(tagSlug: string): Promise<boolean> {
     const db = this.db;
-    const { rows } = await db.query(
-      'SELECT COUNT(*) as count FROM asset_tags WHERE asset_id = ? AND tag_slug = ?',
-      [this.id, tagSlug],
-    );
+    const rows = await db.list('asset_tags', {
+      where: { asset_id: this.id, tag_slug: tagSlug },
+    });
 
-    const result = rows?.[0] as { count: number } | undefined;
-    return result ? result.count > 0 : false;
+    return rows.length > 0;
   }
 
   /**
@@ -104,14 +101,12 @@ export class Asset extends SmrtObject {
   async getParent(): Promise<Asset | null> {
     if (!this.parentId) return null;
 
-    const { rows } = await this.db.query('SELECT * FROM assets WHERE id = ?', [
-      this.parentId,
-    ]);
+    const record = await this.db.get('assets', { id: this.parentId });
 
-    if (!rows?.[0]) return null;
+    if (!record) return null;
 
     const asset = new Asset();
-    Object.assign(asset, rows[0]);
+    Object.assign(asset, record);
     return asset;
   }
 
@@ -121,10 +116,9 @@ export class Asset extends SmrtObject {
    * @returns Array of child Asset instances
    */
   async getChildren(): Promise<Asset[]> {
-    const { rows } = await this.db.query(
-      'SELECT * FROM assets WHERE parent_id = ?',
-      [this.id],
-    );
+    const rows = await this.db.list('assets', {
+      where: { parent_id: this.id },
+    });
 
     return (rows as any[]).map((row) => {
       const asset = new Asset();
