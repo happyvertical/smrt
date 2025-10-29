@@ -1290,21 +1290,27 @@ export class ObjectRegistry {
         };
       }
 
-      await db.query(
-        `INSERT OR REPLACE INTO _smrt_registry
-         (class_name, schema_version, fields, relationships, config, manifest, last_updated)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        className,
-        '1.0.0', // Could be derived from package version
-        JSON.stringify(fieldsData),
-        JSON.stringify(ObjectRegistry.getRelationships(className)),
-        JSON.stringify(registered.config),
-        JSON.stringify({
-          name: registered.name,
-          tableName: registered.schema?.tableName,
-          tools: registered.tools,
-        }),
-        new Date(),
+      // Use upsert() for database-agnostic INSERT OR REPLACE
+      // SQLite: INSERT OR REPLACE
+      // Postgres/DuckDB: INSERT ... ON CONFLICT ... DO UPDATE
+      await db.upsert(
+        '_smrt_registry',
+        ['class_name'], // PRIMARY KEY for conflict detection
+        {
+          class_name: className,
+          schema_version: '1.0.0', // Could be derived from package version
+          fields: JSON.stringify(fieldsData),
+          relationships: JSON.stringify(
+            ObjectRegistry.getRelationships(className),
+          ),
+          config: JSON.stringify(registered.config),
+          manifest: JSON.stringify({
+            name: registered.name,
+            tableName: registered.schema?.tableName,
+            tools: registered.tools,
+          }),
+          last_updated: new Date(),
+        },
       );
     }
   }
