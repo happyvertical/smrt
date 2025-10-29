@@ -151,6 +151,22 @@ export function fieldsFromClass(
   // Use cached field definitions from AST manifest
   const fields: Record<string, any> = {};
 
+  // Base class fields that should always be included for SmrtObject subclasses
+  // These match registry.ts SCHEMA_PROPERTIES
+  const BASE_FIELDS = {
+    id: { name: 'id', type: 'text' },
+    slug: { name: 'slug', type: 'text' },
+    context: { name: 'context', type: 'text' },
+    created_at: { name: 'created_at', type: 'datetime' },
+    updated_at: { name: 'updated_at', type: 'datetime' },
+  };
+
+  // Add base fields first (will be overridden if class defines them explicitly)
+  for (const [key, fieldDef] of Object.entries(BASE_FIELDS)) {
+    fields[key] = { ...fieldDef };
+  }
+
+  // Add/override with fields from cached registry
   for (const [key, field] of cachedFields.entries()) {
     fields[key] = {
       name: key,
