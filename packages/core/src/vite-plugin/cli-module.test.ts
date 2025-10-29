@@ -3,6 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { boolean, datetime, decimal, integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 

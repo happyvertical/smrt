@@ -28,7 +28,6 @@
  */
 
 import type { SmrtCollection } from './collection';
-import { Field } from './fields/index';
 import { staticManifest } from './manifest/static-manifest';
 import type { SmrtObject } from './object';
 import { classnameToTablename, tableNameFromClass } from './utils';
@@ -275,7 +274,8 @@ export class ObjectRegistry {
         fields.set(fieldName, fieldDef);
       }
     } else {
-      // Fallback for test classes: detect fields at runtime
+      // Fallback: detect Field helper instances only (no primitive inference)
+      // Issues #128, #69: Runtime introspection cannot detect TypeScript types from primitives
       try {
         const tempInstance = new (ctor as any)({
           db: null,
@@ -284,141 +284,82 @@ export class ObjectRegistry {
           _skipRegistration: true,
         });
 
-        // Traverse prototype chain to collect inherited fields (Issue #50)
+        // Collect all properties from prototype chain
         const allProperties = new Set<string>();
         let currentProto = tempInstance;
 
         while (currentProto && currentProto !== Object.prototype) {
-          // Get own properties from this level of the chain
           for (const key of Object.getOwnPropertyNames(currentProto)) {
             allProperties.add(key);
           }
           currentProto = Object.getPrototypeOf(currentProto);
         }
 
-        // Properties to exclude from schema (system/internal properties from base classes)
-        // These cause circular serialization errors when included
+        // Properties to skip
         const BASE_CLASS_PROPERTIES = new Set([
           'ai',
           'db',
           'fs',
           'tableName',
           'signalBus',
-          'systemDb', // Getters from base classes
+          'systemDb',
           '_ai',
           '_db',
           '_fs',
           '_className',
           '_signalBus',
-          '_tableName', // Private properties
+          '_tableName',
           '_id',
           '_slug',
           '_context',
-          '_loadedRelationships', // SmrtObject private properties
-          'options', // Configuration object
+          '_loadedRelationships',
+          'options',
         ]);
 
-        // Schema properties that should be persisted despite being on base class
-        const SCHEMA_PROPERTIES = new Set([
-          'id',
-          'slug',
-          'context',
-          'created_at',
-          'updated_at',
-        ]);
-
-        // First pass: look for Field instances (from field helpers like text())
+        // Detect Field helper instances ONLY (explicit type declarations)
         for (const key of allProperties) {
-          // Skip protected properties - this fixes Issue #13
-          if (key.startsWith('_') || key.startsWith('#')) {
-            continue;
-          }
-
-          // Skip base class properties (Issue #75) except whitelisted schema properties
-          if (BASE_CLASS_PROPERTIES.has(key) && !SCHEMA_PROPERTIES.has(key)) {
-            continue;
-          }
-
-          const value = tempInstance[key];
-
-          // Check for Field instances first (from field helpers like text())
-          if (value && typeof value === 'object' && value.type) {
-            fields.set(key, value);
-          }
-        }
-
-        // Second pass: infer from primitive properties
-        // Always run this pass, not just when fields.size === 0 (fixes Issue #102, #103)
-        for (const key of allProperties) {
-          // Skip fields already detected by Field helpers
-          if (fields.has(key)) {
-            continue;
-          }
-
           // Skip protected properties
           if (key.startsWith('_') || key.startsWith('#')) {
             continue;
           }
 
-          // Skip base class properties (Issue #75) except whitelisted schema properties
-          if (BASE_CLASS_PROPERTIES.has(key) && !SCHEMA_PROPERTIES.has(key)) {
+          // Skip base class properties
+          if (BASE_CLASS_PROPERTIES.has(key)) {
             continue;
           }
 
           const value = tempInstance[key];
-          const valueType = typeof value;
 
-          // Infer field type from primitive value
-          let fieldType = 'text';
-          if (valueType === 'string') fieldType = 'text';
-          else if (valueType === 'number')
-            fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
-          else if (valueType === 'boolean') fieldType = 'boolean';
-          else if (value instanceof Date) fieldType = 'datetime';
-          else if (Array.isArray(value)) fieldType = 'json';
-          else if (valueType === 'object' && value !== null) fieldType = 'json';
-          else if (valueType === 'function')
-            continue; // Skip functions
-          // For null/undefined, infer type from field name pattern
-          // Issue #65: nullable fields (e.g., latitude: number | null = null)
-          // must be included in schema. Since we can't introspect TypeScript types
-          // at runtime, we infer from common naming patterns
-          else if (value === null || value === undefined) {
-            // Check field name for type hints using conventional naming patterns
-            // Issue #87: Support both snake_case and camelCase date field conventions
-            // Issue #101: Add common datetime field names (date, time, timestamp)
-            if (
-              key === 'date' || // Exact match: date field
-              key === 'time' || // Exact match: time field
-              key === 'timestamp' || // Exact match: timestamp field
-              key.endsWith('_at') ||
-              key.endsWith('At') || // camelCase: issuedAt, createdAt, updatedAt
-              key.endsWith('_date') ||
-              key.endsWith('Date') || // camelCase: startDate, endDate, issueDate
-              key.endsWith('_time') ||
-              key.endsWith('Time') || // camelCase: publishedTime, startTime
-              key.endsWith('_timestamp') ||
-              key.endsWith('Timestamp') // camelCase: createdTimestamp, modifiedTimestamp
-            ) {
-              fieldType = 'datetime';
-            } else if (key.endsWith('Id') || key.endsWith('_id')) {
-              fieldType = 'text'; // Foreign keys are text (UUIDs)
-            } else {
-              // Default to text for nullable fields (safer fallback)
-              // Most nullable fields are strings (ids, slugs, names, emails, urls, etc.)
-              // Numeric nullables (latitude, longitude, price) should use Field helpers for explicit typing:
-              // e.g., latitude = decimal({ nullable: true })
-              fieldType = 'text';
-            }
+          // Only accept Field instances (explicit typing via field helpers)
+          if (value && typeof value === 'object' && value.type) {
+            fields.set(key, value);
           }
+        }
 
-          // Create proper Field instances so getSqlType() works
-          fields.set(key, new Field(fieldType, {}));
+        // If no Field helpers found, require explicit definitions
+        if (fields.size === 0) {
+          throw new Error(
+            `No Field helpers found for class '${name}'. SMRT objects require explicit field definitions.\n\n` +
+              `Use Field helpers:\n` +
+              `  class ${name} extends SmrtObject {\n` +
+              `    name = text({ required: true });\n` +
+              `    latitude = decimal({ nullable: true });\n` +
+              `  }\n\n` +
+              `See: https://github.com/happyvertical/smrt/issues/128`,
+          );
         }
       } catch (error) {
-        console.warn(
-          `Warning: Could not extract fields from ${ctor.name}:`,
-          error,
+        if (
+          error instanceof Error &&
+          error.message.includes('No Field helpers')
+        ) {
+          throw error; // Re-throw our helpful error
+        }
+        // Rethrow construction errors with context
+        throw new Error(
+          `Failed to introspect class '${name}': ${error}. ` +
+            `Use Field helpers for explicit typing. ` +
+            `See: https://github.com/happyvertical/smrt/issues/128`,
         );
       }
     }

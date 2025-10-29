@@ -9,6 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 
@@ -19,8 +20,8 @@ describe('Issue #89: DuckDB/JSON adapter schema transformation', () => {
       api: { include: ['list', 'get'] },
     })
     class TestDocument extends SmrtObject {
-      title = '';
-      content = '';
+      title = text();
+      content = text();
     }
 
     // Define collection
@@ -75,9 +76,9 @@ describe('Issue #89: DuckDB/JSON adapter schema transformation', () => {
       api: { include: ['list', 'get'] },
     })
     class IndexedDocument extends SmrtObject {
-      title = '';
-      category = '';
-      priority = 0;
+      title = text();
+      category = text();
+      priority = integer();
     }
 
     class IndexedDocumentCollection extends SmrtCollection<IndexedDocument> {
@@ -118,7 +119,7 @@ describe('Issue #89: DuckDB/JSON adapter schema transformation', () => {
       api: { include: ['list', 'get'] },
     })
     class ScopedDocument extends SmrtObject {
-      title = '';
+      title = text();
     }
 
     class ScopedDocumentCollection extends SmrtCollection<ScopedDocument> {

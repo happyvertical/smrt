@@ -11,6 +11,7 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { boolean, decimal, integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ASTScanner } from '../scanner/ast-scanner';
 
@@ -39,10 +40,10 @@ describe('Issue #75: Circular Serialization Errors', () => {
   describe('Serialization without circular references', () => {
     it('should serialize object to JSON without circular reference errors', async () => {
       class TestProduct extends SmrtObject {
-        name: string = '';
-        productName: string = 'Test Product';
-        price: number = 99.99;
-        inStock: boolean = true;
+        name = text();
+        productName = text();
+        price = decimal();
+        inStock = boolean();
       }
 
       // Create instance with minimal options
@@ -77,10 +78,10 @@ describe('Issue #75: Circular Serialization Errors', () => {
 
     it('should save object without circular reference errors', async () => {
       class TestArticle extends SmrtObject {
-        name: string = '';
-        title: string = 'Test Article';
-        body: string = 'Article content';
-        published: boolean = false;
+        name = text();
+        title = text();
+        body = text();
+        published = boolean();
       }
 
       const article = new TestArticle({
@@ -110,10 +111,10 @@ describe('Issue #75: Circular Serialization Errors', () => {
   describe('toJSON() method behavior', () => {
     it('should only include schema fields in toJSON() output', async () => {
       class TestBook extends SmrtObject {
-        name: string = '';
-        bookTitle: string = 'The Book';
-        author: string = 'Author Name';
-        pages: number = 300;
+        name = text();
+        bookTitle = text();
+        author = text();
+        pages = integer();
       }
 
       const book = new TestBook({

@@ -3,6 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
+import { boolean, integer, text } from './fields/index.js';
 import { SmrtObject } from './object';
 import { smrt } from './registry';
 
@@ -13,10 +14,10 @@ class TestObject extends SmrtObject {
   static tableName = 'test_objects';
 
   // Need to initialize properties for runtime field detection
-  name: string = '';
-  description?: string = '';
-  active: boolean = false;
-  count: number = 0;
+  name = text();
+  description? = text();
+  active = boolean();
+  count = integer();
 }
 
 describe('SmrtObject', () => {
@@ -108,8 +109,8 @@ describe('SmrtObject', () => {
     // Test class with custom tableName in decorator
     @smrt({ tableName: 'custom_councils' })
     class Council extends SmrtObject {
-      name: string = '';
-      description?: string = '';
+      name = text();
+      description? = text();
     }
 
     it('should not throw error when tableName is specified in decorator', async () => {

@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
+import { integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
@@ -17,8 +18,8 @@ describe('Issue #117: Memory Leak Prevention', () => {
   // Test class for cache testing
   @smrt({ api: true, mcp: true, cli: true })
   class CacheTestObject extends SmrtObject {
-    name = '';
-    value = 0;
+    name = text();
+    value = integer();
   }
 
   class CacheTestCollection extends SmrtCollection<CacheTestObject> {

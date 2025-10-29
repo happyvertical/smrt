@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { boolean, datetime, integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 
@@ -18,9 +19,9 @@ describe('Issue #87: Inherited Date fields schema generation', () => {
       api: { include: ['list', 'get'] },
     })
     class ParentEvent extends SmrtObject {
-      startDate: Date | null = null;
-      endDate: Date | null = null;
-      issuedAt: Date | null = null; // This field was mentioned in the issue
+      startDate = datetime({ nullable: true });
+      endDate = datetime({ nullable: true });
+      issuedAt = datetime({ nullable: true }); // This field was mentioned in the issue
     }
 
     // Define a child class that extends the parent
@@ -28,8 +29,8 @@ describe('Issue #87: Inherited Date fields schema generation', () => {
       api: { include: ['list', 'get'] },
     })
     class ChildEvent extends ParentEvent {
-      temperature = 0;
-      description = '';
+      temperature = integer();
+      description = text();
     }
 
     // Register collections
@@ -76,18 +77,18 @@ describe('Issue #87: Inherited Date fields schema generation', () => {
       api: { include: ['list', 'get'] },
     })
     class BaseModel extends SmrtObject {
-      textField = '';
-      numberField = 0;
-      booleanField = false;
-      issueDate: Date | null = null; // Conventional naming: ends with 'Date'
-      optionalEventDate?: Date; // Conventional naming: ends with 'Date'
+      textField = text();
+      numberField = integer();
+      booleanField = boolean();
+      issueDate = datetime({ nullable: true }); // Conventional naming: ends with 'Date'
+      optionalEventDate = datetime({ nullable: true }); // Conventional naming: ends with 'Date'
     }
 
     @smrt({
       api: { include: ['list', 'get'] },
     })
     class DerivedModel extends BaseModel {
-      derivedField = '';
+      derivedField = text();
     }
 
     class DerivedModelCollection extends SmrtCollection<DerivedModel> {
