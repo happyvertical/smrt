@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Field } from './fields/index';
+import {
+  boolean as booleanField,
+  datetime,
+  decimal,
+  Field,
+  text,
+} from './fields/index';
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
 import { tableNameFromClass } from './utils';
@@ -775,6 +781,100 @@ describe('ObjectRegistry', () => {
 
       // Should read from SMRT_TABLE_NAME property, not derive from class name
       expect(tableName).toBe('test_for_table_names');
+    });
+  });
+
+  describe('Mixed Field helpers and primitives (Issue #102, #103)', () => {
+    it('should detect base class fields even when using Field helpers', () => {
+      @smrt()
+      class MixedFieldsObject extends SmrtObject {
+        date = datetime({ nullable: true }); // Field helper
+        // Base class fields (name, created_at, updated_at) should still be inferred
+      }
+
+      const fields = ObjectRegistry.getFields('MixedFieldsObject');
+
+      // Field helper should be present
+      expect(fields.get('date')).toBeDefined();
+      expect(fields.get('date')?.type).toBe('datetime');
+
+      // Base class fields should ALSO be present (fixes all-or-nothing bug)
+      expect(fields.get('name')).toBeDefined();
+      expect(fields.get('created_at')).toBeDefined();
+      expect(fields.get('created_at')?.type).toBe('datetime');
+      expect(fields.get('updated_at')).toBeDefined();
+      expect(fields.get('updated_at')?.type).toBe('datetime');
+    });
+
+    it('should handle mix of Field helpers and custom primitives', () => {
+      @smrt()
+      class ProductWithMixedFields extends SmrtObject {
+        title = text({ required: true }); // Field helper
+        price = decimal({ min: 0 }); // Field helper
+        description: string = ''; // Primitive (should infer TEXT)
+        stock: number = 0; // Primitive (should infer INTEGER)
+        active: boolean = true; // Primitive (should infer BOOLEAN)
+      }
+
+      const fields = ObjectRegistry.getFields('ProductWithMixedFields');
+
+      // Field helpers should be present with their configuration
+      expect(fields.get('title')).toBeDefined();
+      expect(fields.get('title')?.type).toBe('text');
+      expect(fields.get('title')?.options?.required).toBe(true);
+
+      expect(fields.get('price')).toBeDefined();
+      expect(fields.get('price')?.type).toBe('decimal');
+
+      // Primitives should be inferred (not skipped!)
+      expect(fields.get('description')).toBeDefined();
+      expect(fields.get('description')?.type).toBe('text');
+
+      expect(fields.get('stock')).toBeDefined();
+      expect(fields.get('stock')?.type).toBe('integer');
+
+      expect(fields.get('active')).toBeDefined();
+      expect(fields.get('active')?.type).toBe('boolean');
+    });
+
+    it('should not overwrite Field helpers with primitive inference', () => {
+      @smrt()
+      class OverwriteTestObject extends SmrtObject {
+        // Field helper with specific configuration
+        name = text({ required: true, maxLength: 100 });
+      }
+
+      const fields = ObjectRegistry.getFields('OverwriteTestObject');
+
+      // Field helper configuration should be preserved
+      expect(fields.get('name')).toBeDefined();
+      expect(fields.get('name')?.type).toBe('text');
+      expect(fields.get('name')?.options?.required).toBe(true);
+      expect(fields.get('name')?.options?.maxLength).toBe(100);
+    });
+
+    it('should handle nullable fields with Field helpers', () => {
+      @smrt()
+      class MeetingWithNullableDate extends SmrtObject {
+        date = datetime({ nullable: true }); // Explicit nullable
+        title: string = ''; // Primitive
+        location: string | null = null; // Nullable primitive (should infer)
+      }
+
+      const fields = ObjectRegistry.getFields('MeetingWithNullableDate');
+
+      // Field helper for date
+      expect(fields.get('date')).toBeDefined();
+      expect(fields.get('date')?.type).toBe('datetime');
+      expect(fields.get('date')?.options?.nullable).toBe(true);
+
+      // Primitive fields should still be detected
+      expect(fields.get('title')).toBeDefined();
+      expect(fields.get('title')?.type).toBe('text');
+
+      expect(fields.get('location')).toBeDefined();
+      // Nullable primitive defaults to decimal (see registry.ts line 402-404)
+      expect(fields.get('location')?.type).toBe('decimal');
     });
   });
 });

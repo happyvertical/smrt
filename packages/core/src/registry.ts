@@ -345,60 +345,71 @@ export class ObjectRegistry {
           }
         }
 
-        // If no Field instances found, infer from primitive properties
-        if (fields.size === 0) {
-          for (const key of allProperties) {
-            // Skip protected properties
-            if (key.startsWith('_') || key.startsWith('#')) {
-              continue;
-            }
-
-            // Skip base class properties (Issue #75) except whitelisted schema properties
-            if (BASE_CLASS_PROPERTIES.has(key) && !SCHEMA_PROPERTIES.has(key)) {
-              continue;
-            }
-
-            const value = tempInstance[key];
-            const valueType = typeof value;
-
-            // Infer field type from primitive value
-            let fieldType = 'text';
-            if (valueType === 'string') fieldType = 'text';
-            else if (valueType === 'number')
-              fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
-            else if (valueType === 'boolean') fieldType = 'boolean';
-            else if (value instanceof Date) fieldType = 'datetime';
-            else if (Array.isArray(value)) fieldType = 'json';
-            else if (valueType === 'object' && value !== null)
-              fieldType = 'json';
-            else if (valueType === 'function')
-              continue; // Skip functions
-            // For null/undefined, infer type from field name pattern
-            // Issue #65: nullable fields (e.g., latitude: number | null = null)
-            // must be included in schema. Since we can't introspect TypeScript types
-            // at runtime, we infer from common naming patterns
-            else if (value === null || value === undefined) {
-              // Check field name for type hints using conventional naming patterns
-              // Issue #87: Support both snake_case and camelCase date field conventions
-              if (
-                key.endsWith('_at') ||
-                key.endsWith('At') || // camelCase: issuedAt, createdAt, updatedAt
-                key.endsWith('_date') ||
-                key.endsWith('Date') // camelCase: startDate, endDate, issueDate
-              ) {
-                fieldType = 'datetime';
-              } else if (key.endsWith('Id') || key.endsWith('_id')) {
-                fieldType = 'text'; // Foreign keys are text (UUIDs)
-              } else {
-                // Default to decimal for coordinate fields and other numeric nullables
-                // This handles common cases like latitude, longitude, price, amount, etc.
-                fieldType = 'decimal';
-              }
-            }
-
-            // Create proper Field instances so getSqlType() works
-            fields.set(key, new Field(fieldType, {}));
+        // Second pass: infer from primitive properties
+        // Always run this pass, not just when fields.size === 0 (fixes Issue #102, #103)
+        for (const key of allProperties) {
+          // Skip fields already detected by Field helpers
+          if (fields.has(key)) {
+            continue;
           }
+
+          // Skip protected properties
+          if (key.startsWith('_') || key.startsWith('#')) {
+            continue;
+          }
+
+          // Skip base class properties (Issue #75) except whitelisted schema properties
+          if (BASE_CLASS_PROPERTIES.has(key) && !SCHEMA_PROPERTIES.has(key)) {
+            continue;
+          }
+
+          const value = tempInstance[key];
+          const valueType = typeof value;
+
+          // Infer field type from primitive value
+          let fieldType = 'text';
+          if (valueType === 'string') fieldType = 'text';
+          else if (valueType === 'number')
+            fieldType = Number.isInteger(value) ? 'integer' : 'decimal';
+          else if (valueType === 'boolean') fieldType = 'boolean';
+          else if (value instanceof Date) fieldType = 'datetime';
+          else if (Array.isArray(value)) fieldType = 'json';
+          else if (valueType === 'object' && value !== null) fieldType = 'json';
+          else if (valueType === 'function')
+            continue; // Skip functions
+          // For null/undefined, infer type from field name pattern
+          // Issue #65: nullable fields (e.g., latitude: number | null = null)
+          // must be included in schema. Since we can't introspect TypeScript types
+          // at runtime, we infer from common naming patterns
+          else if (value === null || value === undefined) {
+            // Check field name for type hints using conventional naming patterns
+            // Issue #87: Support both snake_case and camelCase date field conventions
+            // Issue #101: Add common datetime field names (date, time, timestamp)
+            if (
+              key === 'date' || // Exact match: date field
+              key === 'time' || // Exact match: time field
+              key === 'timestamp' || // Exact match: timestamp field
+              key.endsWith('_at') ||
+              key.endsWith('At') || // camelCase: issuedAt, createdAt, updatedAt
+              key.endsWith('_date') ||
+              key.endsWith('Date') || // camelCase: startDate, endDate, issueDate
+              key.endsWith('_time') ||
+              key.endsWith('Time') || // camelCase: publishedTime, startTime
+              key.endsWith('_timestamp') ||
+              key.endsWith('Timestamp') // camelCase: createdTimestamp, modifiedTimestamp
+            ) {
+              fieldType = 'datetime';
+            } else if (key.endsWith('Id') || key.endsWith('_id')) {
+              fieldType = 'text'; // Foreign keys are text (UUIDs)
+            } else {
+              // Default to decimal for coordinate fields and other numeric nullables
+              // This handles common cases like latitude, longitude, price, amount, etc.
+              fieldType = 'decimal';
+            }
+          }
+
+          // Create proper Field instances so getSqlType() works
+          fields.set(key, new Field(fieldType, {}));
         }
       } catch (error) {
         console.warn(
