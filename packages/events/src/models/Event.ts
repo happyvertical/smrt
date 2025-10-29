@@ -5,6 +5,7 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { text } from '@happyvertical/smrt-core/fields';
 import type { EventOptions, EventStatus } from '../types';
 
 @smrt({
@@ -13,8 +14,7 @@ import type { EventOptions, EventStatus } from '../types';
   cli: true,
 })
 export class Event extends SmrtObject {
-  // id, slug, name inherited from SmrtObject
-
+  name = text();
   seriesId = ''; // FK to EventSeries (nullable for standalone events)
   parentEventId = ''; // FK to Event (nullable, self-referencing for hierarchy)
   typeId = ''; // FK to EventType

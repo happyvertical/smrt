@@ -39,6 +39,7 @@ describe('Issue #75: Circular Serialization Errors', () => {
   describe('Serialization without circular references', () => {
     it('should serialize object to JSON without circular reference errors', async () => {
       class TestProduct extends SmrtObject {
+        name: string = '';
         productName: string = 'Test Product';
         price: number = 99.99;
         inStock: boolean = true;
@@ -76,6 +77,7 @@ describe('Issue #75: Circular Serialization Errors', () => {
 
     it('should save object without circular reference errors', async () => {
       class TestArticle extends SmrtObject {
+        name: string = '';
         title: string = 'Test Article';
         body: string = 'Article content';
         published: boolean = false;
@@ -108,6 +110,7 @@ describe('Issue #75: Circular Serialization Errors', () => {
   describe('toJSON() method behavior', () => {
     it('should only include schema fields in toJSON() output', async () => {
       class TestBook extends SmrtObject {
+        name: string = '';
         bookTitle: string = 'The Book';
         author: string = 'Author Name';
         pages: number = 300;

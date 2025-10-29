@@ -788,8 +788,9 @@ describe('ObjectRegistry', () => {
     it('should detect base class fields even when using Field helpers', () => {
       @smrt()
       class MixedFieldsObject extends SmrtObject {
+        name = '';
         date = datetime({ nullable: true }); // Field helper
-        // Base class fields (name, created_at, updated_at) should still be inferred
+        // Base class fields (created_at, updated_at) are still inferred
       }
 
       const fields = ObjectRegistry.getFields('MixedFieldsObject');
@@ -873,8 +874,8 @@ describe('ObjectRegistry', () => {
       expect(fields.get('title')?.type).toBe('text');
 
       expect(fields.get('location')).toBeDefined();
-      // Nullable primitive defaults to decimal (see registry.ts line 402-404)
-      expect(fields.get('location')?.type).toBe('decimal');
+      // Nullable string should be detected as text type
+      expect(fields.get('location')?.type).toBe('text');
     });
   });
 });

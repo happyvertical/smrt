@@ -556,9 +556,8 @@ Key Methods:
 
 Core Properties:
 - `id: string` - Unique UUID identifier (auto-generated if not provided)
-- `slug: string` - URL-friendly identifier (auto-generated from name, or ID as fallback if name not provided)
+- `slug: string` - URL-friendly identifier (auto-generated from title, label, or ID as fallback)
 - `context: string` - Optional context to scope the slug (enables multiple objects with same slug in different contexts)
-- `name: string` - Human-readable name, primarily for display (optional - ID will be used for slug if omitted)
 - `created_at: Date` - Creation timestamp (auto-managed by application on first save)
 - `updated_at: Date` - Last update timestamp (auto-managed by application on each save)
 
@@ -567,7 +566,7 @@ Key Methods:
 - `delete()` - Deletes object from database with lifecycle hooks
 - `loadFromId()` - Loads data by ID
 - `loadFromSlug()` - Loads data by slug and context
-- `getSlug()` - Gets or generates slug from name (converts to lowercase, replaces non-alphanumeric with hyphens)
+- `getSlug()` - Gets or generates slug using fallback chain: title → label → id (converts to lowercase, replaces non-alphanumeric with hyphens)
 - `is(criteria: string, options?)` - AI-powered validation against criteria (returns boolean)
 - `do(instructions: string, options?)` - AI-powered operation based on instructions (returns string result)
 

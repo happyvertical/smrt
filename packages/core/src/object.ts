@@ -29,11 +29,6 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
   id?: string;
 
   /**
-   * Human-readable name for the object
-   */
-  name?: string;
-
-  /**
    * URL-friendly identifier
    */
   slug?: string;
@@ -108,12 +103,6 @@ export class SmrtObject extends SmrtClass {
    * Optional context to scope the slug
    */
   protected _context: string | null | undefined;
-
-  /**
-   * Human-readable name, primarily for display purposes
-   * Can be a string value or a Field instance (for Field-based schema definition)
-   */
-  public name?: string | Field | null = null;
 
   /**
    * Creation timestamp
@@ -204,7 +193,6 @@ export class SmrtObject extends SmrtClass {
     const options = this.options;
 
     // Set base properties that exist on SmrtObject
-    if (options.name !== undefined) this.name = options.name;
     if (options.created_at !== undefined) this.created_at = options.created_at;
     if (options.updated_at !== undefined) this.updated_at = options.updated_at;
 
@@ -422,7 +410,6 @@ export class SmrtObject extends SmrtClass {
       id: this.id,
       slug: this.slug,
       context: this.context,
-      name: this.name,
       created_at: this.created_at,
       updated_at: this.updated_at,
     };
@@ -466,12 +453,10 @@ export class SmrtObject extends SmrtClass {
    */
   async getSlug() {
     if (!this.slug) {
-      // Try multiple fallback fields in order: name, title, label
+      // Try multiple fallback fields in order: title, label, id
       let sourceField = null;
 
-      if (this.name) {
-        sourceField = String(this.name);
-      } else if ((this as any).title) {
+      if ((this as any).title) {
         sourceField = String((this as any).title);
       } else if ((this as any).label) {
         sourceField = String((this as any).label);

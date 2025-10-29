@@ -5,6 +5,7 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { text } from '@happyvertical/smrt-core/fields';
 import type { EventTypeOptions } from '../types';
 
 @smrt({
@@ -13,7 +14,7 @@ import type { EventTypeOptions } from '../types';
   cli: true,
 })
 export class EventType extends SmrtObject {
-  // id, slug, name inherited from SmrtObject
+  name = text();
   description = ''; // Optional description
   schema = ''; // JSON schema for event metadata (stored as text)
   participantSchema = ''; // JSON schema for participant metadata (stored as text)

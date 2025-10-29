@@ -141,11 +141,11 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
     const grouped = new Map<string, string[]>();
 
     for (const alias of aliases) {
-      const lang = alias.language || 'default';
+      const lang = String(alias.language || 'default');
       if (!grouped.has(lang)) {
         grouped.set(lang, []);
       }
-      grouped.get(lang)?.push(alias.alias);
+      grouped.get(lang)?.push(String(alias.alias));
     }
 
     return grouped;
@@ -169,7 +169,7 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
     const queryLower = query.toLowerCase();
 
     return all.filter((alias) =>
-      alias.alias.toLowerCase().includes(queryLower),
+      String(alias.alias).toLowerCase().includes(queryLower),
     );
   }
 }
