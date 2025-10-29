@@ -320,7 +320,6 @@ export class ObjectRegistry {
           'id',
           'slug',
           'context',
-          'name',
           'created_at',
           'updated_at',
         ]);

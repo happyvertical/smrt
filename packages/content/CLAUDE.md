@@ -56,7 +56,7 @@ The primary data model representing structured content objects with comprehensiv
 ```
 
 **Key Methods**:
-- `initialize()`: Sets up content instance, syncs title to name field
+- `initialize()`: Sets up content instance
 - `addReference(content: Content | string)`: Add reference to related content
 - `getReferences()`: Retrieve all referenced content objects
 - `loadReferences()`: Load reference network (currently no-op, extensible)
@@ -840,16 +840,16 @@ const text1 = await fetchDocument('file:///path/to/file.pdf'); // Extracts and c
 - Document text cache: `{localPath}.extracted_text`
 - Uses @happyvertical/files `getCached/setCached` functions
 
-### 6. Title vs Name Field
-**Problem**: Confusion between `title` and `name` properties
+### 6. Title and Name Fields
+**Note**: Both `title` and `name` are explicit fields in the Content class
 
 ```typescript
-const content = new Content({ title: 'My Title' });
+const content = new Content({ title: 'My Title', name: 'my-title' });
 await content.initialize();
-// After initialization, content.name === 'My Title'
+// Content has both title and name as separate fields
 ```
 
-**Explanation**: Content syncs `title` to `name` during initialization for SmrtObject compatibility. Use `title` for content-specific operations, `name` is for SMRT framework integration.
+**Explanation**: Unlike SmrtObject base class (which no longer includes `name`), Content explicitly defines both `title` and `name` fields. Use `title` for display, `name` for identification if needed.
 
 ### 7. Reference Persistence
 **Problem**: Expecting references to be automatically saved to database

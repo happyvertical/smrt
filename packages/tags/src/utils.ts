@@ -59,7 +59,7 @@ export async function hasCircularReference(
     const parent = await tagCollection.get({ slug: current });
     if (!parent || !parent.parentSlug) break;
 
-    current = parent.parentSlug;
+    current = String(parent.parentSlug);
   }
 
   return false;

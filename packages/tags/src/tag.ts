@@ -5,7 +5,7 @@
  * for taxonomies and category trees.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { SmrtObject, smrt, text } from '@happyvertical/smrt-core';
 import type { TagMetadata, TagOptions } from './types';
 
 @smrt({
@@ -33,11 +33,11 @@ export class Tag extends SmrtObject {
     this._context = value;
   }
 
-  name = ''; // Display name
-  parentSlug = ''; // FK to parent tag for hierarchy (nullable)
+  name = text(); // Display name
+  parentSlug = text(); // FK to parent tag for hierarchy (nullable)
   level = 0; // Hierarchy depth (0 = root)
-  description = ''; // Optional description
-  metadata = ''; // JSON metadata stored as text
+  description = text(); // Optional description
+  metadata = text(); // JSON metadata stored as text
 
   // Timestamps
   createdAt = new Date();
@@ -45,20 +45,18 @@ export class Tag extends SmrtObject {
 
   constructor(options: TagOptions = {}) {
     super(options);
+    // Field values are automatically set by initializePropertiesFromOptions()
+    // Only need to handle non-Field properties
     if (options.slug) this._slug = options.slug;
-    if (options.name) this.name = options.name;
     if (options.context !== undefined) this._context = options.context;
-    if (options.parentSlug !== undefined) this.parentSlug = options.parentSlug;
     if (options.level !== undefined) this.level = options.level;
-    if (options.description !== undefined)
-      this.description = options.description;
 
     // Handle metadata - can be object or JSON string
     if (options.metadata !== undefined) {
       if (typeof options.metadata === 'string') {
-        this.metadata = options.metadata;
+        this.metadata.value = options.metadata;
       } else {
-        this.metadata = JSON.stringify(options.metadata);
+        this.metadata.value = JSON.stringify(options.metadata);
       }
     }
   }
@@ -69,9 +67,10 @@ export class Tag extends SmrtObject {
    * @returns Parsed metadata object or empty object if no metadata
    */
   getMetadata(): TagMetadata {
-    if (!this.metadata) return {};
+    const metadataValue = String(this.metadata || '');
+    if (!metadataValue) return {};
     try {
-      return JSON.parse(this.metadata);
+      return JSON.parse(metadataValue);
     } catch {
       return {};
     }
@@ -83,7 +82,7 @@ export class Tag extends SmrtObject {
    * @param data - Metadata object to store
    */
   setMetadata(data: TagMetadata): void {
-    this.metadata = JSON.stringify(data);
+    (this.metadata as any).value = JSON.stringify(data);
   }
 
   /**

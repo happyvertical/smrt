@@ -1,5 +1,6 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { text } from '@happyvertical/smrt-core/fields';
 
 /**
  * Options for Content initialization
@@ -133,6 +134,11 @@ export class Content extends SmrtObject {
   public author: string | null = null;
 
   /**
+   * Human-readable name for SMRT framework compatibility
+   */
+  public name = text();
+
+  /**
    * Content title
    */
   public title = '';
@@ -221,10 +227,6 @@ export class Content extends SmrtObject {
    */
   async initialize(): Promise<this> {
     await super.initialize();
-    // Set name to title for SmrtObject compatibility
-    if (this.title && !this.name) {
-      this.name = this.title;
-    }
     return this;
   }
 

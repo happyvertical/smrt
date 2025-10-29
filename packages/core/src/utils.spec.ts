@@ -36,10 +36,6 @@ it('should get fields from a class without values', () => {
       name: 'context',
       type: 'text',
     },
-    name: {
-      name: 'name',
-      type: 'text',
-    },
     created_at: {
       name: 'created_at',
       type: 'datetime',
@@ -90,10 +86,6 @@ it('should get fields from a class with values', () => {
     },
     context: {
       name: 'context',
-      type: 'text',
-    },
-    name: {
-      name: 'name',
       type: 'text',
     },
     created_at: {

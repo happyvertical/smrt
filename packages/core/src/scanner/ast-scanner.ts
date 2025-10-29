@@ -378,7 +378,7 @@ export class ASTScanner {
     // Skip properties inherited from base classes to avoid circular serialization
     if (this.baseClassProperties.has(propertyName)) {
       // Exception: Allow specific SmrtObject schema properties that should be persisted
-      const SCHEMA_PROPERTIES = ['name', 'created_at', 'updated_at'];
+      const SCHEMA_PROPERTIES = ['created_at', 'updated_at'];
       if (!SCHEMA_PROPERTIES.includes(propertyName)) {
         return null;
       }

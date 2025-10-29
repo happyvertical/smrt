@@ -118,7 +118,7 @@ export class TagCollection extends SmrtCollection<Tag> {
     const newLevel = await this.calculateLevel(newParentSlug);
 
     // Update tag
-    tag.parentSlug = newParentSlug || '';
+    (tag.parentSlug as any).value = newParentSlug || '';
     tag.level = newLevel;
     await tag.save();
 
@@ -145,7 +145,7 @@ export class TagCollection extends SmrtCollection<Tag> {
     // Move all children of fromTag to toTag
     const children = await this.getChildren(fromSlug);
     for (const child of children) {
-      child.parentSlug = toSlug;
+      (child.parentSlug as any).value = toSlug;
       await child.save();
     }
 
@@ -240,7 +240,7 @@ export class TagCollection extends SmrtCollection<Tag> {
       const parent = await this.get({ slug: current });
       if (!parent || !parent.parentSlug) break;
 
-      current = parent.parentSlug;
+      current = String(parent.parentSlug);
     }
 
     return false;
