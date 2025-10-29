@@ -11,11 +11,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
-import { smrt } from '../registry';
+import { ObjectRegistry, smrt } from '../registry';
 
 describe('Issue #115: SQL Injection Prevention', () => {
   // Test class with known fields
-  @smrt({ api: true, mcp: true, cli: true })
+  @smrt({ api: { include: ['list', 'get'] } })
   class Product extends SmrtObject {
     name = '';
     price = 0;
@@ -27,33 +27,41 @@ describe('Issue #115: SQL Injection Prevention', () => {
     static readonly _itemClass = Product;
   }
 
+  // Register the collection
+  ObjectRegistry.registerCollection('Product', ProductCollection);
+
   let collection: ProductCollection;
 
   beforeAll(async () => {
     collection = await ProductCollection.create({
-      persistence: { type: 'sql', url: ':memory:' },
+      db: { type: 'sqlite', url: ':memory:' },
     });
 
     // Create() already initializes the database, so we can directly create test data
     // Create some test data
-    await collection.create({
+    const widget = await collection.create({
       name: 'Widget',
       price: 100,
       category: 'A',
       active: true,
     });
-    await collection.create({
+    await widget.save();
+
+    const gadget = await collection.create({
       name: 'Gadget',
       price: 200,
       category: 'B',
       active: true,
     });
-    await collection.create({
+    await gadget.save();
+
+    const doohickey = await collection.create({
       name: 'Doohickey',
       price: 50,
       category: 'A',
       active: false,
     });
+    await doohickey.save();
   });
 
   afterAll(async () => {
@@ -102,7 +110,8 @@ describe('Issue #115: SQL Injection Prevention', () => {
     it('should handle operator with no explicit value (defaults to =)', async () => {
       const results = await collection.list({ where: { active: true } });
       expect(results).toBeDefined();
-      expect(results.every((p) => p.active === true)).toBe(true);
+      // SQLite stores booleans as integers (0/1), so use truthy comparison
+      expect(results.every((p) => p.active)).toBe(true);
     });
   });
 
@@ -124,12 +133,25 @@ describe('Issue #115: SQL Injection Prevention', () => {
     });
 
     it('should reject prototype pollution attempts', async () => {
+      // Real prototype pollution comes from JSON parsing or Object.create
+      // Object literal syntax { __proto__: 'polluted' } doesn't create an own property
+      const maliciousWhere1 = JSON.parse('{"__proto__": "polluted"}');
       await expect(
         collection.list({
-          where: { __proto__: 'polluted' },
+          where: maliciousWhere1,
         }),
-      ).rejects.toThrow(/Invalid WHERE clause field: '__proto__'/);
+      ).rejects.toThrow(/Prototype pollution attempts are not allowed/);
 
+      // Direct property assignment
+      const maliciousWhere2: any = {};
+      maliciousWhere2.constructor = 'exploit';
+      await expect(
+        collection.list({
+          where: maliciousWhere2,
+        }),
+      ).rejects.toThrow(/Prototype pollution attempts are not allowed/);
+
+      // Nested prototype pollution attempt via string key
       await expect(
         collection.list({
           where: { 'constructor.prototype.isAdmin': true },
@@ -227,7 +249,8 @@ describe('Issue #115: SQL Injection Prevention', () => {
       expect(results).toBeDefined();
       expect(results.every((p) => p.price > 50 && p.price <= 200)).toBe(true);
       expect(results.every((p) => p.category === 'A')).toBe(true);
-      expect(results.every((p) => p.active === true)).toBe(true);
+      // SQLite stores booleans as integers (0/1), so use truthy comparison instead of strict equality
+      expect(results.every((p) => p.active)).toBe(true);
     });
 
     it('should reject if any condition is invalid', async () => {

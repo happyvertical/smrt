@@ -67,6 +67,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const converted: Record<string, any> = {};
 
+    // Check for prototype pollution attempts using own properties only
+    // __proto__ is a special property that doesn't show up in Object.entries()
+    // but can still be checked with hasOwnProperty
+    if (
+      Object.hasOwn(where, '__proto__') ||
+      Object.hasOwn(where, 'constructor') ||
+      Object.hasOwn(where, 'prototype')
+    ) {
+      throw new Error(
+        `Invalid WHERE clause: Prototype pollution attempts are not allowed. ` +
+          `Detected dangerous properties in WHERE clause.`,
+      );
+    }
+
     for (const [key, value] of Object.entries(where)) {
       // Split field name and operator (e.g., "typeId >" → ["typeId", ">"])
       const parts = key.trim().split(/\s+/);
@@ -77,7 +91,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       if (
         fieldName === '__proto__' ||
         fieldName === 'constructor' ||
-        fieldName === 'prototype'
+        fieldName === 'prototype' ||
+        fieldName.includes('__proto__') ||
+        fieldName.includes('constructor') ||
+        fieldName.includes('prototype')
       ) {
         throw new Error(
           `Invalid WHERE clause field: '${fieldName}'. ` +
