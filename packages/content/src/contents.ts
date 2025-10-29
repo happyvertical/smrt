@@ -260,45 +260,4 @@ export class Contents extends SmrtCollection<Content> {
       });
     }
   }
-
-  // public async list(options: {
-  //   where?: object;
-  //   filter?: object;
-  //   offset?: number;
-  //   limit?: number;
-  // }): Promise<Content[]> {
-  //   const { where, filter, offset, limit } = options;
-
-  //   const replacements: any[] = [];
-  //   let currIndex = 1;
-
-  //   let whereSql = '';
-  //   if (where) {
-  //     whereSql = 'where ';
-  //     for (const [key, value] of Object.entries(where)) {
-  //       whereSql += ` AND ${key} = $${currIndex++}`;
-  //       replacements.push(value);
-  //     }
-  //   }
-
-  //   let whereNotSql = '';
-  //   if (filter) {
-  //     if (whereSql) {
-  //       whereNotSql = ' and ';
-  //     } else {
-  //       whereNotSql += ' where ';
-  //     }
-  //     for (const [key, value] of Object.entries(filter)) {
-  //       whereNotSql += `${key} != $${currIndex++}`;
-  //       replacements.push(value);
-  //     }
-  //   }
-
-  //   const { rows } = await this._db.query(
-  //     `SELECT * FROM contents ${whereSql} ${whereNotSql} LIMIT ${limit} OFFSET ${offset}`,
-  //     replacements,
-  //   );
-
-  //   return Promise.all(rows.map((row: any) => this.create(row)));
-  // }
 }
