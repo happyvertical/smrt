@@ -402,9 +402,11 @@ export class ObjectRegistry {
             } else if (key.endsWith('Id') || key.endsWith('_id')) {
               fieldType = 'text'; // Foreign keys are text (UUIDs)
             } else {
-              // Default to decimal for coordinate fields and other numeric nullables
-              // This handles common cases like latitude, longitude, price, amount, etc.
-              fieldType = 'decimal';
+              // Default to text for nullable fields (safer fallback)
+              // Most nullable fields are strings (ids, slugs, names, emails, urls, etc.)
+              // Numeric nullables (latitude, longitude, price) should use Field helpers for explicit typing:
+              // e.g., latitude = decimal({ nullable: true })
+              fieldType = 'text';
             }
           }
 

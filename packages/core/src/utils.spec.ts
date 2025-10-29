@@ -23,6 +23,32 @@ class TestClass extends SmrtObject {
 it('should get fields from a class without values', () => {
   const fields = fieldsFromClass(TestClass);
   expect(fields).toEqual({
+    // Inherited fields from SmrtObject
+    id: {
+      name: 'id',
+      type: 'text',
+    },
+    slug: {
+      name: 'slug',
+      type: 'text',
+    },
+    context: {
+      name: 'context',
+      type: 'text',
+    },
+    name: {
+      name: 'name',
+      type: 'text',
+    },
+    created_at: {
+      name: 'created_at',
+      type: 'datetime',
+    },
+    updated_at: {
+      name: 'updated_at',
+      type: 'datetime',
+    },
+    // Direct fields declared on TestClass
     test_string: {
       name: 'test_string',
       type: 'text',
@@ -53,6 +79,32 @@ it('should get fields from a class with values', () => {
   const fields = fieldsFromClass(TestClass, values);
 
   expect(fields).toEqual({
+    // Inherited fields from SmrtObject (no values set)
+    id: {
+      name: 'id',
+      type: 'text',
+    },
+    slug: {
+      name: 'slug',
+      type: 'text',
+    },
+    context: {
+      name: 'context',
+      type: 'text',
+    },
+    name: {
+      name: 'name',
+      type: 'text',
+    },
+    created_at: {
+      name: 'created_at',
+      type: 'datetime',
+    },
+    updated_at: {
+      name: 'updated_at',
+      type: 'datetime',
+    },
+    // Direct fields declared on TestClass (with values)
     test_string: {
       name: 'test_string',
       type: 'text',
