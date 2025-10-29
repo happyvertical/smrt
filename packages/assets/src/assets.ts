@@ -18,9 +18,14 @@ export class AssetCollection extends SmrtCollection<Asset> {
    */
   async addTag(assetId: string, tagSlug: string): Promise<void> {
     const db = this.db;
-    await db.query(
-      'INSERT OR IGNORE INTO asset_tags (asset_id, tag_slug, created_at) VALUES (?, ?, ?)',
-      [assetId, tagSlug, new Date().toISOString()],
+    await db.upsert(
+      'asset_tags',
+      {
+        asset_id: assetId,
+        tag_slug: tagSlug,
+        created_at: new Date().toISOString(),
+      },
+      ['asset_id', 'tag_slug'],
     );
   }
 
@@ -32,10 +37,10 @@ export class AssetCollection extends SmrtCollection<Asset> {
    */
   async removeTag(assetId: string, tagSlug: string): Promise<void> {
     const db = this.db;
-    await db.query(
-      'DELETE FROM asset_tags WHERE asset_id = ? AND tag_slug = ?',
-      [assetId, tagSlug],
-    );
+    await db.delete('asset_tags', {
+      asset_id: assetId,
+      tag_slug: tagSlug,
+    });
   }
 
   /**
@@ -46,10 +51,9 @@ export class AssetCollection extends SmrtCollection<Asset> {
    */
   async getByTag(tagSlug: string): Promise<Asset[]> {
     const db = this.db;
-    const { rows } = await db.query(
-      'SELECT asset_id FROM asset_tags WHERE tag_slug = ?',
-      [tagSlug],
-    );
+    const rows = await db.list('asset_tags', {
+      where: { tag_slug: tagSlug },
+    });
 
     const assets: Asset[] = [];
     for (const row of rows as { asset_id: string }[]) {
@@ -153,16 +157,32 @@ export class AssetCollection extends SmrtCollection<Asset> {
     const db = this.db;
 
     // Query for all assets with this primary version ID or ID matching primary version ID
-    const { rows } = await db.query(
-      'SELECT * FROM assets WHERE primary_version_id = ? OR id = ? ORDER BY version ASC',
-      [primaryVersionId, primaryVersionId],
-    );
+    // Split OR logic into two queries since semantic adapters don't support OR directly
+    const [versionsRows, primaryRow] = await Promise.all([
+      db.list('assets', {
+        where: { primary_version_id: primaryVersionId },
+        orderBy: 'version ASC',
+      }),
+      db.get('assets', { id: primaryVersionId }),
+    ]);
 
-    return (rows as any[]).map((row) => {
+    // Combine results and deduplicate by ID
+    const allRows = primaryRow ? [primaryRow, ...versionsRows] : versionsRows;
+    const uniqueAssets = new Map<string, any>();
+    for (const row of allRows) {
+      uniqueAssets.set((row as any).id, row);
+    }
+
+    // Convert to Asset instances and sort by version
+    const assets = Array.from(uniqueAssets.values()).map((row) => {
       const asset = new Asset();
       Object.assign(asset, row);
       return asset;
     });
+
+    // Sort by version number
+    assets.sort((a, b) => a.version - b.version);
+    return assets;
   }
 
   /**
@@ -185,10 +205,9 @@ export class AssetCollection extends SmrtCollection<Asset> {
     const db = this.db;
     const pattern = mimePattern.replace('*', '%');
 
-    const { rows } = await db.query(
-      'SELECT * FROM assets WHERE mime_type LIKE ?',
-      [pattern],
-    );
+    const rows = await db.list('assets', {
+      where: { 'mime_type like': pattern },
+    });
 
     return (rows as any[]).map((row) => {
       const asset = new Asset();
