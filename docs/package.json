@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-docs",
-  "version": "0.41.0",
+  "version": "0.4.1",
   "private": true,
   "main": "docusaurus.config.ts",
   "description": "SMRT Framework Documentation - TypeScript framework for building vertical AI agents",
