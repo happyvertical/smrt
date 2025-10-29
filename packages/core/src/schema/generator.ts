@@ -117,11 +117,13 @@ export class SchemaGenerator {
         column.defaultValue = fieldDef.default;
       } else if (
         !fieldDef.required &&
-        this.mapFieldTypeToSQL(fieldDef.type) === 'TEXT'
+        this.mapFieldTypeToSQL(fieldDef.type) === 'TEXT' &&
+        fieldName !== 'name' // Exclude 'name' - it's optional per PR #94 (slug fallback chain)
       ) {
         // For TEXT columns without explicit default or required constraint,
         // add NOT NULL DEFAULT '' to prevent DuckDB ANY type inference
         // DuckDB infers ANY type for nullable TEXT columns without defaults
+        // Exception: 'name' field is optional (slug generation uses fallback: name → title → label → id)
         column.notNull = true;
         column.defaultValue = '';
       }

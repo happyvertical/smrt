@@ -182,4 +182,68 @@ describe('SmrtObject', () => {
       expect(council.tableName).toBe('custom_councils');
     });
   });
+
+  describe('Nullable Name Field (Issue #111)', () => {
+    // Test class that doesn't redefine name (inherits from SmrtObject)
+    @smrt({ tableName: 'test_meetings' })
+    class TestMeeting extends SmrtObject {
+      title: string = '';
+      date?: Date;
+    }
+
+    it('should inherit null name from SmrtObject when not redefined', async () => {
+      const meeting = new TestMeeting({
+        title: 'Town Council Meeting',
+        _skipLoad: true,
+      });
+      await meeting.initialize();
+
+      // name should be inherited from SmrtObject and remain null
+      expect(meeting.name).toBeNull();
+    });
+
+    it('should generate slug from title when name is null (PR #94 fallback)', async () => {
+      const meeting = new TestMeeting({
+        title: 'Town Council Meeting',
+        _skipLoad: true,
+      });
+      await meeting.initialize();
+
+      // Slug should be generated from title (PR #94 fallback chain: name → title → label → id)
+      const slug = await meeting.getSlug();
+      expect(slug).toBe('town-council-meeting');
+    });
+
+    it('should allow name field to be explicitly set', async () => {
+      const meeting = new TestMeeting({
+        title: 'Meeting',
+        _skipLoad: true,
+      });
+      await meeting.initialize();
+
+      // Explicitly set name (overrides inherited null)
+      meeting.name = 'Custom Name';
+      expect(meeting.name).toBe('Custom Name');
+
+      // Slug should now use name instead of title
+      const slug = await meeting.getSlug();
+      expect(slug).toBe('custom-name');
+    });
+
+    it('should fall back to id for slug when both name and title are empty', async () => {
+      const meeting = new TestMeeting({
+        id: 'test-id-123',
+        _skipLoad: true,
+      });
+      await meeting.initialize();
+
+      // Both name and title are null/empty
+      expect(meeting.name).toBeNull();
+      expect(meeting.title).toBe('');
+
+      // Slug should fall back to ID (PR #94 final fallback)
+      const slug = await meeting.getSlug();
+      expect(slug).toBe('test-id-123');
+    });
+  });
 });
