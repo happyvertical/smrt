@@ -5,6 +5,7 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { text } from '@happyvertical/smrt-core/fields';
 import type { AccountOptions, AccountType, CurrencyCode } from '../types';
 
 @smrt({
@@ -13,8 +14,7 @@ import type { AccountOptions, AccountType, CurrencyCode } from '../types';
   cli: true,
 })
 export class Account extends SmrtObject {
-  // id, slug, name inherited from SmrtObject
-
+  name = text({ required: true });
   type: AccountType = 'asset';
   currency: CurrencyCode = 'USD'; // Default to USD, should be set explicitly
   parentId = ''; // FK to parent Account (nullable for root accounts)
