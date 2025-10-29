@@ -90,7 +90,8 @@ export async function setupTableFromClass(db: any, ClassType: any) {
     return _setupTableFromClassPromises[tableName];
   }
 
-  _setupTableFromClassPromises[tableName] = (async () => {
+  // Create the setup promise
+  const setupPromise = (async () => {
     try {
       // Get fields from registry (from AST manifest)
       const cachedFields = ObjectRegistry.getFields(className);
@@ -110,10 +111,15 @@ export async function setupTableFromClass(db: any, ClassType: any) {
 
       await syncSchema({ db, schema });
     } catch (error) {
-      _setupTableFromClassPromises[tableName] = null; // Allow retry on failure
+      // CRITICAL: Clear cache BEFORE throwing to prevent race condition
+      // This ensures concurrent callers don't get a stale reference
+      _setupTableFromClassPromises[tableName] = null;
       throw error;
     }
   })();
 
-  return _setupTableFromClassPromises[tableName];
+  // Store the promise in cache AFTER creating it
+  _setupTableFromClassPromises[tableName] = setupPromise;
+
+  return setupPromise;
 }
