@@ -284,9 +284,17 @@ export class SmrtClass {
 
     try {
       // Create all system tables
-      for (const createTableSQL of ALL_SYSTEM_TABLES) {
-        // Execute as raw SQL (not a parameterized query)
-        await this._db.query(createTableSQL);
+      // Use syncSchema() if available (works with JSON adapter SDK fix)
+      // Fall back to query() for adapters without syncSchema()
+      if (this._db.syncSchema) {
+        // syncSchema() triggers SDK fix for JSON adapter to export empty tables
+        const schema = ALL_SYSTEM_TABLES.join(';\n');
+        await this._db.syncSchema(schema);
+      } else {
+        // Fallback for adapters without syncSchema()
+        for (const createTableSQL of ALL_SYSTEM_TABLES) {
+          await this._db.query(createTableSQL);
+        }
       }
 
       // Record current schema version
