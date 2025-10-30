@@ -18,24 +18,24 @@ import { ASTScanner } from '../scanner/ast-scanner';
 // Define test classes at top level so AST scanner can find them
 // Use Issue75 prefix to avoid collisions with other test files
 class Issue75Product extends SmrtObject {
-  name = text();
-  productName = text();
-  price = decimal();
-  inStock = boolean();
+  name = text({ default: '' });
+  productName = text({ default: 'Test Product' });
+  price = decimal({ default: 99.99 });
+  inStock = boolean({ default: true });
 }
 
 class Issue75Article extends SmrtObject {
-  name = text();
-  title = text();
-  body = text();
-  published = boolean();
+  name = text({ default: '' });
+  title = text({ default: 'Test Article' });
+  body = text({ default: 'Article content' });
+  published = boolean({ default: false });
 }
 
 class Issue75Book extends SmrtObject {
-  name = text();
-  bookTitle = text();
-  author = text();
-  pages = integer();
+  name = text({ default: '' });
+  bookTitle = text({ default: 'The Book' });
+  author = text({ default: 'Author Name' });
+  pages = integer({ default: 300 });
 }
 
 describe('Issue #75: Circular Serialization Errors', () => {
