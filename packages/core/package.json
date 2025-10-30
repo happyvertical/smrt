@@ -31,7 +31,9 @@
     "./runtime": "./dist/runtime.js",
     "./prebuild": "./dist/prebuild.js",
     "./prebuild/cli": "./dist/prebuild/cli.js",
-    "./consumer-plugin": "./dist/consumer-plugin.js"
+    "./consumer-plugin": "./dist/consumer-plugin.js",
+    "./scanner": "./dist/scanner/index.js",
+    "./scanner/types": "./dist/scanner/types.js"
   },
   "dependencies": {
     "@happyvertical/ai": "workspace:*",
