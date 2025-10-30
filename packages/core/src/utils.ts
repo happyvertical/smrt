@@ -276,6 +276,12 @@ export function formatDataJs(
       } else {
         normalizedData[camelKey] = value;
       }
+    } else if (
+      typeof value === 'number' &&
+      fields?.[camelKey]?.type?.toLowerCase() === 'boolean'
+    ) {
+      // Convert SQLite integers (0/1) to booleans for boolean fields
+      normalizedData[camelKey] = value === 1;
     } else {
       normalizedData[camelKey] = value;
     }
@@ -296,10 +302,22 @@ export function formatDataSql(data: Record<string, any>) {
     // Convert camelCase to snake_case for SQL
     const snakeKey = toSnakeCase(key);
 
-    if (value instanceof Date) {
-      normalizedData[snakeKey] = value.toISOString(); // Postgres accepts ISO format with timezone
+    // Extract value from Field instances
+    let actualValue = value;
+    if (
+      value &&
+      typeof value === 'object' &&
+      'value' in value &&
+      'type' in value
+    ) {
+      // This is a Field instance - extract its value
+      actualValue = value.value;
+    }
+
+    if (actualValue instanceof Date) {
+      normalizedData[snakeKey] = actualValue.toISOString(); // Postgres accepts ISO format with timezone
     } else {
-      normalizedData[snakeKey] = value;
+      normalizedData[snakeKey] = actualValue;
     }
   }
   return normalizedData;

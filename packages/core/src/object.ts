@@ -349,7 +349,19 @@ export class SmrtObject extends SmrtClass {
         // Only set if property has a setter or is writable
         // Skip readonly properties (e.g., tableName getter without setter)
         if (!descriptor || descriptor.set || descriptor.writable === true) {
-          this[field as keyof this] = data[field];
+          let value = data[field];
+
+          // Convert SQLite integers (0/1) to booleans for boolean fields
+          const fieldObj = fields[field];
+          if (
+            fieldObj &&
+            fieldObj.type === 'boolean' &&
+            typeof value === 'number'
+          ) {
+            value = value === 1;
+          }
+
+          this[field as keyof this] = value;
         }
       }
     }

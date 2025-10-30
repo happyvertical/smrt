@@ -365,6 +365,13 @@ export class SchemaGenerator {
         hasUpdatedAt = true;
       }
 
+      // Skip relationship fields that don't create columns
+      // oneToMany and manyToMany are relationship metadata, not actual database columns
+      // foreignKey DOES create a column (it stores the foreign key ID)
+      if (field.type === 'oneToMany' || field.type === 'manyToMany') {
+        continue;
+      }
+
       const sqlType = (field.getSqlType?.() || 'TEXT') as SQLDataType;
 
       const columnDef: ColumnDefinition = {
