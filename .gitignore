@@ -156,6 +156,7 @@ repomix-output.xml
 **/static-manifest.json
 **/test-manifest.ts
 **/test-manifest.json
+**/test-manifest-stub.ts
 
 # Auto-generated SMRT files
 **/.smrt/
