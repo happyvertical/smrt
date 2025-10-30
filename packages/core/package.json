@@ -32,7 +32,7 @@
     "./prebuild": "./dist/prebuild.js",
     "./prebuild/cli": "./dist/prebuild/cli.js",
     "./consumer-plugin": "./dist/consumer-plugin.js",
-    "./scanner": "./dist/scanner/index.js",
+    "./scanner": "./dist/scanner.js",
     "./scanner/types": "./dist/scanner/types.js"
   },
   "dependencies": {

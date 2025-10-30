@@ -426,6 +426,9 @@ importers:
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
+      fast-glob:
+        specifier: 3.3.3
+        version: 3.3.3
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
