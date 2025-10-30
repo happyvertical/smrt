@@ -70,22 +70,8 @@ export function getPackageName(
       }
     }
 
-    // For testing, check if class name suggests a package
-    const className = ctor.name;
-    if (className === 'Place' || className === 'PlaceType') {
-      return '@happyvertical/smrt-places';
-    }
-    if (
-      className === 'Event' ||
-      className === 'EventParticipant' ||
-      className === 'EventType'
-    ) {
-      return '@happyvertical/smrt-events';
-    }
-    if (className === 'Profile' || className === 'ProfileType') {
-      return '@happyvertical/smrt-profiles';
-    }
-
+    // Package name is now injected at build time into the manifest
+    // No need for brittle class name → package name mappings
     return null;
   } catch {
     return null;

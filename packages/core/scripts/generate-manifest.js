@@ -25,7 +25,7 @@ async function generateManifest() {
     const tsCode = `
 import { ASTScanner, ManifestGenerator } from './src/scanner/index.js';
 import fg from 'fast-glob';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 async function runScanner() {
@@ -59,6 +59,16 @@ async function runScanner() {
 }
 
 runScanner().then(manifest => {
+  // Inject package name from package.json
+  try {
+    const packageJsonPath = resolve(process.cwd(), 'package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+    manifest.packageName = packageJson.name;
+    console.log(\`[smrt] Injected package name: \${packageJson.name}\`);
+  } catch (error) {
+    console.warn('[smrt] Warning: Could not read package.json, packageName will be undefined');
+  }
+
   mkdirSync('src/manifest', { recursive: true });
   writeFileSync('src/manifest/static-manifest.json', JSON.stringify(manifest, null, 2));
 

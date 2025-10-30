@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   version: '1.0.0',
-  timestamp: 1761823423747,
+  timestamp: 1761828559866,
   objects: {
     testobject: {
       name: 'testobject',
@@ -1145,6 +1145,7 @@ export const testManifest: SmartObjectManifest = {
       },
     },
   },
+  packageName: '@happyvertical/smrt-core',
 } as const;
 
 export default testManifest;
