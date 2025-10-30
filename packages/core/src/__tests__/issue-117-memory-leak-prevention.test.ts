@@ -175,7 +175,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       // With LRU cache (size 100), oldest 50 were evicted automatically.
 
       expect(true).toBe(true); // Test passed
-    });
+    }, 15000); // 15 second timeout for this test (creates 150 SQLite DBs)
 
     it('should handle concurrent cache access without memory leaks', async () => {
       // Simulate concurrent requests to same collection
