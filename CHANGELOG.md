@@ -1,3 +1,40 @@
+# [0.5.0](https://github.com/happyvertical/smrt/compare/v0.4.1...v0.5.0) (2025-10-30)
+
+
+### Bug Fixes
+
+* **accounts:** add explicit name field to Account model ([#114](https://github.com/happyvertical/smrt/issues/114)) ([8d46a88](https://github.com/happyvertical/smrt/commit/8d46a88beb5f100180723d8f3e10973160ffa5b5)), closes [#113](https://github.com/happyvertical/smrt/issues/113) [#113](https://github.com/happyvertical/smrt/issues/113)
+* **core:** correct empty string type inference for DuckDB/JSON adapters ([#110](https://github.com/happyvertical/smrt/issues/110)) ([2acdadd](https://github.com/happyvertical/smrt/commit/2acdadd00538a40c1edd5e8f582ca8eb5f990c5a)), closes [#107](https://github.com/happyvertical/smrt/issues/107)
+* **core:** correct field type detection for nullable string fields ([2bc6980](https://github.com/happyvertical/smrt/commit/2bc6980df67be8d2a7aadbf8171dd0b9b58c08ea))
+* **core:** critical security and reliability fixes ([#127](https://github.com/happyvertical/smrt/issues/127)) ([8cce8ad](https://github.com/happyvertical/smrt/commit/8cce8ad54a05c57039bc7b5e910aa949306b854b)), closes [#115](https://github.com/happyvertical/smrt/issues/115) [#116](https://github.com/happyvertical/smrt/issues/116) [#117](https://github.com/happyvertical/smrt/issues/117) [#118](https://github.com/happyvertical/smrt/issues/118) [#115](https://github.com/happyvertical/smrt/issues/115) [#117](https://github.com/happyvertical/smrt/issues/117) [#118](https://github.com/happyvertical/smrt/issues/118) [#115](https://github.com/happyvertical/smrt/issues/115) [#115](https://github.com/happyvertical/smrt/issues/115) [#116](https://github.com/happyvertical/smrt/issues/116) [#117](https://github.com/happyvertical/smrt/issues/117) [#118](https://github.com/happyvertical/smrt/issues/118) [#115](https://github.com/happyvertical/smrt/issues/115)
+* **core:** resolve remaining test failures in utils and issue-75 ([#130](https://github.com/happyvertical/smrt/issues/130)) ([19314ad](https://github.com/happyvertical/smrt/commit/19314ada468ef3f309ac82ad7697b1ce9be0d727)), closes [#128](https://github.com/happyvertical/smrt/issues/128) [#69](https://github.com/happyvertical/smrt/issues/69)
+
+
+### Code Refactoring
+
+* **core:** remove name field from SmrtObject base class ([#113](https://github.com/happyvertical/smrt/issues/113)) ([96fe4fc](https://github.com/happyvertical/smrt/commit/96fe4fc595b9f3834a8811e250906c8c546c6f09)), closes [#65](https://github.com/happyvertical/smrt/issues/65) [#111](https://github.com/happyvertical/smrt/issues/111) [#112](https://github.com/happyvertical/smrt/issues/112)
+
+
+### BREAKING CHANGES
+
+* **core:** SmrtObject base class no longer includes `name` field.
+All SMRT objects must explicitly define name/title/label fields if needed.
+Slug generation now uses fallback chain: title → label → id (not name).
+
+Note: Packages already compliant (no changes needed):
+- assets: All classes had explicit `name = ''`
+- places: Both classes had explicit name fields
+- profiles: All relevant classes had explicit `name = text({ required: true })`
+- products: Product and Category already had explicit `name = ''`
+
+Test Results:
+- All tests pass (457 passing, 19 skipped)
+* **core:** Numeric nullable fields now need explicit Field helpers.
+For numeric fields that can be null, use explicit field definitions:
+  latitude = decimal({ nullable: true })
+
+This is safer than auto-inferring all nullables as decimal.
+
 ## [1.3.1](https://github.com/happyvertical/smrt/compare/v1.3.0...v1.3.1) (2025-10-29)
 
 
