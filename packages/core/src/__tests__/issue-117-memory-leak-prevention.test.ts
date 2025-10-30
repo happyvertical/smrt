@@ -14,18 +14,18 @@ import { integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
+// Test class for cache testing - defined at top level for AST scanner
+@smrt({ api: true, mcp: true, cli: true })
+class CacheTestObject extends SmrtObject {
+  name = text();
+  value = integer();
+}
+
+class CacheTestCollection extends SmrtCollection<CacheTestObject> {
+  static readonly _itemClass = CacheTestObject;
+}
+
 describe('Issue #117: Memory Leak Prevention', () => {
-  // Test class for cache testing
-  @smrt({ api: true, mcp: true, cli: true })
-  class CacheTestObject extends SmrtObject {
-    name = text();
-    value = integer();
-  }
-
-  class CacheTestCollection extends SmrtCollection<CacheTestObject> {
-    static readonly _itemClass = CacheTestObject;
-  }
-
   beforeEach(() => {
     // Clear registry before each test
     ObjectRegistry.clear();
@@ -49,14 +49,14 @@ describe('Issue #117: Memory Leak Prevention', () => {
       const collection1 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory' },
+          persistence: { type: 'sqlite', url: ':memory:' },
         },
       );
 
       const collection2 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory' },
+          persistence: { type: 'sqlite', url: ':memory:' },
         },
       );
 
@@ -73,7 +73,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
           'CacheTestObject',
           {
             persistence: {
-              type: 'memory',
+              type: 'sqlite',
               url: `test-${i}.db`,
             },
           },
@@ -84,7 +84,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       // Access collection 0 to make it "recently used"
       await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
         persistence: {
-          type: 'memory',
+          type: 'sqlite',
           url: 'test-0.db',
         },
       });
@@ -92,7 +92,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       // Create one more collection, should evict collection 1 (least recently used)
       await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
         persistence: {
-          type: 'memory',
+          type: 'sqlite',
           url: 'test-100.db',
         },
       });
@@ -102,7 +102,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
         'CacheTestObject',
         {
           persistence: {
-            type: 'memory',
+            type: 'sqlite',
             url: 'test-0.db',
           },
         },
@@ -114,7 +114,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
         'CacheTestObject',
         {
           persistence: {
-            type: 'memory',
+            type: 'sqlite',
             url: 'test-1.db',
           },
         },
@@ -127,7 +127,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       const collection1 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory' },
+          persistence: { type: 'sqlite', url: ':memory:' },
         },
       );
 
@@ -145,7 +145,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       const collection2 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory' },
+          persistence: { type: 'sqlite', url: ':memory:' },
         },
       );
 
@@ -163,7 +163,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       for (let i = 0; i < 150; i++) {
         await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
           persistence: {
-            type: 'memory',
+            type: 'sqlite',
             url: `collection-${i}.db`, // Each has unique URL
           },
         });
@@ -188,7 +188,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
         const promise = ObjectRegistry.getCollection<CacheTestObject>(
           'CacheTestObject',
           {
-            persistence: { type: 'memory' },
+            persistence: { type: 'sqlite', url: ':memory:' },
           },
         );
         promises.push(promise);
@@ -210,14 +210,14 @@ describe('Issue #117: Memory Leak Prevention', () => {
       const collection1 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory', url: 'test.db' },
+          persistence: { type: 'sqlite', url: 'test.db' },
         },
       );
 
       const collection2 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory', url: 'different.db' },
+          persistence: { type: 'sqlite', url: 'different.db' },
         },
       );
 
@@ -227,7 +227,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       // Requesting again with same config returns cached instance
       const collection1Again =
         await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
-          persistence: { type: 'memory', url: 'test.db' },
+          persistence: { type: 'sqlite', url: 'test.db' },
         });
 
       expect(collection1Again).toBe(collection1);
@@ -237,7 +237,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       const collection1 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory' },
+          persistence: { type: 'sqlite', url: ':memory:' },
           // No AI config
         },
       );
@@ -245,7 +245,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       const collection2 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory' },
+          persistence: { type: 'sqlite', url: ':memory:' },
           ai: {}, // AI config present (even if empty)
         },
       );
@@ -258,7 +258,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
   describe('Backwards Compatibility', () => {
     it('should maintain existing collection.create() behavior', async () => {
       const collection = await CacheTestCollection.create({
-        persistence: { type: 'memory' },
+        persistence: { type: 'sqlite', url: ':memory:' },
       });
 
       expect(collection).toBeInstanceOf(CacheTestCollection);
@@ -270,14 +270,14 @@ describe('Issue #117: Memory Leak Prevention', () => {
       const collection1 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory' },
+          persistence: { type: 'sqlite', url: ':memory:' },
         },
       );
 
       const collection2 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'memory' },
+          persistence: { type: 'sqlite', url: ':memory:' },
         },
       );
 

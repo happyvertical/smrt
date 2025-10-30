@@ -20,6 +20,13 @@ class TestObject extends SmrtObject {
   count = integer();
 }
 
+// Test class for readonly property handling (Issue #61)
+@smrt({ tableName: 'custom_councils' })
+class Council extends SmrtObject {
+  name = text();
+  description? = text();
+}
+
 describe('SmrtObject', () => {
   describe('Basic Instantiation', () => {
     it('should create a new instance with provided values', async () => {
@@ -106,13 +113,6 @@ describe('SmrtObject', () => {
   });
 
   describe('Readonly Property Handling (Issue #61)', () => {
-    // Test class with custom tableName in decorator
-    @smrt({ tableName: 'custom_councils' })
-    class Council extends SmrtObject {
-      name = text();
-      description? = text();
-    }
-
     it('should not throw error when tableName is specified in decorator', async () => {
       // This would previously throw:
       // "TypeError: Cannot set property tableName of #<SmrtObject> which has only a getter"
