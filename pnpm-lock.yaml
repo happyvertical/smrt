@@ -6,21 +6,23 @@ settings:
 
 overrides:
   '@types/node': 24.0.0
-  '@have/ai': workspace:*
-  '@have/cache': workspace:*
-  '@have/config': workspace:*
-  '@have/documents': workspace:*
-  '@have/email': workspace:*
-  '@have/files': workspace:*
-  '@have/geo': workspace:*
-  '@have/languages': workspace:*
-  '@have/logger': workspace:*
-  '@have/ocr': workspace:*
-  '@have/pdf': workspace:*
-  '@have/spider': workspace:*
-  '@have/sql': workspace:*
-  '@have/translator': workspace:*
-  '@have/utils': workspace:*
+  '@happyvertical/ai': workspace:*
+  '@happyvertical/cache': workspace:*
+  '@happyvertical/config': workspace:*
+  '@happyvertical/documents': workspace:*
+  '@happyvertical/email': workspace:*
+  '@happyvertical/files': workspace:*
+  '@happyvertical/geo': workspace:*
+  '@happyvertical/github-actions': workspace:*
+  '@happyvertical/languages': workspace:*
+  '@happyvertical/logger': workspace:*
+  '@happyvertical/ocr': workspace:*
+  '@happyvertical/pdf': workspace:*
+  '@happyvertical/sdk-mcp': workspace:*
+  '@happyvertical/spider': workspace:*
+  '@happyvertical/sql': workspace:*
+  '@happyvertical/translator': workspace:*
+  '@happyvertical/utils': workspace:*
 
 importers:
 
@@ -371,6 +373,9 @@ importers:
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
+      fast-glob:
+        specifier: 3.3.3
+        version: 3.3.3
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -424,6 +429,9 @@ importers:
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
+      fast-glob:
+        specifier: 3.3.3
+        version: 3.3.3
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -590,36 +598,6 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.20.6)(yaml@2.8.1)
-
-  sdk/packages/ai: {}
-
-  sdk/packages/cache: {}
-
-  sdk/packages/documents: {}
-
-  sdk/packages/files: {}
-
-  sdk/packages/geo: {}
-
-  sdk/packages/github-actions: {}
-
-  sdk/packages/logger: {}
-
-  sdk/packages/ocr: {}
-
-  sdk/packages/pdf: {}
-
-  sdk/packages/sdk-mcp: {}
-
-  sdk/packages/spider: {}
-
-  sdk/packages/sql: {}
-
-  sdk/packages/translator: {}
-
-  sdk/packages/utils: {}
-
-  sdk/packages/weather: {}
 
 packages:
 

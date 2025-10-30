@@ -279,6 +279,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const {
       _className,
       db,
+      persistence, // Also extract persistence alias
       ai,
       fs,
       logging,
@@ -291,6 +292,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const collectionOptions: SmrtCollectionOptions = {
       _className,
       db,
+      persistence, // Pass persistence through so initialize() can map it to db
       ai,
       fs,
       logging,

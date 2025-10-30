@@ -600,10 +600,8 @@ export class ASTScanner {
         if (funcName === 'datetime') return 'datetime';
         if (funcName === 'json') return 'json';
         if (funcName === 'foreignkey') return 'foreignKey';
-        if (funcName === 'onetomany' || funcName === 'manytomany') {
-          // Relationship fields don't have columns
-          return 'foreignKey';
-        }
+        if (funcName === 'onetomany') return 'oneToMany';
+        if (funcName === 'manytomany') return 'manyToMany';
       }
     }
 

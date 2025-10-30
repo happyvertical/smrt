@@ -36,6 +36,49 @@ export type { FieldDefinition, MethodDefinition };
 const manifestCache = new Map<string, Manifest>();
 
 /**
+ * Local test manifest - loaded from current package during test runs
+ * undefined = not attempted yet, null = attempted but not found, Manifest = successfully loaded
+ */
+let localTestManifest: Manifest | null | undefined;
+
+/**
+ * Load local test manifest from current package (synchronous)
+ *
+ * During test runs, domain packages generate a test manifest in src/manifest/test-manifest.json.
+ * This function attempts to load that manifest so domain package tests can access field definitions.
+ *
+ * @returns Loaded manifest or null if not found or undefined if not yet attempted
+ */
+export function loadLocalTestManifestSync(): Manifest | null | undefined {
+  if (localTestManifest !== undefined) {
+    return localTestManifest;
+  }
+
+  try {
+    // Try to load from current working directory
+    const path = require('node:path');
+    const fs = require('node:fs');
+    const manifestPath = path.resolve(
+      process.cwd(),
+      'src/manifest/test-manifest.json',
+    );
+
+    const manifestJson = fs.readFileSync(manifestPath, 'utf-8');
+    localTestManifest = JSON.parse(manifestJson);
+
+    console.log(
+      `[manifest-loader] Loaded local test manifest from ${manifestPath}`,
+    );
+    return localTestManifest;
+  } catch {
+    // File doesn't exist or can't be read - this is OK for production
+    // Mark as attempted so we don't try again
+    localTestManifest = null;
+    return null;
+  }
+}
+
+/**
  * Extract package name from class constructor
  *
  * Uses the file path from the constructor's source location to determine
@@ -122,9 +165,10 @@ export async function loadExternalManifest(
  * Discover manifest entry synchronously (checks only loaded manifests)
  *
  * Search order:
- * 1. testManifest (for test classes)
- * 2. staticManifest (for core framework classes)
- * 3. Cached external manifests
+ * 1. localTestManifest (for domain package test classes)
+ * 2. testManifest (for core test classes)
+ * 3. staticManifest (for core framework classes)
+ * 4. Cached external manifests
  *
  * @param className - Class name (for lookup)
  * @returns ManifestEntry or undefined if not found
@@ -134,7 +178,18 @@ export function discoverManifestSync(
 ): ManifestEntry | undefined {
   const name = className.toLowerCase();
 
-  // 1. Check testManifest (test classes)
+  // 1. Check localTestManifest (domain package test classes) - try to load if not attempted yet
+  if (localTestManifest === undefined) {
+    loadLocalTestManifestSync();
+  }
+  if (localTestManifest?.objects[name]) {
+    return localTestManifest.objects[name];
+  }
+  if (localTestManifest?.objects[className]) {
+    return localTestManifest.objects[className];
+  }
+
+  // 2. Check testManifest (core test classes)
   if (testManifest?.objects[name]) {
     return testManifest.objects[name];
   }
@@ -142,7 +197,7 @@ export function discoverManifestSync(
     return testManifest.objects[className];
   }
 
-  // 2. Check staticManifest (core framework classes)
+  // 3. Check staticManifest (core framework classes)
   const staticObjects = staticManifest.objects as Record<string, ManifestEntry>;
   if (staticObjects[name]) {
     return staticObjects[name];
@@ -151,7 +206,7 @@ export function discoverManifestSync(
     return staticObjects[className];
   }
 
-  // 3. Check cached external manifests
+  // 4. Check cached external manifests
   for (const manifest of manifestCache.values()) {
     if (manifest.objects[name]) {
       return manifest.objects[name];

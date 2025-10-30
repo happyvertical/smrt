@@ -115,16 +115,11 @@ export class SchemaGenerator {
       // Handle default values
       if (fieldDef.default !== undefined) {
         column.defaultValue = fieldDef.default;
-      } else if (
-        !fieldDef.required &&
-        this.mapFieldTypeToSQL(fieldDef.type) === 'TEXT'
-      ) {
-        // For TEXT columns without explicit default or required constraint,
-        // add NOT NULL DEFAULT '' to prevent DuckDB ANY type inference
-        // DuckDB infers ANY type for nullable TEXT columns without defaults
-        column.notNull = true;
-        column.defaultValue = '';
       }
+      // Note: Removed automatic NOT NULL DEFAULT '' for TEXT columns
+      // This was forcing all TEXT fields to be NOT NULL regardless of required option
+      // If DuckDB ANY type inference is an issue, it should be handled at the adapter level
+      // or with an explicit field option, not by silently changing schema semantics
 
       // Handle foreign keys
       if (fieldDef.type === 'foreignKey' && fieldDef.related) {
@@ -370,6 +365,13 @@ export class SchemaGenerator {
         hasUpdatedAt = true;
       }
 
+      // Skip relationship fields that don't create columns
+      // oneToMany and manyToMany are relationship metadata, not actual database columns
+      // foreignKey DOES create a column (it stores the foreign key ID)
+      if (field.type === 'oneToMany' || field.type === 'manyToMany') {
+        continue;
+      }
+
       const sqlType = (field.getSqlType?.() || 'TEXT') as SQLDataType;
 
       const columnDef: ColumnDefinition = {
@@ -383,11 +385,11 @@ export class SchemaGenerator {
       // Get default value
       if (field.options?.default !== undefined) {
         columnDef.defaultValue = field.options.default;
-      } else if (!columnDef.notNull && columnDef.type === 'TEXT') {
-        // Prevent DuckDB ANY type inference for nullable TEXT columns
-        columnDef.notNull = true;
-        columnDef.defaultValue = '';
       }
+      // Note: Removed automatic NOT NULL DEFAULT '' for TEXT columns
+      // This was forcing all TEXT fields to be NOT NULL regardless of required option
+      // If DuckDB ANY type inference is an issue, it should be handled at the adapter level
+      // or with an explicit field option, not by silently changing schema semantics
 
       // Handle foreign keys
       if (field.type === 'foreignKey') {

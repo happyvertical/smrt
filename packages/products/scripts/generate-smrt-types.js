@@ -1,12 +1,13 @@
 #!/usr/bin/env node
+
 /**
  * Generate SMRT type declarations for products package
  * This creates the TypeScript declarations needed for virtual modules
  */
 
-import { generateDeclarations } from '@happyvertical/smrt-core/prebuild';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generateDeclarations } from '@happyvertical/smrt-core/prebuild';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -30,14 +31,14 @@ const basicManifest = {
         price: { type: 'decimal', required: false },
         inStock: { type: 'boolean', required: false },
         specifications: { type: 'json', required: false },
-        tags: { type: 'json', required: false }
+        tags: { type: 'json', required: false },
       },
       methods: {},
       decoratorConfig: {
         api: { include: ['list', 'get', 'create', 'update'] },
         mcp: { include: ['list', 'get'] },
-        cli: true
-      }
+        cli: true,
+      },
     },
     category: {
       name: 'category',
@@ -51,16 +52,16 @@ const basicManifest = {
         parentId: { type: 'text', required: false },
         level: { type: 'integer', required: false },
         productCount: { type: 'integer', required: false },
-        active: { type: 'boolean', required: false }
+        active: { type: 'boolean', required: false },
       },
       methods: {},
       decoratorConfig: {
         api: { include: ['list', 'get', 'create', 'update'] },
         mcp: { include: ['list', 'get'] },
-        cli: true
-      }
-    }
-  }
+        cli: true,
+      },
+    },
+  },
 };
 
 try {
@@ -71,7 +72,7 @@ try {
     outDir: 'src/lib/types/smrt-generated',
     projectRoot,
     includeVirtualModules: true,
-    includeObjectTypes: true
+    includeObjectTypes: true,
   });
 
   console.log('[products] ✅ Generated SMRT type declarations');

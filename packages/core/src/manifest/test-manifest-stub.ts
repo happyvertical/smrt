@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   version: '1.0.0',
-  timestamp: 1761828559866,
+  timestamp: 1761830359623,
   objects: {
     testobject: {
       name: 'testobject',
@@ -282,37 +282,6 @@ export const testManifest: SmartObjectManifest = {
         cli: false,
       },
     },
-    testevent: {
-      name: 'testevent',
-      className: 'TestEvent',
-      collection: 'testevents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
-        },
-        description: {
-          type: 'text',
-          required: true,
-        },
-        startDate: {
-          type: 'datetime',
-          required: true,
-        },
-        endDate: {
-          type: 'datetime',
-          required: true,
-        },
-      },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
-    },
     testprofile: {
       name: 'testprofile',
       className: 'TestProfile',
@@ -334,6 +303,64 @@ export const testManifest: SmartObjectManifest = {
         },
         bio: {
           type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {
+        api: {},
+        mcp: {},
+        cli: false,
+      },
+    },
+    testmetadata: {
+      name: 'testmetadata',
+      className: 'TestMetadata',
+      collection: 'testmetadatas',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/circular-dependency.test.ts',
+      fields: {
+        profileId: {
+          type: 'foreignKey',
+          required: true,
+        },
+        key: {
+          type: 'text',
+          required: true,
+        },
+        value: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {
+        api: {
+          include: ['list', 'get'],
+        },
+      },
+    },
+    testevent: {
+      name: 'testevent',
+      className: 'TestEvent',
+      collection: 'testevents',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts',
+      fields: {
+        title: {
+          type: 'text',
+          required: true,
+        },
+        description: {
+          type: 'text',
+          required: true,
+        },
+        startDate: {
+          type: 'datetime',
+          required: true,
+        },
+        endDate: {
+          type: 'datetime',
           required: true,
         },
       },
