@@ -1,3 +1,41 @@
+# [0.6.0](https://github.com/happyvertical/smrt/compare/v0.5.0...v0.6.0) (2025-10-30)
+
+
+### Bug Fixes
+
+* **core:** remove runtime primitive type inference fallback ([#129](https://github.com/happyvertical/smrt/issues/129)) ([4b44359](https://github.com/happyvertical/smrt/commit/4b443597b3c410d4608932cee37423ac6653e959)), closes [#128](https://github.com/happyvertical/smrt/issues/128) [#69](https://github.com/happyvertical/smrt/issues/69) [#65](https://github.com/happyvertical/smrt/issues/65) [#115](https://github.com/happyvertical/smrt/issues/115) [#87](https://github.com/happyvertical/smrt/issues/87) [#89](https://github.com/happyvertical/smrt/issues/89) [#144](https://github.com/happyvertical/smrt/issues/144) [#128](https://github.com/happyvertical/smrt/issues/128) [#69](https://github.com/happyvertical/smrt/issues/69) [#65](https://github.com/happyvertical/smrt/issues/65) [#128](https://github.com/happyvertical/smrt/issues/128) [#69](https://github.com/happyvertical/smrt/issues/69)
+
+
+### BREAKING CHANGES
+
+* **core:** SMRT objects must now use Field helpers (text(),
+decimal(), integer(), boolean(), datetime(), etc.) instead of relying
+on runtime type inference from property initializers.
+
+Before:
+```typescript
+class Product extends SmrtObject {
+  name: string = '';
+  price: number = 0;
+}
+```
+
+After:
+```typescript
+class Product extends SmrtObject {
+  name = text();
+  price = decimal();
+}
+```
+
+Changes:
+- registry.ts: Removed primitive type inference logic (lines 277-363)
+- registry.ts: Field detection now only accepts Field helper instances
+- All test files: Updated to use Field helpers explicitly
+- issue-65-nullable-fields.test.ts: Now uses decimal({ nullable: true })
+
+Test results:
+
 # [0.5.0](https://github.com/happyvertical/smrt/compare/v0.4.1...v0.5.0) (2025-10-30)
 
 
