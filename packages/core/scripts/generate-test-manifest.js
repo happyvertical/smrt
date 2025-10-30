@@ -8,10 +8,9 @@
  * instead of requiring explicit Field helpers, maintaining consistency with production code.
  */
 
+import { writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { writeFileSync, mkdirSync } from 'node:fs';
-import fg from 'fast-glob';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -99,7 +98,9 @@ export default testManifest;
       execSync('npx tsx temp-test-manifest-gen.ts', { stdio: 'inherit' });
     } finally {
       // Clean up
-      try { execSync('rm temp-test-manifest-gen.ts'); } catch {}
+      try {
+        execSync('rm temp-test-manifest-gen.ts');
+      } catch {}
     }
   } catch (error) {
     console.error('[smrt] ❌ Failed to generate test manifest:', error);

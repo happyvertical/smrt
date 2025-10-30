@@ -5,10 +5,9 @@
  * Scans TypeScript source files and generates static manifest JSON
  */
 
+import { writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
-import fg from 'fast-glob';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -97,7 +96,9 @@ export default staticManifest;
       execSync('npx tsx temp-manifest-gen.ts', { stdio: 'inherit' });
     } finally {
       // Clean up
-      try { execSync('rm temp-manifest-gen.ts'); } catch {}
+      try {
+        execSync('rm temp-manifest-gen.ts');
+      } catch {}
     }
 
     return { version: '1.0.0', timestamp: Date.now(), objects: {} };
@@ -107,7 +108,7 @@ export default staticManifest;
   }
 }
 
-function createEmptyManifest() {
+function _createEmptyManifest() {
   return {
     version: '1.0.0',
     timestamp: Date.now(),
