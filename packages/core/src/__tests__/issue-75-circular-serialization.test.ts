@@ -15,6 +15,29 @@ import { boolean, decimal, integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ASTScanner } from '../scanner/ast-scanner';
 
+// Define test classes at top level so AST scanner can find them
+// Use Issue75 prefix to avoid collisions with other test files
+class Issue75Product extends SmrtObject {
+  name = text();
+  productName = text();
+  price = decimal();
+  inStock = boolean();
+}
+
+class Issue75Article extends SmrtObject {
+  name = text();
+  title = text();
+  body = text();
+  published = boolean();
+}
+
+class Issue75Book extends SmrtObject {
+  name = text();
+  bookTitle = text();
+  author = text();
+  pages = integer();
+}
+
 describe('Issue #75: Circular Serialization Errors', () => {
   describe('AST Scanner excludes base class properties', () => {
     it('should exclude system properties from SmrtClass and SmrtObject', () => {
@@ -39,15 +62,8 @@ describe('Issue #75: Circular Serialization Errors', () => {
 
   describe('Serialization without circular references', () => {
     it('should serialize object to JSON without circular reference errors', async () => {
-      class TestProduct extends SmrtObject {
-        name = text();
-        productName = text();
-        price = decimal();
-        inStock = boolean();
-      }
-
       // Create instance with minimal options
-      const product = new TestProduct({
+      const product = new Issue75Product({
         name: 'Widget',
         db: ':memory:',
       });
@@ -77,14 +93,7 @@ describe('Issue #75: Circular Serialization Errors', () => {
     });
 
     it('should save object without circular reference errors', async () => {
-      class TestArticle extends SmrtObject {
-        name = text();
-        title = text();
-        body = text();
-        published = boolean();
-      }
-
-      const article = new TestArticle({
+      const article = new Issue75Article({
         name: 'My Article',
         db: ':memory:',
       });
@@ -96,7 +105,7 @@ describe('Issue #75: Circular Serialization Errors', () => {
 
       // Verify we can create a new instance and load it
       // Important: Use the same database instance (article.db) for retrieval
-      const retrieved = new TestArticle({
+      const retrieved = new Issue75Article({
         id: article.id,
         db: article.db, // Reuse the same database instance
       });
@@ -110,14 +119,7 @@ describe('Issue #75: Circular Serialization Errors', () => {
 
   describe('toJSON() method behavior', () => {
     it('should only include schema fields in toJSON() output', async () => {
-      class TestBook extends SmrtObject {
-        name = text();
-        bookTitle = text();
-        author = text();
-        pages = integer();
-      }
-
-      const book = new TestBook({
+      const book = new Issue75Book({
         name: 'Book 1',
         db: ':memory:',
       });

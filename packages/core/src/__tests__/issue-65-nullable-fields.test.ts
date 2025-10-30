@@ -11,23 +11,20 @@ import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { SchemaGenerator } from '../schema/generator';
 
-describe('Issue #65: Nullable number fields', () => {
-  @smrt({ api: true, mcp: true, cli: true })
-  class Place extends SmrtObject {
-    latitude = decimal({ nullable: true });
-    longitude = decimal({ nullable: true });
-    name = text();
-  }
+// Define test class at top level so AST scanner can find it
+@smrt({ api: true, mcp: true, cli: true })
+class Place extends SmrtObject {
+  latitude = decimal({ nullable: true });
+  longitude = decimal({ nullable: true });
+  name = text();
+}
 
+describe('Issue #65: Nullable number fields', () => {
   it('should detect nullable number fields in ObjectRegistry', () => {
     // Force registration
     new Place({ _skipLoad: true });
 
     const fields = ObjectRegistry.getFields('Place');
-
-    console.log('Registered fields:', Array.from(fields.keys()));
-    console.log('latitude field:', fields.get('latitude'));
-    console.log('longitude field:', fields.get('longitude'));
 
     // Nullable number fields should be registered
     expect(fields.has('latitude')).toBe(true);
@@ -54,10 +51,6 @@ describe('Issue #65: Nullable number fields', () => {
       fields,
     );
 
-    console.log('Generated schema columns:', Object.keys(schema.columns));
-    console.log('latitude column:', schema.columns.latitude);
-    console.log('longitude column:', schema.columns.longitude);
-
     // Nullable number fields should be in schema
     expect(schema.columns.latitude).toBeDefined();
     expect(schema.columns.longitude).toBeDefined();
@@ -81,9 +74,6 @@ describe('Issue #65: Nullable number fields', () => {
     );
 
     const sql = generator.generateSQL(schema);
-
-    console.log('Generated SQL:');
-    console.log(sql);
 
     // SQL should include latitude and longitude columns
     expect(sql).toContain('latitude');

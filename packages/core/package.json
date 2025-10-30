@@ -50,6 +50,7 @@
     "yaml": "^2.7.0"
   },
   "scripts": {
+    "pretest": "node scripts/generate-test-manifest.js",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
     "prebuild": "node scripts/generate-manifest.js",

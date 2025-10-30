@@ -378,7 +378,14 @@ export class ASTScanner {
     // Skip properties inherited from base classes to avoid circular serialization
     if (this.baseClassProperties.has(propertyName)) {
       // Exception: Allow specific SmrtObject schema properties that should be persisted
-      const SCHEMA_PROPERTIES = ['created_at', 'updated_at'];
+      // These match the SCHEMA_PROPERTIES list in registry.ts
+      const SCHEMA_PROPERTIES = [
+        'id',
+        'slug',
+        'context',
+        'created_at',
+        'updated_at',
+      ];
       if (!SCHEMA_PROPERTIES.includes(propertyName)) {
         return null;
       }
@@ -579,12 +586,42 @@ export class ASTScanner {
     }
     if (ts.isArrayLiteralExpression(initializer)) return 'json';
     if (ts.isObjectLiteralExpression(initializer)) return 'json';
+
+    // Handle call expressions (Field helpers like text(), integer(), datetime())
+    if (ts.isCallExpression(initializer)) {
+      const expression = initializer.expression;
+      if (ts.isIdentifier(expression)) {
+        const funcName = expression.text.toLowerCase();
+        // Map field helper function names to types
+        if (funcName === 'text') return 'text';
+        if (funcName === 'integer') return 'integer';
+        if (funcName === 'decimal') return 'decimal';
+        if (funcName === 'boolean') return 'boolean';
+        if (funcName === 'datetime') return 'datetime';
+        if (funcName === 'json') return 'json';
+        if (funcName === 'foreignkey') return 'foreignKey';
+        if (funcName === 'onetomany' || funcName === 'manytomany') {
+          // Relationship fields don't have columns
+          return 'foreignKey';
+        }
+      }
+    }
+
     if (ts.isNewExpression(initializer)) {
       const expression = initializer.expression;
       if (ts.isIdentifier(expression)) {
         const typeName = expression.text.toLowerCase();
         if (typeName === 'date') return 'datetime';
         if (typeName === 'array') return 'json';
+        if (typeName === 'field') {
+          // new Field('type', options) - extract type from first argument
+          if (initializer.arguments && initializer.arguments.length > 0) {
+            const firstArg = initializer.arguments[0];
+            if (ts.isStringLiteral(firstArg)) {
+              return firstArg.text as FieldDefinition['type'];
+            }
+          }
+        }
       }
     }
 
