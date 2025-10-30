@@ -9,1170 +9,1287 @@
 import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
-  version: '1.0.0',
-  timestamp: 1761830359623,
-  objects: {
-    testobject: {
-      name: 'testobject',
-      className: 'TestObject',
-      collection: 'testobjects',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/object.spec.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
+  "version": "1.0.0",
+  "timestamp": 1761857433031,
+  "objects": {
+    "testobject": {
+      "name": "testobject",
+      "className": "TestObject",
+      "collection": "testobjects",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/object.spec.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
         },
-        description: {
-          type: 'text',
-          required: false,
+        "description": {
+          "type": "text",
+          "required": false
         },
-        active: {
-          type: 'boolean',
-          required: true,
+        "active": {
+          "type": "boolean",
+          "required": true
         },
-        count: {
-          type: 'integer',
-          required: true,
-        },
+        "count": {
+          "type": "integer",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    perftestuser: {
-      name: 'perftestuser',
-      className: 'PerfTestUser',
-      collection: 'perftestusers',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/performance.spec.ts',
-      fields: {
-        username: {
-          type: 'text',
-          required: true,
+    "council": {
+      "name": "council",
+      "className": "Council",
+      "collection": "councils",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/object.spec.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
         },
-        email: {
-          type: 'text',
-          required: true,
-        },
-        age: {
-          type: 'integer',
-          required: true,
-        },
-        active: {
-          type: 'boolean',
-          required: true,
-        },
-        createdAt: {
-          type: 'datetime',
-          required: true,
-        },
-        lastLogin: {
-          type: 'datetime',
-          required: true,
-        },
-        profileData: {
-          type: 'text',
-          required: true,
-        },
+        "description": {
+          "type": "text",
+          "required": false
+        }
       },
-      methods: {
-        create: {
-          name: 'create',
-          async: true,
-          parameters: [
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "custom_councils"
+      }
+    },
+    "perftestuser": {
+      "name": "perftestuser",
+      "className": "PerfTestUser",
+      "collection": "perftestusers",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/performance.spec.ts",
+      "fields": {
+        "username": {
+          "type": "text",
+          "required": true
+        },
+        "email": {
+          "type": "text",
+          "required": true
+        },
+        "age": {
+          "type": "integer",
+          "required": true
+        },
+        "active": {
+          "type": "boolean",
+          "required": true
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": true
+        },
+        "lastLogin": {
+          "type": "datetime",
+          "required": true
+        },
+        "profileData": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {
+        "create": {
+          "name": "create",
+          "async": true,
+          "parameters": [
             {
-              name: 'options',
-              type: 'any',
-              optional: false,
-            },
+              "name": "options",
+              "type": "any",
+              "optional": false
+            }
           ],
-          returnType: 'Promise<PerfTestUser>',
-          isStatic: true,
-          isPublic: true,
-        },
+          "returnType": "Promise<PerfTestUser>",
+          "isStatic": true,
+          "isPublic": true
+        }
       },
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    perftestusers: {
-      name: 'perftestusers',
-      className: 'PerfTestUsers',
-      collection: 'perftestuserses',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/performance.spec.ts',
-      fields: {},
-      methods: {
-        create: {
-          name: 'create',
-          async: true,
-          parameters: [
+    "perftestusers": {
+      "name": "perftestusers",
+      "className": "PerfTestUsers",
+      "collection": "perftestuserses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/performance.spec.ts",
+      "fields": {},
+      "methods": {
+        "create": {
+          "name": "create",
+          "async": true,
+          "parameters": [
             {
-              name: 'options',
-              type: 'any',
-              optional: false,
-            },
+              "name": "options",
+              "type": "any",
+              "optional": false
+            }
           ],
-          returnType: 'Promise<PerfTestUsers>',
-          isStatic: true,
-          isPublic: true,
-        },
+          "returnType": "Promise<PerfTestUsers>",
+          "isStatic": true,
+          "isPublic": true
+        }
       },
-      decoratorConfig: {},
+      "decoratorConfig": {}
     },
-    testcategory: {
-      name: 'testcategory',
-      className: 'TestCategory',
-      collection: 'testcategories',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/registry.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
+    "testcategory": {
+      "name": "testcategory",
+      "className": "TestCategory",
+      "collection": "testcategories",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/registry.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
         },
-        description: {
-          type: 'text',
-          required: true,
-        },
+        "description": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    testcustomer: {
-      name: 'testcustomer',
-      className: 'TestCustomer',
-      collection: 'testcustomers',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/registry.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
+    "testcustomer": {
+      "name": "testcustomer",
+      "className": "TestCustomer",
+      "collection": "testcustomers",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/registry.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
         },
-        email: {
-          type: 'text',
-          required: true,
-        },
+        "email": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    testproduct: {
-      name: 'testproduct',
-      className: 'TestProduct',
-      collection: 'testproducts',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-integration.spec.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
+    "testproduct": {
+      "name": "testproduct",
+      "className": "TestProduct",
+      "collection": "testproducts",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-integration.spec.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
         },
-        price: {
-          type: 'decimal',
-          required: true,
+        "price": {
+          "type": "decimal",
+          "required": true
         },
-        stock: {
-          type: 'integer',
-          required: true,
-        },
+        "stock": {
+          "type": "integer",
+          "required": true
+        }
       },
-      methods: {
-        analyze: {
-          name: 'analyze',
-          async: true,
-          parameters: [
+      "methods": {
+        "analyze": {
+          "name": "analyze",
+          "async": true,
+          "parameters": [
             {
-              name: 'options',
-              type: 'any',
-              optional: false,
-              default: {},
-            },
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
           ],
-          returnType: 'void',
-          isStatic: false,
-          isPublic: true,
-        },
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        }
       },
-      decoratorConfig: {
-        api: {
-          include: ['list', 'get', 'create', 'update'],
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
         },
-        mcp: {
-          include: ['list', 'get', 'analyze'],
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "analyze"
+          ]
         },
-        cli: true,
-      },
+        "cli": true
+      }
     },
-    testorder: {
-      name: 'testorder',
-      className: 'TestOrder',
-      collection: 'testorders',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/registry.test.ts',
-      fields: {
-        customerId: {
-          type: 'text',
-          required: true,
+    "testorder": {
+      "name": "testorder",
+      "className": "TestOrder",
+      "collection": "testorders",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/registry.test.ts",
+      "fields": {
+        "customerId": {
+          "type": "text",
+          "required": true
         },
-        productId: {
-          type: 'text',
-          required: true,
+        "productId": {
+          "type": "text",
+          "required": true
         },
-        total: {
-          type: 'integer',
-          required: true,
-        },
+        "total": {
+          "type": "integer",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    testclass: {
-      name: 'testclass',
-      className: 'TestClass',
-      collection: 'testclasses',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/utils.spec.ts',
-      fields: {
-        test_string: {
-          type: 'text',
-          required: true,
-        },
-        test_number: {
-          type: 'integer',
-          required: true,
-        },
-        test_date: {
-          type: 'datetime',
-          required: true,
-        },
+    "overwritetestobject": {
+      "name": "overwritetestobject",
+      "className": "OverwriteTestObject",
+      "collection": "overwritetestobjects",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/registry.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {
-        methodField: {
-          name: 'methodField',
-          async: false,
-          parameters: [],
-          returnType: 'void',
-          isStatic: false,
-          isPublic: true,
-        },
-      },
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    testprofile: {
-      name: 'testprofile',
-      className: 'TestProfile',
-      collection: 'testprofiles',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts',
-      fields: {
-        firstName: {
-          type: 'text',
-          required: true,
+    "testclass": {
+      "name": "testclass",
+      "className": "TestClass",
+      "collection": "testclasses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/utils.spec.ts",
+      "fields": {
+        "test_string": {
+          "type": "text",
+          "required": true
         },
-        lastName: {
-          type: 'text',
-          required: true,
+        "test_number": {
+          "type": "integer",
+          "required": true
         },
-        email: {
-          type: 'text',
-          required: true,
-        },
-        bio: {
-          type: 'text',
-          required: true,
-        },
+        "test_date": {
+          "type": "datetime",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
+      "methods": {
+        "methodField": {
+          "name": "methodField",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        }
       },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    testmetadata: {
-      name: 'testmetadata',
-      className: 'TestMetadata',
-      collection: 'testmetadatas',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/circular-dependency.test.ts',
-      fields: {
-        profileId: {
-          type: 'foreignKey',
-          required: true,
+    "testprofile": {
+      "name": "testprofile",
+      "className": "TestProfile",
+      "collection": "testprofiles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts",
+      "fields": {
+        "firstName": {
+          "type": "text",
+          "required": true
         },
-        key: {
-          type: 'text',
-          required: true,
+        "lastName": {
+          "type": "text",
+          "required": true
         },
-        value: {
-          type: 'text',
-          required: true,
+        "email": {
+          "type": "text",
+          "required": true
         },
+        "bio": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {
-          include: ['list', 'get'],
-        },
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    testevent: {
-      name: 'testevent',
-      className: 'TestEvent',
-      collection: 'testevents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
+    "testmetadata": {
+      "name": "testmetadata",
+      "className": "TestMetadata",
+      "collection": "testmetadatas",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/circular-dependency.test.ts",
+      "fields": {
+        "profileId": {
+          "type": "foreignKey",
+          "required": true
         },
-        description: {
-          type: 'text',
-          required: true,
+        "key": {
+          "type": "text",
+          "required": true
         },
-        startDate: {
-          type: 'datetime',
-          required: true,
-        },
-        endDate: {
-          type: 'datetime',
-          required: true,
-        },
+        "value": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      }
     },
-    testeventcollection: {
-      name: 'testeventcollection',
-      className: 'TestEventCollection',
-      collection: 'testeventcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "product": {
+      "name": "product",
+      "className": "Product",
+      "collection": "products",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-115-sql-injection-prevention.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "price": {
+          "type": "decimal",
+          "required": true
+        },
+        "category": {
+          "type": "text",
+          "required": true
+        },
+        "active": {
+          "type": "boolean",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      }
     },
-    testprofilecollection: {
-      name: 'testprofilecollection',
-      className: 'TestProfileCollection',
-      collection: 'testprofilecollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "productcollection": {
+      "name": "productcollection",
+      "className": "ProductCollection",
+      "collection": "productcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-115-sql-injection-prevention.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue35testobject1: {
-      name: 'issue35testobject1',
-      className: 'Issue35TestObject1',
-      collection: 'issue35testobject1s',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
-      fields: {
-        value1: {
-          type: 'text',
-          required: true,
+    "cachetestobject": {
+      "name": "cachetestobject",
+      "className": "CacheTestObject",
+      "collection": "cachetestobjects",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-117-memory-leak-prevention.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
         },
+        "value": {
+          "type": "integer",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {},
+      "methods": {},
+      "decoratorConfig": {
+        "api": true,
+        "mcp": true,
+        "cli": true
+      }
     },
-    issue35testobject2: {
-      name: 'issue35testobject2',
-      className: 'Issue35TestObject2',
-      collection: 'issue35testobject2s',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
-      fields: {
-        value2: {
-          type: 'text',
-          required: true,
-        },
-      },
-      methods: {},
-      decoratorConfig: {},
+    "cachetestcollection": {
+      "name": "cachetestcollection",
+      "className": "CacheTestCollection",
+      "collection": "cachetestcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-117-memory-leak-prevention.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue35testobjectdiffdb: {
-      name: 'issue35testobjectdiffdb',
-      className: 'Issue35TestObjectDiffDb',
-      collection: 'issue35testobjectdiffdbs',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
-      fields: {
-        value: {
-          type: 'text',
-          required: true,
+    "testevent": {
+      "name": "testevent",
+      "className": "TestEvent",
+      "collection": "testevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true
         },
+        "description": {
+          "type": "text",
+          "required": true
+        },
+        "startDate": {
+          "type": "datetime",
+          "required": true
+        },
+        "endDate": {
+          "type": "datetime",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {},
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
-    issue35testdocument: {
-      name: 'issue35testdocument',
-      className: 'Issue35TestDocument',
-      collection: 'issue35testdocuments',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
-      fields: {
-        content: {
-          type: 'text',
-          required: true,
-        },
-      },
-      methods: {},
-      decoratorConfig: {},
+    "testeventcollection": {
+      "name": "testeventcollection",
+      "className": "TestEventCollection",
+      "collection": "testeventcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue35testobjectstringconfig: {
-      name: 'issue35testobjectstringconfig',
-      className: 'Issue35TestObjectStringConfig',
-      collection: 'issue35testobjectstringconfigs',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
-      fields: {
-        value: {
-          type: 'text',
-          required: true,
-        },
-      },
-      methods: {},
-      decoratorConfig: {},
+    "testprofilecollection": {
+      "name": "testprofilecollection",
+      "className": "TestProfileCollection",
+      "collection": "testprofilecollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue35testobjectconfigobj: {
-      name: 'issue35testobjectconfigobj',
-      className: 'Issue35TestObjectConfigObj',
-      collection: 'issue35testobjectconfigobjs',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
-      fields: {
-        value: {
-          type: 'text',
-          required: true,
-        },
+    "issue35testobject1": {
+      "name": "issue35testobject1",
+      "className": "Issue35TestObject1",
+      "collection": "issue35testobject1s",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts",
+      "fields": {
+        "value1": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue35testobjectconcurrent: {
-      name: 'issue35testobjectconcurrent',
-      className: 'Issue35TestObjectConcurrent',
-      collection: 'issue35testobjectconcurrents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
-      fields: {
-        value: {
-          type: 'text',
-          required: true,
-        },
+    "issue35testobject2": {
+      "name": "issue35testobject2",
+      "className": "Issue35TestObject2",
+      "collection": "issue35testobject2s",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts",
+      "fields": {
+        "value2": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue35testobjectweakset: {
-      name: 'issue35testobjectweakset',
-      className: 'Issue35TestObjectWeakSet',
-      collection: 'issue35testobjectweaksets',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
-      fields: {
-        value: {
-          type: 'text',
-          required: true,
-        },
+    "issue35testobjectdiffdb": {
+      "name": "issue35testobjectdiffdb",
+      "className": "Issue35TestObjectDiffDb",
+      "collection": "issue35testobjectdiffdbs",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts",
+      "fields": {
+        "value": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    place: {
-      name: 'place',
-      className: 'Place',
-      collection: 'places',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-65-nullable-fields.test.ts',
-      fields: {
-        latitude: {
-          type: 'decimal',
-          required: true,
-        },
-        longitude: {
-          type: 'decimal',
-          required: true,
-        },
-        name: {
-          type: 'text',
-          required: true,
-        },
+    "issue35testdocument": {
+      "name": "issue35testdocument",
+      "className": "Issue35TestDocument",
+      "collection": "issue35testdocuments",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts",
+      "fields": {
+        "content": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: true,
-        mcp: true,
-        cli: true,
-      },
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue75product: {
-      name: 'issue75product',
-      className: 'Issue75Product',
-      collection: 'issue75products',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-75-circular-serialization.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
-        },
-        productName: {
-          type: 'text',
-          required: true,
-        },
-        price: {
-          type: 'decimal',
-          required: true,
-        },
-        inStock: {
-          type: 'boolean',
-          required: true,
-        },
+    "issue35testobjectstringconfig": {
+      "name": "issue35testobjectstringconfig",
+      "className": "Issue35TestObjectStringConfig",
+      "collection": "issue35testobjectstringconfigs",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts",
+      "fields": {
+        "value": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue75article: {
-      name: 'issue75article',
-      className: 'Issue75Article',
-      collection: 'issue75articles',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-75-circular-serialization.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
-        },
-        title: {
-          type: 'text',
-          required: true,
-        },
-        body: {
-          type: 'text',
-          required: true,
-        },
-        published: {
-          type: 'boolean',
-          required: true,
-        },
+    "issue35testobjectconfigobj": {
+      "name": "issue35testobjectconfigobj",
+      "className": "Issue35TestObjectConfigObj",
+      "collection": "issue35testobjectconfigobjs",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts",
+      "fields": {
+        "value": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue75book: {
-      name: 'issue75book',
-      className: 'Issue75Book',
-      collection: 'issue75books',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-75-circular-serialization.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
-        },
-        bookTitle: {
-          type: 'text',
-          required: true,
-        },
-        author: {
-          type: 'text',
-          required: true,
-        },
-        pages: {
-          type: 'integer',
-          required: true,
-        },
+    "issue35testobjectconcurrent": {
+      "name": "issue35testobjectconcurrent",
+      "className": "Issue35TestObjectConcurrent",
+      "collection": "issue35testobjectconcurrents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts",
+      "fields": {
+        "value": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue87parentevent: {
-      name: 'issue87parentevent',
-      className: 'Issue87ParentEvent',
-      collection: 'issue87parentevents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
-      fields: {
-        startDate: {
-          type: 'datetime',
-          required: true,
-        },
-        endDate: {
-          type: 'datetime',
-          required: true,
-        },
-        issuedAt: {
-          type: 'datetime',
-          required: true,
-        },
+    "issue35testobjectweakset": {
+      "name": "issue35testobjectweakset",
+      "className": "Issue35TestObjectWeakSet",
+      "collection": "issue35testobjectweaksets",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts",
+      "fields": {
+        "value": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {
-          include: ['list', 'get'],
-        },
-      },
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue87parenteventcollection: {
-      name: 'issue87parenteventcollection',
-      className: 'Issue87ParentEventCollection',
-      collection: 'issue87parenteventcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "place": {
+      "name": "place",
+      "className": "Place",
+      "collection": "places",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-65-nullable-fields.test.ts",
+      "fields": {
+        "latitude": {
+          "type": "decimal",
+          "required": true
+        },
+        "longitude": {
+          "type": "decimal",
+          "required": true
+        },
+        "name": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": true,
+        "mcp": true,
+        "cli": true
+      }
     },
-    issue87childeventcollection: {
-      name: 'issue87childeventcollection',
-      className: 'Issue87ChildEventCollection',
-      collection: 'issue87childeventcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "issue75product": {
+      "name": "issue75product",
+      "className": "Issue75Product",
+      "collection": "issue75products",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-75-circular-serialization.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "productName": {
+          "type": "text",
+          "required": true
+        },
+        "price": {
+          "type": "decimal",
+          "required": true
+        },
+        "inStock": {
+          "type": "boolean",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue87basemodel: {
-      name: 'issue87basemodel',
-      className: 'Issue87BaseModel',
-      collection: 'issue87basemodels',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
-      fields: {
-        textField: {
-          type: 'text',
-          required: true,
+    "issue75article": {
+      "name": "issue75article",
+      "className": "Issue75Article",
+      "collection": "issue75articles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-75-circular-serialization.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
         },
-        numberField: {
-          type: 'integer',
-          required: true,
+        "title": {
+          "type": "text",
+          "required": true
         },
-        booleanField: {
-          type: 'boolean',
-          required: true,
+        "body": {
+          "type": "text",
+          "required": true
         },
-        issueDate: {
-          type: 'datetime',
-          required: true,
-        },
-        optionalEventDate: {
-          type: 'datetime',
-          required: true,
-        },
+        "published": {
+          "type": "boolean",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {
-          include: ['list', 'get'],
-        },
-      },
+      "methods": {},
+      "decoratorConfig": {}
     },
-    issue87derivedmodelcollection: {
-      name: 'issue87derivedmodelcollection',
-      className: 'Issue87DerivedModelCollection',
-      collection: 'issue87derivedmodelcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "issue75book": {
+      "name": "issue75book",
+      "className": "Issue75Book",
+      "collection": "issue75books",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-75-circular-serialization.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "bookTitle": {
+          "type": "text",
+          "required": true
+        },
+        "author": {
+          "type": "text",
+          "required": true
+        },
+        "pages": {
+          "type": "integer",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {}
     },
-    testdocumentforduckdb: {
-      name: 'testdocumentforduckdb',
-      className: 'TestDocumentForDuckDB',
-      collection: 'testdocumentforduckdbs',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
+    "issue87parentevent": {
+      "name": "issue87parentevent",
+      "className": "Issue87ParentEvent",
+      "collection": "issue87parentevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
+      "fields": {
+        "startDate": {
+          "type": "datetime",
+          "required": true
         },
-        content: {
-          type: 'text',
-          required: true,
+        "endDate": {
+          "type": "datetime",
+          "required": true
         },
+        "issuedAt": {
+          "type": "datetime",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {
-          include: ['list', 'get'],
-        },
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      }
     },
-    testdocumentcollection: {
-      name: 'testdocumentcollection',
-      className: 'TestDocumentCollection',
-      collection: 'testdocumentcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "issue87parenteventcollection": {
+      "name": "issue87parenteventcollection",
+      "className": "Issue87ParentEventCollection",
+      "collection": "issue87parenteventcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    indexeddocument: {
-      name: 'indexeddocument',
-      className: 'IndexedDocument',
-      collection: 'indexeddocuments',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
-        },
-        category: {
-          type: 'text',
-          required: true,
-        },
-        priority: {
-          type: 'integer',
-          required: true,
-        },
-      },
-      methods: {},
-      decoratorConfig: {
-        api: {
-          include: ['list', 'get'],
-        },
-      },
+    "issue87childeventcollection": {
+      "name": "issue87childeventcollection",
+      "className": "Issue87ChildEventCollection",
+      "collection": "issue87childeventcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    indexeddocumentcollection: {
-      name: 'indexeddocumentcollection',
-      className: 'IndexedDocumentCollection',
-      collection: 'indexeddocumentcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "issue87basemodel": {
+      "name": "issue87basemodel",
+      "className": "Issue87BaseModel",
+      "collection": "issue87basemodels",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
+      "fields": {
+        "textField": {
+          "type": "text",
+          "required": true
+        },
+        "numberField": {
+          "type": "integer",
+          "required": true
+        },
+        "booleanField": {
+          "type": "boolean",
+          "required": true
+        },
+        "issueDate": {
+          "type": "datetime",
+          "required": true
+        },
+        "optionalEventDate": {
+          "type": "datetime",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      }
     },
-    scopeddocument: {
-      name: 'scopeddocument',
-      className: 'ScopedDocument',
-      collection: 'scopeddocuments',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
-        },
-        content: {
-          type: 'text',
-          required: true,
-        },
-      },
-      methods: {},
-      decoratorConfig: {
-        api: {
-          include: ['list', 'get'],
-        },
-      },
+    "issue87derivedmodelcollection": {
+      "name": "issue87derivedmodelcollection",
+      "className": "Issue87DerivedModelCollection",
+      "collection": "issue87derivedmodelcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    scopeddocumentcollection: {
-      name: 'scopeddocumentcollection',
-      className: 'ScopedDocumentCollection',
-      collection: 'scopeddocumentcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "testdocumentforduckdb": {
+      "name": "testdocumentforduckdb",
+      "className": "TestDocumentForDuckDB",
+      "collection": "testdocumentforduckdbs",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true
+        },
+        "content": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      }
     },
-    schemagentestevent: {
-      name: 'schemagentestevent',
-      className: 'SchemaGenTestEvent',
-      collection: 'schemagentestevents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/schema-generation.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
-        },
-        description: {
-          type: 'text',
-          required: true,
-        },
-        startDate: {
-          type: 'text',
-          required: true,
-        },
-      },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+    "testdocumentcollection": {
+      "name": "testdocumentcollection",
+      "className": "TestDocumentCollection",
+      "collection": "testdocumentcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    schemagenarticle: {
-      name: 'schemagenarticle',
-      className: 'SchemaGenArticle',
-      collection: 'schemagenarticles',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/schema-generation.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
+    "indexeddocument": {
+      "name": "indexeddocument",
+      "className": "IndexedDocument",
+      "collection": "indexeddocuments",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true
         },
-        body: {
-          type: 'text',
-          required: true,
+        "category": {
+          "type": "text",
+          "required": true
         },
+        "priority": {
+          "type": "integer",
+          "required": true
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      }
     },
-    customtimestamps: {
-      name: 'customtimestamps',
-      className: 'CustomTimestamps',
-      collection: 'customtimestampses',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/schema-generation.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
-        },
-        created_at: {
-          type: 'datetime',
-          required: true,
-        },
-        updated_at: {
-          type: 'datetime',
-          required: true,
-        },
-      },
-      methods: {},
-      decoratorConfig: {
-        api: {},
-        mcp: {},
-        cli: false,
-      },
+    "indexeddocumentcollection": {
+      "name": "indexeddocumentcollection",
+      "className": "IndexedDocumentCollection",
+      "collection": "indexeddocumentcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    testproductcollection: {
-      name: 'testproductcollection',
-      className: 'TestProductCollection',
-      collection: 'testproductcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-integration.spec.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
-    },
-    protocoltestobject: {
-      name: 'protocoltestobject',
-      className: 'ProtocolTestObject',
-      collection: 'protocoltestobjects',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-protocol.spec.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
+    "scopeddocument": {
+      "name": "scopeddocument",
+      "className": "ScopedDocument",
+      "collection": "scopeddocuments",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true
         },
-        count: {
-          type: 'integer',
-          required: true,
-        },
+        "content": {
+          "type": "text",
+          "required": true
+        }
       },
-      methods: {
-        testAction: {
-          name: 'testAction',
-          async: true,
-          parameters: [
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      }
+    },
+    "scopeddocumentcollection": {
+      "name": "scopeddocumentcollection",
+      "className": "ScopedDocumentCollection",
+      "collection": "scopeddocumentcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
+    },
+    "schemagentestevent": {
+      "name": "schemagentestevent",
+      "className": "SchemaGenTestEvent",
+      "collection": "schemagentestevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/schema-generation.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true
+        },
+        "description": {
+          "type": "text",
+          "required": true
+        },
+        "startDate": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
+    },
+    "schemagenarticle": {
+      "name": "schemagenarticle",
+      "className": "SchemaGenArticle",
+      "collection": "schemagenarticles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/schema-generation.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true
+        },
+        "body": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
+    },
+    "customtimestamps": {
+      "name": "customtimestamps",
+      "className": "CustomTimestamps",
+      "collection": "customtimestampses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/schema-generation.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "created_at": {
+          "type": "datetime",
+          "required": true
+        },
+        "updated_at": {
+          "type": "datetime",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
+    },
+    "testproductcollection": {
+      "name": "testproductcollection",
+      "className": "TestProductCollection",
+      "collection": "testproductcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-integration.spec.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
+    },
+    "protocoltestobject": {
+      "name": "protocoltestobject",
+      "className": "ProtocolTestObject",
+      "collection": "protocoltestobjects",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-protocol.spec.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "count": {
+          "type": "integer",
+          "required": true
+        }
+      },
+      "methods": {
+        "testAction": {
+          "name": "testAction",
+          "async": true,
+          "parameters": [
             {
-              name: 'options',
-              type: 'any',
-              optional: false,
-              default: {},
-            },
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
           ],
-          returnType: 'void',
-          isStatic: false,
-          isPublic: true,
-        },
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        }
       },
-      decoratorConfig: {
-        mcp: {
-          include: ['list', 'get', 'testAction'],
-        },
-      },
+      "decoratorConfig": {
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "testAction"
+          ]
+        }
+      }
     },
-    protocoltestobjectcollection: {
-      name: 'protocoltestobjectcollection',
-      className: 'ProtocolTestObjectCollection',
-      collection: 'protocoltestobjectcollections',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-protocol.spec.ts',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
+    "protocoltestobjectcollection": {
+      "name": "protocoltestobjectcollection",
+      "className": "ProtocolTestObjectCollection",
+      "collection": "protocoltestobjectcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-protocol.spec.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
-    testagent: {
-      name: 'testagent',
-      className: 'TestAgent',
-      collection: 'testagents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
-          default: '',
+    "testagent": {
+      "name": "testagent",
+      "className": "TestAgent",
+      "collection": "testagents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
         },
-        source: {
-          type: 'text',
-          required: true,
-          default: '',
-        },
+        "source": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
       },
-      methods: {
-        research: {
-          name: 'research',
-          async: true,
-          parameters: [
+      "methods": {
+        "research": {
+          "name": "research",
+          "async": true,
+          "parameters": [
             {
-              name: 'options',
-              type: 'any',
-              optional: false,
-              default: {},
-            },
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
           ],
-          returnType: 'Promise<any>',
-          isStatic: false,
-          isPublic: true,
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
         },
-        report: {
-          name: 'report',
-          async: true,
-          parameters: [
+        "report": {
+          "name": "report",
+          "async": true,
+          "parameters": [
             {
-              name: 'options',
-              type: 'any',
-              optional: false,
-              default: {},
-            },
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
           ],
-          returnType: 'Promise<any>',
-          isStatic: false,
-          isPublic: true,
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
         },
-        analyze: {
-          name: 'analyze',
-          async: true,
-          parameters: [
+        "analyze": {
+          "name": "analyze",
+          "async": true,
+          "parameters": [
             {
-              name: 'options',
-              type: 'any',
-              optional: false,
-              default: {},
-            },
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
           ],
-          returnType: 'Promise<any>',
-          isStatic: false,
-          isPublic: true,
-        },
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
       },
-      decoratorConfig: {
-        mcp: {
-          include: ['list', 'get', 'research', 'report', 'analyze'],
-        },
-      },
+      "decoratorConfig": {
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "research",
+            "report",
+            "analyze"
+          ]
+        }
+      }
     },
-    invalidactionagent: {
-      name: 'invalidactionagent',
-      className: 'InvalidActionAgent',
-      collection: 'invalidactionagents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
-          default: '',
-        },
+    "invalidactionagent": {
+      "name": "invalidactionagent",
+      "className": "InvalidActionAgent",
+      "collection": "invalidactionagents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        mcp: {
-          include: ['list', 'get', 'nonexistent'],
-        },
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "nonexistent"
+          ]
+        }
+      }
     },
-    excludedactionagent: {
-      name: 'excludedactionagent',
-      className: 'ExcludedActionAgent',
-      collection: 'excludedactionagents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp.test.ts',
-      fields: {
-        name: {
-          type: 'text',
-          required: true,
-          default: '',
-        },
+    "excludedactionagent": {
+      "name": "excludedactionagent",
+      "className": "ExcludedActionAgent",
+      "collection": "excludedactionagents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
       },
-      methods: {
-        research: {
-          name: 'research',
-          async: true,
-          parameters: [],
-          returnType: 'Promise<any>',
-          isStatic: false,
-          isPublic: true,
+      "methods": {
+        "research": {
+          "name": "research",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
         },
-        report: {
-          name: 'report',
-          async: true,
-          parameters: [],
-          returnType: 'Promise<any>',
-          isStatic: false,
-          isPublic: true,
-        },
+        "report": {
+          "name": "report",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
       },
-      decoratorConfig: {
-        mcp: {
-          include: ['list', 'get', 'research', 'report'],
-          exclude: ['report'],
-        },
-      },
+      "decoratorConfig": {
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "research",
+            "report"
+          ],
+          "exclude": [
+            "report"
+          ]
+        }
+      }
     },
-    document: {
-      name: 'document',
-      className: 'Document',
-      collection: 'documents',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/vite-plugin/cli-module.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
-          default: '',
+    "document": {
+      "name": "document",
+      "className": "Document",
+      "collection": "documents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/vite-plugin/cli-module.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
         },
-        content: {
-          type: 'text',
-          required: true,
-          default: '',
-        },
+        "content": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
       },
-      methods: {
-        analyze: {
-          name: 'analyze',
-          async: true,
-          parameters: [
+      "methods": {
+        "analyze": {
+          "name": "analyze",
+          "async": true,
+          "parameters": [
             {
-              name: 'options',
-              type: 'any',
-              optional: false,
-              default: {},
-            },
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
           ],
-          returnType: 'Promise<any>',
-          isStatic: false,
-          isPublic: true,
-        },
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
       },
-      decoratorConfig: {
-        cli: true,
-      },
+      "decoratorConfig": {
+        "cli": true
+      }
     },
-    secret: {
-      name: 'secret',
-      className: 'Secret',
-      collection: 'secrets',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/vite-plugin/cli-module.test.ts',
-      fields: {
-        value: {
-          type: 'text',
-          required: true,
-          default: '',
-        },
+    "secret": {
+      "name": "secret",
+      "className": "Secret",
+      "collection": "secrets",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/vite-plugin/cli-module.test.ts",
+      "fields": {
+        "value": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
       },
-      methods: {},
-      decoratorConfig: {
-        cli: false,
-      },
+      "methods": {},
+      "decoratorConfig": {
+        "cli": false
+      }
     },
-    article: {
-      name: 'article',
-      className: 'Article',
-      collection: 'articles',
-      filePath:
-        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/vite-plugin/cli-module.test.ts',
-      fields: {
-        title: {
-          type: 'text',
-          required: true,
-          default: '',
+    "article": {
+      "name": "article",
+      "className": "Article",
+      "collection": "articles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/vite-plugin/cli-module.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
         },
-        author: {
-          type: 'text',
-          required: true,
-          default: '',
-        },
+        "author": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
       },
-      methods: {
-        analyze: {
-          name: 'analyze',
-          async: true,
-          parameters: [],
-          returnType: 'Promise<any>',
-          isStatic: false,
-          isPublic: true,
-        },
+      "methods": {
+        "analyze": {
+          "name": "analyze",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
       },
-      decoratorConfig: {
-        cli: {
-          include: ['list', 'get', 'analyze'],
-          exclude: ['delete'],
-        },
-      },
-    },
+      "decoratorConfig": {
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "analyze"
+          ],
+          "exclude": [
+            "delete"
+          ]
+        }
+      }
+    }
   },
-  packageName: '@happyvertical/smrt-core',
+  "packageName": "@happyvertical/smrt-core"
 } as const;
 
 export default testManifest;
