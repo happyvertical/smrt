@@ -789,10 +789,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
               trimmed.startsWith('CREATE INDEX') ||
               trimmed.startsWith('CREATE UNIQUE INDEX')
             ) {
-              // This is an index statement
               indexStatements.push(trimmed);
             } else if (trimmed.startsWith('CREATE TABLE')) {
-              // This is the DDL
               ddl = trimmed;
             }
           }

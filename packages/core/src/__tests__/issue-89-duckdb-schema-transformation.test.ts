@@ -44,7 +44,7 @@ class IndexedDocumentCollection extends SmrtCollection<IndexedDocument> {
 })
 class ScopedDocument extends SmrtObject {
   title = text();
-  content = text();
+  content? = text(); // Optional field (TypeScript optional property)
 }
 
 class ScopedDocumentCollection extends SmrtCollection<ScopedDocument> {
@@ -146,6 +146,7 @@ describe('Issue #89: DuckDB/JSON adapter schema transformation', () => {
       context: '/blog',
       title: 'Blog Post',
     });
+
     await blog.save();
 
     const doc = await collection.create({
