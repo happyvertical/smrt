@@ -244,9 +244,10 @@ describe('Issue #35: System Tables Initialization', () => {
 
       // All objects should be able to use recall()
       for (const obj of objects) {
-        await obj.remember({ scope: 'test', key: 'key', value: obj.value });
+        const testValue = `test-value-${obj.id}`;
+        await obj.remember({ scope: 'test', key: 'key', value: testValue });
         const recalled = await obj.recall({ scope: 'test', key: 'key' });
-        expect(recalled).toBe(obj.value);
+        expect(recalled).toBe(testValue);
       }
     });
   });

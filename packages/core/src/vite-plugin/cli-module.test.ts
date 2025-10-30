@@ -164,7 +164,7 @@ describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
     // Create test class with private method
     @smrt({ cli: true })
     class TestWithPrivate extends SmrtObject {
-      name = '';
+      name = text();
 
       constructor(options: any) {
         super(options);
