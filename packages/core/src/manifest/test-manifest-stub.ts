@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   version: '1.0.0',
-  timestamp: 1761786352369,
+  timestamp: 1761823423747,
   objects: {
     testobject: {
       name: 'testobject',
@@ -364,6 +364,126 @@ export const testManifest: SmartObjectManifest = {
       methods: {},
       decoratorConfig: {},
     },
+    issue35testobject1: {
+      name: 'issue35testobject1',
+      className: 'Issue35TestObject1',
+      collection: 'issue35testobject1s',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
+      fields: {
+        value1: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue35testobject2: {
+      name: 'issue35testobject2',
+      className: 'Issue35TestObject2',
+      collection: 'issue35testobject2s',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
+      fields: {
+        value2: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue35testobjectdiffdb: {
+      name: 'issue35testobjectdiffdb',
+      className: 'Issue35TestObjectDiffDb',
+      collection: 'issue35testobjectdiffdbs',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
+      fields: {
+        value: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue35testdocument: {
+      name: 'issue35testdocument',
+      className: 'Issue35TestDocument',
+      collection: 'issue35testdocuments',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
+      fields: {
+        content: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue35testobjectstringconfig: {
+      name: 'issue35testobjectstringconfig',
+      className: 'Issue35TestObjectStringConfig',
+      collection: 'issue35testobjectstringconfigs',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
+      fields: {
+        value: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue35testobjectconfigobj: {
+      name: 'issue35testobjectconfigobj',
+      className: 'Issue35TestObjectConfigObj',
+      collection: 'issue35testobjectconfigobjs',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
+      fields: {
+        value: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue35testobjectconcurrent: {
+      name: 'issue35testobjectconcurrent',
+      className: 'Issue35TestObjectConcurrent',
+      collection: 'issue35testobjectconcurrents',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
+      fields: {
+        value: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue35testobjectweakset: {
+      name: 'issue35testobjectweakset',
+      className: 'Issue35TestObjectWeakSet',
+      collection: 'issue35testobjectweaksets',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-35-system-tables-initialization.test.ts',
+      fields: {
+        value: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {},
+    },
     place: {
       name: 'place',
       className: 'Place',
@@ -472,6 +592,201 @@ export const testManifest: SmartObjectManifest = {
       methods: {},
       decoratorConfig: {},
     },
+    issue87parentevent: {
+      name: 'issue87parentevent',
+      className: 'Issue87ParentEvent',
+      collection: 'issue87parentevents',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
+      fields: {
+        startDate: {
+          type: 'datetime',
+          required: true,
+        },
+        endDate: {
+          type: 'datetime',
+          required: true,
+        },
+        issuedAt: {
+          type: 'datetime',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {
+        api: {
+          include: ['list', 'get'],
+        },
+      },
+    },
+    issue87parenteventcollection: {
+      name: 'issue87parenteventcollection',
+      className: 'Issue87ParentEventCollection',
+      collection: 'issue87parenteventcollections',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue87childeventcollection: {
+      name: 'issue87childeventcollection',
+      className: 'Issue87ChildEventCollection',
+      collection: 'issue87childeventcollections',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    },
+    issue87basemodel: {
+      name: 'issue87basemodel',
+      className: 'Issue87BaseModel',
+      collection: 'issue87basemodels',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
+      fields: {
+        textField: {
+          type: 'text',
+          required: true,
+        },
+        numberField: {
+          type: 'integer',
+          required: true,
+        },
+        booleanField: {
+          type: 'boolean',
+          required: true,
+        },
+        issueDate: {
+          type: 'datetime',
+          required: true,
+        },
+        optionalEventDate: {
+          type: 'datetime',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {
+        api: {
+          include: ['list', 'get'],
+        },
+      },
+    },
+    issue87derivedmodelcollection: {
+      name: 'issue87derivedmodelcollection',
+      className: 'Issue87DerivedModelCollection',
+      collection: 'issue87derivedmodelcollections',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    },
+    testdocumentforduckdb: {
+      name: 'testdocumentforduckdb',
+      className: 'TestDocumentForDuckDB',
+      collection: 'testdocumentforduckdbs',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
+      fields: {
+        title: {
+          type: 'text',
+          required: true,
+        },
+        content: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {
+        api: {
+          include: ['list', 'get'],
+        },
+      },
+    },
+    testdocumentcollection: {
+      name: 'testdocumentcollection',
+      className: 'TestDocumentCollection',
+      collection: 'testdocumentcollections',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    },
+    indexeddocument: {
+      name: 'indexeddocument',
+      className: 'IndexedDocument',
+      collection: 'indexeddocuments',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
+      fields: {
+        title: {
+          type: 'text',
+          required: true,
+        },
+        category: {
+          type: 'text',
+          required: true,
+        },
+        priority: {
+          type: 'integer',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {
+        api: {
+          include: ['list', 'get'],
+        },
+      },
+    },
+    indexeddocumentcollection: {
+      name: 'indexeddocumentcollection',
+      className: 'IndexedDocumentCollection',
+      collection: 'indexeddocumentcollections',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    },
+    scopeddocument: {
+      name: 'scopeddocument',
+      className: 'ScopedDocument',
+      collection: 'scopeddocuments',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
+      fields: {
+        title: {
+          type: 'text',
+          required: true,
+        },
+        content: {
+          type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {
+        api: {
+          include: ['list', 'get'],
+        },
+      },
+    },
+    scopeddocumentcollection: {
+      name: 'scopeddocumentcollection',
+      className: 'ScopedDocumentCollection',
+      collection: 'scopeddocumentcollections',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    },
     schemagentestevent: {
       name: 'schemagentestevent',
       className: 'SchemaGenTestEvent',
@@ -512,6 +827,33 @@ export const testManifest: SmartObjectManifest = {
         },
         body: {
           type: 'text',
+          required: true,
+        },
+      },
+      methods: {},
+      decoratorConfig: {
+        api: {},
+        mcp: {},
+        cli: false,
+      },
+    },
+    customtimestamps: {
+      name: 'customtimestamps',
+      className: 'CustomTimestamps',
+      collection: 'customtimestampses',
+      filePath:
+        '/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/schema-generation.test.ts',
+      fields: {
+        name: {
+          type: 'text',
+          required: true,
+        },
+        created_at: {
+          type: 'datetime',
+          required: true,
+        },
+        updated_at: {
+          type: 'datetime',
           required: true,
         },
       },

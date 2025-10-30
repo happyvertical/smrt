@@ -24,6 +24,15 @@ class SchemaGenArticle extends SmrtObject {
   body = text();
 }
 
+// Move to module level so AST scanner can pick it up during test manifest generation
+@smrt()
+class CustomTimestamps extends SmrtObject {
+  name = text();
+  // Explicitly defining timestamp fields (should still not duplicate)
+  created_at = new Date();
+  updated_at = new Date();
+}
+
 describe('Issue #144: Schema Generation Duplicate Columns', () => {
   it('should not duplicate created_at column in schema', async () => {
     const schema = await generateSchema(SchemaGenTestEvent);
@@ -107,14 +116,6 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
   });
 
   it('should handle classes with explicit timestamp field definitions', async () => {
-    @smrt()
-    class CustomTimestamps extends SmrtObject {
-      name = text();
-      // Explicitly defining timestamp fields (should still not duplicate)
-      created_at = new Date();
-      updated_at = new Date();
-    }
-
     const schema = await generateSchema(CustomTimestamps);
 
     // Even with explicit definitions, should only appear once

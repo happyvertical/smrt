@@ -22,6 +22,39 @@ function getTempDbPath(name: string): string {
   return join(tmpdir(), `test-issue-35-${name}-${Date.now()}.db`);
 }
 
+// Move test classes to module level so AST scanner can pick them up during test manifest generation
+class Issue35TestObject1 extends SmrtObject {
+  value1 = text();
+}
+
+class Issue35TestObject2 extends SmrtObject {
+  value2 = text();
+}
+
+class Issue35TestObjectDiffDb extends SmrtObject {
+  value = text();
+}
+
+class Issue35TestDocument extends SmrtObject {
+  content = text();
+}
+
+class Issue35TestObjectStringConfig extends SmrtObject {
+  value = text();
+}
+
+class Issue35TestObjectConfigObj extends SmrtObject {
+  value = text();
+}
+
+class Issue35TestObjectConcurrent extends SmrtObject {
+  value = text();
+}
+
+class Issue35TestObjectWeakSet extends SmrtObject {
+  value = text();
+}
+
 describe('Issue #35: System Tables Initialization', () => {
   // Clear the WeakSet before each test by creating new classes
   // (WeakSet is static, so we need fresh class instances)
@@ -38,11 +71,7 @@ describe('Issue #35: System Tables Initialization', () => {
       const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
 
       // Create first SMRT object with this database
-      class TestObject1 extends SmrtObject {
-        value1 = text();
-      }
-
-      const obj1 = new TestObject1({ db, value1: 'test1' });
+      const obj1 = new Issue35TestObject1({ db, value1: 'test1' });
       await obj1.initialize();
 
       // Verify system tables exist
@@ -50,11 +79,7 @@ describe('Issue #35: System Tables Initialization', () => {
       expect(migrations1.rows.length).toBeGreaterThan(0);
 
       // Create second SMRT object with SAME database instance
-      class TestObject2 extends SmrtObject {
-        value2 = text();
-      }
-
-      const obj2 = new TestObject2({ db, value2: 'test2' });
+      const obj2 = new Issue35TestObject2({ db, value2: 'test2' });
       await obj2.initialize();
 
       // System tables should NOT be recreated (same count of migrations)
@@ -79,12 +104,8 @@ describe('Issue #35: System Tables Initialization', () => {
       const db1 = await getDatabase({ type: 'sqlite', url: ':memory:' });
       const db2 = await getDatabase({ type: 'sqlite', url: ':memory:' });
 
-      class TestObject extends SmrtObject {
-        value = text();
-      }
-
       // Initialize with first database
-      const obj1 = new TestObject({ db: db1, value: 'test1' });
+      const obj1 = new Issue35TestObjectDiffDb({ db: db1, value: 'test1' });
       await obj1.initialize();
 
       // Verify system tables in db1
@@ -92,7 +113,7 @@ describe('Issue #35: System Tables Initialization', () => {
       expect(migrations1.rows.length).toBeGreaterThan(0);
 
       // Initialize with second database
-      const obj2 = new TestObject({ db: db2, value: 'test2' });
+      const obj2 = new Issue35TestObjectDiffDb({ db: db2, value: 'test2' });
       await obj2.initialize();
 
       // Verify system tables in db2 (should be created independently)
@@ -124,12 +145,8 @@ describe('Issue #35: System Tables Initialization', () => {
         writeStrategy: 'immediate',
       });
 
-      class TestDocument extends SmrtObject {
-        content = text();
-      }
-
       // Initialize with first JSON database
-      const doc1 = new TestDocument({ db: db1, content: 'test1' });
+      const doc1 = new Issue35TestDocument({ db: db1, content: 'test1' });
       await doc1.initialize();
 
       // Verify system tables in db1
@@ -137,7 +154,7 @@ describe('Issue #35: System Tables Initialization', () => {
       expect(migrations1.rows.length).toBeGreaterThan(0);
 
       // Initialize with second JSON database
-      const doc2 = new TestDocument({ db: db2, content: 'test2' });
+      const doc2 = new Issue35TestDocument({ db: db2, content: 'test2' });
       await doc2.initialize();
 
       // Verify system tables in db2 (should be created independently)
@@ -168,12 +185,8 @@ describe('Issue #35: System Tables Initialization', () => {
     it('should handle string database configuration correctly', async () => {
       const dbPath = getTempDbPath('string-config');
 
-      class TestObject extends SmrtObject {
-        value = text();
-      }
-
       // Use config object with file path (string shortcut alone can't auto-detect type from path)
-      const obj = new TestObject({
+      const obj = new Issue35TestObjectStringConfig({
         db: { type: 'sqlite', url: dbPath },
         value: 'test',
       });
@@ -193,12 +206,8 @@ describe('Issue #35: System Tables Initialization', () => {
     it('should handle config object database configuration correctly', async () => {
       const dbPath = getTempDbPath('config-object');
 
-      class TestObject extends SmrtObject {
-        value = text();
-      }
-
       // Use config object for database configuration
-      const obj = new TestObject({
+      const obj = new Issue35TestObjectConfigObj({
         db: { type: 'sqlite', url: dbPath },
         value: 'test',
       });
@@ -215,24 +224,20 @@ describe('Issue #35: System Tables Initialization', () => {
     it('should handle concurrent initialization with same database instance', async () => {
       const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
 
-      class TestObject extends SmrtObject {
-        value = text();
-      }
-
       // Create multiple objects concurrently with same database
       const objects = await Promise.all([
         (async () => {
-          const obj = new TestObject({ db, value: 'test1' });
+          const obj = new Issue35TestObjectConcurrent({ db, value: 'test1' });
           await obj.initialize();
           return obj;
         })(),
         (async () => {
-          const obj = new TestObject({ db, value: 'test2' });
+          const obj = new Issue35TestObjectConcurrent({ db, value: 'test2' });
           await obj.initialize();
           return obj;
         })(),
         (async () => {
-          const obj = new TestObject({ db, value: 'test3' });
+          const obj = new Issue35TestObjectConcurrent({ db, value: 'test3' });
           await obj.initialize();
           return obj;
         })(),
@@ -254,14 +259,10 @@ describe('Issue #35: System Tables Initialization', () => {
 
   describe('WeakSet garbage collection behavior', () => {
     it('should allow garbage collection of database instances', async () => {
-      class TestObject extends SmrtObject {
-        value = text();
-      }
-
       // Create and initialize object with database
       {
         const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
-        const obj = new TestObject({ db, value: 'test' });
+        const obj = new Issue35TestObjectWeakSet({ db, value: 'test' });
         await obj.initialize();
 
         // Verify system tables were created
@@ -276,7 +277,7 @@ describe('Issue #35: System Tables Initialization', () => {
 
       // Create new database instance
       const db2 = await getDatabase({ type: 'sqlite', url: ':memory:' });
-      const obj2 = new TestObject({ db: db2, value: 'test2' });
+      const obj2 = new Issue35TestObjectWeakSet({ db: db2, value: 'test2' });
       await obj2.initialize();
 
       // System tables should be created for this new instance

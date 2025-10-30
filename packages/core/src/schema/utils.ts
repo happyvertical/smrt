@@ -30,6 +30,11 @@ export async function generateSchema(
   const className = ClassType.name;
   const tableName = tableNameFromClass(ClassType);
 
+  // For external packages, ensure manifest is loaded before proceeding
+  if (!providedFields || providedFields.size === 0) {
+    await ObjectRegistry.ensureManifestLoaded(className);
+  }
+
   // Use provided fields if available AND non-empty (during registration), otherwise get from registry
   const cachedFields =
     providedFields && providedFields.size > 0
@@ -41,7 +46,7 @@ export async function generateSchema(
     throw new Error(
       `Cannot generate schema for unregistered class '${className}'. ` +
         `Ensure the class is decorated with @smrt() for schema generation to work. ` +
-        `Runtime introspection has been removed in Phase 2 of the schema management refactor.`,
+        `Runtime introspection has been removed per issue #131.`,
     );
   }
 

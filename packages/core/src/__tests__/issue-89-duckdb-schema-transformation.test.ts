@@ -13,23 +13,50 @@ import { integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 
+// Define test classes at module level so they get picked up by test manifest scanner
+@smrt({
+  api: { include: ['list', 'get'] },
+})
+class TestDocumentForDuckDB extends SmrtObject {
+  title = text();
+  content = text();
+}
+
+class TestDocumentCollection extends SmrtCollection<TestDocumentForDuckDB> {
+  static readonly _itemClass = TestDocumentForDuckDB;
+}
+
+@smrt({
+  api: { include: ['list', 'get'] },
+})
+class IndexedDocument extends SmrtObject {
+  title = text();
+  category = text();
+  priority = integer();
+}
+
+class IndexedDocumentCollection extends SmrtCollection<IndexedDocument> {
+  static readonly _itemClass = IndexedDocument;
+}
+
+@smrt({
+  api: { include: ['list', 'get'] },
+})
+class ScopedDocument extends SmrtObject {
+  title = text();
+  content = text();
+}
+
+class ScopedDocumentCollection extends SmrtCollection<ScopedDocument> {
+  static readonly _itemClass = ScopedDocument;
+}
+
 describe('Issue #89: DuckDB/JSON adapter schema transformation', () => {
   it('should transform UNIQUE indexes to inline constraints for DuckDB adapter', async () => {
-    // Define a test object with unique slug+context constraint
-    @smrt({
-      api: { include: ['list', 'get'] },
-    })
-    class TestDocument extends SmrtObject {
-      title = text();
-      content = text();
-    }
-
-    // Define collection
-    class TestDocumentCollection extends SmrtCollection<TestDocument> {
-      static readonly _itemClass = TestDocument;
-    }
-
-    ObjectRegistry.registerCollection('TestDocument', TestDocumentCollection);
+    ObjectRegistry.registerCollection(
+      'TestDocumentForDuckDB',
+      TestDocumentCollection,
+    );
 
     // Create collection with DuckDB adapter (in-memory)
     // DuckDB requires inline UNIQUE constraints instead of separate indexes
@@ -72,19 +99,6 @@ describe('Issue #89: DuckDB/JSON adapter schema transformation', () => {
   });
 
   it('should preserve non-UNIQUE indexes during transformation', async () => {
-    @smrt({
-      api: { include: ['list', 'get'] },
-    })
-    class IndexedDocument extends SmrtObject {
-      title = text();
-      category = text();
-      priority = integer();
-    }
-
-    class IndexedDocumentCollection extends SmrtCollection<IndexedDocument> {
-      static readonly _itemClass = IndexedDocument;
-    }
-
     ObjectRegistry.registerCollection(
       'IndexedDocument',
       IndexedDocumentCollection,
@@ -115,17 +129,6 @@ describe('Issue #89: DuckDB/JSON adapter schema transformation', () => {
   });
 
   it('should work with different contexts (scoped slugs)', async () => {
-    @smrt({
-      api: { include: ['list', 'get'] },
-    })
-    class ScopedDocument extends SmrtObject {
-      title = text();
-    }
-
-    class ScopedDocumentCollection extends SmrtCollection<ScopedDocument> {
-      static readonly _itemClass = ScopedDocument;
-    }
-
     ObjectRegistry.registerCollection(
       'ScopedDocument',
       ScopedDocumentCollection,
