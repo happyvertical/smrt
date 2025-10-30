@@ -279,6 +279,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const {
       _className,
       db,
+      persistence,
       ai,
       fs,
       logging,
@@ -290,7 +291,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const collectionOptions: SmrtCollectionOptions = {
       _className,
-      db,
+      db: db || persistence, // Map persistence to db for backward compatibility
       ai,
       fs,
       logging,

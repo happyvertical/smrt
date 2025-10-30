@@ -36,7 +36,22 @@ export interface SmrtClassOptions {
     | string
     | {
         url?: string;
-        type?: 'sqlite' | 'postgres';
+        type?: 'sqlite' | 'postgres' | 'sql';
+        authToken?: string;
+        [key: string]: any;
+      }
+    | DatabaseInterface;
+
+  /**
+   * Alias for db option - for backward compatibility with documentation
+   *
+   * @deprecated Use 'db' instead. This alias exists for backward compatibility.
+   */
+  persistence?:
+    | string
+    | {
+        url?: string;
+        type?: 'sqlite' | 'postgres' | 'sql';
         authToken?: string;
         [key: string]: any;
       }
@@ -174,6 +189,11 @@ export class SmrtClass {
    * @throws {Error} If database is required but not provided in options
    */
   protected async initialize(): Promise<this> {
+    // Map persistence to db for backward compatibility
+    if (this.options.persistence && !this.options.db) {
+      this.options.db = this.options.persistence;
+    }
+
     // Validate database configuration if required
     if (this.requiresDatabase() && !this.options.db) {
       throw new Error(
