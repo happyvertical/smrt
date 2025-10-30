@@ -4,6 +4,7 @@ import {
   datetime,
   decimal,
   Field,
+  integer,
   text,
 } from './fields/index';
 import { SmrtObject } from './object';
@@ -15,28 +16,28 @@ import { tableNameFromClass } from './utils';
 
 @smrt()
 class TestCategory extends SmrtObject {
-  name: string = '';
-  description: string = '';
+  name = text();
+  description = text();
 }
 
 @smrt()
 class TestCustomer extends SmrtObject {
-  name: string = '';
-  email: string = '';
+  name = text();
+  email = text();
 }
 
 @smrt()
 class TestProduct extends SmrtObject {
-  name: string = '';
-  price: number = 0;
-  categoryId: string = '';
+  name = text();
+  price = integer();
+  categoryId = text();
 }
 
 @smrt()
 class TestOrder extends SmrtObject {
-  customerId: string = '';
-  productId: string = '';
-  total: number = 0;
+  customerId = text();
+  productId = text();
+  total = integer();
 }
 
 // Helper to manually register test classes with field metadata
@@ -698,7 +699,7 @@ describe('ObjectRegistry', () => {
     it('should work with @smrt decorator syntax', () => {
       @smrt()
       class DecoratorTest extends SmrtObject {
-        name: string = '';
+        name = text();
       }
 
       // Verify SMRT_TABLE_NAME was set by decorator
@@ -709,7 +710,7 @@ describe('ObjectRegistry', () => {
     it('should work with @smrt decorator and custom tableName', () => {
       @smrt({ tableName: 'super_custom_table' })
       class CustomDecoratorTest extends SmrtObject {
-        name: string = '';
+        name = text();
       }
 
       // Verify custom tableName was set
@@ -721,7 +722,7 @@ describe('ObjectRegistry', () => {
     it('should use captured table name from SMRT_TABLE_NAME property', () => {
       @smrt()
       class TableNameTest extends SmrtObject {
-        name: string = '';
+        name = text();
       }
 
       const metadata = ObjectRegistry.getObjectMetadata('TableNameTest');
@@ -731,8 +732,8 @@ describe('ObjectRegistry', () => {
     it('should respect custom tableName in config', () => {
       @smrt({ tableName: 'my_custom_products' })
       class CustomTableProduct extends SmrtObject {
-        name: string = '';
-        price: number = 0;
+        name = text();
+        price = integer();
       }
 
       const metadata = ObjectRegistry.getObjectMetadata('CustomTableProduct');
@@ -750,7 +751,7 @@ describe('ObjectRegistry', () => {
 
       @smrt()
       class OriginalClassName extends SmrtObject {
-        name: string = '';
+        name = text();
       }
 
       // Capture the SMRT_TABLE_NAME before "minification"
@@ -774,7 +775,7 @@ describe('ObjectRegistry', () => {
     it('should use SMRT_TABLE_NAME in tableNameFromClass()', () => {
       @smrt()
       class TestForTableName extends SmrtObject {
-        name: string = '';
+        name = text();
       }
 
       const tableName = tableNameFromClass(TestForTableName);
@@ -785,7 +786,10 @@ describe('ObjectRegistry', () => {
   });
 
   describe('Mixed Field helpers and primitives (Issue #102, #103)', () => {
-    it('should detect base class fields even when using Field helpers', () => {
+    // OBSOLETE after PR #129: Runtime primitive type inference was removed
+    // PR #129 requires explicit Field helpers for all fields
+    // These tests expected automatic inference from primitives, which no longer works
+    it.skip('should detect base class fields even when using Field helpers - OBSOLETE after PR #129', () => {
       @smrt()
       class MixedFieldsObject extends SmrtObject {
         name = '';
@@ -807,12 +811,12 @@ describe('ObjectRegistry', () => {
       expect(fields.get('updated_at')?.type).toBe('datetime');
     });
 
-    it('should handle mix of Field helpers and custom primitives', () => {
+    it.skip('should handle mix of Field helpers and custom primitives - OBSOLETE after PR #129', () => {
       @smrt()
       class ProductWithMixedFields extends SmrtObject {
         title = text({ required: true }); // Field helper
         price = decimal({ min: 0 }); // Field helper
-        description: string = ''; // Primitive (should infer TEXT)
+        description = text(); // Primitive (should infer TEXT)
         stock: number = 0; // Primitive (should infer INTEGER)
         active: boolean = true; // Primitive (should infer BOOLEAN)
       }
@@ -854,7 +858,7 @@ describe('ObjectRegistry', () => {
       expect(fields.get('name')?.options?.maxLength).toBe(100);
     });
 
-    it('should handle nullable fields with Field helpers', () => {
+    it.skip('should handle nullable fields with Field helpers - OBSOLETE after PR #129', () => {
       @smrt()
       class MeetingWithNullableDate extends SmrtObject {
         date = datetime({ nullable: true }); // Explicit nullable

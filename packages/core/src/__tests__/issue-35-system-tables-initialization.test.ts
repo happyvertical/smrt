@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 
 // Helper to create unique test database paths
@@ -38,7 +39,7 @@ describe('Issue #35: System Tables Initialization', () => {
 
       // Create first SMRT object with this database
       class TestObject1 extends SmrtObject {
-        value1: string = '';
+        value1 = text();
       }
 
       const obj1 = new TestObject1({ db, value1: 'test1' });
@@ -50,7 +51,7 @@ describe('Issue #35: System Tables Initialization', () => {
 
       // Create second SMRT object with SAME database instance
       class TestObject2 extends SmrtObject {
-        value2: string = '';
+        value2 = text();
       }
 
       const obj2 = new TestObject2({ db, value2: 'test2' });
@@ -79,7 +80,7 @@ describe('Issue #35: System Tables Initialization', () => {
       const db2 = await getDatabase({ type: 'sqlite', url: ':memory:' });
 
       class TestObject extends SmrtObject {
-        value: string = '';
+        value = text();
       }
 
       // Initialize with first database
@@ -124,7 +125,7 @@ describe('Issue #35: System Tables Initialization', () => {
       });
 
       class TestDocument extends SmrtObject {
-        content: string = '';
+        content = text();
       }
 
       // Initialize with first JSON database
@@ -168,7 +169,7 @@ describe('Issue #35: System Tables Initialization', () => {
       const dbPath = getTempDbPath('string-config');
 
       class TestObject extends SmrtObject {
-        value: string = '';
+        value = text();
       }
 
       // Use config object with file path (string shortcut alone can't auto-detect type from path)
@@ -193,7 +194,7 @@ describe('Issue #35: System Tables Initialization', () => {
       const dbPath = getTempDbPath('config-object');
 
       class TestObject extends SmrtObject {
-        value: string = '';
+        value = text();
       }
 
       // Use config object for database configuration
@@ -215,7 +216,7 @@ describe('Issue #35: System Tables Initialization', () => {
       const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
 
       class TestObject extends SmrtObject {
-        value: string = '';
+        value = text();
       }
 
       // Create multiple objects concurrently with same database
@@ -243,9 +244,10 @@ describe('Issue #35: System Tables Initialization', () => {
 
       // All objects should be able to use recall()
       for (const obj of objects) {
-        await obj.remember({ scope: 'test', key: 'key', value: obj.value });
+        const testValue = `test-value-${obj.id}`;
+        await obj.remember({ scope: 'test', key: 'key', value: testValue });
         const recalled = await obj.recall({ scope: 'test', key: 'key' });
-        expect(recalled).toBe(obj.value);
+        expect(recalled).toBe(testValue);
       }
     });
   });
@@ -253,7 +255,7 @@ describe('Issue #35: System Tables Initialization', () => {
   describe('WeakSet garbage collection behavior', () => {
     it('should allow garbage collection of database instances', async () => {
       class TestObject extends SmrtObject {
-        value: string = '';
+        value = text();
       }
 
       // Create and initialize object with database

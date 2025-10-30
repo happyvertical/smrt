@@ -11,30 +11,31 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { boolean, decimal, integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ASTScanner } from '../scanner/ast-scanner';
 
 // Define test classes at top level so AST scanner can find them
 // Use Issue75 prefix to avoid collisions with other test files
 class Issue75Product extends SmrtObject {
-  name: string = '';
-  productName: string = 'Test Product';
-  price: number = 99.99;
-  inStock: boolean = true;
+  name = text({ default: '' });
+  productName = text({ default: 'Test Product' });
+  price = decimal({ default: 99.99 });
+  inStock = boolean({ default: true });
 }
 
 class Issue75Article extends SmrtObject {
-  name: string = '';
-  title: string = 'Test Article';
-  body: string = 'Article content';
-  published: boolean = false;
+  name = text({ default: '' });
+  title = text({ default: 'Test Article' });
+  body = text({ default: 'Article content' });
+  published = boolean({ default: false });
 }
 
 class Issue75Book extends SmrtObject {
-  name: string = '';
-  bookTitle: string = 'The Book';
-  author: string = 'Author Name';
-  pages: number = 300;
+  name = text({ default: '' });
+  bookTitle = text({ default: 'The Book' });
+  author = text({ default: 'Author Name' });
+  pages = integer({ default: 300 });
 }
 
 describe('Issue #75: Circular Serialization Errors', () => {

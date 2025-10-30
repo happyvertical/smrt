@@ -10,6 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
+import { boolean, decimal, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
@@ -17,10 +18,10 @@ describe('Issue #115: SQL Injection Prevention', () => {
   // Test class with known fields
   @smrt({ api: { include: ['list', 'get'] } })
   class Product extends SmrtObject {
-    name = '';
-    price = 0;
-    category = '';
-    active = true;
+    name = text();
+    price = decimal();
+    category = text();
+    active = boolean();
   }
 
   class ProductCollection extends SmrtCollection<Product> {

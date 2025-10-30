@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   version: '1.0.0',
-  timestamp: 1761781747871,
+  timestamp: 1761786352369,
   objects: {
     testobject: {
       name: 'testobject',
@@ -22,22 +22,18 @@ export const testManifest: SmartObjectManifest = {
         name: {
           type: 'text',
           required: true,
-          default: '',
         },
         description: {
           type: 'text',
           required: false,
-          default: '',
         },
         active: {
           type: 'boolean',
           required: true,
-          default: false,
         },
         count: {
-          type: 'decimal',
+          type: 'integer',
           required: true,
-          default: 0,
         },
       },
       methods: {},
@@ -57,22 +53,18 @@ export const testManifest: SmartObjectManifest = {
         username: {
           type: 'text',
           required: true,
-          default: '',
         },
         email: {
           type: 'text',
           required: true,
-          default: '',
         },
         age: {
-          type: 'decimal',
+          type: 'integer',
           required: true,
-          default: 0,
         },
         active: {
           type: 'boolean',
           required: true,
-          default: false,
         },
         createdAt: {
           type: 'datetime',
@@ -85,7 +77,6 @@ export const testManifest: SmartObjectManifest = {
         profileData: {
           type: 'text',
           required: true,
-          default: '',
         },
       },
       methods: {
@@ -145,12 +136,10 @@ export const testManifest: SmartObjectManifest = {
         name: {
           type: 'text',
           required: true,
-          default: '',
         },
         description: {
           type: 'text',
           required: true,
-          default: '',
         },
       },
       methods: {},
@@ -170,12 +159,10 @@ export const testManifest: SmartObjectManifest = {
         name: {
           type: 'text',
           required: true,
-          default: '',
         },
         email: {
           type: 'text',
           required: true,
-          default: '',
         },
       },
       methods: {},
@@ -242,17 +229,14 @@ export const testManifest: SmartObjectManifest = {
         customerId: {
           type: 'text',
           required: true,
-          default: '',
         },
         productId: {
           type: 'text',
           required: true,
-          default: '',
         },
         total: {
-          type: 'decimal',
+          type: 'integer',
           required: true,
-          default: 0,
         },
       },
       methods: {},
@@ -308,12 +292,10 @@ export const testManifest: SmartObjectManifest = {
         title: {
           type: 'text',
           required: true,
-          default: '',
         },
         description: {
           type: 'text',
           required: true,
-          default: '',
         },
         startDate: {
           type: 'datetime',
@@ -341,22 +323,18 @@ export const testManifest: SmartObjectManifest = {
         firstName: {
           type: 'text',
           required: true,
-          default: '',
         },
         lastName: {
           type: 'text',
           required: true,
-          default: '',
         },
         email: {
           type: 'text',
           required: true,
-          default: '',
         },
         bio: {
           type: 'text',
           required: true,
-          default: '',
         },
       },
       methods: {},
@@ -396,17 +374,14 @@ export const testManifest: SmartObjectManifest = {
         latitude: {
           type: 'decimal',
           required: true,
-          default: null,
         },
         longitude: {
           type: 'decimal',
           required: true,
-          default: null,
         },
         name: {
           type: 'text',
           required: true,
-          default: '',
         },
       },
       methods: {},
@@ -426,22 +401,18 @@ export const testManifest: SmartObjectManifest = {
         name: {
           type: 'text',
           required: true,
-          default: '',
         },
         productName: {
           type: 'text',
           required: true,
-          default: 'Test Product',
         },
         price: {
           type: 'decimal',
           required: true,
-          default: 99.99,
         },
         inStock: {
           type: 'boolean',
           required: true,
-          default: true,
         },
       },
       methods: {},
@@ -457,22 +428,18 @@ export const testManifest: SmartObjectManifest = {
         name: {
           type: 'text',
           required: true,
-          default: '',
         },
         title: {
           type: 'text',
           required: true,
-          default: 'Test Article',
         },
         body: {
           type: 'text',
           required: true,
-          default: 'Article content',
         },
         published: {
           type: 'boolean',
           required: true,
-          default: false,
         },
       },
       methods: {},
@@ -488,22 +455,18 @@ export const testManifest: SmartObjectManifest = {
         name: {
           type: 'text',
           required: true,
-          default: '',
         },
         bookTitle: {
           type: 'text',
           required: true,
-          default: 'The Book',
         },
         author: {
           type: 'text',
           required: true,
-          default: 'Author Name',
         },
         pages: {
-          type: 'decimal',
+          type: 'integer',
           required: true,
-          default: 300,
         },
       },
       methods: {},

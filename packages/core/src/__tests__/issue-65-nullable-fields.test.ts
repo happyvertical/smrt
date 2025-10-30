@@ -1,9 +1,12 @@
 /**
  * Test for issue #65: Nullable number fields not persisted to database schema
  * https://github.com/happyvertical/smrt/issues/65
+ *
+ * Fixed by issues #128, #69: Runtime fallback removed, Field helpers required
  */
 
 import { describe, expect, it } from 'vitest';
+import { decimal, text } from '../fields';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { SchemaGenerator } from '../schema/generator';
@@ -11,9 +14,9 @@ import { SchemaGenerator } from '../schema/generator';
 // Define test class at top level so AST scanner can find it
 @smrt({ api: true, mcp: true, cli: true })
 class Place extends SmrtObject {
-  latitude: number | null = null;
-  longitude: number | null = null;
-  name = '';
+  latitude = decimal({ nullable: true });
+  longitude = decimal({ nullable: true });
+  name = text();
 }
 
 describe('Issue #65: Nullable number fields', () => {
