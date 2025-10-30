@@ -1,3 +1,13 @@
+## [0.6.1](https://github.com/happyvertical/smrt/compare/v0.6.0...v0.6.1) (2025-10-30)
+
+
+### Bug Fixes
+
+* **core:** fix Issue [#89](https://github.com/happyvertical/smrt/issues/89) DuckDB undefined value handling ([#141](https://github.com/happyvertical/smrt/issues/141)) ([e5dc048](https://github.com/happyvertical/smrt/commit/e5dc04888e556a6eccac6ef856dbbd2c42ef441f)), closes [#117](https://github.com/happyvertical/smrt/issues/117) [#117](https://github.com/happyvertical/smrt/issues/117) [#140](https://github.com/happyvertical/smrt/issues/140)
+* **core:** implement automatic manifest loading for external packages ([#132](https://github.com/happyvertical/smrt/issues/132)) ([725f763](https://github.com/happyvertical/smrt/commit/725f763fd7cafae2e6b766c8476ca9ed57f1a859)), closes [#131](https://github.com/happyvertical/smrt/issues/131) [#131](https://github.com/happyvertical/smrt/issues/131) [#131](https://github.com/happyvertical/smrt/issues/131)
+* **core:** resolve test failures without runtime introspection ([#139](https://github.com/happyvertical/smrt/issues/139)) ([904a43f](https://github.com/happyvertical/smrt/commit/904a43f1a24cdfb4851f120579a3ecf5ca293f45)), closes [#117](https://github.com/happyvertical/smrt/issues/117) [#117](https://github.com/happyvertical/smrt/issues/117)
+* **profiles:** use smrtPlugin for manifest generation and export scanner from core ([#134](https://github.com/happyvertical/smrt/issues/134)) ([c998431](https://github.com/happyvertical/smrt/commit/c99843169518afd6ec1f1a16c002a326ed1dd2e9)), closes [#133](https://github.com/happyvertical/smrt/issues/133) [#9](https://github.com/happyvertical/smrt/issues/9) [#110](https://github.com/happyvertical/smrt/issues/110)
+
 # [0.6.0](https://github.com/happyvertical/smrt/compare/v0.5.0...v0.6.0) (2025-10-30)
 
 
