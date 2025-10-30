@@ -9,16 +9,24 @@ import { SmrtObject, smrt, text } from '../index';
 import { generateSchema } from '../schema/utils';
 import { tableNameFromClass } from '../utils';
 
-describe('Issue #144: Schema Generation Duplicate Columns', () => {
-  @smrt()
-  class TestEvent extends SmrtObject {
-    title = text({ required: true });
-    description = text();
-    startDate = text();
-  }
+// Move to top level to avoid collision with TestEvent in issue-144-integration.test.ts
+@smrt()
+class SchemaGenTestEvent extends SmrtObject {
+  title = text({ required: true });
+  description = text();
+  startDate = text();
+}
 
+// Move to top level to avoid collision with Article in cli-module.test.ts
+@smrt()
+class SchemaGenArticle extends SmrtObject {
+  title = text({ required: true });
+  body = text();
+}
+
+describe('Issue #144: Schema Generation Duplicate Columns', () => {
   it('should not duplicate created_at column in schema', async () => {
-    const schema = await generateSchema(TestEvent);
+    const schema = await generateSchema(SchemaGenTestEvent);
 
     // Count occurrences of 'created_at' in the schema
     const matches = schema.match(/created_at/g) || [];
@@ -27,7 +35,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
   });
 
   it('should not duplicate updated_at column in schema', async () => {
-    const schema = await generateSchema(TestEvent);
+    const schema = await generateSchema(SchemaGenTestEvent);
 
     // Count occurrences of 'updated_at' in the schema
     const matches = schema.match(/updated_at/g) || [];
@@ -36,7 +44,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
   });
 
   it('should include timestamp columns for trigger support', async () => {
-    const schema = await generateSchema(TestEvent);
+    const schema = await generateSchema(SchemaGenTestEvent);
 
     // Verify both timestamp columns exist (with quoted column names)
     expect(schema).toContain('"created_at" DATETIME');
@@ -44,7 +52,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
   });
 
   it('should generate valid SQL without duplicate column errors', async () => {
-    const schema = await generateSchema(TestEvent);
+    const schema = await generateSchema(SchemaGenTestEvent);
 
     // Extract the CREATE TABLE statement (before indexes)
     const createTableStmt = `${schema.split('\n).')[0]}\n);`;
@@ -74,8 +82,8 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
   });
 
   it('should match expected schema structure', async () => {
-    const schema = await generateSchema(TestEvent);
-    const tableName = tableNameFromClass(TestEvent);
+    const schema = await generateSchema(SchemaGenTestEvent);
+    const tableName = tableNameFromClass(SchemaGenTestEvent);
 
     // Expected schema should have this structure:
     // - CREATE TABLE statement
@@ -118,13 +126,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
   });
 
   it('should work correctly with inherited base class fields', async () => {
-    @smrt()
-    class Article extends SmrtObject {
-      title = text({ required: true });
-      body = text();
-    }
-
-    const schema = await generateSchema(Article);
+    const schema = await generateSchema(SchemaGenArticle);
 
     // Verify all base SmrtObject fields are included (with quoted column names)
     expect(schema).toContain('"id" TEXT PRIMARY KEY');
