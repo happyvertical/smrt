@@ -13,7 +13,41 @@ Changesets provides better control over releases in monorepos:
 
 ## Creating a Changeset
 
-When you make changes that should be released, create a changeset:
+You have two options for creating changesets:
+
+### Option 1: Auto-generate from Conventional Commits (Recommended)
+
+Simply use conventional commit format in your commits:
+
+```bash
+git commit -m "feat(core): add eager loading support"
+git commit -m "fix(agents): handle retry timeout"
+```
+
+When you open a PR, a GitHub Action automatically generates a changeset from your commits!
+
+**Conventional Commit Format:**
+```
+type(scope): description
+
+Examples:
+feat(core): add new feature          → minor bump
+fix(agents): fix bug                 → patch bump
+feat(core)!: breaking change         → minor bump (pre-1.0)
+feat: change affecting all packages  → all packages, minor bump
+```
+
+**Supported scopes** (package names):
+- `core`, `types`, `config`
+- `accounts`, `agents`, `assets`, `cli`, `content`
+- `events`, `gnode`, `places`, `products`, `profiles`
+- `svelte`, `tags`, `dev-mcp`, `docs-mcp`
+
+**No scope** = affects all packages
+
+### Option 2: Manual Creation
+
+Create a changeset manually for more control:
 
 ```bash
 pnpm changeset
@@ -207,12 +241,71 @@ Core package adds retry utilities, types updated for
 new retry configuration, agents updated to use retries.
 ```
 
+## Auto-Generated Changesets
+
+### How Auto-Generation Works
+
+1. **Write conventional commits** on your feature branch
+2. **Open PR** to main branch
+3. **GitHub Action runs** (`.github/workflows/auto-changeset.yml`)
+4. **Script analyzes commits** (`scripts/generate-changesets-from-commits.js`)
+5. **Changeset generated** and committed to your PR branch
+6. **Bot comments** on PR with changeset details
+
+### Editing Auto-Generated Changesets
+
+Auto-generated changesets can be edited for better descriptions:
+
+```bash
+# Find the changeset file
+ls .changeset/*.md | grep -v README
+
+# Edit it
+code .changeset/some-changeset-name.md
+
+# Commit changes
+git add .changeset
+git commit -m "docs: improve changeset description"
+```
+
+### Regenerating Changesets
+
+If you want to regenerate after adding more commits:
+
+```bash
+# Delete existing changeset
+rm .changeset/some-changeset-name.md
+
+# Push to trigger regeneration
+git push
+
+# Or run manually
+node scripts/generate-changesets-from-commits.js
+```
+
+### Skipping Auto-Generation
+
+To skip auto-generation and create manually:
+
+```bash
+# Create changeset before opening PR
+pnpm changeset
+git add .changeset
+git commit -m "chore: add changeset"
+git push
+
+# Open PR - auto-generation will skip (changeset exists)
+```
+
 ## Troubleshooting
 
 ### "No changesets found"
 
 If you don't create a changeset, the bot won't create a Version Packages PR.
-Make sure to run `pnpm changeset` before merging.
+
+**Solutions**:
+- Use conventional commits → auto-generation creates one
+- Run `pnpm changeset` manually before merging
 
 ### Version check fails
 
@@ -229,6 +322,36 @@ Common causes:
 - Build failures
 
 Check GitHub Actions logs for details.
+
+### Auto-generation not working
+
+If changesets aren't being auto-generated:
+
+1. **Check commits use conventional format**:
+   ```bash
+   git log --oneline
+   # Should show: feat(core): description
+   ```
+
+2. **Check GitHub Action ran**:
+   - Visit PR → "Checks" tab
+   - Look for "Auto-generate changeset" workflow
+
+3. **Check for existing changesets**:
+   ```bash
+   ls .changeset/*.md | grep -v README
+   # Auto-generation skips if changeset exists
+   ```
+
+4. **Run script manually**:
+   ```bash
+   node scripts/generate-changesets-from-commits.js
+   ```
+
+5. **Check script output**:
+   - "No conventional commits found" → Fix commit format
+   - "Changesets already exist" → Delete to regenerate
+   - "No changes to commit" → Script succeeded
 
 ## Migration from Semantic Release
 
