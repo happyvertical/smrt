@@ -1,3 +1,47 @@
+## [Unreleased]
+
+### Features
+
+* **core:** add 0 vs 0.0 heuristic for integer/decimal type inference
+
+The AST scanner now infers INTEGER or DECIMAL types based on numeric literal patterns:
+- Numeric literals without decimal point (e.g., `0`, `1`, `42`) → INTEGER
+- Numeric literals with decimal point (e.g., `0.0`, `4.5`, `1.0`) → DECIMAL
+
+This enhancement minimizes the need for field helpers while maintaining type precision.
+
+**Examples:**
+
+Before (required field helpers):
+```typescript
+class Product extends SmrtObject {
+  quantity = integer();  // Required for INTEGER column
+  price = decimal();     // Required for DECIMAL column
+}
+```
+
+After (TypeScript types work):
+```typescript
+class Product extends SmrtObject {
+  quantity: number = 0;    // → INTEGER (no decimal point)
+  price: number = 0.0;     // → DECIMAL (has decimal point)
+}
+```
+
+**Field helpers still needed for:**
+- Relationships: `categoryId = foreignKey(Category)`
+- Constraints: `name = text({ required: true, maxLength: 100 })`
+- Nullable decimals: `price = decimal({ nullable: true })`
+
+**Edge cases:**
+- `1.0` → DECIMAL (has decimal point)
+- `0.` → DECIMAL (has decimal point)
+- `1e10` → INTEGER (no decimal point in literal)
+
+**Backward compatibility:**
+- Field helpers (`integer()`, `decimal()`) still work and take priority
+- Non-breaking change - existing code continues to work
+
 ## [0.7.1](https://github.com/happyvertical/smrt/compare/v0.7.0...v0.7.1) (2025-10-31)
 
 
