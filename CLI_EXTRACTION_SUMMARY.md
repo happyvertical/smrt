@@ -70,10 +70,12 @@ Functions:
 - Provides next steps guidance
 
 **`smrt test`**:
-- Guides users to set up test manifest generation
-- Points to existing script-based approach
-- Shows package.json configuration example
-- Optional test execution with vitest
+- Scans src/**/*.test.ts and src/**/*.spec.ts files
+- Generates test manifest using ASTScanner and ManifestGenerator
+- Creates both JSON manifest and TypeScript stub
+- Optionally runs vitest after manifest generation
+- `--manifest-only` flag to skip test execution
+- `--output` option to specify output directory (default: src/manifest)
 
 ### 5. Architecture
 

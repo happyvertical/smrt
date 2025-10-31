@@ -42,9 +42,13 @@ smrt gnode create my-town --template=sveltekit
   - Scans for: static-manifest.js, manifest.json in project root and packages
   - Shows discovered objects and their sources
   - Use `--verbose` for detailed field information
-- `smrt test` - Guide for setting up test manifest generation
-  - Points to the script-based approach (see packages/profiles/scripts)
-  - Helps configure pretest hooks for automatic manifest generation
+- `smrt test` - Generate test manifest and run tests
+  - Scans src/**/*.test.ts and src/**/*.spec.ts files
+  - Generates manifest using ASTScanner and ManifestGenerator
+  - Creates JSON and TypeScript stub files
+  - Optionally runs vitest after generation
+  - Use `--manifest-only` to skip test execution
+  - Use `--output <dir>` to customize output location
 
 ### Object Management
 
