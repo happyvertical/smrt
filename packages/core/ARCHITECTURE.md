@@ -771,6 +771,46 @@ cliGen.prompt(fields);          // "name (required, max 100 chars)", "price (min
 mcpGen.parameters(fields);      // name: { type: "string", maxLength: 100 }, price: { type: "number", minimum: 0 }
 ```
 
+**TypeScript Types vs Field Helpers**:
+
+The framework supports two approaches for defining properties. Both are processed identically by all generators:
+
+```typescript
+// Field helpers (when constraints needed)
+class ProductWithConstraints extends SmrtObject {
+  name = text({ required: true, maxLength: 100 });  // Validation needed
+  price = decimal({ min: 0 });                       // Constraint needed
+  categoryId = foreignKey(Category);                 // Relationship
+}
+
+// TypeScript types (when no constraints)
+class ProductSimple extends SmrtObject {
+  name: string = '';          // → TEXT
+  description: string = '';   // → TEXT
+  quantity: number = 0;       // → INTEGER (no decimal point)
+  price: number = 0.0;        // → DECIMAL (has decimal point)
+  active: boolean = true;     // → BOOLEAN
+  tags: string[] = [];        // → JSON
+}
+
+// Mixed approach (common in practice)
+class ProductMixed extends SmrtObject {
+  // TypeScript types for simple fields
+  name: string = '';
+  description: string = '';
+  quantity: number = 0;       // INTEGER
+  price: number = 0.0;        // DECIMAL
+
+  // Field helpers only where needed
+  sku = text({ required: true, unique: true });  // Constraint
+  categoryId = foreignKey(Category);             // Relationship
+}
+```
+
+All three approaches produce identical field definitions in `ObjectRegistry.getFields()` and are processed consistently by all generators (CLI, API, MCP, Swagger).
+
+**The 0 vs 0.0 Heuristic**: Numeric literals without decimal point (0, 1, 42) → INTEGER; with decimal point (0.0, 4.5, 1.0) → DECIMAL.
+
 ### 3. Collection Name Consistency
 
 **Guarantee**: All generators use identical collection names (pluralization).
