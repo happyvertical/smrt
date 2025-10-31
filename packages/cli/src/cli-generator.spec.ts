@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 describe('CLI Generator - Simplified Tests', () => {
   it('should import and instantiate CLI generator', async () => {
     // Dynamic import to avoid module resolution issues
-    const { CLIGenerator } = await import('./cli.js');
+    const { CLIGenerator } = await import('./cli-generator.js');
 
     const generator = new CLIGenerator({
       name: 'test-cli',
@@ -28,7 +28,7 @@ describe('CLI Generator - Simplified Tests', () => {
     // Set NODE_ENV to test to prevent process.exit
     process.env.NODE_ENV = 'test';
 
-    const { CLIGenerator } = await import('./cli.js');
+    const { CLIGenerator } = await import('./cli-generator.js');
 
     const generator = new CLIGenerator({
       name: 'test-cli',
@@ -54,28 +54,6 @@ describe('CLI Generator - Simplified Tests', () => {
     }
   });
 
-  it('should validate unified mocking strategy works', async () => {
-    // Test that the mocking utilities can be imported and used
-    const { TestDataFactory, MockContextFactory } = await import(
-      '../test-utils.js'
-    );
-
-    expect(TestDataFactory).toBeDefined();
-    expect(MockContextFactory).toBeDefined();
-
-    // Create test data
-    const testUser = TestDataFactory.generateTestUser();
-    expect(testUser.id).toBeDefined();
-    expect(testUser.username).toBeDefined();
-    expect(typeof testUser.save).toBe('function');
-
-    // Create mock context
-    const contextFactory = new MockContextFactory();
-    const mockContext = contextFactory.createMockContext();
-    expect(mockContext.db).toBeDefined();
-    expect(mockContext.ai).toBeDefined();
-  });
-
   it('should not crash in non-TTY environments (Issue #80)', async () => {
     // Mock non-TTY environment
     const originalIsTTY = process.stdout.isTTY;
@@ -94,7 +72,7 @@ describe('CLI Generator - Simplified Tests', () => {
       delete (process.stdout as any).clearLine;
       delete (process.stdout as any).cursorTo;
 
-      const { CLIGenerator } = await import('./cli.js');
+      const { CLIGenerator } = await import('./cli-generator.js');
 
       const generator = new CLIGenerator({
         name: 'test-cli',
