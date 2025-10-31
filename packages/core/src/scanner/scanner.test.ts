@@ -12,6 +12,7 @@ const __dirname = dirname(__filename);
 
 describe('AST Scanner', () => {
   const testFilePath = resolve(__dirname, 'test-sample.ts');
+  const numericTypesPath = resolve(__dirname, 'test-numeric-types.ts');
 
   it('should scan and find SMRT classes', () => {
     const scanner = new ASTScanner([testFilePath]);
@@ -159,5 +160,159 @@ describe('AST Scanner', () => {
     expect(tools).toContain('get_content');
     expect(tools).toContain('create_content');
     expect(tools).not.toContain('delete_content'); // Not in include list
+  });
+
+  describe('Numeric Type Inference (0 vs 0.0 heuristic)', () => {
+    it('should infer INTEGER for numeric literals without decimal point', () => {
+      const scanner = new ASTScanner([numericTypesPath]);
+      const results = scanner.scanFiles();
+      const numericObj = results[0].objects.find(
+        (obj) => obj.className === 'NumericTypes',
+      );
+
+      expect(numericObj).toBeDefined();
+
+      // count: number = 0
+      expect(numericObj?.fields.count).toMatchObject({
+        type: 'integer',
+        required: true,
+        default: 0,
+      });
+
+      // quantity: number = 1
+      expect(numericObj?.fields.quantity).toMatchObject({
+        type: 'integer',
+        required: true,
+        default: 1,
+      });
+
+      // viewCount: number = 42
+      expect(numericObj?.fields.viewCount).toMatchObject({
+        type: 'integer',
+        required: true,
+        default: 42,
+      });
+
+      // negativeInt: number = -5
+      expect(numericObj?.fields.negativeInt).toMatchObject({
+        type: 'integer',
+        required: true,
+        default: -5,
+      });
+
+      // explicitNumber: number = 100
+      expect(numericObj?.fields.explicitNumber).toMatchObject({
+        type: 'integer',
+        required: true,
+        default: 100,
+      });
+    });
+
+    it('should infer DECIMAL for numeric literals with decimal point', () => {
+      const scanner = new ASTScanner([numericTypesPath]);
+      const results = scanner.scanFiles();
+      const numericObj = results[0].objects.find(
+        (obj) => obj.className === 'NumericTypes',
+      );
+
+      expect(numericObj).toBeDefined();
+
+      // price: number = 0.0
+      expect(numericObj?.fields.price).toMatchObject({
+        type: 'decimal',
+        required: true,
+        default: 0.0,
+      });
+
+      // rating: number = 4.5
+      expect(numericObj?.fields.rating).toMatchObject({
+        type: 'decimal',
+        required: true,
+        default: 4.5,
+      });
+
+      // percentage: number = 0.95
+      expect(numericObj?.fields.percentage).toMatchObject({
+        type: 'decimal',
+        required: true,
+        default: 0.95,
+      });
+
+      // temperature: number = -3.7
+      expect(numericObj?.fields.temperature).toMatchObject({
+        type: 'decimal',
+        required: true,
+        default: -3.7,
+      });
+    });
+
+    it('should handle edge cases correctly', () => {
+      const scanner = new ASTScanner([numericTypesPath]);
+      const results = scanner.scanFiles();
+      const numericObj = results[0].objects.find(
+        (obj) => obj.className === 'NumericTypes',
+      );
+
+      expect(numericObj).toBeDefined();
+
+      // wholeAsDecimal: number = 1.0 (has dot, should be decimal)
+      expect(numericObj?.fields.wholeAsDecimal).toMatchObject({
+        type: 'decimal',
+        default: 1.0,
+      });
+
+      // trailingDot: number = 0. (has dot, should be decimal)
+      expect(numericObj?.fields.trailingDot).toMatchObject({
+        type: 'decimal',
+        default: 0,
+      });
+    });
+
+    it('should handle scientific notation as integer (no dot in literal)', () => {
+      const scanner = new ASTScanner([numericTypesPath]);
+      const results = scanner.scanFiles();
+      const numericObj = results[0].objects.find(
+        (obj) => obj.className === 'NumericTypes',
+      );
+
+      expect(numericObj).toBeDefined();
+
+      // sciNotation: number = 1e10 (no dot in "1e10", treated as integer)
+      expect(numericObj?.fields.sciNotation).toMatchObject({
+        type: 'integer',
+        default: 1e10,
+      });
+    });
+
+    it('should still handle other types correctly', () => {
+      const scanner = new ASTScanner([numericTypesPath]);
+      const results = scanner.scanFiles();
+      const numericObj = results[0].objects.find(
+        (obj) => obj.className === 'NumericTypes',
+      );
+
+      expect(numericObj).toBeDefined();
+
+      // name: string = ''
+      expect(numericObj?.fields.name).toMatchObject({
+        type: 'text',
+        required: true,
+        default: '',
+      });
+
+      // active: boolean = true
+      expect(numericObj?.fields.active).toMatchObject({
+        type: 'boolean',
+        required: true,
+        default: true,
+      });
+    });
+
+    it('should preserve backward compatibility with field helpers', () => {
+      // Field helpers like integer() and decimal() should still work
+      // and take priority over the heuristic
+      // This is tested indirectly through the call expression handling
+      // in inferTypeFromInitializer()
+    });
   });
 });

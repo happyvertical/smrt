@@ -479,6 +479,16 @@ export class ASTScanner {
     node: ts.PropertyDeclaration,
     sourceFile: ts.SourceFile,
   ): FieldDefinition['type'] {
+    // Special case: If type annotation is 'number' AND there's an initializer,
+    // use the initializer to determine integer vs decimal (0 vs 0.0 heuristic)
+    if (node.type && node.initializer) {
+      const typeText = node.type.getText(sourceFile).toLowerCase();
+      if (typeText === 'number') {
+        // Defer to initializer for integer/decimal distinction
+        return this.inferTypeFromInitializer(node.initializer, sourceFile);
+      }
+    }
+
     // Check type annotation first with enhanced detection
     if (node.type) {
       return this.analyzeTypeNode(node.type, sourceFile);
@@ -486,7 +496,7 @@ export class ASTScanner {
 
     // Infer from initializer with enhanced detection
     if (node.initializer) {
-      return this.inferTypeFromInitializer(node.initializer);
+      return this.inferTypeFromInitializer(node.initializer, sourceFile);
     }
 
     return 'text'; // Default fallback
@@ -575,9 +585,38 @@ export class ASTScanner {
    */
   private inferTypeFromInitializer(
     initializer: ts.Expression,
+    sourceFile?: ts.SourceFile,
   ): FieldDefinition['type'] {
     if (ts.isStringLiteral(initializer)) return 'text';
-    if (ts.isNumericLiteral(initializer)) return 'decimal';
+
+    // Handle negative numbers (PrefixUnaryExpression with minus operator)
+    if (ts.isPrefixUnaryExpression(initializer)) {
+      if (
+        initializer.operator === ts.SyntaxKind.MinusToken &&
+        ts.isNumericLiteral(initializer.operand)
+      ) {
+        // Get original source text to check for decimal point
+        if (sourceFile) {
+          const sourceText = initializer.operand.getText(sourceFile);
+          return sourceText.includes('.') ? 'decimal' : 'integer';
+        }
+        // Fallback to checking the parsed number value
+        const numText = initializer.operand.text;
+        return numText.includes('.') ? 'decimal' : 'integer';
+      }
+    }
+
+    if (ts.isNumericLiteral(initializer)) {
+      // Use 0 vs 0.0 heuristic: decimal point indicates DECIMAL, otherwise INTEGER
+      // Get original source text to check for decimal point (TypeScript normalizes in AST)
+      if (sourceFile) {
+        const sourceText = initializer.getText(sourceFile);
+        return sourceText.includes('.') ? 'decimal' : 'integer';
+      }
+      // Fallback to checking the text property
+      const numText = initializer.text;
+      return numText.includes('.') ? 'decimal' : 'integer';
+    }
     if (
       initializer.kind === ts.SyntaxKind.TrueKeyword ||
       initializer.kind === ts.SyntaxKind.FalseKeyword
@@ -632,6 +671,17 @@ export class ASTScanner {
   private extractDefaultValue(node: ts.Expression): any {
     if (ts.isStringLiteral(node)) return node.text;
     if (ts.isNumericLiteral(node)) return Number(node.text);
+
+    // Handle negative numbers (PrefixUnaryExpression)
+    if (ts.isPrefixUnaryExpression(node)) {
+      if (
+        node.operator === ts.SyntaxKind.MinusToken &&
+        ts.isNumericLiteral(node.operand)
+      ) {
+        return -Number(node.operand.text);
+      }
+    }
+
     if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
     if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
     if (node.kind === ts.SyntaxKind.NullKeyword) return null;
