@@ -47,6 +47,7 @@
 
     // SMRT core framework
     { "path": "./packages/core" },
+    { "path": "./packages/cli" },
 
     // Domain modules
     { "path": "./packages/accounts" },

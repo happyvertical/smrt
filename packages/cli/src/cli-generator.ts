@@ -11,16 +11,17 @@ import {
   type ParsedArgs,
   parseCliArgs,
 } from '@happyvertical/utils';
-import type { SmrtCollection } from '../collection';
-import { ObjectRegistry } from '../registry';
+import type { SmrtCollection } from '@happyvertical/smrt-core';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 // Lazy-load commands to avoid loading tar dependencies unless needed
 let _gnodeCommands: Record<string, Command> | null = null;
 let _generateCommands: Record<string, Command> | null = null;
+let _utilityCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
-    const { gnodeCommands } = await import('../cli/commands/index.js');
+    const { gnodeCommands } = await import('./commands/index.js');
     _gnodeCommands = gnodeCommands;
   }
   return _gnodeCommands;
@@ -28,10 +29,18 @@ async function getGnodeCommands(): Promise<Record<string, Command>> {
 
 async function getGenerateCommands(): Promise<Record<string, Command>> {
   if (!_generateCommands) {
-    const { generateCommands } = await import('../cli/commands/index.js');
+    const { generateCommands } = await import('./commands/index.js');
     _generateCommands = generateCommands;
   }
   return _generateCommands;
+}
+
+async function getUtilityCommands(): Promise<Record<string, Command>> {
+  if (!_utilityCommands) {
+    const { utilityCommands } = await import('./commands/index.js');
+    _utilityCommands = utilityCommands;
+  }
+  return _utilityCommands;
 }
 
 export interface CLIConfig {
@@ -341,13 +350,15 @@ export class CLIGenerator {
 
     // Only load built-in commands if not found in object commands
     // This avoids loading tar dependencies unless actually needed
-    const [gnodeCommands, generateCommands] = await Promise.all([
+    const [gnodeCommands, generateCommands, utilityCommands] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
+      getUtilityCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
       ...generateCommands,
+      ...utilityCommands,
     };
 
     const builtInCommand = builtInCommands[parsed.command];
@@ -485,10 +496,17 @@ export class CLIGenerator {
     console.log();
 
     // Show built-in subcommands first
-    const [gnodeCommands, generateCommands] = await Promise.all([
+    const [gnodeCommands, generateCommands, utilityCommands] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
+      getUtilityCommands(),
     ]);
+
+    console.log('Utility Commands:');
+    for (const command of Object.values(utilityCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
 
     console.log('Gnode Commands:');
     for (const command of Object.values(gnodeCommands)) {
@@ -500,8 +518,8 @@ export class CLIGenerator {
       this.showCommandHelp(command);
     }
 
-    // Show utility commands
-    const utilityCommands = commands.filter(
+    // Show utility commands (from object commands list)
+    const builtInUtilityCommands = commands.filter(
       (cmd) =>
         cmd.name === 'objects' ||
         cmd.name === 'schema' ||
@@ -510,16 +528,16 @@ export class CLIGenerator {
         cmd.name === 'status',
     );
 
-    if (utilityCommands.length > 0) {
-      console.log('Utility Commands:');
-      for (const command of utilityCommands) {
+    if (builtInUtilityCommands.length > 0) {
+      console.log('Object Utilities:');
+      for (const command of builtInUtilityCommands) {
         this.showCommandHelp(command);
       }
     }
 
     // Show auto-generated object commands
     const objectCommands = commands.filter(
-      (cmd) => !utilityCommands.includes(cmd),
+      (cmd) => !builtInUtilityCommands.includes(cmd),
     );
 
     if (objectCommands.length > 0) {

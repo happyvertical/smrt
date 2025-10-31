@@ -4,7 +4,7 @@
  * Commands for creating and managing gnodes (federated local knowledge bases)
  */
 
-import type { CLICommand } from '../../generators/cli.js';
+import type { CLICommand } from '../cli-generator.js';
 import {
   cleanupGitTemplate,
   discoverInstalledTemplates,

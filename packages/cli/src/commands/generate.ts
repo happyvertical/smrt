@@ -4,10 +4,10 @@
  * Commands for generating code, types, and other artifacts
  */
 
-import type { CLICommand } from '../../generators/cli.js';
-import { MCPGenerator } from '../../generators/mcp.js';
-import { generateDeclarationsFromCLI } from '../../prebuild/index.js';
-import { ObjectRegistry } from '../../registry.js';
+import type { CLICommand } from '../cli-generator.js';
+import { MCPGenerator } from '@happyvertical/smrt-core/generators';
+import { generateDeclarationsFromCLI } from '@happyvertical/smrt-core/prebuild';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 /**
  * Code generation commands for CLI
