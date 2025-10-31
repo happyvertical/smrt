@@ -6,24 +6,21 @@ on:
       - main
   workflow_dispatch:
     inputs:
-      dry-run:
-        description: 'Run semantic-release in dry-run mode'
-        required: false
-        type: boolean
-        default: false
       skip-docs:
         description: 'Skip documentation deployment'
         required: false
         type: boolean
         default: false
 
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
 jobs:
   test:
     name: Run Test Suite
     uses: ./.github/workflows/test-suite.yml
 
-  build-and-release:
-    name: Build and Release
+  release:
+    name: Release
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -32,11 +29,12 @@ jobs:
       issues: write
       pull-requests: write
       packages: write
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for semantic-release
+          fetch-depth: 0
 
       - name: Checkout SDK repository
         uses: actions/checkout@v4
@@ -68,23 +66,22 @@ jobs:
       - name: Build packages
         run: pnpm run build
 
-      - name: Semantic Release (Dry Run)
-        if: ${{ github.event.inputs.dry-run == 'true' }}
-        run: pnpm run release:dry-run
+      - name: Create Release PR or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm run version
+          publish: pnpm run release
+          commit: 'chore(release): version packages'
+          title: 'chore(release): version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Semantic Release
-        if: ${{ github.event.inputs.dry-run != 'true' }}
-        run: pnpm run release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy-docs:
     name: Deploy Documentation
-    needs: build-and-release
+    needs: release
     if: ${{ github.event.inputs.skip-docs != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15

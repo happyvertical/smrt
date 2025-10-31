@@ -20,14 +20,9 @@
     "typecheck": "turbo typecheck",
     "dev": "turbo dev --parallel",
     "validate-build": "node scripts/validate-build.js",
-    "release": "npx semantic-release",
-    "release:dry-run": "npx semantic-release --dry-run",
-    "release:packages": "pnpm run build && pnpm -r --workspace-concurrency=1 exec -- npx semantic-release",
-    "release:packages:dry-run": "pnpm run build && pnpm -r --workspace-concurrency=1 exec -- npx semantic-release --dry-run",
-    "release:preview": "node scripts/release-helper.js preview",
-    "release:test": "node scripts/release-helper.js test",
-    "release:validate": "node scripts/release-helper.js validate",
-    "release:full": "node scripts/release-helper.js full",
+    "changeset": "changeset",
+    "version": "node scripts/check-version-limit.js && changeset version",
+    "release": "pnpm run build && changeset publish",
     "smrt": "pnpm --filter @smrt/core cli",
     "docs:site": "npm run --prefix docs start",
     "docs:site:build": "npm run --prefix docs build",
@@ -72,23 +67,9 @@
   "packageManager": "pnpm@9.15.0",
   "pnpm": {
     "overrides": {
-      "@happyvertical/ai": "workspace:*",
-      "@happyvertical/cache": "workspace:*",
-      "@happyvertical/config": "workspace:*",
-      "@happyvertical/documents": "workspace:*",
-      "@happyvertical/email": "workspace:*",
-      "@happyvertical/files": "workspace:*",
-      "@happyvertical/geo": "workspace:*",
-      "@happyvertical/github-actions": "workspace:*",
-      "@happyvertical/languages": "workspace:*",
-      "@happyvertical/logger": "workspace:*",
-      "@happyvertical/ocr": "workspace:*",
-      "@happyvertical/pdf": "workspace:*",
-      "@happyvertical/sdk-mcp": "workspace:*",
-      "@happyvertical/spider": "workspace:*",
-      "@happyvertical/sql": "workspace:*",
-      "@happyvertical/translator": "workspace:*",
-      "@happyvertical/utils": "workspace:*"
+      "@happyvertical/smrt-types": "workspace:*",
+      "@happyvertical/smrt-config": "workspace:*",
+      "@happyvertical/smrt-core": "workspace:*"
     }
   }
 }
