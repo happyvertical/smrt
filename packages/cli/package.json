@@ -1,0 +1,60 @@
+{
+  "name": "@happyvertical/smrt-cli",
+  "version": "0.4.1",
+  "description": "Developer CLI for SMRT framework - introspection, testing, and project management",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "smrt": "./dist/index.js",
+    "smrt-cli": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "build:watch": "vite build --watch",
+    "clean": "rm -rf dist",
+    "dev": "npm run build:watch",
+    "test": "npx vitest run",
+    "test:watch": "npx vitest",
+    "cli": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/utils": "workspace:*",
+    "fast-glob": "3.3.3",
+    "tar": "^7.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.7.3",
+    "vite": "^7.1.3",
+    "vite-plugin-dts": "4.3.0",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "smrt",
+    "cli",
+    "developer-tools",
+    "introspection",
+    "testing",
+    "ai-agents"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}

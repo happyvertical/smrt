@@ -141,6 +141,7 @@ import { tools } from '@smrt/mcp';
 
 - `@smrt/core` - Core framework with ORM, code generation, and AI integration
 - `@smrt/types` - Shared TypeScript type definitions
+- `@smrt/cli` - Developer CLI for introspection, testing, and project management
 
 ### Domain Modules (`@smrt/*`)
 

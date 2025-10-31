@@ -21,7 +21,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "pretest": "node scripts/generate-test-manifest.js",
+    "pretest": "node ../cli/dist/index.js test --manifest-only",
     "test": "npx vitest run",
     "test:watch": "npx vitest"
   },
@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",
+    "@happyvertical/smrt-cli": "workspace:*",
     "@types/node": "^24.0.0",
     "fast-glob": "3.3.3",
     "typescript": "^5.7.2",

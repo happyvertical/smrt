@@ -160,3 +160,7 @@ repomix-output.xml
 
 # Auto-generated SMRT files
 **/.smrt/
+
+# Test databases
+*.db
+**/*.db

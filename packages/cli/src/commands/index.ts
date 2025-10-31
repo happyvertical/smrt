@@ -4,3 +4,4 @@
 
 export { generateCommands } from './generate.js';
 export { gnodeCommands } from './gnode.js';
+export { utilityCommands } from './utilities.js';
