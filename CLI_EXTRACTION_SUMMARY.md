@@ -36,7 +36,7 @@ Created new `@happyvertical/smrt-cli` package at `packages/cli/` with:
 ### 3. Core Package Cleaned Up
 
 **Removed from Core**:
-- `dist/generators/cli.js` binary
+- `dist/generators/cli.js` binary → moved to CLI package as `smrt` binary
 - `src/cli/` directory (all CLI command implementations)
 - `src/generators/cli.ts` and `cli.spec.ts`
 - `tar` dependency (moved to CLI package)
@@ -44,6 +44,10 @@ Created new `@happyvertical/smrt-cli` package at `packages/cli/` with:
 
 **Kept in Core**:
 - `smrt-prebuild` binary (for pre-build type generation)
+  - **Purpose**: Generates TypeScript declarations from manifests before builds
+  - **Location**: `packages/core/src/prebuild/`
+  - **Usage**: `smrt-prebuild generate-types <manifest> <output-dir>`
+  - **Use Case**: Solves chicken-and-egg problem for virtual module type resolution
 - Code generation libraries (MCPGenerator, APIGenerator, etc.)
 - All other framework functionality
 
@@ -119,6 +123,37 @@ Functions:
 - Previously only searched src/manifest/ and root, missing build artifacts
 - Now correctly discovers manifests in all SMRT packages
 
+## Two-CLI Architecture
+
+The extraction results in **two separate CLI tools** with distinct purposes:
+
+### `smrt` CLI (`@happyvertical/smrt-cli`)
+**Developer-facing tool** for working with SMRT projects:
+- **Commands**: `introspect`, `test`, `generate-mcp`, `gnode create`, `objects`, `schema`
+- **Used by**: Developers during development
+- **Installation**: `npm install -D @happyvertical/smrt-cli`
+- **Purpose**: Full-featured developer CLI for SMRT project management
+
+### `smrt-prebuild` CLI (`@happyvertical/smrt-core`)
+**Build-time tool** for type generation:
+- **Commands**: `generate-types <manifest> <output-dir>`
+- **Used by**: Package build scripts (not developers directly)
+- **Installation**: Installed automatically as dependency of `@happyvertical/smrt-core`
+- **Purpose**: Generates physical `.d.ts` files from manifests before TypeScript compilation
+- **Why Needed**: Solves chicken-and-egg problem where virtual modules need type declarations before Vite plugin runs
+
+**Example build script usage**:
+```json
+{
+  "scripts": {
+    "prebuild": "smrt-prebuild generate-types ./manifest.json src/types",
+    "build": "npm run prebuild && vite build"
+  }
+}
+```
+
+This separation keeps the core framework lightweight while providing a full-featured developer CLI.
+
 ## Benefits Achieved
 
 1. **Clean Separation**: CLI is now independent from core framework
@@ -126,6 +161,7 @@ Functions:
 3. **Better Discoverability**: `smrt introspect` solves the main problem from Issue #135
 4. **Independent Versioning**: CLI can evolve separately from core
 5. **Focused Packages**: Each package has a clear, single responsibility
+6. **Two-CLI Architecture**: Developer CLI (`smrt`) separate from build-time utility (`smrt-prebuild`)
 
 ## Next Steps
 
