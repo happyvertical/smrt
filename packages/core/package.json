@@ -34,11 +34,11 @@
     "./scanner/types": "./dist/scanner/types.js"
   },
   "dependencies": {
-    "@happyvertical/ai": "workspace:*",
-    "@happyvertical/files": "workspace:*",
-    "@happyvertical/logger": "workspace:*",
-    "@happyvertical/sql": "workspace:*",
-    "@happyvertical/utils": "workspace:*",
+    "@happyvertical/ai": "^0.55.0",
+    "@happyvertical/files": "^0.55.0",
+    "@happyvertical/logger": "^0.55.0",
+    "@happyvertical/sql": "^0.55.0",
+    "@happyvertical/utils": "^0.55.0",
     "@happyvertical/smrt-types": "workspace:*",
     "@langchain/community": "^0.3.24",
     "@modelcontextprotocol/sdk": "^1.0.4",

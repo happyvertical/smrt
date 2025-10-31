@@ -22,13 +22,13 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/ai": "workspace:*",
+    "@happyvertical/ai": "^0.55.0",
     "@happyvertical/documents": "workspace:*",
-    "@happyvertical/files": "workspace:*",
+    "@happyvertical/files": "^0.55.0",
     "@happyvertical/pdf": "workspace:*",
     "@happyvertical/spider": "workspace:*",
     "@happyvertical/ocr": "workspace:*",
-    "@happyvertical/utils": "workspace:*",
+    "@happyvertical/utils": "^0.55.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
