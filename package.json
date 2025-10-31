@@ -72,23 +72,9 @@
   "packageManager": "pnpm@9.15.0",
   "pnpm": {
     "overrides": {
-      "@happyvertical/ai": "workspace:*",
-      "@happyvertical/cache": "workspace:*",
-      "@happyvertical/config": "workspace:*",
-      "@happyvertical/documents": "workspace:*",
-      "@happyvertical/email": "workspace:*",
-      "@happyvertical/files": "workspace:*",
-      "@happyvertical/geo": "workspace:*",
-      "@happyvertical/github-actions": "workspace:*",
-      "@happyvertical/languages": "workspace:*",
-      "@happyvertical/logger": "workspace:*",
-      "@happyvertical/ocr": "workspace:*",
-      "@happyvertical/pdf": "workspace:*",
-      "@happyvertical/sdk-mcp": "workspace:*",
-      "@happyvertical/spider": "workspace:*",
-      "@happyvertical/sql": "workspace:*",
-      "@happyvertical/translator": "workspace:*",
-      "@happyvertical/utils": "workspace:*"
+      "@happyvertical/smrt-types": "workspace:*",
+      "@happyvertical/smrt-config": "workspace:*",
+      "@happyvertical/smrt-core": "workspace:*"
     }
   }
 }

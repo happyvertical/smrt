@@ -4,7 +4,7 @@
  * Synchronizes all package versions with the root package version
  * Run this after semantic-release updates the root version
  *
- * Scans packages/core/* and packages/modules/* for packages
+ * Scans packages/* for all packages
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'node:fs'
@@ -37,16 +37,16 @@ function updatePackage(pkgJsonPath, pkgName) {
       console.log(`  ${pkgName}: already at ${newVersion}`)
     }
   } catch (err) {
-    // Skip packages that don't have a package.json (e.g., spec-only directories)
+    // Skip packages that don't have a package.json
     console.warn(`  ${pkgName}: skipped (${err.message})`)
   }
 }
 
 /**
- * Scan a directory for packages
+ * Scan packages directory
  */
-function scanDirectory(baseDir, subdirName) {
-  const fullPath = join(baseDir, subdirName)
+function scanDirectory(baseDir) {
+  const fullPath = baseDir
 
   if (!existsSync(fullPath)) {
     console.warn(`Directory ${fullPath} does not exist, skipping`)
@@ -62,14 +62,12 @@ function scanDirectory(baseDir, subdirName) {
 
     // Only process if it's a directory with package.json
     if (existsSync(itemPath) && statSync(itemPath).isDirectory() && existsSync(pkgJsonPath)) {
-      const displayName = `${subdirName}/${item}`
-      updatePackage(pkgJsonPath, displayName)
+      updatePackage(pkgJsonPath, item)
     }
   }
 }
 
-// Scan packages in new structure only
-scanDirectory('packages', 'core')
-scanDirectory('packages', 'modules')
+// Scan all packages
+scanDirectory('packages')
 
 console.log(`\nSynchronized ${updated} package(s)`)
