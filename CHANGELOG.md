@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/happyvertical/smrt/compare/v0.6.1...v0.7.0) (2025-10-31)
+
+
+### Features
+
+* **cli:** extract CLI functionality into standalone package ([#142](https://github.com/happyvertical/smrt/issues/142)) ([8f1d71e](https://github.com/happyvertical/smrt/commit/8f1d71ecd0af2f9e5e91b848c79ca0cc2dc9b029)), closes [#135](https://github.com/happyvertical/smrt/issues/135)
+
 ## [0.6.1](https://github.com/happyvertical/smrt/compare/v0.6.0...v0.6.1) (2025-10-30)
 
 
