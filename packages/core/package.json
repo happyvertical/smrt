@@ -49,7 +49,6 @@
     "yaml": "^2.7.0"
   },
   "scripts": {
-    "prepare": "test -d dist || npm run build",
     "pretest": "node scripts/generate-test-manifest.js",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
