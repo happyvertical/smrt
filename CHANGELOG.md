@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/happyvertical/smrt/compare/v0.7.0...v0.7.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* **core:** store package name in manifest at build time ([#144](https://github.com/happyvertical/smrt/issues/144)) ([3f8ba58](https://github.com/happyvertical/smrt/commit/3f8ba586f249e243bbc3899e863d54572cf8ca2b)), closes [#143](https://github.com/happyvertical/smrt/issues/143) [#143](https://github.com/happyvertical/smrt/issues/143)
+
 # [0.7.0](https://github.com/happyvertical/smrt/compare/v0.6.1...v0.7.0) (2025-10-31)
 
 
