@@ -165,15 +165,17 @@ This separation keeps the core framework lightweight while providing a full-feat
 
 ## Next Steps
 
-### Immediate (Before PR)
+### Immediate (Completed)
 - [x] Test CLI in profiles package
 - [x] Verify introspect command discovers manifests correctly
 - [x] Update workspace documentation
-- [ ] Create commit with conventional message
-- [ ] Create PR with full description
+- [x] Create commits with conventional messages
+- [x] Create PR with full description
+- [x] Fix CI failure (removed prepare script causing build issues)
+- [x] Migrate profiles package to use `smrt test` command
 
 ### Future Enhancements
-- [ ] Enhance `smrt test` to actually generate manifests (requires aligning AST scanner API)
+- [ ] Migrate other packages to use `smrt test` (check for similar custom scripts)
 - [ ] Add more introspection features (relationship visualization, etc.)
 - [ ] Improve manifest discovery caching
 - [ ] Add configuration file support for CLI
