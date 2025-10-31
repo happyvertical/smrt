@@ -16,6 +16,7 @@
  * 4. Return manifest entry or undefined
  */
 
+import { ObjectRegistry } from '../registry.js';
 import type {
   FieldDefinition,
   MethodDefinition,
@@ -100,9 +101,6 @@ export function getPackageName(
     // This solves issue #143 where pnpm workspace symlinks break stack trace parsing
     const className = ctor.name;
     if (className) {
-      // Import ObjectRegistry dynamically to avoid circular dependency issues
-      // This is safe because ObjectRegistry is already loaded by the time this runs
-      const { ObjectRegistry } = require('../registry.js');
       const registered = ObjectRegistry.getClass(className);
       if (registered?.packageName) {
         return registered.packageName;
