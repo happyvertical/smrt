@@ -173,6 +173,10 @@ This separation keeps the core framework lightweight while providing a full-feat
 - [x] Create PR with full description
 - [x] Fix CI failure (removed prepare script causing build issues)
 - [x] Migrate profiles package to use `smrt test` command
+- [x] Add `@happyvertical/smrt-cli` as devDependency to profiles package
+- [x] Fix CLI scanner bundling issue by externalizing `@happyvertical/smrt-core/scanner`
+- [x] Fix test command output option default value handling
+- [x] Verify profiles tests pass with new `smrt test` command
 
 ### Future Enhancements
 - [ ] Migrate other packages to use `smrt test` (check for similar custom scripts)
