@@ -3,8 +3,8 @@
  */
 
 export {
-  discoverManifests,
-  loadManifest,
   autoDiscoverAndLoad,
   type DiscoveredManifest,
+  discoverManifests,
+  loadManifest,
 } from './manifest-discovery.js';

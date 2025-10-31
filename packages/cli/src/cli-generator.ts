@@ -6,13 +6,13 @@
  */
 
 import { createInterface } from 'node:readline';
+import type { SmrtCollection } from '@happyvertical/smrt-core';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   type Command,
   type ParsedArgs,
   parseCliArgs,
 } from '@happyvertical/utils';
-import type { SmrtCollection } from '@happyvertical/smrt-core';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 // Lazy-load commands to avoid loading tar dependencies unless needed
 let _gnodeCommands: Record<string, Command> | null = null;
@@ -350,11 +350,12 @@ export class CLIGenerator {
 
     // Only load built-in commands if not found in object commands
     // This avoids loading tar dependencies unless actually needed
-    const [gnodeCommands, generateCommands, utilityCommands] = await Promise.all([
-      getGnodeCommands(),
-      getGenerateCommands(),
-      getUtilityCommands(),
-    ]);
+    const [gnodeCommands, generateCommands, utilityCommands] =
+      await Promise.all([
+        getGnodeCommands(),
+        getGenerateCommands(),
+        getUtilityCommands(),
+      ]);
     const builtInCommands = {
       ...gnodeCommands,
       ...generateCommands,
@@ -496,11 +497,12 @@ export class CLIGenerator {
     console.log();
 
     // Show built-in subcommands first
-    const [gnodeCommands, generateCommands, utilityCommands] = await Promise.all([
-      getGnodeCommands(),
-      getGenerateCommands(),
-      getUtilityCommands(),
-    ]);
+    const [gnodeCommands, generateCommands, utilityCommands] =
+      await Promise.all([
+        getGnodeCommands(),
+        getGenerateCommands(),
+        getUtilityCommands(),
+      ]);
 
     console.log('Utility Commands:');
     for (const command of Object.values(utilityCommands)) {

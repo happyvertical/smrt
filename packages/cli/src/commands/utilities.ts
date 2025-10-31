@@ -4,11 +4,11 @@
  * Commands for introspection, testing, and project management
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 /**
  * Utility commands for CLI
@@ -43,7 +43,8 @@ export const utilityCommands: Record<string, CLICommand> = {
       console.log(`📦 Discovered ${discovered.length} manifest(s):\n`);
 
       for (const manifest of discovered) {
-        const source = manifest.source === 'project' ? '📁 Project' : '📦 Package';
+        const source =
+          manifest.source === 'project' ? '📁 Project' : '📦 Package';
         const name = manifest.packageName ? ` (${manifest.packageName})` : '';
         console.log(`${source}${name}`);
         console.log(`  Path: ${manifest.path}`);
@@ -84,10 +85,10 @@ export const utilityCommands: Record<string, CLICommand> = {
     options: {
       'manifest-only': {
         type: 'boolean',
-        description: 'Only generate manifest, don\'t run tests',
+        description: "Only generate manifest, don't run tests",
         default: false,
       },
-      'output': {
+      output: {
         type: 'string',
         description: 'Output directory for test manifest',
         default: 'src/manifest',
@@ -108,13 +109,17 @@ export const utilityCommands: Record<string, CLICommand> = {
       }
 
       // For now, point users to use the existing script approach
-      console.log('To generate test manifest, add a pretest script to your package.json:');
+      console.log(
+        'To generate test manifest, add a pretest script to your package.json:',
+      );
       console.log('\n{');
       console.log('  "scripts": {');
       console.log('    "pretest": "node scripts/generate-test-manifest.js"');
       console.log('  }');
       console.log('}\n');
-      console.log('See packages/profiles/scripts/generate-test-manifest.js for example');
+      console.log(
+        'See packages/profiles/scripts/generate-test-manifest.js for example',
+      );
       console.log();
 
       if (!options.manifestOnly) {

@@ -7,10 +7,9 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import glob from 'fast-glob';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 export interface DiscoveredManifest {
   path: string;
@@ -22,7 +21,9 @@ export interface DiscoveredManifest {
 /**
  * Discover manifest files in the project and installed packages
  */
-export async function discoverManifests(projectRoot: string = process.cwd()): Promise<DiscoveredManifest[]> {
+export async function discoverManifests(
+  projectRoot: string = process.cwd(),
+): Promise<DiscoveredManifest[]> {
   const discovered: DiscoveredManifest[] = [];
 
   // 1. Check project root for manifests
@@ -39,7 +40,9 @@ export async function discoverManifests(projectRoot: string = process.cwd()): Pr
 /**
  * Find manifests in project root
  */
-async function findProjectManifests(projectRoot: string): Promise<DiscoveredManifest[]> {
+async function findProjectManifests(
+  projectRoot: string,
+): Promise<DiscoveredManifest[]> {
   const discovered: DiscoveredManifest[] = [];
   const candidates = [
     'dist/manifest.json',
@@ -55,7 +58,7 @@ async function findProjectManifests(projectRoot: string): Promise<DiscoveredMani
     const manifestPath = resolve(projectRoot, candidate);
     try {
       const manifest = await loadManifestFile(manifestPath);
-      if (manifest && manifest.objects) {
+      if (manifest?.objects) {
         discovered.push({
           path: manifestPath,
           source: 'project',
@@ -74,7 +77,9 @@ async function findProjectManifests(projectRoot: string): Promise<DiscoveredMani
 /**
  * Find manifests in installed packages
  */
-async function findPackageManifests(projectRoot: string): Promise<DiscoveredManifest[]> {
+async function findPackageManifests(
+  projectRoot: string,
+): Promise<DiscoveredManifest[]> {
   const discovered: DiscoveredManifest[] = [];
   const nodeModulesPath = resolve(projectRoot, 'node_modules');
 
@@ -92,9 +97,13 @@ async function findPackageManifests(projectRoot: string): Promise<DiscoveredMani
         const pkg = JSON.parse(pkgContent);
 
         // Check if package has @happyvertical/smrt in dependencies
-        const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
-        const hasSmrt = Object.keys(deps).some(dep =>
-          dep.includes('@happyvertical/smrt') || dep.includes('smrt')
+        const deps = {
+          ...pkg.dependencies,
+          ...pkg.devDependencies,
+          ...pkg.peerDependencies,
+        };
+        const hasSmrt = Object.keys(deps).some(
+          (dep) => dep.includes('@happyvertical/smrt') || dep.includes('smrt'),
         );
 
         if (hasSmrt) {
@@ -110,7 +119,7 @@ async function findPackageManifests(projectRoot: string): Promise<DiscoveredMani
           for (const manifestPath of manifestCandidates) {
             try {
               const manifest = await loadManifestFile(manifestPath);
-              if (manifest && manifest.objects) {
+              if (manifest?.objects) {
                 discovered.push({
                   path: manifestPath,
                   source: 'package',
@@ -176,7 +185,9 @@ export async function loadManifest(manifestPath: string): Promise<void> {
 /**
  * Auto-discover and load all manifests in the project
  */
-export async function autoDiscoverAndLoad(projectRoot: string = process.cwd()): Promise<{
+export async function autoDiscoverAndLoad(
+  projectRoot: string = process.cwd(),
+): Promise<{
   discovered: DiscoveredManifest[];
   totalObjects: number;
 }> {
@@ -189,7 +200,10 @@ export async function autoDiscoverAndLoad(projectRoot: string = process.cwd()): 
       await loadManifest(manifest.path);
       totalObjects += manifest.objectCount;
     } catch (error) {
-      console.warn(`Failed to load manifest ${manifest.path}:`, error instanceof Error ? error.message : 'Unknown error');
+      console.warn(
+        `Failed to load manifest ${manifest.path}:`,
+        error instanceof Error ? error.message : 'Unknown error',
+      );
     }
   }
 
