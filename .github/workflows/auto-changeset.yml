@@ -1,0 +1,92 @@
+name: Auto-generate Changesets
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-changeset:
+    name: Generate Changeset from Commits
+    runs-on: ubuntu-latest
+    # Skip for Version Packages PR (created by changesets)
+    if: "!startsWith(github.head_ref, 'changeset-release/')"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'false'
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check for existing changesets
+        id: check-changesets
+        run: |
+          if ls .changeset/*.md 2>/dev/null | grep -v README.md; then
+            echo "has_changesets=true" >> $GITHUB_OUTPUT
+            echo "✅ Changeset(s) already exist"
+          else
+            echo "has_changesets=false" >> $GITHUB_OUTPUT
+            echo "📝 No changesets found"
+          fi
+
+      - name: Generate changeset from commits
+        if: steps.check-changesets.outputs.has_changesets == 'false'
+        run: |
+          node scripts/generate-changesets-from-commits.js origin/main
+
+      - name: Check if changeset was created
+        id: check-created
+        if: steps.check-changesets.outputs.has_changesets == 'false'
+        run: |
+          if ls .changeset/*.md 2>/dev/null | grep -v README.md; then
+            echo "changeset_created=true" >> $GITHUB_OUTPUT
+          else
+            echo "changeset_created=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push changeset
+        if: steps.check-created.outputs.changeset_created == 'true'
+        run: |
+          git add .changeset
+          git commit -m "chore: auto-generate changeset from commits [skip ci]"
+          git push
+
+      - name: Comment on PR
+        if: steps.check-created.outputs.changeset_created == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🤖 **Changeset auto-generated** from conventional commits!\n\nA changeset has been automatically generated based on your commit messages. You can edit `.changeset/*.md` to add more details if needed.\n\nTo regenerate, delete the changeset file and push again.'
+            })
+
+      - name: Comment if no commits
+        if: steps.check-created.outputs.changeset_created == 'false' && steps.check-changesets.outputs.has_changesets == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠️ **No changeset found**\n\nNo conventional commits detected. Please either:\n1. Use conventional commit format: `type(scope): description`\n   - Examples: `feat(core): add feature`, `fix(agents): fix bug`\n2. Manually create a changeset: `pnpm changeset`\n\nWithout a changeset, this PR won\'t trigger a release when merged.'
+            })
