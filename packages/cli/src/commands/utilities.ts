@@ -147,7 +147,10 @@ export const utilityCommands: Record<string, CLICommand> = {
         }
 
         // Create output directory
-        const outputDir = resolve(process.cwd(), options.output);
+        const outputDir = resolve(
+          process.cwd(),
+          options.output || 'src/manifest',
+        );
         mkdirSync(outputDir, { recursive: true });
 
         // Write manifest.json

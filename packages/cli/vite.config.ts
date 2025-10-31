@@ -13,6 +13,7 @@ export default defineConfig({
         '@happyvertical/smrt-core',
         '@happyvertical/smrt-core/generators',
         '@happyvertical/smrt-core/prebuild',
+        '@happyvertical/smrt-core/scanner',
         '@happyvertical/smrt-types',
         '@happyvertical/utils',
         'fast-glob',

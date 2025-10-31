@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",
+    "@happyvertical/smrt-cli": "workspace:*",
     "@types/node": "^24.0.0",
     "fast-glob": "3.3.3",
     "typescript": "^5.7.2",
