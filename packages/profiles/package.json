@@ -21,7 +21,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "pretest": "node scripts/generate-test-manifest.js",
+    "pretest": "smrt test --manifest-only",
     "test": "npx vitest run",
     "test:watch": "npx vitest"
   },
