@@ -42,6 +42,7 @@ export interface SmartObjectDefinition {
   className: string;
   collection: string; // Pluralized name for endpoints
   filePath: string;
+  packageName?: string; // Package name for external manifest loading
   fields: Record<string, FieldDefinition>;
   methods: Record<string, MethodDefinition>;
   decoratorConfig: {

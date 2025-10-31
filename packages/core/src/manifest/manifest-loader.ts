@@ -16,6 +16,7 @@
  * 4. Return manifest entry or undefined
  */
 
+import { ObjectRegistry } from '../registry.js';
 import type {
   FieldDefinition,
   MethodDefinition,
@@ -81,8 +82,13 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
 /**
  * Extract package name from class constructor
  *
- * Uses the file path from the constructor's source location to determine
+ * Uses the ObjectRegistry (preferred) or fallback methods to determine
  * which package the class belongs to.
+ *
+ * Search order:
+ * 1. ObjectRegistry (packageName injected at build time)
+ * 2. __package__ metadata (build tooling)
+ * 3. Error stack trace parsing (fragile, fails in pnpm workspaces)
  *
  * @param ctor - Class constructor
  * @returns Package name (e.g., '@happyvertical/smrt-places') or null
@@ -91,16 +97,23 @@ export function getPackageName(
   ctor: new (...args: any[]) => any,
 ): string | null {
   try {
-    // Try to get package name from constructor metadata
-    // This works when classes are imported from external packages
-    const ctorString = ctor.toString();
+    // 1. Try ObjectRegistry first (most reliable - from build-time manifest)
+    // This solves issue #143 where pnpm workspace symlinks break stack trace parsing
+    const className = ctor.name;
+    if (className) {
+      const registered = ObjectRegistry.getClass(className);
+      if (registered?.packageName) {
+        return registered.packageName;
+      }
+    }
 
-    // Check if class has __package__ metadata (could be added by build tooling)
+    // 2. Check if class has __package__ metadata (could be added by build tooling)
     if ((ctor as any).__package__) {
       return (ctor as any).__package__;
     }
 
-    // Try to extract from Error stack trace
+    // 3. Fallback: Try to extract from Error stack trace
+    // This method is fragile and fails in pnpm workspaces, but kept for backward compatibility
     const error = new Error();
     const stack = error.stack || '';
     const stackLines = stack.split('\n');
@@ -113,8 +126,8 @@ export function getPackageName(
       }
     }
 
-    // Package name is now injected at build time into the manifest
-    // No need for brittle class name → package name mappings
+    // Package name is now injected at build time into the manifest and stored in ObjectRegistry
+    // If we reach here, the class is likely not from an external package
     return null;
   } catch {
     return null;

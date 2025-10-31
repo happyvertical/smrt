@@ -12,16 +12,33 @@ import type {
 export class ManifestGenerator {
   /**
    * Generate manifest from scan results
+   *
+   * @param scanResults - Array of scan results containing object definitions
+   * @param options - Optional configuration
+   * @param options.packageName - Package name to inject into manifest and object definitions
    */
-  generateManifest(scanResults: ScanResult[]): SmartObjectManifest {
+  generateManifest(
+    scanResults: ScanResult[],
+    options?: { packageName?: string },
+  ): SmartObjectManifest {
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
       timestamp: Date.now(),
       objects: {},
     };
 
+    // Set package name at manifest level if provided
+    if (options?.packageName) {
+      manifest.packageName = options.packageName;
+    }
+
     for (const result of scanResults) {
       for (const objectDef of result.objects) {
+        // Set package name on object definition if provided
+        if (options?.packageName) {
+          objectDef.packageName = options.packageName;
+        }
+
         // Generate AI tools from methods if AI config exists
         if (objectDef.decoratorConfig.ai) {
           const methods = Object.values(objectDef.methods);
