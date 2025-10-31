@@ -131,20 +131,23 @@ export const utilityCommands: Record<string, CLICommand> = {
         });
 
         const scanResults = scanner.scanFiles();
-        const generator = new ManifestGenerator();
-        const manifest = generator.generateManifest(scanResults);
 
         // Read package.json for package name
-        let packageName = 'unknown';
+        let packageName: string | undefined;
         try {
           const pkgPath = resolve(process.cwd(), 'package.json');
           const pkgContent = await readFile(pkgPath, 'utf-8');
           const pkg = JSON.parse(pkgContent);
-          packageName = pkg.name || 'unknown';
-          manifest.packageName = packageName;
+          packageName = pkg.name || undefined;
         } catch {
           console.warn('⚠️  Could not read package.json');
         }
+
+        // Generate manifest with package name
+        const generator = new ManifestGenerator();
+        const manifest = generator.generateManifest(scanResults, {
+          packageName,
+        });
 
         // Create output directory
         const outputDir = resolve(

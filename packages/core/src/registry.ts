@@ -228,6 +228,8 @@ interface RegisteredClass {
       parameters?: Record<string, any>;
     };
   }>;
+  /** Package name from manifest (for external package classes) */
+  packageName?: string;
 }
 
 /**
@@ -274,6 +276,7 @@ export class ObjectRegistry {
     // For external packages not yet loaded, manifest discovery happens lazily during schema generation
     const manifestEntry = discoverManifestSync(name);
     const fields = new Map<string, any>();
+    let packageName: string | undefined;
 
     if (manifestEntry?.fields) {
       // Use manifest fields (from build-time AST scanning)
@@ -291,6 +294,11 @@ export class ObjectRegistry {
             ...fieldDef.options, // Includes unique, primaryKey, index, etc.
           }),
         );
+      }
+
+      // Extract package name from manifest entry (injected at build time)
+      if (manifestEntry.packageName) {
+        packageName = manifestEntry.packageName;
       }
     }
 
@@ -320,6 +328,7 @@ export class ObjectRegistry {
       fields,
       schema,
       validators,
+      packageName, // Store package name from manifest for getPackageName() lookup
     });
 
     console.log(
@@ -768,6 +777,11 @@ export class ObjectRegistry {
             ...fieldDef.options, // Includes unique, primaryKey, index, etc.
           }),
         );
+      }
+
+      // Extract and store package name from manifest entry (for getPackageName() lookup)
+      if (manifestEntry.packageName) {
+        registered.packageName = manifestEntry.packageName;
       }
 
       console.log(

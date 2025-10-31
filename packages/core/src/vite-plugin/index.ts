@@ -410,7 +410,23 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       });
 
       const scanResults = scanner.scanFiles();
-      const newManifest = manifestGenerator.generateManifest(scanResults);
+
+      // Read package.json for package name
+      let packageName: string | undefined;
+      try {
+        const { readFileSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const pkgPath = join(rootDir, 'package.json');
+        const pkgContent = readFileSync(pkgPath, 'utf-8');
+        const pkg = JSON.parse(pkgContent);
+        packageName = pkg.name || undefined;
+      } catch {
+        // package.json not found or invalid - continue without packageName
+      }
+
+      const newManifest = manifestGenerator.generateManifest(scanResults, {
+        packageName,
+      });
 
       // Log scan results
       const objectCount = Object.keys(newManifest.objects).length;
