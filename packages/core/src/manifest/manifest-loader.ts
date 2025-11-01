@@ -86,9 +86,10 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
  * which package the class belongs to.
  *
  * Search order:
- * 1. ObjectRegistry (packageName injected at build time)
- * 2. __package__ metadata (build tooling)
- * 3. Error stack trace parsing (fragile, fails in pnpm workspaces)
+ * 1. ObjectRegistry (packageName injected at build time from manifest)
+ * 2. __package__ metadata (build tooling can inject this)
+ * 3. require.resolve() (resolves package.json from constructor file location)
+ * 4. Error stack trace parsing (fallback, fragile in pnpm workspaces)
  *
  * @param ctor - Class constructor
  * @returns Package name (e.g., '@happyvertical/smrt-places') or null
@@ -112,13 +113,57 @@ export function getPackageName(
       return (ctor as any).__package__;
     }
 
-    // 3. Fallback: Try to extract from Error stack trace
+    // 3. Try require.resolve() to find package.json from constructor location
+    // This is more reliable than stack trace parsing for published packages
+    try {
+      const error = new Error();
+      const stack = error.stack || '';
+      const stackLines = stack.split('\n');
+
+      // Find the first line with a file path (not this file)
+      for (const line of stackLines) {
+        const fileMatch = line.match(/\(([^)]+\.(?:js|ts))/);
+        if (fileMatch && !fileMatch[1].includes('manifest-loader')) {
+          const filePath = fileMatch[1];
+          // Try to resolve package.json from this file
+          try {
+            const path = require('node:path');
+            let dir = path.dirname(filePath);
+            // Walk up until we find a package.json
+            for (let i = 0; i < 10; i++) {
+              try {
+                const pkgPath = path.join(dir, 'package.json');
+                const fs = require('node:fs');
+                if (fs.existsSync(pkgPath)) {
+                  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+                  if (pkg.name?.startsWith('@')) {
+                    return pkg.name;
+                  }
+                }
+              } catch {
+                // Keep walking up
+              }
+              const parent = path.dirname(dir);
+              if (parent === dir) break; // Reached root
+              dir = parent;
+            }
+          } catch {
+            // Fall through to next method
+          }
+          break;
+        }
+      }
+    } catch {
+      // Fall through to next method
+    }
+
+    // 4. Final fallback: Try to extract from Error stack trace with node_modules pattern
     // This method is fragile and fails in pnpm workspaces, but kept for backward compatibility
     const error = new Error();
     const stack = error.stack || '';
     const stackLines = stack.split('\n');
 
-    // Look for line with 'node_modules/@happyvertical/' or similar
+    // Look for line with 'node_modules/@scope/package' pattern
     for (const line of stackLines) {
       const match = line.match(/node_modules\/(@[^/]+\/[^/]+)/);
       if (match) {
@@ -137,9 +182,12 @@ export function getPackageName(
 /**
  * Load manifest from external package
  *
- * Attempts to dynamically import manifest from package exports.
+ * Attempts to load manifest from package exports using fs.readFileSync.
  * External packages export manifests via package.json:
  *   "exports": { "./manifest": "./dist/manifest.json" }
+ *
+ * This approach avoids issues with dynamic JSON imports in ESM which require
+ * import assertions that don't work with template string imports.
  *
  * @param packageName - Package name (e.g., '@happyvertical/smrt-places')
  * @returns Manifest object or null if not found
@@ -153,9 +201,44 @@ export async function loadExternalManifest(
   }
 
   try {
-    // Dynamic import from package manifest export
-    const manifestModule = await import(`${packageName}/manifest`);
-    const manifest: Manifest = manifestModule.default || manifestModule;
+    // Use require.resolve to find the package and fs to read the manifest
+    // This works reliably with both published packages and local development
+    const path = require('node:path');
+    const fs = require('node:fs');
+
+    // Resolve to package.json first to get package root
+    const pkgPath = require.resolve(`${packageName}/package.json`);
+    const pkgDir = path.dirname(pkgPath);
+
+    // Read package.json to get manifest export path
+    const pkgJson = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    const manifestExport = pkgJson.exports?.['./manifest'];
+
+    if (!manifestExport) {
+      console.warn(
+        `Package ${packageName} does not export "./manifest" in package.json`,
+      );
+      return null;
+    }
+
+    // Resolve manifest path (handle both string and conditional exports)
+    const manifestRelPath =
+      typeof manifestExport === 'string'
+        ? manifestExport
+        : manifestExport.default || manifestExport.import;
+
+    if (!manifestRelPath) {
+      console.warn(
+        `Package ${packageName} has invalid manifest export configuration`,
+      );
+      return null;
+    }
+
+    const manifestPath = path.join(pkgDir, manifestRelPath);
+
+    // Read and parse manifest JSON
+    const manifestJson = fs.readFileSync(manifestPath, 'utf-8');
+    const manifest: Manifest = JSON.parse(manifestJson);
 
     // Validate manifest structure
     if (!manifest.objects || typeof manifest.objects !== 'object') {
@@ -221,11 +304,13 @@ export function discoverManifestSync(
 
   // 4. Check cached external manifests
   for (const manifest of manifestCache.values()) {
-    if (manifest.objects[name]) {
-      return manifest.objects[name];
-    }
-    if (manifest.objects[className]) {
-      return manifest.objects[className];
+    const entry = manifest.objects[name] || manifest.objects[className];
+    if (entry) {
+      // Enrich entry with packageName from manifest if not already present
+      if (!entry.packageName && manifest.packageName) {
+        return { ...entry, packageName: manifest.packageName };
+      }
+      return entry;
     }
   }
 
@@ -262,11 +347,13 @@ export async function discoverManifestEntry(
     if (manifest) {
       const name = className.toLowerCase();
       // Try lowercase first, then exact case
-      if (manifest.objects[name]) {
-        return manifest.objects[name];
-      }
-      if (manifest.objects[className]) {
-        return manifest.objects[className];
+      const entry = manifest.objects[name] || manifest.objects[className];
+      if (entry) {
+        // Enrich entry with packageName from manifest if not already present
+        if (!entry.packageName && manifest.packageName) {
+          return { ...entry, packageName: manifest.packageName };
+        }
+        return entry;
       }
     }
   }
