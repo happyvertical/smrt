@@ -1,5 +1,11 @@
 # @happyvertical/smrt-core
 
+## 0.5.1
+
+### Patch Changes
+
+- 3663a95: - fix(core): resolve manifest loading issues with published packages
+
 ## 0.5.0
 
 ### Minor Changes
