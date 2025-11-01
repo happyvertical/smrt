@@ -64,7 +64,7 @@ jobs:
         if: steps.check-created.outputs.changeset_created == 'true'
         run: |
           git add .changeset
-          git commit -m "chore: auto-generate changeset from commits [skip ci]"
+          git commit -m "chore: auto-generate changeset from commits"
           git push
 
       - name: Comment on PR
