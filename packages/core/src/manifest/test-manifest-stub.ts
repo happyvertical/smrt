@@ -58,9 +58,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {
-        "tableName": "custom_councils"
-      }
+      "decoratorConfig": {}  // tableName is not part of decorator config
     },
     "perftestuser": {
       "name": "perftestuser",

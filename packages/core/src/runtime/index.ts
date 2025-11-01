@@ -4,7 +4,8 @@
  */
 
 export { createSmrtClient } from './client';
-export type { MCPServerOptions, MCPTool } from './mcp';
+// Note: MCPTool is exported from generators/index.ts to avoid duplicate exports
+export type { MCPServerOptions } from './mcp';
 export { createMCPServer, SmrtMCPServer } from './mcp';
 export { createSmrtServer } from './server';
 export type { SmrtClientOptions, SmrtServerOptions } from './types';

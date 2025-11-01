@@ -55,7 +55,9 @@ export class LRUCache<K, V> {
     if (this.cache.size >= this.maxSize) {
       // First entry is least recently used (Map maintains insertion order)
       const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
     }
 
     // Add as most recently used (at end)

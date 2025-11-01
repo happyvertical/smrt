@@ -509,7 +509,7 @@ export function setupRoutes(app, options = {}) {
   console.warn('[smrt] Available endpoints:');
 ${routes
   .split('\\n')
-  .map((line) => `  console.warn(\`  ${basePath}${line.trim()}\`);`)
+  .map((line) => `  console.warn(\`  \${basePath}${line.trim()}\`);`)
   .join('\\n')}
 }
 
