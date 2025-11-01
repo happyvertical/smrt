@@ -27,8 +27,8 @@
     "@happyvertical/smrt-core": "workspace:*"
   },
   "devDependencies": {
-    "@happyvertical/logger": "workspace:*",
-    "@happyvertical/sql": "workspace:*",
+    "@happyvertical/logger": "0.55.0",
+    "@happyvertical/sql": "0.55.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.3",
     "vite": "^7.1.3",
