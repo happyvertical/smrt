@@ -1,5 +1,11 @@
 # @happyvertical/smrt-config
 
+## 0.5.0
+
+### Minor Changes
+
+- 007567e: - feat(all): add local SDK development setup scripts
+
 ## 0.4.2
 
 ### Patch Changes

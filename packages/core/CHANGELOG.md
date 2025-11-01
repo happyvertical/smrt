@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.5.0
+
+### Minor Changes
+
+- 007567e: - feat(all): add local SDK development setup scripts
+
+### Patch Changes
+
+- 6d322c8: - fix(core): increase timeout for LRU cache eviction test
+- Updated dependencies [007567e]
+  - @happyvertical/smrt-types@0.5.0
+
 ## 0.4.2
 
 ### Patch Changes
