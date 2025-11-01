@@ -1,5 +1,19 @@
 # @happyvertical/smrt-events
 
+## 0.5.0
+
+### Minor Changes
+
+- 007567e: - feat(all): add local SDK development setup scripts
+
+### Patch Changes
+
+- Updated dependencies [6d322c8]
+- Updated dependencies [007567e]
+  - @happyvertical/smrt-core@0.5.0
+  - @happyvertical/smrt-places@0.5.0
+  - @happyvertical/smrt-profiles@0.5.0
+
 ## 0.4.2
 
 ### Patch Changes
