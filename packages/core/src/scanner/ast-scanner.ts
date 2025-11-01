@@ -27,15 +27,67 @@ export class ASTScanner {
     };
 
     // Create TypeScript program
-    this.program = ts.createProgram(filePaths, {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.ESNext,
-      allowJs: true,
-      declaration: true,
-      esModuleInterop: true,
-      skipLibCheck: true,
-      strict: true,
-    });
+    // Use project's tsconfig.json if available to properly resolve modules
+    const configPath = ts.findConfigFile(
+      process.cwd(),
+      ts.sys.fileExists,
+      'tsconfig.json',
+    );
+
+    let compilerOptions: ts.CompilerOptions;
+    if (configPath) {
+      const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+      const parsedConfig = ts.parseJsonConfigFileContent(
+        configFile.config,
+        ts.sys,
+        process.cwd(),
+      );
+      compilerOptions = {
+        ...parsedConfig.options,
+        // Override key options to ensure proper scanning
+        skipLibCheck: true, // Skip type checking for faster scanning
+        noEmit: true, // We're just scanning, not emitting
+      };
+      console.log(`[ast-scanner] Using tsconfig from: ${configPath}`);
+    } else {
+      // Fallback to default options if no tsconfig found
+      compilerOptions = {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+        allowJs: true,
+        declaration: true,
+        esModuleInterop: true,
+        skipLibCheck: true,
+        strict: false, // Don't enforce strict mode for scanning
+        noEmit: true,
+      };
+      console.log(
+        '[ast-scanner] No tsconfig.json found, using default options',
+      );
+    }
+
+    this.program = ts.createProgram(filePaths, compilerOptions);
+
+    // Log TypeScript diagnostics if any
+    const diagnostics = ts.getPreEmitDiagnostics(this.program);
+    if (diagnostics.length > 0 && process.env.DEBUG_SCANNER) {
+      console.log(
+        `[ast-scanner] TypeScript diagnostics: ${diagnostics.length} issues`,
+      );
+      diagnostics.forEach((diagnostic) => {
+        if (diagnostic.file && diagnostic.start !== undefined) {
+          const { line, character } =
+            diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
+          const message = ts.flattenDiagnosticMessageText(
+            diagnostic.messageText,
+            '\n',
+          );
+          console.log(
+            `  ${diagnostic.file.fileName} (${line + 1},${character + 1}): ${message}`,
+          );
+        }
+      });
+    }
 
     // Extract properties defined on base classes to exclude from subclass schemas
     this.baseClassProperties = this.extractBaseClassProperties();
@@ -47,13 +99,24 @@ export class ASTScanner {
   scanFiles(): ScanResult[] {
     const results: ScanResult[] = [];
 
+    const sourceFilePaths: string[] = [];
     for (const sourceFile of this.program.getSourceFiles()) {
       if (sourceFile.isDeclarationFile) continue;
 
+      sourceFilePaths.push(sourceFile.fileName);
       const result = this.scanFile(sourceFile);
       if (result.objects.length > 0 || result.errors.length > 0) {
         results.push(result);
       }
+    }
+
+    // Debug: Log which files were actually scanned
+    console.log(`[ast-scanner] Scanned ${sourceFilePaths.length} files`);
+    if (process.env.DEBUG_SCANNER) {
+      console.log('[ast-scanner] Files scanned:');
+      sourceFilePaths.forEach((f) => {
+        console.log(`  - ${f}`);
+      });
     }
 
     return results;
