@@ -261,9 +261,9 @@ describe('AST Scanner', () => {
         default: 1.0,
       });
 
-      // trailingDot: number = 0. (has dot, should be decimal)
-      expect(numericObj?.fields.trailingDot).toMatchObject({
-        type: 'decimal',
+      // zeroWithoutDot: number = 0 (no dot, Biome removes trailing dot, should be integer)
+      expect(numericObj?.fields.zeroWithoutDot).toMatchObject({
+        type: 'integer',
         default: 0,
       });
     });

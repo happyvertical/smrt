@@ -28,7 +28,7 @@ class NumericTypes extends SmrtObject {
 
   // Edge cases
   wholeAsDecimal: number = 1.0; // Has dot, should be decimal
-  trailingDot: number = 0; // Has dot, should be decimal
+  zeroWithoutDot: number = 0; // No dot (Biome removes trailing dot), should be integer
 
   // TypeScript type annotation should also work
   explicitNumber: number = 100; // No dot, should be integer
