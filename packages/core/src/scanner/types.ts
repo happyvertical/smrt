@@ -10,14 +10,16 @@ export interface FieldDefinition {
     | 'integer'
     | 'datetime'
     | 'json'
-    | 'foreignKey';
+    | 'foreignKey'
+    | 'oneToMany'
+    | 'manyToMany';
   required?: boolean;
   default?: any;
   min?: number;
   max?: number;
   maxLength?: number;
   minLength?: number;
-  related?: string; // For foreignKey
+  related?: string; // For foreignKey, oneToMany, manyToMany
   description?: string;
   options?: Record<string, any>;
 }

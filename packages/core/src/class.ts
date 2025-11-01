@@ -215,7 +215,8 @@ export class SmrtClass {
         this._db = this.options.db as DatabaseInterface;
       } else {
         // Config object - pass directly to getDatabase
-        this._db = await getDatabase(this.options.db);
+        // Cast to any to bypass index signature incompatibility
+        this._db = await getDatabase(this.options.db as any);
       }
       await this.ensureSystemTables();
     }
