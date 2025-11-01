@@ -18,6 +18,11 @@ inputs:
     required: false
     default: ''
 
+  auth-token:
+    description: 'Authentication token for npm registry'
+    required: false
+    default: ''
+
 outputs:
   pnpm-cache-hit:
     description: 'Whether pnpm cache was hit'
@@ -137,6 +142,8 @@ runs:
       env:
         # Force ONNX Runtime to skip CUDA installation
         ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'
+        # Authentication token for GitHub Package Registry
+        NODE_AUTH_TOKEN: ${{ inputs.auth-token }}
 
     - name: Install Playwright browsers
       if: inputs.install-deps == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'

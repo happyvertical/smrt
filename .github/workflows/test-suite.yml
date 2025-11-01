@@ -40,6 +40,7 @@ jobs:
           node-version: '24'
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Turborepo cache
         uses: actions/cache@v4
@@ -52,7 +53,7 @@ jobs:
       - name: Build packages
         run: pnpm run build
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Type check
         run: pnpm run typecheck
