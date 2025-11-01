@@ -12,8 +12,6 @@
   ],
   "exports": {
     ".": "./dist/index.js",
-    "./federation": "./dist/federation/index.js",
-    "./protocols": "./dist/protocols/index.js",
     "./manifest": "./dist/manifest.json"
   },
   "dependencies": {
