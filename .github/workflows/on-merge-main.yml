@@ -36,12 +36,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout SDK repository
-        uses: actions/checkout@v4
-        with:
-          repository: happyvertical/sdk
-          path: sdk
-
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
@@ -57,14 +51,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-turbo-
 
-      - name: Build SDK packages
-        run: |
-          cd sdk
-          npm run build
-          cd ..
-
       - name: Build packages
         run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release PR or Publish
         id: changesets
@@ -99,17 +89,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Checkout SDK repository
-        uses: actions/checkout@v4
-        with:
-          repository: happyvertical/sdk
-          path: sdk
-
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
           node-version: '24'
           install-deps: 'true'
+          registry-url: 'https://npm.pkg.github.com'
 
       - name: Setup Turborepo cache
         uses: actions/cache@v4
@@ -119,14 +104,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-turbo-
 
-      - name: Build SDK packages
-        run: |
-          cd sdk
-          npm run build
-          cd ..
-
       - name: Build packages
         run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install docs dependencies
         run: |
