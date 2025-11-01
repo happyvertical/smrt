@@ -200,6 +200,30 @@ npm run lint
 npm run format
 ```
 
+### Local SDK Development
+
+To develop SMRT framework alongside SDK packages, use the provided setup scripts:
+
+```bash
+# Link local SDK packages for development
+./setup-local-dev.sh
+
+# Restore published SDK packages from GitHub Package Registry
+./restore-published-deps.sh
+```
+
+**Requirements:**
+- Clone the SDK repository: `git clone git@github.com:happyvertical/sdk.git ../sdk`
+- Or set a custom path: `export SDK_PATH=/path/to/sdk`
+
+The setup script will:
+1. Build SDK packages from your local SDK repository
+2. Link SDK packages globally using `pnpm link`
+3. Link them into all SMRT packages that depend on SDK packages
+4. Enable hot-reload: changes to SDK packages are reflected immediately
+
+**Note:** The restore script runs `pnpm install --force` to reinstall packages from the registry.
+
 ### Git Hooks
 
 This project uses [Lefthook](https://lefthook.dev/) to enforce commit message standards:
