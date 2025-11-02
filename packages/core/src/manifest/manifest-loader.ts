@@ -45,8 +45,11 @@ let localTestManifest: Manifest | null | undefined;
 /**
  * Load local test manifest from current package (synchronous)
  *
- * During test runs, domain packages generate a test manifest in src/manifest/test-manifest.json.
- * This function attempts to load that manifest so domain package tests can access field definitions.
+ * During test runs, packages can have manifests in two locations:
+ * 1. src/manifest/test-manifest.json - Domain packages during development
+ * 2. dist/manifest.json - Built packages (consuming apps like praeco)
+ *
+ * This function attempts to load the manifest from either location.
  *
  * @returns Loaded manifest or null if not found or undefined if not yet attempted
  */
@@ -55,28 +58,31 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     return localTestManifest;
   }
 
-  try {
-    // Try to load from current working directory
-    const path = require('node:path');
-    const fs = require('node:fs');
-    const manifestPath = path.resolve(
-      process.cwd(),
-      'src/manifest/test-manifest.json',
-    );
+  const path = require('node:path');
+  const fs = require('node:fs');
 
-    const manifestJson = fs.readFileSync(manifestPath, 'utf-8');
-    localTestManifest = JSON.parse(manifestJson);
+  // Try multiple possible manifest locations
+  const possiblePaths = [
+    path.resolve(process.cwd(), 'src/manifest/test-manifest.json'),
+    path.resolve(process.cwd(), 'dist/manifest.json'),
+  ];
 
-    console.log(
-      `[manifest-loader] Loaded local test manifest from ${manifestPath}`,
-    );
-    return localTestManifest;
-  } catch {
-    // File doesn't exist or can't be read - this is OK for production
-    // Mark as attempted so we don't try again
-    localTestManifest = null;
-    return null;
+  for (const manifestPath of possiblePaths) {
+    try {
+      const manifestJson = fs.readFileSync(manifestPath, 'utf-8');
+      localTestManifest = JSON.parse(manifestJson);
+
+      console.log(
+        `[manifest-loader] Loaded local test manifest from ${manifestPath}`,
+      );
+      return localTestManifest;
+    } catch {}
   }
+
+  // No manifest found - this is OK for production
+  // Mark as attempted so we don't try again
+  localTestManifest = null;
+  return null;
 }
 
 /**
