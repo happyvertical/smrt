@@ -92,25 +92,30 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
  * which package the class belongs to.
  *
  * Search order:
- * 1. ObjectRegistry (packageName injected at build time from manifest)
+ * 1. ObjectRegistry (packageName injected at build time from manifest) - SKIPPED during initial registration
  * 2. __package__ metadata (build tooling can inject this)
  * 3. require.resolve() (resolves package.json from constructor file location)
  * 4. Error stack trace parsing (fallback, fragile in pnpm workspaces)
  *
  * @param ctor - Class constructor
+ * @param skipRegistry - If true, skip checking ObjectRegistry (used during initial registration to avoid circular dependency)
  * @returns Package name (e.g., '@happyvertical/smrt-places') or null
  */
 export function getPackageName(
   ctor: new (...args: any[]) => any,
+  skipRegistry: boolean = false,
 ): string | null {
   try {
     // 1. Try ObjectRegistry first (most reliable - from build-time manifest)
     // This solves issue #143 where pnpm workspace symlinks break stack trace parsing
-    const className = ctor.name;
-    if (className) {
-      const registered = ObjectRegistry.getClass(className);
-      if (registered?.packageName) {
-        return registered.packageName;
+    // CRITICAL: Skip during initial registration to avoid circular dependency (issue #159)
+    if (!skipRegistry) {
+      const className = ctor.name;
+      if (className) {
+        const registered = ObjectRegistry.getClass(className);
+        if (registered?.packageName) {
+          return registered.packageName;
+        }
       }
     }
 
