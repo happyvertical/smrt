@@ -276,8 +276,9 @@ export class ObjectRegistry {
     // CRITICAL: Capture package name NOW, while stack trace still shows external package
     // This is called from the @smrt() decorator during import, so the stack trace
     // includes the external package file path. Later calls won't have this context.
+    // Skip registry check to avoid circular dependency - class isn't registered yet!
     // This solves issue #159 where external package manifests couldn't be loaded.
-    const packageNameFromStack = getPackageName(ctor) || undefined;
+    const packageNameFromStack = getPackageName(ctor, true) || undefined;
 
     // Get field definitions from manifest (synchronous lookup of loaded manifests)
     // Supports:
