@@ -2,7 +2,27 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@happyvertical/smrt-accounts",
+      "@happyvertical/smrt-agents",
+      "@happyvertical/smrt-assets",
+      "@happyvertical/smrt-cli",
+      "@happyvertical/smrt-config",
+      "@happyvertical/smrt-content",
+      "@happyvertical/smrt-core",
+      "@happyvertical/smrt-dev-mcp",
+      "@happyvertical/smrt-docs-mcp",
+      "@happyvertical/smrt-events",
+      "@happyvertical/smrt-gnode",
+      "@happyvertical/smrt-places",
+      "@happyvertical/smrt-products",
+      "@happyvertical/smrt-profiles",
+      "@happyvertical/smrt-svelte",
+      "@happyvertical/smrt-tags",
+      "@happyvertical/smrt-types"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
