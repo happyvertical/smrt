@@ -1,5 +1,32 @@
 # @happyvertical/smrt-profiles
 
+## 0.5.8
+
+### Patch Changes
+
+- f0d34b0: - docs(all): add comprehensive custom method discovery documentation
+- 7c1de77: - feat(core): add getMethods() API to ObjectRegistry for custom method discovery
+
+  - feat(cli): automatically discover and generate CLI commands for custom methods defined on SMRT objects
+
+  Custom methods defined on SMRT objects are now automatically discovered at build time and exposed through the CLI generator. This eliminates the need for manual CLI command configuration for custom methods.
+
+  Example:
+
+  ```typescript
+  @smrt({ cli: { include: ["list", "get", "research"] } })
+  class Agent extends SmrtObject {
+    async research(options: { query: string; depth?: number }) {
+      // Custom method automatically gets CLI command:
+      // smrt agent:research <id> --query "topic" --depth 5
+    }
+  }
+  ```
+
+- Updated dependencies [f0d34b0]
+- Updated dependencies [7c1de77]
+  - @happyvertical/smrt-core@0.6.0
+
 ## 0.5.7
 
 ### Patch Changes
