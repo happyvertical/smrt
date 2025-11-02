@@ -167,47 +167,6 @@ describe('AST Scanner', () => {
       __dirname,
       'test-complex-decorator.ts',
     );
-    const praecoSourcePath =
-      '/Users/will/Work/happyvertical/repos/praeco/src/source.ts';
-
-    it('should scan real praeco source.ts file', () => {
-      const scanner = new ASTScanner([praecoSourcePath]);
-      const results = scanner.scanFiles();
-
-      // Scanner may return multiple files due to TypeScript import resolution
-      expect(results.length).toBeGreaterThan(0);
-
-      // Find PraecoSource across all scanned files
-      let praecoSource = null;
-      for (const result of results) {
-        const found = result.objects.find(
-          (obj) => obj.className === 'PraecoSource',
-        );
-        if (found) {
-          praecoSource = found;
-          break;
-        }
-      }
-
-      expect(praecoSource).toBeDefined();
-      if (praecoSource) {
-        expect(praecoSource.decoratorConfig).toMatchObject({
-          tableName: 'praeco_sources',
-          api: expect.objectContaining({
-            include: expect.arrayContaining([
-              'list',
-              'get',
-              'create',
-              'update',
-            ]),
-          }),
-          mcp: expect.objectContaining({
-            include: expect.arrayContaining(['list', 'get', 'search', 'sync']),
-          }),
-          cli: true,
-        });
-      }
-    });
 
     it('should detect all classes with complex decorators', () => {
       const scanner = new ASTScanner([complexDecoratorPath]);
