@@ -1,5 +1,11 @@
 # @happyvertical/smrt-core
 
+## 0.5.6
+
+### Patch Changes
+
+- 708a6ab: - fix(core): resolve circular dependency in getPackageName
+
 ## 0.5.5
 
 ### Patch Changes
