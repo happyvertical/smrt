@@ -157,6 +157,58 @@ The `@smrt()` decorator automatically configures code generation:
 // document_list, document_get, document_analyze
 ```
 
+### Custom Method Discovery (Auto-Generated CLI Commands)
+
+**New in v0.6+**: Custom methods are automatically discovered and exposed as CLI commands!
+
+Define custom methods on your SMRT objects, and the CLI generator will automatically create corresponding commands:
+
+```typescript
+@smrt({
+  cli: { include: ['list', 'get', 'research', 'report'] }  // Include custom methods
+})
+class Agent extends SmrtObject {
+  name: string = '';
+  source: string = '';
+
+  // Custom method with parameters
+  async research(options: { query: string, depth?: number }) {
+    return {
+      action: 'research',
+      query: options.query,
+      depth: options.depth || 3,
+      results: await this.do(`Research: ${options.query}`)
+    };
+  }
+
+  // Another custom method
+  async report(options: { type?: string }) {
+    return {
+      action: 'report',
+      type: options.type || 'summary',
+      content: await this.do(`Generate ${options.type} report for ${this.name}`)
+    };
+  }
+}
+```
+
+**Auto-generated CLI commands:**
+```bash
+# Standard CRUD (as before)
+smrt agent:list
+smrt agent:get <id>
+
+# Custom methods (auto-discovered! 🎉)
+smrt agent:research <id> --query "AI safety research" --depth 5
+smrt agent:report <id> --type detailed
+```
+
+**How it works:**
+- CLI generator scans `ObjectRegistry.getMethods()` for public methods
+- Method parameters are converted to kebab-case CLI options (`researchQuery` → `--research-query`)
+- Include/exclude lists work for both CRUD commands and custom methods
+- Only public methods are exposed (private/protected methods are skipped)
+
 ### Next Steps
 
 - **Deep Dive**: [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) - Comprehensive technical reference
