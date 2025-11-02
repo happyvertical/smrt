@@ -16,6 +16,9 @@
  * 4. Return manifest entry or undefined
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
 import { ObjectRegistry } from '../registry.js';
 import type {
   FieldDefinition,
@@ -58,18 +61,15 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     return localTestManifest;
   }
 
-  const path = require('node:path');
-  const fs = require('node:fs');
-
   // Try multiple possible manifest locations
   const possiblePaths = [
-    path.resolve(process.cwd(), 'src/manifest/test-manifest.json'),
-    path.resolve(process.cwd(), 'dist/manifest.json'),
+    resolve(process.cwd(), 'src/manifest/test-manifest.json'),
+    resolve(process.cwd(), 'dist/manifest.json'),
   ];
 
   for (const manifestPath of possiblePaths) {
     try {
-      const manifestJson = fs.readFileSync(manifestPath, 'utf-8');
+      const manifestJson = readFileSync(manifestPath, 'utf-8');
       localTestManifest = JSON.parse(manifestJson);
 
       console.log(
@@ -133,15 +133,13 @@ export function getPackageName(
           const filePath = fileMatch[1];
           // Try to resolve package.json from this file
           try {
-            const path = require('node:path');
-            let dir = path.dirname(filePath);
+            let dir = dirname(filePath);
             // Walk up until we find a package.json
             for (let i = 0; i < 10; i++) {
               try {
-                const pkgPath = path.join(dir, 'package.json');
-                const fs = require('node:fs');
-                if (fs.existsSync(pkgPath)) {
-                  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+                const pkgPath = join(dir, 'package.json');
+                if (existsSync(pkgPath)) {
+                  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
                   if (pkg.name?.startsWith('@')) {
                     return pkg.name;
                   }
@@ -149,7 +147,7 @@ export function getPackageName(
               } catch {
                 // Keep walking up
               }
-              const parent = path.dirname(dir);
+              const parent = dirname(dir);
               if (parent === dir) break; // Reached root
               dir = parent;
             }
@@ -188,12 +186,12 @@ export function getPackageName(
 /**
  * Load manifest from external package
  *
- * Attempts to load manifest from package exports using fs.readFileSync.
+ * Uses createRequire from process.cwd() to resolve packages from the calling
+ * application's context, not from smrt-core's context. This allows finding
+ * packages that are dependencies of the app but not of smrt-core.
+ *
  * External packages export manifests via package.json:
  *   "exports": { "./manifest": "./dist/manifest.json" }
- *
- * This approach avoids issues with dynamic JSON imports in ESM which require
- * import assertions that don't work with template string imports.
  *
  * @param packageName - Package name (e.g., '@happyvertical/smrt-places')
  * @returns Manifest object or null if not found
@@ -207,17 +205,45 @@ export async function loadExternalManifest(
   }
 
   try {
-    // Use require.resolve to find the package and fs to read the manifest
-    // This works reliably with both published packages and local development
-    const path = require('node:path');
-    const fs = require('node:fs');
+    // Create require from calling app's context (process.cwd())
+    // This allows resolving packages that are installed in the app,
+    // not just packages that are dependencies of smrt-core
+    const require = createRequire(`${process.cwd()}/package.json`);
 
-    // Resolve to package.json first to get package root
-    const pkgPath = require.resolve(`${packageName}/package.json`);
-    const pkgDir = path.dirname(pkgPath);
+    // Resolve package main entry point
+    const pkgMainPath = require.resolve(packageName);
+
+    // Walk up from main entry to find package.json
+    let dir = dirname(pkgMainPath);
+    let pkgPath: string | null = null;
+
+    for (let i = 0; i < 10; i++) {
+      const testPath = join(dir, 'package.json');
+      try {
+        const content = readFileSync(testPath, 'utf-8');
+        const json = JSON.parse(content);
+        if (json.name === packageName) {
+          pkgPath = testPath;
+          break;
+        }
+      } catch {
+        // File doesn't exist or can't be read, keep walking
+      }
+
+      const parent = dirname(dir);
+      if (parent === dir) break; // Reached filesystem root
+      dir = parent;
+    }
+
+    if (!pkgPath) {
+      console.warn(`Could not find package.json for ${packageName}`);
+      return null;
+    }
+
+    const pkgDir = dirname(pkgPath);
 
     // Read package.json to get manifest export path
-    const pkgJson = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    const pkgJson = JSON.parse(readFileSync(pkgPath, 'utf-8'));
     const manifestExport = pkgJson.exports?.['./manifest'];
 
     if (!manifestExport) {
@@ -240,10 +266,10 @@ export async function loadExternalManifest(
       return null;
     }
 
-    const manifestPath = path.join(pkgDir, manifestRelPath);
+    const manifestPath = join(pkgDir, manifestRelPath);
 
     // Read and parse manifest JSON
-    const manifestJson = fs.readFileSync(manifestPath, 'utf-8');
+    const manifestJson = readFileSync(manifestPath, 'utf-8');
     const manifest: Manifest = JSON.parse(manifestJson);
 
     // Validate manifest structure
@@ -348,6 +374,7 @@ export async function discoverManifestEntry(
 
   // Try loading from external package
   const packageName = getPackageName(ctor);
+
   if (packageName) {
     const manifest = await loadExternalManifest(packageName);
     if (manifest) {
