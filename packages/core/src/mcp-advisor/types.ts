@@ -212,14 +212,18 @@ export interface GetObjectConfigInput {
 export interface ObjectConfig {
   className: string;
   decorator: {
-    api?: {
-      include?: string[];
-      exclude?: string[];
-    };
-    mcp?: {
-      include?: string[];
-      exclude?: string[];
-    };
+    api?:
+      | boolean
+      | {
+          include?: string[];
+          exclude?: string[];
+        };
+    mcp?:
+      | boolean
+      | {
+          include?: string[];
+          exclude?: string[];
+        };
     cli?: boolean;
     hooks?: Record<string, string>;
   };

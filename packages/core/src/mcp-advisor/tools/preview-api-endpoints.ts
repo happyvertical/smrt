@@ -20,9 +20,13 @@ export async function previewApiEndpoints(
       throw new Error(`Class '${className}' not found in ObjectRegistry`);
     }
 
-    const apiConfig = config.api || {};
-    const included = apiConfig.include;
-    const excluded = apiConfig.exclude || [];
+    const apiConfig = config.api;
+    const included: string[] | undefined =
+      typeof apiConfig === 'object' ? apiConfig?.include : undefined;
+    const excluded: string[] =
+      typeof apiConfig === 'object' && apiConfig?.exclude
+        ? apiConfig.exclude
+        : [];
 
     const shouldInclude = (endpoint: string) => {
       if (included && !included.includes(endpoint)) return false;

@@ -2,6 +2,8 @@
  * Type definitions for AST scanning and manifest generation
  */
 
+import type { SmartObjectConfig } from '../registry.js';
+
 export interface FieldDefinition {
   type:
     | 'text'
@@ -47,31 +49,7 @@ export interface SmartObjectDefinition {
   packageName?: string; // Package name for external manifest loading
   fields: Record<string, FieldDefinition>;
   methods: Record<string, MethodDefinition>;
-  decoratorConfig: {
-    api?:
-      | {
-          include?: string[];
-          exclude?: string[];
-        }
-      | boolean;
-    mcp?:
-      | {
-          include?: string[];
-          exclude?: string[];
-        }
-      | boolean;
-    cli?:
-      | boolean
-      | {
-          include?: string[];
-          exclude?: string[];
-        };
-    ai?: {
-      callable?: string[] | 'public-async' | 'all';
-      exclude?: string[];
-      descriptions?: Record<string, string>;
-    };
-  };
+  decoratorConfig: SmartObjectConfig;
   extends?: string; // Base class name
   tools?: Array<{
     type: 'function';

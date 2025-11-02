@@ -60,42 +60,46 @@ export interface SmartObjectConfig {
   /**
    * API configuration
    */
-  api?: {
-    /**
-     * Exclude specific endpoints (supports both standard CRUD actions and custom methods)
-     */
-    exclude?: string[];
+  api?:
+    | boolean
+    | {
+        /**
+         * Exclude specific endpoints (supports both standard CRUD actions and custom methods)
+         */
+        exclude?: string[];
 
-    /**
-     * Include only specific endpoints (supports both standard CRUD actions and custom methods)
-     */
-    include?: string[];
+        /**
+         * Include only specific endpoints (supports both standard CRUD actions and custom methods)
+         */
+        include?: string[];
 
-    /**
-     * Custom middleware for this object's endpoints
-     */
-    middleware?: any[];
+        /**
+         * Custom middleware for this object's endpoints
+         */
+        middleware?: any[];
 
-    /**
-     * Custom endpoint handlers (supports both standard CRUD actions and custom methods)
-     */
-    customize?: Record<string, (req: any, collection: any) => Promise<any>>;
-  };
+        /**
+         * Custom endpoint handlers (supports both standard CRUD actions and custom methods)
+         */
+        customize?: Record<string, (req: any, collection: any) => Promise<any>>;
+      };
 
   /**
    * MCP server configuration
    */
-  mcp?: {
-    /**
-     * Include specific tools (supports both standard CRUD actions and custom methods)
-     */
-    include?: string[];
+  mcp?:
+    | boolean
+    | {
+        /**
+         * Include specific tools (supports both standard CRUD actions and custom methods)
+         */
+        include?: string[];
 
-    /**
-     * Exclude specific tools (supports both standard CRUD actions and custom methods)
-     */
-    exclude?: string[];
-  };
+        /**
+         * Exclude specific tools (supports both standard CRUD actions and custom methods)
+         */
+        exclude?: string[];
+      };
 
   /**
    * CLI configuration

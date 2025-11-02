@@ -193,9 +193,13 @@ function generatePaths(basePath: string): Record<string, any> {
     const objectPath = `${basePath}/${pluralName}`;
 
     const config = ObjectRegistry.getConfig(name);
-    const apiConfig = config.api || {};
-    const excluded = apiConfig.exclude || [];
-    const included = apiConfig.include;
+    const apiConfig = config.api;
+    const excluded: string[] =
+      typeof apiConfig === 'object' && apiConfig?.exclude
+        ? apiConfig.exclude
+        : [];
+    const included: string[] | undefined =
+      typeof apiConfig === 'object' ? apiConfig?.include : undefined;
 
     const shouldInclude = (
       endpoint: 'list' | 'get' | 'create' | 'update' | 'delete',
