@@ -1,5 +1,13 @@
 # @happyvertical/smrt-dev-mcp
 
+## 0.5.7
+
+### Patch Changes
+
+- f9019e6: - fix(scanner): use project tsconfig.json for proper module resolution
+- Updated dependencies [f9019e6]
+  - @happyvertical/smrt-core@0.5.7
+
 ## 0.5.6
 
 ### Patch Changes

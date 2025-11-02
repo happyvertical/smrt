@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.5.4
+
+### Patch Changes
+
+- f9019e6: - fix(scanner): use project tsconfig.json for proper module resolution
+
 ## 0.5.3
 
 ### Patch Changes
