@@ -298,6 +298,54 @@ export class CLIGenerator {
       });
     }
 
+    // CUSTOM METHODS - discover from manifest
+    const methods = ObjectRegistry.getMethods(objectName);
+    for (const [methodName, methodDef] of methods) {
+      // Check if method should be included in CLI
+      const shouldIncludeMethod = () => {
+        // Skip if not public (private/protected methods shouldn't be in CLI)
+        if (!methodDef.isPublic) return false;
+
+        // Check include/exclude lists (custom methods treated same as CRUD)
+        if (included && !included.includes(methodName)) return false;
+        if (excluded.includes(methodName)) return false;
+        return true;
+      };
+
+      if (!shouldIncludeMethod()) continue;
+
+      // Build options from method parameters
+      const methodOptions: Record<string, any> = {};
+
+      // Map method parameters to CLI options
+      for (const param of methodDef.parameters || []) {
+        const optionName = param.name.replace(/([A-Z])/g, '-$1').toLowerCase();
+        methodOptions[optionName] = {
+          type: 'string',
+          description: `${param.type}${param.optional ? ' (optional)' : ''}`,
+          ...(param.default !== undefined && {
+            default: String(param.default),
+          }),
+        };
+      }
+
+      commands.push({
+        name: `${lowerName}:${methodName}`,
+        description:
+          methodDef.description || `Execute ${methodName} on ${objectName}`,
+        args: ['id'], // All custom methods require an ID to load the object
+        options: methodOptions,
+        handler: async (args, options) => {
+          await this.handleCustomMethod(
+            objectName,
+            args[0],
+            methodName,
+            options,
+          );
+        },
+      });
+    }
+
     return commands;
   }
 
@@ -840,6 +888,69 @@ export class CLIGenerator {
       await existing.delete();
 
       spinner.succeed(`Deleted ${objectName}`);
+    } catch (error) {
+      this.exitWithError(
+        error instanceof Error ? error.message : 'Unknown error',
+      );
+    }
+  }
+
+  /**
+   * Handle custom method execution
+   */
+  private async handleCustomMethod(
+    objectName: string,
+    id: string,
+    methodName: string,
+    options: any,
+  ): Promise<void> {
+    try {
+      const collection = await this.getCollection(objectName);
+      const obj = await collection.get(id);
+
+      if (!obj) {
+        this.exitWithError(`${objectName} not found`);
+        return;
+      }
+
+      // Get method metadata for parameter mapping
+      const methods = ObjectRegistry.getMethods(objectName);
+      const methodDef = methods.get(methodName);
+
+      if (!methodDef) {
+        this.exitWithError(`Method ${methodName} not found on ${objectName}`);
+        return;
+      }
+
+      const spinner = this.createSpinner(
+        `Executing ${methodName} on ${objectName}...`,
+      );
+
+      // Map CLI options to method parameters (kebab-case to camelCase)
+      const methodArgs: any = {};
+      for (const param of methodDef.parameters || []) {
+        const optionName = param.name.replace(/([A-Z])/g, '-$1').toLowerCase();
+        if (options[optionName] !== undefined) {
+          methodArgs[param.name] = options[optionName];
+        } else if (param.default !== undefined) {
+          methodArgs[param.name] = param.default;
+        }
+      }
+
+      // Call the method on the object instance
+      const method = (obj as any)[methodName];
+      if (typeof method !== 'function') {
+        spinner.fail(`Method ${methodName} is not a function`);
+        this.exitWithError(`Method ${methodName} is not callable`);
+        return;
+      }
+
+      const result = await method.call(obj, methodArgs);
+
+      spinner.succeed(`Executed ${methodName}`);
+
+      // Output result in JSON format
+      console.log(JSON.stringify(result, null, 2));
     } catch (error) {
       this.exitWithError(
         error instanceof Error ? error.message : 'Unknown error',

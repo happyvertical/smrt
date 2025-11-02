@@ -597,6 +597,107 @@ describe('ObjectRegistry', () => {
     });
   });
 
+  describe('getMethods', () => {
+    it('should return empty Map for class with no methods', () => {
+      const fields = new Map();
+      fields.set('name', new Field('text', { required: true }));
+      registerTestClass(TestCategory, fields);
+
+      const methods = ObjectRegistry.getMethods('TestCategory');
+      expect(methods).toBeInstanceOf(Map);
+      expect(methods.size).toBe(0);
+    });
+
+    it('should return method definitions from manifest', () => {
+      // Register class with methods metadata
+      const fields = new Map();
+      fields.set('name', new Field('text', { required: true }));
+      registerTestClass(TestProduct, fields);
+
+      // Manually add method metadata (simulating what would come from manifest)
+      const registered = (ObjectRegistry as any).classes.get('TestProduct');
+      if (registered) {
+        registered.methods.set('analyze', {
+          name: 'analyze',
+          async: true,
+          isStatic: false,
+          isPublic: true,
+          returnType: 'Promise<any>',
+          parameters: [
+            { name: 'options', type: 'any', optional: true, default: {} },
+          ],
+          description: 'Analyze the product',
+        });
+        registered.methods.set('sync', {
+          name: 'sync',
+          async: true,
+          isStatic: false,
+          isPublic: true,
+          returnType: 'Promise<void>',
+          parameters: [],
+          description: 'Sync product data',
+        });
+      }
+
+      const methods = ObjectRegistry.getMethods('TestProduct');
+
+      expect(methods).toBeInstanceOf(Map);
+      expect(methods.size).toBe(2);
+      expect(methods.has('analyze')).toBe(true);
+      expect(methods.has('sync')).toBe(true);
+
+      const analyzeMethod = methods.get('analyze');
+      expect(analyzeMethod.name).toBe('analyze');
+      expect(analyzeMethod.async).toBe(true);
+      expect(analyzeMethod.isPublic).toBe(true);
+      expect(analyzeMethod.returnType).toBe('Promise<any>');
+      expect(analyzeMethod.parameters).toHaveLength(1);
+      expect(analyzeMethod.parameters[0].name).toBe('options');
+
+      const syncMethod = methods.get('sync');
+      expect(syncMethod.name).toBe('sync');
+      expect(syncMethod.async).toBe(true);
+      expect(syncMethod.parameters).toHaveLength(0);
+    });
+
+    it('should return empty Map for non-existent class', () => {
+      const methods = ObjectRegistry.getMethods('NonExistent');
+      expect(methods).toBeInstanceOf(Map);
+      expect(methods.size).toBe(0);
+    });
+
+    it('should include methods in getObjectMetadata', () => {
+      const fields = new Map();
+      fields.set('name', new Field('text', { required: true }));
+      registerTestClass(TestProduct, fields);
+
+      // Add method metadata
+      const registered = (ObjectRegistry as any).classes.get('TestProduct');
+      if (registered) {
+        registered.methods.set('research', {
+          name: 'research',
+          async: true,
+          isStatic: false,
+          isPublic: true,
+          returnType: 'Promise<string>',
+          parameters: [{ name: 'query', type: 'string', optional: false }],
+        });
+      }
+
+      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+
+      expect(metadata).not.toBeNull();
+      expect(metadata?.methods).toBeInstanceOf(Map);
+      expect(metadata?.methods.size).toBeGreaterThanOrEqual(1);
+      expect(metadata?.methods.has('research')).toBe(true);
+
+      const researchMethod = metadata?.methods.get('research');
+      expect(researchMethod.name).toBe('research');
+      expect(researchMethod.async).toBe(true);
+      expect(researchMethod.parameters[0].name).toBe('query');
+    });
+  });
+
   describe('Dependency Graph and Relationships', () => {
     it('should build correct dependency graph', () => {
       // Register TestCategory
