@@ -124,33 +124,41 @@ function formatAsYAML(config: ObjectConfig): string {
 
   yaml += `decorator:\n`;
   if (config.decorator.api) {
-    yaml += `  api:\n`;
-    if (config.decorator.api.include) {
-      yaml += `    include:\n`;
-      for (const item of config.decorator.api.include) {
-        yaml += `      - ${item}\n`;
+    if (typeof config.decorator.api === 'boolean') {
+      yaml += `  api: ${config.decorator.api}\n`;
+    } else {
+      yaml += `  api:\n`;
+      if (config.decorator.api.include) {
+        yaml += `    include:\n`;
+        for (const item of config.decorator.api.include) {
+          yaml += `      - ${item}\n`;
+        }
       }
-    }
-    if (config.decorator.api.exclude) {
-      yaml += `    exclude:\n`;
-      for (const item of config.decorator.api.exclude) {
-        yaml += `      - ${item}\n`;
+      if (config.decorator.api.exclude) {
+        yaml += `    exclude:\n`;
+        for (const item of config.decorator.api.exclude) {
+          yaml += `      - ${item}\n`;
+        }
       }
     }
   }
 
   if (config.decorator.mcp) {
-    yaml += `  mcp:\n`;
-    if (config.decorator.mcp.include) {
-      yaml += `    include:\n`;
-      for (const item of config.decorator.mcp.include) {
-        yaml += `      - ${item}\n`;
+    if (typeof config.decorator.mcp === 'boolean') {
+      yaml += `  mcp: ${config.decorator.mcp}\n`;
+    } else {
+      yaml += `  mcp:\n`;
+      if (config.decorator.mcp.include) {
+        yaml += `    include:\n`;
+        for (const item of config.decorator.mcp.include) {
+          yaml += `      - ${item}\n`;
+        }
       }
-    }
-    if (config.decorator.mcp.exclude) {
-      yaml += `    exclude:\n`;
-      for (const item of config.decorator.mcp.exclude) {
-        yaml += `      - ${item}\n`;
+      if (config.decorator.mcp.exclude) {
+        yaml += `    exclude:\n`;
+        for (const item of config.decorator.mcp.exclude) {
+          yaml += `      - ${item}\n`;
+        }
       }
     }
   }

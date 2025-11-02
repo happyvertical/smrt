@@ -39,12 +39,14 @@ export async function listRegisteredObjects(
 
       // Extract configuration
       const apiEnabled = !!(
-        config.api &&
-        (config.api.include || config.api.exclude !== undefined)
+        config.api === true ||
+        (typeof config.api === 'object' &&
+          (config.api.include || config.api.exclude !== undefined))
       );
       const mcpEnabled = !!(
-        config.mcp &&
-        (config.mcp.include || config.mcp.exclude !== undefined)
+        config.mcp === true ||
+        (typeof config.mcp === 'object' &&
+          (config.mcp.include || config.mcp.exclude !== undefined))
       );
       const cliEnabled = config.cli === true;
 

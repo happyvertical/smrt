@@ -106,11 +106,15 @@ export class MCPGenerator {
 
     for (const [name, _classInfo] of registeredClasses) {
       const config = ObjectRegistry.getConfig(name);
-      const mcpConfig = config.mcp || {};
+      const mcpConfig = config.mcp;
 
-      // Skip excluded endpoints
-      const excluded = mcpConfig.exclude || [];
-      const included = mcpConfig.include;
+      // Handle boolean vs object config
+      const excluded: string[] =
+        typeof mcpConfig === 'object' && mcpConfig?.exclude
+          ? mcpConfig.exclude
+          : [];
+      const included: string[] | undefined =
+        typeof mcpConfig === 'object' ? mcpConfig?.include : undefined;
 
       const shouldInclude = (endpoint: string) => {
         if (included && !included.includes(endpoint)) return false;
@@ -262,9 +266,13 @@ export class MCPGenerator {
     // CUSTOM ACTIONS
     if (classInfo) {
       const config = ObjectRegistry.getConfig(objectName);
-      const mcpConfig = config.mcp || {};
-      const included = mcpConfig.include;
-      const excluded = mcpConfig.exclude || [];
+      const mcpConfig = config.mcp;
+      const included: string[] | undefined =
+        typeof mcpConfig === 'object' ? mcpConfig?.include : undefined;
+      const excluded: string[] =
+        typeof mcpConfig === 'object' && mcpConfig?.exclude
+          ? mcpConfig.exclude
+          : [];
 
       // If specific actions are included, check for custom actions
       if (included) {
