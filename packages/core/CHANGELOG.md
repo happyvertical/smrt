@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.5.4
+
+### Patch Changes
+
+- 1129a5a: fix(manifest): complete external package manifest loading
+
+  - Check both src/manifest/test-manifest.json and dist/manifest.json for built packages
+  - Use createRequire(process.cwd()) to resolve packages from calling app's context
+  - Walk up from package main entry to find package.json and load manifest
+  - Fixes manifest loading for external dependencies (e.g., @happyvertical/smrt-events)
+
+  Resolves #159
+
 ## 0.5.3
 
 ### Patch Changes
