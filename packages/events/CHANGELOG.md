@@ -1,5 +1,15 @@
 # @happyvertical/smrt-events
 
+## 0.5.2
+
+### Patch Changes
+
+- 905bdf4: - fix(scanner): use project tsconfig.json for proper module resolution
+- Updated dependencies [905bdf4]
+  - @happyvertical/smrt-core@0.5.2
+  - @happyvertical/smrt-places@0.5.2
+  - @happyvertical/smrt-profiles@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes
