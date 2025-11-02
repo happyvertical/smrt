@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.5.2
+
+### Patch Changes
+
+- b1c4faa: - fix(types): match SmartObjectDefinition.decoratorConfig to SmartObjectConfig
+
 ## 0.5.1
 
 ### Patch Changes
