@@ -162,6 +162,87 @@ describe('AST Scanner', () => {
     expect(tools).not.toContain('delete_content'); // Not in include list
   });
 
+  describe('Complex Decorator Parsing (Issue #166)', () => {
+    const complexDecoratorPath = resolve(
+      __dirname,
+      'test-complex-decorator.ts',
+    );
+
+    it('should detect all classes with complex decorators', () => {
+      const scanner = new ASTScanner([complexDecoratorPath]);
+      const results = scanner.scanFiles();
+
+      expect(results).toHaveLength(1);
+      // Should find all 3 classes: Council (simple), PraecoSource (complex), Document (complex)
+      expect(results[0].objects).toHaveLength(3);
+
+      const council = results[0].objects.find(
+        (obj) => obj.className === 'Council',
+      );
+      const praecoSource = results[0].objects.find(
+        (obj) => obj.className === 'PraecoSource',
+      );
+      const document = results[0].objects.find(
+        (obj) => obj.className === 'Document',
+      );
+
+      expect(council).toBeDefined();
+      expect(praecoSource).toBeDefined();
+      expect(document).toBeDefined();
+    });
+
+    it('should parse simple decorator correctly', () => {
+      const scanner = new ASTScanner([complexDecoratorPath]);
+      const results = scanner.scanFiles();
+      const council = results[0].objects.find(
+        (obj) => obj.className === 'Council',
+      );
+
+      expect(council?.decoratorConfig).toMatchObject({
+        tableName: 'councils',
+      });
+    });
+
+    it('should parse complex nested decorator config (PraecoSource)', () => {
+      const scanner = new ASTScanner([complexDecoratorPath]);
+      const results = scanner.scanFiles();
+      const praecoSource = results[0].objects.find(
+        (obj) => obj.className === 'PraecoSource',
+      );
+
+      expect(praecoSource).toBeDefined();
+      expect(praecoSource?.decoratorConfig).toMatchObject({
+        tableName: 'praeco_sources',
+        api: {
+          include: ['list', 'get', 'create', 'update'],
+        },
+        mcp: {
+          include: ['list', 'get', 'search', 'sync'],
+        },
+        cli: true,
+      });
+    });
+
+    it('should parse complex nested decorator config (Document)', () => {
+      const scanner = new ASTScanner([complexDecoratorPath]);
+      const results = scanner.scanFiles();
+      const document = results[0].objects.find(
+        (obj) => obj.className === 'Document',
+      );
+
+      expect(document).toBeDefined();
+      expect(document?.decoratorConfig).toMatchObject({
+        api: {
+          include: ['list', 'get', 'create', 'update', 'delete'],
+        },
+        mcp: {
+          include: ['list', 'get', 'analyze'],
+        },
+        cli: true,
+      });
+    });
+  });
+
   describe('Numeric Type Inference (0 vs 0.0 heuristic)', () => {
     it('should infer INTEGER for numeric literals without decimal point', () => {
       const scanner = new ASTScanner([numericTypesPath]);
