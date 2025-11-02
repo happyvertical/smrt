@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.5.3
+
+### Patch Changes
+
+- 694e1da: - fix(manifest): capture package name during registration for external packages
+
 ## 0.5.2
 
 ### Patch Changes

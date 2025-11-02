@@ -1,5 +1,15 @@
 # @happyvertical/smrt-events
 
+## 0.5.5
+
+### Patch Changes
+
+- 694e1da: - fix(manifest): capture package name during registration for external packages
+- Updated dependencies [694e1da]
+  - @happyvertical/smrt-core@0.5.5
+  - @happyvertical/smrt-places@0.5.5
+  - @happyvertical/smrt-profiles@0.5.5
+
 ## 0.5.4
 
 ### Patch Changes
