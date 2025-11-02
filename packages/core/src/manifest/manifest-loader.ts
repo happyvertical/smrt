@@ -126,18 +126,30 @@ export function getPackageName(
       const stack = error.stack || '';
       const stackLines = stack.split('\n');
 
-      // Find the first line with a file path (not this file)
+      // Find the first line with a file path that's NOT from smrt-core
+      // Skip manifest-loader, registry, and other smrt-core files
       for (const line of stackLines) {
         const fileMatch = line.match(/\(([^)]+\.(?:js|ts))/);
-        if (fileMatch && !fileMatch[1].includes('manifest-loader')) {
+        if (fileMatch) {
           const filePath = fileMatch[1];
+          // Skip smrt-core internal files
+          if (
+            filePath.includes('manifest-loader') ||
+            filePath.includes('registry') ||
+            filePath.includes('/smrt-core/dist/')
+          ) {
+            continue; // Skip smrt-core files, look for external package
+          }
+
           // Try to resolve package.json from this file
           try {
-            let dir = dirname(filePath);
+            // Handle file:// URLs
+            const cleanPath = filePath.replace(/^file:\/\//, '');
+            let dir = dirname(cleanPath);
             // Walk up until we find a package.json
             for (let i = 0; i < 10; i++) {
+              const pkgPath = join(dir, 'package.json');
               try {
-                const pkgPath = join(dir, 'package.json');
                 if (existsSync(pkgPath)) {
                   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
                   if (pkg.name?.startsWith('@')) {

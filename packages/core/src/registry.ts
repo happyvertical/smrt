@@ -32,6 +32,7 @@ import { Field } from './fields';
 import {
   discoverManifestEntry,
   discoverManifestSync,
+  getPackageName,
 } from './manifest/manifest-loader.js';
 import type { SmrtObject } from './object';
 import { classnameToTablename, tableNameFromClass } from './utils';
@@ -272,6 +273,12 @@ export class ObjectRegistry {
       return; // Already registered, skip silently
     }
 
+    // CRITICAL: Capture package name NOW, while stack trace still shows external package
+    // This is called from the @smrt() decorator during import, so the stack trace
+    // includes the external package file path. Later calls won't have this context.
+    // This solves issue #159 where external package manifests couldn't be loaded.
+    const packageNameFromStack = getPackageName(ctor) || undefined;
+
     // Get field definitions from manifest (synchronous lookup of loaded manifests)
     // Supports:
     // 1. Test manifests (for test classes)
@@ -300,10 +307,12 @@ export class ObjectRegistry {
         );
       }
 
-      // Extract package name from manifest entry (injected at build time)
-      if (manifestEntry.packageName) {
-        packageName = manifestEntry.packageName;
-      }
+      // Use packageName from manifest if available, otherwise from stack trace
+      packageName = manifestEntry.packageName || packageNameFromStack;
+    } else {
+      // No manifest found yet - use package name from stack trace
+      // This will be used later by ensureManifestLoaded() to load the external manifest
+      packageName = packageNameFromStack;
     }
 
     // Note: If manifest not found here, it will be loaded asynchronously when needed
