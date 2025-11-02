@@ -557,6 +557,161 @@ await generator.generate();
 // Creates: ./mcp/products-mcp-server.js for AI integration
 ```
 
+### Custom Method Discovery
+
+**New in v0.6+**: All code generators (CLI, API, MCP) automatically discover custom methods from your SMRT objects!
+
+#### How It Works
+
+1. **Define custom methods** on your SMRT class
+2. **Include them** in the `@smrt()` decorator config
+3. **Generated automatically** as CLI commands, API endpoints, or MCP tools
+
+#### Example
+
+```typescript
+@smrt({
+  cli: { include: ['list', 'get', 'research', 'report'] },
+  api: { include: ['list', 'get', 'research'] },
+  mcp: { include: ['list', 'get', 'research', 'analyze'] }
+})
+class Agent extends SmrtObject {
+  name: string = '';
+  source: string = '';
+
+  /**
+   * Research a topic using AI
+   */
+  async research(options: { query: string, depth?: number }) {
+    return {
+      action: 'research',
+      query: options.query,
+      depth: options.depth || 3,
+      results: await this.do(`Research: ${options.query}`)
+    };
+  }
+
+  /**
+   * Generate a report
+   */
+  async report(options: { type?: string }) {
+    return {
+      action: 'report',
+      type: options.type || 'summary',
+      content: await this.do(`Generate ${options.type} report`)
+    };
+  }
+
+  /**
+   * Analyze data (MCP only - not in CLI/API)
+   */
+  async analyze(options: any = {}) {
+    return {
+      action: 'analyze',
+      results: await this.is('Data is comprehensive and accurate')
+    };
+  }
+}
+```
+
+#### Generated Output
+
+**CLI Commands:**
+```bash
+smrt agent:list
+smrt agent:get <id>
+smrt agent:research <id> --query "AI safety" --depth 5
+smrt agent:report <id> --type detailed
+```
+
+**REST API Endpoints:**
+```
+GET    /agents
+GET    /agents/:id
+POST   /agents/:id/research
+```
+
+**MCP Tools:**
+```json
+{
+  "tools": [
+    { "name": "agent_list", "description": "List Agent objects" },
+    { "name": "agent_get", "description": "Get Agent by ID" },
+    { "name": "agent_research", "description": "Research a topic using AI" },
+    { "name": "agent_analyze", "description": "Analyze data" }
+  ]
+}
+```
+
+#### ObjectRegistry.getMethods()
+
+Access method metadata programmatically:
+
+```typescript
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+
+// Get all methods for a class
+const methods = ObjectRegistry.getMethods('Agent');
+
+for (const [name, methodDef] of methods) {
+  console.log(`Method: ${name}`);
+  console.log(`  Async: ${methodDef.async}`);
+  console.log(`  Public: ${methodDef.isPublic}`);
+  console.log(`  Return type: ${methodDef.returnType}`);
+  console.log(`  Parameters:`, methodDef.parameters);
+}
+
+// Output:
+// Method: research
+//   Async: true
+//   Public: true
+//   Return type: Promise<any>
+//   Parameters: [{ name: 'options', type: 'any', optional: true }]
+```
+
+#### Parameter Mapping
+
+CLI generator automatically converts between naming conventions:
+
+- **Method → CLI**: `researchQuery` → `--research-query`
+- **CLI → Method**: `--research-query` → `researchQuery`
+
+**Example:**
+```typescript
+async research(options: { researchQuery: string, maxResults?: number }) {
+  // Implementation
+}
+```
+
+**Generated CLI:**
+```bash
+smrt agent:research <id> --research-query "AI" --max-results 10
+```
+
+#### Method Filtering
+
+Control which methods are exposed:
+
+```typescript
+@smrt({
+  cli: {
+    include: ['list', 'get', 'research'],  // Only these methods
+    exclude: ['internalMethod']             // Explicitly excluded
+  }
+})
+class Agent extends SmrtObject {
+  async research(options: any) { /* ... */ }      // ✅ Included
+  async report(options: any) { /* ... */ }        // ❌ Not in include list
+  private async internalMethod() { /* ... */ }    // ❌ Private (auto-excluded)
+}
+```
+
+**Rules:**
+- Only **public methods** are discoverable (private/protected auto-excluded)
+- `include` list is whitelist (if present, only listed methods are exposed)
+- `exclude` list is blacklist (removes methods even if in include list)
+- Works the same for CLI, API, and MCP configs
+
 ## Vite Plugin Integration
 
 ### SMRT Plugin (For Object Creators)

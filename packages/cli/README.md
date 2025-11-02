@@ -61,15 +61,44 @@ smrt gnode create my-town --template=sveltekit
 - `smrt generate-mcp` - Generate MCP server from registered objects
 - `smrt generate-types` - Generate TypeScript declarations from manifest
 
-### Object Management (CRUD)
+### Object Management (CRUD + Custom Methods)
 
 Auto-generated commands for each registered SMRT object:
 
+**Standard CRUD:**
 - `<object>:list` - List objects with filtering and pagination
 - `<object>:get <id>` - Get object by ID or slug
 - `<object>:create` - Create new object
 - `<object>:update <id>` - Update existing object
 - `<object>:delete <id>` - Delete object
+
+**Custom Methods (New in v0.6+):**
+
+Custom methods defined on SMRT objects are automatically discovered and exposed as CLI commands!
+
+```typescript
+@smrt({
+  cli: { include: ['list', 'get', 'research', 'report'] }
+})
+class Agent extends SmrtObject {
+  async research(options: { query: string }) {
+    return { results: await this.do(`Research: ${options.query}`) };
+  }
+}
+```
+
+**Auto-generated commands:**
+```bash
+smrt agent:list
+smrt agent:get <id>
+smrt agent:research <id> --query "AI safety"  # Custom method!
+```
+
+**How it works:**
+- All public methods are auto-discovered from manifests
+- Method parameters become CLI options (camelCase → kebab-case)
+- Include/exclude lists control which methods are exposed
+- Results output in JSON format
 
 ### Project Scaffolding
 
@@ -82,6 +111,11 @@ Auto-generated commands for each registered SMRT object:
   - Finds static-manifest.js and manifest.json files
   - Discovers manifests from installed SMRT packages
   - No manual configuration needed
+- **Custom Method Discovery** ⭐ NEW: Auto-generates CLI commands from custom methods
+  - Discovers all public methods from SMRT objects
+  - Maps method parameters to CLI options (kebab-case)
+  - Respects include/exclude configuration
+  - Works for CLI, API, and MCP generators
 - **Introspection**: View discovered objects, their fields, and sources
 - **Gnode Scaffolding**: Create new federated knowledge base projects
 - **Code Generation**: Generate MCP servers from registered objects
