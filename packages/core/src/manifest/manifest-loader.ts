@@ -14,6 +14,13 @@
  * 2. Check staticManifest (for core framework classes)
  * 3. Try dynamic import from external package manifest
  * 4. Return manifest entry or undefined
+ *
+ * Module Resolution Strategy:
+ * - Method 1: require.resolve() - works for published packages from npm registry
+ * - Method 2: Direct node_modules lookup - works for file: protocol linked packages
+ *
+ * The dual-method approach enables both development (file: protocol) and production
+ * (published packages) workflows without changing code or configuration.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -221,18 +228,15 @@ export async function loadExternalManifest(
     return manifestCache.get(packageName)!;
   }
 
-  try {
-    // Create require from calling app's context (process.cwd())
-    // This allows resolving packages that are installed in the app,
-    // not just packages that are dependencies of smrt-core
-    const require = createRequire(`${process.cwd()}/package.json`);
+  let pkgPath: string | null = null;
 
-    // Resolve package main entry point
+  try {
+    // Try Method 1: require.resolve() - works for published packages
+    const require = createRequire(`${process.cwd()}/package.json`);
     const pkgMainPath = require.resolve(packageName);
 
     // Walk up from main entry to find package.json
     let dir = dirname(pkgMainPath);
-    let pkgPath: string | null = null;
 
     for (let i = 0; i < 10; i++) {
       const testPath = join(dir, 'package.json');
@@ -251,12 +255,34 @@ export async function loadExternalManifest(
       if (parent === dir) break; // Reached filesystem root
       dir = parent;
     }
+  } catch (error) {
+    // Try Method 2: Direct node_modules lookup - works for file: protocol
+    // When packages are linked via file: protocol, require.resolve() fails
+    // because Node.js expects the exports field to define a main entry point.
+    // We fall back to directly checking node_modules for the package.
 
-    if (!pkgPath) {
-      console.warn(`Could not find package.json for ${packageName}`);
-      return null;
+    // Convert @scope/package-name to node_modules/@scope/package-name
+    const nodeModulesPath = join(process.cwd(), 'node_modules', packageName);
+    const nodeModulesPkgPath = join(nodeModulesPath, 'package.json');
+
+    try {
+      if (existsSync(nodeModulesPkgPath)) {
+        const content = readFileSync(nodeModulesPkgPath, 'utf-8');
+        const json = JSON.parse(content);
+        if (json.name === packageName) {
+          pkgPath = nodeModulesPkgPath;
+        }
+      }
+    } catch {
+      // Fallback also failed
     }
+  }
 
+  if (!pkgPath) {
+    return null;
+  }
+
+  try {
     const pkgDir = dirname(pkgPath);
 
     // Read package.json to get manifest export path
@@ -264,9 +290,6 @@ export async function loadExternalManifest(
     const manifestExport = pkgJson.exports?.['./manifest'];
 
     if (!manifestExport) {
-      console.warn(
-        `Package ${packageName} does not export "./manifest" in package.json`,
-      );
       return null;
     }
 
