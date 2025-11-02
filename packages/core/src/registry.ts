@@ -220,6 +220,8 @@ interface RegisteredClass {
   collectionConstructor?: new (options: any) => SmrtCollection<any>;
   config: SmartObjectConfig;
   fields: Map<string, any>;
+  /** Method definitions from manifest (for custom CLI/API/MCP generation) */
+  methods: Map<string, any>;
   /** Cached schema definition generated during registration */
   schema?: SchemaDefinition;
   /** Compiled validation functions for efficient runtime validation */
@@ -288,6 +290,7 @@ export class ObjectRegistry {
     // For external packages not yet loaded, manifest discovery happens lazily during schema generation
     const manifestEntry = discoverManifestSync(name);
     const fields = new Map<string, any>();
+    const methods = new Map<string, any>();
     let packageName: string | undefined;
 
     if (manifestEntry?.fields) {
@@ -316,6 +319,15 @@ export class ObjectRegistry {
       packageName = packageNameFromStack;
     }
 
+    if (manifestEntry?.methods) {
+      // Load method definitions from manifest (for custom CLI/API/MCP generation)
+      for (const [methodName, methodDef] of Object.entries(
+        manifestEntry.methods,
+      )) {
+        methods.set(methodName, methodDef);
+      }
+    }
+
     // Note: If manifest not found here, it will be loaded asynchronously when needed
     // via ensureManifestLoaded(). This allows decorators to remain synchronous while
     // supporting dynamic external package manifest loading.
@@ -340,6 +352,7 @@ export class ObjectRegistry {
       constructor: ctor,
       config,
       fields,
+      methods,
       schema,
       validators,
       packageName, // Store package name from manifest for getPackageName() lookup
@@ -740,6 +753,31 @@ export class ObjectRegistry {
   }
 
   /**
+   * Get method definitions for a registered class
+   *
+   * Returns method metadata extracted from the manifest during AST scanning.
+   * This enables code generators (CLI, API, MCP) to discover custom methods
+   * and automatically generate corresponding commands/endpoints/tools.
+   *
+   * @param name - Name of the registered class
+   * @returns Map of method names to MethodDefinition objects
+   * @example
+   * ```typescript
+   * const methods = ObjectRegistry.getMethods('Agent');
+   * for (const [name, methodDef] of methods) {
+   *   console.log(`Method: ${name}`);
+   *   console.log(`  Async: ${methodDef.async}`);
+   *   console.log(`  Public: ${methodDef.isPublic}`);
+   *   console.log(`  Params: ${methodDef.parameters.map(p => p.name).join(', ')}`);
+   * }
+   * ```
+   */
+  static getMethods(name: string): Map<string, any> {
+    const registered = ObjectRegistry.classes.get(name);
+    return registered ? registered.methods : new Map();
+  }
+
+  /**
    * Ensure manifest is loaded for external package classes
    *
    * For classes from external packages, the manifest may not be loaded during
@@ -793,13 +831,22 @@ export class ObjectRegistry {
         );
       }
 
+      // Load method definitions from manifest
+      if (manifestEntry.methods) {
+        for (const [methodName, methodDef] of Object.entries(
+          manifestEntry.methods,
+        )) {
+          registered.methods.set(methodName, methodDef);
+        }
+      }
+
       // Extract and store package name from manifest entry (for getPackageName() lookup)
       if (manifestEntry.packageName) {
         registered.packageName = manifestEntry.packageName;
       }
 
       console.log(
-        `📦 Loaded manifest for external package class: ${className} (${registered.fields.size} fields)`,
+        `📦 Loaded manifest for external package class: ${className} (${registered.fields.size} fields, ${registered.methods.size} methods)`,
       );
     } else {
       // Manifest not found - throw helpful error
@@ -1117,6 +1164,7 @@ export class ObjectRegistry {
     collectionConstructor?: new (options: any) => SmrtCollection<any>;
     config: SmartObjectConfig;
     fields: Map<string, any>;
+    methods: Map<string, any>;
     schema: SchemaDefinition | undefined;
     validators: ValidatorFunction[];
     relationships: RelationshipMetadata[];
@@ -1141,6 +1189,7 @@ export class ObjectRegistry {
       collectionConstructor: registered.collectionConstructor,
       config: registered.config,
       fields: new Map(registered.fields), // Return copy to prevent mutations
+      methods: new Map(registered.methods), // Return copy to prevent mutations
       schema: registered.schema,
       validators: registered.validators || [],
       relationships: ObjectRegistry.getRelationships(className),
@@ -1198,6 +1247,7 @@ export class ObjectRegistry {
     collectionConstructor?: new (options: any) => SmrtCollection<any>;
     config: SmartObjectConfig;
     fields: Map<string, any>;
+    methods: Map<string, any>;
     schema: SchemaDefinition | undefined;
     validators: ValidatorFunction[];
     relationships: RelationshipMetadata[];
