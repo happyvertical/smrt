@@ -10,12 +10,14 @@ export default defineConfig({
     },
     rollupOptions: {
       external: [
+        '@happyvertical/smrt-config',
         '@happyvertical/smrt-core',
         '@happyvertical/smrt-core/generators',
         '@happyvertical/smrt-core/manifest',
         '@happyvertical/smrt-core/prebuild',
         '@happyvertical/smrt-core/scanner',
         '@happyvertical/smrt-types',
+        '@happyvertical/sql',
         '@happyvertical/utils',
         'fast-glob',
         'tar',

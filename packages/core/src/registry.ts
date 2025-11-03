@@ -460,7 +460,9 @@ export class ObjectRegistry {
     // Compile validators
     const validators = ObjectRegistry.compileValidators(name, fields);
 
-    // Register in ObjectRegistry
+    // Register in ObjectRegistry (metadata only, no collection constructor)
+    // Manifest registration is for command discovery and help text.
+    // Runtime execution requires real classes loaded from entry point.
     ObjectRegistry.classes.set(name, {
       name,
       constructor: stubConstructor,
