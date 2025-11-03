@@ -27,7 +27,7 @@
  * ```
  */
 
-import type { SmrtCollection } from './collection';
+import { SmrtCollection } from './collection';
 import { Field } from './fields';
 import {
   discoverManifestEntry,
@@ -1504,20 +1504,44 @@ export class ObjectRegistry {
  */
 export function smrt(config: SmartObjectConfig = {}) {
   return <T extends typeof SmrtObject>(ctor: T): T => {
-    // Capture table name BEFORE minification (decorator runs at class definition time)
-    // This ensures the table name survives code minification
-    const tableName = config.tableName || classnameToTablename(ctor.name);
+    // Check if this is a SmrtCollection class
+    const isCollection = ctor.prototype instanceof SmrtCollection;
 
-    // Store table name in a static property that survives minification
-    Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
-      value: tableName,
-      writable: false,
-      enumerable: false,
-      configurable: false,
-    });
+    if (isCollection) {
+      // Handle SmrtCollection registration
+      const itemClass = (ctor as any)._itemClass;
+      if (itemClass) {
+        // Register the item class (SmrtObject) with metadata
+        const tableName =
+          config.tableName || classnameToTablename(itemClass.name);
 
-    // Register with the captured table name
-    ObjectRegistry.register(ctor, { ...config, tableName });
+        Object.defineProperty(itemClass, 'SMRT_TABLE_NAME', {
+          value: tableName,
+          writable: false,
+          enumerable: false,
+          configurable: false,
+        });
+
+        ObjectRegistry.register(itemClass, { ...config, tableName });
+
+        // Register the collection constructor using tableName (not class name)
+        // This ensures CLI lookups by tableName (e.g., "meetings") find the collection
+        ObjectRegistry.registerCollection(tableName, ctor as any);
+      }
+    } else {
+      // Handle SmrtObject registration (existing behavior)
+      const tableName = config.tableName || classnameToTablename(ctor.name);
+
+      Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
+        value: tableName,
+        writable: false,
+        enumerable: false,
+        configurable: false,
+      });
+
+      ObjectRegistry.register(ctor, { ...config, tableName });
+    }
+
     return ctor;
   };
 }
