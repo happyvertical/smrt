@@ -9,6 +9,7 @@ export type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
+export { loadLocalTestManifestSync } from './manifest-loader';
 export {
   staticManifest as manifest,
   staticManifest as default,

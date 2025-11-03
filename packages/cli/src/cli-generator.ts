@@ -8,6 +8,7 @@
 import { createInterface } from 'node:readline';
 import type { SmrtCollection } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
 import {
   type Command,
   type ParsedArgs,
@@ -127,6 +128,27 @@ export class CLIGenerator {
    */
   private generateCommands(): CLICommand[] {
     const commands: CLICommand[] = [];
+
+    // IMPORTANT: Load local project manifest before generating commands
+    // This populates ObjectRegistry with objects from the user's project
+    // Without this, the CLI would only see core framework objects
+    const manifest = loadLocalTestManifestSync();
+
+    if (manifest?.objects) {
+      // Register objects from manifest so they're available in ObjectRegistry
+      // This enables the CLI to generate commands for user-defined SMRT objects
+      for (const [name, objectDef] of Object.entries(manifest.objects)) {
+        // Register with stub constructor - we don't need the actual class
+        // for CLI generation, just the metadata (fields, methods, config)
+        // registerFromManifest handles duplicate checking internally
+        ObjectRegistry.registerFromManifest(
+          name,
+          objectDef,
+          manifest.packageName,
+        );
+      }
+    }
+
     const registeredClasses = ObjectRegistry.getAllClasses();
 
     // Generate object commands
@@ -298,17 +320,31 @@ export class CLIGenerator {
       });
     }
 
-    // CUSTOM METHODS - discover from manifest
+    // CUSTOM METHODS - discover from manifest and show by default
     const methods = ObjectRegistry.getMethods(objectName);
+
+    // Check if include list contains any custom method names (indicates strict mode)
+    const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
+    const hasCustomMethodsInInclude = included?.some(
+      (item) => !crudOperations.includes(item),
+    );
+
     for (const [methodName, methodDef] of methods) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
         // Skip if not public (private/protected methods shouldn't be in CLI)
         if (!methodDef.isPublic) return false;
 
-        // Check include/exclude lists (custom methods treated same as CRUD)
-        if (included && !included.includes(methodName)) return false;
+        // Always respect exclude list
         if (excluded.includes(methodName)) return false;
+
+        // If include list has custom methods, use strict mode (only show what's in include)
+        if (hasCustomMethodsInInclude && !included.includes(methodName)) {
+          return false;
+        }
+
+        // Otherwise, show custom methods by default (even if include only has CRUD ops)
+        // This allows: cli: { include: ['list', 'get'] } to show list + get + all custom methods
         return true;
       };
 

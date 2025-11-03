@@ -7,7 +7,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
-import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import {
   generateClaudeConfig,
@@ -263,7 +262,7 @@ export class MCPGenerator {
       });
     }
 
-    // CUSTOM ACTIONS
+    // CUSTOM METHODS - discover from manifest and show by default
     if (classInfo) {
       const config = ObjectRegistry.getConfig(objectName);
       const mcpConfig = config.mcp;
@@ -274,56 +273,125 @@ export class MCPGenerator {
           ? mcpConfig.exclude
           : [];
 
-      // If specific actions are included, check for custom actions
-      if (included) {
-        for (const action of included) {
-          // Skip standard CRUD actions (already handled above)
-          if (['list', 'get', 'create', 'update', 'delete'].includes(action)) {
-            continue;
-          }
+      // Check if include list contains any custom method names (indicates strict mode)
+      const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
+      const customMethodsInInclude =
+        included?.filter((item) => !crudOperations.includes(item)) || [];
+      const hasCustomMethodsInInclude = customMethodsInInclude.length > 0;
 
-          // Skip if excluded
-          if (excluded.includes(action)) {
-            continue;
-          }
+      // Try to discover methods from manifest first
+      const methods = ObjectRegistry.getMethods(objectName);
+      const methodNames = new Set(Array.from(methods.keys()));
 
-          // Validate that the method exists on the class
-          const isValid = this.validateCustomMethod(
+      // If we have an include list with custom methods, validate and generate tools
+      if (hasCustomMethodsInInclude) {
+        for (const methodName of customMethodsInInclude) {
+          // Skip if explicitly excluded
+          if (excluded.includes(methodName)) continue;
+
+          // Check if method exists (in manifest or on class prototype)
+          const existsInManifest = methodNames.has(methodName);
+          const existsOnClass = this.validateCustomMethod(
             classInfo.constructor,
-            action,
+            methodName,
           );
 
-          if (isValid) {
-            const toolName = `${lowerName}_${action}`.toLowerCase();
-            tools.push({
-              name: toolName,
-              description: `Execute ${action} action on ${objectName}`,
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  id: {
-                    type: 'string',
-                    description: 'ID of the object to execute action on',
-                  },
-                  options: {
-                    type: 'object',
-                    description: 'Additional options for the custom action',
-                    additionalProperties: true,
-                  },
-                },
-                required: ['id'],
-              },
-            });
-          } else {
+          if (!existsInManifest && !existsOnClass) {
+            // Warn about missing methods
             console.warn(
-              `Warning: Custom action '${action}' specified in MCP config for ${objectName}, but method ${action}() not found on class`,
+              `Warning: Custom action '${methodName}' specified in MCP config for ${objectName}, but method ${methodName}() not found on class`,
             );
+            continue;
           }
+
+          // Generate tool for this method
+          const toolName = `${lowerName}_${methodName}`.toLowerCase();
+          tools.push({
+            name: toolName,
+            description: `Execute ${methodName} action on ${objectName}`,
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: 'string',
+                  description: 'ID of the object to execute action on',
+                },
+                options: {
+                  type: 'object',
+                  description: 'Additional options for the custom action',
+                  additionalProperties: true,
+                },
+              },
+              required: ['id'],
+            },
+          });
+        }
+      } else {
+        // No custom methods in include = show all discovered methods by default
+        for (const [methodName, methodDef] of methods) {
+          // Skip if not public (private/protected methods shouldn't be in MCP)
+          if (!methodDef.isPublic) continue;
+
+          // Always respect exclude list
+          if (excluded.includes(methodName)) continue;
+
+          // Generate MCP tool for this custom method
+          const toolName = `${lowerName}_${methodName}`.toLowerCase();
+          tools.push({
+            name: toolName,
+            description: `Execute ${methodName} action on ${objectName}`,
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: 'string',
+                  description: 'ID of the object to execute action on',
+                },
+                options: {
+                  type: 'object',
+                  description: 'Additional options for the custom action',
+                  additionalProperties: true,
+                },
+              },
+              required: ['id'],
+            },
+          });
         }
       }
     }
 
     return tools;
+  }
+
+  /**
+   * Validate that a custom method exists on a class
+   */
+  private validateCustomMethod(
+    classConstructor: typeof SmrtObject,
+    methodName: string,
+  ): boolean {
+    try {
+      // Check if method exists on the prototype
+      const prototype = classConstructor.prototype;
+
+      // Check if the method exists and is a function
+      if (typeof (prototype as any)[methodName] === 'function') {
+        return true;
+      }
+
+      // Also check static methods
+      if (typeof (classConstructor as any)[methodName] === 'function') {
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.warn(
+        `Error validating method ${methodName} on class ${classConstructor.name}:`,
+        error,
+      );
+      return false;
+    }
   }
 
   /**
@@ -379,37 +447,6 @@ export class MCPGenerator {
     }
 
     return schema;
-  }
-
-  /**
-   * Validate that a custom method exists on a class
-   */
-  private validateCustomMethod(
-    classConstructor: typeof SmrtObject,
-    methodName: string,
-  ): boolean {
-    try {
-      // Check if method exists on the prototype
-      const prototype = classConstructor.prototype;
-
-      // Check if the method exists and is a function
-      if (typeof (prototype as any)[methodName] === 'function') {
-        return true;
-      }
-
-      // Also check static methods
-      if (typeof (classConstructor as any)[methodName] === 'function') {
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      console.warn(
-        `Error validating method ${methodName} on class ${classConstructor.name}:`,
-        error,
-      );
-      return false;
-    }
   }
 
   /**

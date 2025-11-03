@@ -12,6 +12,7 @@ export default defineConfig({
       external: [
         '@happyvertical/smrt-core',
         '@happyvertical/smrt-core/generators',
+        '@happyvertical/smrt-core/manifest',
         '@happyvertical/smrt-core/prebuild',
         '@happyvertical/smrt-core/scanner',
         '@happyvertical/smrt-types',

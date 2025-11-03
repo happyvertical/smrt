@@ -34,7 +34,7 @@ import {
   discoverManifestSync,
   getPackageName,
 } from './manifest/manifest-loader.js';
-import type { SmrtObject } from './object';
+import { SmrtObject } from './object';
 import { classnameToTablename, tableNameFromClass } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
@@ -383,6 +383,98 @@ export class ObjectRegistry {
     }
 
     ObjectRegistry.collections.set(objectName, collectionConstructor as any);
+  }
+
+  /**
+   * Register an object from manifest metadata (for CLI/tools without importing actual classes)
+   *
+   * This method allows tools like the CLI to register objects from build-time manifest data
+   * without needing to import the actual class. This solves the bootstrap problem where
+   * `npx smrt` can't access user project classes but needs to generate commands for them.
+   *
+   * @param name - Name of the object class
+   * @param objectDef - Object definition from manifest
+   * @param packageName - Package name from manifest
+   * @example
+   * ```typescript
+   * const manifest = loadLocalTestManifestSync();
+   * for (const [name, objectDef] of Object.entries(manifest.objects)) {
+   *   ObjectRegistry.registerFromManifest(name, objectDef, manifest.packageName);
+   * }
+   * ```
+   */
+  static registerFromManifest(
+    name: string,
+    objectDef: any,
+    packageName?: string,
+  ): void {
+    // Prevent duplicate registrations
+    if (ObjectRegistry.classes.has(name)) {
+      return;
+    }
+
+    // Create stub constructor - not needed for CLI command generation
+    // The CLI only needs metadata (fields, methods, config)
+    const stubConstructor = class extends SmrtObject {} as typeof SmrtObject;
+    Object.defineProperty(stubConstructor, 'name', { value: name });
+
+    // Convert manifest field definitions to Field objects
+    const fields = new Map<string, any>();
+    if (objectDef.fields) {
+      for (const [fieldName, fieldDef] of Object.entries(
+        objectDef.fields as any,
+      )) {
+        const fd = fieldDef as any;
+        fields.set(
+          fieldName,
+          new Field(fd.type, {
+            required: fd.required,
+            default: fd.default,
+            description: fd.description,
+            ...fd.options,
+          }),
+        );
+      }
+    }
+
+    // Load method definitions
+    const methods = new Map<string, any>();
+    if (objectDef.methods) {
+      for (const [methodName, methodDef] of Object.entries(objectDef.methods)) {
+        methods.set(methodName, methodDef);
+      }
+    }
+
+    // Get config from manifest
+    const config = objectDef.decoratorConfig || {};
+    const tableName = config.tableName || tableNameFromClass(stubConstructor);
+
+    // Placeholder schema
+    const schema: SchemaDefinition = {
+      ddl: '',
+      indexes: [],
+      triggers: [],
+      tableName,
+    };
+
+    // Compile validators
+    const validators = ObjectRegistry.compileValidators(name, fields);
+
+    // Register in ObjectRegistry
+    ObjectRegistry.classes.set(name, {
+      name,
+      constructor: stubConstructor,
+      config,
+      fields,
+      methods,
+      schema,
+      validators,
+      packageName,
+    });
+
+    console.log(
+      `📦 Registered ${name} from manifest (${fields.size} fields, ${methods.size} methods)`,
+    );
   }
 
   /**
