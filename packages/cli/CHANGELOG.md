@@ -1,5 +1,18 @@
 # @happyvertical/smrt-cli
 
+## 0.8.0
+
+### Minor Changes
+
+- a095a1d: - feat(cli): integrate smrt-config for CLI configuration
+  - feat(cli): dynamically import user's compiled classes for runtime execution
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.8.0
+- @happyvertical/smrt-core@0.8.0
+- @happyvertical/smrt-types@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes
