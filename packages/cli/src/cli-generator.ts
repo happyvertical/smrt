@@ -8,6 +8,7 @@
 import { createInterface } from 'node:readline';
 import type { SmrtCollection } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
 import {
   type Command,
   type ParsedArgs,
@@ -127,6 +128,27 @@ export class CLIGenerator {
    */
   private generateCommands(): CLICommand[] {
     const commands: CLICommand[] = [];
+
+    // IMPORTANT: Load local project manifest before generating commands
+    // This populates ObjectRegistry with objects from the user's project
+    // Without this, the CLI would only see core framework objects
+    const manifest = loadLocalTestManifestSync();
+
+    if (manifest?.objects) {
+      // Register objects from manifest so they're available in ObjectRegistry
+      // This enables the CLI to generate commands for user-defined SMRT objects
+      for (const [name, objectDef] of Object.entries(manifest.objects)) {
+        // Register with stub constructor - we don't need the actual class
+        // for CLI generation, just the metadata (fields, methods, config)
+        // registerFromManifest handles duplicate checking internally
+        ObjectRegistry.registerFromManifest(
+          name,
+          objectDef,
+          manifest.packageName,
+        );
+      }
+    }
+
     const registeredClasses = ObjectRegistry.getAllClasses();
 
     // Generate object commands
