@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.10.0
+
+### Minor Changes
+
+- c6d8f52: - feat(ci): add auto-update workflow to prevent PR conflicts
+
 ## 0.9.0
 
 ### Minor Changes
