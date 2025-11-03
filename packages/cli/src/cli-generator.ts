@@ -320,17 +320,31 @@ export class CLIGenerator {
       });
     }
 
-    // CUSTOM METHODS - discover from manifest
+    // CUSTOM METHODS - discover from manifest and show by default
     const methods = ObjectRegistry.getMethods(objectName);
+
+    // Check if include list contains any custom method names (indicates strict mode)
+    const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
+    const hasCustomMethodsInInclude = included?.some(
+      (item) => !crudOperations.includes(item),
+    );
+
     for (const [methodName, methodDef] of methods) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
         // Skip if not public (private/protected methods shouldn't be in CLI)
         if (!methodDef.isPublic) return false;
 
-        // Check include/exclude lists (custom methods treated same as CRUD)
-        if (included && !included.includes(methodName)) return false;
+        // Always respect exclude list
         if (excluded.includes(methodName)) return false;
+
+        // If include list has custom methods, use strict mode (only show what's in include)
+        if (hasCustomMethodsInInclude && !included.includes(methodName)) {
+          return false;
+        }
+
+        // Otherwise, show custom methods by default (even if include only has CRUD ops)
+        // This allows: cli: { include: ['list', 'get'] } to show list + get + all custom methods
         return true;
       };
 
