@@ -1,5 +1,12 @@
 # @happyvertical/smrt-core
 
+## 0.8.1
+
+### Patch Changes
+
+- fb98c3a: - fix(cli,core): enable collection constructor discovery for bundled code
+  - @happyvertical/smrt-types@0.8.1
+
 ## 0.8.0
 
 ### Patch Changes
