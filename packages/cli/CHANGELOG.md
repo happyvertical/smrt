@@ -1,5 +1,18 @@
 # @happyvertical/smrt-cli
 
+## 0.7.0
+
+### Minor Changes
+
+- 51c388a: - feat(generators): expose custom methods by default without explicit include
+  - fix(cli): load manifest at runtime to populate ObjectRegistry
+
+### Patch Changes
+
+- Updated dependencies [51c388a]
+  - @happyvertical/smrt-core@0.7.0
+  - @happyvertical/smrt-types@0.7.0
+
 ## 0.6.0
 
 ### Minor Changes
