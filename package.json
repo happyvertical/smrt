@@ -22,7 +22,7 @@
     "validate-build": "node scripts/validate-build.js",
     "changeset": "changeset",
     "version": "node scripts/check-version-limit.js && changeset version",
-    "release": "pnpm run build && changeset publish",
+    "release": "pnpm run build && node scripts/publish-sequential.js",
     "smrt": "pnpm --filter @smrt/core cli",
     "docs:site": "npm run --prefix docs start",
     "docs:site:build": "npm run --prefix docs build",
