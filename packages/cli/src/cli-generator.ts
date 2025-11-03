@@ -176,7 +176,30 @@ export class CLIGenerator {
       }
 
       const fileUrl = `file://${fullPath}`;
-      await import(fileUrl);
+      const importedModule = await import(fileUrl);
+
+      // Register collections from exported classes (for bundled code without decorators)
+      // Scan exports for collection classes and register them
+      for (const [exportName, exportValue] of Object.entries(importedModule)) {
+        if (exportValue && typeof exportValue === 'function') {
+          // Check if it's a collection class by looking for _itemClass
+          const itemClass = (exportValue as any)._itemClass;
+          if (itemClass) {
+            // It's a collection class - register it
+            const tableName =
+              itemClass.SMRT_TABLE_NAME || itemClass.name.toLowerCase();
+            const existing = ObjectRegistry.getClass(tableName);
+            if (existing && !existing.collectionConstructor) {
+              ObjectRegistry.registerCollection(tableName, exportValue as any);
+              if (config.verbose) {
+                console.log(
+                  `[CLI] Registered collection ${exportName} for ${tableName}`,
+                );
+              }
+            }
+          }
+        }
+      }
 
       // Verify registration
       const registeredCount = ObjectRegistry.getAllClasses().size;
