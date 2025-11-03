@@ -1,5 +1,11 @@
 # @happyvertical/smrt-config
 
+## 0.9.0
+
+### Minor Changes
+
+- 85c671b: - feat(ci): add auto-update workflow to prevent PR conflicts
+
 ## 0.8.1
 
 ## 0.8.0

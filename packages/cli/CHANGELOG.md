@@ -1,5 +1,18 @@
 # @happyvertical/smrt-cli
 
+## 0.9.0
+
+### Minor Changes
+
+- 85c671b: - feat(ci): add auto-update workflow to prevent PR conflicts
+
+### Patch Changes
+
+- Updated dependencies [85c671b]
+  - @happyvertical/smrt-config@0.9.0
+  - @happyvertical/smrt-core@0.9.0
+  - @happyvertical/smrt-types@0.9.0
+
 ## 0.8.1
 
 ### Patch Changes
