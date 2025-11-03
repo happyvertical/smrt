@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const packagesDir = 'packages';
 const packageDirs = readdirSync(packagesDir, { withFileTypes: true })
-  .filter(dirent => dirent.isDirectory())
-  .map(dirent => dirent.name);
+  .filter((dirent) => dirent.isDirectory())
+  .map((dirent) => dirent.name);
 
 const publishConfig = {
   registry: 'https://npm.pkg.github.com',
-  access: 'public'
+  access: 'public',
 };
 
 for (const dir of packageDirs) {
@@ -22,12 +22,12 @@ for (const dir of packageDirs) {
 
     if (!pkg.publishConfig) {
       pkg.publishConfig = publishConfig;
-      writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
+      writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
       console.log(`✅ Added publishConfig to ${file}`);
     } else {
       console.log(`⏭️  Skipped ${file} (already has publishConfig)`);
     }
-  } catch (err) {
+  } catch (_err) {
     console.log(`⚠️  Skipped ${dir} (no package.json)`);
   }
 }

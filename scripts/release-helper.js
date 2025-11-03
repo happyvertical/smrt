@@ -7,9 +7,8 @@
  * It can generate changesets from conventional commits and preview what would be released.
  */
 
-import { execSync } from 'child_process';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 function execCommand(command, options = {}) {
   try {
@@ -24,7 +23,9 @@ function execCommand(command, options = {}) {
 }
 
 function getLastReleaseTag() {
-  return execCommand('git describe --tags --abbrev=0', { silent: true }) || 'HEAD~10';
+  return (
+    execCommand('git describe --tags --abbrev=0', { silent: true }) || 'HEAD~10'
+  );
 }
 
 function getCommitsSinceLastRelease() {
@@ -33,11 +34,13 @@ function getCommitsSinceLastRelease() {
 
   console.log(`📋 Analyzing commits since last release (${lastTag})`);
 
-  const commits = execCommand(`git log --pretty=format:"%H|%s|%an|%ad" --date=short ${range}`);
+  const commits = execCommand(
+    `git log --pretty=format:"%H|%s|%an|%ad" --date=short ${range}`,
+  );
 
   if (!commits) return [];
 
-  return commits.split('\n').map(line => {
+  return commits.split('\n').map((line) => {
     const [hash, message, author, date] = line.split('|');
     return { hash, message, author, date };
   });
@@ -47,14 +50,14 @@ function analyzeCommitsForRelease(commits) {
   let hasBreaking = false;
   let hasFeatures = false;
   let hasFixes = false;
-  let otherCommits = [];
+  const _otherCommits = [];
 
   const analysis = {
     breaking: [],
     features: [],
     fixes: [],
     others: [],
-    releaseType: 'patch'
+    releaseType: 'patch',
   };
 
   for (const commit of commits) {
@@ -81,7 +84,9 @@ function analyzeCommitsForRelease(commits) {
       analysis.fixes.push(commit);
     }
     // Other conventional commits
-    else if (/^(docs|style|refactor|perf|test|build|ci|chore|revert)/.test(message)) {
+    else if (
+      /^(docs|style|refactor|perf|test|build|ci|chore|revert)/.test(message)
+    ) {
       analysis.others.push(commit);
     }
   }
@@ -104,7 +109,7 @@ function getCurrentVersion() {
   try {
     const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
     return packageJson.version;
-  } catch (error) {
+  } catch (_error) {
     return '0.0.0';
   }
 }
@@ -138,9 +143,11 @@ function previewRelease() {
   console.log(`📝 Found ${commits.length} commits since last release:\n`);
 
   // Show all commits
-  commits.forEach(commit => {
+  commits.forEach((commit) => {
     const shortHash = commit.hash.substring(0, 8);
-    console.log(`  ${shortHash} ${commit.message} (${commit.author}, ${commit.date})`);
+    console.log(
+      `  ${shortHash} ${commit.message} (${commit.author}, ${commit.date})`,
+    );
   });
 
   console.log();
@@ -156,7 +163,10 @@ function previewRelease() {
   console.log();
 
   const currentVersion = getCurrentVersion();
-  const nextVersion = calculateNextVersion(currentVersion, analysis.releaseType);
+  const nextVersion = calculateNextVersion(
+    currentVersion,
+    analysis.releaseType,
+  );
 
   console.log('📦 Version Information:');
   console.log(`   Current Version: ${currentVersion}`);
@@ -176,7 +186,9 @@ function testSemanticRelease() {
 
   try {
     // Run semantic-release with dry-run but suppress npm token error
-    execCommand('GITHUB_TOKEN=dummy npx semantic-release --dry-run --no-ci 2>/dev/null || echo "Semantic-release test completed"');
+    execCommand(
+      'GITHUB_TOKEN=dummy npx semantic-release --dry-run --no-ci 2>/dev/null || echo "Semantic-release test completed"',
+    );
     console.log('✅ Semantic-release configuration is valid');
   } catch (error) {
     console.error('❌ Semantic-release test failed');
@@ -192,7 +204,7 @@ function validateConventionalCommits() {
 
   try {
     execCommand(`node scripts/validate-conventional-commits.js ${range}`);
-  } catch (error) {
+  } catch (_error) {
     console.error('❌ Conventional commit validation failed');
     process.exit(1);
   }
@@ -220,9 +232,15 @@ function main() {
       console.log('🛠️  Release Helper');
       console.log('');
       console.log('Usage:');
-      console.log('  node scripts/release-helper.js preview   - Preview what would be released');
-      console.log('  node scripts/release-helper.js test      - Test semantic-release configuration');
-      console.log('  node scripts/release-helper.js validate  - Validate conventional commits');
+      console.log(
+        '  node scripts/release-helper.js preview   - Preview what would be released',
+      );
+      console.log(
+        '  node scripts/release-helper.js test      - Test semantic-release configuration',
+      );
+      console.log(
+        '  node scripts/release-helper.js validate  - Validate conventional commits',
+      );
       console.log('  node scripts/release-helper.js full      - Run all steps');
       console.log('');
       console.log('Examples:');
