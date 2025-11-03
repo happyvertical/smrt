@@ -7,6 +7,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
+import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import {
   generateClaudeConfig,
