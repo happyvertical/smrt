@@ -34,6 +34,108 @@ smrt generate-mcp
 smrt gnode create my-town --template=sveltekit
 ```
 
+## Configuration
+
+The CLI uses [@happyvertical/smrt-config](../config) for configuration management. Configuration is optional - the CLI works with sensible defaults.
+
+### Entry Point Discovery
+
+The CLI automatically discovers your SMRT objects by loading your project's entry point:
+
+1. **Explicit configuration** in `smrt.config.js`:
+   ```javascript
+   export default {
+     packages: {
+       cli: {
+         entryPoint: './dist/index.js'
+       }
+     }
+   };
+   ```
+
+2. **Auto-detection from package.json** (if not configured):
+   - Checks `exports['.'].import` or `exports['.']`
+   - Falls back to `main` field
+   - Final fallback: `./dist/index.js`
+
+### Database Configuration
+
+Configure database connection for CLI operations (list, get, create, update, delete):
+
+```javascript
+// smrt.config.js
+export default {
+  packages: {
+    cli: {
+      database: {
+        type: 'sqlite',           // or 'postgres'
+        url: './my-project.db'    // default: ':memory:'
+      }
+    }
+  }
+};
+```
+
+**Default behavior:**
+- Uses in-memory SQLite (`:memory:`) if no database is configured
+- Data is not persisted between CLI invocations with default settings
+
+### All Configuration Options
+
+```javascript
+// smrt.config.js
+export default {
+  packages: {
+    cli: {
+      // Entry point to load SMRT classes from
+      // Default: auto-detect from package.json
+      entryPoint: './dist/index.js',
+
+      // Database configuration
+      database: {
+        type: 'sqlite',          // 'sqlite' | 'postgres'
+        url: './data.db'         // default: ':memory:'
+      },
+
+      // Enable verbose output for debugging
+      // Default: false
+      verbose: true,
+
+      // Default output format
+      // Default: 'table'
+      format: 'table',            // 'table' | 'json' | 'yaml' | 'plain'
+
+      // Command timeout in milliseconds
+      // Default: 30000 (30 seconds)
+      timeout: 60000,
+
+      // Enable colored output
+      // Default: true (auto-detected from TTY)
+      colors: true,
+
+      // Enable interactive prompts
+      // Default: true (false in CI environments)
+      interactive: true
+    }
+  }
+};
+```
+
+### Manifest-Only Mode
+
+If the CLI cannot load your compiled classes (e.g., due to bundling issues), it falls back to **manifest-only mode**:
+
+- ✅ Object discovery and introspection work
+- ✅ Schema inspection works
+- ✅ Code generation works (MCP, types)
+- ❌ CRUD operations (list, get, create, update, delete) don't work
+- ❌ Custom method invocation doesn't work
+
+To resolve, ensure:
+1. Your project has a valid `dist/index.js` (or configured entry point)
+2. The entry point imports all SMRT objects (triggers `@smrt()` decorators)
+3. Your build doesn't mangle required dependencies (check vite externals)
+
 ## Commands
 
 ### Utility Commands

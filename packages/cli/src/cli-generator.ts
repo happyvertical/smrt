@@ -100,6 +100,111 @@ export class CLIGenerator {
   }
 
   /**
+   * Try to load user's compiled classes for runtime execution
+   *
+   * Entry point discovery order:
+   * 1. smrt.config.js: packages.cli.entryPoint (explicit override)
+   * 2. package.json: exports['.'] or main field
+   * 3. Fallback: ./dist/index.js
+   *
+   * When the entry point is imported, @smrt() decorators run and populate
+   * ObjectRegistry with real class constructors needed for command execution.
+   */
+  private async tryLoadUserClasses(): Promise<void> {
+    try {
+      const { getPackageConfig } = await import('@happyvertical/smrt-config');
+      const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+
+      // Get CLI configuration
+      const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+      // Determine entry point
+      let entryPoint: string | null = config.entryPoint;
+
+      // If not explicitly configured, read from package.json
+      if (!entryPoint) {
+        try {
+          const packageJsonPath = path.resolve(process.cwd(), 'package.json');
+          if (fs.existsSync(packageJsonPath)) {
+            const packageJson = JSON.parse(
+              fs.readFileSync(packageJsonPath, 'utf-8'),
+            );
+
+            // Try exports['.'] first, then main
+            entryPoint =
+              packageJson.exports?.['.']?.import ||
+              packageJson.exports?.['.'] ||
+              packageJson.main ||
+              './dist/index.js';
+
+            if (config.verbose) {
+              console.log(
+                `[CLI] Detected entry point from package.json: ${entryPoint}`,
+              );
+            }
+          }
+        } catch (error) {
+          // Failed to read package.json, use fallback
+          entryPoint = './dist/index.js';
+        }
+      }
+
+      // Default to ./dist/index.js if still null
+      if (!entryPoint) {
+        entryPoint = './dist/index.js';
+      }
+
+      // Resolve to absolute path
+      const fullPath = path.resolve(process.cwd(), entryPoint);
+
+      // Check if file exists
+      if (!fs.existsSync(fullPath)) {
+        if (config.verbose) {
+          console.log(`[CLI] Entry point not found: ${fullPath}`);
+          console.log(
+            '[CLI] Using manifest-only mode (metadata operations only)',
+          );
+        }
+        return;
+      }
+
+      // Import the entry point
+      if (config.verbose) {
+        console.log(`[CLI] Loading SMRT classes from ${entryPoint}...`);
+      }
+
+      const fileUrl = `file://${fullPath}`;
+      await import(fileUrl);
+
+      // Verify registration
+      const registeredCount = ObjectRegistry.getAllClasses().size;
+      if (config.verbose) {
+        console.log(
+          `[CLI] Successfully loaded ${registeredCount} SMRT objects`,
+        );
+      }
+    } catch (error) {
+      // Import failed - fall back to manifest-only mode
+      // This is acceptable for metadata operations (help, schema, discovery)
+      const { getPackageConfig } = await import('@happyvertical/smrt-config');
+      const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+      const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+      if (config.verbose) {
+        console.warn(
+          '[CLI] Failed to load classes from entry point:',
+          error instanceof Error ? error.message : 'Unknown error',
+        );
+        console.log(
+          '[CLI] Using manifest-only mode (some commands may not work)',
+        );
+      }
+    }
+  }
+
+  /**
    * Handle exits safely in test mode
    */
   private exitWithError(message: string, code = 1): void {
@@ -114,9 +219,10 @@ export class CLIGenerator {
    * Generate CLI handler function
    */
   generateHandler(): (argv: string[]) => Promise<void> {
-    const commands = this.generateCommands();
-
     return async (argv: string[]) => {
+      // Generate commands (async to load user classes)
+      const commands = await this.generateCommands();
+
       // Parse args first without built-in commands to avoid loading them unnecessarily
       const parsed = parseCliArgs(argv, commands, {});
       await this.executeCommand(parsed, commands);
@@ -126,7 +232,7 @@ export class CLIGenerator {
   /**
    * Generate all CLI commands
    */
-  private generateCommands(): CLICommand[] {
+  private async generateCommands(): Promise<CLICommand[]> {
     const commands: CLICommand[] = [];
 
     // IMPORTANT: Load local project manifest before generating commands
@@ -147,6 +253,11 @@ export class CLIGenerator {
           manifest.packageName,
         );
       }
+
+      // IMPORTANT: Try to load actual compiled classes for runtime execution
+      // The manifest registration above provides metadata for command generation,
+      // but we need real class constructors for executing commands (CRUD, custom methods)
+      await this.tryLoadUserClasses();
     }
 
     const registeredClasses = ObjectRegistry.getAllClasses();
@@ -339,7 +450,11 @@ export class CLIGenerator {
         if (excluded.includes(methodName)) return false;
 
         // If include list has custom methods, use strict mode (only show what's in include)
-        if (hasCustomMethodsInInclude && !included.includes(methodName)) {
+        if (
+          hasCustomMethodsInInclude &&
+          included &&
+          !included.includes(methodName)
+        ) {
           return false;
         }
 
@@ -996,6 +1111,7 @@ export class CLIGenerator {
 
   /**
    * Get or create collection for an object
+   * Uses database configuration from smrt.config.js or defaults to :memory:
    */
   private async getCollection(
     objectName: string,
@@ -1004,13 +1120,33 @@ export class CLIGenerator {
       const classInfo = ObjectRegistry.getClass(objectName);
       if (!classInfo || !classInfo.collectionConstructor) {
         throw new Error(
-          `Object ${objectName} not found or has no collection constructor`,
+          `Object ${objectName} not found or has no collection constructor.\n` +
+            `Hint: Create a smrt.config.js file with database configuration, or ensure SMRT classes are loaded.`,
         );
+      }
+
+      // Get database from context or config
+      let db = this.context.db;
+      if (!db) {
+        const { getPackageConfig } = await import('@happyvertical/smrt-config');
+        const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+        const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+        // Initialize database connection from config
+        const { getDatabase } = await import('@happyvertical/sql');
+        db = await getDatabase({
+          type: config.database.type,
+          url: config.database.url,
+        });
+
+        if (config.verbose) {
+          console.log(`[CLI] Using database: ${config.database.url}`);
+        }
       }
 
       const collection = new classInfo.collectionConstructor({
         ai: this.context.ai,
-        db: this.context.db,
+        db,
       });
 
       await collection.initialize();
@@ -1122,6 +1258,10 @@ export class CLIGenerator {
 
 // CLI Binary Entry Point
 export async function main() {
+  // Initialize smrt-config (loads smrt.config.js if present)
+  const { loadConfig } = await import('@happyvertical/smrt-config');
+  await loadConfig({ cache: true });
+
   const config: CLIConfig = {
     name: 'smrt',
     version: '1.0.0',

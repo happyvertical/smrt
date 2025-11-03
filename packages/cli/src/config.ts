@@ -1,0 +1,78 @@
+/**
+ * CLI Configuration Schema
+ *
+ * Defines configuration options for the SMRT CLI tool.
+ * Uses @happyvertical/smrt-config for loading and merging configuration.
+ */
+
+export interface CLIConfig {
+  /**
+   * Entry point file to load SMRT classes from.
+   * If null, auto-detected from package.json (main or exports fields).
+   * @default null (auto-detect)
+   */
+  entryPoint?: string | null;
+
+  /**
+   * Database configuration for CLI operations.
+   */
+  database?: {
+    /**
+     * Database type
+     * @default 'sqlite'
+     */
+    type?: 'sqlite' | 'postgres';
+
+    /**
+     * Database connection URL
+     * @default ':memory:' (in-memory SQLite)
+     */
+    url?: string;
+  };
+
+  /**
+   * Enable verbose output for debugging
+   * @default false
+   */
+  verbose?: boolean;
+
+  /**
+   * Default output format for commands
+   * @default 'table'
+   */
+  format?: 'table' | 'json' | 'yaml' | 'plain';
+
+  /**
+   * Command timeout in milliseconds
+   * @default 30000 (30 seconds)
+   */
+  timeout?: number;
+
+  /**
+   * Enable colored output
+   * @default true
+   */
+  colors?: boolean;
+
+  /**
+   * Enable interactive prompts
+   * @default true (false in CI environments)
+   */
+  interactive?: boolean;
+}
+
+/**
+ * Default CLI configuration values
+ */
+export const DEFAULT_CLI_CONFIG: Required<CLIConfig> = {
+  entryPoint: null, // Auto-detect from package.json
+  database: {
+    type: 'sqlite',
+    url: ':memory:',
+  },
+  verbose: false,
+  format: 'table',
+  timeout: 30000,
+  colors: !process.env.NO_COLOR && process.stdout.isTTY,
+  interactive: !process.env.CI,
+};
