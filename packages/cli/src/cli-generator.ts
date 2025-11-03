@@ -100,6 +100,73 @@ export class CLIGenerator {
   }
 
   /**
+   * Try to load user's compiled classes for runtime execution
+   *
+   * The manifest provides metadata for CLI command generation, but we need
+   * actual compiled classes to execute commands. This method attempts to
+   * dynamically import the user's dist/index.js file, which will trigger
+   * @smrt() decorators to properly populate ObjectRegistry with real constructors.
+   */
+  private async tryLoadUserClasses(): Promise<void> {
+    try {
+      // Look for common compiled output locations
+      const possiblePaths = [
+        './dist/index.js', // Most common
+        './dist/index.mjs', // ESM variant
+        './build/index.js', // Alternative build dir
+        './lib/index.js', // Another alternative
+      ];
+
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+
+      // Try each path to find the user's compiled code
+      for (const distPath of possiblePaths) {
+        try {
+          const fullPath = path.resolve(process.cwd(), distPath);
+
+          // Check if file exists before attempting import
+          if (fs.existsSync(fullPath)) {
+            // Convert to file:// URL for dynamic import
+            const fileUrl = `file://${fullPath}`;
+
+            // Dynamically import the compiled classes
+            // This will run @smrt() decorators and populate ObjectRegistry properly
+            await import(fileUrl);
+
+            // Successfully loaded classes
+            if (process.env.DEBUG) {
+              console.log(`Loaded user classes from ${distPath}`);
+            }
+            return; // Success, exit early
+          }
+        } catch (error) {
+          // This path failed, try next
+          if (process.env.DEBUG) {
+            console.warn(
+              `Failed to import from ${distPath}:`,
+              error instanceof Error ? error.message : 'Unknown error',
+            );
+          }
+        }
+      }
+
+      // No compiled classes found - that's OK, manifest-only mode works for some operations
+      if (process.env.DEBUG) {
+        console.log('No compiled user classes found, using manifest-only mode');
+      }
+    } catch (error) {
+      // Silently fail - manifest-only mode is acceptable for metadata operations
+      if (process.env.DEBUG) {
+        console.warn(
+          'Could not load user classes for runtime execution:',
+          error,
+        );
+      }
+    }
+  }
+
+  /**
    * Handle exits safely in test mode
    */
   private exitWithError(message: string, code = 1): void {
@@ -114,9 +181,10 @@ export class CLIGenerator {
    * Generate CLI handler function
    */
   generateHandler(): (argv: string[]) => Promise<void> {
-    const commands = this.generateCommands();
-
     return async (argv: string[]) => {
+      // Generate commands (async to load user classes)
+      const commands = await this.generateCommands();
+
       // Parse args first without built-in commands to avoid loading them unnecessarily
       const parsed = parseCliArgs(argv, commands, {});
       await this.executeCommand(parsed, commands);
@@ -126,7 +194,7 @@ export class CLIGenerator {
   /**
    * Generate all CLI commands
    */
-  private generateCommands(): CLICommand[] {
+  private async generateCommands(): Promise<CLICommand[]> {
     const commands: CLICommand[] = [];
 
     // IMPORTANT: Load local project manifest before generating commands
@@ -147,6 +215,11 @@ export class CLIGenerator {
           manifest.packageName,
         );
       }
+
+      // IMPORTANT: Try to load actual compiled classes for runtime execution
+      // The manifest registration above provides metadata for command generation,
+      // but we need real class constructors for executing commands (CRUD, custom methods)
+      await this.tryLoadUserClasses();
     }
 
     const registeredClasses = ObjectRegistry.getAllClasses();
@@ -339,7 +412,11 @@ export class CLIGenerator {
         if (excluded.includes(methodName)) return false;
 
         // If include list has custom methods, use strict mode (only show what's in include)
-        if (hasCustomMethodsInInclude && !included.includes(methodName)) {
+        if (
+          hasCustomMethodsInInclude &&
+          included &&
+          !included.includes(methodName)
+        ) {
           return false;
         }
 
