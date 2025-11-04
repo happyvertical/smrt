@@ -1,5 +1,12 @@
 # @happyvertical/smrt-core
 
+## 0.10.1
+
+### Patch Changes
+
+- be1be8f: - fix(core): use SQL standard TIMESTAMP for DuckDB compatibility
+  - @happyvertical/smrt-types@0.10.1
+
 ## 0.10.0
 
 ### Minor Changes
