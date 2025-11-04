@@ -193,7 +193,7 @@ export class Field {
       case 'boolean':
         return 'INTEGER';
       case 'datetime':
-        return 'DATETIME';
+        return 'TIMESTAMP';
       case 'json':
         return 'TEXT';
       case 'foreignKey':

@@ -56,8 +56,8 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     const schema = await generateSchema(SchemaGenTestEvent);
 
     // Verify both timestamp columns exist (with quoted column names)
-    expect(schema).toContain('"created_at" DATETIME');
-    expect(schema).toContain('"updated_at" DATETIME');
+    expect(schema).toContain('"created_at" TIMESTAMP');
+    expect(schema).toContain('"updated_at" TIMESTAMP');
   });
 
   it('should generate valid SQL without duplicate column errors', async () => {
@@ -109,8 +109,8 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(schema).toContain('"title" TEXT NOT NULL'); // required: true
     expect(schema).toContain('"description" TEXT');
     expect(schema).toContain('"start_date" TEXT');
-    expect(schema).toContain('"created_at" DATETIME');
-    expect(schema).toContain('"updated_at" DATETIME');
+    expect(schema).toContain('"created_at" TIMESTAMP');
+    expect(schema).toContain('"updated_at" TIMESTAMP');
     // The new SchemaGenerator creates a UNIQUE INDEX instead of table constraint
     expect(schema).toContain('UNIQUE INDEX');
   });
@@ -133,8 +133,8 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(schema).toContain('"id" TEXT PRIMARY KEY');
     expect(schema).toContain('"slug" TEXT NOT NULL');
     expect(schema).toContain('"context" TEXT NOT NULL');
-    expect(schema).toContain('"created_at" DATETIME');
-    expect(schema).toContain('"updated_at" DATETIME');
+    expect(schema).toContain('"created_at" TIMESTAMP');
+    expect(schema).toContain('"updated_at" TIMESTAMP');
 
     // Verify custom fields (with quoted column names)
     expect(schema).toContain('"title" TEXT NOT NULL');
