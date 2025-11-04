@@ -415,6 +415,8 @@ export class SmrtObject extends SmrtClass {
    * Custom JSON serialization
    * Returns a plain object with all field values for proper JSON.stringify() behavior
    * Field instances automatically call their toJSON() method during serialization
+   *
+   * Issue #205: Filters out undefined values to prevent database errors
    */
   toJSON() {
     const fields = this.getFields();
@@ -428,8 +430,22 @@ export class SmrtObject extends SmrtClass {
 
     // Add all field values
     // Field.toJSON() is called automatically for Field instances
+    // Filter out undefined values (Issue #205) - convert to empty string for TEXT fields
     for (const [key, field] of Object.entries(fields)) {
-      data[key] = field.value;
+      const value = field.value;
+
+      // Skip undefined values - they will be converted to appropriate defaults
+      // based on the field type when saving to database
+      if (value === undefined) {
+        // For TEXT fields, convert undefined to empty string
+        // For other types, let the database handle the default
+        if (field.type === 'text') {
+          data[key] = '';
+        } else {
+        }
+      } else {
+        data[key] = value;
+      }
     }
 
     return data;

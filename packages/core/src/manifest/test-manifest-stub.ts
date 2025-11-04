@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762273645127,
+  "timestamp": 1762292648868,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -617,6 +617,141 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       }
+    },
+    "councilwithtsoptional": {
+      "name": "councilwithtsoptional",
+      "className": "CouncilWithTSOptional",
+      "collection": "councilwithtsoptionals",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "url": {
+          "type": "text",
+          "required": false
+        },
+        "location": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "councils_ts_optional"
+      }
+    },
+    "counciltsoptionalcollection": {
+      "name": "counciltsoptionalcollection",
+      "className": "CouncilTSOptionalCollection",
+      "collection": "counciltsoptionalcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
+    },
+    "councilwithnullable": {
+      "name": "councilwithnullable",
+      "className": "CouncilWithNullable",
+      "collection": "councilwithnullables",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "url": {
+          "type": "text",
+          "required": true
+        },
+        "location": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "councils_nullable"
+      }
+    },
+    "councilnullablecollection": {
+      "name": "councilnullablecollection",
+      "className": "CouncilNullableCollection",
+      "collection": "councilnullablecollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
+    },
+    "councilwithworkaround": {
+      "name": "councilwithworkaround",
+      "className": "CouncilWithWorkaround",
+      "collection": "councilwithworkarounds",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "url": {
+          "type": "text",
+          "required": false
+        },
+        "location": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "councils_workaround"
+      }
+    },
+    "councilworkaroundcollection": {
+      "name": "councilworkaroundcollection",
+      "className": "CouncilWorkaroundCollection",
+      "collection": "councilworkaroundcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
+    },
+    "councilforupdate": {
+      "name": "councilforupdate",
+      "className": "CouncilForUpdate",
+      "collection": "councilforupdates",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "url": {
+          "type": "text",
+          "required": false
+        },
+        "location": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "councils_update"
+      }
+    },
+    "councilupdatecollection": {
+      "name": "councilupdatecollection",
+      "className": "CouncilUpdateCollection",
+      "collection": "councilupdatecollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
     },
     "issue35testobject1": {
       "name": "issue35testobject1",
