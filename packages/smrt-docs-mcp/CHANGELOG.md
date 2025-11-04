@@ -1,5 +1,11 @@
 # @happyvertical/smrt-docs-mcp
 
+## 0.10.2
+
+### Patch Changes
+
+- b3be399: - fix(all): exclude protected and private properties from database schema
+
 ## 0.10.1
 
 ## 0.10.0
