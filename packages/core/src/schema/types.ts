@@ -10,7 +10,7 @@ export type SQLDataType =
   | 'BLOB'
   | 'BOOLEAN'
   | 'JSON'
-  | 'DATETIME';
+  | 'TIMESTAMP';
 
 export interface ColumnDefinition {
   type: SQLDataType;

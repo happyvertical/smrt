@@ -55,7 +55,7 @@ export class SchemaGenerator {
       case 'boolean':
         return 'BOOLEAN';
       case 'datetime':
-        return 'DATETIME';
+        return 'TIMESTAMP';
       case 'json':
         return 'JSON';
       case 'foreignKey':
@@ -82,16 +82,16 @@ export class SchemaGenerator {
     };
 
     columns.created_at = {
-      type: 'DATETIME',
+      type: 'TIMESTAMP',
       notNull: true,
-      defaultValue: "datetime('now')",
+      defaultValue: 'current_timestamp',
       description: 'Creation timestamp',
     };
 
     columns.updated_at = {
-      type: 'DATETIME',
+      type: 'TIMESTAMP',
       notNull: true,
-      defaultValue: "datetime('now')",
+      defaultValue: 'current_timestamp',
       description: 'Last update timestamp',
     };
 
@@ -198,7 +198,7 @@ export class SchemaGenerator {
         name: `trg_${tableName}_updated_at`,
         when: 'BEFORE',
         event: 'UPDATE',
-        body: `UPDATE "${tableName}" SET "updated_at" = datetime('now') WHERE "id" = NEW."id";`,
+        body: `UPDATE "${tableName}" SET "updated_at" = current_timestamp WHERE "id" = NEW."id";`,
         description: 'Automatically update updated_at timestamp',
       },
     ];
@@ -413,15 +413,17 @@ export class SchemaGenerator {
     // Ensure timestamp columns exist
     if (!hasCreatedAt) {
       columns.created_at = {
-        type: 'DATETIME',
-        notNull: false,
+        type: 'TIMESTAMP',
+        notNull: true,
+        defaultValue: 'current_timestamp',
         description: 'Creation timestamp',
       };
     }
     if (!hasUpdatedAt) {
       columns.updated_at = {
-        type: 'DATETIME',
-        notNull: false,
+        type: 'TIMESTAMP',
+        notNull: true,
+        defaultValue: 'current_timestamp',
         description: 'Last update timestamp',
       };
     }
@@ -570,9 +572,23 @@ export class SchemaGenerator {
    * @returns Formatted SQL default value expression
    */
   private formatDefaultValue(value: any, type: SQLDataType): string {
-    // Handle SQL expressions (like datetime('now'))
-    if (typeof value === 'string' && value.includes('(')) {
-      return value;
+    // Handle SQL functions and keywords (like current_timestamp, datetime('now'), CURRENT_DATE, etc.)
+    if (typeof value === 'string') {
+      // SQL function with parentheses (e.g., datetime('now'))
+      if (value.includes('(')) {
+        return value;
+      }
+      // SQL standard keywords (e.g., current_timestamp, CURRENT_DATE, CURRENT_TIME)
+      const sqlKeywords = [
+        'current_timestamp',
+        'current_date',
+        'current_time',
+        'now()',
+        'uuid_generate_v4()',
+      ];
+      if (sqlKeywords.some((keyword) => value.toLowerCase() === keyword)) {
+        return value;
+      }
     }
 
     // Handle different types
@@ -589,11 +605,11 @@ export class SchemaGenerator {
       return value ? 'TRUE' : 'FALSE';
     }
 
-    if (type === 'DATETIME') {
+    if (type === 'TIMESTAMP') {
       if (typeof value === 'string') {
-        return `CAST('${value}' AS DATETIME)`;
+        return `CAST('${value}' AS TIMESTAMP)`;
       }
-      return "datetime('now')";
+      return 'current_timestamp';
     }
 
     // Fallback for other types
