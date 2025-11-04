@@ -1,5 +1,13 @@
 # @happyvertical/smrt-gnode
 
+## 0.10.2
+
+### Patch Changes
+
+- b3be399: - fix(all): exclude protected and private properties from database schema
+- Updated dependencies [b3be399]
+  - @happyvertical/smrt-core@0.10.2
+
 ## 0.10.1
 
 ### Patch Changes
