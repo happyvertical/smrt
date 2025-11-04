@@ -435,6 +435,18 @@ export class ASTScanner {
       return null;
     }
 
+    // Skip protected and private properties - only public properties should be in schema
+    const isProtected =
+      node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ProtectedKeyword) ??
+      false;
+    const isPrivate =
+      node.modifiers?.some((m) => m.kind === ts.SyntaxKind.PrivateKeyword) ??
+      false;
+
+    if (isProtected || isPrivate) {
+      return null;
+    }
+
     const propertyName = this.getPropertyName(node);
     if (!propertyName) return null;
 

@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762083776303,
+  "timestamp": 1762273645127,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -500,6 +500,123 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {}
+    },
+    "testcontent": {
+      "name": "testcontent",
+      "className": "TestContent",
+      "collection": "testcontents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-198-duckdb-datetime-compatibility.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true
+        },
+        "publishDate": {
+          "type": "datetime",
+          "required": true
+        },
+        "lastSyncedAt": {
+          "type": "datetime",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
+    },
+    "eventwithdates": {
+      "name": "eventwithdates",
+      "className": "EventWithDates",
+      "collection": "eventwithdateses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-198-integration-date-serialization.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true
+        },
+        "eventDate": {
+          "type": "datetime",
+          "required": true
+        },
+        "registrationDeadline": {
+          "type": "datetime",
+          "required": true
+        },
+        "lastModified": {
+          "type": "datetime",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
+    },
+    "eventcollection": {
+      "name": "eventcollection",
+      "className": "EventCollection",
+      "collection": "eventcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-198-integration-date-serialization.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {}
+    },
+    "contentmock": {
+      "name": "contentmock",
+      "className": "ContentMock",
+      "collection": "contentmocks",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-201-content-references-excluded.test.ts",
+      "fields": {
+        "type": {
+          "type": "text",
+          "required": true,
+          "default": null
+        },
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
+    },
+    "testwithprotected": {
+      "name": "testwithprotected",
+      "className": "TestWithProtected",
+      "collection": "testwithprotecteds",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-201-protected-properties-in-schema.test.ts",
+      "fields": {
+        "publicName": {
+          "type": "text",
+          "required": true
+        },
+        "publicDescription": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      }
     },
     "issue35testobject1": {
       "name": "issue35testobject1",
