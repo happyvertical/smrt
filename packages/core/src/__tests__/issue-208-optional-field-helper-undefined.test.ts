@@ -5,11 +5,15 @@
  * description? = text();
  *
  * are still passing undefined to the database even after the toJSON() fix.
+ *
+ * Issue #208 specifically mentions using DuckDB via JSON adapter, so we test both.
  */
 
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { text } from '../fields';
 import { SmrtObject } from '../object';
@@ -27,65 +31,133 @@ class CouncilIssue208Collection extends SmrtCollection<CouncilIssue208> {
 }
 
 describe('Issue #208: Optional TEXT field helpers with undefined values', () => {
-  let db: DatabaseInterface;
+  describe('with JSON database (as reported in issue)', () => {
+    let db: DatabaseInterface;
+    let dataDir: string;
 
-  beforeEach(async () => {
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
-  });
-
-  it('should handle field helper with optional ? syntax when undefined', async () => {
-    const collection = await CouncilIssue208Collection.create({ db });
-
-    // Create without description - this is the failing case from #208
-    const council = await collection.create({
-      name: 'Test Council',
-      // description not provided
+    beforeEach(async () => {
+      // Create unique temp directory for JSON database
+      dataDir = join(
+        tmpdir(),
+        `test-issue-208-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      );
+      db = await getDatabase({
+        type: 'json',
+        url: dataDir,
+        dataDir: dataDir,
+        writeStrategy: 'immediate',
+      });
     });
 
-    // This should not throw "Cannot create values of type ANY"
-    await council.save();
+    it('should handle field helper with optional ? syntax when undefined', async () => {
+      const collection = await CouncilIssue208Collection.create({ db });
 
-    expect(council.id).toBeDefined();
-    expect(council.name).toBe('Test Council');
-  });
+      // Create without description - this is the failing case from #208
+      const council = await collection.create({
+        name: 'Test Council',
+        // description not provided
+      });
 
-  it('should convert undefined to empty string in toJSON()', async () => {
-    const collection = await CouncilIssue208Collection.create({ db });
+      // This should not throw "Cannot create values of type ANY"
+      await council.save();
 
-    const council = await collection.create({
-      name: 'Test Council',
+      expect(council.id).toBeDefined();
+      expect(council.name).toBe('Test Council');
     });
 
-    const json = council.toJSON();
+    it('should convert undefined to empty string in toJSON()', async () => {
+      const collection = await CouncilIssue208Collection.create({ db });
 
-    // Check what toJSON() returns for the undefined description field
-    console.log('toJSON() output:', json);
-    console.log('description value:', json.description);
-    console.log('description type:', typeof json.description);
+      const council = await collection.create({
+        name: 'Test Council',
+      });
 
-    // The fix should convert undefined TEXT fields to empty strings
-    expect(json.description).toBe('');
-  });
+      const json = council.toJSON();
 
-  it('should show field type from getFields()', async () => {
-    const collection = await CouncilIssue208Collection.create({ db });
-
-    const council = await collection.create({
-      name: 'Test Council',
+      // The fix should convert undefined TEXT fields to empty strings
+      expect(json.description).toBe('');
     });
 
-    const fields = council.getFields();
-    console.log('Fields:', Object.keys(fields));
+    it('should handle getOrUpsert with undefined optional fields', async () => {
+      const collection = await CouncilIssue208Collection.create({ db });
 
-    if (fields.description) {
-      console.log('description field:', fields.description);
-      console.log('description.type:', fields.description.type);
-      console.log('description.value:', fields.description.value);
-    } else {
-      console.log('description field not in getFields()!');
-    }
+      // This is the exact pattern from the issue report
+      const council = await collection.getOrUpsert({ name: 'test-council' });
 
-    expect(fields.description).toBeDefined();
-    expect(fields.description.type).toBe('text');
+      // This should not throw "Cannot create values of type ANY"
+      await council.save();
+
+      expect(council.id).toBeDefined();
+      expect(council.name).toBe('test-council');
+    });
+  });
+
+  describe('with SQLite database', () => {
+    let db: DatabaseInterface;
+
+    beforeEach(async () => {
+      db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    });
+
+    it('should handle field helper with optional ? syntax when undefined', async () => {
+      const collection = await CouncilIssue208Collection.create({ db });
+
+      const council = await collection.create({
+        name: 'Test Council',
+      });
+
+      await council.save();
+
+      expect(council.id).toBeDefined();
+      expect(council.name).toBe('Test Council');
+    });
+
+    it('should show field type from getFields()', async () => {
+      const collection = await CouncilIssue208Collection.create({ db });
+
+      const council = await collection.create({
+        name: 'Test Council',
+      });
+
+      const fields = council.getFields();
+
+      expect(fields.description).toBeDefined();
+      expect(fields.description.type).toBe('text');
+      expect(fields.description.value).toBeUndefined();
+    });
+  });
+
+  describe('with DuckDB database', () => {
+    let db: DatabaseInterface;
+    let dbPath: string;
+
+    beforeEach(async () => {
+      dbPath = join(tmpdir(), `test-issue-208-duckdb-${Date.now()}.db`);
+      db = await getDatabase({ type: 'duckdb', url: dbPath });
+    });
+
+    it('should handle field helper with optional ? syntax when undefined (DuckDB)', async () => {
+      const collection = await CouncilIssue208Collection.create({ db });
+
+      const council = await collection.create({
+        name: 'Test Council',
+      });
+
+      // This is where the issue #208 error occurs with DuckDB
+      await council.save();
+
+      expect(council.id).toBeDefined();
+      expect(council.name).toBe('Test Council');
+    });
+
+    it('should handle getOrUpsert with DuckDB', async () => {
+      const collection = await CouncilIssue208Collection.create({ db });
+
+      const council = await collection.getOrUpsert({ name: 'test-council' });
+      await council.save();
+
+      expect(council.id).toBeDefined();
+      expect(council.name).toBe('test-council');
+    });
   });
 });
