@@ -1,5 +1,12 @@
 # @happyvertical/smrt-core
 
+## 0.10.3
+
+### Patch Changes
+
+- 2e5cab1: - fix(core): handle undefined values in optional fields to prevent database errors
+  - @happyvertical/smrt-types@0.10.3
+
 ## 0.10.2
 
 ### Patch Changes
