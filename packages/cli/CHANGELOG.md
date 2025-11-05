@@ -1,5 +1,18 @@
 # @happyvertical/smrt-cli
 
+## 0.11.0
+
+### Minor Changes
+
+- 4bf5d82: - feat(all): add automated dependency cascade workflow
+
+### Patch Changes
+
+- Updated dependencies [4bf5d82]
+  - @happyvertical/smrt-config@0.11.0
+  - @happyvertical/smrt-core@0.11.0
+  - @happyvertical/smrt-types@0.11.0
+
 ## 0.10.4
 
 ### Patch Changes
