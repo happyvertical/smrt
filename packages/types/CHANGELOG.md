@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.11.1
+
+### Patch Changes
+
+- 538c597: - fix(all): use GH_TOKEN for package access in cascade workflow
+
 ## 0.11.0
 
 ### Minor Changes
