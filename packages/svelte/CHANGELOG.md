@@ -1,5 +1,11 @@
 # @happyvertical/smrt-svelte
 
+## 0.11.0
+
+### Minor Changes
+
+- 4bf5d82: - feat(all): add automated dependency cascade workflow
+
 ## 0.10.4
 
 ## 0.10.3
