@@ -1,5 +1,12 @@
 # @happyvertical/smrt-accounts
 
+## 0.10.4
+
+### Patch Changes
+
+- Updated dependencies [192a86f]
+  - @happyvertical/smrt-core@0.10.4
+
 ## 0.10.3
 
 ### Patch Changes

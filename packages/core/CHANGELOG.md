@@ -1,5 +1,12 @@
 # @happyvertical/smrt-core
 
+## 0.10.4
+
+### Patch Changes
+
+- 192a86f: test: add comprehensive tests for issue #208 with JSON, SQLite, and DuckDB adapters
+  - @happyvertical/smrt-types@0.10.4
+
 ## 0.10.3
 
 ### Patch Changes
