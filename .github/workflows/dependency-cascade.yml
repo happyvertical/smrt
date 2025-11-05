@@ -1,0 +1,68 @@
+# This is a template workflow for downstream repositories
+# Copy this to .github/workflows/dependency-cascade.yml in:
+# - happyvertical/smrt
+# - happyvertical/praeco
+# - happyvertical/caelus
+# - blindmanpress/bentleyalberta.com
+
+name: Dependency Cascade Handler
+
+on:
+  # Triggered by upstream repositories
+  repository_dispatch:
+    types: [dependency-updated, sdk-updated]
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run mode (no actual changes)'
+        required: false
+        default: false
+        type: boolean
+
+  # Optional: Run on a schedule to catch any missed updates
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  handle-update:
+    name: Handle Dependency Update
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Handle cascade
+        uses: happyvertical/sdk/.github/actions/cascade-handler@main
+        with:
+          # CHANGE THIS to match your project name
+          # Options: smrt, praeco, caelus, bentleyalberta
+          project_name: 'smrt'
+
+          # Upstream info (from repository_dispatch payload)
+          upstream_package: ${{ github.event.client_payload.package }}
+          upstream_version: ${{ github.event.client_payload.version }}
+
+          # Tokens
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          npm_token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Settings
+          auto_merge: 'true'
+          dry_run: ${{ github.event.inputs.dry_run || 'false' }}
+
+      - name: Report results
+        if: always()
+        run: |
+          echo "### Cascade Handler Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Updated:** ${{ steps.handle-cascade.outputs.updated }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR:** ${{ steps.handle-cascade.outputs.pr_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Downstream:** ${{ steps.handle-cascade.outputs.triggered_downstream }}" >> $GITHUB_STEP_SUMMARY
