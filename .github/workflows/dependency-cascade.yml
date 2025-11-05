@@ -51,8 +51,8 @@ jobs:
           upstream_version: ${{ github.event.client_payload.version }}
 
           # Tokens
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          npm_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_TOKEN }}
+          npm_token: ${{ secrets.GH_TOKEN }}
 
           # Settings
           auto_merge: 'true'
