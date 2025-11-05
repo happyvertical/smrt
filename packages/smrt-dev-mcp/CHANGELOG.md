@@ -1,5 +1,13 @@
 # @happyvertical/smrt-dev-mcp
 
+## 0.11.1
+
+### Patch Changes
+
+- 538c597: - fix(all): use GH_TOKEN for package access in cascade workflow
+- Updated dependencies [538c597]
+  - @happyvertical/smrt-core@0.11.1
+
 ## 0.11.0
 
 ### Minor Changes
