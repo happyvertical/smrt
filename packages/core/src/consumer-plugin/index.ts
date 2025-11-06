@@ -70,6 +70,9 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         // Aggregate type manifests from discovered packages
         typeManifest = await aggregateTypeManifests(smrtPackages, projectRoot);
 
+        // Save aggregated manifest for CLI discovery
+        await saveAggregatedManifest(typeManifest, projectRoot);
+
         // Generate types if requested
         if (generateTypes && !typesGenerated) {
           await generateProjectTypes(typeManifest, typesDir, projectRoot);
@@ -320,6 +323,33 @@ function determineImportPath(packageJson: any): string {
 
   // Strategy 3: Fallback to package name
   return packageName;
+}
+
+/**
+ * Save aggregated manifest to .smrt/manifest.json for CLI discovery
+ */
+async function saveAggregatedManifest(
+  manifest: any,
+  projectRoot: string,
+): Promise<void> {
+  const smrtDir = path.join(projectRoot, '.smrt');
+  const manifestPath = path.join(smrtDir, 'manifest.json');
+
+  try {
+    // Create .smrt directory if it doesn't exist
+    if (!fs.existsSync(smrtDir)) {
+      fs.mkdirSync(smrtDir, { recursive: true });
+    }
+
+    // Write manifest
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+
+    console.log(
+      `[smrt:consumer] Saved aggregated manifest to .smrt/manifest.json (${Object.keys(manifest.objects).length} objects)`,
+    );
+  } catch (error) {
+    console.warn('[smrt:consumer] Failed to save aggregated manifest:', error);
+  }
 }
 
 /**
