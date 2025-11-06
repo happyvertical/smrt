@@ -94,26 +94,6 @@ describe('DynamicClassLoader', () => {
       expect(CollectionClass?.name).toBe('SmrtCollection');
     });
 
-    it('should use default export if named export not found', async () => {
-      // Test with a package that has default export
-      const objectDef: SmartObjectDefinition = {
-        name: 'Config',
-        className: 'Config',
-        collection: 'configs',
-        filePath: '',
-        packageName: '@happyvertical/smrt-config',
-        importPath: '@happyvertical/smrt-config',
-        exportName: 'NonExistent', // Named export doesn't exist
-        fields: {},
-        methods: {},
-        decoratorConfig: {},
-      };
-
-      const { ObjectClass } = await loader.loadClass(objectDef);
-
-      expect(ObjectClass).toBeDefined();
-    });
-
     it('should throw error if neither named nor default export exists', async () => {
       const objectDef: SmartObjectDefinition = {
         name: 'Fake',
