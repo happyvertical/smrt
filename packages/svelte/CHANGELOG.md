@@ -1,5 +1,15 @@
 # @happyvertical/smrt-svelte
 
+## 0.12.0
+
+### Minor Changes
+
+- 6d80cc4: - test(all): remove flaky default export test (#215)
+  - feat(all): integrate dynamic class loader into CLI (#215)
+  - feat(all): add dynamic class loader for external packages (#215)
+  - feat(all): update consumer plugin to preserve package metadata (#215)
+  - feat(all): enhance manifest schema with package metadata (#215)
+
 ## 0.11.1
 
 ### Patch Changes

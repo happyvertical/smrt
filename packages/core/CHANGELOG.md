@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.12.0
+
+### Minor Changes
+
+- 6d80cc4: - test(all): remove flaky default export test (#215)
+  - feat(all): integrate dynamic class loader into CLI (#215)
+  - feat(all): add dynamic class loader for external packages (#215)
+  - feat(all): update consumer plugin to preserve package metadata (#215)
+  - feat(all): enhance manifest schema with package metadata (#215)
+
+### Patch Changes
+
+- Updated dependencies [6d80cc4]
+  - @happyvertical/smrt-types@0.12.0
+
 ## 0.11.1
 
 ### Patch Changes
