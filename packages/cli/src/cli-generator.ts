@@ -589,19 +589,27 @@ export class CLIGenerator {
         };
       }
 
+      // Determine if method needs an object instance (has parameters or requires loading an object)
+      // Parameterless methods can be called on a new instance without database lookup
+      const needsInstance = (methodDef.parameters || []).length > 0;
+
       commands.push({
         name: `${lowerName}:${methodName}`,
         description:
           methodDef.description || `Execute ${methodName} on ${objectName}`,
-        args: ['id'], // All custom methods require an ID to load the object
+        args: needsInstance ? ['id'] : [], // Only require ID if method has parameters
         options: methodOptions,
         handler: async (args, options) => {
-          await this.handleCustomMethod(
-            objectName,
-            args[0],
-            methodName,
-            options,
-          );
+          if (needsInstance) {
+            await this.handleCustomMethod(
+              objectName,
+              args[0],
+              methodName,
+              options,
+            );
+          } else {
+            await this.handleSingletonMethod(objectName, methodName, options);
+          }
         },
       });
     }
@@ -1211,6 +1219,57 @@ export class CLIGenerator {
 
       // Output result in JSON format
       console.log(JSON.stringify(result, null, 2));
+    } catch (error) {
+      this.exitWithError(
+        error instanceof Error ? error.message : 'Unknown error',
+      );
+    }
+  }
+
+  /**
+   * Handle singleton method (no parameters, no database lookup)
+   * Creates a new instance and calls the method
+   */
+  private async handleSingletonMethod(
+    objectName: string,
+    methodName: string,
+    _options: any,
+  ): Promise<void> {
+    try {
+      const classInfo = ObjectRegistry.getClass(objectName);
+      if (!classInfo || !classInfo.constructor) {
+        this.exitWithError(`Object class '${objectName}' not found`);
+        return;
+      }
+
+      const spinner = this.createSpinner(
+        `Executing ${methodName} on ${objectName}...`,
+      );
+
+      // Create new instance (no database initialization needed)
+      const obj = new classInfo.constructor();
+
+      // Initialize if needed
+      if (typeof obj.initialize === 'function') {
+        await obj.initialize();
+      }
+
+      // Call the method
+      const method = (obj as any)[methodName];
+      if (typeof method !== 'function') {
+        spinner.fail(`Method ${methodName} is not a function`);
+        this.exitWithError(`Method ${methodName} is not callable`);
+        return;
+      }
+
+      const result = await method.call(obj);
+
+      spinner.succeed(`Executed ${methodName}`);
+
+      // Output result in JSON format
+      if (result !== undefined) {
+        console.log(JSON.stringify(result, null, 2));
+      }
     } catch (error) {
       this.exitWithError(
         error instanceof Error ? error.message : 'Unknown error',
