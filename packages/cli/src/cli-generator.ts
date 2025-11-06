@@ -102,106 +102,21 @@ export class CLIGenerator {
   /**
    * Try to load user's compiled classes for runtime execution
    *
-   * Entry point discovery order:
-   * 1. smrt.config.js: packages.cli.entryPoint (explicit override)
-   * 2. package.json: exports['.'] or main field
-   * 3. Fallback: ./dist/index.js
-   *
-   * When the entry point is imported, @smrt() decorators run and populate
-   * ObjectRegistry with real class constructors needed for command execution.
+   * Loads both local classes (from project entry point) and external classes
+   * (from packages in .smrt/manifest.json) to enable full CLI functionality.
    */
   private async tryLoadUserClasses(): Promise<void> {
     try {
+      // 1. Load local classes (existing code)
+      await this.loadLocalClasses();
+
+      // 2. NEW: Load classes from external packages
+      await this.loadExternalClasses();
+
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
       const { DEFAULT_CLI_CONFIG } = await import('./config.js');
-      const fs = await import('node:fs');
-      const path = await import('node:path');
-
-      // Get CLI configuration
       const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
 
-      // Determine entry point
-      let entryPoint: string | null = config.entryPoint;
-
-      // If not explicitly configured, read from package.json
-      if (!entryPoint) {
-        try {
-          const packageJsonPath = path.resolve(process.cwd(), 'package.json');
-          if (fs.existsSync(packageJsonPath)) {
-            const packageJson = JSON.parse(
-              fs.readFileSync(packageJsonPath, 'utf-8'),
-            );
-
-            // Try exports['.'] first, then main
-            entryPoint =
-              packageJson.exports?.['.']?.import ||
-              packageJson.exports?.['.'] ||
-              packageJson.main ||
-              './dist/index.js';
-
-            if (config.verbose) {
-              console.log(
-                `[CLI] Detected entry point from package.json: ${entryPoint}`,
-              );
-            }
-          }
-        } catch (error) {
-          // Failed to read package.json, use fallback
-          entryPoint = './dist/index.js';
-        }
-      }
-
-      // Default to ./dist/index.js if still null
-      if (!entryPoint) {
-        entryPoint = './dist/index.js';
-      }
-
-      // Resolve to absolute path
-      const fullPath = path.resolve(process.cwd(), entryPoint);
-
-      // Check if file exists
-      if (!fs.existsSync(fullPath)) {
-        if (config.verbose) {
-          console.log(`[CLI] Entry point not found: ${fullPath}`);
-          console.log(
-            '[CLI] Using manifest-only mode (metadata operations only)',
-          );
-        }
-        return;
-      }
-
-      // Import the entry point
-      if (config.verbose) {
-        console.log(`[CLI] Loading SMRT classes from ${entryPoint}...`);
-      }
-
-      const fileUrl = `file://${fullPath}`;
-      const importedModule = await import(fileUrl);
-
-      // Register collections from exported classes (for bundled code without decorators)
-      // Scan exports for collection classes and register them
-      for (const [exportName, exportValue] of Object.entries(importedModule)) {
-        if (exportValue && typeof exportValue === 'function') {
-          // Check if it's a collection class by looking for _itemClass
-          const itemClass = (exportValue as any)._itemClass;
-          if (itemClass) {
-            // It's a collection class - register it
-            const tableName =
-              itemClass.SMRT_TABLE_NAME || itemClass.name.toLowerCase();
-            const existing = ObjectRegistry.getClass(tableName);
-            if (existing && !existing.collectionConstructor) {
-              ObjectRegistry.registerCollection(tableName, exportValue as any);
-              if (config.verbose) {
-                console.log(
-                  `[CLI] Registered collection ${exportName} for ${tableName}`,
-                );
-              }
-            }
-          }
-        }
-      }
-
-      // Verify registration
       const registeredCount = ObjectRegistry.getAllClasses().size;
       if (config.verbose) {
         console.log(
@@ -209,21 +124,192 @@ export class CLIGenerator {
         );
       }
     } catch (error) {
-      // Import failed - fall back to manifest-only mode
-      // This is acceptable for metadata operations (help, schema, discovery)
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
       const { DEFAULT_CLI_CONFIG } = await import('./config.js');
       const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
 
       if (config.verbose) {
         console.warn(
-          '[CLI] Failed to load classes from entry point:',
+          '[CLI] Failed to load classes:',
           error instanceof Error ? error.message : 'Unknown error',
         );
         console.log(
           '[CLI] Using manifest-only mode (some commands may not work)',
         );
       }
+    }
+  }
+
+  /**
+   * Load classes from local project entry point
+   *
+   * Entry point discovery order:
+   * 1. smrt.config.js: packages.cli.entryPoint (explicit override)
+   * 2. package.json: exports['.'] or main field
+   * 3. Fallback: ./dist/index.js
+   */
+  private async loadLocalClasses(): Promise<void> {
+    const { getPackageConfig } = await import('@happyvertical/smrt-config');
+    const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+
+    const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+    // Determine entry point
+    let entryPoint: string | null = config.entryPoint;
+
+    if (!entryPoint) {
+      try {
+        const packageJsonPath = path.resolve(process.cwd(), 'package.json');
+        if (fs.existsSync(packageJsonPath)) {
+          const packageJson = JSON.parse(
+            fs.readFileSync(packageJsonPath, 'utf-8'),
+          );
+
+          entryPoint =
+            packageJson.exports?.['.']?.import ||
+            packageJson.exports?.['.'] ||
+            packageJson.main ||
+            './dist/index.js';
+
+          if (config.verbose) {
+            console.log(
+              `[CLI] Detected entry point from package.json: ${entryPoint}`,
+            );
+          }
+        }
+      } catch {
+        entryPoint = './dist/index.js';
+      }
+    }
+
+    if (!entryPoint) {
+      entryPoint = './dist/index.js';
+    }
+
+    const fullPath = path.resolve(process.cwd(), entryPoint);
+
+    if (!fs.existsSync(fullPath)) {
+      if (config.verbose) {
+        console.log(`[CLI] Entry point not found: ${fullPath}`);
+      }
+      return;
+    }
+
+    if (config.verbose) {
+      console.log(`[CLI] Loading local SMRT classes from ${entryPoint}...`);
+    }
+
+    const fileUrl = `file://${fullPath}`;
+    const importedModule = await import(fileUrl);
+
+    // Register collections from exports
+    for (const [exportName, exportValue] of Object.entries(importedModule)) {
+      if (exportValue && typeof exportValue === 'function') {
+        const itemClass = (exportValue as any)._itemClass;
+        if (itemClass) {
+          const tableName =
+            itemClass.SMRT_TABLE_NAME || itemClass.name.toLowerCase();
+          const existing = ObjectRegistry.getClass(tableName);
+          if (existing && !existing.collectionConstructor) {
+            ObjectRegistry.registerCollection(tableName, exportValue as any);
+            if (config.verbose) {
+              console.log(`[CLI] Registered local collection ${exportName}`);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * NEW: Load classes from external packages
+   *
+   * Reads .smrt/manifest.json to discover objects from consumed packages,
+   * then uses DynamicClassLoader to import and register them.
+   */
+  private async loadExternalClasses(): Promise<void> {
+    const { getPackageConfig } = await import('@happyvertical/smrt-config');
+    const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+    const { DynamicClassLoader } = await import('./loaders/class-loader.js');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+
+    const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+    // Read .smrt/manifest.json
+    const manifestPath = path.join(process.cwd(), '.smrt/manifest.json');
+    if (!fs.existsSync(manifestPath)) {
+      if (config.verbose) {
+        console.log(
+          '[CLI] No .smrt/manifest.json found - no external packages',
+        );
+      }
+      return;
+    }
+
+    const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
+    const manifest = JSON.parse(manifestContent);
+
+    if (!manifest.objects || Object.keys(manifest.objects).length === 0) {
+      if (config.verbose) {
+        console.log('[CLI] No objects in manifest');
+      }
+      return;
+    }
+
+    const loader = new DynamicClassLoader({ verbose: config.verbose });
+
+    // Load classes from external packages only
+    for (const [objectName, objectDef] of Object.entries(manifest.objects)) {
+      const def = objectDef as any;
+
+      // Skip local objects (already loaded)
+      if (!def.packageName || def.packageName === manifest.packageName) {
+        continue;
+      }
+
+      try {
+        const { ObjectClass, CollectionClass } = await loader.loadClass(def);
+
+        // Register in ObjectRegistry
+        const tableName = def.collection || objectName.toLowerCase();
+
+        // Check if already registered
+        const existing = ObjectRegistry.getClass(tableName);
+        if (!existing) {
+          // Register new object
+          ObjectRegistry.register(tableName, ObjectClass);
+          if (config.verbose) {
+            console.log(
+              `[CLI] Registered ${objectName} from ${def.packageName}`,
+            );
+          }
+        }
+
+        // Register collection if available
+        if (CollectionClass && (!existing || !existing.collectionConstructor)) {
+          ObjectRegistry.registerCollection(tableName, CollectionClass);
+          if (config.verbose) {
+            console.log(
+              `[CLI] Registered ${objectName}Collection from ${def.packageName}`,
+            );
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `[CLI] Failed to load ${objectName} from ${def.packageName}:`,
+          error instanceof Error ? error.message : 'Unknown error',
+        );
+      }
+    }
+
+    const stats = loader.getStats();
+    if (config.verbose) {
+      console.log(
+        `[CLI] External classes loaded: ${stats.classesCached} (${stats.modulesLoaded} modules)`,
+      );
     }
   }
 
@@ -1142,9 +1228,23 @@ export class CLIGenerator {
     if (!this.collections.has(objectName)) {
       const classInfo = ObjectRegistry.getClass(objectName);
       if (!classInfo || !classInfo.collectionConstructor) {
+        // Enhanced error message with troubleshooting
+        const availableObjects = Array.from(
+          ObjectRegistry.getAllClasses().keys(),
+        );
+
         throw new Error(
-          `Object ${objectName} not found or has no collection constructor.\n` +
-            `Hint: Create a smrt.config.js file with database configuration, or ensure SMRT classes are loaded.`,
+          `Object '${objectName}' not found or has no collection constructor.\n\n` +
+            `Available objects:\n  ${availableObjects.join('\n  ')}\n\n` +
+            `Troubleshooting:\n` +
+            `1. If from external package, ensure it's installed:\n` +
+            `   npm install <package-name>\n\n` +
+            `2. Rebuild your project to regenerate manifest:\n` +
+            `   npm run build\n\n` +
+            `3. Check .smrt/manifest.json contains the object\n\n` +
+            `4. Verify package exports classes correctly\n` +
+            `5. Run with verbose mode for more details:\n` +
+            `   SMRT_CLI_VERBOSE=true npx smrt ${objectName}:list\n`,
         );
       }
 
