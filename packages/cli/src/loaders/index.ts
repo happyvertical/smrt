@@ -3,6 +3,10 @@
  */
 
 export {
+  DynamicClassLoader,
+  type LoadedClasses,
+} from './class-loader.js';
+export {
   cleanupGitTemplate,
   getGitTemplateDir,
   loadGitTemplate,

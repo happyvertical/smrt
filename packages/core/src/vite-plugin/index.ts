@@ -411,21 +411,26 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       const scanResults = scanner.scanFiles();
 
-      // Read package.json for package name
+      // Read package.json for package metadata
       let packageName: string | undefined;
+      let packageVersion: string | undefined;
+      let packageJson: any;
       try {
         const { readFileSync } = await import('node:fs');
         const { join } = await import('node:path');
         const pkgPath = join(rootDir, 'package.json');
         const pkgContent = readFileSync(pkgPath, 'utf-8');
-        const pkg = JSON.parse(pkgContent);
-        packageName = pkg.name || undefined;
+        packageJson = JSON.parse(pkgContent);
+        packageName = packageJson.name || undefined;
+        packageVersion = packageJson.version || undefined;
       } catch {
         // package.json not found or invalid - continue without packageName
       }
 
       const newManifest = manifestGenerator.generateManifest(scanResults, {
         packageName,
+        packageVersion,
+        packageJson,
       });
 
       // Log scan results

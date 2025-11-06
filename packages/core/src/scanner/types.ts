@@ -47,6 +47,11 @@ export interface SmartObjectDefinition {
   collection: string; // Pluralized name for endpoints
   filePath: string;
   packageName?: string; // Package name for external manifest loading
+  packageVersion?: string; // Package version for external manifest loading
+  importPath?: string; // Import path for dynamic loading (e.g., "@pkg/objects")
+  modulePath?: string; // Relative module path within package
+  exportName?: string; // Named export to use (defaults to className)
+  collectionExportName?: string; // Collection class export name
   fields: Record<string, FieldDefinition>;
   methods: Record<string, MethodDefinition>;
   decoratorConfig: SmartObjectConfig;
@@ -64,7 +69,8 @@ export interface SmartObjectDefinition {
 export interface SmartObjectManifest {
   version: string;
   timestamp: number;
-  packageName?: string;
+  packageName?: string; // Root package name
+  packageVersion?: string; // Root package version
   objects: Record<string, SmartObjectDefinition>;
 }
 

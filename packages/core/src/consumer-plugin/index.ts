@@ -202,23 +202,71 @@ async function aggregateTypeManifests(
 
   for (const packageName of packages) {
     try {
-      const manifestPath = path.join(
-        projectRoot,
-        'node_modules',
-        packageName,
-        'dist',
-        'manifest',
-        'static-manifest.js',
-      );
+      const packageDir = path.join(projectRoot, 'node_modules', packageName);
 
-      if (fs.existsSync(manifestPath)) {
-        // Import the manifest
-        const manifestModule = await import(manifestPath);
-        const manifest =
-          manifestModule.staticManifest || manifestModule.default;
+      // Load package.json for version and export information
+      const packageJsonPath = path.join(packageDir, 'package.json');
+      let packageJson: any;
+      try {
+        const packageJsonContent = fs.readFileSync(packageJsonPath, 'utf-8');
+        packageJson = JSON.parse(packageJsonContent);
+      } catch {
+        console.warn(
+          `[smrt:consumer] Could not read package.json for ${packageName}`,
+        );
+        continue;
+      }
 
-        if (manifest?.objects) {
-          Object.assign(aggregatedManifest.objects, manifest.objects);
+      // Try multiple manifest locations
+      const manifestCandidates = [
+        path.join(packageDir, 'dist', 'manifest', 'static-manifest.js'),
+        path.join(packageDir, 'dist', 'manifest.json'),
+        path.join(packageDir, 'manifest.json'),
+      ];
+
+      for (const manifestPath of manifestCandidates) {
+        if (fs.existsSync(manifestPath)) {
+          // Import or read the manifest
+          let manifest: any;
+          if (manifestPath.endsWith('.js')) {
+            const manifestModule = await import(manifestPath);
+            manifest = manifestModule.staticManifest || manifestModule.default;
+          } else {
+            const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
+            manifest = JSON.parse(manifestContent);
+          }
+
+          if (manifest?.objects) {
+            console.log(
+              `[smrt:consumer] Loaded manifest from ${packageName} (${Object.keys(manifest.objects).length} objects)`,
+            );
+
+            // ENHANCED: Preserve package metadata for each object
+            for (const [objectName, objectDef] of Object.entries(
+              manifest.objects,
+            )) {
+              const def = objectDef as any;
+
+              aggregatedManifest.objects[objectName] = {
+                ...def,
+                // Ensure package metadata is preserved/set
+                packageName:
+                  def.packageName || manifest.packageName || packageName,
+                packageVersion:
+                  def.packageVersion ||
+                  manifest.packageVersion ||
+                  packageJson.version,
+                // Add fallback import paths if missing
+                importPath: def.importPath || determineImportPath(packageJson),
+                exportName: def.exportName || def.className || objectName,
+                collectionExportName:
+                  def.collectionExportName ||
+                  `${def.className || objectName}Collection`,
+              };
+            }
+
+            break; // Use first found manifest for this package
+          }
         }
       }
     } catch (error) {
@@ -230,6 +278,48 @@ async function aggregateTypeManifests(
   }
 
   return aggregatedManifest;
+}
+
+/**
+ * Determine import path from package.json
+ */
+function determineImportPath(packageJson: any): string {
+  const packageName = packageJson.name;
+
+  if (!packageName) {
+    throw new Error('Package name not found in package.json');
+  }
+
+  // Strategy 1: Check for specific exports
+  if (packageJson.exports) {
+    // Check for objects export
+    if (packageJson.exports['./objects']) {
+      return `${packageName}/objects`;
+    }
+
+    // Check for main export
+    const mainExport = packageJson.exports['.'];
+    if (mainExport) {
+      // Handle conditional exports
+      if (typeof mainExport === 'object') {
+        if (mainExport.import) {
+          return packageName;
+        }
+        if (mainExport.default) {
+          return packageName;
+        }
+      }
+      return packageName;
+    }
+  }
+
+  // Strategy 2: Check main field
+  if (packageJson.main) {
+    return packageName;
+  }
+
+  // Strategy 3: Fallback to package name
+  return packageName;
 }
 
 /**
