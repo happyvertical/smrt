@@ -260,10 +260,18 @@ export class CLIGenerator {
   private async loadExternalClasses(): Promise<void> {
     const { getPackageConfig } = await import('@happyvertical/smrt-config');
     const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+    const { loadLocalTestManifestSync } = await import(
+      '@happyvertical/smrt-core/manifest'
+    );
     const fs = await import('node:fs');
     const path = await import('node:path');
 
     const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+    // CRITICAL: Load manifest BEFORE importing register.js
+    // This ensures ObjectRegistry.register() can find manifest entries
+    // and load method definitions during registration
+    loadLocalTestManifestSync();
 
     // Check for generated registration file
     const registerPath = path.join(process.cwd(), '.smrt', 'register.js');
