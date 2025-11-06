@@ -1,5 +1,11 @@
 # @happyvertical/smrt-core
 
+## 0.13.1
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.13.1
+
 ## 0.13.0
 
 ### Minor Changes

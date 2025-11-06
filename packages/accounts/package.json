@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-accounts",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Flexible accounting ledger with multi-currency support and SMRT framework integration",
   "type": "module",
   "main": "./dist/index.js",
