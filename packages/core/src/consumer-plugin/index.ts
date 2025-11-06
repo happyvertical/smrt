@@ -398,9 +398,11 @@ async function generateRegistrationFile(
     }
 
     // Generate registration calls
-    // Note: register() takes the constructor as first param, not table name
-    // The table name comes from the @smrt() decorator metadata
-    registrations.push(`ObjectRegistry.register(${exportName});`);
+    // Pass the manifest object name so ObjectRegistry can find the manifest entry
+    // The object name in manifest might differ from the class name (case, pluralization, etc.)
+    registrations.push(
+      `ObjectRegistry.register(${exportName}, { name: '${objectName}' });`,
+    );
 
     // Only register collection if it exists
     if (hasCollection && collectionExportName) {
