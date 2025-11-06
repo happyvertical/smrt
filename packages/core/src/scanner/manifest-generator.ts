@@ -16,10 +16,16 @@ export class ManifestGenerator {
    * @param scanResults - Array of scan results containing object definitions
    * @param options - Optional configuration
    * @param options.packageName - Package name to inject into manifest and object definitions
+   * @param options.packageVersion - Package version
+   * @param options.packageJson - Full package.json object for determining import paths
    */
   generateManifest(
     scanResults: ScanResult[],
-    options?: { packageName?: string },
+    options?: {
+      packageName?: string;
+      packageVersion?: string;
+      packageJson?: any;
+    },
   ): SmartObjectManifest {
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
@@ -27,17 +33,36 @@ export class ManifestGenerator {
       objects: {},
     };
 
-    // Set package name at manifest level if provided
+    // Set package metadata at manifest level if provided
     if (options?.packageName) {
       manifest.packageName = options.packageName;
+    }
+    if (options?.packageVersion) {
+      manifest.packageVersion = options.packageVersion;
     }
 
     for (const result of scanResults) {
       for (const objectDef of result.objects) {
-        // Set package name on object definition if provided
+        // Set package metadata on object definition if provided
         if (options?.packageName) {
           objectDef.packageName = options.packageName;
         }
+        if (options?.packageVersion) {
+          objectDef.packageVersion = options.packageVersion;
+        }
+
+        // Determine import path from package.json exports
+        if (options?.packageName && options?.packageJson) {
+          objectDef.importPath = this.determineImportPath(
+            options.packageJson,
+            objectDef.filePath,
+          );
+        }
+
+        // Set export names (defaults to className)
+        objectDef.exportName = objectDef.exportName || objectDef.className;
+        objectDef.collectionExportName =
+          objectDef.collectionExportName || `${objectDef.className}Collection`;
 
         // Generate AI tools from methods if AI config exists
         if (objectDef.decoratorConfig.ai) {
@@ -58,6 +83,50 @@ export class ManifestGenerator {
     }
 
     return manifest;
+  }
+
+  /**
+   * Determine import path from package.json exports
+   *
+   * Tries the following strategies in order:
+   * 1. package.json exports["./objects"] - Specific objects export
+   * 2. package.json exports["."] - Main export
+   * 3. package.json main - Main field
+   * 4. Fallback to package name
+   */
+  private determineImportPath(packageJson: any, _filePath?: string): string {
+    const packageName = packageJson.name;
+
+    // Strategy 1: Check for specific exports
+    if (packageJson.exports) {
+      // Check for objects export
+      if (packageJson.exports['./objects']) {
+        return `${packageName}/objects`;
+      }
+
+      // Check for main export
+      const mainExport = packageJson.exports['.'];
+      if (mainExport) {
+        // Handle conditional exports
+        if (typeof mainExport === 'object') {
+          if (mainExport.import) {
+            return packageName;
+          }
+          if (mainExport.default) {
+            return packageName;
+          }
+        }
+        return packageName;
+      }
+    }
+
+    // Strategy 2: Check main field
+    if (packageJson.main) {
+      return packageName;
+    }
+
+    // Strategy 3: Fallback to package name
+    return packageName;
   }
 
   /**
