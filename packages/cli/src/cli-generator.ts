@@ -1,13 +1,14 @@
 #!/usr/bin/env node
+
 /**
  * CLI command generator for smrt objects
  *
  * Generates admin and development tools from object definitions
  */
 
-import { createInterface } from 'node:readline';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import type { SmrtCollection } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
