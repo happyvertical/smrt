@@ -6,6 +6,9 @@
  */
 
 import { createInterface } from 'node:readline';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { SmrtCollection } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
@@ -14,6 +17,13 @@ import {
   type ParsedArgs,
   parseCliArgs,
 } from '@happyvertical/utils';
+
+// Read version from package.json (ESM-compatible)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, '../package.json'), 'utf-8'),
+);
+const CLI_VERSION = packageJson.version;
 
 // Lazy-load commands to avoid loading tar dependencies unless needed
 let _gnodeCommands: Record<string, Command> | null = null;
@@ -78,7 +88,7 @@ export class CLIGenerator {
   constructor(config: CLIConfig = {}, context: CLIContext = {}) {
     this.config = {
       name: 'smrt',
-      version: '1.0.0',
+      version: CLI_VERSION,
       description: 'Admin CLI for smrt objects',
       prompt: true,
       colors: true,
@@ -1368,7 +1378,7 @@ export async function main() {
 
   const config: CLIConfig = {
     name: 'smrt',
-    version: '1.0.0',
+    version: CLI_VERSION,
     description: 'Admin CLI for smrt objects',
     prompt: !process.env.CI, // Disable prompts in CI
     colors: !process.env.NO_COLOR && process.stdout.isTTY,
