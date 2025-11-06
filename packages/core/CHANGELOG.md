@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.13.0
+
+### Minor Changes
+
+- 8b35bce: - feat(all): save aggregated manifest for CLI discovery (#215)
+
+### Patch Changes
+
+- f620cd9: fix(core): pass manifest object name to ObjectRegistry.register()
+
+  Fixes method discovery by ensuring the registry uses the correct manifest key when looking up methods. Previously, `ObjectRegistry.register(Praeco)` used `Praeco.name` ('Praeco' with capital P) to discover manifest, but the manifest stores entries under lowercase keys like 'praeco'. This caused method lookup to fail and prevented custom CLI commands from being generated.
+
+  Now the consumer plugin generates: `ObjectRegistry.register(Praeco, { name: 'praeco' })`
+
+  This ensures `getMethods('praeco')` succeeds and CLI commands like `npx smrt praeco:research` are generated correctly.
+
+- Updated dependencies [8b35bce]
+  - @happyvertical/smrt-types@0.13.0
+
 ## 0.12.0
 
 ### Minor Changes

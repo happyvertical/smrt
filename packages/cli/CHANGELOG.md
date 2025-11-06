@@ -1,5 +1,42 @@
 # @happyvertical/smrt-cli
 
+## 0.13.0
+
+### Minor Changes
+
+- 8b35bce: - feat(all): save aggregated manifest for CLI discovery (#215)
+
+### Patch Changes
+
+- 6a7690f: fix(cli): read version from package.json instead of hardcoded '1.0.0'
+
+  The CLI was showing version '1.0.0' regardless of the actual package version. Now it reads the version dynamically from package.json using pure ESM (readFileSync + fileURLToPath), so `smrt version` will correctly show the actual package version (currently 0.12.0).
+
+- c05290a: fix(cli): load manifest before importing register.js to enable method discovery
+
+  **CRITICAL FIX for Phase 3 - Custom Method Commands**
+
+  Custom method commands like `npx smrt praeco:research` were not appearing because the manifest wasn't loaded when `ObjectRegistry.register()` was called during module initialization.
+
+  **The Problem:**
+
+  1. CLI imports `.smrt/register.js`
+  2. `register.js` executes: `ObjectRegistry.register(Praeco, { name: 'praeco' })`
+  3. `ObjectRegistry.register()` calls `discoverManifestSync('praeco')` to load methods
+  4. BUT manifest not loaded yet → returns `undefined` → no methods discovered!
+
+  **The Solution:**
+  Now `loadLocalTestManifestSync()` is called BEFORE importing `register.js`, ensuring the manifest is in memory when registration happens. This allows `ObjectRegistry.register()` to find the manifest entry and load method definitions.
+
+  **Impact:**
+  Commands like `npx smrt praeco:research <id> --query "..."` should now work after consumers rebuild with this version.
+
+- Updated dependencies [8b35bce]
+- Updated dependencies [f620cd9]
+  - @happyvertical/smrt-config@0.13.0
+  - @happyvertical/smrt-core@0.13.0
+  - @happyvertical/smrt-types@0.13.0
+
 ## 0.12.0
 
 ### Minor Changes

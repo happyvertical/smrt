@@ -1,5 +1,19 @@
 # @happyvertical/smrt-events
 
+## 0.13.0
+
+### Minor Changes
+
+- 8b35bce: - feat(all): save aggregated manifest for CLI discovery (#215)
+
+### Patch Changes
+
+- Updated dependencies [8b35bce]
+- Updated dependencies [f620cd9]
+  - @happyvertical/smrt-core@0.13.0
+  - @happyvertical/smrt-places@0.13.0
+  - @happyvertical/smrt-profiles@0.13.0
+
 ## 0.12.0
 
 ### Minor Changes
