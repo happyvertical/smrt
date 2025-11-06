@@ -384,10 +384,12 @@ async function generateRegistrationFile(
     const importPath = def.importPath || def.packageName;
     const exportName = def.exportName || def.className || objectName;
     const collectionExportName = def.collectionExportName;
+    const hasCollection = def.hasCollection; // Check if collection class actually exists
     const tableName = def.collection || objectName.toLowerCase();
 
     // Generate import statement
-    if (collectionExportName) {
+    // Only import collection if it exists (hasCollection is truthy)
+    if (hasCollection && collectionExportName) {
       imports.push(
         `import { ${exportName}, ${collectionExportName} } from '${importPath}';`,
       );
@@ -396,11 +398,12 @@ async function generateRegistrationFile(
     }
 
     // Generate registration calls
-    registrations.push(
-      `ObjectRegistry.register('${tableName}', ${exportName});`,
-    );
+    // Note: register() takes the constructor as first param, not table name
+    // The table name comes from the @smrt() decorator metadata
+    registrations.push(`ObjectRegistry.register(${exportName});`);
 
-    if (collectionExportName) {
+    // Only register collection if it exists
+    if (hasCollection && collectionExportName) {
       registrations.push(
         `ObjectRegistry.registerCollection('${tableName}', ${collectionExportName});`,
       );
