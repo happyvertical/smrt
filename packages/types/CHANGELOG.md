@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.13.0
+
+### Minor Changes
+
+- 8b35bce: - feat(all): save aggregated manifest for CLI discovery (#215)
+
 ## 0.12.0
 
 ### Minor Changes
