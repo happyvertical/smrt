@@ -1,5 +1,11 @@
 # @happyvertical/smrt-config
 
+## 0.13.2
+
+### Patch Changes
+
+- e7fc0d0: - chore(all): update @happyvertical dependencies
+
 ## 0.13.1
 
 ## 0.13.0
