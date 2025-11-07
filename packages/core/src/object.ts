@@ -84,6 +84,12 @@ export class SmrtObject extends SmrtClass {
   private _loadedRelationships: Map<string, any> = new Map();
 
   /**
+   * Flag to track if database setup (table creation) has been completed
+   * Used for lazy initialization - tables are created on first database operation
+   */
+  private _dbSetupComplete: boolean = false;
+
+  /**
    * Override options with SmrtObjectOptions type for proper type narrowing.
    * Initialized by parent constructor via super() call.
    */
@@ -310,12 +316,9 @@ export class SmrtObject extends SmrtClass {
       this.initializePropertiesFromOptions();
     }
 
-    // Setup database tables if database is configured
-    if (this.options.db) {
-      await setupTableFromClass(this.db, this.constructor);
-      // Note: SchemaGenerator already creates the unique index on (slug, context)
-      // No need to create it manually here
-    }
+    // NOTE: Database table setup is now deferred until first database operation (lazy initialization)
+    // This prevents database connections during import/prerendering (issue #237)
+    // Tables will be created automatically when calling save(), delete(), or query methods
 
     if (this._id && !(this.options as any)._skipLoad) {
       await this.loadFromId();
@@ -324,6 +327,34 @@ export class SmrtObject extends SmrtClass {
     }
 
     return this;
+  }
+
+  /**
+   * Ensures database tables are set up before performing database operations
+   *
+   * This method implements lazy initialization - tables are created on first use
+   * rather than during initialize(). This prevents database connections during
+   * import/prerendering phases (issue #237).
+   *
+   * @protected - Available for custom methods that need direct database access
+   * @returns Promise that resolves when setup is complete
+   */
+  protected async ensureDbSetup(): Promise<void> {
+    // Skip if already set up or no database configured
+    if (this._dbSetupComplete || !this.options.db) {
+      return;
+    }
+
+    try {
+      await setupTableFromClass(this.db, this.constructor);
+      this._dbSetupComplete = true;
+    } catch (error) {
+      throw DatabaseError.schemaError(
+        this._tableName || this.constructor.name,
+        'table setup',
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
   }
 
   /**
@@ -457,6 +488,8 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise resolving to the object's ID
    */
   async getId() {
+    await this.ensureDbSetup();
+
     // lookup by slug and context using adapter method
     const saved = await this.db.get(this.tableName, {
       slug: this.slug,
@@ -512,6 +545,8 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise resolving to the saved ID or null if not saved
    */
   async getSavedId() {
+    await this.ensureDbSetup();
+
     // Try to find by id first
     if (this.id) {
       const byId = await this.db.get(this.tableName, { id: this.id });
@@ -562,16 +597,8 @@ export class SmrtObject extends SmrtClass {
         this.created_at = new Date();
       }
 
-      // Setup database table with proper error handling
-      try {
-        await setupTableFromClass(this.db, this.constructor);
-      } catch (error) {
-        throw DatabaseError.schemaError(
-          this._tableName || this.constructor.name,
-          'table setup',
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
+      // Ensure database tables are set up (lazy initialization)
+      await this.ensureDbSetup();
 
       // Execute save operation with retry logic for transient failures
       // Use per-adapter upsert method instead of generating SQL
@@ -735,6 +762,8 @@ export class SmrtObject extends SmrtClass {
         throw ValidationError.requiredField('id', this.constructor.name);
       }
 
+      await this.ensureDbSetup();
+
       await ErrorUtils.withRetry(
         async () => {
           try {
@@ -773,6 +802,8 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise that resolves when loading is complete
    */
   public async loadFromSlug() {
+    await this.ensureDbSetup();
+
     const existing = await this.db.get(this.tableName, {
       slug: this._slug,
       context: this._context || '',
@@ -903,6 +934,7 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise that resolves when deletion is complete
    */
   public async delete(): Promise<void> {
+    await this.ensureDbSetup();
     await this.runHook('beforeDelete');
 
     await this.db.delete(this.tableName, { id: this.id });

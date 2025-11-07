@@ -478,6 +478,13 @@ export class SmrtClass {
    * Gets the database interface instance
    */
   get db() {
+    // Throw helpful error if database is accessed before initialization
+    if (!this._db) {
+      throw new Error(
+        `Database accessed before initialization. ` +
+          `Please call await instance.initialize() before accessing the database.`,
+      );
+    }
     return this._db;
   }
 

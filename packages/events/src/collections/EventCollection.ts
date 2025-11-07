@@ -159,14 +159,12 @@ export class EventCollection extends SmrtCollection<Event> {
         }
       }
       if (filters.startDate) {
-        events = events.filter(
-          (e) => e.startDate && e.startDate >= filters.startDate,
-        );
+        const startDate = filters.startDate;
+        events = events.filter((e) => e.startDate && e.startDate >= startDate);
       }
       if (filters.endDate) {
-        events = events.filter(
-          (e) => e.startDate && e.startDate <= filters.endDate,
-        );
+        const endDate = filters.endDate;
+        events = events.filter((e) => e.startDate && e.startDate <= endDate);
       }
       if (filters.organizerId) {
         // Filter by series organizer
