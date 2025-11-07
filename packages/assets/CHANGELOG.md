@@ -1,5 +1,14 @@
 # @happyvertical/smrt-assets
 
+## 0.13.6
+
+### Patch Changes
+
+- 5160664: - fix(ci): resolve issue triage authentication error
+- Updated dependencies [5160664]
+  - @happyvertical/smrt-core@0.13.6
+  - @happyvertical/smrt-tags@0.13.6
+
 ## 0.13.5
 
 ### Patch Changes

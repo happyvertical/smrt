@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.13.6
+
+### Patch Changes
+
+- 5160664: - fix(ci): resolve issue triage authentication error
+
 ## 0.13.5
 
 ## 0.13.4
