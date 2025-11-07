@@ -1,0 +1,1 @@
+CREATE TABLE _smrt_registry(class_name VARCHAR PRIMARY KEY, schema_version VARCHAR, fields VARCHAR, relationships VARCHAR, config VARCHAR, manifest VARCHAR, last_updated TIMESTAMP DEFAULT(CURRENT_TIMESTAMP));

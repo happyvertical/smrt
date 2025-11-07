@@ -1,8 +1,4 @@
-import {
-  buildWhere,
-  convertUniqueIndexesToInlineConstraints,
-  syncSchema,
-} from '@happyvertical/sql';
+import { buildWhere, syncSchema } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import type { SmrtObject } from './object';
@@ -678,6 +674,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns New item instance
    */
   public async create(options: any) {
+    // Ensure table exists before creating objects (lazy initialization)
+    await this.setupDb();
+
     const params = {
       ai: this.options.ai,
       // Pass the actual database instance, not options
@@ -763,51 +762,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     this._db_setup_promise = (async () => {
       try {
-        let schema = await this.generateSchema();
+        const schema = await this.generateSchema();
 
-        // Issue #89: DuckDB and JSON adapters require inline UNIQUE constraints
-        // instead of separate CREATE UNIQUE INDEX statements for ON CONFLICT to work
-        //
-        // Detection strategy:
-        // - Both JSON and DuckDB adapters use DuckDB under the hood
-        // - Check if client is a DuckDB connection
-        const clientConstructorName = this.db.client?.constructor?.name || '';
-        const isDuckDbBased =
-          clientConstructorName.toLowerCase().includes('duck') ||
-          clientConstructorName.toLowerCase().includes('connection');
-
-        if (isDuckDbBased) {
-          // Split schema into DDL (CREATE TABLE) and index statements
-          // Schema format: "CREATE TABLE ...;\nCREATE INDEX ...;\nCREATE UNIQUE INDEX ...;"
-          const statements = schema.split(';').filter((s) => s.trim());
-
-          let ddl = '';
-          const indexStatements: string[] = [];
-
-          for (const stmt of statements) {
-            const trimmed = stmt.trim();
-            if (!trimmed) continue;
-
-            if (
-              trimmed.startsWith('CREATE INDEX') ||
-              trimmed.startsWith('CREATE UNIQUE INDEX')
-            ) {
-              indexStatements.push(trimmed);
-            } else if (trimmed.startsWith('CREATE TABLE')) {
-              ddl = trimmed;
-            }
-          }
-
-          // Apply transformation to convert UNIQUE indexes to inline constraints
-          const { ddl: transformedDDL, indexes: remainingIndexes } =
-            convertUniqueIndexesToInlineConstraints(ddl, indexStatements);
-
-          // Reconstruct schema with transformed DDL and remaining indexes
-          schema = remainingIndexes.length
-            ? `${transformedDDL};\n${remainingIndexes.map((idx) => `${idx};`).join('\n')}`
-            : `${transformedDDL};`;
-        }
-
+        // NOTE: DuckDB/JSON adapter-specific transformations (e.g., inline UNIQUE constraints)
+        // are now handled by the adapters themselves in syncSchema().
+        // See: happyvertical/sdk#392
         await syncSchema({ db: this.db, schema });
       } catch (error) {
         this._db_setup_promise = null; // Allow retry on failure

@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762292648868,
+  "timestamp": 1762532151647,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -40,7 +40,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestObject",
+      "collectionExportName": "TestObjectCollection"
     },
     "council": {
       "name": "council",
@@ -60,7 +62,9 @@ export const testManifest: SmartObjectManifest = {
       "methods": {},
       "decoratorConfig": {
         "tableName": "custom_councils"
-      }
+      },
+      "exportName": "Council",
+      "collectionExportName": "CouncilCollection"
     },
     "perftestuser": {
       "name": "perftestuser",
@@ -117,7 +121,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "PerfTestUser",
+      "collectionExportName": "PerfTestUserCollection"
     },
     "perftestusers": {
       "name": "perftestusers",
@@ -141,7 +147,9 @@ export const testManifest: SmartObjectManifest = {
           "isPublic": true
         }
       },
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "PerfTestUsers",
+      "collectionExportName": "PerfTestUsersCollection"
     },
     "testcategory": {
       "name": "testcategory",
@@ -163,7 +171,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestCategory",
+      "collectionExportName": "TestCategoryCollection"
     },
     "testcustomer": {
       "name": "testcustomer",
@@ -185,7 +195,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestCustomer",
+      "collectionExportName": "TestCustomerCollection"
     },
     "testproduct": {
       "name": "testproduct",
@@ -240,7 +252,9 @@ export const testManifest: SmartObjectManifest = {
           ]
         },
         "cli": true
-      }
+      },
+      "exportName": "TestProduct",
+      "collectionExportName": "TestProductCollection"
     },
     "testorder": {
       "name": "testorder",
@@ -266,7 +280,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestOrder",
+      "collectionExportName": "TestOrderCollection"
     },
     "overwritetestobject": {
       "name": "overwritetestobject",
@@ -284,7 +300,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "OverwriteTestObject",
+      "collectionExportName": "OverwriteTestObjectCollection"
     },
     "testclass": {
       "name": "testclass",
@@ -319,7 +337,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestClass",
+      "collectionExportName": "TestClassCollection"
     },
     "testprofile": {
       "name": "testprofile",
@@ -349,7 +369,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestProfile",
+      "collectionExportName": "TestProfileCollection"
     },
     "testmetadata": {
       "name": "testmetadata",
@@ -378,7 +400,9 @@ export const testManifest: SmartObjectManifest = {
             "get"
           ]
         }
-      }
+      },
+      "exportName": "TestMetadata",
+      "collectionExportName": "TestMetadataCollection"
     },
     "product": {
       "name": "product",
@@ -411,7 +435,9 @@ export const testManifest: SmartObjectManifest = {
             "get"
           ]
         }
-      }
+      },
+      "exportName": "Product",
+      "collectionExportName": "ProductCollection"
     },
     "productcollection": {
       "name": "productcollection",
@@ -420,7 +446,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-115-sql-injection-prevention.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "ProductCollection",
+      "collectionExportName": "ProductCollectionCollection"
     },
     "cachetestobject": {
       "name": "cachetestobject",
@@ -442,7 +470,9 @@ export const testManifest: SmartObjectManifest = {
         "api": true,
         "mcp": true,
         "cli": true
-      }
+      },
+      "exportName": "CacheTestObject",
+      "collectionExportName": "CacheTestObjectCollection"
     },
     "cachetestcollection": {
       "name": "cachetestcollection",
@@ -451,7 +481,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-117-memory-leak-prevention.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "CacheTestCollection",
+      "collectionExportName": "CacheTestCollectionCollection"
     },
     "testevent": {
       "name": "testevent",
@@ -481,7 +513,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestEvent",
+      "collectionExportName": "TestEventCollection"
     },
     "testeventcollection": {
       "name": "testeventcollection",
@@ -490,7 +524,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "TestEventCollection",
+      "collectionExportName": "TestEventCollectionCollection"
     },
     "testprofilecollection": {
       "name": "testprofilecollection",
@@ -499,7 +535,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-144-integration.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "TestProfileCollection",
+      "collectionExportName": "TestProfileCollectionCollection"
     },
     "testcontent": {
       "name": "testcontent",
@@ -525,7 +563,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestContent",
+      "collectionExportName": "TestContentCollection"
     },
     "eventwithdates": {
       "name": "eventwithdates",
@@ -555,7 +595,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "EventWithDates",
+      "collectionExportName": "EventWithDatesCollection"
     },
     "eventcollection": {
       "name": "eventcollection",
@@ -564,7 +606,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-198-integration-date-serialization.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "EventCollection",
+      "collectionExportName": "EventCollectionCollection"
     },
     "contentmock": {
       "name": "contentmock",
@@ -593,7 +637,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "ContentMock",
+      "collectionExportName": "ContentMockCollection"
     },
     "testwithprotected": {
       "name": "testwithprotected",
@@ -616,7 +662,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "TestWithProtected",
+      "collectionExportName": "TestWithProtectedCollection"
     },
     "councilwithtsoptional": {
       "name": "councilwithtsoptional",
@@ -641,7 +689,9 @@ export const testManifest: SmartObjectManifest = {
       "methods": {},
       "decoratorConfig": {
         "tableName": "councils_ts_optional"
-      }
+      },
+      "exportName": "CouncilWithTSOptional",
+      "collectionExportName": "CouncilWithTSOptionalCollection"
     },
     "counciltsoptionalcollection": {
       "name": "counciltsoptionalcollection",
@@ -650,7 +700,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "CouncilTSOptionalCollection",
+      "collectionExportName": "CouncilTSOptionalCollectionCollection"
     },
     "councilwithnullable": {
       "name": "councilwithnullable",
@@ -674,7 +726,9 @@ export const testManifest: SmartObjectManifest = {
       "methods": {},
       "decoratorConfig": {
         "tableName": "councils_nullable"
-      }
+      },
+      "exportName": "CouncilWithNullable",
+      "collectionExportName": "CouncilWithNullableCollection"
     },
     "councilnullablecollection": {
       "name": "councilnullablecollection",
@@ -683,7 +737,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "CouncilNullableCollection",
+      "collectionExportName": "CouncilNullableCollectionCollection"
     },
     "councilwithworkaround": {
       "name": "councilwithworkaround",
@@ -708,7 +764,9 @@ export const testManifest: SmartObjectManifest = {
       "methods": {},
       "decoratorConfig": {
         "tableName": "councils_workaround"
-      }
+      },
+      "exportName": "CouncilWithWorkaround",
+      "collectionExportName": "CouncilWithWorkaroundCollection"
     },
     "councilworkaroundcollection": {
       "name": "councilworkaroundcollection",
@@ -717,7 +775,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "CouncilWorkaroundCollection",
+      "collectionExportName": "CouncilWorkaroundCollectionCollection"
     },
     "councilforupdate": {
       "name": "councilforupdate",
@@ -742,7 +802,9 @@ export const testManifest: SmartObjectManifest = {
       "methods": {},
       "decoratorConfig": {
         "tableName": "councils_update"
-      }
+      },
+      "exportName": "CouncilForUpdate",
+      "collectionExportName": "CouncilForUpdateCollection"
     },
     "councilupdatecollection": {
       "name": "councilupdatecollection",
@@ -751,7 +813,42 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-205-optional-field-undefined.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "CouncilUpdateCollection",
+      "collectionExportName": "CouncilUpdateCollectionCollection"
+    },
+    "councilissue208": {
+      "name": "councilissue208",
+      "className": "CouncilIssue208",
+      "collection": "councilissue208s",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-208-optional-field-helper-undefined.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "description": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "councils_issue_208"
+      },
+      "exportName": "CouncilIssue208",
+      "collectionExportName": "CouncilIssue208Collection"
+    },
+    "councilissue208collection": {
+      "name": "councilissue208collection",
+      "className": "CouncilIssue208Collection",
+      "collection": "councilissue208collections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-208-optional-field-helper-undefined.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "exportName": "CouncilIssue208Collection",
+      "collectionExportName": "CouncilIssue208CollectionCollection"
     },
     "issue35testobject1": {
       "name": "issue35testobject1",
@@ -765,7 +862,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue35TestObject1",
+      "collectionExportName": "Issue35TestObject1Collection"
     },
     "issue35testobject2": {
       "name": "issue35testobject2",
@@ -779,7 +878,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue35TestObject2",
+      "collectionExportName": "Issue35TestObject2Collection"
     },
     "issue35testobjectdiffdb": {
       "name": "issue35testobjectdiffdb",
@@ -793,7 +894,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue35TestObjectDiffDb",
+      "collectionExportName": "Issue35TestObjectDiffDbCollection"
     },
     "issue35testdocument": {
       "name": "issue35testdocument",
@@ -807,7 +910,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue35TestDocument",
+      "collectionExportName": "Issue35TestDocumentCollection"
     },
     "issue35testobjectstringconfig": {
       "name": "issue35testobjectstringconfig",
@@ -821,7 +926,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue35TestObjectStringConfig",
+      "collectionExportName": "Issue35TestObjectStringConfigCollection"
     },
     "issue35testobjectconfigobj": {
       "name": "issue35testobjectconfigobj",
@@ -835,7 +942,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue35TestObjectConfigObj",
+      "collectionExportName": "Issue35TestObjectConfigObjCollection"
     },
     "issue35testobjectconcurrent": {
       "name": "issue35testobjectconcurrent",
@@ -849,7 +958,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue35TestObjectConcurrent",
+      "collectionExportName": "Issue35TestObjectConcurrentCollection"
     },
     "issue35testobjectweakset": {
       "name": "issue35testobjectweakset",
@@ -863,7 +974,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue35TestObjectWeakSet",
+      "collectionExportName": "Issue35TestObjectWeakSetCollection"
     },
     "place": {
       "name": "place",
@@ -889,7 +1002,9 @@ export const testManifest: SmartObjectManifest = {
         "api": true,
         "mcp": true,
         "cli": true
-      }
+      },
+      "exportName": "Place",
+      "collectionExportName": "PlaceCollection"
     },
     "issue75product": {
       "name": "issue75product",
@@ -915,7 +1030,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue75Product",
+      "collectionExportName": "Issue75ProductCollection"
     },
     "issue75article": {
       "name": "issue75article",
@@ -941,7 +1058,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue75Article",
+      "collectionExportName": "Issue75ArticleCollection"
     },
     "issue75book": {
       "name": "issue75book",
@@ -967,7 +1086,9 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue75Book",
+      "collectionExportName": "Issue75BookCollection"
     },
     "issue87parentevent": {
       "name": "issue87parentevent",
@@ -996,7 +1117,9 @@ export const testManifest: SmartObjectManifest = {
             "get"
           ]
         }
-      }
+      },
+      "exportName": "Issue87ParentEvent",
+      "collectionExportName": "Issue87ParentEventCollection"
     },
     "issue87parenteventcollection": {
       "name": "issue87parenteventcollection",
@@ -1005,7 +1128,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue87ParentEventCollection",
+      "collectionExportName": "Issue87ParentEventCollectionCollection"
     },
     "issue87childeventcollection": {
       "name": "issue87childeventcollection",
@@ -1014,7 +1139,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue87ChildEventCollection",
+      "collectionExportName": "Issue87ChildEventCollectionCollection"
     },
     "issue87basemodel": {
       "name": "issue87basemodel",
@@ -1051,7 +1178,9 @@ export const testManifest: SmartObjectManifest = {
             "get"
           ]
         }
-      }
+      },
+      "exportName": "Issue87BaseModel",
+      "collectionExportName": "Issue87BaseModelCollection"
     },
     "issue87derivedmodelcollection": {
       "name": "issue87derivedmodelcollection",
@@ -1060,7 +1189,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "Issue87DerivedModelCollection",
+      "collectionExportName": "Issue87DerivedModelCollectionCollection"
     },
     "testdocumentforduckdb": {
       "name": "testdocumentforduckdb",
@@ -1085,7 +1216,9 @@ export const testManifest: SmartObjectManifest = {
             "get"
           ]
         }
-      }
+      },
+      "exportName": "TestDocumentForDuckDB",
+      "collectionExportName": "TestDocumentForDuckDBCollection"
     },
     "testdocumentcollection": {
       "name": "testdocumentcollection",
@@ -1094,7 +1227,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "TestDocumentCollection",
+      "collectionExportName": "TestDocumentCollectionCollection"
     },
     "indexeddocument": {
       "name": "indexeddocument",
@@ -1123,7 +1258,9 @@ export const testManifest: SmartObjectManifest = {
             "get"
           ]
         }
-      }
+      },
+      "exportName": "IndexedDocument",
+      "collectionExportName": "IndexedDocumentCollection"
     },
     "indexeddocumentcollection": {
       "name": "indexeddocumentcollection",
@@ -1132,7 +1269,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "IndexedDocumentCollection",
+      "collectionExportName": "IndexedDocumentCollectionCollection"
     },
     "scopeddocument": {
       "name": "scopeddocument",
@@ -1157,7 +1296,9 @@ export const testManifest: SmartObjectManifest = {
             "get"
           ]
         }
-      }
+      },
+      "exportName": "ScopedDocument",
+      "collectionExportName": "ScopedDocumentCollection"
     },
     "scopeddocumentcollection": {
       "name": "scopeddocumentcollection",
@@ -1166,7 +1307,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-89-duckdb-schema-transformation.test.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "ScopedDocumentCollection",
+      "collectionExportName": "ScopedDocumentCollectionCollection"
     },
     "schemagentestevent": {
       "name": "schemagentestevent",
@@ -1192,7 +1335,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "SchemaGenTestEvent",
+      "collectionExportName": "SchemaGenTestEventCollection"
     },
     "schemagenarticle": {
       "name": "schemagenarticle",
@@ -1214,7 +1359,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "SchemaGenArticle",
+      "collectionExportName": "SchemaGenArticleCollection"
     },
     "customtimestamps": {
       "name": "customtimestamps",
@@ -1240,7 +1387,9 @@ export const testManifest: SmartObjectManifest = {
         "api": {},
         "mcp": {},
         "cli": false
-      }
+      },
+      "exportName": "CustomTimestamps",
+      "collectionExportName": "CustomTimestampsCollection"
     },
     "testproductcollection": {
       "name": "testproductcollection",
@@ -1249,7 +1398,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-integration.spec.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "TestProductCollection",
+      "collectionExportName": "TestProductCollectionCollection"
     },
     "protocoltestobject": {
       "name": "protocoltestobject",
@@ -1291,7 +1442,9 @@ export const testManifest: SmartObjectManifest = {
             "testAction"
           ]
         }
-      }
+      },
+      "exportName": "ProtocolTestObject",
+      "collectionExportName": "ProtocolTestObjectCollection"
     },
     "protocoltestobjectcollection": {
       "name": "protocoltestobjectcollection",
@@ -1300,7 +1453,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/generators/mcp-protocol.spec.ts",
       "fields": {},
       "methods": {},
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "exportName": "ProtocolTestObjectCollection",
+      "collectionExportName": "ProtocolTestObjectCollectionCollection"
     },
     "testagent": {
       "name": "testagent",
@@ -1376,7 +1531,9 @@ export const testManifest: SmartObjectManifest = {
             "analyze"
           ]
         }
-      }
+      },
+      "exportName": "TestAgent",
+      "collectionExportName": "TestAgentCollection"
     },
     "invalidactionagent": {
       "name": "invalidactionagent",
@@ -1399,7 +1556,9 @@ export const testManifest: SmartObjectManifest = {
             "nonexistent"
           ]
         }
-      }
+      },
+      "exportName": "InvalidActionAgent",
+      "collectionExportName": "InvalidActionAgentCollection"
     },
     "excludedactionagent": {
       "name": "excludedactionagent",
@@ -1443,7 +1602,9 @@ export const testManifest: SmartObjectManifest = {
             "report"
           ]
         }
-      }
+      },
+      "exportName": "ExcludedActionAgent",
+      "collectionExportName": "ExcludedActionAgentCollection"
     },
     "document": {
       "name": "document",
@@ -1481,7 +1642,9 @@ export const testManifest: SmartObjectManifest = {
       },
       "decoratorConfig": {
         "cli": true
-      }
+      },
+      "exportName": "Document",
+      "collectionExportName": "DocumentCollection"
     },
     "secret": {
       "name": "secret",
@@ -1498,7 +1661,9 @@ export const testManifest: SmartObjectManifest = {
       "methods": {},
       "decoratorConfig": {
         "cli": false
-      }
+      },
+      "exportName": "Secret",
+      "collectionExportName": "SecretCollection"
     },
     "article": {
       "name": "article",
@@ -1538,7 +1703,9 @@ export const testManifest: SmartObjectManifest = {
             "delete"
           ]
         }
-      }
+      },
+      "exportName": "Article",
+      "collectionExportName": "ArticleCollection"
     }
   },
   "packageName": "@happyvertical/smrt-core"

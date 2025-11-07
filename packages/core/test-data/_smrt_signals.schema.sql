@@ -1,0 +1,1 @@
+CREATE TABLE _smrt_signals(id VARCHAR PRIMARY KEY, "type" VARCHAR NOT NULL, source_class VARCHAR, source_id VARCHAR, target_class VARCHAR, target_id VARCHAR, payload VARCHAR, "timestamp" TIMESTAMP DEFAULT(CURRENT_TIMESTAMP));

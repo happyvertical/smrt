@@ -32,9 +32,16 @@ describe('SmrtClass', () => {
     });
 
     it('should have service getter properties', () => {
-      expect(baseClass).toHaveProperty('db');
-      expect(baseClass).toHaveProperty('fs');
-      expect(baseClass).toHaveProperty('ai');
+      // Check descriptors without calling getters (which would throw before init)
+      expect(
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(baseClass), 'db'),
+      ).toBeDefined();
+      expect(
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(baseClass), 'fs'),
+      ).toBeDefined();
+      expect(
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(baseClass), 'ai'),
+      ).toBeDefined();
     });
   });
 
@@ -43,9 +50,16 @@ describe('SmrtClass', () => {
       const base = new SmrtClass({});
 
       // Services should be getter properties, not yet initialized
-      expect(base).toHaveProperty('db');
-      expect(base).toHaveProperty('fs');
-      expect(base).toHaveProperty('ai');
+      // Check descriptors without calling getters (which would throw before init)
+      expect(
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(base), 'db'),
+      ).toBeDefined();
+      expect(
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(base), 'fs'),
+      ).toBeDefined();
+      expect(
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(base), 'ai'),
+      ).toBeDefined();
     });
   });
 
