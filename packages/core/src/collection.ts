@@ -321,10 +321,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   public async initialize(): Promise<this> {
     await super.initialize();
 
-    // Setup database if configured
-    if (this.options.db) {
-      await this.setupDb();
-    }
+    // NOTE: Database table setup is now deferred until first database operation (lazy initialization)
+    // This prevents database connections during import/prerendering (issue #237)
+    // Tables will be created automatically when calling list(), get(), create(), etc.
 
     return this;
   }
@@ -336,6 +335,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to the object or null if not found
    */
   public async get(filter: string | Record<string, any>) {
+    await this.setupDb();
+
     const where =
       typeof filter === 'string'
         ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -419,6 +420,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
      */
     include?: string[];
   }) {
+    await this.setupDb();
+
     const { where, offset, limit, orderBy } = options;
     const { sql: whereSql, values: whereValues } = buildWhere(
       this.convertWhereKeys(where || {}),
@@ -876,6 +879,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to the total count of matching records
    */
   public async count(options: { where?: Record<string, any> } = {}) {
+    await this.setupDb();
+
     const { where } = options;
     const { sql: whereSql, values: whereValues } = buildWhere(
       this.convertWhereKeys(where || {}),
