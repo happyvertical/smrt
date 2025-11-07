@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.13.4
+
+### Patch Changes
+
+- 3f46832: - chore(all): update @happyvertical dependencies
+
 ## 0.13.3
 
 ## 0.13.2
