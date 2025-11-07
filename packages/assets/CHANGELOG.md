@@ -1,5 +1,17 @@
 # @happyvertical/smrt-assets
 
+## 0.13.3
+
+### Patch Changes
+
+- 9adec16: Add --passWithNoTests flag to test scripts for packages without test files
+
+  Packages that don't yet have test files now use `vitest run --passWithNoTests` instead of `vitest run`, allowing CI to pass while we incrementally add tests. This fixes the test suite failures caused by vitest exiting with code 1 when no tests are found.
+
+- Updated dependencies [9adec16]
+  - @happyvertical/smrt-tags@0.13.3
+  - @happyvertical/smrt-core@0.13.3
+
 ## 0.13.2
 
 ### Patch Changes
