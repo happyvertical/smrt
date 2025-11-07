@@ -135,6 +135,7 @@ ci-debug-*.log
 
 *.traineddata
 .svelte-kit
+.npmrc
 .npmrc.local
 
 # Package artifacts
