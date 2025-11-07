@@ -78,8 +78,26 @@ jobs:
             --auto --squash \
             --delete-branch
 
+      - name: Check if packages were published
+        id: check_published
+        run: |
+          # Check if changesets action published packages
+          if [ "${{ steps.changesets.outputs.published }}" == "true" ]; then
+            echo "published=true" >> $GITHUB_OUTPUT
+            echo "✅ Packages published via changesets"
+          else
+            # Check git tags to see if packages were published (fallback case)
+            if git tag --points-at HEAD | grep -q "@happyvertical"; then
+              echo "published=true" >> $GITHUB_OUTPUT
+              echo "✅ Packages published (detected via git tags)"
+            else
+              echo "published=false" >> $GITHUB_OUTPUT
+              echo "ℹ️  No packages published"
+            fi
+          fi
+
       - name: Create git tags
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.check_published.outputs.published == 'true' && steps.changesets.outputs.publishedPackages != ''
         run: |
           # Create tags for each published package
           echo '${{ steps.changesets.outputs.publishedPackages }}' | jq -r '.[] | "\(.name)@\(.version)"' | while read tag; do
@@ -90,27 +108,32 @@ jobs:
           git push --tags || echo "No new tags to push"
 
       - name: Trigger dependency cascade
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.check_published.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "📢 Triggering dependency cascade for downstream repositories..."
 
-          # Extract published packages info
-          PUBLISHED_PACKAGES='${{ steps.changesets.outputs.publishedPackages }}'
-          echo "Published packages: $PUBLISHED_PACKAGES"
+          # Get list of downstream targets from cascade config
+          DOWNSTREAM_REPOS=$(curl -s https://raw.githubusercontent.com/happyvertical/sdk/main/.github/cascade-config.json | \
+            jq -r '.cascade.smrt.triggers[]' | tr '\n' ' ')
 
-          # Trigger praeco with full package information
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/happyvertical/praeco/dispatches \
-            -f event_type='dependency-updated' \
-            -f 'client_payload[repository]=happyvertical/smrt' \
-            -f "client_payload[packages]=$PUBLISHED_PACKAGES"
+          echo "Downstream repos: $DOWNSTREAM_REPOS"
 
-          echo "✅ Triggered praeco dependency cascade"
+          # Trigger each downstream repo
+          for repo in $DOWNSTREAM_REPOS; do
+            echo "📤 Triggering $repo..."
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              /repos/happyvertical/$repo/dispatches \
+              -f event_type='dependency-updated' \
+              -f 'client_payload[repository]=happyvertical/smrt' \
+              || echo "⚠️  Failed to trigger $repo (may not have workflow configured)"
+          done
+
+          echo "✅ Triggered dependency cascade for: $DOWNSTREAM_REPOS"
 
   deploy-docs:
     name: Deploy Documentation
