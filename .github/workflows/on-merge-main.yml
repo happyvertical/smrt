@@ -45,7 +45,7 @@ jobs:
           node-version: '24'
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GH_TOKEN }}
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Turborepo cache
         uses: actions/cache@v4
@@ -65,8 +65,8 @@ jobs:
           title: 'chore(release): version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
-          NPM_TOKEN: ${{ secrets.GH_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable auto-merge for version PR
         if: steps.changesets.outputs.pullRequestNumber != ''
@@ -161,7 +161,7 @@ jobs:
           node-version: '24'
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GH_TOKEN }}
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Turborepo cache
         uses: actions/cache@v4
