@@ -272,7 +272,27 @@ export class ObjectRegistry {
 
     // Prevent duplicate registrations
     if (ObjectRegistry.classes.has(name)) {
-      return; // Already registered, skip silently
+      const existing = ObjectRegistry.classes.get(name)!;
+
+      // Check if this is the exact same constructor (re-registration is OK)
+      if (existing.constructor === ctor) {
+        return; // Same class, skip silently
+      }
+
+      // Different constructors with same name - this is a collision!
+      // This will cause silent bugs where the wrong fields are used
+      throw new Error(
+        `SMRT Class Name Collision: "${name}"\n\n` +
+          `A class with this name is already registered, but with a different constructor.\n` +
+          `This usually happens when:\n` +
+          `  1. Multiple test files define classes with the same name\n` +
+          `  2. Different packages export classes with the same name\n\n` +
+          `The collision will cause the wrong field definitions to be used,\n` +
+          `leading to properties not being initialized correctly.\n\n` +
+          `To fix:\n` +
+          `  - Use unique class names (e.g., ${name}_UniqueId)\n` +
+          `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
+      );
     }
 
     // CRITICAL: Capture package name NOW, while stack trace still shows external package
