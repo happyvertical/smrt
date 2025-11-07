@@ -133,11 +133,11 @@ async function main() {
 
       switch (name) {
         case 'generate-smrt-class':
-          result = await generateSmrtClass(args || {});
+          result = await generateSmrtClass(args as any);
           break;
 
         case 'introspect-project':
-          result = await introspectProject(args || {});
+          result = await introspectProject(args as any);
           break;
 
         default:

@@ -85,7 +85,7 @@ export async function introspectProject(
       }
 
       const className = classMatch[1];
-      const baseClass = classMatch[2];
+      // const baseClass = classMatch[2]; // Reserved for future use
       const relativePath = relative(directory, filePath);
 
       const objInfo: SmrtObjectInfo = {

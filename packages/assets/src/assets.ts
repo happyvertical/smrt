@@ -18,15 +18,11 @@ export class AssetCollection extends SmrtCollection<Asset> {
    */
   async addTag(assetId: string, tagSlug: string): Promise<void> {
     const db = this.db;
-    await db.upsert(
-      'asset_tags',
-      {
-        asset_id: assetId,
-        tag_slug: tagSlug,
-        created_at: new Date().toISOString(),
-      },
-      ['asset_id', 'tag_slug'],
-    );
+    await db.upsert('asset_tags', ['asset_id', 'tag_slug'], {
+      asset_id: assetId,
+      tag_slug: tagSlug,
+      created_at: new Date().toISOString(),
+    });
   }
 
   /**
