@@ -15,9 +15,13 @@ runs:
 
     - name: Configure npm for GitHub Packages
       shell: bash
+      env:
+        NODE_AUTH_TOKEN: ${{ inputs.github-token }}
       run: |
-        echo "@happyvertical:registry=https://npm.pkg.github.com" >> ~/.npmrc
-        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-token }}" >> ~/.npmrc
+        # Get the npmrc file that npm will actually use
+        NPMRC_FILE="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+        echo "@happyvertical:registry=https://npm.pkg.github.com" >> "$NPMRC_FILE"
+        echo "//npm.pkg.github.com/:_authToken=${{ inputs.github-token }}" >> "$NPMRC_FILE"
 
     - name: Run issue triage
       shell: bash

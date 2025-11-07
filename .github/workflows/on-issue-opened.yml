@@ -17,4 +17,4 @@ jobs:
       - name: Run issue triage
         uses: ./.github/actions/issue-triage
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_TOKEN }}
