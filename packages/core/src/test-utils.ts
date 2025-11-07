@@ -304,7 +304,7 @@ export class TestSetup {
   /**
    * Mock collection constructor to return mock instances
    */
-  static mockCollectionConstructors(mockCollections: any) {
+  static mockCollectionConstructors(mockCollections: any): any {
     return vi.fn().mockImplementation((options: any) => {
       const mockCollection =
         mockCollections.TestUser || mockCollections.TestProduct;
