@@ -8,8 +8,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 describe('CLI Generator - Simplified Tests', () => {
   it('should import and instantiate CLI generator', async () => {
-    // Dynamic import to avoid module resolution issues
-    const { CLIGenerator } = await import('./cli-generator.js');
+    // Import from source to avoid dependency resolution issues with built chunks
+    const { CLIGenerator } = await import('./cli-generator.ts');
 
     const generator = new CLIGenerator({
       name: 'test-cli',
@@ -28,7 +28,7 @@ describe('CLI Generator - Simplified Tests', () => {
     // Set NODE_ENV to test to prevent process.exit
     process.env.NODE_ENV = 'test';
 
-    const { CLIGenerator } = await import('./cli-generator.js');
+    const { CLIGenerator } = await import('./cli-generator.ts');
 
     const generator = new CLIGenerator({
       name: 'test-cli',
@@ -72,7 +72,7 @@ describe('CLI Generator - Simplified Tests', () => {
       delete (process.stdout as any).clearLine;
       delete (process.stdout as any).cursorTo;
 
-      const { CLIGenerator } = await import('./cli-generator.js');
+      const { CLIGenerator } = await import('./cli-generator.ts');
 
       const generator = new CLIGenerator({
         name: 'test-cli',
