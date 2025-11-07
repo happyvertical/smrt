@@ -9,7 +9,7 @@ import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1761880987429,
+  "timestamp": 1762480211449,
   "objects": {
     "profilerelationshipterm": {
       "name": "profilerelationshipterm",
@@ -79,7 +79,10 @@ export const testManifest: SmartObjectManifest = {
           ]
         },
         "cli": true
-      }
+      },
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileRelationshipTerm",
+      "collectionExportName": "ProfileRelationshipTermCollection"
     },
     "profilerelationshiptermcollection": {
       "name": "profilerelationshiptermcollection",
@@ -131,7 +134,10 @@ export const testManifest: SmartObjectManifest = {
           "isPublic": true
         }
       },
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileRelationshipTermCollection",
+      "collectionExportName": "ProfileRelationshipTermCollectionCollection"
     },
     "profilerelationship": {
       "name": "profilerelationship",
@@ -235,7 +241,10 @@ export const testManifest: SmartObjectManifest = {
           ]
         },
         "cli": true
-      }
+      },
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileRelationship",
+      "collectionExportName": "ProfileRelationshipCollection"
     },
     "profiletype": {
       "name": "profiletype",
@@ -284,7 +293,10 @@ export const testManifest: SmartObjectManifest = {
           ]
         },
         "cli": true
-      }
+      },
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileType",
+      "collectionExportName": "ProfileTypeCollection"
     },
     "profilemetafield": {
       "name": "profilemetafield",
@@ -384,7 +396,10 @@ export const testManifest: SmartObjectManifest = {
           ]
         },
         "cli": true
-      }
+      },
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileMetafield",
+      "collectionExportName": "ProfileMetafieldCollection"
     },
     "profilemetafieldcollection": {
       "name": "profilemetafieldcollection",
@@ -427,7 +442,10 @@ export const testManifest: SmartObjectManifest = {
           "isPublic": true
         }
       },
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileMetafieldCollection",
+      "collectionExportName": "ProfileMetafieldCollectionCollection"
     },
     "profilemetadata": {
       "name": "profilemetadata",
@@ -483,7 +501,10 @@ export const testManifest: SmartObjectManifest = {
           ]
         },
         "cli": true
-      }
+      },
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileMetadata",
+      "collectionExportName": "ProfileMetadataCollection"
     },
     "profilemetadatacollection": {
       "name": "profilemetadatacollection",
@@ -540,7 +561,10 @@ export const testManifest: SmartObjectManifest = {
           "isPublic": true
         }
       },
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileMetadataCollection",
+      "collectionExportName": "ProfileMetadataCollectionCollection"
     },
     "profilerelationshiptype": {
       "name": "profilerelationshiptype",
@@ -636,7 +660,10 @@ export const testManifest: SmartObjectManifest = {
           ]
         },
         "cli": true
-      }
+      },
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileRelationshipType",
+      "collectionExportName": "ProfileRelationshipTypeCollection"
     },
     "profilerelationshiptypecollection": {
       "name": "profilerelationshiptypecollection",
@@ -695,7 +722,10 @@ export const testManifest: SmartObjectManifest = {
           "isPublic": true
         }
       },
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileRelationshipTypeCollection",
+      "collectionExportName": "ProfileRelationshipTypeCollectionCollection"
     },
     "profilerelationshipcollection": {
       "name": "profilerelationshipcollection",
@@ -786,7 +816,10 @@ export const testManifest: SmartObjectManifest = {
           "isPublic": true
         }
       },
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileRelationshipCollection",
+      "collectionExportName": "ProfileRelationshipCollectionCollection"
     },
     "profile": {
       "name": "profile",
@@ -1080,7 +1113,10 @@ export const testManifest: SmartObjectManifest = {
           ]
         },
         "cli": true
-      }
+      },
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "Profile",
+      "collectionExportName": "ProfileCollection"
     },
     "profilecollection": {
       "name": "profilecollection",
@@ -1171,7 +1207,10 @@ export const testManifest: SmartObjectManifest = {
           "isPublic": true
         }
       },
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileCollection",
+      "collectionExportName": "ProfileCollectionCollection"
     },
     "profiletypecollection": {
       "name": "profiletypecollection",
@@ -1214,7 +1253,10 @@ export const testManifest: SmartObjectManifest = {
           "isPublic": true
         }
       },
-      "decoratorConfig": {}
+      "decoratorConfig": {},
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "ProfileTypeCollection",
+      "collectionExportName": "ProfileTypeCollectionCollection"
     }
   },
   "packageName": "@happyvertical/smrt-profiles"

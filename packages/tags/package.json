@@ -21,7 +21,8 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "test": "npx vitest run --passWithNoTests",
+    "pretest": "node ../cli/dist/index.js test --manifest-only",
+    "test": "npx vitest run",
     "test:watch": "npx vitest"
   },
   "dependencies": {
