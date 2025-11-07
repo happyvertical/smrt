@@ -5,7 +5,6 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { text } from '@happyvertical/smrt-core/fields';
 import type { EventSeriesOptions, RecurrencePattern } from '../types';
 
 @smrt({
@@ -14,7 +13,7 @@ import type { EventSeriesOptions, RecurrencePattern } from '../types';
   cli: true,
 })
 export class EventSeries extends SmrtObject {
-  name = text();
+  name: string = '';
   typeId = ''; // FK to EventType
   organizerId = ''; // FK to Profile (from @happyvertical/smrt-profiles)
   description = '';
