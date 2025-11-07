@@ -3,15 +3,18 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "inputs": ["src/**", "package.json", "tsconfig.json", "vite.config.ts", "vite.config.js"],
       "outputs": ["dist/**", ".next/**", "docs/**", "tsconfig.*.tsbuildinfo"],
       "cache": true
     },
     "prebuild": {
-      "cache": true,
-      "outputs": ["src/runtime/**"]
+      "inputs": ["src/**", "package.json", "tsconfig.json"],
+      "outputs": ["src/runtime/**"],
+      "cache": true
     },
     "test": {
       "dependsOn": ["build"],
+      "inputs": ["src/**", "test/**", "**/*.test.ts", "**/*.spec.ts", "package.json", "vitest.config.ts", "vitest.config.js"],
       "outputs": ["coverage/**"],
       "cache": true
     },
@@ -20,19 +23,24 @@
       "persistent": true
     },
     "lint": {
+      "inputs": ["src/**", "test/**", "**/*.ts", "**/*.js", "biome.json"],
       "cache": true
     },
     "lint:fix": {
+      "inputs": ["src/**", "test/**", "**/*.ts", "**/*.js", "biome.json"],
       "cache": false
     },
     "format": {
+      "inputs": ["src/**", "test/**", "**/*.ts", "**/*.js", "**/*.json", "**/*.md", "biome.json"],
       "cache": false
     },
     "format-check": {
+      "inputs": ["src/**", "test/**", "**/*.ts", "**/*.js", "**/*.json", "**/*.md", "biome.json"],
       "cache": true
     },
     "typecheck": {
       "dependsOn": ["^build"],
+      "inputs": ["src/**", "test/**", "**/*.ts", "tsconfig.json"],
       "cache": true
     },
     "dev": {
@@ -41,6 +49,12 @@
     },
     "clean": {
       "cache": false
+    },
+    "docs": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "README.md", "CLAUDE.md", "package.json"],
+      "outputs": ["docs/**", "manual/**"],
+      "cache": true
     }
   },
   "globalDependencies": [

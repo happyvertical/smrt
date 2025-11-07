@@ -46,27 +46,31 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          key: ${{ runner.os }}-turbo-${{ hashFiles('**/package.json', '**/pnpm-lock.yaml', 'packages/*/src/**') }}-${{ github.run_id }}
           restore-keys: |
+            ${{ runner.os }}-turbo-${{ hashFiles('**/package.json', '**/pnpm-lock.yaml', 'packages/*/src/**') }}-
             ${{ runner.os }}-turbo-
+
+      - name: Cache build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/*/dist
+            .turbo
+          key: ${{ runner.os }}-build-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
 
       - name: Build packages
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Type check
-        run: pnpm run typecheck
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Format check
-        run: pnpm run format-check
-
-      - name: Run tests
+      - name: Run typecheck, lint, and tests in parallel
         id: tests
-        run: pnpm run test --filter="./packages/*"
+        run: |
+          # Run typecheck, lint, and test in parallel using Turborepo
+          pnpm turbo run typecheck lint test --parallel
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -75,6 +79,9 @@ jobs:
           POSTGRES_DB: test_db
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
           NODE_ENV: test
+
+      - name: Format check
+        run: pnpm run format-check
 
       - name: Upload test results
         if: always()
