@@ -1,5 +1,14 @@
 # @happyvertical/smrt-docs-mcp
 
+## 0.13.4
+
+### Patch Changes
+
+- 3f46832: - chore(all): update @happyvertical dependencies
+- 505a835: Make pretest scripts resilient to CLI not being built yet
+
+  The pretest script now checks if `../cli/dist/index.js` exists before trying to run it, allowing tests to pass in scenarios where packages aren't built yet (like the cascade handler workflow). This uses the pattern `[ -f file ] && command || true` which silently succeeds if the CLI isn't available, while still running manifest generation when it is.
+
 ## 0.13.3
 
 ### Patch Changes
