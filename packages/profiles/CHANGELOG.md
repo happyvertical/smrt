@@ -1,5 +1,12 @@
 # @happyvertical/smrt-profiles
 
+## 0.13.5
+
+### Patch Changes
+
+- Updated dependencies [7706d2b]
+  - @happyvertical/smrt-core@0.13.5
+
 ## 0.13.4
 
 ### Patch Changes

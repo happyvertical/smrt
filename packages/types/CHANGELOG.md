@@ -1,5 +1,7 @@
 # @happyvertical/smrt-types
 
+## 0.13.5
+
 ## 0.13.4
 
 ### Patch Changes
