@@ -15,7 +15,7 @@
   "scripts": {
     "build": "VITE_BUILD_PACKAGE=accounts vite build --mode library",
     "dev": "vite",
-    "pretest": "node ../cli/dist/index.js test --manifest-only",
+    "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "npx vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

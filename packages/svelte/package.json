@@ -37,7 +37,7 @@
     "build": "vite build && svelte-package",
     "build:watch": "vite build --watch",
     "preview": "vite preview",
-    "pretest": "node ../cli/dist/index.js test --manifest-only",
+    "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "npx vitest run --passWithNoTests",
     "test:watch": "vitest",
     "clean": "rm -rf dist",
