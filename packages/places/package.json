@@ -27,7 +27,12 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/ai": "^0.55.0",
+    "@happyvertical/files": "^0.55.0",
     "@happyvertical/geo": "0.55.0",
+    "@happyvertical/logger": "^0.55.0",
+    "@happyvertical/sql": "^0.55.0",
+    "@happyvertical/utils": "^0.55.0",
     "@happyvertical/cache": "0.55.0"
   },
   "devDependencies": {

@@ -22,8 +22,13 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
+    "@happyvertical/ai": "^0.55.0",
+    "@happyvertical/files": "^0.55.0",
+    "@happyvertical/logger": "^0.55.0",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-tags": "workspace:*"
+    "@happyvertical/smrt-tags": "workspace:*",
+    "@happyvertical/sql": "^0.55.0",
+    "@happyvertical/utils": "^0.55.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

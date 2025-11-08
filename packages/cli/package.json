@@ -29,6 +29,9 @@
     "cli": "tsx src/index.ts"
   },
   "dependencies": {
+    "@happyvertical/ai": "^0.55.0",
+    "@happyvertical/files": "^0.55.0",
+    "@happyvertical/logger": "^0.55.0",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
