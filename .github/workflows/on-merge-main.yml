@@ -74,6 +74,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "🔀 Enabling auto-merge for version PR #${{ steps.changesets.outputs.pullRequestNumber }}"
+          echo "⏳ Waiting 30 seconds for status checks to start..."
+          sleep 30
           gh pr merge ${{ steps.changesets.outputs.pullRequestNumber }} \
             --auto --squash \
             --delete-branch
