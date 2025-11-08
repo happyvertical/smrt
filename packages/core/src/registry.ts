@@ -27,7 +27,8 @@
  * ```
  */
 
-import { loadConfig } from '@happyvertical/smrt-config';
+import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
+import { getModuleConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
 import { Field } from './fields';
 import {
@@ -38,6 +39,19 @@ import {
 import { SmrtObject } from './object';
 import { classnameToTablename, tableNameFromClass } from './utils';
 import { LRUCache } from './utils/lru-cache';
+
+/**
+ * Get inheritance config synchronously
+ * Uses the config package's sync accessor which returns already-loaded config
+ */
+function getInheritanceConfig() {
+  const config = getModuleConfig<SmrtGlobalConfig>('smrt', {});
+  return {
+    cacheSize: config.inheritance?.cacheSize ?? 200,
+    onMissingAncestor:
+      config.inheritance?.onMissingAncestor ?? ('warn' as 'warn' | 'error'),
+  };
+}
 
 /**
  * Configuration options for SMRT objects registered in the system
@@ -270,8 +284,7 @@ export class ObjectRegistry {
    */
   private static getInheritanceCache(): LRUCache<string, string[]> {
     if (!ObjectRegistry.inheritanceChainCache) {
-      const config = loadConfig({ cache: true });
-      const cacheSize = config.smrt?.inheritance?.cacheSize ?? 200;
+      const { cacheSize } = getInheritanceConfig();
       ObjectRegistry.inheritanceChainCache = new LRUCache<string, string[]>(
         cacheSize,
       );
@@ -1436,10 +1449,8 @@ export class ObjectRegistry {
       return new Map(registered.inheritedFields);
     }
 
-    // Load config for error handling behavior
-    const config = loadConfig({ cache: true });
-    const onMissingAncestor =
-      config.smrt?.inheritance?.onMissingAncestor ?? 'warn';
+    // Get config for error handling behavior
+    const { onMissingAncestor } = getInheritanceConfig();
 
     // Build merged fields from inheritance chain
     const allFields = new Map<string, any>();
