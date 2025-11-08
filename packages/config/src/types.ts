@@ -6,6 +6,22 @@ export interface SmrtGlobalConfig {
   cacheDir?: string;
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
   environment?: 'development' | 'production' | 'test';
+
+  /**
+   * Schema migration strategy when parent class schema changes
+   *
+   * Options:
+   * - 'warn': Log warning about schema mismatch, require manual migration (safest)
+   * - 'auto-add': Automatically ALTER TABLE to add new parent fields (default, convenient)
+   *
+   * Note: Removing columns is never automatic - always requires manual migration
+   *
+   * @default 'auto-add'
+   */
+  schemaMigration?: {
+    strategy?: 'warn' | 'auto-add';
+  };
+
   [key: string]: unknown;
 }
 

@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762532151647,
+  "timestamp": 1762619905472,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -41,6 +41,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestObject",
       "collectionExportName": "TestObjectCollection"
     },
@@ -63,6 +64,7 @@ export const testManifest: SmartObjectManifest = {
       "decoratorConfig": {
         "tableName": "custom_councils"
       },
+      "extends": "SmrtObject",
       "exportName": "Council",
       "collectionExportName": "CouncilCollection"
     },
@@ -122,6 +124,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "PerfTestUser",
       "collectionExportName": "PerfTestUserCollection"
     },
@@ -148,6 +151,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "PerfTestUsers",
       "collectionExportName": "PerfTestUsersCollection"
     },
@@ -172,6 +176,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestCategory",
       "collectionExportName": "TestCategoryCollection"
     },
@@ -196,6 +201,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestCustomer",
       "collectionExportName": "TestCustomerCollection"
     },
@@ -207,15 +213,24 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "price": {
           "type": "decimal",
-          "required": true
+          "required": true,
+          "options": {
+            "min": 0
+          }
         },
         "stock": {
           "type": "integer",
-          "required": true
+          "required": true,
+          "options": {
+            "default": 0
+          }
         }
       },
       "methods": {
@@ -253,6 +268,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "cli": true
       },
+      "extends": "SmrtObject",
       "exportName": "TestProduct",
       "collectionExportName": "TestProductCollection"
     },
@@ -281,6 +297,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestOrder",
       "collectionExportName": "TestOrderCollection"
     },
@@ -292,7 +309,11 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true,
+            "maxLength": 100
+          }
         }
       },
       "methods": {},
@@ -301,6 +322,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "OverwriteTestObject",
       "collectionExportName": "OverwriteTestObjectCollection"
     },
@@ -338,6 +360,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestClass",
       "collectionExportName": "TestClassCollection"
     },
@@ -370,6 +393,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestProfile",
       "collectionExportName": "TestProfileCollection"
     },
@@ -385,11 +409,17 @@ export const testManifest: SmartObjectManifest = {
         },
         "key": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "value": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         }
       },
       "methods": {},
@@ -401,8 +431,346 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "TestMetadata",
       "collectionExportName": "TestMetadataCollection"
+    },
+    "basecontent": {
+      "name": "basecontent",
+      "className": "BaseContent",
+      "collection": "basecontents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance-simple.test.ts",
+      "fields": {
+        "baseField": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "baseNumber": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "BaseContent",
+      "collectionExportName": "BaseContentCollection"
+    },
+    "extendedcontent": {
+      "name": "extendedcontent",
+      "className": "ExtendedContent",
+      "collection": "extendedcontents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance-simple.test.ts",
+      "fields": {
+        "extendedField": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "extendedNumber": {
+          "type": "decimal",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "BaseContent",
+      "exportName": "ExtendedContent",
+      "collectionExportName": "ExtendedContentCollection"
+    },
+    "content": {
+      "name": "content",
+      "className": "Content",
+      "collection": "contents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "publishedAt": {
+          "type": "datetime",
+          "required": true,
+          "default": null
+        },
+        "wordCount": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {
+        "generateSummary": {
+          "name": "generateSummary",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "Content",
+      "collectionExportName": "ContentCollection"
+    },
+    "praecocontent": {
+      "name": "praecocontent",
+      "className": "PraecoContent",
+      "collection": "praecocontents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {
+        "praecoCustom1": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "sourceUrl": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "rating": {
+          "type": "decimal",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {
+        "analyzeSentiment": {
+          "name": "analyzeSentiment",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Content",
+      "exportName": "PraecoContent",
+      "collectionExportName": "PraecoContentCollection"
+    },
+    "bentleycontent": {
+      "name": "bentleycontent",
+      "className": "BentleyContent",
+      "collection": "bentleycontents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {
+        "bentleyCustom1": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "localTags": {
+          "type": "json",
+          "required": true,
+          "default": []
+        }
+      },
+      "methods": {
+        "analyzeLocal": {
+          "name": "analyzeLocal",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "PraecoContent",
+      "exportName": "BentleyContent",
+      "collectionExportName": "BentleyContentCollection"
+    },
+    "parentwithconstraints": {
+      "name": "parentwithconstraints",
+      "className": "ParentWithConstraints",
+      "collection": "parentwithconstraintses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {
+        "age": {
+          "type": "integer",
+          "required": true,
+          "options": {
+            "min": 0,
+            "max": 150
+          }
+        },
+        "score": {
+          "type": "decimal",
+          "required": true,
+          "options": {
+            "min": 0,
+            "max": 100
+          }
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "ParentWithConstraints",
+      "collectionExportName": "ParentWithConstraintsCollection"
+    },
+    "childwithconstraints": {
+      "name": "childwithconstraints",
+      "className": "ChildWithConstraints",
+      "collection": "childwithconstraintses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {
+        "age": {
+          "type": "integer",
+          "required": true,
+          "options": {
+            "min": 18,
+            "max": 65
+          }
+        },
+        "score": {
+          "type": "decimal",
+          "required": true,
+          "options": {
+            "min": 50,
+            "max": 90
+          }
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "ParentWithConstraints",
+      "exportName": "ChildWithConstraints",
+      "collectionExportName": "ChildWithConstraintsCollection"
+    },
+    "parenttypemismatch": {
+      "name": "parenttypemismatch",
+      "className": "ParentTypeMismatch",
+      "collection": "parenttypemismatches",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {
+        "myField": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "ParentTypeMismatch",
+      "collectionExportName": "ParentTypeMismatchCollection"
+    },
+    "childtypemismatch": {
+      "name": "childtypemismatch",
+      "className": "ChildTypeMismatch",
+      "collection": "childtypemismatches",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {
+        "myField": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "ParentTypeMismatch",
+      "exportName": "ChildTypeMismatch",
+      "collectionExportName": "ChildTypeMismatchCollection"
+    },
+    "parentwithmethod": {
+      "name": "parentwithmethod",
+      "className": "ParentWithMethod",
+      "collection": "parentwithmethods",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {},
+      "methods": {
+        "doSomething": {
+          "name": "doSomething",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "ParentWithMethod",
+      "collectionExportName": "ParentWithMethodCollection"
+    },
+    "childwithmethod": {
+      "name": "childwithmethod",
+      "className": "ChildWithMethod",
+      "collection": "childwithmethods",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {},
+      "methods": {
+        "doSomething": {
+          "name": "doSomething",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "ParentWithMethod",
+      "exportName": "ChildWithMethod",
+      "collectionExportName": "ChildWithMethodCollection"
     },
     "product": {
       "name": "product",
@@ -436,6 +804,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "Product",
       "collectionExportName": "ProductCollection"
     },
@@ -447,6 +816,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "ProductCollection",
       "collectionExportName": "ProductCollectionCollection"
     },
@@ -471,6 +841,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": true,
         "cli": true
       },
+      "extends": "SmrtObject",
       "exportName": "CacheTestObject",
       "collectionExportName": "CacheTestObjectCollection"
     },
@@ -482,6 +853,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "CacheTestCollection",
       "collectionExportName": "CacheTestCollectionCollection"
     },
@@ -514,6 +886,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestEvent",
       "collectionExportName": "TestEventCollection"
     },
@@ -525,6 +898,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "TestEventCollection",
       "collectionExportName": "TestEventCollectionCollection"
     },
@@ -536,6 +910,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "TestProfileCollection",
       "collectionExportName": "TestProfileCollectionCollection"
     },
@@ -547,7 +922,10 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "publishDate": {
           "type": "datetime",
@@ -564,6 +942,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestContent",
       "collectionExportName": "TestContentCollection"
     },
@@ -575,7 +954,10 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "eventDate": {
           "type": "datetime",
@@ -596,6 +978,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "EventWithDates",
       "collectionExportName": "EventWithDatesCollection"
     },
@@ -607,6 +990,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "EventCollection",
       "collectionExportName": "EventCollectionCollection"
     },
@@ -638,6 +1022,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "ContentMock",
       "collectionExportName": "ContentMockCollection"
     },
@@ -649,7 +1034,10 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "publicName": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "publicDescription": {
           "type": "text",
@@ -663,6 +1051,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "TestWithProtected",
       "collectionExportName": "TestWithProtectedCollection"
     },
@@ -690,6 +1079,7 @@ export const testManifest: SmartObjectManifest = {
       "decoratorConfig": {
         "tableName": "councils_ts_optional"
       },
+      "extends": "SmrtObject",
       "exportName": "CouncilWithTSOptional",
       "collectionExportName": "CouncilWithTSOptionalCollection"
     },
@@ -701,6 +1091,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "CouncilTSOptionalCollection",
       "collectionExportName": "CouncilTSOptionalCollectionCollection"
     },
@@ -712,21 +1103,31 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "url": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "nullable": true
+          }
         },
         "location": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "nullable": true
+          }
         }
       },
       "methods": {},
       "decoratorConfig": {
         "tableName": "councils_nullable"
       },
+      "extends": "SmrtObject",
       "exportName": "CouncilWithNullable",
       "collectionExportName": "CouncilWithNullableCollection"
     },
@@ -738,6 +1139,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "CouncilNullableCollection",
       "collectionExportName": "CouncilNullableCollectionCollection"
     },
@@ -765,6 +1167,7 @@ export const testManifest: SmartObjectManifest = {
       "decoratorConfig": {
         "tableName": "councils_workaround"
       },
+      "extends": "SmrtObject",
       "exportName": "CouncilWithWorkaround",
       "collectionExportName": "CouncilWithWorkaroundCollection"
     },
@@ -776,6 +1179,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "CouncilWorkaroundCollection",
       "collectionExportName": "CouncilWorkaroundCollectionCollection"
     },
@@ -803,6 +1207,7 @@ export const testManifest: SmartObjectManifest = {
       "decoratorConfig": {
         "tableName": "councils_update"
       },
+      "extends": "SmrtObject",
       "exportName": "CouncilForUpdate",
       "collectionExportName": "CouncilForUpdateCollection"
     },
@@ -814,6 +1219,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "CouncilUpdateCollection",
       "collectionExportName": "CouncilUpdateCollectionCollection"
     },
@@ -825,7 +1231,10 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "description": {
           "type": "text",
@@ -836,6 +1245,7 @@ export const testManifest: SmartObjectManifest = {
       "decoratorConfig": {
         "tableName": "councils_issue_208"
       },
+      "extends": "SmrtObject",
       "exportName": "CouncilIssue208",
       "collectionExportName": "CouncilIssue208Collection"
     },
@@ -847,6 +1257,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "CouncilIssue208Collection",
       "collectionExportName": "CouncilIssue208CollectionCollection"
     },
@@ -863,6 +1274,7 @@ export const testManifest: SmartObjectManifest = {
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue35TestObject1",
       "collectionExportName": "Issue35TestObject1Collection"
     },
@@ -879,6 +1291,7 @@ export const testManifest: SmartObjectManifest = {
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue35TestObject2",
       "collectionExportName": "Issue35TestObject2Collection"
     },
@@ -895,6 +1308,7 @@ export const testManifest: SmartObjectManifest = {
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue35TestObjectDiffDb",
       "collectionExportName": "Issue35TestObjectDiffDbCollection"
     },
@@ -911,6 +1325,7 @@ export const testManifest: SmartObjectManifest = {
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue35TestDocument",
       "collectionExportName": "Issue35TestDocumentCollection"
     },
@@ -927,6 +1342,7 @@ export const testManifest: SmartObjectManifest = {
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue35TestObjectStringConfig",
       "collectionExportName": "Issue35TestObjectStringConfigCollection"
     },
@@ -943,6 +1359,7 @@ export const testManifest: SmartObjectManifest = {
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue35TestObjectConfigObj",
       "collectionExportName": "Issue35TestObjectConfigObjCollection"
     },
@@ -959,6 +1376,7 @@ export const testManifest: SmartObjectManifest = {
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue35TestObjectConcurrent",
       "collectionExportName": "Issue35TestObjectConcurrentCollection"
     },
@@ -975,6 +1393,7 @@ export const testManifest: SmartObjectManifest = {
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue35TestObjectWeakSet",
       "collectionExportName": "Issue35TestObjectWeakSetCollection"
     },
@@ -986,11 +1405,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "latitude": {
           "type": "decimal",
-          "required": true
+          "required": true,
+          "options": {
+            "nullable": true
+          }
         },
         "longitude": {
           "type": "decimal",
-          "required": true
+          "required": true,
+          "options": {
+            "nullable": true
+          }
         },
         "name": {
           "type": "text",
@@ -1003,6 +1428,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": true,
         "cli": true
       },
+      "extends": "SmrtObject",
       "exportName": "Place",
       "collectionExportName": "PlaceCollection"
     },
@@ -1014,23 +1440,36 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "default": ""
+          }
         },
         "productName": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "default": "Test Product"
+          }
         },
         "price": {
           "type": "decimal",
-          "required": true
+          "required": true,
+          "options": {
+            "default": 99.99
+          }
         },
         "inStock": {
           "type": "boolean",
-          "required": true
+          "required": true,
+          "options": {
+            "default": true
+          }
         }
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue75Product",
       "collectionExportName": "Issue75ProductCollection"
     },
@@ -1042,23 +1481,36 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "default": ""
+          }
         },
         "title": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "default": "Test Article"
+          }
         },
         "body": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "default": "Article content"
+          }
         },
         "published": {
           "type": "boolean",
-          "required": true
+          "required": true,
+          "options": {
+            "default": false
+          }
         }
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue75Article",
       "collectionExportName": "Issue75ArticleCollection"
     },
@@ -1070,23 +1522,36 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "default": ""
+          }
         },
         "bookTitle": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "default": "The Book"
+          }
         },
         "author": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "default": "Author Name"
+          }
         },
         "pages": {
           "type": "integer",
-          "required": true
+          "required": true,
+          "options": {
+            "default": 300
+          }
         }
       },
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtObject",
       "exportName": "Issue75Book",
       "collectionExportName": "Issue75BookCollection"
     },
@@ -1098,14 +1563,51 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "startDate": {
           "type": "datetime",
-          "required": true
+          "required": true,
+          "options": {
+            "nullable": true
+          }
         },
         "endDate": {
           "type": "datetime",
-          "required": true
+          "required": true,
+          "options": {
+            "nullable": true
+          }
         },
         "issuedAt": {
           "type": "datetime",
+          "required": true,
+          "options": {
+            "nullable": true
+          }
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Issue87ParentEvent",
+      "collectionExportName": "Issue87ParentEventCollection"
+    },
+    "issue87childevent": {
+      "name": "issue87childevent",
+      "className": "Issue87ChildEvent",
+      "collection": "issue87childevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
+      "fields": {
+        "temperature": {
+          "type": "integer",
+          "required": true
+        },
+        "description": {
+          "type": "text",
           "required": true
         }
       },
@@ -1118,8 +1620,9 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
-      "exportName": "Issue87ParentEvent",
-      "collectionExportName": "Issue87ParentEventCollection"
+      "extends": "Issue87ParentEvent",
+      "exportName": "Issue87ChildEvent",
+      "collectionExportName": "Issue87ChildEventCollection"
     },
     "issue87parenteventcollection": {
       "name": "issue87parenteventcollection",
@@ -1129,6 +1632,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "Issue87ParentEventCollection",
       "collectionExportName": "Issue87ParentEventCollectionCollection"
     },
@@ -1140,6 +1644,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "Issue87ChildEventCollection",
       "collectionExportName": "Issue87ChildEventCollectionCollection"
     },
@@ -1163,10 +1668,40 @@ export const testManifest: SmartObjectManifest = {
         },
         "issueDate": {
           "type": "datetime",
-          "required": true
+          "required": true,
+          "options": {
+            "nullable": true
+          }
         },
         "optionalEventDate": {
           "type": "datetime",
+          "required": true,
+          "options": {
+            "nullable": true
+          }
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Issue87BaseModel",
+      "collectionExportName": "Issue87BaseModelCollection"
+    },
+    "issue87derivedmodel": {
+      "name": "issue87derivedmodel",
+      "className": "Issue87DerivedModel",
+      "collection": "issue87derivedmodels",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-87-inherited-date-fields.test.ts",
+      "fields": {
+        "derivedField": {
+          "type": "text",
           "required": true
         }
       },
@@ -1179,8 +1714,9 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
-      "exportName": "Issue87BaseModel",
-      "collectionExportName": "Issue87BaseModelCollection"
+      "extends": "Issue87BaseModel",
+      "exportName": "Issue87DerivedModel",
+      "collectionExportName": "Issue87DerivedModelCollection"
     },
     "issue87derivedmodelcollection": {
       "name": "issue87derivedmodelcollection",
@@ -1190,6 +1726,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "Issue87DerivedModelCollection",
       "collectionExportName": "Issue87DerivedModelCollectionCollection"
     },
@@ -1217,6 +1754,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "TestDocumentForDuckDB",
       "collectionExportName": "TestDocumentForDuckDBCollection"
     },
@@ -1228,6 +1766,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "TestDocumentCollection",
       "collectionExportName": "TestDocumentCollectionCollection"
     },
@@ -1259,6 +1798,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "IndexedDocument",
       "collectionExportName": "IndexedDocumentCollection"
     },
@@ -1270,6 +1810,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "IndexedDocumentCollection",
       "collectionExportName": "IndexedDocumentCollectionCollection"
     },
@@ -1297,6 +1838,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "ScopedDocument",
       "collectionExportName": "ScopedDocumentCollection"
     },
@@ -1308,6 +1850,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "ScopedDocumentCollection",
       "collectionExportName": "ScopedDocumentCollectionCollection"
     },
@@ -1319,7 +1862,10 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "description": {
           "type": "text",
@@ -1336,6 +1882,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "SchemaGenTestEvent",
       "collectionExportName": "SchemaGenTestEventCollection"
     },
@@ -1347,7 +1894,10 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true
+          "required": true,
+          "options": {
+            "required": true
+          }
         },
         "body": {
           "type": "text",
@@ -1360,6 +1910,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "SchemaGenArticle",
       "collectionExportName": "SchemaGenArticleCollection"
     },
@@ -1388,6 +1939,7 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "CustomTimestamps",
       "collectionExportName": "CustomTimestampsCollection"
     },
@@ -1399,6 +1951,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "TestProductCollection",
       "collectionExportName": "TestProductCollectionCollection"
     },
@@ -1443,6 +1996,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "ProtocolTestObject",
       "collectionExportName": "ProtocolTestObjectCollection"
     },
@@ -1454,6 +2008,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "exportName": "ProtocolTestObjectCollection",
       "collectionExportName": "ProtocolTestObjectCollectionCollection"
     },
@@ -1532,6 +2087,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "TestAgent",
       "collectionExportName": "TestAgentCollection"
     },
@@ -1557,6 +2113,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "InvalidActionAgent",
       "collectionExportName": "InvalidActionAgentCollection"
     },
@@ -1603,6 +2160,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "ExcludedActionAgent",
       "collectionExportName": "ExcludedActionAgentCollection"
     },
@@ -1643,6 +2201,7 @@ export const testManifest: SmartObjectManifest = {
       "decoratorConfig": {
         "cli": true
       },
+      "extends": "SmrtObject",
       "exportName": "Document",
       "collectionExportName": "DocumentCollection"
     },
@@ -1662,6 +2221,7 @@ export const testManifest: SmartObjectManifest = {
       "decoratorConfig": {
         "cli": false
       },
+      "extends": "SmrtObject",
       "exportName": "Secret",
       "collectionExportName": "SecretCollection"
     },
@@ -1704,6 +2264,7 @@ export const testManifest: SmartObjectManifest = {
           ]
         }
       },
+      "extends": "SmrtObject",
       "exportName": "Article",
       "collectionExportName": "ArticleCollection"
     }

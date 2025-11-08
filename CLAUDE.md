@@ -137,6 +137,75 @@ const isQuality = await doc.isHighQuality();
 const summary = await doc.generateSummary();
 ```
 
+### Multi-Level Class Inheritance
+
+SMRT supports multi-level class inheritance, allowing you to build class hierarchies where child classes automatically inherit fields and methods from parent classes:
+
+```typescript
+// Level 1: Base Content class (from @happyvertical/smrt-content)
+@smrt()
+class Content extends SmrtObject {
+  title: string = '';
+  body: string = '';
+  publishedAt: Date | null = null;
+  wordCount: number = 0;
+
+  async generateSummary(): Promise<string> {
+    return await this.do('Create a 2-sentence summary');
+  }
+}
+
+// Level 2: Praeco Content extends Content (from praeco package)
+@smrt()
+class PraecoContent extends Content {
+  sourceUrl: string = '';
+  sentiment: string = '';
+
+  async analyzeSentiment(): Promise<string> {
+    return await this.is('The content has positive sentiment')
+      ? 'positive'
+      : 'negative';
+  }
+}
+
+// Level 3: Bentley Content extends PraecoContent (from bentleyalberta.com)
+@smrt()
+class BentleyContent extends PraecoContent {
+  localTags: string[] = [];
+  featured: boolean = false;
+
+  async analyzeLocalRelevance(): Promise<number> {
+    // Custom local analysis
+    return 0.95;
+  }
+}
+
+// BentleyContent automatically inherits ALL fields and methods:
+// - title, body, publishedAt, wordCount (from Content)
+// - sourceUrl, sentiment (from PraecoContent)
+// - localTags, featured (from BentleyContent)
+// - generateSummary() (from Content)
+// - analyzeSentiment() (from PraecoContent)
+// - analyzeLocalRelevance() (from BentleyContent)
+
+// Schema generation includes all inherited fields
+const bentley = new BentleyContent({
+  title: 'Local News',
+  body: 'Story content...',
+  sourceUrl: 'https://example.com',
+  localTags: ['bentley', 'alberta'],
+  db: { type: 'sqlite', url: 'bentley.db' }
+});
+
+await bentley.initialize();
+await bentley.save();  // Table has ALL inherited columns
+
+// Call methods from any level of the hierarchy
+const summary = await bentley.generateSummary();  // Content
+const sentiment = await bentley.analyzeSentiment();  // PraecoContent
+const relevance = await bentley.analyzeLocalRelevance();  // BentleyContent
+```
+
 ### Generate APIs, CLI, and MCP
 
 The `@smrt()` decorator automatically configures code generation:
