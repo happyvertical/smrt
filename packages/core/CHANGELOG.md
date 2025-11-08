@@ -1,5 +1,13 @@
 # @happyvertical/smrt-core
 
+## 0.14.3
+
+### Patch Changes
+
+- f0051a4: - fix(core): enable preserveModules to match package.json exports
+  - @happyvertical/smrt-config@0.14.3
+  - @happyvertical/smrt-types@0.14.3
+
 ## 0.14.2
 
 ### Patch Changes
