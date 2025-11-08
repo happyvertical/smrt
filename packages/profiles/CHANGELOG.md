@@ -1,5 +1,16 @@
 # @happyvertical/smrt-profiles
 
+## 0.14.0
+
+### Minor Changes
+
+- c45b560: - feat(all): implement multi-level class inheritance support (#247)
+
+### Patch Changes
+
+- Updated dependencies [c45b560]
+  - @happyvertical/smrt-core@0.14.0
+
 ## 0.13.7
 
 ### Patch Changes
