@@ -22,6 +22,32 @@ export interface SmrtGlobalConfig {
     strategy?: 'warn' | 'auto-add';
   };
 
+  /**
+   * Inheritance configuration
+   */
+  inheritance?: {
+    /**
+     * Behavior when an ancestor class is missing from the registry
+     *
+     * Options:
+     * - 'error': Throw an error (strict, catches bugs)
+     * - 'warn': Log warning and skip (lenient, default)
+     *
+     * @default 'warn'
+     */
+    onMissingAncestor?: 'error' | 'warn';
+
+    /**
+     * Size of LRU cache for inheritance chains and merged fields
+     *
+     * Higher values improve performance but use more memory.
+     * Each entry stores one inheritance chain (array of strings).
+     *
+     * @default 200
+     */
+    cacheSize?: number;
+  };
+
   [key: string]: unknown;
 }
 

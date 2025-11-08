@@ -9,7 +9,7 @@ import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762561866445,
+  "timestamp": 1762622109137,
   "objects": {
     "profilerelationshipterm": {
       "name": "profilerelationshipterm",
@@ -80,6 +80,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "cli": true
       },
+      "extends": "SmrtObject",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileRelationshipTerm",
       "collectionExportName": "ProfileRelationshipTermCollection"
@@ -135,6 +136,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileRelationshipTermCollection",
       "collectionExportName": "ProfileRelationshipTermCollectionCollection"
@@ -242,6 +244,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "cli": true
       },
+      "extends": "SmrtObject",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileRelationship",
       "collectionExportName": "ProfileRelationshipCollection"
@@ -294,6 +297,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "cli": true
       },
+      "extends": "SmrtObject",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileType",
       "collectionExportName": "ProfileTypeCollection"
@@ -397,6 +401,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "cli": true
       },
+      "extends": "SmrtObject",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileMetafield",
       "collectionExportName": "ProfileMetafieldCollection"
@@ -443,6 +448,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileMetafieldCollection",
       "collectionExportName": "ProfileMetafieldCollectionCollection"
@@ -502,6 +508,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "cli": true
       },
+      "extends": "SmrtObject",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileMetadata",
       "collectionExportName": "ProfileMetadataCollection"
@@ -562,6 +569,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileMetadataCollection",
       "collectionExportName": "ProfileMetadataCollectionCollection"
@@ -661,6 +669,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "cli": true
       },
+      "extends": "SmrtObject",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileRelationshipType",
       "collectionExportName": "ProfileRelationshipTypeCollection"
@@ -723,6 +732,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileRelationshipTypeCollection",
       "collectionExportName": "ProfileRelationshipTypeCollectionCollection"
@@ -817,6 +827,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileRelationshipCollection",
       "collectionExportName": "ProfileRelationshipCollectionCollection"
@@ -1114,6 +1125,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "cli": true
       },
+      "extends": "SmrtObject",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "Profile",
       "collectionExportName": "ProfileCollection"
@@ -1208,6 +1220,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileCollection",
       "collectionExportName": "ProfileCollectionCollection"
@@ -1254,6 +1267,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {},
+      "extends": "SmrtCollection",
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileTypeCollection",
       "collectionExportName": "ProfileTypeCollectionCollection"

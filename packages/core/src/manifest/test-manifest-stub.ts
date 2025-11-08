@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762619905472,
+  "timestamp": 1762622627205,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -771,6 +771,28 @@ export const testManifest: SmartObjectManifest = {
       "extends": "ParentWithMethod",
       "exportName": "ChildWithMethod",
       "collectionExportName": "ChildWithMethodCollection"
+    },
+    "orphanclass": {
+      "name": "orphanclass",
+      "className": "OrphanClass",
+      "collection": "orphanclasses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/inheritance.test.ts",
+      "fields": {
+        "orphanField": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "OrphanClass",
+      "collectionExportName": "OrphanClassCollection"
     },
     "product": {
       "name": "product",

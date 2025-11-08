@@ -27,6 +27,7 @@
  * ```
  */
 
+import { loadConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
 import { Field } from './fields';
 import {
@@ -260,8 +261,23 @@ export class ObjectRegistry {
    * Global cache for inheritance chains (shared across all instances)
    * Maps className → full inheritance chain (base to child)
    * Performance optimization: ~100x faster than re-walking prototype chain
+   * Cache size is configurable via smrt.inheritance.cacheSize (default: 200)
    */
-  private static inheritanceChainCache = new LRUCache<string, string[]>(200);
+  private static inheritanceChainCache: LRUCache<string, string[]>;
+
+  /**
+   * Initialize the inheritance chain cache with size from config
+   */
+  private static getInheritanceCache(): LRUCache<string, string[]> {
+    if (!ObjectRegistry.inheritanceChainCache) {
+      const config = loadConfig({ cache: true });
+      const cacheSize = config.smrt?.inheritance?.cacheSize ?? 200;
+      ObjectRegistry.inheritanceChainCache = new LRUCache<string, string[]>(
+        cacheSize,
+      );
+    }
+    return ObjectRegistry.inheritanceChainCache;
+  }
 
   /**
    * Register a new SMRT object class with the global registry
@@ -599,6 +615,60 @@ export class ObjectRegistry {
     ObjectRegistry.classes.clear();
     ObjectRegistry.collections.clear();
     ObjectRegistry.collectionCache.clear();
+    ObjectRegistry.getInheritanceCache().clear();
+  }
+
+  /**
+   * Invalidate inheritance cache for a specific class
+   *
+   * Clears cached inheritance chain and merged fields/methods for the given class.
+   * Call this when a class definition changes at runtime (e.g., hot module reload).
+   *
+   * @param className - The class name to invalidate cache for
+   * @example
+   * ```typescript
+   * // After hot module reload of a parent class
+   * ObjectRegistry.invalidateInheritanceCache('BentleyContent');
+   * ```
+   */
+  static invalidateInheritanceCache(className: string): void {
+    // Clear inheritance chain cache
+    ObjectRegistry.getInheritanceCache().delete(className);
+
+    // Clear merged fields/methods cache
+    const registered = ObjectRegistry.classes.get(className);
+    if (registered) {
+      registered.inheritedFields = undefined;
+      registered.inheritedMethods = undefined;
+    }
+
+    // Also invalidate all descendants (they depend on this class's fields)
+    for (const [childName, childClass] of ObjectRegistry.classes) {
+      if (childClass.extends === className) {
+        ObjectRegistry.invalidateInheritanceCache(childName);
+      }
+    }
+  }
+
+  /**
+   * Invalidate all inheritance caches
+   *
+   * Clears all cached inheritance chains and merged fields/methods.
+   * Call this when multiple classes change at runtime.
+   *
+   * @example
+   * ```typescript
+   * // After hot module reload of multiple classes
+   * ObjectRegistry.invalidateAllInheritanceCaches();
+   * ```
+   */
+  static invalidateAllInheritanceCaches(): void {
+    ObjectRegistry.getInheritanceCache().clear();
+
+    for (const registered of ObjectRegistry.classes.values()) {
+      registered.inheritedFields = undefined;
+      registered.inheritedMethods = undefined;
+    }
   }
 
   /**
@@ -1306,8 +1376,10 @@ export class ObjectRegistry {
    * ```
    */
   static getInheritanceChain(className: string): string[] {
+    const cache = ObjectRegistry.getInheritanceCache();
+
     // Check cache first
-    const cached = ObjectRegistry.inheritanceChainCache.get(className);
+    const cached = cache.get(className);
     if (cached) {
       return cached;
     }
@@ -1320,10 +1392,7 @@ export class ObjectRegistry {
 
     // Check if already computed and stored
     if (registered.inheritanceChain) {
-      ObjectRegistry.inheritanceChainCache.set(
-        className,
-        registered.inheritanceChain,
-      );
+      cache.set(className, registered.inheritanceChain);
       return registered.inheritanceChain;
     }
 
@@ -1332,7 +1401,7 @@ export class ObjectRegistry {
 
     // Cache in both places
     registered.inheritanceChain = chain;
-    ObjectRegistry.inheritanceChainCache.set(className, chain);
+    cache.set(className, chain);
 
     return chain;
   }
@@ -1367,6 +1436,11 @@ export class ObjectRegistry {
       return new Map(registered.inheritedFields);
     }
 
+    // Load config for error handling behavior
+    const config = loadConfig({ cache: true });
+    const onMissingAncestor =
+      config.smrt?.inheritance?.onMissingAncestor ?? 'warn';
+
     // Build merged fields from inheritance chain
     const allFields = new Map<string, any>();
     const chain = ObjectRegistry.getInheritanceChain(className);
@@ -1374,7 +1448,31 @@ export class ObjectRegistry {
     // Walk chain from base to child (parent fields first)
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
-      if (!ancestor) continue;
+
+      // Handle missing ancestors according to config
+      if (!ancestor) {
+        const message = `Missing ancestor class "${ancestorName}" in inheritance chain for "${className}"`;
+
+        if (onMissingAncestor === 'error') {
+          throw new Error(
+            `${message}\n\n` +
+              `This usually means:\n` +
+              `  1. The parent class is not registered with @smrt()\n` +
+              `  2. The parent class file is not imported\n` +
+              `  3. The manifest does not include the parent class\n\n` +
+              `To fix:\n` +
+              `  - Ensure all parent classes use @smrt() decorator\n` +
+              `  - Import all parent class files before child classes\n` +
+              `  - Rebuild to regenerate manifest\n` +
+              `  - Or set smrt.inheritance.onMissingAncestor='warn' in config`,
+          );
+        } else {
+          // 'warn' mode (default)
+          console.warn(`[ObjectRegistry] ${message}`);
+        }
+
+        continue;
+      }
 
       // Skip framework base classes (SmrtObject, SmrtClass, SmrtCollection)
       if (

@@ -93,10 +93,16 @@ class ChildWithMethod extends ParentWithMethod {
   }
 }
 
+// Test class for missing ancestor warning
+@smrt()
+class OrphanClass extends SmrtObject {
+  orphanField: string = '';
+}
+
 describe('Multi-level Class Inheritance', () => {
   beforeEach(() => {
     // Clear caches before each test
-    ObjectRegistry.inheritanceChainCache.clear();
+    ObjectRegistry.invalidateAllInheritanceCaches();
   });
 
   describe('Inheritance Chain Building', () => {
@@ -379,6 +385,114 @@ describe('Multi-level Class Inheritance', () => {
       const avgTime = (end - start) / 1000;
 
       expect(avgTime).toBeLessThan(10); // <10ms per call when cached
+    });
+  });
+
+  describe('Cache Invalidation', () => {
+    it('should invalidate cache for specific class', () => {
+      // Build and cache inheritance chain
+      const chain1 = ObjectRegistry.getInheritanceChain('BentleyContent');
+      const fields1 = ObjectRegistry.getAllFields('BentleyContent');
+
+      expect(chain1.length).toBeGreaterThan(0);
+      expect(fields1.size).toBeGreaterThan(0);
+
+      // Invalidate cache
+      ObjectRegistry.invalidateInheritanceCache('BentleyContent');
+
+      // Verify cache was cleared (fields will be rebuilt on next access)
+      const registered = ObjectRegistry.classes.get('BentleyContent');
+      expect(registered?.inheritedFields).toBeUndefined();
+      expect(registered?.inheritedMethods).toBeUndefined();
+    });
+
+    it('should recursively invalidate descendant caches', () => {
+      // Build and cache entire hierarchy
+      ObjectRegistry.getInheritanceChain('Content');
+      ObjectRegistry.getInheritanceChain('PraecoContent');
+      ObjectRegistry.getInheritanceChain('BentleyContent');
+
+      ObjectRegistry.getAllFields('Content');
+      ObjectRegistry.getAllFields('PraecoContent');
+      ObjectRegistry.getAllFields('BentleyContent');
+
+      // Invalidate parent class
+      ObjectRegistry.invalidateInheritanceCache('Content');
+
+      // Verify all descendants were also invalidated
+      const content = ObjectRegistry.classes.get('Content');
+      const praeco = ObjectRegistry.classes.get('PraecoContent');
+      const bentley = ObjectRegistry.classes.get('BentleyContent');
+
+      expect(content?.inheritedFields).toBeUndefined();
+      expect(praeco?.inheritedFields).toBeUndefined();
+      expect(bentley?.inheritedFields).toBeUndefined();
+    });
+
+    it('should invalidate all inheritance caches', () => {
+      // Build and cache multiple classes
+      ObjectRegistry.getInheritanceChain('Content');
+      ObjectRegistry.getInheritanceChain('PraecoContent');
+      ObjectRegistry.getInheritanceChain('BentleyContent');
+
+      ObjectRegistry.getAllFields('Content');
+      ObjectRegistry.getAllFields('PraecoContent');
+      ObjectRegistry.getAllFields('BentleyContent');
+
+      // Invalidate all
+      ObjectRegistry.invalidateAllInheritanceCaches();
+
+      // Verify all were cleared
+      for (const registered of ObjectRegistry.classes.values()) {
+        if (registered.extends) {
+          expect(registered.inheritedFields).toBeUndefined();
+          expect(registered.inheritedMethods).toBeUndefined();
+        }
+      }
+    });
+
+    it('should rebuild cache after invalidation', () => {
+      // Build and cache
+      const fields1 = ObjectRegistry.getAllFields('BentleyContent');
+      expect(fields1.has('title')).toBe(true);
+
+      // Invalidate
+      ObjectRegistry.invalidateInheritanceCache('BentleyContent');
+
+      // Should rebuild cache on next access
+      const fields2 = ObjectRegistry.getAllFields('BentleyContent');
+      expect(fields2.has('title')).toBe(true);
+      expect(fields2.size).toBe(fields1.size);
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should warn about missing ancestors by default', () => {
+      // Manually set extends to non-existent parent and clear inheritance chain
+      // (OrphanClass is defined at top level of file)
+      const registered = ObjectRegistry.classes.get('OrphanClass');
+      if (registered) {
+        registered.extends = 'NonExistentParent';
+        registered.inheritanceChain = [
+          'SmrtObject',
+          'NonExistentParent',
+          'OrphanClass',
+        ];
+        registered.inheritedFields = undefined;
+      }
+
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // Should warn but not throw
+      const fields = ObjectRegistry.getAllFields('OrphanClass');
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Missing ancestor class "NonExistentParent"'),
+      );
+      // Should still include fields from OrphanClass itself
+      expect(fields.has('orphanField')).toBe(true);
+
+      consoleSpy.mockRestore();
     });
   });
 });
