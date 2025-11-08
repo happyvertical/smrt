@@ -1,5 +1,11 @@
 # @happyvertical/smrt-types
 
+## 0.14.0
+
+### Minor Changes
+
+- c45b560: - feat(all): implement multi-level class inheritance support (#247)
+
 ## 0.13.7
 
 ### Patch Changes
