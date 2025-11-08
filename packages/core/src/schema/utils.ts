@@ -5,9 +5,27 @@
  * Separated from main utils.ts to prevent bundling in browser builds.
  */
 
+import { getModuleConfig } from '@happyvertical/smrt-config';
 import { syncSchema } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry';
 import { tableNameFromClass, toSnakeCase } from '../utils';
+
+/**
+ * Get schema migration configuration from global config
+ *
+ * @returns Schema migration strategy ('warn' or 'auto-add')
+ */
+function getSchemaMigrationStrategy(): 'warn' | 'auto-add' {
+  try {
+    const config = getModuleConfig('core', {
+      schemaMigration: { strategy: 'auto-add' as const },
+    });
+    return config.schemaMigration?.strategy || 'auto-add';
+  } catch {
+    // If config loading fails, use safe default
+    return 'auto-add';
+  }
+}
 
 /**
  * Generates a complete database schema SQL statement for a class
@@ -36,10 +54,11 @@ export async function generateSchema(
   }
 
   // Use provided fields if available AND non-empty (during registration), otherwise get from registry
+  // NEW: Use getAllFields() to include inherited fields from parent classes
   const cachedFields =
     providedFields && providedFields.size > 0
       ? providedFields
-      : ObjectRegistry.getFields(className);
+      : ObjectRegistry.getAllFields(className);
 
   // Throw error if class is not registered AND no fields provided
   if (cachedFields.size === 0) {
@@ -113,6 +132,28 @@ export async function setupTableFromClass(db: any, ClassType: any) {
           }
         }
       }
+
+      // TODO: Implement schema migration detection and automatic column addition
+      // When a parent class schema changes (fields added/removed), we should:
+      // 1. Detect schema mismatch by comparing current table schema with generated schema
+      // 2. Get migration strategy from getSchemaMigrationStrategy()
+      // 3. If 'warn': Log warning about mismatch, do nothing
+      // 4. If 'auto-add': Generate ALTER TABLE ADD COLUMN statements for new fields
+      // 5. Never auto-remove columns (always require manual migration)
+      //
+      // Implementation outline:
+      // const strategy = getSchemaMigrationStrategy();
+      // const currentSchema = await db.describeTable(tableName);
+      // const missingColumns = detectMissingColumns(currentSchema, schemaDefinition);
+      // if (missingColumns.length > 0) {
+      //   if (strategy === 'warn') {
+      //     console.warn(`Schema mismatch in ${tableName}: missing columns ${missingColumns.join(', ')}`);
+      //   } else if (strategy === 'auto-add') {
+      //     for (const column of missingColumns) {
+      //       await db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${generateColumnDDL(column)}`);
+      //     }
+      //   }
+      // }
 
       await syncSchema({ db, schema });
     } catch (error) {

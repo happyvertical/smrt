@@ -139,7 +139,8 @@ export function fieldsFromClass(
   values?: Record<string, any>,
 ) {
   const className = ClassType.name;
-  const cachedFields = ObjectRegistry.getFields(className);
+  // NEW: Use getAllFields() to include inherited fields from parent classes
+  const cachedFields = ObjectRegistry.getAllFields(className);
 
   // Phase 2: AST manifest only - no runtime introspection fallback
   if (cachedFields.size === 0) {

@@ -540,8 +540,8 @@ export class CLIGenerator {
       });
     }
 
-    // CUSTOM METHODS - discover from manifest and show by default
-    const methods = ObjectRegistry.getMethods(objectName);
+    // CUSTOM METHODS - discover from manifest (including inherited methods)
+    const methods = ObjectRegistry.getAllMethods(objectName);
 
     // Check if include list contains any custom method names (indicates strict mode)
     const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
@@ -1181,8 +1181,8 @@ export class CLIGenerator {
         return;
       }
 
-      // Get method metadata for parameter mapping
-      const methods = ObjectRegistry.getMethods(objectName);
+      // Get method metadata for parameter mapping (including inherited methods)
+      const methods = ObjectRegistry.getAllMethods(objectName);
       const methodDef = methods.get(methodName);
 
       if (!methodDef) {

@@ -225,6 +225,9 @@ export class ASTScanner {
     // Generate collection name (pluralized)
     const collection = this.pluralize(className.toLowerCase());
 
+    // Extract parent class name from extends clause
+    const parentClass = this.extractParentClassName(node);
+
     const objectDef: SmartObjectDefinition = {
       name: className.toLowerCase(),
       className,
@@ -233,6 +236,7 @@ export class ASTScanner {
       fields: {},
       methods: {},
       decoratorConfig,
+      extends: parentClass, // NEW: Capture inheritance
     };
 
     // Parse class members
@@ -284,9 +288,25 @@ export class ASTScanner {
   }
 
   /**
-   * Check if class extends a SMRT base class
+   * Check if class extends a SMRT base class (recursively)
+   *
+   * This method now recursively walks the inheritance chain to check if ANY ancestor
+   * is a framework base class. This enables multi-level inheritance:
+   * - ExtendedContent extends BaseContent extends SmrtObject ✅
+   * - Previously only: SomeClass extends SmrtObject ✅
+   *
+   * @param node - Class declaration to check
+   * @param visited - Set of visited class names to prevent infinite loops
+   * @returns True if this class or any ancestor extends a framework base class
    */
-  private extendsBaseClass(node: ts.ClassDeclaration): boolean {
+  private extendsBaseClass(
+    node: ts.ClassDeclaration,
+    visited: Set<string> = new Set(),
+  ): boolean {
+    const className = node.name?.text;
+    if (!className || visited.has(className)) return false;
+    visited.add(className);
+
     if (!node.heritageClauses) return false;
 
     for (const clause of node.heritageClauses) {
@@ -306,9 +326,19 @@ export class ASTScanner {
             baseClassName = expressionText?.split('.').pop()?.trim();
           }
 
+          if (!baseClassName) continue;
+
+          // Check if this is a framework base class
+          if (this.options.baseClasses?.includes(baseClassName)) {
+            return true;
+          }
+
+          // Recursively check if the parent class extends a framework base class
+          // This enables multi-level inheritance (e.g., Child → Parent → SmrtObject)
+          const parentClassNode = this.findClassDeclaration(baseClassName);
           if (
-            baseClassName &&
-            this.options.baseClasses?.includes(baseClassName)
+            parentClassNode &&
+            this.extendsBaseClass(parentClassNode, visited)
           ) {
             return true;
           }
@@ -317,6 +347,70 @@ export class ASTScanner {
     }
 
     return false;
+  }
+
+  /**
+   * Find a class declaration by name in the program
+   *
+   * Used by extendsBaseClass to recursively check inheritance chains.
+   *
+   * @param className - Name of the class to find
+   * @returns Class declaration node or undefined if not found
+   */
+  private findClassDeclaration(
+    className: string,
+  ): ts.ClassDeclaration | undefined {
+    for (const sourceFile of this.program.getSourceFiles()) {
+      if (sourceFile.isDeclarationFile) continue;
+
+      let found: ts.ClassDeclaration | undefined;
+      ts.forEachChild(sourceFile, (node) => {
+        if (ts.isClassDeclaration(node) && node.name?.text === className) {
+          found = node;
+        }
+      });
+
+      if (found) return found;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Extract parent class name from extends clause
+   *
+   * Returns the direct parent class name, or undefined if no extends clause.
+   * This enables inheritance chain tracking in the ObjectRegistry.
+   *
+   * @param node - Class declaration node
+   * @returns Parent class name or undefined
+   */
+  private extractParentClassName(
+    node: ts.ClassDeclaration,
+  ): string | undefined {
+    if (!node.heritageClauses) return undefined;
+
+    for (const clause of node.heritageClauses) {
+      if (clause.token === ts.SyntaxKind.ExtendsKeyword) {
+        // Get the first extends type (TypeScript only allows single inheritance)
+        const type = clause.types[0];
+        if (!type) continue;
+
+        // Handle both simple identifiers and complex expressions
+        if (ts.isIdentifier(type.expression)) {
+          return type.expression.text;
+        } else if (ts.isPropertyAccessExpression(type.expression)) {
+          // Handle cases like 'SmrtBase.SubClass'
+          return type.expression.name?.text;
+        } else if (type.expression) {
+          // Try to extract text from any expression
+          const expressionText = type.expression.getText?.();
+          return expressionText?.split('.').pop()?.trim();
+        }
+      }
+    }
+
+    return undefined;
   }
 
   /**
@@ -480,6 +574,12 @@ export class ASTScanner {
     // Extract default value from initializer
     if (node.initializer) {
       field.default = this.extractDefaultValue(node.initializer);
+
+      // Extract options from field helper calls (e.g., integer({ min: 0, max: 100 }))
+      const options = this.extractFieldOptions(node.initializer, sourceFile);
+      if (options && Object.keys(options).length > 0) {
+        field.options = options;
+      }
     }
 
     return field;
@@ -764,6 +864,108 @@ export class ASTScanner {
     if (ts.isObjectLiteralExpression(node)) return {};
 
     return undefined;
+  }
+
+  /**
+   * Extract options object from field helper calls
+   * Extracts options from: integer({ min: 0, max: 100 }), text({ required: true }), etc.
+   */
+  private extractFieldOptions(
+    node: ts.Expression,
+    sourceFile: ts.SourceFile,
+  ): Record<string, any> | undefined {
+    // Only extract from call expressions (field helpers)
+    if (!ts.isCallExpression(node)) {
+      return undefined;
+    }
+
+    const expression = node.expression;
+    if (!ts.isIdentifier(expression)) {
+      return undefined;
+    }
+
+    const funcName = expression.text.toLowerCase();
+    const fieldHelpers = [
+      'text',
+      'integer',
+      'decimal',
+      'boolean',
+      'datetime',
+      'json',
+      'foreignkey',
+      'onetomany',
+      'manytomany',
+    ];
+
+    // Only extract options from known field helpers
+    if (!fieldHelpers.includes(funcName)) {
+      return undefined;
+    }
+
+    // Get first argument (options object)
+    if (!node.arguments || node.arguments.length === 0) {
+      return undefined;
+    }
+
+    const firstArg = node.arguments[0];
+
+    // Options should be an object literal
+    if (!ts.isObjectLiteralExpression(firstArg)) {
+      return undefined;
+    }
+
+    // Extract properties from the object literal
+    const options: Record<string, any> = {};
+
+    for (const prop of firstArg.properties) {
+      if (!ts.isPropertyAssignment(prop)) continue;
+
+      const key = prop.name?.getText(sourceFile);
+      if (!key) continue;
+
+      const value = this.extractPropertyValue(prop.initializer, sourceFile);
+      if (value !== undefined) {
+        options[key] = value;
+      }
+    }
+
+    return options;
+  }
+
+  /**
+   * Extract value from a property assignment in an options object
+   */
+  private extractPropertyValue(
+    node: ts.Expression,
+    sourceFile: ts.SourceFile,
+  ): any {
+    if (ts.isStringLiteral(node)) return node.text;
+    if (ts.isNumericLiteral(node)) return Number(node.text);
+    if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
+    if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
+    if (node.kind === ts.SyntaxKind.NullKeyword) return null;
+
+    // Handle negative numbers
+    if (ts.isPrefixUnaryExpression(node)) {
+      if (
+        node.operator === ts.SyntaxKind.MinusToken &&
+        ts.isNumericLiteral(node.operand)
+      ) {
+        return -Number(node.operand.text);
+      }
+    }
+
+    // Handle arrays and objects (serialize as JSON for now)
+    if (
+      ts.isArrayLiteralExpression(node) ||
+      ts.isObjectLiteralExpression(node)
+    ) {
+      return node.getText(sourceFile);
+    }
+
+    // For complex expressions, store the source text
+    // (e.g., regex patterns, function calls)
+    return node.getText(sourceFile);
   }
 
   /**

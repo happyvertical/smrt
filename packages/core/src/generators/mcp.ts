@@ -7,7 +7,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
-import { SmrtObject } from '../object';
+import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import {
   generateClaudeConfig,
@@ -280,8 +280,8 @@ export class MCPGenerator {
         included?.filter((item) => !crudOperations.includes(item)) || [];
       const hasCustomMethodsInInclude = customMethodsInInclude.length > 0;
 
-      // Try to discover methods from manifest first
-      const methods = ObjectRegistry.getMethods(objectName);
+      // Try to discover methods from manifest (including inherited methods)
+      const methods = ObjectRegistry.getAllMethods(objectName);
       const methodNames = new Set(Array.from(methods.keys()));
 
       // If we have an include list with custom methods, validate and generate tools
