@@ -1,5 +1,16 @@
 # @happyvertical/smrt-assets
 
+## 0.13.7
+
+### Patch Changes
+
+- febac3c: - chore(core): update SDK dependency and remove DuckDB workaround
+  - fix(core): implement lazy database table initialization to prevent prerendering crashes
+  - fix(ci): resolve issue triage authentication error
+- Updated dependencies [febac3c]
+  - @happyvertical/smrt-core@0.13.7
+  - @happyvertical/smrt-tags@0.13.7
+
 ## 0.13.6
 
 ### Patch Changes
