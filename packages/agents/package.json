@@ -24,7 +24,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@happyvertical/smrt-core": "workspace:*"
+    "@happyvertical/ai": "^0.55.0",
+    "@happyvertical/files": "^0.55.0",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/utils": "^0.55.0"
   },
   "devDependencies": {
     "@happyvertical/logger": "0.55.0",
