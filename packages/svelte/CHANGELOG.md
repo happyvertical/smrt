@@ -1,5 +1,11 @@
 # @happyvertical/smrt-svelte
 
+## 0.14.2
+
+### Patch Changes
+
+- dedf98e: - fix(ci): add 30-second delay before enabling auto-merge on version PR
+
 ## 0.14.1
 
 ## 0.14.0
