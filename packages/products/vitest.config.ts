@@ -48,7 +48,7 @@ export default defineConfig({
     // setupFiles: ['../../vitest.setup.ts'],
 
     // Reporter
-    reporter: process.env.CI ? 'github' : 'default',
+    reporter: 'default',
 
     // Coverage configuration
     coverage: {
