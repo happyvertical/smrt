@@ -1,5 +1,14 @@
 # @happyvertical/smrt-core
 
+## 0.14.2
+
+### Patch Changes
+
+- dedf98e: - fix(ci): add 30-second delay before enabling auto-merge on version PR
+- Updated dependencies [dedf98e]
+  - @happyvertical/smrt-config@0.14.2
+  - @happyvertical/smrt-types@0.14.2
+
 ## 0.14.1
 
 ### Patch Changes

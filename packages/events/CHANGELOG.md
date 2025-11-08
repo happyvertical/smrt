@@ -1,5 +1,15 @@
 # @happyvertical/smrt-events
 
+## 0.14.2
+
+### Patch Changes
+
+- dedf98e: - fix(ci): add 30-second delay before enabling auto-merge on version PR
+- Updated dependencies [dedf98e]
+  - @happyvertical/smrt-core@0.14.2
+  - @happyvertical/smrt-places@0.14.2
+  - @happyvertical/smrt-profiles@0.14.2
+
 ## 0.14.1
 
 ### Patch Changes
