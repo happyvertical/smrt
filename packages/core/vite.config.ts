@@ -49,7 +49,8 @@ export default defineConfig({
       output: {
         dir: resolve(__dirname, 'dist'),
         format: 'es' as const,
-        preserveModules: false,
+        preserveModules: true,
+        preserveModulesRoot: 'src',
         entryFileNames: '[name].js',
         chunkFileNames: 'chunks/[name]-[hash].js',
       },
