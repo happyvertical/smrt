@@ -28,7 +28,7 @@ describe('DynamicClassLoader', () => {
 
       expect(ObjectClass).toBeDefined();
       expect(ObjectClass.name).toBe('SmrtObject');
-    });
+    }, 15000); // Increased timeout for CI - dynamic imports are slower
 
     it('should cache loaded modules', async () => {
       const objectDef: SmartObjectDefinition = {
