@@ -13,7 +13,7 @@
       "cache": true
     },
     "test": {
-      "dependsOn": ["build"],
+      "dependsOn": ["^build", "build"],
       "inputs": ["src/**", "test/**", "**/*.test.ts", "**/*.spec.ts", "package.json", "vitest.config.ts", "vitest.config.js"],
       "outputs": ["coverage/**"],
       "cache": true

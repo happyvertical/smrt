@@ -44,5 +44,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    pool: 'forks', // Fix for vitest 4.0 dynamic import timeouts in workspace
   },
 });
