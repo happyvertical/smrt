@@ -1,11 +1,17 @@
-# This is a template workflow for downstream repositories
-# Copy this to .github/workflows/dependency-cascade.yml in:
-# - happyvertical/smrt
-# - happyvertical/praeco
-# - happyvertical/caelus
-# - blindmanpress/bentleyalberta.com
+# ⚠️  DEPRECATED - This workflow has been consolidated into on-merge-main.yml
+#
+# Cascade handling is now integrated directly into the main branch workflow,
+# which reduces duplication and ensures tests only run once.
+#
+# The on-merge-main.yml workflow now handles:
+# - repository_dispatch events (cascade updates from upstream)
+# - push events (normal merges to main)
+# - workflow_dispatch events (manual triggers)
+#
+# This file is kept for reference only and is disabled.
+# It will be removed in a future update.
 
-name: Dependency Cascade Handler
+name: Dependency Cascade Handler (DEPRECATED)
 
 on:
   # Triggered by upstream repositories
@@ -31,13 +37,17 @@ permissions:
   actions: write
 
 jobs:
-  # Run full test suite (includes build step)
-  test:
-    name: Run Test Suite
-    uses: ./.github/workflows/test-suite.yml
-    permissions:
-      contents: read
-      packages: read
+  # DISABLED: This workflow has been consolidated into on-merge-main.yml
+  deprecated-notice:
+    name: Deprecated Notice
+    runs-on: ubuntu-latest
+    if: false  # Never runs - workflow is deprecated
+    steps:
+      - name: Notice
+        run: |
+          echo "⚠️  This workflow has been deprecated"
+          echo "Cascade handling is now in on-merge-main.yml"
+          exit 1
 
   # Handle dependency updates after tests pass
   handle-update:
