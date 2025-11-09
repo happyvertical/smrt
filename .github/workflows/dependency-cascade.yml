@@ -31,8 +31,18 @@ permissions:
   actions: write
 
 jobs:
+  # Run full test suite (includes build step)
+  test:
+    name: Run Test Suite
+    uses: ./.github/workflows/test-suite.yml
+    permissions:
+      contents: read
+      packages: read
+
+  # Handle dependency updates after tests pass
   handle-update:
     name: Handle Dependency Update
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
