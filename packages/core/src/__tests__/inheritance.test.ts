@@ -494,5 +494,27 @@ describe('Multi-level Class Inheritance', () => {
 
       consoleSpy.mockRestore();
     });
+
+    it('should not warn about framework base classes (SmrtObject) in chain', () => {
+      // This test verifies the fix for issue #261
+      // Previously, getAllFields() would warn about "Missing ancestor class 'SmrtObject'"
+      // even though SmrtObject is a framework base class that shouldn't need to be registered
+
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // Get fields for a simple class that extends SmrtObject
+      const fields = ObjectRegistry.getAllFields('Content');
+
+      // Should NOT warn about SmrtObject being missing
+      expect(consoleSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Missing ancestor class "SmrtObject"'),
+      );
+
+      // Should still include fields from the class
+      expect(fields.has('title')).toBe(true);
+      expect(fields.has('body')).toBe(true);
+
+      consoleSpy.mockRestore();
+    });
   });
 });

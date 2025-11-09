@@ -1458,6 +1458,16 @@ export class ObjectRegistry {
 
     // Walk chain from base to child (parent fields first)
     for (const ancestorName of chain) {
+      // Skip framework base classes (SmrtObject, SmrtClass, SmrtCollection)
+      // Check this BEFORE looking up in registry to avoid false warnings
+      if (
+        ancestorName === 'SmrtObject' ||
+        ancestorName === 'SmrtClass' ||
+        ancestorName === 'SmrtCollection'
+      ) {
+        continue;
+      }
+
       const ancestor = ObjectRegistry.findClass(ancestorName);
 
       // Handle missing ancestors according to config
@@ -1482,15 +1492,6 @@ export class ObjectRegistry {
           console.warn(`[ObjectRegistry] ${message}`);
         }
 
-        continue;
-      }
-
-      // Skip framework base classes (SmrtObject, SmrtClass, SmrtCollection)
-      if (
-        ancestorName === 'SmrtObject' ||
-        ancestorName === 'SmrtClass' ||
-        ancestorName === 'SmrtCollection'
-      ) {
         continue;
       }
 
