@@ -461,11 +461,19 @@ export class SmrtObject extends SmrtClass {
       updated_at: this.updated_at,
     };
 
+    // Get registered field definitions (synchronous access to already-loaded metadata)
+    const registeredFields = ObjectRegistry.getFields(this.constructor.name);
+
     // Get all enumerable properties from the instance
-    // This includes fields defined as class properties
     const allProps = Object.keys(this);
 
-    for (const key of allProps) {
+    // Combine registered fields and enumerable properties
+    const allKeys = new Set([
+      ...allProps,
+      ...Array.from(registeredFields.keys()),
+    ]);
+
+    for (const key of allKeys) {
       // Skip private properties, methods, and already-handled core fields
       if (
         key.startsWith('_') ||
@@ -480,13 +488,29 @@ export class SmrtObject extends SmrtClass {
         continue;
       }
 
+      const prop = (this as any)[key];
       const value = this.getPropertyValue(key);
 
-      // Filter out undefined values (Issue #205)
-      // Leave them out of the JSON - database will use defaults
-      if (value !== undefined) {
-        data[key] = value;
+      // Handle undefined values (Issue #205)
+      // For TEXT fields, convert undefined to empty string
+      if (value === undefined) {
+        const fieldDef = registeredFields.get(key);
+
+        // Check if this field is TEXT type (either from Field instance or registry)
+        const isTextField =
+          (prop &&
+            typeof prop === 'object' &&
+            'type' in prop &&
+            prop.type === 'text') ||
+          (fieldDef && fieldDef.type === 'text');
+
+        if (isTextField) {
+          data[key] = '';
+        }
+        continue; // Skip undefined for non-text fields
       }
+
+      data[key] = value;
     }
 
     return data;
