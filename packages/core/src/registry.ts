@@ -1020,31 +1020,41 @@ export class ObjectRegistry {
       );
     }
 
-    // If fields already loaded, nothing to do
-    if (registered.fields.size > 0) {
-      return;
-    }
-
-    // Try to load manifest from external package
+    // Try to load manifest from external package (even if some fields exist)
+    // This handles cases where AST scanner missed optional fields without initializers
     const manifestEntry = await discoverManifestEntry(
       registered.constructor,
       className,
     );
 
+    if (!manifestEntry) {
+      return;
+    }
+
     if (manifestEntry?.fields) {
-      // Convert FieldDefinition to Field objects
+      const manifestFieldCount = Object.keys(manifestEntry.fields).length;
+      const existingFieldCount = registered.fields.size;
+
+      if (existingFieldCount > 0 && existingFieldCount >= manifestFieldCount) {
+        return;
+      }
+
+      // Convert FieldDefinition to Field objects and merge with existing
       for (const [fieldName, fieldDef] of Object.entries(
         manifestEntry.fields,
       )) {
-        registered.fields.set(
-          fieldName,
-          new Field(fieldDef.type, {
-            required: fieldDef.required,
-            default: fieldDef.default,
-            description: fieldDef.description,
-            ...fieldDef.options, // Includes unique, primaryKey, index, etc.
-          }),
-        );
+        // Only add if not already present (don't overwrite AST-scanned fields)
+        if (!registered.fields.has(fieldName)) {
+          registered.fields.set(
+            fieldName,
+            new Field(fieldDef.type, {
+              required: fieldDef.required,
+              default: fieldDef.default,
+              description: fieldDef.description,
+              ...fieldDef.options, // Includes unique, primaryKey, index, etc.
+            }),
+          );
+        }
       }
 
       // Load method definitions from manifest
@@ -1361,12 +1371,12 @@ export class ObjectRegistry {
 
     // Walk up the prototype chain
     while (current?.name) {
-      chain.unshift(current.name); // Add to front (we're walking child → base)
-
       // Stop at SmrtObject (don't include it in chain unless it's the class itself)
       if (current.name === 'SmrtObject') {
         break;
       }
+
+      chain.unshift(current.name); // Add to front (we're walking child → base)
 
       current = Object.getPrototypeOf(current);
     }
@@ -1438,7 +1448,7 @@ export class ObjectRegistry {
    * // Includes: title, body (from Content) + praecoCustom1 (from PraecoContent) + bentleyCustom1 (from BentleyContent)
    * ```
    */
-  static getAllFields(className: string): Map<string, any> {
+  static async getAllFields(className: string): Promise<Map<string, any>> {
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return new Map();
@@ -1466,6 +1476,15 @@ export class ObjectRegistry {
         ancestorName === 'SmrtCollection'
       ) {
         continue;
+      }
+
+      // Load manifest for ancestor class (handles external packages)
+      // This ensures inherited fields from external packages are available
+      try {
+        await ObjectRegistry.ensureManifestLoaded(ancestorName);
+      } catch (error) {
+        // Manifest loading failed - this is expected for classes not in manifest
+        // The findClass check below will handle the missing ancestor
       }
 
       const ancestor = ObjectRegistry.findClass(ancestorName);
@@ -1614,16 +1633,18 @@ export class ObjectRegistry {
    *
    * Results are cached per-class for performance.
    *
+   * **Note:** This is an async method that ensures manifests are loaded for external package classes.
+   *
    * @param className - Name of the registered class
-   * @returns Map of all methods (own + inherited)
+   * @returns Promise resolving to Map of all methods (own + inherited)
    * @example
    * ```typescript
    * // Given: Content → PraecoContent → BentleyContent
-   * const allMethods = ObjectRegistry.getAllMethods('BentleyContent');
+   * const allMethods = await ObjectRegistry.getAllMethods('BentleyContent');
    * // Includes: generateSummary() (from PraecoContent) + analyzeLocal() (from BentleyContent)
    * ```
    */
-  static getAllMethods(className: string): Map<string, any> {
+  static async getAllMethods(className: string): Promise<Map<string, any>> {
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return new Map();
@@ -1640,10 +1661,7 @@ export class ObjectRegistry {
 
     // Walk chain from base to child (parent methods first)
     for (const ancestorName of chain) {
-      const ancestor = ObjectRegistry.findClass(ancestorName);
-      if (!ancestor) continue;
-
-      // Skip framework base classes
+      // Skip framework base classes (check BEFORE looking up in registry)
       if (
         ancestorName === 'SmrtObject' ||
         ancestorName === 'SmrtClass' ||
@@ -1651,6 +1669,18 @@ export class ObjectRegistry {
       ) {
         continue;
       }
+
+      // Load manifest for ancestor class (handles external packages)
+      // This ensures inherited methods from external packages are available
+      try {
+        await ObjectRegistry.ensureManifestLoaded(ancestorName);
+      } catch (error) {
+        // Manifest loading failed - this is expected for classes not in manifest
+        // Continue to next ancestor
+      }
+
+      const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (!ancestor) continue;
 
       // Merge parent methods into result
       for (const [methodName, method] of ancestor.methods) {

@@ -129,18 +129,18 @@ export function dateAsObject(date: Date | string) {
  *   price = decimal();
  * }
  *
- * const fields = fieldsFromClass(Product);
+ * const fields = await fieldsFromClass(Product);
  * console.log(fields.name.type); // 'TEXT'
  * console.log(fields.price.type); // 'REAL'
  * ```
  */
-export function fieldsFromClass(
+export async function fieldsFromClass(
   ClassType: new (...args: any[]) => any,
   values?: Record<string, any>,
 ) {
   const className = ClassType.name;
   // NEW: Use getAllFields() to include inherited fields from parent classes
-  const cachedFields = ObjectRegistry.getAllFields(className);
+  const cachedFields = await ObjectRegistry.getAllFields(className);
 
   // Phase 2: AST manifest only - no runtime introspection fallback
   if (cachedFields.size === 0) {

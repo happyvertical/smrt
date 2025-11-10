@@ -390,48 +390,175 @@ export function discoverManifestSync(
 }
 
 /**
+ * Track discovered manifest entries to detect collisions
+ * Maps className -> Array<{packageName, filePath, manifestSource}>
+ */
+const manifestCollisions = new Map<
+  string,
+  Array<{ packageName: string; filePath?: string; manifestSource: string }>
+>();
+
+/**
  * Discover manifest entry asynchronously (includes external package loading)
  *
  * Search order:
- * 1. testManifest (for test classes)
- * 2. staticManifest (for core framework classes)
- * 3. Cached external manifests
- * 4. External package manifest (dynamic import)
+ * 1. External package manifest (for constructor's package) - PRIORITIZED
+ * 2. testManifest (for test classes)
+ * 3. staticManifest (for core framework classes)
+ * 4. Cached external manifests
+ *
+ * This function now detects and reports class name collisions across packages.
  *
  * @param ctor - Class constructor
  * @param className - Class name (for lookup)
  * @returns ManifestEntry or undefined if not found
+ * @throws {Error} If class name collision detected across different packages
  */
 export async function discoverManifestEntry(
   ctor: new (...args: any[]) => any,
   className: string,
 ): Promise<ManifestEntry | undefined> {
-  // First try synchronous lookup
-  const syncEntry = discoverManifestSync(className);
-  if (syncEntry) {
-    return syncEntry;
-  }
+  const name = className.toLowerCase();
+  const constructorPackage = getPackageName(ctor);
 
-  // Try loading from external package
-  const packageName = getPackageName(ctor);
+  // Track all manifest sources that define this class
+  const foundEntries: Array<{
+    entry: ManifestEntry;
+    packageName: string;
+    filePath?: string;
+    manifestSource: string;
+  }> = [];
 
-  if (packageName) {
-    const manifest = await loadExternalManifest(packageName);
+  // 1. PRIORITY: Try loading from the constructor's package first
+  if (constructorPackage) {
+    const manifest = await loadExternalManifest(constructorPackage);
     if (manifest) {
-      const name = className.toLowerCase();
-      // Try lowercase first, then exact case
       const entry = manifest.objects[name] || manifest.objects[className];
       if (entry) {
-        // Enrich entry with packageName from manifest if not already present
-        if (!entry.packageName && manifest.packageName) {
-          return { ...entry, packageName: manifest.packageName };
-        }
-        return entry;
+        const enrichedEntry =
+          !entry.packageName && manifest.packageName
+            ? { ...entry, packageName: manifest.packageName }
+            : entry;
+
+        foundEntries.push({
+          entry: enrichedEntry,
+          packageName: manifest.packageName || constructorPackage,
+          filePath: entry.filePath,
+          manifestSource: `${manifest.packageName || constructorPackage}/manifest.json`,
+        });
       }
     }
   }
 
+  // 2. Check localTestManifest (domain package test classes)
+  if (localTestManifest === undefined) {
+    loadLocalTestManifestSync();
+  }
+  const localEntry =
+    localTestManifest?.objects[name] || localTestManifest?.objects[className];
+  if (localEntry) {
+    foundEntries.push({
+      entry: localEntry,
+      packageName: localTestManifest?.packageName || 'local-test',
+      filePath: localEntry.filePath,
+      manifestSource: 'local test manifest',
+    });
+  }
+
+  // 3. Check testManifest (core test classes)
+  const testEntry =
+    testManifest?.objects[name] || testManifest?.objects[className];
+  if (testEntry) {
+    foundEntries.push({
+      entry: testEntry,
+      packageName: testManifest.packageName || '@happyvertical/smrt-core',
+      filePath: testEntry.filePath,
+      manifestSource: '@happyvertical/smrt-core test manifest',
+    });
+  }
+
+  // 4. Check staticManifest (core framework classes)
+  const staticObjects = staticManifest.objects as Record<string, ManifestEntry>;
+  const staticEntry = staticObjects[name] || staticObjects[className];
+  if (staticEntry) {
+    foundEntries.push({
+      entry: staticEntry,
+      packageName: staticManifest.packageName || '@happyvertical/smrt-core',
+      filePath: staticEntry.filePath,
+      manifestSource: '@happyvertical/smrt-core static manifest',
+    });
+  }
+
+  // 5. Check other cached external manifests
+  for (const [cachedPkgName, manifest] of manifestCache.entries()) {
+    // Skip if this is the constructor's package (already checked above)
+    if (cachedPkgName === constructorPackage) {
+      continue;
+    }
+
+    const entry = manifest.objects[name] || manifest.objects[className];
+    if (entry) {
+      foundEntries.push({
+        entry:
+          !entry.packageName && manifest.packageName
+            ? { ...entry, packageName: manifest.packageName }
+            : entry,
+        packageName: manifest.packageName || cachedPkgName,
+        filePath: entry.filePath,
+        manifestSource: `${manifest.packageName || cachedPkgName}/manifest.json`,
+      });
+    }
+  }
+
+  // Detect collisions: multiple packages defining the same class name
+  if (foundEntries.length > 1) {
+    const collisionInfo = foundEntries.map(
+      (f) =>
+        `  - ${f.packageName} (${f.filePath || 'unknown file'}) from ${f.manifestSource}`,
+    );
+
+    // Store collision info for reporting
+    manifestCollisions.set(
+      className,
+      foundEntries.map((f) => ({
+        packageName: f.packageName,
+        filePath: f.filePath,
+        manifestSource: f.manifestSource,
+      })),
+    );
+
+    // Throw error on collision
+    throw new Error(
+      `SMRT Class Name Collision Detected: "${className}"\n\n` +
+        `This class is defined in multiple packages:\n${collisionInfo.join('\n')}\n\n` +
+        `The collision will cause the wrong field definitions to be used,\n` +
+        `leading to properties not being initialized correctly.\n\n` +
+        `To fix:\n` +
+        `  1. Use unique class names across packages (e.g., ${className}_${constructorPackage?.split('/').pop() || 'Unique'})\n` +
+        `  2. Or use @smrt({ name: 'unique_name' }) to override the registration name\n` +
+        `  3. Remove test classes with conflicting names from production manifests\n\n` +
+        `If this is a test class collision, ensure test manifests are not included in production builds.`,
+    );
+  }
+
+  // Return the found entry (priority given to constructor's package)
+  if (foundEntries.length === 1) {
+    return foundEntries[0].entry;
+  }
+
   return undefined;
+}
+
+/**
+ * Get all detected manifest collisions
+ *
+ * @returns Map of class names to array of collision info
+ */
+export function getManifestCollisions(): Map<
+  string,
+  Array<{ packageName: string; filePath?: string; manifestSource: string }>
+> {
+  return new Map(manifestCollisions);
 }
 
 /**

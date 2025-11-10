@@ -54,8 +54,8 @@ describe('MCP Protocol Compliance', () => {
   });
 
   describe('Tool Definition Format', () => {
-    it('should generate tools with required MCP structure', () => {
-      const tools = generator.generateTools();
+    it('should generate tools with required MCP structure', async () => {
+      const tools = await generator.generateTools();
 
       tools.forEach((tool) => {
         // Required fields per MCP spec
@@ -70,8 +70,8 @@ describe('MCP Protocol Compliance', () => {
       });
     });
 
-    it('should use JSON Schema for inputSchema', () => {
-      const tools = generator.generateTools();
+    it('should use JSON Schema for inputSchema', async () => {
+      const tools = await generator.generateTools();
 
       tools.forEach((tool) => {
         const schema = tool.inputSchema;
@@ -90,8 +90,8 @@ describe('MCP Protocol Compliance', () => {
       });
     });
 
-    it('should name tools following {objectname}_{action} convention', () => {
-      const tools = generator.generateTools();
+    it('should name tools following {objectname}_{action} convention', async () => {
+      const tools = await generator.generateTools();
       const protocolTools = tools.filter((t) =>
         t.name.startsWith('protocoltestobject_'),
       );
@@ -106,8 +106,8 @@ describe('MCP Protocol Compliance', () => {
       });
     });
 
-    it('should include clear descriptions for all tools', () => {
-      const tools = generator.generateTools();
+    it('should include clear descriptions for all tools', async () => {
+      const tools = await generator.generateTools();
 
       tools.forEach((tool) => {
         expect(tool.description.length).toBeGreaterThan(10);
@@ -118,8 +118,8 @@ describe('MCP Protocol Compliance', () => {
   });
 
   describe('Standard CRUD Tool Structure', () => {
-    it('should define list tool correctly', () => {
-      const tools = generator.generateTools();
+    it('should define list tool correctly', async () => {
+      const tools = await generator.generateTools();
       const listTool = tools.find((t) => t.name === 'protocoltestobject_list');
 
       expect(listTool).toBeDefined();
@@ -129,8 +129,8 @@ describe('MCP Protocol Compliance', () => {
       expect(listTool?.inputSchema.properties).toHaveProperty('where');
     });
 
-    it('should define get tool correctly', () => {
-      const tools = generator.generateTools();
+    it('should define get tool correctly', async () => {
+      const tools = await generator.generateTools();
       const getTool = tools.find((t) => t.name === 'protocoltestobject_get');
 
       expect(getTool).toBeDefined();
@@ -139,8 +139,8 @@ describe('MCP Protocol Compliance', () => {
       expect(getTool?.inputSchema.required).toContain('id');
     });
 
-    it('should define custom action tools correctly', () => {
-      const tools = generator.generateTools();
+    it('should define custom action tools correctly', async () => {
+      const tools = await generator.generateTools();
       const actionTool = tools.find(
         (t) => t.name === 'protocoltestobject_testaction',
       );
@@ -206,8 +206,8 @@ describe('MCP Protocol Compliance', () => {
   });
 
   describe('Tool List Response Format', () => {
-    it('should return tools in MCP ListToolsResult format', () => {
-      const tools = generator.generateTools();
+    it('should return tools in MCP ListToolsResult format', async () => {
+      const tools = await generator.generateTools();
 
       // Must be an array
       expect(Array.isArray(tools)).toBe(true);
@@ -235,7 +235,7 @@ describe('MCP Protocol Compliance', () => {
         description: 'Test description',
       });
 
-      const tools = generator.generateTools();
+      const tools = await generator.generateTools();
 
       // Metadata should be accessible
       expect(generator).toHaveProperty('name');
@@ -340,8 +340,8 @@ describe('MCP Protocol Compliance', () => {
   });
 
   describe('Protocol Version Compatibility', () => {
-    it('should use MCP SDK compatible types', () => {
-      const tools = generator.generateTools();
+    it('should use MCP SDK compatible types', async () => {
+      const tools = await generator.generateTools();
 
       // Tool structure matches @modelcontextprotocol/sdk types
       tools.forEach((tool) => {
@@ -377,8 +377,8 @@ describe('MCP Protocol Compliance', () => {
   });
 
   describe('Tool Discovery', () => {
-    it('should make all registered SMRT objects discoverable', () => {
-      const tools = generator.generateTools();
+    it('should make all registered SMRT objects discoverable', async () => {
+      const tools = await generator.generateTools();
 
       // Should find tools for our test object
       const testObjectTools = tools.filter((t) =>
@@ -394,8 +394,8 @@ describe('MCP Protocol Compliance', () => {
       expect(toolNames).toContain('protocoltestobject_testaction');
     });
 
-    it('should respect MCP configuration excludes', () => {
-      const tools = generator.generateTools();
+    it('should respect MCP configuration excludes', async () => {
+      const tools = await generator.generateTools();
 
       // If an action is excluded in MCP config, it shouldn't appear
       // Test objects include create/update/delete by default

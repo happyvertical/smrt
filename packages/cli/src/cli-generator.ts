@@ -373,7 +373,8 @@ export class CLIGenerator {
 
     // Generate object commands
     for (const [name, classInfo] of registeredClasses) {
-      commands.push(...this.generateObjectCommands(name, classInfo));
+      const objectCommands = await this.generateObjectCommands(name, classInfo);
+      commands.push(...objectCommands);
     }
 
     // Add utility commands
@@ -385,10 +386,10 @@ export class CLIGenerator {
   /**
    * Generate CRUD commands for a specific object
    */
-  private generateObjectCommands(
+  private async generateObjectCommands(
     objectName: string,
     _classInfo: any,
-  ): CLICommand[] {
+  ): Promise<CLICommand[]> {
     const commands: CLICommand[] = [];
     const lowerName = objectName.toLowerCase();
     const config = ObjectRegistry.getConfig(objectName);
@@ -541,7 +542,7 @@ export class CLIGenerator {
     }
 
     // CUSTOM METHODS - discover from manifest (including inherited methods)
-    const methods = ObjectRegistry.getAllMethods(objectName);
+    const methods = await ObjectRegistry.getAllMethods(objectName);
 
     // Check if include list contains any custom method names (indicates strict mode)
     const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
@@ -1182,7 +1183,7 @@ export class CLIGenerator {
       }
 
       // Get method metadata for parameter mapping (including inherited methods)
-      const methods = ObjectRegistry.getAllMethods(objectName);
+      const methods = await ObjectRegistry.getAllMethods(objectName);
       const methodDef = methods.get(methodName);
 
       if (!methodDef) {

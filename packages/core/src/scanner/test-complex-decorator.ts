@@ -11,8 +11,8 @@ function smrt(_config?: any) {
 }
 
 // Simple decorator (should work)
-@smrt({ tableName: 'councils' })
-export class Council extends SmrtObject {
+@smrt({ tableName: 'test_councils' })
+export class TestCouncil extends SmrtObject {
   name = '';
   url = '';
 }

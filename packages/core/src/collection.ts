@@ -44,12 +44,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * // Output: { 'type_id': 'foo', 'category_id >': 100 }
    * ```
    */
-  private convertWhereKeys(where: Record<string, any>): Record<string, any> {
+  private async convertWhereKeys(
+    where: Record<string, any>,
+  ): Promise<Record<string, any>> {
     // Whitelist of allowed SQL operators
     const VALID_OPERATORS = ['=', '>', '<', '>=', '<=', '!=', 'in', 'like'];
 
     // Get schema fields for validation
-    const fields = this.getFields();
+    const fields = await this.getFields();
     const validFieldNames = new Set(
       Object.keys(fields).map((f) => toSnakeCase(f)),
     );
@@ -333,6 +335,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   public async get(filter: string | Record<string, any>) {
     await this.setupDb();
 
+    // Ensure manifest is loaded for external packages before validating WHERE clause
+    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+
     const where =
       typeof filter === 'string'
         ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -343,7 +348,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         : filter;
 
     const { sql: whereSql, values: whereValues } = buildWhere(
-      this.convertWhereKeys(where),
+      await this.convertWhereKeys(where),
     );
 
     const { rows } = await this.db.query(
@@ -354,7 +359,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return null;
     }
 
-    const fields = this.getFields();
+    const fields = await this.getFields();
     return this.create(formatDataJs(rows[0], fields));
   }
 
@@ -418,9 +423,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }) {
     await this.setupDb();
 
+    // Ensure manifest is loaded for external packages before validating WHERE clause
+    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+
     const { where, offset, limit, orderBy } = options;
     const { sql: whereSql, values: whereValues } = buildWhere(
-      this.convertWhereKeys(where || {}),
+      await this.convertWhereKeys(where || {}),
     );
 
     let orderBySql = '';
@@ -469,7 +477,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`,
       [...whereValues, ...limitOffsetValues],
     );
-    const fields = this.getFields();
+    const fields = await this.getFields();
     const instances = await Promise.all(
       result.rows.map((item: object) =>
         this.create(formatDataJs(item, fields)),
@@ -713,7 +721,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     const existing = await this.get(where);
     if (existing) {
-      const diff = this.getDiff(existing, data);
+      const diff = await this.getDiff(existing, data);
       if (diff) {
         Object.assign(existing, diff);
         await existing.save();
@@ -734,11 +742,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @param data - New data
    * @returns Object containing only the changed fields
    */
-  getDiff(
+  async getDiff(
     existing: Record<string, any>,
     data: Record<string, any>,
-  ): Record<string, any> {
-    const fields = this._itemClass.prototype.getFields();
+  ): Promise<Record<string, any>> {
+    const fields = await this._itemClass.prototype.getFields();
     return Object.keys(data).reduce(
       (acc, key) => {
         if (fields[key] && existing[key] !== data[key]) {
@@ -782,8 +790,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @returns Object containing field definitions
    */
-  getFields() {
-    return fieldsFromClass(this._itemClass);
+  async getFields() {
+    return await fieldsFromClass(this._itemClass);
   }
 
   /**
@@ -842,7 +850,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const { where } = options;
     const { sql: whereSql, values: whereValues } = buildWhere(
-      this.convertWhereKeys(where || {}),
+      await this.convertWhereKeys(where || {}),
     );
 
     const result = await this.db.query(

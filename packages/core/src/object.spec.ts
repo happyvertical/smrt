@@ -22,7 +22,7 @@ class TestObject extends SmrtObject {
 
 // Test class for readonly property handling (Issue #61)
 @smrt({ tableName: 'custom_councils' })
-class Council extends SmrtObject {
+class TestCouncil extends SmrtObject {
   name = text();
   description? = text();
 }
@@ -117,7 +117,7 @@ describe('SmrtObject', () => {
       // This would previously throw:
       // "TypeError: Cannot set property tableName of #<SmrtObject> which has only a getter"
       expect(async () => {
-        const council = new Council({
+        const council = new TestCouncil({
           name: 'Test Council',
           description: 'A test council',
           _skipLoad: true,
@@ -127,7 +127,7 @@ describe('SmrtObject', () => {
     });
 
     it('should allow accessing tableName getter after initialization', async () => {
-      const council = new Council({
+      const council = new TestCouncil({
         name: 'Test Council',
         _skipLoad: true,
       });
@@ -138,7 +138,7 @@ describe('SmrtObject', () => {
     });
 
     it('should handle object creation with property values', async () => {
-      const council = new Council({
+      const council = new TestCouncil({
         name: 'City Council',
         description: 'Main city governing body',
         _skipLoad: true,
@@ -153,7 +153,7 @@ describe('SmrtObject', () => {
 
     it('should not throw error in loadDataFromDb (Issue #63)', async () => {
       // Test loadDataFromDb() directly - it should skip readonly properties
-      const council = new Council({
+      const council = new TestCouncil({
         _skipLoad: true,
       });
       await council.initialize();
