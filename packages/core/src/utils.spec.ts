@@ -20,8 +20,8 @@ class TestClass extends SmrtObject {
   }
 }
 
-it('should get fields from a class without values', () => {
-  const fields = fieldsFromClass(TestClass);
+it('should get fields from a class without values', async () => {
+  const fields = await fieldsFromClass(TestClass);
   expect(fields).toEqual({
     // Inherited fields from SmrtObject
     id: {
@@ -64,7 +64,7 @@ it('should get fields from a class without values', () => {
   expect(fields).not.toHaveProperty('methodField');
 });
 
-it('should get fields from a class with values', () => {
+it('should get fields from a class with values', async () => {
   const values = {
     test_string: 'custom value',
     test_number: 456,
@@ -72,7 +72,7 @@ it('should get fields from a class with values', () => {
     extraField: 'should not appear',
   };
 
-  const fields = fieldsFromClass(TestClass, values);
+  const fields = await fieldsFromClass(TestClass, values);
 
   expect(fields).toEqual({
     // Inherited fields from SmrtObject (no values set)

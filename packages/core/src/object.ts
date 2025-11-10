@@ -195,7 +195,7 @@ export class SmrtObject extends SmrtClass {
    * This ensures option values take precedence over default field initializer values
    * Uses smart cloning to prevent array/object aliasing (Issue #22)
    */
-  private initializePropertiesFromOptions(): void {
+  private async initializePropertiesFromOptions(): Promise<void> {
     const options = this.options;
 
     // Set base properties that exist on SmrtObject
@@ -203,7 +203,7 @@ export class SmrtObject extends SmrtClass {
     if (options.updated_at !== undefined) this.updated_at = options.updated_at;
 
     // Get all fields (both Field instances and plain properties)
-    const fields = fieldsFromClass(
+    const fields = await fieldsFromClass(
       this.constructor as new (
         ...args: any[]
       ) => any,
@@ -313,7 +313,7 @@ export class SmrtObject extends SmrtClass {
     // Initialize properties from options AFTER all field initializers have run
     // This prevents TypeScript field initializers from overwriting option values
     if (!this.options._extractingFields) {
-      this.initializePropertiesFromOptions();
+      await this.initializePropertiesFromOptions();
     }
 
     // NOTE: Database table setup is now deferred until first database operation (lazy initialization)
@@ -362,8 +362,8 @@ export class SmrtObject extends SmrtClass {
    *
    * @param data - Database row data
    */
-  loadDataFromDb(data: any) {
-    const fields = this.getFields();
+  async loadDataFromDb(data: any) {
+    const fields = await this.getFields();
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
         // Check if property is writable before setting (Issue #63)
@@ -424,10 +424,10 @@ export class SmrtObject extends SmrtClass {
    *
    * @returns Object containing field definitions with current values
    */
-  getFields() {
+  async getFields() {
     // Use cached field definitions from ObjectRegistry (via fieldsFromClass)
     // This is much more efficient than creating temporary instances
-    const fields = fieldsFromClass(
+    const fields = await fieldsFromClass(
       this.constructor as new (
         ...args: any[]
       ) => any,
@@ -685,7 +685,7 @@ export class SmrtObject extends SmrtClass {
     } else {
       // Fallback to old validation logic if no cached validators
       // (for classes not registered with ObjectRegistry)
-      const fields = fieldsFromClass(this.constructor as any);
+      const fields = await fieldsFromClass(this.constructor as any);
 
       for (const [fieldName, field] of Object.entries(fields)) {
         if (field instanceof Field && field.options.required) {
@@ -771,7 +771,7 @@ export class SmrtObject extends SmrtClass {
               id: this._id,
             });
             if (existing) {
-              this.loadDataFromDb(existing);
+              await this.loadDataFromDb(existing);
             }
           } catch (error) {
             throw DatabaseError.queryFailed(
@@ -809,7 +809,7 @@ export class SmrtObject extends SmrtClass {
       context: this._context || '',
     });
     if (existing) {
-      this.loadDataFromDb(existing);
+      await this.loadDataFromDb(existing);
     }
   }
 
