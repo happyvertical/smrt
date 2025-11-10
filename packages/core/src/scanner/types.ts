@@ -24,6 +24,7 @@ export interface FieldDefinition {
   related?: string; // For foreignKey, oneToMany, manyToMany
   description?: string;
   options?: Record<string, any>;
+  transient?: boolean; // Field not persisted to database
 }
 
 export interface MethodDefinition {

@@ -351,6 +351,11 @@ export class SchemaGenerator {
 
     // Add fields from ObjectRegistry
     for (const [fieldName, field] of fields.entries()) {
+      // Skip transient fields (non-persisted)
+      if (field.transient || field.options?.transient) {
+        continue;
+      }
+
       // Skip default fields if already added
       if (
         !hasCustomPK &&

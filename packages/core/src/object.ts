@@ -488,14 +488,20 @@ export class SmrtObject extends SmrtClass {
         continue;
       }
 
+      // Get field definition (used for transient check and type checking)
+      const fieldDef = registeredFields.get(key);
+
+      // Skip transient fields (non-persisted fields like functions, computed properties)
+      if (fieldDef && (fieldDef.transient || fieldDef.options?.transient)) {
+        continue;
+      }
+
       const prop = (this as any)[key];
       const value = this.getPropertyValue(key);
 
       // Handle undefined values (Issue #205)
       // For TEXT fields, convert undefined to empty string
       if (value === undefined) {
-        const fieldDef = registeredFields.get(key);
-
         // Check if this field is TEXT type (either from Field instance or registry)
         const isTextField =
           (prop &&

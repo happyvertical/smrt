@@ -51,6 +51,8 @@ export interface FieldOptions {
   index?: boolean;
   /** Human-readable description of the field's purpose */
   description?: string;
+  /** Whether this field is transient (not persisted to database) - useful for computed properties, functions, etc. */
+  transient?: boolean;
   /**
    * Custom validation function (synchronous or asynchronous)
    * Should return true if valid, false if invalid
@@ -133,6 +135,14 @@ export class Field {
     this.type = type;
     this.options = options;
     this.value = options.default;
+  }
+
+  /**
+   * Check if this field is transient (not persisted to database)
+   * Convenience getter that checks options.transient
+   */
+  get transient(): boolean | undefined {
+    return this.options.transient;
   }
 
   /**

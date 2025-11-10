@@ -369,6 +369,7 @@ export class ObjectRegistry {
             required: fieldDef.required,
             default: fieldDef.default,
             description: fieldDef.description,
+            transient: fieldDef.transient, // Mark transient fields (non-persisted)
             ...fieldDef.options, // Includes unique, primaryKey, index, etc.
           }),
         );
