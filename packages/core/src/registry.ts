@@ -170,6 +170,13 @@ export interface SmartObjectConfig {
     beforeDelete?: string | ((instance: any) => Promise<void>);
     afterDelete?: string | ((instance: any) => Promise<void>);
   };
+
+  /**
+   * Synchronous manifest for build-time imports (Issue #270 Phase 1)
+   * Allows passing manifest directly instead of async loading
+   * @internal Advanced usage - typically set by build tools
+   */
+  _manifest?: SmartObjectManifest;
 }
 
 /**
@@ -345,13 +352,16 @@ export class ObjectRegistry {
     // This solves issue #159 where external package manifests couldn't be loaded.
     const packageNameFromStack = getPackageName(ctor, true) || undefined;
 
-    // Get field definitions from manifest (synchronous lookup of loaded manifests)
-    // Supports:
-    // 1. Test manifests (for test classes)
-    // 2. Static manifests (for core framework classes)
-    // 3. Cached external manifests (if already loaded)
+    // Get field definitions from manifest
+    // Priority order (Issue #270 Phase 1 - synchronous manifest loading):
+    // 1. Explicitly provided manifest (_manifest parameter)
+    // 2. Test manifests (for test classes)
+    // 3. Static manifests (for core framework classes)
+    // 4. Cached external manifests (if already loaded)
     // For external packages not yet loaded, manifest discovery happens lazily during schema generation
-    const manifestEntry = discoverManifestSync(name);
+    const manifestEntry =
+      config._manifest?.objects?.[name.toLowerCase()] ??
+      discoverManifestSync(name);
     const fields = new Map<string, any>();
     const methods = new Map<string, any>();
     let packageName: string | undefined;
@@ -376,7 +386,11 @@ export class ObjectRegistry {
       }
 
       // Use packageName from manifest if available, otherwise from stack trace
-      packageName = manifestEntry.packageName || packageNameFromStack;
+      // Priority: explicit manifest > manifestEntry > stack trace
+      packageName =
+        config._manifest?.packageName ||
+        manifestEntry.packageName ||
+        packageNameFromStack;
     } else {
       // No manifest found yet - use package name from stack trace
       // This will be used later by ensureManifestLoaded() to load the external manifest
