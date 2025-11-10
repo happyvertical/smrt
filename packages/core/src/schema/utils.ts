@@ -58,7 +58,7 @@ export async function generateSchema(
   const cachedFields =
     providedFields && providedFields.size > 0
       ? providedFields
-      : ObjectRegistry.getAllFields(className);
+      : await ObjectRegistry.getAllFields(className);
 
   // Throw error if class is not registered AND no fields provided
   if (cachedFields.size === 0) {

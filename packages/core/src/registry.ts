@@ -1438,7 +1438,7 @@ export class ObjectRegistry {
    * // Includes: title, body (from Content) + praecoCustom1 (from PraecoContent) + bentleyCustom1 (from BentleyContent)
    * ```
    */
-  static getAllFields(className: string): Map<string, any> {
+  static async getAllFields(className: string): Promise<Map<string, any>> {
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return new Map();
@@ -1466,6 +1466,15 @@ export class ObjectRegistry {
         ancestorName === 'SmrtCollection'
       ) {
         continue;
+      }
+
+      // Load manifest for ancestor class (handles external packages)
+      // This ensures inherited fields from external packages are available
+      try {
+        await ObjectRegistry.ensureManifestLoaded(ancestorName);
+      } catch (error) {
+        // Manifest loading failed - this is expected for classes not in manifest
+        // The findClass check below will handle the missing ancestor
       }
 
       const ancestor = ObjectRegistry.findClass(ancestorName);
@@ -1614,16 +1623,18 @@ export class ObjectRegistry {
    *
    * Results are cached per-class for performance.
    *
+   * **Note:** This is an async method that ensures manifests are loaded for external package classes.
+   *
    * @param className - Name of the registered class
-   * @returns Map of all methods (own + inherited)
+   * @returns Promise resolving to Map of all methods (own + inherited)
    * @example
    * ```typescript
    * // Given: Content → PraecoContent → BentleyContent
-   * const allMethods = ObjectRegistry.getAllMethods('BentleyContent');
+   * const allMethods = await ObjectRegistry.getAllMethods('BentleyContent');
    * // Includes: generateSummary() (from PraecoContent) + analyzeLocal() (from BentleyContent)
    * ```
    */
-  static getAllMethods(className: string): Map<string, any> {
+  static async getAllMethods(className: string): Promise<Map<string, any>> {
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return new Map();
@@ -1640,10 +1651,7 @@ export class ObjectRegistry {
 
     // Walk chain from base to child (parent methods first)
     for (const ancestorName of chain) {
-      const ancestor = ObjectRegistry.findClass(ancestorName);
-      if (!ancestor) continue;
-
-      // Skip framework base classes
+      // Skip framework base classes (check BEFORE looking up in registry)
       if (
         ancestorName === 'SmrtObject' ||
         ancestorName === 'SmrtClass' ||
@@ -1651,6 +1659,18 @@ export class ObjectRegistry {
       ) {
         continue;
       }
+
+      // Load manifest for ancestor class (handles external packages)
+      // This ensures inherited methods from external packages are available
+      try {
+        await ObjectRegistry.ensureManifestLoaded(ancestorName);
+      } catch (error) {
+        // Manifest loading failed - this is expected for classes not in manifest
+        // Continue to next ancestor
+      }
+
+      const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (!ancestor) continue;
 
       // Merge parent methods into result
       for (const [methodName, method] of ancestor.methods) {

@@ -100,7 +100,7 @@ export class MCPGenerator {
   /**
    * Generate all available tools from registered objects
    */
-  generateTools(): MCPTool[] {
+  async generateTools(): Promise<MCPTool[]> {
     const tools: MCPTool[] = [];
     const registeredClasses = ObjectRegistry.getAllClasses();
 
@@ -122,7 +122,7 @@ export class MCPGenerator {
         return true;
       };
 
-      const objectTools = this.generateObjectTools(name, shouldInclude);
+      const objectTools = await this.generateObjectTools(name, shouldInclude);
       tools.push(...objectTools);
     }
 
@@ -132,10 +132,10 @@ export class MCPGenerator {
   /**
    * Generate tools for a specific object
    */
-  private generateObjectTools(
+  private async generateObjectTools(
     objectName: string,
     shouldInclude: (endpoint: string) => boolean,
-  ): MCPTool[] {
+  ): Promise<MCPTool[]> {
     const tools: MCPTool[] = [];
     const fields = ObjectRegistry.getFields(objectName);
     const lowerName = objectName.toLowerCase();
@@ -281,7 +281,7 @@ export class MCPGenerator {
       const hasCustomMethodsInInclude = customMethodsInInclude.length > 0;
 
       // Try to discover methods from manifest (including inherited methods)
-      const methods = ObjectRegistry.getAllMethods(objectName);
+      const methods = await ObjectRegistry.getAllMethods(objectName);
       const methodNames = new Set(Array.from(methods.keys()));
 
       // If we have an include list with custom methods, validate and generate tools
@@ -458,7 +458,7 @@ export class MCPGenerator {
 
     try {
       // Check if tool exists
-      const availableTools = this.generateTools();
+      const availableTools = await this.generateTools();
       const toolExists = availableTools.some((t) => t.name === name);
 
       if (!toolExists) {
@@ -806,7 +806,7 @@ export class MCPGenerator {
       );
     } else {
       // Generate single-file server with static tools
-      const tools = this.generateTools();
+      const tools = await this.generateTools();
 
       const runtimeOptions: RuntimeOptions = {
         name: serverName,
@@ -887,13 +887,13 @@ export class MCPGenerator {
 
     // Generate tools/index.ts with tool definitions
     const toolsPath = resolve(toolsDir, 'index.ts');
-    const toolsCode = this.generateToolsFile();
+    const toolsCode = await this.generateToolsFile();
     await writeFile(toolsPath, toolsCode, 'utf-8');
     console.log(`✅ Generated tools: ${toolsPath}`);
 
     // Generate handlers/index.ts with tool call handlers
     const handlersPath = resolve(handlersDir, 'index.ts');
-    const handlersCode = this.generateHandlersFile();
+    const handlersCode = await this.generateHandlersFile();
     await writeFile(handlersPath, handlersCode, 'utf-8');
     console.log(`✅ Generated handlers: ${handlersPath}`);
 
@@ -927,8 +927,8 @@ export const DEBUG = ${debug};
   /**
    * Generate tools definitions file for modular server
    */
-  private generateToolsFile(): string {
-    const tools = this.generateTools();
+  private async generateToolsFile(): Promise<string> {
+    const tools = await this.generateTools();
 
     return `/**
  * MCP Tools Definitions
@@ -946,8 +946,8 @@ export const tools: Array<{
   /**
    * Generate switch cases for tool execution
    */
-  private generateToolSwitchCases(indent: string = '    '): string {
-    const tools = this.generateTools();
+  private async generateToolSwitchCases(indent: string = '    '): Promise<string> {
+    const tools = await this.generateTools();
 
     const capitalize = (str: string) =>
       str.charAt(0).toUpperCase() + str.slice(1);
@@ -1088,8 +1088,8 @@ ${indent}}`;
   /**
    * Generate handlers file for modular server
    */
-  private generateHandlersFile(): string {
-    const switchCases = this.generateToolSwitchCases('      ');
+  private async generateHandlersFile(): Promise<string> {
+    const switchCases = await this.generateToolSwitchCases('      ');
 
     return `/**
  * MCP Tool Call Handlers

@@ -55,8 +55,8 @@ describe('Inheritance Core Functionality', () => {
     expect(fieldNames).toContain('extendedNumber');
   });
 
-  it('should get ALL fields (including inherited) from ExtendedContent', () => {
-    const allFields = ObjectRegistry.getAllFields('ExtendedContent');
+  it('should get ALL fields (including inherited) from ExtendedContent', async () => {
+    const allFields = await ObjectRegistry.getAllFields('ExtendedContent');
     const fieldNames = Array.from(allFields.keys());
     console.log('ExtendedContent ALL fields:', fieldNames);
 

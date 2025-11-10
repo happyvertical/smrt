@@ -98,7 +98,7 @@ describe('MCPGenerator - Integration Tests', () => {
     });
 
     it('should include proper tool definitions for real object methods', async () => {
-      const tools = generator.generateTools();
+      const tools = await generator.generateTools();
 
       const productTools = tools.filter((t) =>
         t.name.startsWith('testproduct_'),
