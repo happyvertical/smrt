@@ -291,6 +291,52 @@ export function formatDataJs(
 }
 
 /**
+ * Type guard to check if a value is a Field instance
+ *
+ * Uses instanceof check (most reliable) with structural fallback for edge cases.
+ * Improves type safety over duck typing by properly narrowing the type.
+ *
+ * @param value - Value to check
+ * @returns True if value is a Field instance, false otherwise
+ * @example
+ * ```typescript
+ * import { text } from '@happyvertical/smrt-core/fields';
+ *
+ * const field = text({ default: 'hello' });
+ * if (isFieldInstance(field)) {
+ *   console.log(field.value); // TypeScript knows this is a Field
+ * }
+ * ```
+ */
+export function isFieldInstance(
+  value: any,
+): value is import('./fields/index.js').Field {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  // Try instanceof check first (most reliable)
+  // Import Field class dynamically to avoid circular dependency issues
+  try {
+    const { Field } = require('./fields/index.js');
+    if (value instanceof Field) {
+      return true;
+    }
+  } catch {
+    // Fall through to structural check if import fails
+  }
+
+  // Structural check as fallback: Field instances have 'type', 'value', and 'options' properties
+  // This is more specific than just checking 'type' and 'value'
+  return (
+    'type' in value &&
+    'value' in value &&
+    'options' in value &&
+    typeof value.type === 'string'
+  );
+}
+
+/**
  * Formats data for SQL by converting Date objects to ISO strings
  * and camelCase property names to snake_case column names
  *
@@ -303,15 +349,9 @@ export function formatDataSql(data: Record<string, any>) {
     // Convert camelCase to snake_case for SQL
     const snakeKey = toSnakeCase(key);
 
-    // Extract value from Field instances
+    // Extract value from Field instances using type guard
     let actualValue = value;
-    if (
-      value &&
-      typeof value === 'object' &&
-      'value' in value &&
-      'type' in value
-    ) {
-      // This is a Field instance - extract its value
+    if (isFieldInstance(value)) {
       actualValue = value.value;
     }
 
