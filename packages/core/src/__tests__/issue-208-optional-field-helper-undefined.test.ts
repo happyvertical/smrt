@@ -119,7 +119,7 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
         name: 'Test Council',
       });
 
-      const fields = council.getFields();
+      const fields = await council.getFields();
 
       expect(fields.description).toBeDefined();
       expect(fields.description.type).toBe('text');
