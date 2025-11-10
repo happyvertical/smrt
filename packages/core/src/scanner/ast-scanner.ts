@@ -560,6 +560,9 @@ export class ASTScanner {
       }
     }
 
+    // Check if this is a function type (transient by default)
+    const isFunction = this.isFunctionType(node, sourceFile);
+
     // Determine field type from initializer or type annotation
     const fieldType = this.inferFieldType(node, sourceFile);
     // Required if no question token and no undefined/null type
@@ -571,6 +574,11 @@ export class ASTScanner {
       required: isRequired,
     };
 
+    // Mark function types as transient (non-persisted) by default
+    if (isFunction) {
+      field.transient = true;
+    }
+
     // Extract default value from initializer
     if (node.initializer) {
       field.default = this.extractDefaultValue(node.initializer);
@@ -579,6 +587,10 @@ export class ASTScanner {
       const options = this.extractFieldOptions(node.initializer, sourceFile);
       if (options && Object.keys(options).length > 0) {
         field.options = options;
+        // Check if explicitly marked as transient via option
+        if (options.transient !== undefined) {
+          field.transient = options.transient;
+        }
       }
     }
 
@@ -645,6 +657,40 @@ export class ASTScanner {
       return node.name.text;
     }
     return null;
+  }
+
+  /**
+   * Check if a property is a function type
+   */
+  private isFunctionType(
+    node: ts.PropertyDeclaration,
+    sourceFile: ts.SourceFile,
+  ): boolean {
+    // Check type annotation
+    if (node.type) {
+      const typeNode = node.type;
+      // Function type signature: (param: type) => ReturnType
+      if (ts.isFunctionTypeNode(typeNode)) {
+        return true;
+      }
+      // Arrow function expression type
+      const typeText = typeNode.getText(sourceFile).toLowerCase();
+      if (typeText.includes('=>') || typeText.startsWith('function')) {
+        return true;
+      }
+    }
+
+    // Check initializer (arrow function or function expression)
+    if (node.initializer) {
+      if (ts.isArrowFunction(node.initializer)) {
+        return true;
+      }
+      if (ts.isFunctionExpression(node.initializer)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
