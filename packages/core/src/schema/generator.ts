@@ -108,7 +108,11 @@ export class SchemaGenerator {
 
       const column: ColumnDefinition = {
         type: this.mapFieldTypeToSQL(fieldDef.type),
-        notNull: fieldDef.required || false,
+        // If options.nullable is true, the field can be null regardless of required
+        // This handles field helpers like text({ required: true, nullable: true })
+        notNull: fieldDef.options?.nullable
+          ? false
+          : fieldDef.required || false,
         description: fieldDef.description,
       };
 
@@ -376,7 +380,10 @@ export class SchemaGenerator {
 
       const columnDef: ColumnDefinition = {
         type: sqlType,
-        notNull: field.options?.required || false,
+        // If options.nullable is true, the field can be null regardless of required
+        notNull: field.options?.nullable
+          ? false
+          : field.options?.required || false,
         primaryKey: field.options?.primaryKey || false,
         unique: field.options?.unique || false,
         description: field.options?.description,

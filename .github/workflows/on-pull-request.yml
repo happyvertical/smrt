@@ -1,0 +1,129 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    branches: [ main ]
+
+# Cancel in-progress runs when new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-commits:
+    name: Validate Conventional Commits
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit messages
+        run: |
+          # Get all commit messages since main (excluding merge commits)
+          commits=$(git log origin/main..HEAD --no-merges --pretty=format:"%s")
+
+          if [ -z "$commits" ]; then
+            echo "No commits found"
+            exit 0
+          fi
+
+          echo "📋 Validating commits:"
+          echo "$commits"
+          echo ""
+
+          # Check if commits follow conventional commit format
+          invalid_commits=""
+          while IFS= read -r commit; do
+            if ! echo "$commit" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore)(\(.+\))?!?: .+"; then
+              invalid_commits="$invalid_commits\n- $commit"
+            fi
+          done <<< "$commits"
+
+          if [ -n "$invalid_commits" ]; then
+            echo "❌ Found commits that don't follow conventional commit format:"
+            echo -e "$invalid_commits"
+            echo ""
+            echo "Please use one of: feat, fix, docs, style, refactor, perf, test, build, ci, chore"
+            exit 1
+          fi
+
+          echo "✅ All commits follow conventional commit format"
+
+      - name: Determine version bump
+        id: version
+        run: |
+          commits=$(git log origin/main..HEAD --no-merges --pretty=format:"%s")
+
+          bump="patch"
+          if echo "$commits" | grep -qE "^feat(\(.+\))?!?:"; then
+            bump="minor"
+          fi
+
+          if echo "$commits" | grep -qiE "(BREAKING CHANGE|!:)"; then
+            bump="minor"  # Treat as minor until 1.0.0
+          fi
+
+          echo "bump=$bump" >> $GITHUB_OUTPUT
+          echo "📦 Will perform $bump version bump on merge"
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const bump = '${{ steps.version.outputs.bump }}';
+
+            const comment = `## 📦 Version Bump Preview
+
+            When this PR is merged, packages will receive a **${bump}** version bump based on your conventional commits.
+
+            ### What happens on merge?
+
+            1. Tests run on main branch
+            2. Packages are built
+            3. Versions are bumped automatically
+            4. Packages are published to GitHub Packages
+            5. Git tags are created
+
+            No manual intervention needed! 🎉`;
+
+            // Check if we already commented
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const existingComment = comments.find(c =>
+              c.user.login === 'github-actions[bot]' &&
+              c.body.includes('Version Bump Preview')
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+  test:
+    name: Validate Changes
+    uses: ./.github/workflows/test-suite.yml
+    permissions:
+      contents: read
+      packages: read

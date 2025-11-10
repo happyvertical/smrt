@@ -29,7 +29,7 @@ export async function previewMcpTools(
     const _mcpConfig = config.mcp || {};
 
     // Generate tools for all registered objects
-    const allTools = generator.generateTools();
+    const allTools = await generator.generateTools();
 
     // Filter to only this class's tools
     const lowerName = className.toLowerCase();

@@ -108,22 +108,20 @@ describe('Multi-level Class Inheritance', () => {
   describe('Inheritance Chain Building', () => {
     it('should build correct inheritance chain for 3-level hierarchy', () => {
       const chain = ObjectRegistry.getInheritanceChain('BentleyContent');
-      expect(chain).toEqual([
-        'SmrtObject',
-        'Content',
-        'PraecoContent',
-        'BentleyContent',
-      ]);
+      // SmrtObject is excluded from chains (fixed in #265)
+      expect(chain).toEqual(['Content', 'PraecoContent', 'BentleyContent']);
     });
 
     it('should build correct inheritance chain for 2-level hierarchy', () => {
       const chain = ObjectRegistry.getInheritanceChain('PraecoContent');
-      expect(chain).toEqual(['SmrtObject', 'Content', 'PraecoContent']);
+      // SmrtObject is excluded from chains (fixed in #265)
+      expect(chain).toEqual(['Content', 'PraecoContent']);
     });
 
     it('should build correct inheritance chain for 1-level hierarchy', () => {
       const chain = ObjectRegistry.getInheritanceChain('Content');
-      expect(chain).toEqual(['SmrtObject', 'Content']);
+      // SmrtObject is excluded from chains (fixed in #265)
+      expect(chain).toEqual(['Content']);
     });
 
     it('should return empty array for unregistered class', () => {
@@ -475,11 +473,8 @@ describe('Multi-level Class Inheritance', () => {
       const registered = ObjectRegistry.classes.get('OrphanClass');
       if (registered) {
         registered.extends = 'NonExistentParent';
-        registered.inheritanceChain = [
-          'SmrtObject',
-          'NonExistentParent',
-          'OrphanClass',
-        ];
+        // SmrtObject is excluded from chains (fixed in #265)
+        registered.inheritanceChain = ['NonExistentParent', 'OrphanClass'];
         registered.inheritedFields = undefined;
       }
 

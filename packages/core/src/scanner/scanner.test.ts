@@ -173,11 +173,11 @@ describe('AST Scanner', () => {
       const results = scanner.scanFiles();
 
       expect(results).toHaveLength(1);
-      // Should find all 3 classes: Council (simple), PraecoSource (complex), Document (complex)
+      // Should find all 3 classes: TestCouncil (simple), PraecoSource (complex), Document (complex)
       expect(results[0].objects).toHaveLength(3);
 
       const council = results[0].objects.find(
-        (obj) => obj.className === 'Council',
+        (obj) => obj.className === 'TestCouncil',
       );
       const praecoSource = results[0].objects.find(
         (obj) => obj.className === 'PraecoSource',
@@ -195,11 +195,11 @@ describe('AST Scanner', () => {
       const scanner = new ASTScanner([complexDecoratorPath]);
       const results = scanner.scanFiles();
       const council = results[0].objects.find(
-        (obj) => obj.className === 'Council',
+        (obj) => obj.className === 'TestCouncil',
       );
 
       expect(council?.decoratorConfig).toMatchObject({
-        tableName: 'councils',
+        tableName: 'test_councils',
       });
     });
 

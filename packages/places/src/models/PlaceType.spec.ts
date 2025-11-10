@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { PlaceType } from './PlaceType';
 
 describe('PlaceType Schema Generation', () => {
-  it('should include name field in extracted fields', () => {
-    const fields = fieldsFromClass(PlaceType);
+  it('should include name field in extracted fields', async () => {
+    const fields = await fieldsFromClass(PlaceType);
 
     // Verify name field is extracted
     expect(fields).toHaveProperty('name');

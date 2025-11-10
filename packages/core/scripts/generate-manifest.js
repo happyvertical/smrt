@@ -33,6 +33,7 @@ async function runScanner() {
     ignore: [
       'src/**/*.test.ts',
       'src/**/*.spec.ts',
+      'src/**/__tests__/**/*.ts',  // Exclude __tests__ directory
       'src/**/*.d.ts',
       'src/scanner/**/*.ts',
       'src/vite-plugin/**/*.ts',

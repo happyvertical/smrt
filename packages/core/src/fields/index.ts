@@ -41,6 +41,8 @@ export interface FieldOptions {
   primaryKey?: boolean;
   /** Whether this field is required (NOT NULL constraint) */
   required?: boolean;
+  /** Whether this field can be null (allows NULL values, opposite of required) */
+  nullable?: boolean;
   /** Default value for this field when creating new objects */
   default?: any;
   /** Whether this field must have unique values (UNIQUE constraint) */

@@ -120,8 +120,8 @@ describe('MCPGenerator with Custom Actions', () => {
   });
 
   describe('Tool Generation', () => {
-    it('should generate tools for custom actions', () => {
-      const tools = generator.generateTools();
+    it('should generate tools for custom actions', async () => {
+      const tools = await generator.generateTools();
 
       // Find tools for our test agent
       const agentTools = tools.filter((tool) =>
@@ -137,8 +137,8 @@ describe('MCPGenerator with Custom Actions', () => {
       expect(toolNames).toContain('testagent_analyze');
     });
 
-    it('should have correct schema for custom action tools', () => {
-      const tools = generator.generateTools();
+    it('should have correct schema for custom action tools', async () => {
+      const tools = await generator.generateTools();
       const researchTool = tools.find(
         (tool) => tool.name === 'testagent_research',
       );
@@ -152,10 +152,10 @@ describe('MCPGenerator with Custom Actions', () => {
       expect(researchTool?.inputSchema.properties.options).toBeDefined();
     });
 
-    it('should warn about invalid custom actions', () => {
+    it('should warn about invalid custom actions', async () => {
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      generator.generateTools();
+      await generator.generateTools();
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining(
@@ -166,8 +166,8 @@ describe('MCPGenerator with Custom Actions', () => {
       consoleSpy.mockRestore();
     });
 
-    it('should respect exclude configuration for custom actions', () => {
-      const tools = generator.generateTools();
+    it('should respect exclude configuration for custom actions', async () => {
+      const tools = await generator.generateTools();
       const excludedAgentTools = tools.filter((tool) =>
         tool.name.startsWith('excludedactionagent_'),
       );

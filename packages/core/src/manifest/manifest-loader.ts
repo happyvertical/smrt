@@ -466,15 +466,18 @@ export async function discoverManifestEntry(
   }
 
   // 3. Check testManifest (core test classes)
-  const testEntry =
-    testManifest?.objects[name] || testManifest?.objects[className];
-  if (testEntry) {
-    foundEntries.push({
-      entry: testEntry,
-      packageName: testManifest.packageName || '@happyvertical/smrt-core',
-      filePath: testEntry.filePath,
-      manifestSource: '@happyvertical/smrt-core test manifest',
-    });
+  // Skip if we already loaded a local test manifest (avoids duplicate entries from same package)
+  if (!localTestManifest || !localEntry) {
+    const testEntry =
+      testManifest?.objects[name] || testManifest?.objects[className];
+    if (testEntry) {
+      foundEntries.push({
+        entry: testEntry,
+        packageName: testManifest.packageName || '@happyvertical/smrt-core',
+        filePath: testEntry.filePath,
+        manifestSource: '@happyvertical/smrt-core test manifest',
+      });
+    }
   }
 
   // 4. Check staticManifest (core framework classes)
