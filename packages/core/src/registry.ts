@@ -74,6 +74,29 @@ export interface SmartObjectConfig {
   tableName?: string;
 
   /**
+   * Table inheritance strategy (defaults to 'cti')
+   * - 'cti': Class Table Inheritance - one table per class (current default)
+   * - 'sti': Single Table Inheritance - shared table with discriminator column
+   *
+   * Set once on base class, children inherit automatically.
+   *
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject {
+   *   title: string = '';
+   * }
+   *
+   * // Meeting inherits 'sti' strategy
+   * @smrt()
+   * class Meeting extends Event {
+   *   roomId = foreignKey(Room);
+   * }
+   * ```
+   */
+  tableStrategy?: 'cti' | 'sti';
+
+  /**
    * API configuration
    */
   api?:
@@ -267,6 +290,8 @@ interface RegisteredClass {
   inheritedFields?: Map<string, any>;
   /** Merged methods from entire inheritance chain (cached, includes parent methods) */
   inheritedMethods?: Map<string, any>;
+  /** Decorator config passed to @smrt() (includes tableStrategy) */
+  decorator?: SmartObjectConfig;
 }
 
 /**
@@ -439,6 +464,7 @@ export class ObjectRegistry {
       packageName, // Store package name from manifest for getPackageName() lookup
       extends: manifestEntry?.extends, // NEW: Capture parent class name from manifest
       inheritanceChain, // NEW: Pre-compute and cache inheritance chain
+      decorator: config, // Store decorator config (includes tableStrategy)
     });
 
     console.log(
@@ -1878,6 +1904,149 @@ export class ObjectRegistry {
     }
 
     return inverseRelationships;
+  }
+
+  /**
+   * Get table inheritance strategy for a class
+   *
+   * Returns the table strategy (CTI or STI) for a class, with automatic
+   * inheritance from parent classes. If not explicitly configured,
+   * walks up the inheritance chain to find the strategy.
+   *
+   * **Strategy Inheritance:**
+   * - Set once on base class, children inherit automatically
+   * - Children can explicitly override (not recommended)
+   * - Default is 'cti' if not found in hierarchy
+   *
+   * @param className - Name of the class to get strategy for
+   * @returns 'cti' (Class Table Inheritance) or 'sti' (Single Table Inheritance)
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject { }
+   *
+   * @smrt() // Inherits 'sti'
+   * class Meeting extends Event { }
+   *
+   * ObjectRegistry.getTableStrategy('Meeting'); // 'sti'
+   * ObjectRegistry.getTableStrategy('Event'); // 'sti'
+   * ```
+   */
+  static getTableStrategy(className: string): 'cti' | 'sti' {
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      return 'cti'; // Default for unregistered classes
+    }
+
+    // Explicit config wins (check decorator first)
+    if (registered.decorator?.tableStrategy) {
+      return registered.decorator.tableStrategy;
+    }
+
+    // Inherit from ancestors
+    const chain = ObjectRegistry.getInheritanceChain(className);
+    for (const ancestorName of chain) {
+      const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (ancestor?.decorator?.tableStrategy) {
+        return ancestor.decorator.tableStrategy;
+      }
+    }
+
+    return 'cti'; // Default strategy
+  }
+
+  /**
+   * Get the base class for an STI hierarchy
+   *
+   * Walks up the inheritance chain to find the first class configured
+   * with `tableStrategy: 'sti'`. This is the class that owns the shared table.
+   *
+   * **Returns:**
+   * - The base class name if STI is configured in the hierarchy
+   * - null if the class uses CTI strategy
+   *
+   * @param className - Name of the class to find STI base for
+   * @returns Base class name or null if CTI
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject { }
+   *
+   * @smrt()
+   * class Meeting extends Event { }
+   *
+   * ObjectRegistry.getSTIBase('Meeting'); // 'Event'
+   * ObjectRegistry.getSTIBase('Event'); // 'Event'
+   * ```
+   */
+  static getSTIBase(className: string): string | null {
+    const strategy = ObjectRegistry.getTableStrategy(className);
+    if (strategy === 'cti') {
+      return null; // Not using STI
+    }
+
+    // Find the first class in the chain with tableStrategy: 'sti'
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      return null;
+    }
+
+    // Check if this class itself defines STI
+    if (registered.decorator?.tableStrategy === 'sti') {
+      return className;
+    }
+
+    // Walk up the chain to find the base
+    const chain = ObjectRegistry.getInheritanceChain(className);
+    for (const ancestorName of chain) {
+      const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (ancestor?.decorator?.tableStrategy === 'sti') {
+        return ancestorName;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get all descendant classes of a base class
+   *
+   * Returns all registered classes that inherit from the specified base class.
+   * Uses the `extends` field from manifest to build the descendant tree.
+   *
+   * **Use cases:**
+   * - Schema generation: Aggregate fields from all children for STI table
+   * - Polymorphic queries: Find all types to instantiate
+   * - Documentation: Show class hierarchy
+   *
+   * @param className - Name of the base class
+   * @returns Array of descendant class names (direct and indirect)
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject { }
+   *
+   * @smrt()
+   * class Meeting extends Event { }
+   *
+   * @smrt()
+   * class HockeyGame extends Event { }
+   *
+   * ObjectRegistry.getDescendants('Event'); // ['Meeting', 'HockeyGame']
+   * ```
+   */
+  static getDescendants(className: string): string[] {
+    const descendants: string[] = [];
+
+    // Find all classes that extend the given class
+    for (const [childName, childClass] of ObjectRegistry.classes) {
+      const chain = ObjectRegistry.getInheritanceChain(childName);
+      if (chain.includes(className) && childName !== className) {
+        descendants.push(childName);
+      }
+    }
+
+    return descendants;
   }
 
   /**
