@@ -474,6 +474,7 @@ export class SmrtObject extends SmrtClass {
         key === 'context' ||
         key === 'created_at' ||
         key === 'updated_at' ||
+        key === 'options' || // Skip options object (not a database column)
         typeof (this as any)[key] === 'function'
       ) {
         continue;
