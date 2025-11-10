@@ -1361,12 +1361,12 @@ export class ObjectRegistry {
 
     // Walk up the prototype chain
     while (current?.name) {
-      chain.unshift(current.name); // Add to front (we're walking child → base)
-
       // Stop at SmrtObject (don't include it in chain unless it's the class itself)
       if (current.name === 'SmrtObject') {
         break;
       }
+
+      chain.unshift(current.name); // Add to front (we're walking child → base)
 
       current = Object.getPrototypeOf(current);
     }
