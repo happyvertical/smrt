@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762736043407,
+  "timestamp": 1762768325244,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -45,10 +45,10 @@ export const testManifest: SmartObjectManifest = {
       "exportName": "TestObject",
       "collectionExportName": "TestObjectCollection"
     },
-    "council": {
-      "name": "council",
-      "className": "Council",
-      "collection": "councils",
+    "testcouncil": {
+      "name": "testcouncil",
+      "className": "TestCouncil",
+      "collection": "testcouncils",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/object.spec.ts",
       "fields": {
         "name": {
@@ -65,8 +65,8 @@ export const testManifest: SmartObjectManifest = {
         "tableName": "custom_councils"
       },
       "extends": "SmrtObject",
-      "exportName": "Council",
-      "collectionExportName": "CouncilCollection"
+      "exportName": "TestCouncil",
+      "collectionExportName": "TestCouncilCollection"
     },
     "perftestuser": {
       "name": "perftestuser",
