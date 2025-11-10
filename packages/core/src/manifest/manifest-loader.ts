@@ -421,10 +421,6 @@ export async function discoverManifestEntry(
   const name = className.toLowerCase();
   const constructorPackage = getPackageName(ctor);
 
-  console.log(
-    `[discoverManifestEntry] Looking for ${className}, constructorPackage: ${constructorPackage}`,
-  );
-
   // Track all manifest sources that define this class
   const foundEntries: Array<{
     entry: ManifestEntry;
@@ -444,10 +440,6 @@ export async function discoverManifestEntry(
             ? { ...entry, packageName: manifest.packageName }
             : entry;
 
-        console.log(
-          `[discoverManifestEntry] Found in constructor's package ${constructorPackage}: ${Object.keys(entry.fields || {}).join(', ')}`,
-        );
-
         foundEntries.push({
           entry: enrichedEntry,
           packageName: manifest.packageName || constructorPackage,
@@ -465,9 +457,6 @@ export async function discoverManifestEntry(
   const localEntry =
     localTestManifest?.objects[name] || localTestManifest?.objects[className];
   if (localEntry) {
-    console.log(
-      `[discoverManifestEntry] Found in local test manifest: ${Object.keys(localEntry.fields || {}).join(', ')}`,
-    );
     foundEntries.push({
       entry: localEntry,
       packageName: localTestManifest?.packageName || 'local-test',
@@ -480,9 +469,6 @@ export async function discoverManifestEntry(
   const testEntry =
     testManifest?.objects[name] || testManifest?.objects[className];
   if (testEntry) {
-    console.log(
-      `[discoverManifestEntry] Found in core test manifest: ${Object.keys(testEntry.fields || {}).join(', ')}`,
-    );
     foundEntries.push({
       entry: testEntry,
       packageName: testManifest.packageName || '@happyvertical/smrt-core',
@@ -495,9 +481,6 @@ export async function discoverManifestEntry(
   const staticObjects = staticManifest.objects as Record<string, ManifestEntry>;
   const staticEntry = staticObjects[name] || staticObjects[className];
   if (staticEntry) {
-    console.log(
-      `[discoverManifestEntry] Found in static manifest: ${Object.keys(staticEntry.fields || {}).join(', ')}`,
-    );
     foundEntries.push({
       entry: staticEntry,
       packageName: staticManifest.packageName || '@happyvertical/smrt-core',
@@ -515,9 +498,6 @@ export async function discoverManifestEntry(
 
     const entry = manifest.objects[name] || manifest.objects[className];
     if (entry) {
-      console.log(
-        `[discoverManifestEntry] Found in cached package ${cachedPkgName}: ${Object.keys(entry.fields || {}).join(', ')}`,
-      );
       foundEntries.push({
         entry:
           !entry.packageName && manifest.packageName
@@ -529,10 +509,6 @@ export async function discoverManifestEntry(
       });
     }
   }
-
-  console.log(
-    `[discoverManifestEntry] Total entries found for ${className}: ${foundEntries.length}`,
-  );
 
   // Detect collisions: multiple packages defining the same class name
   if (foundEntries.length > 1) {
@@ -567,15 +543,9 @@ export async function discoverManifestEntry(
 
   // Return the found entry (priority given to constructor's package)
   if (foundEntries.length === 1) {
-    console.log(
-      `[discoverManifestEntry] Returning entry from ${foundEntries[0].manifestSource}`,
-    );
     return foundEntries[0].entry;
   }
 
-  console.log(
-    `[discoverManifestEntry] No manifest entry found for ${className}`,
-  );
   return undefined;
 }
 

@@ -1020,10 +1020,6 @@ export class ObjectRegistry {
       );
     }
 
-    console.log(
-      `[ensureManifestLoaded] ${className} - calling discoverManifestEntry`,
-    );
-
     // Try to load manifest from external package (even if some fields exist)
     // This handles cases where AST scanner missed optional fields without initializers
     const manifestEntry = await discoverManifestEntry(
@@ -1032,30 +1028,16 @@ export class ObjectRegistry {
     );
 
     if (!manifestEntry) {
-      console.log(`[ensureManifestLoaded] ${className} - no manifest found`);
       return;
     }
-
-    console.log(
-      `[ensureManifestLoaded] ${className} - manifestEntry.fields:`,
-      Object.keys(manifestEntry.fields || {}).join(', '),
-    );
 
     if (manifestEntry?.fields) {
       const manifestFieldCount = Object.keys(manifestEntry.fields).length;
       const existingFieldCount = registered.fields.size;
 
       if (existingFieldCount > 0 && existingFieldCount >= manifestFieldCount) {
-        const fieldNames = Array.from(registered.fields.keys()).join(', ');
-        console.log(
-          `[ensureManifestLoaded] ${className} already has ${existingFieldCount} fields loaded (manifest has ${manifestFieldCount}): ${fieldNames} - skipping`,
-        );
         return;
       }
-
-      console.log(
-        `[ensureManifestLoaded] ${className} has ${existingFieldCount} fields, manifest has ${manifestFieldCount} - merging`,
-      );
 
       // Convert FieldDefinition to Field objects and merge with existing
       for (const [fieldName, fieldDef] of Object.entries(
