@@ -69,15 +69,52 @@ export async function generateSchema(
     );
   }
 
+  // Check if class uses STI strategy
+  const tableStrategy = ObjectRegistry.getTableStrategy(className);
+
   // Dynamic import SchemaGenerator (Node.js-only, uses node:crypto)
   // This prevents bundling it into browser builds
   const { SchemaGenerator } = await import('./generator.js');
   const generator = new SchemaGenerator();
-  const schemaDefinition = generator.generateSchemaFromRegistry(
-    className,
-    tableName,
-    cachedFields,
-  );
+
+  let schemaDefinition: Awaited<
+    ReturnType<SchemaGenerator['generateSchemaFromRegistry']>
+  >;
+
+  if (tableStrategy === 'sti') {
+    // STI: Generate shared table for base class
+    const stiBase = ObjectRegistry.getSTIBase(className);
+
+    if (!stiBase) {
+      throw new Error(
+        `STI strategy detected for '${className}' but no STI base class found. ` +
+          `This should not happen - please report this bug.`,
+      );
+    }
+
+    // Only generate schema for the base class (not for children)
+    // Children will use the same table as the base
+    if (className === stiBase) {
+      // This is the base class - generate STI schema
+      schemaDefinition = await generator.generateSTISchemaFromRegistry(
+        className,
+        tableName,
+        cachedFields,
+      );
+    } else {
+      // This is a child class - return null or empty schema
+      // The base class schema already includes all fields
+      // Child classes don't need their own tables
+      return ''; // Empty SQL - table already created by base class
+    }
+  } else {
+    // CTI: Generate separate table for each class
+    schemaDefinition = generator.generateSchemaFromRegistry(
+      className,
+      tableName,
+      cachedFields,
+    );
+  }
 
   return generator.generateSQL(schemaDefinition);
 }
