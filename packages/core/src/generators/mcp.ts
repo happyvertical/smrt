@@ -946,7 +946,9 @@ export const tools: Array<{
   /**
    * Generate switch cases for tool execution
    */
-  private async generateToolSwitchCases(indent: string = '    '): Promise<string> {
+  private async generateToolSwitchCases(
+    indent: string = '    ',
+  ): Promise<string> {
     const tools = await this.generateTools();
 
     const capitalize = (str: string) =>

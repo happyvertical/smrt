@@ -216,7 +216,9 @@ describe('Multi-level Class Inheritance', () => {
 
   describe('Field Config Merging', () => {
     it('should merge numeric constraints (take strictest)', async () => {
-      const allFields = await ObjectRegistry.getAllFields('ChildWithConstraints');
+      const allFields = await ObjectRegistry.getAllFields(
+        'ChildWithConstraints',
+      );
 
       const ageField = allFields.get('age');
       expect(ageField.options.min).toBe(18); // Stricter min (child)
