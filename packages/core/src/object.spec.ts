@@ -171,9 +171,7 @@ describe('SmrtObject', () => {
       };
 
       // loadDataFromDb should not throw when encountering readonly tableName
-      expect(() => {
-        council.loadDataFromDb(dbData);
-      }).not.toThrow();
+      await council.loadDataFromDb(dbData);
 
       // Verify data was loaded correctly
       expect(council.name).toBe('Database Council');
