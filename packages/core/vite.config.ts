@@ -182,16 +182,19 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    // Default: Use 'forks' for most tests (fixes vitest 4.0 dynamic import timeouts)
-    pool: 'forks',
-    // Override: Use 'threads' for scanner tests (AST scanning hangs with 'forks' in CI)
-    projects: [
-      {
-        test: {
-          include: ['**/scanner/**/*.test.ts'],
-          pool: 'threads',
-        },
-      },
+    poolMatchGlobs: [
+      [
+        // Scanner tests are slower and hang with 'forks' in CI.
+        // Run them in 'threads' pool with longer timeout.
+        'src/scanner/scanner.test.ts',
+        'threads',
+      ],
+      [
+        // All other tests use 'forks' pool for performance
+        '**/*.test.ts',
+        'forks',
+      ],
     ],
+    testTimeout: 30000, // Scanner tests need longer timeout in CI
   },
 });
