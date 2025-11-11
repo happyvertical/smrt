@@ -118,6 +118,29 @@ export interface RelationshipFieldOptions extends FieldOptions {
 }
 
 /**
+ * Type wrapper for meta fields in STI (Single Table Inheritance)
+ *
+ * Marks a field to be stored in the `_meta_data` JSONB column
+ * instead of as a regular table column. Only used with `tableStrategy: 'sti'`.
+ *
+ * @template T - The TypeScript type of the meta field value
+ * @example
+ * ```typescript
+ * @smrt({ tableStrategy: 'sti' })
+ * class HockeyGame extends Event {
+ *   // Stored in _meta_data JSONB column
+ *   arenaName: Meta<string> = '';
+ *   capacity: Meta<number> = 0;
+ *
+ *   // Regular fields (stored in columns)
+ *   title: string = '';
+ *   homeTeamId = foreignKey(Team);
+ * }
+ * ```
+ */
+export type Meta<T> = T;
+
+/**
  * Base field class that all field types extend
  *
  * Represents a database field with type information, validation rules,
@@ -569,4 +592,53 @@ export function manyToMany(
   }
 
   return field;
+}
+
+/**
+ * Creates a meta field for STI (Single Table Inheritance)
+ *
+ * Meta fields are stored in the `_meta_data` JSONB column instead of as
+ * regular table columns. This is useful for fields that are specific to
+ * child classes in an STI hierarchy.
+ *
+ * **Usage patterns**:
+ * - TypeScript type annotation: `arenaName: Meta<string> = ''`
+ * - Field helper with options: `arenaName = meta<string>({ required: true })`
+ * - Combined (type + helper): Both patterns together
+ *
+ * @template T - The TypeScript type of the meta field value
+ * @param options - Configuration options for the meta field
+ * @returns Field instance configured for meta storage
+ * @example TypeScript type annotation
+ * ```typescript
+ * @smrt({ tableStrategy: 'sti' })
+ * class HockeyGame extends Event {
+ *   // TypeScript-first: AST scanner detects Meta<T> type
+ *   arenaName: Meta<string> = '';
+ *   capacity: Meta<number> = 0;
+ * }
+ * ```
+ *
+ * @example Field helper with options
+ * ```typescript
+ * @smrt({ tableStrategy: 'sti' })
+ * class HockeyGame extends Event {
+ *   // Field helper: Allows constraints and validation
+ *   arenaName = meta<string>({ required: true, maxLength: 100 });
+ *   capacity = meta<number>({ min: 0, max: 100000 });
+ * }
+ * ```
+ *
+ * @example Combined approach
+ * ```typescript
+ * @smrt({ tableStrategy: 'sti' })
+ * class HockeyGame extends Event {
+ *   // Both: Type safety + constraints
+ *   arenaName: Meta<string> = meta({ required: true, maxLength: 100 });
+ *   capacity: Meta<number> = meta({ min: 0, max: 100000 });
+ * }
+ * ```
+ */
+export function meta<T = any>(options: FieldOptions = {}): Field {
+  return new Field('meta', options);
 }

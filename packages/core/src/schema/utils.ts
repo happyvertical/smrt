@@ -121,14 +121,25 @@ export async function generateSchema(
 
 /**
  * Cache of table setup promises to avoid duplicate setup operations
+ * Key format: "${dbUrl}::${tableName}" to prevent cross-database conflicts
  */
 const _setupTableFromClassPromises: Record<string, Promise<void> | null> = {};
+
+/**
+ * Clears the table setup cache - useful for testing
+ * @internal
+ */
+export function _clearSetupTableCache() {
+  Object.keys(_setupTableFromClassPromises).forEach((key) => {
+    delete _setupTableFromClassPromises[key];
+  });
+}
 
 /**
  * Sets up database tables for a class with caching to prevent duplicate operations
  *
  * Creates the database table, indexes, and triggers for a SMRT class.
- * Uses promise caching to ensure each table is only set up once.
+ * Uses promise caching to ensure each table is only set up once per database.
  * Now leverages ObjectRegistry's cached schema for instant retrieval.
  *
  * @param db - Database connection interface
@@ -138,17 +149,26 @@ const _setupTableFromClassPromises: Record<string, Promise<void> | null> = {};
  */
 export async function setupTableFromClass(db: any, ClassType: any) {
   const className = ClassType.name;
-  const tableName = className
-    .replace(/([a-z])([A-Z])/g, '$1_$2')
-    .toLowerCase()
-    .replace(/([^s])$/, '$1s')
-    .replace(/y$/, 'ies');
+
+  // Use SMRT_TABLE_NAME if available (set by @smrt decorator, handles STI correctly)
+  // Otherwise derive from class name
+  const tableName =
+    (ClassType as any).SMRT_TABLE_NAME ||
+    className
+      .replace(/([a-z])([A-Z])/g, '$1_$2')
+      .toLowerCase()
+      .replace(/([^s])$/, '$1s')
+      .replace(/y$/, 'ies');
+
+  // Include database URL in cache key to prevent cross-database conflicts
+  const dbUrl = db.url || db.config?.url || 'memory';
+  const cacheKey = `${dbUrl}::${tableName}`;
 
   if (
-    _setupTableFromClassPromises[tableName] !== undefined &&
-    _setupTableFromClassPromises[tableName] !== null
+    _setupTableFromClassPromises[cacheKey] !== undefined &&
+    _setupTableFromClassPromises[cacheKey] !== null
   ) {
-    return _setupTableFromClassPromises[tableName];
+    return _setupTableFromClassPromises[cacheKey];
   }
 
   // Create the setup promise
@@ -192,17 +212,34 @@ export async function setupTableFromClass(db: any, ClassType: any) {
       //   }
       // }
 
-      await syncSchema({ db, schema });
+      // Skip schema sync for STI child classes (empty schema returned)
+      // But ensure the base class table exists first!
+      if (schema && schema.trim() !== '') {
+        await syncSchema({ db, schema });
+      } else {
+        // STI child: Ensure base class table exists
+        const tableStrategy = ObjectRegistry.getTableStrategy(className);
+        if (tableStrategy === 'sti') {
+          const stiBase = ObjectRegistry.getSTIBase(className);
+          if (stiBase && stiBase !== className) {
+            // This is a child - recursively setup base class table
+            const baseClass = ObjectRegistry.getClass(stiBase);
+            if (baseClass) {
+              await setupTableFromClass(db, baseClass.constructor);
+            }
+          }
+        }
+      }
     } catch (error) {
       // CRITICAL: Clear cache BEFORE throwing to prevent race condition
       // This ensures concurrent callers don't get a stale reference
-      _setupTableFromClassPromises[tableName] = null;
+      _setupTableFromClassPromises[cacheKey] = null;
       throw error;
     }
   })();
 
   // Store the promise in cache AFTER creating it
-  _setupTableFromClassPromises[tableName] = setupPromise;
+  _setupTableFromClassPromises[cacheKey] = setupPromise;
 
   return setupPromise;
 }

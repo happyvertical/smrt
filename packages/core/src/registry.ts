@@ -435,8 +435,12 @@ export class ObjectRegistry {
     // via ensureManifestLoaded(). This allows decorators to remain synchronous while
     // supporting dynamic external package manifest loading.
 
+    // Build inheritance chain from constructor (needed for STI table name resolution)
+    const inheritanceChain = ObjectRegistry.buildInheritanceChain(ctor);
+
     // Defer schema generation until needed (generateSchema now uses dynamic import)
     // Store table name for lazy schema generation
+    // Note: For STI classes, tableName is already set correctly by the decorator
     const tableName = config.tableName || tableNameFromClass(ctor);
 
     // Placeholder schema - will be generated lazily when first needed
@@ -449,9 +453,6 @@ export class ObjectRegistry {
 
     // Compile validation functions from field definitions
     const validators = ObjectRegistry.compileValidators(name, fields);
-
-    // Build inheritance chain from constructor
-    const inheritanceChain = ObjectRegistry.buildInheritanceChain(ctor);
 
     ObjectRegistry.classes.set(name, {
       name,
@@ -2186,7 +2187,36 @@ export function smrt(config: SmartObjectConfig = {}) {
       }
     } else {
       // Handle SmrtObject registration (existing behavior)
-      const tableName = config.tableName || classnameToTablename(ctor.name);
+      let tableName = config.tableName;
+
+      if (!tableName) {
+        // For STI: Use base class's table name if this is a child
+        if (config.tableStrategy === 'sti') {
+          // This class is the STI base - use its own table name
+          tableName = classnameToTablename(ctor.name);
+        } else {
+          // Check if any parent uses STI
+          let proto = Object.getPrototypeOf(ctor);
+          let stiBaseName: string | null = null;
+
+          while (proto?.name && proto.name !== 'SmrtObject') {
+            const parentClass = ObjectRegistry.findClass(proto.name);
+            if (parentClass?.decorator?.tableStrategy === 'sti') {
+              stiBaseName = proto.name;
+              break;
+            }
+            proto = Object.getPrototypeOf(proto);
+          }
+
+          if (stiBaseName) {
+            // Use STI base's table name
+            tableName = classnameToTablename(stiBaseName);
+          } else {
+            // CTI: Use own table name
+            tableName = classnameToTablename(ctor.name);
+          }
+        }
+      }
 
       Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
         value: tableName,

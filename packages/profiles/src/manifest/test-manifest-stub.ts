@@ -9,7 +9,7 @@ import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762775270351,
+  "timestamp": 1762886935527,
   "objects": {
     "profilerelationshipterm": {
       "name": "profilerelationshipterm",

@@ -381,6 +381,12 @@ export class SchemaGenerator {
         continue;
       }
 
+      // Skip meta fields - they're stored in _meta_data JSONB column (STI only)
+      // In CTI mode, meta fields shouldn't be used, but skip them anyway for safety
+      if (field.type === 'meta') {
+        continue;
+      }
+
       const sqlType = (field.getSqlType?.() || 'TEXT') as SQLDataType;
 
       const columnDef: ColumnDefinition = {
@@ -615,6 +621,11 @@ export class SchemaGenerator {
 
         // Skip relationship fields that don't create columns
         if (field.type === 'oneToMany' || field.type === 'manyToMany') {
+          continue;
+        }
+
+        // Skip meta fields - they're stored in _meta_data JSONB column
+        if (field.type === 'meta') {
           continue;
         }
 
