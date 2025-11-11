@@ -14,7 +14,8 @@ export interface FieldDefinition {
     | 'json'
     | 'foreignKey'
     | 'oneToMany'
-    | 'manyToMany';
+    | 'manyToMany'
+    | 'meta'; // STI meta fields (_meta_type, _meta_data)
   required?: boolean;
   default?: any;
   min?: number;

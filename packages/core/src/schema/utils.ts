@@ -78,7 +78,9 @@ export async function generateSchema(
   const generator = new SchemaGenerator();
 
   let schemaDefinition: Awaited<
-    ReturnType<SchemaGenerator['generateSchemaFromRegistry']>
+    ReturnType<
+      InstanceType<typeof SchemaGenerator>['generateSchemaFromRegistry']
+    >
   >;
 
   if (tableStrategy === 'sti') {

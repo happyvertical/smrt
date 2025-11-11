@@ -543,7 +543,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Eager load specified relationships
     if (options.include && options.include.length > 0) {
-      await this.eagerLoadRelationships(instances, options.include);
+      // Cast to ModelType[] - instances are guaranteed to be subtypes of ModelType
+      // even in STI mode where they may be different subclasses
+      await this.eagerLoadRelationships(
+        instances as ModelType[],
+        options.include,
+      );
     }
 
     return instances;
@@ -718,7 +723,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Group related objects by the foreign key value
     const relatedMap = new Map<string, any[]>();
     for (const obj of relatedObjects) {
-      const foreignKeyValue = obj[inverseForeignKey.fieldName as any];
+      // Access dynamic property safely - obj is a SmrtObject with dynamic fields
+      const foreignKeyValue = (obj as Record<string, any>)[
+        inverseForeignKey.fieldName
+      ];
       if (!relatedMap.has(foreignKeyValue)) {
         relatedMap.set(foreignKeyValue, []);
       }

@@ -38,6 +38,7 @@ import {
   getPackageName,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
+import type { SmartObjectManifest } from './scanner/types.js';
 import { classnameToTablename, tableNameFromClass } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
@@ -397,7 +398,7 @@ export class ObjectRegistry {
       // Convert FieldDefinition to Field objects so getSqlType() works in schema generator
       for (const [fieldName, fieldDef] of Object.entries(
         manifestEntry.fields,
-      )) {
+      ) as [string, import('./scanner/types.js').FieldDefinition][]) {
         // Create Field instance from FieldDefinition
         fields.set(
           fieldName,
@@ -2235,7 +2236,7 @@ export function smrt(config: SmartObjectConfig = {}) {
           let stiBaseName: string | null = null;
 
           while (proto?.name && proto.name !== 'SmrtObject') {
-            const parentClass = ObjectRegistry.findClass(proto.name);
+            const parentClass = ObjectRegistry.getClass(proto.name);
             if (parentClass?.decorator?.tableStrategy === 'sti') {
               stiBaseName = proto.name;
               break;
