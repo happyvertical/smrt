@@ -182,6 +182,16 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    pool: 'forks', // Fix for vitest 4.0 dynamic import timeouts in workspace
+    // Default: Use 'forks' for most tests (fixes vitest 4.0 dynamic import timeouts)
+    pool: 'forks',
+    // Override: Use 'threads' for scanner tests (AST scanning hangs with 'forks' in CI)
+    projects: [
+      {
+        test: {
+          include: ['**/scanner/**/*.test.ts'],
+          pool: 'threads',
+        },
+      },
+    ],
   },
 });
