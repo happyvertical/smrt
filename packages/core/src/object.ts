@@ -396,14 +396,23 @@ export class SmrtObject extends SmrtClass {
 
     // STI: Merge meta fields from _meta_data JSONB into main data object
     if (isSTI && data._meta_data) {
-      // Parse _meta_data if it's a JSON string (some adapters return strings)
-      const metaData =
-        typeof data._meta_data === 'string'
-          ? JSON.parse(data._meta_data)
-          : data._meta_data;
+      try {
+        // Parse _meta_data if it's a JSON string (some adapters return strings)
+        const metaData =
+          typeof data._meta_data === 'string'
+            ? JSON.parse(data._meta_data)
+            : data._meta_data;
 
-      // Merge meta fields into data object so they get loaded into instance
-      Object.assign(data, metaData);
+        // Merge meta fields into data object so they get loaded into instance
+        Object.assign(data, metaData);
+      } catch (error) {
+        const { DatabaseError } = await import('./errors.js');
+        throw DatabaseError.corruptedData(
+          '_meta_data',
+          this.constructor.name,
+          error as Error,
+        );
+      }
     }
 
     const fields = await this.getFields();

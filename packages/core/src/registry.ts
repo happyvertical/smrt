@@ -30,6 +30,7 @@
 import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
+import { ConfigurationError } from './errors';
 import { Field } from './fields';
 import {
   discoverManifestEntry,
@@ -437,6 +438,30 @@ export class ObjectRegistry {
 
     // Build inheritance chain from constructor (needed for STI table name resolution)
     const inheritanceChain = ObjectRegistry.buildInheritanceChain(ctor);
+
+    // Validate table strategy compatibility with parent (STI requirement)
+    if (inheritanceChain.length > 1) {
+      // This class has a parent - validate strategy compatibility
+      const parentName = inheritanceChain[inheritanceChain.length - 2]; // Second-to-last is parent
+      const parentEntry = ObjectRegistry.classes.get(parentName);
+
+      if (parentEntry) {
+        const parentStrategy =
+          parentEntry.decorator?.tableStrategy || 'default';
+        const childStrategy = config.tableStrategy; // Don't default - undefined means inherit
+
+        // Only validate if child has an EXPLICIT strategy that differs from parent
+        // undefined childStrategy means it will inherit from parent
+        if (childStrategy !== undefined && parentStrategy !== childStrategy) {
+          throw ConfigurationError.incompatibleStrategy(
+            name,
+            childStrategy,
+            parentName,
+            parentStrategy,
+          );
+        }
+      }
+    }
 
     // Defer schema generation until needed (generateSchema now uses dynamic import)
     // Store table name for lazy schema generation
@@ -1409,6 +1434,7 @@ export class ObjectRegistry {
    */
   private static buildInheritanceChain(ctor: typeof SmrtObject): string[] {
     const chain: string[] = [];
+    const visited = new Set<string>();
     let current: any = ctor;
 
     // Walk up the prototype chain
@@ -1418,6 +1444,15 @@ export class ObjectRegistry {
         break;
       }
 
+      // Circular inheritance detection
+      if (visited.has(current.name)) {
+        throw ConfigurationError.circularInheritance(
+          current.name,
+          Array.from(chain),
+        );
+      }
+
+      visited.add(current.name);
       chain.unshift(current.name); // Add to front (we're walking child → base)
 
       current = Object.getPrototypeOf(current);

@@ -767,9 +767,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to the instance of the correct subclass
    * @private
    */
-  private async createPolymorphic(className: string, options: any) {
+  private async createPolymorphic(
+    className: string | null | undefined,
+    options: any,
+  ) {
     // Ensure table exists before creating objects
     await this.setupDb();
+
+    // Validate discriminator is present
+    if (!className || className === null || className === undefined) {
+      const { DatabaseError } = await import('./errors.js');
+      throw DatabaseError.missingDiscriminator(
+        this._itemClass.name,
+        options?.id,
+      );
+    }
 
     // Get the correct class constructor from ObjectRegistry
     const registeredClass = ObjectRegistry.getClass(className);

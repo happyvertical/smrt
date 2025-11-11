@@ -226,6 +226,13 @@ export async function setupTableFromClass(db: any, ClassType: any) {
             const baseClass = ObjectRegistry.getClass(stiBase);
             if (baseClass) {
               await setupTableFromClass(db, baseClass.constructor);
+            } else {
+              // Base class not registered - fail fast with helpful message
+              const { ConfigurationError } = await import('../errors.js');
+              throw ConfigurationError.unregisteredBaseClass(
+                className,
+                stiBase,
+              );
             }
           }
         }

@@ -509,6 +509,386 @@ class Agent extends SmrtObject {
 - MCP: `agent_research` tool
 - CLI: `agents research <id> --query="topic"`
 
+## Single Table Inheritance (STI)
+
+### What is STI?
+
+Single Table Inheritance (STI) is a database pattern where a class hierarchy shares a single database table. All subclasses are stored in the same table with a discriminator column (`_meta_type`) that identifies the actual class type.
+
+**STI vs CTI (Class Table Inheritance)**:
+- **STI**: One table for entire hierarchy, discriminator column identifies type
+- **CTI**: Separate table for each class in hierarchy (default SMRT behavior)
+
+**When to use STI**:
+- ✅ Subclasses share most fields (80%+ overlap)
+- ✅ Need polymorphic queries (fetch mixed types in one query)
+- ✅ Frequent joins across hierarchy
+- ✅ Small number of subclass-specific fields
+
+**When NOT to use STI**:
+- ❌ Subclasses have many unique fields (sparse columns)
+- ❌ Deep inheritance hierarchies (3+ levels)
+- ❌ Subclasses need separate indexing strategies
+
+### Defining STI Classes
+
+Mark the **base class** with `tableStrategy: 'sti'`. Child classes automatically inherit the strategy:
+
+```typescript
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+// Base class defines STI strategy
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject {
+  title: string = '';
+  date: Date = new Date();
+  location: string = '';
+}
+
+// Child classes inherit STI (no explicit strategy needed)
+@smrt()
+class Meeting extends Event {
+  roomNumber: string = '';
+  attendees: string[] = [];
+}
+
+@smrt()
+class Conference extends Event {
+  sponsorName: string = '';
+  ticketPrice: number = 0.0;
+}
+
+@smrt()
+class Concert extends Event {
+  artist: string = '';
+  genre: string = '';
+}
+```
+
+**Generated schema** (single `events` table for all classes):
+```sql
+CREATE TABLE events (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL,
+  context TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+  -- Base class fields
+  title TEXT NOT NULL,
+  date DATETIME NOT NULL,
+  location TEXT NOT NULL,
+
+  -- STI discriminator (identifies the actual class)
+  _meta_type TEXT NOT NULL,
+
+  -- All child fields in JSONB column
+  _meta_data JSONB,
+
+  UNIQUE(slug, context)
+);
+
+CREATE INDEX idx_events_meta_type ON events(_meta_type);
+```
+
+### Inheritance Rules
+
+**Strategy inheritance**:
+- Child with `@smrt()` (no config) → Inherits parent's strategy ✅
+- Child with `@smrt({ tableStrategy: 'sti' })` → Explicit STI ✅
+- Child with `@smrt({ tableStrategy: 'cti' })` → Error! Cannot override ❌
+
+**Validation**:
+```typescript
+// ✅ CORRECT - Child inherits STI
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject {
+  title: string = '';
+}
+
+@smrt()  // Inherits 'sti' from Event
+class Meeting extends Event {
+  roomNumber: string = '';
+}
+
+// ❌ WRONG - Explicit CTI conflicts with parent's STI
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject {
+  title: string = '';
+}
+
+@smrt({ tableStrategy: 'cti' })  // Throws ConfigurationError!
+class Meeting extends Event {
+  roomNumber: string = '';
+}
+```
+
+### Polymorphic Queries
+
+Query the base class to get mixed instances of all subtypes:
+
+```typescript
+const collection = await EventCollection.create({
+  persistence: { type: 'sql', url: 'events.db' }
+});
+
+// Create different event types
+const meeting = await collection.create({
+  _meta_type: 'Meeting',
+  title: 'Team Standup',
+  date: new Date(),
+  location: 'Conference Room A',
+  roomNumber: '101',
+  attendees: ['Alice', 'Bob']
+});
+
+const concert = await collection.create({
+  _meta_type: 'Concert',
+  title: 'Summer Music Festival',
+  date: new Date(),
+  location: 'City Park',
+  artist: 'The Band',
+  genre: 'Rock'
+});
+
+// Polymorphic query returns mixed types!
+const allEvents = await collection.list({
+  orderBy: 'date ASC'
+});
+
+// Each instance is the correct subclass
+for (const event of allEvents) {
+  console.log(event.constructor.name); // "Meeting", "Concert", etc.
+
+  if (event instanceof Meeting) {
+    console.log(`Room: ${event.roomNumber}`);
+  } else if (event instanceof Concert) {
+    console.log(`Artist: ${event.artist}`);
+  }
+}
+
+// Filter by type
+const meetings = await collection.list({
+  where: { _meta_type: 'Meeting' }
+});
+```
+
+### Meta Fields Storage
+
+**Base class fields**: Stored as regular columns in the table
+**Child-specific fields**: Stored in `_meta_data` JSONB column
+
+```typescript
+// Database row for Meeting:
+{
+  id: 'uuid-123',
+  title: 'Team Standup',        // Base field → column
+  date: '2024-01-15',            // Base field → column
+  location: 'Conference Room A', // Base field → column
+  _meta_type: 'Meeting',         // Discriminator
+  _meta_data: {                  // Child fields → JSONB
+    roomNumber: '101',
+    attendees: ['Alice', 'Bob']
+  }
+}
+```
+
+**Automatic serialization/deserialization**:
+- `save()`: Extracts child fields into `_meta_data`
+- Load: Merges `_meta_data` back into object instance
+
+### Registry Methods
+
+Query STI hierarchy metadata:
+
+```typescript
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+
+// Get table strategy for a class
+ObjectRegistry.getTableStrategy('Event');     // 'sti'
+ObjectRegistry.getTableStrategy('Meeting');   // 'sti' (inherited)
+
+// Get STI base class
+ObjectRegistry.getSTIBase('Event');    // 'Event' (self)
+ObjectRegistry.getSTIBase('Meeting');  // 'Event' (parent)
+
+// Get all descendants
+ObjectRegistry.getDescendants('Event');
+// ['Meeting', 'Conference', 'Concert']
+
+// Build inheritance chain
+ObjectRegistry.getInheritanceChain('Meeting');
+// ['Event', 'Meeting']
+```
+
+### Error Handling
+
+STI implementation includes comprehensive error handling:
+
+**Circular inheritance detection**:
+```typescript
+// Throws ConfigurationError.circularInheritance()
+@smrt({ tableStrategy: 'sti' })
+class A extends SmrtObject { }
+
+@smrt()
+class B extends A { }
+
+@smrt()
+class C extends B { }
+
+// If somehow C extends A again → Error!
+```
+
+**Strategy compatibility validation**:
+```typescript
+// Throws ConfigurationError.incompatibleStrategy()
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject { }
+
+@smrt({ tableStrategy: 'cti' })  // Error: Cannot override parent's strategy
+class Meeting extends Event { }
+```
+
+**Missing discriminator**:
+```typescript
+// Throws DatabaseError.missingDiscriminator()
+const row = { id: '123', title: 'Event', _meta_type: null };
+await collection.createPolymorphic(row._meta_type, row);
+// Error: Cannot determine subclass without discriminator
+```
+
+**Corrupted meta data**:
+```typescript
+// Throws DatabaseError.corruptedData()
+const row = { id: '123', _meta_data: '{invalid json' };
+// Error: Cannot parse _meta_data JSONB
+```
+
+**Unregistered base class**:
+```typescript
+// Throws ConfigurationError.unregisteredBaseClass()
+@smrt({ tableStrategy: 'sti' })
+class Meeting extends Event { }  // Event not decorated yet
+// Error: Base class must be registered first
+```
+
+### Best Practices
+
+**1. Keep child-specific fields minimal**
+```typescript
+// ✅ GOOD - Few child-specific fields
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject {
+  title: string = '';
+  date: Date = new Date();
+  location: string = '';
+  // 3 base fields
+}
+
+@smrt()
+class Meeting extends Event {
+  roomNumber: string = '';
+  // 1 child field
+}
+
+// ❌ BAD - Too many child-specific fields
+@smrt()
+class Conference extends Event {
+  sponsorName: string = '';
+  ticketPrice: number = 0.0;
+  venueCapacity: number = 0;
+  registrationUrl: string = '';
+  speakerBios: string = '';
+  sessionTracks: string[] = [];
+  // 6+ child fields → consider CTI instead
+}
+```
+
+**2. Use type guards for subclass access**
+```typescript
+const events = await collection.list();
+
+for (const event of events) {
+  // ✅ GOOD - Type guards
+  if (event instanceof Meeting) {
+    console.log(event.roomNumber);  // Type-safe!
+  }
+
+  // ❌ BAD - Unsafe casting
+  const meeting = event as Meeting;
+  console.log(meeting.roomNumber);  // May be undefined!
+}
+```
+
+**3. Always specify _meta_type when creating**
+```typescript
+// ✅ GOOD - Explicit type
+const meeting = await collection.create({
+  _meta_type: 'Meeting',
+  title: 'Standup',
+  roomNumber: '101'
+});
+
+// ❌ BAD - Missing type (defaults to base class)
+const event = await collection.create({
+  title: 'Standup',
+  roomNumber: '101'  // Will be ignored!
+});
+```
+
+**4. Index discriminator column**
+```typescript
+// Already done automatically by schema generator
+CREATE INDEX idx_events_meta_type ON events(_meta_type);
+```
+
+**5. Avoid deep hierarchies (prefer 2 levels)**
+```typescript
+// ✅ GOOD - Two levels
+Event
+├── Meeting
+├── Conference
+└── Concert
+
+// ⚠️ AVOID - Three+ levels
+Event
+└── CorporateEvent
+    ├── Meeting
+    ├── Training
+    └── TeamBuilding
+```
+
+### Multi-Level STI Inheritance
+
+SMRT supports multi-level STI hierarchies:
+
+```typescript
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject {
+  title: string = '';
+}
+
+@smrt()  // Inherits STI
+class SportingEvent extends Event {
+  sport: string = '';
+}
+
+@smrt()  // Inherits STI through SportingEvent
+class HockeyGame extends SportingEvent {
+  homeTeam: string = '';
+  awayTeam: string = '';
+}
+
+// All three classes share the 'events' table
+ObjectRegistry.getSTIBase('Event');         // 'Event'
+ObjectRegistry.getSTIBase('SportingEvent'); // 'Event'
+ObjectRegistry.getSTIBase('HockeyGame');    // 'Event'
+
+ObjectRegistry.getDescendants('Event');
+// ['SportingEvent', 'HockeyGame']
+```
+
 ## Code Generation
 
 ### CLI Generator

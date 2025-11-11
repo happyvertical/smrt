@@ -119,6 +119,34 @@ export class DatabaseError extends SmrtError {
       cause,
     );
   }
+
+  static corruptedData(
+    fieldName: string,
+    className: string,
+    cause?: Error,
+  ): DatabaseError {
+    return new DatabaseError(
+      `Corrupted data in field '${fieldName}' for ${className}. ` +
+        `The data cannot be parsed or is malformed. ` +
+        `This may indicate database corruption or incompatible schema changes.`,
+      'DB_CORRUPTED_DATA',
+      { fieldName, className },
+      cause,
+    );
+  }
+
+  static missingDiscriminator(
+    className: string,
+    rowId?: string,
+  ): DatabaseError {
+    return new DatabaseError(
+      `Missing discriminator (_meta_type) for STI class ${className}${rowId ? ` (row id: ${rowId})` : ''}. ` +
+        `STI classes require a discriminator column to determine the correct subclass. ` +
+        `This may indicate a schema mismatch or manual database modification.`,
+      'DB_MISSING_DISCRIMINATOR',
+      { className, rowId },
+    );
+  }
 }
 
 /**
@@ -365,6 +393,48 @@ export class ConfigurationError extends SmrtError {
       'CONFIG_INIT_FAILED',
       { component },
       cause,
+    );
+  }
+
+  static circularInheritance(
+    className: string,
+    inheritanceChain: string[],
+  ): ConfigurationError {
+    return new ConfigurationError(
+      `Circular inheritance detected for class '${className}'. ` +
+        `Inheritance chain: ${inheritanceChain.join(' → ')} → ${className}. ` +
+        `Classes cannot inherit from themselves directly or indirectly.`,
+      'CONFIG_CIRCULAR_INHERITANCE',
+      { className, inheritanceChain },
+    );
+  }
+
+  static incompatibleStrategy(
+    className: string,
+    classStrategy: string,
+    parentClass: string,
+    parentStrategy: string,
+  ): ConfigurationError {
+    return new ConfigurationError(
+      `Incompatible table strategy for class '${className}' (${classStrategy}). ` +
+        `Parent class '${parentClass}' uses ${parentStrategy} strategy. ` +
+        `Child classes must use the same table strategy as their parent. ` +
+        `Either change ${className} to use ${parentStrategy}, or remove the inheritance.`,
+      'CONFIG_INCOMPATIBLE_STRATEGY',
+      { className, classStrategy, parentClass, parentStrategy },
+    );
+  }
+
+  static unregisteredBaseClass(
+    childClass: string,
+    baseClass: string,
+  ): ConfigurationError {
+    return new ConfigurationError(
+      `STI base class '${baseClass}' is not registered for child class '${childClass}'. ` +
+        `When using Single Table Inheritance, the base class must be registered before any child classes. ` +
+        `Ensure ${baseClass} is decorated with @smrt({ tableStrategy: 'sti' }) and imported before ${childClass}.`,
+      'CONFIG_UNREGISTERED_BASE',
+      { childClass, baseClass },
     );
   }
 }

@@ -88,19 +88,19 @@ describe('STI Registry Methods', () => {
       expect(ObjectRegistry.getTableStrategy('HockeyGame')).toBe('sti');
     });
 
-    it('should allow child to explicitly override with "cti"', () => {
+    it('should reject child with explicit CTI when parent uses STI', () => {
       @smrt({ tableStrategy: 'sti' })
       class Event extends SmrtObject {
         title: string = '';
       }
 
-      @smrt({ tableStrategy: 'cti' })
-      class SpecialEvent extends Event {
-        special: string = '';
-      }
-
-      expect(ObjectRegistry.getTableStrategy('Event')).toBe('sti');
-      expect(ObjectRegistry.getTableStrategy('SpecialEvent')).toBe('cti');
+      // Explicitly setting CTI strategy when parent uses STI should throw
+      expect(() => {
+        @smrt({ tableStrategy: 'cti' })
+        class SpecialEvent extends Event {
+          special: string = '';
+        }
+      }).toThrow('Incompatible table strategy');
     });
   });
 
@@ -172,19 +172,19 @@ describe('STI Registry Methods', () => {
       expect(ObjectRegistry.getSTIBase('HockeyGame')).toBe('Event');
     });
 
-    it('should handle child overriding with CTI', () => {
+    it('should reject child with explicit CTI override', () => {
       @smrt({ tableStrategy: 'sti' })
       class Event extends SmrtObject {
         title: string = '';
       }
 
-      @smrt({ tableStrategy: 'cti' })
-      class SpecialEvent extends Event {
-        special: string = '';
-      }
-
-      expect(ObjectRegistry.getSTIBase('Event')).toBe('Event');
-      expect(ObjectRegistry.getSTIBase('SpecialEvent')).toBeNull();
+      // Child attempting to override to CTI should throw during registration
+      expect(() => {
+        @smrt({ tableStrategy: 'cti' })
+        class SpecialEvent extends Event {
+          special: string = '';
+        }
+      }).toThrow('Incompatible table strategy');
     });
   });
 
