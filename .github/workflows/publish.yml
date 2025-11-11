@@ -1,0 +1,186 @@
+# =============================================================================
+# EDITABLE WORKFLOW - Customize for this repository
+# =============================================================================
+# This workflow is called by .github/workflows/happyvertical/on-merge-main.yml
+# when code is merged to the main branch, after tests and build pass.
+#
+# SMRT uses changesets for automated versioning and publishing.
+# =============================================================================
+
+name: Publish
+
+on:
+  workflow_call:  # Called by standard workflows
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  packages: write
+  id-token: write
+  pages: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Create Release PR or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm run version
+          publish: pnpm run release
+          commit: 'chore(release): version packages'
+          title: 'chore(release): version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for version PR
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "🔀 Enabling auto-merge for version PR #${{ steps.changesets.outputs.pullRequestNumber }}"
+          echo "⏳ Waiting 30 seconds for status checks to start..."
+          sleep 30
+          gh pr merge ${{ steps.changesets.outputs.pullRequestNumber }} \
+            --auto --squash \
+            --delete-branch
+
+      - name: Check if packages were published
+        id: check_published
+        run: |
+          # Check if changesets action published packages
+          if [ "${{ steps.changesets.outputs.published }}" == "true" ]; then
+            echo "published=true" >> $GITHUB_OUTPUT
+            echo "✅ Packages published via changesets"
+          else
+            # Check git tags to see if packages were published (fallback case)
+            if git tag --points-at HEAD | grep -q "@happyvertical"; then
+              echo "published=true" >> $GITHUB_OUTPUT
+              echo "✅ Packages published (detected via git tags)"
+            else
+              echo "published=false" >> $GITHUB_OUTPUT
+              echo "ℹ️  No packages published"
+            fi
+          fi
+
+      - name: Create git tags
+        if: steps.check_published.outputs.published == 'true' && steps.changesets.outputs.publishedPackages != ''
+        run: |
+          # Create tags for each published package
+          echo '${{ steps.changesets.outputs.publishedPackages }}' | jq -r '.[] | "\(.name)@\(.version)"' | while read tag; do
+            echo "🏷️  Creating tag: $tag"
+            git tag "$tag" || echo "Tag $tag already exists"
+          done
+
+          git push --tags || echo "No new tags to push"
+
+      - name: Trigger dependency cascade
+        if: steps.check_published.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "📢 Triggering dependency cascade for downstream repositories..."
+
+          # Get list of downstream targets from cascade config
+          DOWNSTREAM_REPOS=$(curl -s https://raw.githubusercontent.com/happyvertical/sdk/main/.github/cascade-config.json | \
+            jq -r '.cascade.smrt.triggers[]' | tr '\n' ' ')
+
+          echo "Downstream repos: $DOWNSTREAM_REPOS"
+
+          # Trigger each downstream repo
+          for repo in $DOWNSTREAM_REPOS; do
+            echo "📤 Triggering $repo..."
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              /repos/happyvertical/$repo/dispatches \
+              -f event_type='dependency-updated' \
+              -f 'client_payload[repository]=happyvertical/smrt' \
+              || echo "⚠️  Failed to trigger $repo (may not have workflow configured)"
+          done
+
+          echo "✅ Triggered dependency cascade for: $DOWNSTREAM_REPOS"
+
+  deploy-docs:
+    name: Deploy Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: 'pages'
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Install docs dependencies
+        run: |
+          cd docs
+          npm install
+          cd ..
+
+      - name: Build documentation site
+        run: pnpm run docs:site:build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './docs/build'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

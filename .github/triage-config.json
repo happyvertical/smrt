@@ -1,4 +1,15 @@
 {
   "repoDescription": "SMRT framework for building AI agents with TypeScript",
-  "projectEnabled": false
+  "projectEnabled": true,
+  "projectId": "PVT_kwDOB9Y8ns4A8-TY",
+  "statusFieldId": "PVTSSF_lADOB9Y8ns4A8-TYzgw0GaY",
+  "statusOptions": {
+    "New": "3d8ca82c",
+    "Backlog": "c89a2a65",
+    "Planning": "7e1bd6b7",
+    "Ready": "e3aa2525",
+    "In Progress": "c126de7e",
+    "Review": "30a150bf",
+    "Done": "03c76b2e"
+  }
 }

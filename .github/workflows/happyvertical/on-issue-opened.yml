@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   triage:
-    uses: happyvertical/sdk/.github/workflows/triage-reusable.yml@main
+    uses: happyvertical/sdk/.github/workflows/shared-triage.yml@main
     with:
       issue_number: ${{ github.event.issue.number }}
       issue_title: ${{ github.event.issue.title }}

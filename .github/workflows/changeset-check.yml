@@ -1,0 +1,54 @@
+name: Changeset Check
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  check:
+    name: Check for Changeset
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changeset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Skip if PR has 'skip-changeset' label
+          if gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -q 'skip-changeset'; then
+            echo "✅ Skipping changeset check (skip-changeset label present)"
+            exit 0
+          fi
+
+          # Skip if PR title starts with 'chore: version packages'
+          if echo "${{ github.event.pull_request.title }}" | grep -qi '^chore: version packages'; then
+            echo "✅ Skipping changeset check (version packages PR)"
+            exit 0
+          fi
+
+          # Check if changeset files exist (excluding README.md)
+          changeset_count=$(find .changeset -name '*.md' ! -name 'README.md' 2>/dev/null | wc -l)
+
+          if [ "$changeset_count" -gt 0 ]; then
+            echo "✅ Found $changeset_count changeset(s)"
+            find .changeset -name '*.md' ! -name 'README.md' -exec basename {} \;
+            exit 0
+          else
+            echo "❌ No changeset found"
+            echo ""
+            echo "Please add a changeset by running:"
+            echo "  npx changeset"
+            echo ""
+            echo "Or add the 'skip-changeset' label if this PR doesn't require a version bump"
+            echo "(e.g., documentation changes, test updates, workflow changes)"
+            exit 1
+          fi
