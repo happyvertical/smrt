@@ -1,0 +1,26 @@
+# =============================================================================
+# EDITABLE WORKFLOW - Customize for this repository
+# =============================================================================
+# This workflow is called by .github/workflows/happyvertical/on-merge-main.yml
+# when code is merged to the main branch.
+#
+# SMRT uses the comprehensive test-suite.yml for all testing.
+# =============================================================================
+
+name: Test
+
+on:
+  workflow_call:  # Called by standard workflows
+    outputs:
+      tests-passed:
+        description: 'Whether all tests passed'
+        value: ${{ jobs.test-suite.outputs.tests-passed }}
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  test-suite:
+    name: Run Test Suite
+    uses: ./.github/workflows/test-suite.yml
+    permissions:
+      contents: read
+      packages: read
