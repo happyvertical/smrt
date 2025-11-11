@@ -64,11 +64,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run typecheck, lint, and tests in parallel
+      - name: Run typecheck, lint, and tests
         id: tests
         run: |
-          # Run typecheck, lint, and test in parallel using Turborepo
-          pnpm turbo run typecheck lint test --parallel
+          # Run typecheck, lint, and test respecting dependency order
+          # Note: Do NOT use --parallel as it overrides turbo.json dependsOn
+          pnpm turbo run typecheck lint test
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
