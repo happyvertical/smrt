@@ -501,10 +501,10 @@ export class SchemaGenerator {
    * Generate STI (Single Table Inheritance) schema from ObjectRegistry fields
    *
    * Creates a shared table for an inheritance hierarchy with:
-   * - type: Discriminator column to identify class type
-   * - meta: JSON column for flexible field storage
+   * - _meta_type: Discriminator column to identify class type
+   * - _meta_data: JSON column for flexible field storage
    * - Union of all FK columns from descendants (all nullable)
-   * - Partial indexes for FK columns (filtered by type)
+   * - Partial indexes for FK columns (filtered by _meta_type)
    *
    * @param baseClassName - Base class name for the STI hierarchy
    * @param tableName - Shared table name (from base class)
@@ -525,8 +525,8 @@ export class SchemaGenerator {
    * // Generates single table 'events' with:
    * // - title (from Event)
    * // - room_id (from Meeting, nullable)
-   * // - type TEXT NOT NULL (discriminator)
-   * // - meta JSON (flexible storage)
+   * // - _meta_type TEXT NOT NULL (discriminator)
+   * // - _meta_data JSON (flexible storage)
    * ```
    */
   async generateSTISchemaFromRegistry(
@@ -559,14 +559,14 @@ export class SchemaGenerator {
     };
 
     // Add STI discriminator column
-    columns.type = {
+    columns._meta_type = {
       type: 'TEXT',
       notNull: true,
       description: 'Class type discriminator for STI',
     };
 
     // Add meta column for flexible storage
-    columns.meta = {
+    columns._meta_data = {
       type: 'JSON',
       notNull: false,
       description: 'Flexible JSON storage for meta() fields',
@@ -693,16 +693,16 @@ export class SchemaGenerator {
 
     // Unique index for slug, context, and type (STI variation)
     indexes.push({
-      name: `${tableName}_slug_context_type_idx`,
-      columns: ['slug', 'context', 'type'],
+      name: `${tableName}_slug_context_meta_type_idx`,
+      columns: ['slug', 'context', '_meta_type'],
       unique: true,
       description: 'Unique index for slug, context, and type',
     });
 
     // Index on type column (for polymorphic queries)
     indexes.push({
-      name: `${tableName}_type_idx`,
-      columns: ['type'],
+      name: `${tableName}_meta_type_idx`,
+      columns: ['_meta_type'],
       description: 'Index for type discriminator queries',
     });
 
@@ -712,7 +712,7 @@ export class SchemaGenerator {
         indexes.push({
           name: `idx_${tableName}_${fkColumn}_${className.toLowerCase()}`,
           columns: [fkColumn],
-          where: `type = '${className}'`,
+          where: `_meta_type = '${className}'`,
           description: `Partial index for ${fkColumn} in ${className} rows`,
         });
       }

@@ -41,8 +41,8 @@ describe('STI Schema Generation (Unit)', () => {
       );
       const sql = generator.generateSQL(schema);
 
-      expect(sql).toContain('"type" TEXT NOT NULL');
-      expect(schema.columns.type).toEqual({
+      expect(sql).toContain('"_meta_type" TEXT NOT NULL');
+      expect(schema.columns._meta_type).toEqual({
         type: 'TEXT',
         notNull: true,
         description: 'Class type discriminator for STI',
@@ -64,8 +64,8 @@ describe('STI Schema Generation (Unit)', () => {
       );
       const sql = generator.generateSQL(schema);
 
-      expect(sql).toContain('"meta" JSON');
-      expect(schema.columns.meta).toEqual({
+      expect(sql).toContain('"_meta_data" JSON');
+      expect(schema.columns._meta_data).toEqual({
         type: 'JSON',
         notNull: false,
         description: 'Flexible JSON storage for meta() fields',
@@ -111,11 +111,11 @@ describe('STI Schema Generation (Unit)', () => {
       );
 
       const uniqueIndex = schema.indexes.find(
-        (idx) => idx.name === 'events_slug_context_type_idx',
+        (idx) => idx.name === 'events_slug_context_meta_type_idx',
       );
 
       expect(uniqueIndex).toBeDefined();
-      expect(uniqueIndex?.columns).toEqual(['slug', 'context', 'type']);
+      expect(uniqueIndex?.columns).toEqual(['slug', 'context', '_meta_type']);
       expect(uniqueIndex?.unique).toBe(true);
     });
 
@@ -134,11 +134,11 @@ describe('STI Schema Generation (Unit)', () => {
       );
 
       const typeIndex = schema.indexes.find(
-        (idx) => idx.name === 'events_type_idx',
+        (idx) => idx.name === 'events_meta_type_idx',
       );
 
       expect(typeIndex).toBeDefined();
-      expect(typeIndex?.columns).toEqual(['type']);
+      expect(typeIndex?.columns).toEqual(['_meta_type']);
       expect(typeIndex?.description).toContain('type discriminator');
     });
 
@@ -259,7 +259,7 @@ describe('STI Schema Generation (Unit)', () => {
       );
 
       expect(partialIndex).toBeDefined();
-      expect(partialIndex?.where).toBe("type = 'Meeting'");
+      expect(partialIndex?.where).toBe("_meta_type = 'Meeting'");
       expect(partialIndex?.columns).toEqual(['room_id']);
     });
 
@@ -279,8 +279,8 @@ describe('STI Schema Generation (Unit)', () => {
 
       // Should still generate valid schema
       expect(schema.tableName).toBe('events');
-      expect(schema.columns.type).toBeDefined();
-      expect(schema.columns.meta).toBeDefined();
+      expect(schema.columns._meta_type).toBeDefined();
+      expect(schema.columns._meta_data).toBeDefined();
       expect(schema.columns.title).toBeDefined();
     });
   });
@@ -299,7 +299,7 @@ describe('STI Schema Generation (Unit)', () => {
           {
             name: 'idx_events_room_id_meeting',
             columns: ['room_id'],
-            where: "type = 'Meeting'",
+            where: "_meta_type = 'Meeting'",
             description: 'Partial index for Meeting rows',
           },
         ],
@@ -314,7 +314,7 @@ describe('STI Schema Generation (Unit)', () => {
       expect(sql).toContain(
         'CREATE INDEX IF NOT EXISTS idx_events_room_id_meeting',
       );
-      expect(sql).toContain("WHERE type = 'Meeting'");
+      expect(sql).toContain("WHERE _meta_type = 'Meeting'");
     });
 
     it('should not add WHERE clause when not specified', () => {

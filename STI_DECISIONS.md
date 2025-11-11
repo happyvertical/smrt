@@ -17,7 +17,7 @@ Answers to open questions from STI_IMPLEMENTATION_ANALYSIS.md
 @smrt({ tableStrategy: 'sti' })
 class HockeyGame extends Event {
   homeTeamId = foreignKey(Team);  // → Column (FK always column)
-  arenaName = meta();              // → JSONB meta field
+  arenaName = meta();              // → Stored in _meta_data JSONB
   capacity: number = 0;            // → Column (normal field)
 }
 ```
@@ -59,12 +59,12 @@ events.forEach(event => {
 -- Only index room_id for Meeting rows
 CREATE INDEX idx_events_room_id
   ON events(room_id)
-  WHERE type = 'Meeting';
+  WHERE _meta_type = 'Meeting';
 
 -- Only index home_team_id for HockeyGame rows
 CREATE INDEX idx_events_home_team_id
   ON events(home_team_id)
-  WHERE type = 'HockeyGame';
+  WHERE _meta_type = 'HockeyGame';
 ```
 
 ## 4. Migration Tooling: Not for v1 ❌
@@ -96,8 +96,8 @@ CREATE INDEX idx_events_home_team_id
 
 **Validation Points**:
 - Schema generation: Verify base has descendants
-- Save: Verify `type` is set before INSERT/UPDATE
-- Load: Verify `type` matches class being instantiated
+- Save: Verify `_meta_type` is set before INSERT/UPDATE
+- Load: Verify `_meta_type` matches class being instantiated
 - Startup: Optionally validate table structure
 
 ## Summary
@@ -116,7 +116,7 @@ CREATE INDEX idx_events_home_team_id
 
 When `tableStrategy: 'sti'`:
 1. `foreignKey()` → Always column (for joins)
-2. `meta()` → Always JSONB meta field
+2. `meta()` → Always stored in `_meta_data` JSONB column
 3. Everything else → Column (default)
 
 ### Schema Generation
@@ -128,7 +128,7 @@ generateSTISchema(baseClass) {
   return `
     CREATE TABLE ${tableName} (
       -- Core columns
-      id, slug, context, type, meta,
+      id, slug, context, _meta_type, _meta_data,
 
       -- Common fields (from base)
       ${baseFields},
@@ -139,14 +139,14 @@ generateSTISchema(baseClass) {
       -- Timestamps
       created_at, updated_at,
 
-      UNIQUE(slug, context, type)
+      UNIQUE(slug, context, _meta_type)
     );
 
     -- Partial indexes for each FK
     ${fkFields.map(f => `
       CREATE INDEX idx_${tableName}_${f.name}
         ON ${tableName}(${f.name})
-        WHERE type = '${f.sourceClass}';
+        WHERE _meta_type = '${f.sourceClass}';
     `).join('\n')}
   `;
 }
