@@ -179,4 +179,9 @@ export default defineConfig({
       tsconfigPath: resolve(__dirname, 'tsconfig.json'),
     }),
   ],
+  test: {
+    globals: true,
+    environment: 'node',
+    pool: 'forks', // Fix for vitest 4.0 dynamic import timeouts in workspace
+  },
 });
