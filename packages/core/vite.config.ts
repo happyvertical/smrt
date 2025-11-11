@@ -179,4 +179,22 @@ export default defineConfig({
       tsconfigPath: resolve(__dirname, 'tsconfig.json'),
     }),
   ],
+  test: {
+    globals: true,
+    environment: 'node',
+    poolMatchGlobs: [
+      [
+        // Scanner tests are slower and hang with 'forks' in CI.
+        // Run them in 'threads' pool with longer timeout.
+        'src/scanner/scanner.test.ts',
+        'threads',
+      ],
+      [
+        // All other tests use 'forks' pool for performance
+        '**/*.test.ts',
+        'forks',
+      ],
+    ],
+    testTimeout: 30000, // Scanner tests need longer timeout in CI
+  },
 });

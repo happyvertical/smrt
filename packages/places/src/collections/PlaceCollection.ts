@@ -103,10 +103,12 @@ export class PlaceCollection extends SmrtCollection<Place> {
 
     // Find closest match within threshold
     for (const place of places) {
-      if (place.latitude === null || place.longitude === null) continue;
+      // Cast to access Place-specific properties
+      const placeObj = place as Place;
+      if (placeObj.latitude === null || placeObj.longitude === null) continue;
 
-      const latDiff = Math.abs(place.latitude - latitude);
-      const lngDiff = Math.abs(place.longitude - longitude);
+      const latDiff = Math.abs(placeObj.latitude - latitude);
+      const lngDiff = Math.abs(placeObj.longitude - longitude);
 
       if (latDiff < threshold && lngDiff < threshold) {
         return place;

@@ -30,6 +30,7 @@
 import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
+import { ConfigurationError } from './errors';
 import { Field } from './fields';
 import {
   discoverManifestEntry,
@@ -37,6 +38,7 @@ import {
   getPackageName,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
+import type { SmartObjectManifest } from './scanner/types.js';
 import { classnameToTablename, tableNameFromClass } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
@@ -72,6 +74,29 @@ export interface SmartObjectConfig {
    * Explicitly setting this ensures the table name survives code minification
    */
   tableName?: string;
+
+  /**
+   * Table inheritance strategy (defaults to 'cti')
+   * - 'cti': Class Table Inheritance - one table per class (current default)
+   * - 'sti': Single Table Inheritance - shared table with discriminator column
+   *
+   * Set once on base class, children inherit automatically.
+   *
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject {
+   *   title: string = '';
+   * }
+   *
+   * // Meeting inherits 'sti' strategy
+   * @smrt()
+   * class Meeting extends Event {
+   *   roomId = foreignKey(Room);
+   * }
+   * ```
+   */
+  tableStrategy?: 'cti' | 'sti';
 
   /**
    * API configuration
@@ -267,6 +292,8 @@ interface RegisteredClass {
   inheritedFields?: Map<string, any>;
   /** Merged methods from entire inheritance chain (cached, includes parent methods) */
   inheritedMethods?: Map<string, any>;
+  /** Decorator config passed to @smrt() (includes tableStrategy) */
+  decorator?: SmartObjectConfig;
 }
 
 /**
@@ -371,7 +398,7 @@ export class ObjectRegistry {
       // Convert FieldDefinition to Field objects so getSqlType() works in schema generator
       for (const [fieldName, fieldDef] of Object.entries(
         manifestEntry.fields,
-      )) {
+      ) as [string, import('./scanner/types.js').FieldDefinition][]) {
         // Create Field instance from FieldDefinition
         fields.set(
           fieldName,
@@ -410,8 +437,36 @@ export class ObjectRegistry {
     // via ensureManifestLoaded(). This allows decorators to remain synchronous while
     // supporting dynamic external package manifest loading.
 
+    // Build inheritance chain from constructor (needed for STI table name resolution)
+    const inheritanceChain = ObjectRegistry.buildInheritanceChain(ctor);
+
+    // Validate table strategy compatibility with parent (STI requirement)
+    if (inheritanceChain.length > 1) {
+      // This class has a parent - validate strategy compatibility
+      const parentName = inheritanceChain[inheritanceChain.length - 2]; // Second-to-last is parent
+      const parentEntry = ObjectRegistry.classes.get(parentName);
+
+      if (parentEntry) {
+        const parentStrategy =
+          parentEntry.decorator?.tableStrategy || 'default';
+        const childStrategy = config.tableStrategy; // Don't default - undefined means inherit
+
+        // Only validate if child has an EXPLICIT strategy that differs from parent
+        // undefined childStrategy means it will inherit from parent
+        if (childStrategy !== undefined && parentStrategy !== childStrategy) {
+          throw ConfigurationError.incompatibleStrategy(
+            name,
+            childStrategy,
+            parentName,
+            parentStrategy,
+          );
+        }
+      }
+    }
+
     // Defer schema generation until needed (generateSchema now uses dynamic import)
     // Store table name for lazy schema generation
+    // Note: For STI classes, tableName is already set correctly by the decorator
     const tableName = config.tableName || tableNameFromClass(ctor);
 
     // Placeholder schema - will be generated lazily when first needed
@@ -425,9 +480,6 @@ export class ObjectRegistry {
     // Compile validation functions from field definitions
     const validators = ObjectRegistry.compileValidators(name, fields);
 
-    // Build inheritance chain from constructor
-    const inheritanceChain = ObjectRegistry.buildInheritanceChain(ctor);
-
     ObjectRegistry.classes.set(name, {
       name,
       constructor: ctor,
@@ -439,6 +491,7 @@ export class ObjectRegistry {
       packageName, // Store package name from manifest for getPackageName() lookup
       extends: manifestEntry?.extends, // NEW: Capture parent class name from manifest
       inheritanceChain, // NEW: Pre-compute and cache inheritance chain
+      decorator: config, // Store decorator config (includes tableStrategy)
     });
 
     console.log(
@@ -1382,6 +1435,7 @@ export class ObjectRegistry {
    */
   private static buildInheritanceChain(ctor: typeof SmrtObject): string[] {
     const chain: string[] = [];
+    const visited = new Set<string>();
     let current: any = ctor;
 
     // Walk up the prototype chain
@@ -1391,6 +1445,15 @@ export class ObjectRegistry {
         break;
       }
 
+      // Circular inheritance detection
+      if (visited.has(current.name)) {
+        throw ConfigurationError.circularInheritance(
+          current.name,
+          Array.from(chain),
+        );
+      }
+
+      visited.add(current.name);
       chain.unshift(current.name); // Add to front (we're walking child → base)
 
       current = Object.getPrototypeOf(current);
@@ -1881,6 +1944,149 @@ export class ObjectRegistry {
   }
 
   /**
+   * Get table inheritance strategy for a class
+   *
+   * Returns the table strategy (CTI or STI) for a class, with automatic
+   * inheritance from parent classes. If not explicitly configured,
+   * walks up the inheritance chain to find the strategy.
+   *
+   * **Strategy Inheritance:**
+   * - Set once on base class, children inherit automatically
+   * - Children can explicitly override (not recommended)
+   * - Default is 'cti' if not found in hierarchy
+   *
+   * @param className - Name of the class to get strategy for
+   * @returns 'cti' (Class Table Inheritance) or 'sti' (Single Table Inheritance)
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject { }
+   *
+   * @smrt() // Inherits 'sti'
+   * class Meeting extends Event { }
+   *
+   * ObjectRegistry.getTableStrategy('Meeting'); // 'sti'
+   * ObjectRegistry.getTableStrategy('Event'); // 'sti'
+   * ```
+   */
+  static getTableStrategy(className: string): 'cti' | 'sti' {
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      return 'cti'; // Default for unregistered classes
+    }
+
+    // Explicit config wins (check decorator first)
+    if (registered.decorator?.tableStrategy) {
+      return registered.decorator.tableStrategy;
+    }
+
+    // Inherit from ancestors
+    const chain = ObjectRegistry.getInheritanceChain(className);
+    for (const ancestorName of chain) {
+      const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (ancestor?.decorator?.tableStrategy) {
+        return ancestor.decorator.tableStrategy;
+      }
+    }
+
+    return 'cti'; // Default strategy
+  }
+
+  /**
+   * Get the base class for an STI hierarchy
+   *
+   * Walks up the inheritance chain to find the first class configured
+   * with `tableStrategy: 'sti'`. This is the class that owns the shared table.
+   *
+   * **Returns:**
+   * - The base class name if STI is configured in the hierarchy
+   * - null if the class uses CTI strategy
+   *
+   * @param className - Name of the class to find STI base for
+   * @returns Base class name or null if CTI
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject { }
+   *
+   * @smrt()
+   * class Meeting extends Event { }
+   *
+   * ObjectRegistry.getSTIBase('Meeting'); // 'Event'
+   * ObjectRegistry.getSTIBase('Event'); // 'Event'
+   * ```
+   */
+  static getSTIBase(className: string): string | null {
+    const strategy = ObjectRegistry.getTableStrategy(className);
+    if (strategy === 'cti') {
+      return null; // Not using STI
+    }
+
+    // Find the first class in the chain with tableStrategy: 'sti'
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      return null;
+    }
+
+    // Check if this class itself defines STI
+    if (registered.decorator?.tableStrategy === 'sti') {
+      return className;
+    }
+
+    // Walk up the chain to find the base
+    const chain = ObjectRegistry.getInheritanceChain(className);
+    for (const ancestorName of chain) {
+      const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (ancestor?.decorator?.tableStrategy === 'sti') {
+        return ancestorName;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get all descendant classes of a base class
+   *
+   * Returns all registered classes that inherit from the specified base class.
+   * Uses the `extends` field from manifest to build the descendant tree.
+   *
+   * **Use cases:**
+   * - Schema generation: Aggregate fields from all children for STI table
+   * - Polymorphic queries: Find all types to instantiate
+   * - Documentation: Show class hierarchy
+   *
+   * @param className - Name of the base class
+   * @returns Array of descendant class names (direct and indirect)
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject { }
+   *
+   * @smrt()
+   * class Meeting extends Event { }
+   *
+   * @smrt()
+   * class HockeyGame extends Event { }
+   *
+   * ObjectRegistry.getDescendants('Event'); // ['Meeting', 'HockeyGame']
+   * ```
+   */
+  static getDescendants(className: string): string[] {
+    const descendants: string[] = [];
+
+    // Find all classes that extend the given class
+    for (const [childName, childClass] of ObjectRegistry.classes) {
+      const chain = ObjectRegistry.getInheritanceChain(childName);
+      if (chain.includes(className) && childName !== className) {
+        descendants.push(childName);
+      }
+    }
+
+    return descendants;
+  }
+
+  /**
    * Persist registry state to system tables
    *
    * Saves all registered class metadata to the _smrt_registry system table
@@ -2017,7 +2223,36 @@ export function smrt(config: SmartObjectConfig = {}) {
       }
     } else {
       // Handle SmrtObject registration (existing behavior)
-      const tableName = config.tableName || classnameToTablename(ctor.name);
+      let tableName = config.tableName;
+
+      if (!tableName) {
+        // For STI: Use base class's table name if this is a child
+        if (config.tableStrategy === 'sti') {
+          // This class is the STI base - use its own table name
+          tableName = classnameToTablename(ctor.name);
+        } else {
+          // Check if any parent uses STI
+          let proto = Object.getPrototypeOf(ctor);
+          let stiBaseName: string | null = null;
+
+          while (proto?.name && proto.name !== 'SmrtObject') {
+            const parentClass = ObjectRegistry.getClass(proto.name);
+            if (parentClass?.decorator?.tableStrategy === 'sti') {
+              stiBaseName = proto.name;
+              break;
+            }
+            proto = Object.getPrototypeOf(proto);
+          }
+
+          if (stiBaseName) {
+            // Use STI base's table name
+            tableName = classnameToTablename(stiBaseName);
+          } else {
+            // CTI: Use own table name
+            tableName = classnameToTablename(ctor.name);
+          }
+        }
+      }
 
       Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
         value: tableName,

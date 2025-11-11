@@ -360,9 +360,61 @@ export class SmrtObject extends SmrtClass {
   /**
    * Loads data from a database row into this object's properties
    *
+   * STI Support: If using Single Table Inheritance (tableStrategy: 'sti'):
+   * - Merges _meta_data JSONB fields into the main data object
+   * - Validates _meta_type discriminator matches class name
+   *
    * @param data - Database row data
+   * @throws Error if STI validation fails
    */
   async loadDataFromDb(data: any) {
+    // Check if this class uses STI (Single Table Inheritance)
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.constructor.name,
+    );
+    const isSTI = tableStrategy === 'sti';
+
+    // STI: Fail-fast validation for _meta_type discriminator
+    if (isSTI) {
+      // Validation 1: _meta_type must be present in database row
+      if (!data._meta_type) {
+        throw new Error(
+          `STI validation failed: Missing _meta_type discriminator in database row for ${this.constructor.name}. ` +
+            `Ensure the row was saved with STI support enabled.`,
+        );
+      }
+
+      // Validation 2: _meta_type must match the class being instantiated
+      if (data._meta_type !== this.constructor.name) {
+        throw new Error(
+          `STI validation failed: Type mismatch when loading ${this.constructor.name}. ` +
+            `Database row has _meta_type='${data._meta_type}' but expected '${this.constructor.name}'. ` +
+            `This usually means you're trying to load a row with the wrong class.`,
+        );
+      }
+    }
+
+    // STI: Merge meta fields from _meta_data JSONB into main data object
+    if (isSTI && data._meta_data) {
+      try {
+        // Parse _meta_data if it's a JSON string (some adapters return strings)
+        const metaData =
+          typeof data._meta_data === 'string'
+            ? JSON.parse(data._meta_data)
+            : data._meta_data;
+
+        // Merge meta fields into data object so they get loaded into instance
+        Object.assign(data, metaData);
+      } catch (error) {
+        const { DatabaseError } = await import('./errors.js');
+        throw DatabaseError.corruptedData(
+          '_meta_data',
+          this.constructor.name,
+          error as Error,
+        );
+      }
+    }
+
     const fields = await this.getFields();
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
@@ -414,7 +466,29 @@ export class SmrtObject extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      this._tableName = tableNameFromClass(this.constructor);
+      // For STI, use the base class's table name
+      const className = this.constructor.name;
+      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+
+      if (tableStrategy === 'sti') {
+        const stiBase = ObjectRegistry.getSTIBase(className);
+        if (stiBase) {
+          // Use base class's table name
+          const baseClass = ObjectRegistry.getClass(stiBase);
+          if (baseClass) {
+            this._tableName = tableNameFromClass(baseClass.constructor);
+          } else {
+            // Fallback to own table name if base not found
+            this._tableName = tableNameFromClass(this.constructor);
+          }
+        } else {
+          // Fallback to own table name
+          this._tableName = tableNameFromClass(this.constructor);
+        }
+      } else {
+        // CTI: Use own table name
+        this._tableName = tableNameFromClass(this.constructor);
+      }
     }
     return this._tableName;
   }
@@ -451,6 +525,10 @@ export class SmrtObject extends SmrtClass {
    *
    * Note: This method cannot be async because JSON.stringify() expects synchronous toJSON()
    * It uses direct property access instead of getFields() to avoid async issues
+   *
+   * STI Support: If using Single Table Inheritance (tableStrategy: 'sti'):
+   * - Sets _meta_type discriminator to class name
+   * - Extracts meta fields to _meta_data JSONB column
    */
   toJSON() {
     const data: any = {
@@ -460,6 +538,18 @@ export class SmrtObject extends SmrtClass {
       created_at: this.created_at,
       updated_at: this.updated_at,
     };
+
+    // Check if this class uses STI (Single Table Inheritance)
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.constructor.name,
+    );
+    const isSTI = tableStrategy === 'sti';
+
+    // If STI, add discriminator and prepare meta_data container
+    if (isSTI) {
+      data._meta_type = this.constructor.name;
+      data._meta_data = {};
+    }
 
     // Get registered field definitions (synchronous access to already-loaded metadata)
     const registeredFields = ObjectRegistry.getFields(this.constructor.name);
@@ -511,12 +601,24 @@ export class SmrtObject extends SmrtClass {
           (fieldDef && fieldDef.type === 'text');
 
         if (isTextField) {
-          data[key] = '';
+          // STI: meta fields go to _meta_data, regular fields go to columns
+          if (isSTI && fieldDef && fieldDef.type === 'meta') {
+            data._meta_data[key] = '';
+          } else {
+            data[key] = '';
+          }
         }
         continue; // Skip undefined for non-text fields
       }
 
-      data[key] = value;
+      // STI: Separate meta fields from regular fields
+      if (isSTI && fieldDef && fieldDef.type === 'meta') {
+        // Meta fields go into _meta_data JSONB column
+        data._meta_data[key] = value;
+      } else {
+        // Regular fields become table columns
+        data[key] = value;
+      }
     }
 
     return data;
@@ -644,16 +746,48 @@ export class SmrtObject extends SmrtClass {
       // Use per-adapter upsert method instead of generating SQL
       const jsonData = this.toJSON();
 
+      // STI: Fail-fast validation for _meta_type discriminator
+      const tableStrategy = ObjectRegistry.getTableStrategy(
+        this.constructor.name,
+      );
+      if (tableStrategy === 'sti') {
+        if (!jsonData._meta_type) {
+          throw new Error(
+            `STI validation failed: Missing _meta_type discriminator when saving ${this.constructor.name}. ` +
+              `This should have been set automatically by toJSON(). Please report this bug.`,
+          );
+        }
+        if (jsonData._meta_type !== this.constructor.name) {
+          throw new Error(
+            `STI validation failed: _meta_type mismatch when saving ${this.constructor.name}. ` +
+              `Expected '${this.constructor.name}' but got '${jsonData._meta_type}'. ` +
+              `This should not happen - please report this bug.`,
+          );
+        }
+      }
+
       // Convert camelCase keys to snake_case for database columns
+      // Preserve leading underscore for special fields like _meta_type, _meta_data
       const data: Record<string, any> = {};
       for (const [key, value] of Object.entries(jsonData)) {
-        data[toSnakeCase(key)] = value;
+        if (key.startsWith('_')) {
+          // Preserve leading underscore for special fields
+          data[key] = value;
+        } else {
+          data[toSnakeCase(key)] = value;
+        }
       }
+
+      // STI: Include _meta_type in conflict columns
+      const conflictColumns =
+        tableStrategy === 'sti'
+          ? ['slug', 'context', '_meta_type']
+          : ['slug', 'context'];
 
       await ErrorUtils.withRetry(
         async () => {
           try {
-            await this.db.upsert(this.tableName, ['slug', 'context'], data);
+            await this.db.upsert(this.tableName, conflictColumns, data);
           } catch (error) {
             // Detect specific database error types
             if (error instanceof Error) {

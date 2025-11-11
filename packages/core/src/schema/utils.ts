@@ -69,29 +69,79 @@ export async function generateSchema(
     );
   }
 
+  // Check if class uses STI strategy
+  const tableStrategy = ObjectRegistry.getTableStrategy(className);
+
   // Dynamic import SchemaGenerator (Node.js-only, uses node:crypto)
   // This prevents bundling it into browser builds
   const { SchemaGenerator } = await import('./generator.js');
   const generator = new SchemaGenerator();
-  const schemaDefinition = generator.generateSchemaFromRegistry(
-    className,
-    tableName,
-    cachedFields,
-  );
+
+  let schemaDefinition: Awaited<
+    ReturnType<
+      InstanceType<typeof SchemaGenerator>['generateSchemaFromRegistry']
+    >
+  >;
+
+  if (tableStrategy === 'sti') {
+    // STI: Generate shared table for base class
+    const stiBase = ObjectRegistry.getSTIBase(className);
+
+    if (!stiBase) {
+      throw new Error(
+        `STI strategy detected for '${className}' but no STI base class found. ` +
+          `This should not happen - please report this bug.`,
+      );
+    }
+
+    // Only generate schema for the base class (not for children)
+    // Children will use the same table as the base
+    if (className === stiBase) {
+      // This is the base class - generate STI schema
+      schemaDefinition = await generator.generateSTISchemaFromRegistry(
+        className,
+        tableName,
+        cachedFields,
+      );
+    } else {
+      // This is a child class - return null or empty schema
+      // The base class schema already includes all fields
+      // Child classes don't need their own tables
+      return ''; // Empty SQL - table already created by base class
+    }
+  } else {
+    // CTI: Generate separate table for each class
+    schemaDefinition = generator.generateSchemaFromRegistry(
+      className,
+      tableName,
+      cachedFields,
+    );
+  }
 
   return generator.generateSQL(schemaDefinition);
 }
 
 /**
  * Cache of table setup promises to avoid duplicate setup operations
+ * Key format: "${dbUrl}::${tableName}" to prevent cross-database conflicts
  */
 const _setupTableFromClassPromises: Record<string, Promise<void> | null> = {};
+
+/**
+ * Clears the table setup cache - useful for testing
+ * @internal
+ */
+export function _clearSetupTableCache() {
+  Object.keys(_setupTableFromClassPromises).forEach((key) => {
+    delete _setupTableFromClassPromises[key];
+  });
+}
 
 /**
  * Sets up database tables for a class with caching to prevent duplicate operations
  *
  * Creates the database table, indexes, and triggers for a SMRT class.
- * Uses promise caching to ensure each table is only set up once.
+ * Uses promise caching to ensure each table is only set up once per database.
  * Now leverages ObjectRegistry's cached schema for instant retrieval.
  *
  * @param db - Database connection interface
@@ -101,17 +151,26 @@ const _setupTableFromClassPromises: Record<string, Promise<void> | null> = {};
  */
 export async function setupTableFromClass(db: any, ClassType: any) {
   const className = ClassType.name;
-  const tableName = className
-    .replace(/([a-z])([A-Z])/g, '$1_$2')
-    .toLowerCase()
-    .replace(/([^s])$/, '$1s')
-    .replace(/y$/, 'ies');
+
+  // Use SMRT_TABLE_NAME if available (set by @smrt decorator, handles STI correctly)
+  // Otherwise derive from class name
+  const tableName =
+    (ClassType as any).SMRT_TABLE_NAME ||
+    className
+      .replace(/([a-z])([A-Z])/g, '$1_$2')
+      .toLowerCase()
+      .replace(/([^s])$/, '$1s')
+      .replace(/y$/, 'ies');
+
+  // Include database URL in cache key to prevent cross-database conflicts
+  const dbUrl = db.url || db.config?.url || 'memory';
+  const cacheKey = `${dbUrl}::${tableName}`;
 
   if (
-    _setupTableFromClassPromises[tableName] !== undefined &&
-    _setupTableFromClassPromises[tableName] !== null
+    _setupTableFromClassPromises[cacheKey] !== undefined &&
+    _setupTableFromClassPromises[cacheKey] !== null
   ) {
-    return _setupTableFromClassPromises[tableName];
+    return _setupTableFromClassPromises[cacheKey];
   }
 
   // Create the setup promise
@@ -155,17 +214,41 @@ export async function setupTableFromClass(db: any, ClassType: any) {
       //   }
       // }
 
-      await syncSchema({ db, schema });
+      // Skip schema sync for STI child classes (empty schema returned)
+      // But ensure the base class table exists first!
+      if (schema && schema.trim() !== '') {
+        await syncSchema({ db, schema });
+      } else {
+        // STI child: Ensure base class table exists
+        const tableStrategy = ObjectRegistry.getTableStrategy(className);
+        if (tableStrategy === 'sti') {
+          const stiBase = ObjectRegistry.getSTIBase(className);
+          if (stiBase && stiBase !== className) {
+            // This is a child - recursively setup base class table
+            const baseClass = ObjectRegistry.getClass(stiBase);
+            if (baseClass) {
+              await setupTableFromClass(db, baseClass.constructor);
+            } else {
+              // Base class not registered - fail fast with helpful message
+              const { ConfigurationError } = await import('../errors.js');
+              throw ConfigurationError.unregisteredBaseClass(
+                className,
+                stiBase,
+              );
+            }
+          }
+        }
+      }
     } catch (error) {
       // CRITICAL: Clear cache BEFORE throwing to prevent race condition
       // This ensures concurrent callers don't get a stale reference
-      _setupTableFromClassPromises[tableName] = null;
+      _setupTableFromClassPromises[cacheKey] = null;
       throw error;
     }
   })();
 
   // Store the promise in cache AFTER creating it
-  _setupTableFromClassPromises[tableName] = setupPromise;
+  _setupTableFromClassPromises[cacheKey] = setupPromise;
 
   return setupPromise;
 }

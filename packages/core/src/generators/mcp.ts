@@ -687,12 +687,14 @@ export class MCPGenerator {
         }
 
         // Check if the method exists on the object instance
-        if (typeof object[action] === 'function') {
+        // Cast to any to access dynamic method names
+        const objectWithMethods = object as any;
+        if (typeof objectWithMethods[action] === 'function') {
           // Call the method with the provided options
           // If options is provided, use it; otherwise use directArgs
           const methodArgs =
             Object.keys(options).length > 0 ? options : directArgs;
-          const result = await object[action](methodArgs);
+          const result = await objectWithMethods[action](methodArgs);
           return result;
         } else {
           throw new Error(`Method '${action}' not found on object instance`);

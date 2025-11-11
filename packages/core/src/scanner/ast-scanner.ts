@@ -732,6 +732,16 @@ export class ASTScanner {
   ): FieldDefinition['type'] {
     const typeText = typeNode.getText(sourceFile).toLowerCase();
 
+    // Handle Meta<T> wrapper for STI (Single Table Inheritance)
+    // Meta<T> fields are stored in _meta_data JSONB column
+    if (ts.isTypeReferenceNode(typeNode)) {
+      const typeName = typeNode.typeName.getText();
+      if (typeName === 'Meta') {
+        // This is a Meta<T> field - mark as 'meta' type
+        return 'meta';
+      }
+    }
+
     // Handle primitive types
     if (typeText === 'string') return 'text';
     if (typeText === 'number') return 'decimal';
@@ -862,6 +872,7 @@ export class ASTScanner {
         if (funcName === 'foreignkey') return 'foreignKey';
         if (funcName === 'onetomany') return 'oneToMany';
         if (funcName === 'manytomany') return 'manyToMany';
+        if (funcName === 'meta') return 'meta'; // STI meta field helper
       }
     }
 

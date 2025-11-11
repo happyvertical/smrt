@@ -33,8 +33,35 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
-import { staticManifest } from './static-manifest.js';
 import { testManifest } from './test-manifest-stub.js';
+
+// Lazy-load staticManifest with fallback for build-time loading
+// During vite config loading, static-manifest.js may not exist yet
+let staticManifest: SmartObjectManifest | null = null;
+let staticManifestLoadAttempted = false;
+
+// Create require function once for reuse
+const require = createRequire(import.meta.url);
+
+function getStaticManifest(): SmartObjectManifest {
+  if (!staticManifestLoadAttempted) {
+    staticManifestLoadAttempted = true;
+    try {
+      // Try to import the generated static manifest
+      const imported = require('./static-manifest.js');
+      staticManifest = imported.staticManifest || imported.default;
+    } catch {
+      // Fallback to empty manifest if file doesn't exist yet (during build)
+      staticManifest = {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        objects: {},
+        packageName: '@happyvertical/smrt-core',
+      };
+    }
+  }
+  return staticManifest!;
+}
 
 // Re-export types for convenience
 export type Manifest = SmartObjectManifest;
@@ -366,7 +393,10 @@ export function discoverManifestSync(
   }
 
   // 3. Check staticManifest (core framework classes)
-  const staticObjects = staticManifest.objects as Record<string, ManifestEntry>;
+  const staticObjects = getStaticManifest().objects as Record<
+    string,
+    ManifestEntry
+  >;
   if (staticObjects[name]) {
     return staticObjects[name];
   }
@@ -481,12 +511,16 @@ export async function discoverManifestEntry(
   }
 
   // 4. Check staticManifest (core framework classes)
-  const staticObjects = staticManifest.objects as Record<string, ManifestEntry>;
+  const staticManifestData = getStaticManifest();
+  const staticObjects = staticManifestData.objects as Record<
+    string,
+    ManifestEntry
+  >;
   const staticEntry = staticObjects[name] || staticObjects[className];
   if (staticEntry) {
     foundEntries.push({
       entry: staticEntry,
-      packageName: staticManifest.packageName || '@happyvertical/smrt-core',
+      packageName: staticManifestData.packageName || '@happyvertical/smrt-core',
       filePath: staticEntry.filePath,
       manifestSource: '@happyvertical/smrt-core static manifest',
     });

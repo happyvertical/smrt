@@ -261,9 +261,22 @@ export function formatDataJs(
   fields?: Record<string, { type?: string }>,
 ) {
   const normalizedData: Record<string, any> = {};
+
+  // STI: If _meta_data exists, merge it into data first
+  // This ensures meta fields are available during formatting
+  if (data._meta_data) {
+    const metaData =
+      typeof data._meta_data === 'string'
+        ? JSON.parse(data._meta_data)
+        : data._meta_data;
+    // Merge meta fields into data (will be formatted below)
+    Object.assign(data, metaData);
+  }
+
   for (const [key, value] of Object.entries(data)) {
-    // Convert snake_case to camelCase for JavaScript
-    const camelKey = toCamelCase(key);
+    // Preserve keys with leading underscore (e.g., _meta_type, _meta_data)
+    // These are special STI/framework fields that should not be camelCased
+    const camelKey = key.startsWith('_') ? key : toCamelCase(key);
 
     if (value instanceof Date) {
       normalizedData[camelKey] = value;

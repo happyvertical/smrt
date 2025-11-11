@@ -381,6 +381,12 @@ export class SchemaGenerator {
         continue;
       }
 
+      // Skip meta fields - they're stored in _meta_data JSONB column (STI only)
+      // In CTI mode, meta fields shouldn't be used, but skip them anyway for safety
+      if (field.type === 'meta') {
+        continue;
+      }
+
       const sqlType = (field.getSqlType?.() || 'TEXT') as SQLDataType;
 
       const columnDef: ColumnDefinition = {
@@ -498,6 +504,248 @@ export class SchemaGenerator {
   }
 
   /**
+   * Generate STI (Single Table Inheritance) schema from ObjectRegistry fields
+   *
+   * Creates a shared table for an inheritance hierarchy with:
+   * - _meta_type: Discriminator column to identify class type
+   * - _meta_data: JSON column for flexible field storage
+   * - Union of all FK columns from descendants (all nullable)
+   * - Partial indexes for FK columns (filtered by _meta_type)
+   *
+   * @param baseClassName - Base class name for the STI hierarchy
+   * @param tableName - Shared table name (from base class)
+   * @param fields - Map of Field definitions from base class
+   * @returns Schema definition object for STI table
+   * @example
+   * ```typescript
+   * @smrt({ tableStrategy: 'sti' })
+   * class Event extends SmrtObject {
+   *   title: string = '';
+   * }
+   *
+   * @smrt()
+   * class Meeting extends Event {
+   *   roomId = foreignKey(Room);
+   * }
+   *
+   * // Generates single table 'events' with:
+   * // - title (from Event)
+   * // - room_id (from Meeting, nullable)
+   * // - _meta_type TEXT NOT NULL (discriminator)
+   * // - _meta_data JSON (flexible storage)
+   * ```
+   */
+  async generateSTISchemaFromRegistry(
+    baseClassName: string,
+    tableName: string,
+    _fields: Map<string, Field>,
+  ): Promise<SchemaDefinition> {
+    const { ObjectRegistry } = await import('../registry');
+    const columns: Record<string, ColumnDefinition> = {};
+
+    // Add default SMRT fields
+    columns.id = {
+      type: 'TEXT',
+      primaryKey: true,
+      notNull: true,
+      description: 'Primary identifier',
+    };
+
+    columns.slug = {
+      type: 'TEXT',
+      notNull: true,
+      description: 'URL-friendly identifier',
+    };
+
+    columns.context = {
+      type: 'TEXT',
+      notNull: true,
+      defaultValue: '',
+      description: 'Context for slug scoping',
+    };
+
+    // Add STI discriminator column
+    columns._meta_type = {
+      type: 'TEXT',
+      notNull: true,
+      description: 'Class type discriminator for STI',
+    };
+
+    // Add meta column for flexible storage
+    columns._meta_data = {
+      type: 'JSON',
+      notNull: false,
+      description: 'Flexible JSON storage for meta() fields',
+    };
+
+    // Track timestamp fields to avoid duplicates
+    let hasCreatedAt = false;
+    let hasUpdatedAt = false;
+
+    // Get all descendants to aggregate fields
+    const descendants = ObjectRegistry.getDescendants(baseClassName);
+    const allClassNames = [baseClassName, ...descendants];
+
+    // Track FK columns by class for partial indexes
+    const fkColumnsByClass = new Map<string, Set<string>>();
+
+    // Aggregate fields from base and all descendants
+    for (const className of allClassNames) {
+      const classFields = await ObjectRegistry.getAllFields(className);
+      fkColumnsByClass.set(className, new Set());
+
+      for (const [fieldName, field] of classFields.entries()) {
+        // Skip transient fields
+        if (field.transient || field.options?.transient) {
+          continue;
+        }
+
+        // Skip default fields already added
+        if (
+          fieldName === 'id' ||
+          fieldName === 'slug' ||
+          fieldName === 'context'
+        ) {
+          continue;
+        }
+
+        // Track timestamp fields
+        if (fieldName === 'created_at' || fieldName === 'createdAt') {
+          if (hasCreatedAt) continue;
+          hasCreatedAt = true;
+        }
+        if (fieldName === 'updated_at' || fieldName === 'updatedAt') {
+          if (hasUpdatedAt) continue;
+          hasUpdatedAt = true;
+        }
+
+        // Skip relationship fields that don't create columns
+        if (field.type === 'oneToMany' || field.type === 'manyToMany') {
+          continue;
+        }
+
+        // Skip meta fields - they're stored in _meta_data JSONB column
+        if (field.type === 'meta') {
+          continue;
+        }
+
+        const columnName = this.toSnakeCase(fieldName);
+
+        // Check if column already exists (inherited from parent)
+        if (columns[columnName]) {
+          continue;
+        }
+
+        const sqlType = (field.getSqlType?.() || 'TEXT') as SQLDataType;
+
+        const columnDef: ColumnDefinition = {
+          type: sqlType,
+          // STI: All columns nullable (union of child fields)
+          notNull: false,
+          primaryKey: false,
+          unique: false,
+          description: field.options?.description,
+        };
+
+        // Get default value (but not applied in STI - defaults handled by application)
+        if (field.options?.default !== undefined) {
+          columnDef.defaultValue = field.options.default;
+        }
+
+        // Handle foreign keys
+        if (field.type === 'foreignKey') {
+          const relatedName = (field.options as any).related;
+          const onDeleteAction = (field.options as any).onDelete;
+
+          if (relatedName) {
+            columnDef.foreignKey = {
+              table: this.classNameToTableName(relatedName),
+              column: 'id',
+              onDelete: onDeleteAction || 'CASCADE',
+              onUpdate: 'CASCADE',
+            };
+
+            // Track FK column for this class (for partial indexes)
+            fkColumnsByClass.get(className)?.add(columnName);
+          }
+        }
+
+        columns[columnName] = columnDef;
+      }
+    }
+
+    // Ensure timestamp columns exist
+    if (!hasCreatedAt) {
+      columns.created_at = {
+        type: 'TIMESTAMP',
+        notNull: true,
+        defaultValue: 'current_timestamp',
+        description: 'Creation timestamp',
+      };
+    }
+    if (!hasUpdatedAt) {
+      columns.updated_at = {
+        type: 'TIMESTAMP',
+        notNull: true,
+        defaultValue: 'current_timestamp',
+        description: 'Last update timestamp',
+      };
+    }
+
+    // Generate indexes
+    const indexes: IndexDefinition[] = [];
+
+    // Primary key index
+    indexes.push({
+      name: `${tableName}_id_idx`,
+      columns: ['id'],
+      description: 'Primary key index',
+    });
+
+    // Unique index for slug, context, and type (STI variation)
+    indexes.push({
+      name: `${tableName}_slug_context_meta_type_idx`,
+      columns: ['slug', 'context', '_meta_type'],
+      unique: true,
+      description: 'Unique index for slug, context, and type',
+    });
+
+    // Index on type column (for polymorphic queries)
+    indexes.push({
+      name: `${tableName}_meta_type_idx`,
+      columns: ['_meta_type'],
+      description: 'Index for type discriminator queries',
+    });
+
+    // Partial indexes for FK columns (filtered by type)
+    for (const [className, fkColumns] of fkColumnsByClass.entries()) {
+      for (const fkColumn of fkColumns) {
+        indexes.push({
+          name: `idx_${tableName}_${fkColumn}_${className.toLowerCase()}`,
+          columns: [fkColumn],
+          where: `_meta_type = '${className}'`,
+          description: `Partial index for ${fkColumn} in ${className} rows`,
+        });
+      }
+    }
+
+    return {
+      tableName,
+      columns,
+      indexes,
+      triggers: [],
+      foreignKeys: this.extractForeignKeys(columns),
+      dependencies: [],
+      version: createHash('sha256')
+        .update(JSON.stringify({ columns, baseClassName, descendants }))
+        .digest('hex')
+        .substring(0, 8),
+      packageName: 'runtime',
+      baseClass: 'SmrtObject',
+    };
+  }
+
+  /**
    * Convert camelCase to snake_case
    */
   private toSnakeCase(str: string): string {
@@ -568,7 +816,8 @@ export class SchemaGenerator {
       const indexType = index.unique ? 'UNIQUE INDEX' : 'INDEX';
       // Quote column names in index to handle SQL reserved keywords
       const columnList = index.columns.map((col) => `"${col}"`).join(', ');
-      sql += `\nCREATE ${indexType} IF NOT EXISTS ${index.name} ON "${tableName}" (${columnList});`;
+      const whereClause = index.where ? ` WHERE ${index.where}` : '';
+      sql += `\nCREATE ${indexType} IF NOT EXISTS ${index.name} ON "${tableName}" (${columnList})${whereClause};`;
     }
 
     return sql;

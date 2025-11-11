@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762775641548,
+  "timestamp": 1762890777777,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -879,6 +879,64 @@ export const testManifest: SmartObjectManifest = {
       "exportName": "CacheTestCollection",
       "collectionExportName": "CacheTestCollectionCollection"
     },
+    "testfieldoptions": {
+      "name": "testfieldoptions",
+      "className": "TestFieldOptions",
+      "collection": "testfieldoptionses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-140-field-helper-options.test.ts",
+      "fields": {
+        "requiredField": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "required": true
+          }
+        },
+        "optionalField": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "required": false
+          }
+        },
+        "lengthConstrainedField": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "minLength": 3,
+            "maxLength": 20
+          }
+        },
+        "complexField": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "required": true,
+            "maxLength": 100,
+            "default": "default value"
+          }
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "test_field_options"
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestFieldOptions",
+      "collectionExportName": "TestFieldOptionsCollection"
+    },
+    "testfieldoptionscollection": {
+      "name": "testfieldoptionscollection",
+      "className": "TestFieldOptionsCollection",
+      "collection": "testfieldoptionscollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-140-field-helper-options.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "TestFieldOptionsCollection",
+      "collectionExportName": "TestFieldOptionsCollectionCollection"
+    },
     "testevent": {
       "name": "testevent",
       "className": "TestEvent",
@@ -935,6 +993,96 @@ export const testManifest: SmartObjectManifest = {
       "extends": "SmrtCollection",
       "exportName": "TestProfileCollection",
       "collectionExportName": "TestProfileCollectionCollection"
+    },
+    "transienttest": {
+      "name": "transienttest",
+      "className": "TransientTest",
+      "collection": "transienttests",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-176-transient-fields.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "required": true
+          }
+        },
+        "filterFn": {
+          "type": "text",
+          "required": true,
+          "transient": true
+        },
+        "processFn": {
+          "type": "text",
+          "required": true,
+          "transient": true
+        },
+        "computedValue": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "transient": true
+          },
+          "transient": true
+        },
+        "status": {
+          "type": "text",
+          "required": true,
+          "default": "active"
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "transient_test"
+      },
+      "extends": "SmrtObject",
+      "exportName": "TransientTest",
+      "collectionExportName": "TransientTestCollection"
+    },
+    "transienttestcollection": {
+      "name": "transienttestcollection",
+      "className": "TransientTestCollection",
+      "collection": "transienttestcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-176-transient-fields.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "TransientTestCollection",
+      "collectionExportName": "TransientTestCollectionCollection"
+    },
+    "withtransientoption": {
+      "name": "withtransientoption",
+      "className": "WithTransientOption",
+      "collection": "withtransientoptions",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-176-transient-fields.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "required": true
+          }
+        },
+        "temp": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "transient": true,
+            "default": "temporary"
+          },
+          "transient": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "WithTransientOption",
+      "collectionExportName": "WithTransientOptionCollection"
     },
     "testcontent": {
       "name": "testcontent",
@@ -1964,6 +2112,369 @@ export const testManifest: SmartObjectManifest = {
       "extends": "SmrtObject",
       "exportName": "CustomTimestamps",
       "collectionExportName": "CustomTimestampsCollection"
+    },
+    "testload1": {
+      "name": "testload1",
+      "className": "TestLoad1",
+      "collection": "testload1s",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-fields.test.ts",
+      "fields": {
+        "metaField": {
+          "type": "meta",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestLoad1",
+      "collectionExportName": "TestLoad1Collection"
+    },
+    "testload2": {
+      "name": "testload2",
+      "className": "TestLoad2",
+      "collection": "testload2s",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-fields.test.ts",
+      "fields": {
+        "metaField": {
+          "type": "meta",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestLoad2",
+      "collectionExportName": "TestLoad2Collection"
+    },
+    "testload3": {
+      "name": "testload3",
+      "className": "TestLoad3",
+      "collection": "testload3s",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-fields.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestLoad3",
+      "collectionExportName": "TestLoad3Collection"
+    },
+    "testload4": {
+      "name": "testload4",
+      "className": "TestLoad4",
+      "collection": "testload4s",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-fields.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestLoad4",
+      "collectionExportName": "TestLoad4Collection"
+    },
+    "integrationevent": {
+      "name": "integrationevent",
+      "className": "IntegrationEvent",
+      "collection": "integrationevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "IntegrationEvent",
+      "collectionExportName": "IntegrationEventCollection"
+    },
+    "integrationhockeygame": {
+      "name": "integrationhockeygame",
+      "className": "IntegrationHockeyGame",
+      "collection": "integrationhockeygames",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
+      "fields": {
+        "arenaName": {
+          "type": "meta",
+          "required": true,
+          "default": ""
+        },
+        "capacity": {
+          "type": "meta",
+          "required": true,
+          "default": 0
+        },
+        "homeTeam": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "IntegrationEvent",
+      "exportName": "IntegrationHockeyGame",
+      "collectionExportName": "IntegrationHockeyGameCollection"
+    },
+    "integrationhockeygamecollection": {
+      "name": "integrationhockeygamecollection",
+      "className": "IntegrationHockeyGameCollection",
+      "collection": "integrationhockeygamecollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "IntegrationHockeyGameCollection",
+      "collectionExportName": "IntegrationHockeyGameCollectionCollection"
+    },
+    "integrationevent2": {
+      "name": "integrationevent2",
+      "className": "IntegrationEvent2",
+      "collection": "integrationevent2s",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "IntegrationEvent2",
+      "collectionExportName": "IntegrationEvent2Collection"
+    },
+    "integrationconcert": {
+      "name": "integrationconcert",
+      "className": "IntegrationConcert",
+      "collection": "integrationconcerts",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
+      "fields": {
+        "venueName": {
+          "type": "meta",
+          "required": true
+        },
+        "ticketsSold": {
+          "type": "meta",
+          "required": true
+        },
+        "artist": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "IntegrationEvent2",
+      "exportName": "IntegrationConcert",
+      "collectionExportName": "IntegrationConcertCollection"
+    },
+    "integrationconcertcollection": {
+      "name": "integrationconcertcollection",
+      "className": "IntegrationConcertCollection",
+      "collection": "integrationconcertcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "IntegrationConcertCollection",
+      "collectionExportName": "IntegrationConcertCollectionCollection"
+    },
+    "polyevent": {
+      "name": "polyevent",
+      "className": "PolyEvent",
+      "collection": "polyevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "PolyEvent",
+      "collectionExportName": "PolyEventCollection"
+    },
+    "polymeeting": {
+      "name": "polymeeting",
+      "className": "PolyMeeting",
+      "collection": "polymeetings",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
+      "fields": {
+        "location": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "attendees": {
+          "type": "meta",
+          "required": true,
+          "default": []
+        },
+        "duration": {
+          "type": "meta",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "PolyEvent",
+      "exportName": "PolyMeeting",
+      "collectionExportName": "PolyMeetingCollection"
+    },
+    "polyconcert": {
+      "name": "polyconcert",
+      "className": "PolyConcert",
+      "collection": "polyconcerts",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
+      "fields": {
+        "venue": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "artist": {
+          "type": "meta",
+          "required": true,
+          "default": ""
+        },
+        "ticketPrice": {
+          "type": "meta",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "PolyEvent",
+      "exportName": "PolyConcert",
+      "collectionExportName": "PolyConcertCollection"
+    },
+    "polyconference": {
+      "name": "polyconference",
+      "className": "PolyConference",
+      "collection": "polyconferences",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
+      "fields": {
+        "organizer": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "tracks": {
+          "type": "meta",
+          "required": true,
+          "default": []
+        },
+        "fee": {
+          "type": "meta",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "PolyEvent",
+      "exportName": "PolyConference",
+      "collectionExportName": "PolyConferenceCollection"
+    },
+    "polyeventcollection": {
+      "name": "polyeventcollection",
+      "className": "PolyEventCollection",
+      "collection": "polyeventcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "PolyEventCollection",
+      "collectionExportName": "PolyEventCollectionCollection"
+    },
+    "polymeetingcollection": {
+      "name": "polymeetingcollection",
+      "className": "PolyMeetingCollection",
+      "collection": "polymeetingcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "PolyMeetingCollection",
+      "collectionExportName": "PolyMeetingCollectionCollection"
+    },
+    "polyconcertcollection": {
+      "name": "polyconcertcollection",
+      "className": "PolyConcertCollection",
+      "collection": "polyconcertcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "PolyConcertCollection",
+      "collectionExportName": "PolyConcertCollectionCollection"
+    },
+    "polyconferencecollection": {
+      "name": "polyconferencecollection",
+      "className": "PolyConferenceCollection",
+      "collection": "polyconferencecollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "PolyConferenceCollection",
+      "collectionExportName": "PolyConferenceCollectionCollection"
     },
     "testproductcollection": {
       "name": "testproductcollection",

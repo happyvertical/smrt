@@ -5,6 +5,7 @@ import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
 import { generateSchema } from './schema/utils';
 import {
+  classnameToTablename,
   fieldsFromClass,
   formatDataJs,
   formatDataSql,
@@ -63,6 +64,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     validFieldNames.add('created_at');
     validFieldNames.add('updated_at');
 
+    // Add STI discriminator field for polymorphic queries
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    if (tableStrategy === 'sti') {
+      // Add both with and without leading underscore (toSnakeCase strips leading _)
+      validFieldNames.add('_meta_type');
+      validFieldNames.add('meta_type');
+      validFieldNames.add('_meta_data');
+      validFieldNames.add('meta_data');
+    }
+
     const converted: Record<string, any> = {};
 
     // Check for prototype pollution attempts using own properties only
@@ -100,8 +111,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
-      // Convert field name to snake_case
-      const snakeFieldName = toSnakeCase(fieldName);
+      // Convert field name to snake_case, preserving leading underscores for special fields
+      const snakeFieldName = fieldName.startsWith('_')
+        ? `_${toSnakeCase(fieldName.slice(1))}`
+        : toSnakeCase(fieldName);
 
       // Validate operator
       if (!VALID_OPERATORS.includes(operator)) {
@@ -360,7 +373,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     const fields = await this.getFields();
-    return this.create(formatDataJs(rows[0], fields));
+    const formattedData = formatDataJs(rows[0], fields);
+
+    // STI: Use _meta_type to determine correct class to instantiate
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const isSTI = tableStrategy === 'sti';
+
+    if (isSTI && formattedData._meta_type) {
+      return await this.createPolymorphic(
+        formattedData._meta_type,
+        formattedData,
+      );
+    }
+
+    // CTI: Use collection's item class
+    return this.create(formattedData);
   }
 
   /**
@@ -426,7 +453,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
-    const { where, offset, limit, orderBy } = options;
+    let { where, offset, limit, orderBy } = options;
+
+    // STI: Child collections should automatically filter by _meta_type
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const isSTI = tableStrategy === 'sti';
+
+    if (isSTI) {
+      const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
+      // If this is a child collection (not the base), auto-filter by type
+      if (stiBase && stiBase !== this._itemClass.name) {
+        where = {
+          _meta_type: this._itemClass.name,
+          ...(where || {}),
+        };
+      }
+    }
+
     const { sql: whereSql, values: whereValues } = buildWhere(
       await this.convertWhereKeys(where || {}),
     );
@@ -473,20 +516,39 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       limitOffsetValues.push(offset);
     }
 
-    const result = await this.db.query(
-      `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`,
-      [...whereValues, ...limitOffsetValues],
-    );
+    const sql = `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
+    const params = [...whereValues, ...limitOffsetValues];
+
+    const result = await this.db.query(sql, params);
     const fields = await this.getFields();
+
+    // STI: Hydrate instances polymorphically based on _meta_type
+    // Reuse tableStrategy and isSTI from earlier in the function
     const instances = await Promise.all(
-      result.rows.map((item: object) =>
-        this.create(formatDataJs(item, fields)),
-      ),
+      result.rows.map(async (item: any) => {
+        const formattedData = formatDataJs(item, fields);
+
+        // STI: Use _meta_type to determine correct class to instantiate
+        if (isSTI && formattedData._meta_type) {
+          return await this.createPolymorphic(
+            formattedData._meta_type,
+            formattedData,
+          );
+        }
+
+        // CTI: Use collection's item class
+        return this.create(formattedData);
+      }),
     );
 
     // Eager load specified relationships
     if (options.include && options.include.length > 0) {
-      await this.eagerLoadRelationships(instances, options.include);
+      // Cast to ModelType[] - instances are guaranteed to be subtypes of ModelType
+      // even in STI mode where they may be different subclasses
+      await this.eagerLoadRelationships(
+        instances as ModelType[],
+        options.include,
+      );
     }
 
     return instances;
@@ -661,7 +723,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Group related objects by the foreign key value
     const relatedMap = new Map<string, any[]>();
     for (const obj of relatedObjects) {
-      const foreignKeyValue = obj[inverseForeignKey.fieldName as any];
+      // Access dynamic property safely - obj is a SmrtObject with dynamic fields
+      const foreignKeyValue = (obj as Record<string, any>)[
+        inverseForeignKey.fieldName
+      ];
       if (!relatedMap.has(foreignKeyValue)) {
         relatedMap.set(foreignKeyValue, []);
       }
@@ -698,6 +763,53 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Direct instantiation - all SmrtObject classes support this pattern
     const instance = new this._itemClass(params);
+    await instance.initialize();
+    return instance;
+  }
+
+  /**
+   * Creates an instance of the correct subclass for STI polymorphic queries
+   *
+   * @param className - Name of the class to instantiate (from _meta_type)
+   * @param options - Data to initialize the instance with
+   * @returns Promise resolving to the instance of the correct subclass
+   * @private
+   */
+  private async createPolymorphic(
+    className: string | null | undefined,
+    options: any,
+  ) {
+    // Ensure table exists before creating objects
+    await this.setupDb();
+
+    // Validate discriminator is present
+    if (!className || className === null || className === undefined) {
+      const { DatabaseError } = await import('./errors.js');
+      throw DatabaseError.missingDiscriminator(
+        this._itemClass.name,
+        options?.id,
+      );
+    }
+
+    // Get the correct class constructor from ObjectRegistry
+    const registeredClass = ObjectRegistry.getClass(className);
+
+    if (!registeredClass) {
+      throw new Error(
+        `STI polymorphic query failed: Class '${className}' not found in ObjectRegistry. ` +
+          `Ensure the class is registered with @smrt() decorator.`,
+      );
+    }
+
+    const params = {
+      ai: this.options.ai,
+      db: this.db,
+      _skipLoad: true,
+      ...options,
+    };
+
+    // Instantiate the correct subclass
+    const instance = new registeredClass.constructor(params);
     await instance.initialize();
     return instance;
   }
@@ -770,12 +882,36 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     this._db_setup_promise = (async () => {
       try {
+        const className = this._itemClass.name;
+        const tableStrategy = ObjectRegistry.getTableStrategy(className);
+
+        // For STI child classes, ensure base class table is created first
+        if (tableStrategy === 'sti') {
+          const stiBase = ObjectRegistry.getSTIBase(className);
+          if (stiBase && stiBase !== className) {
+            // This is a child class - ensure base class table exists
+            const { setupTableFromClass } = await import('./schema/utils.js');
+            // Get the base class constructor
+            const BaseClass = ObjectRegistry.getClass(stiBase);
+            if (BaseClass) {
+              await setupTableFromClass(this.db, BaseClass);
+            }
+            // Don't generate schema for child class (base handles it)
+            return;
+          }
+        }
+
+        // For base classes or CTI, generate and sync schema
         const schema = await this.generateSchema();
 
-        // NOTE: DuckDB/JSON adapter-specific transformations (e.g., inline UNIQUE constraints)
-        // are now handled by the adapters themselves in syncSchema().
-        // See: happyvertical/sdk#392
-        await syncSchema({ db: this.db, schema });
+        // Skip schema sync for STI child classes (empty schema returned)
+        // The base class already created the shared table
+        if (schema && schema.trim() !== '') {
+          // NOTE: DuckDB/JSON adapter-specific transformations (e.g., inline UNIQUE constraints)
+          // are now handled by the adapters themselves in syncSchema().
+          // See: happyvertical/sdk#392
+          await syncSchema({ db: this.db, schema });
+        }
       } catch (error) {
         this._db_setup_promise = null; // Allow retry on failure
         throw error;
@@ -811,7 +947,29 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      this._tableName = tableNameFromClass(this._itemClass);
+      // For STI, use the base class's table name
+      const className = this._itemClass.name;
+      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+
+      if (tableStrategy === 'sti') {
+        const stiBase = ObjectRegistry.getSTIBase(className);
+        if (stiBase) {
+          // Use base class's table name
+          const baseClass = ObjectRegistry.getClass(stiBase);
+          if (baseClass) {
+            this._tableName = tableNameFromClass(baseClass.constructor);
+          } else {
+            // Fallback: derive from base class name
+            this._tableName = classnameToTablename(stiBase);
+          }
+        } else {
+          // Fallback to own table name
+          this._tableName = tableNameFromClass(this._itemClass);
+        }
+      } else {
+        // CTI: Use own table name
+        this._tableName = tableNameFromClass(this._itemClass);
+      }
     }
     return this._tableName;
   }
