@@ -1082,9 +1082,24 @@ export class ObjectRegistry {
   static async ensureManifestLoaded(className: string): Promise<void> {
     const registered = ObjectRegistry.classes.get(className);
     if (!registered) {
+      // Detect if running in test environment
+      const isTestEnv =
+        process.env.NODE_ENV === 'test' ||
+        process.env.VITEST === 'true' ||
+        typeof globalThis.describe !== 'undefined' ||
+        typeof globalThis.it !== 'undefined';
+
+      const testHint = isTestEnv
+        ? `\n\n⚠️  Are you using 'smrt test'? ` +
+          `Tests require manifest generation.\n` +
+          `   ✅ Use: smrt test\n` +
+          `   ❌ NOT:  npx vitest\n`
+        : '';
+
       throw new Error(
         `Class '${className}' is not registered. ` +
-          `Ensure the class is decorated with @smrt() before using it.`,
+          `Ensure the class is decorated with @smrt() before using it.` +
+          testHint,
       );
     }
 

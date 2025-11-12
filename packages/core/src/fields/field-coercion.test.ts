@@ -23,9 +23,10 @@ describe('Field Value Coercion', () => {
     });
 
     it('should return value when hint is "default"', () => {
-      const field = text({ default: 'test' });
-      const result = field === 'test'; // Loose equality triggers 'default' hint
-      expect(result).toBe(true);
+      const field = integer({ default: 42 });
+      // Arithmetic operations trigger 'default' or 'number' hint
+      const result = field + 0;
+      expect(result).toBe(42);
     });
 
     it('should handle null/undefined values in string context', () => {
@@ -174,15 +175,18 @@ describe('Field Value Coercion', () => {
   });
 
   describe('Equality comparisons', () => {
-    it('should work with loose equality', () => {
+    it('should use valueOf() for value comparisons', () => {
       const name = text({ default: 'test' });
-      expect(name === 'test').toBe(true); // Uses Symbol.toPrimitive
+      // Field instances don't === their values (different types)
+      expect(name.valueOf() === 'test').toBe(true);
     });
 
     it('should not work with strict equality (different types)', () => {
       const name = text({ default: 'test' });
-      expect(name === 'test').toBe(false); // Field object !== string
-      expect(name.valueOf() === 'test').toBe(true); // But valueOf() does
+      // Field object !== string primitive
+      expect(name === 'test').toBe(false);
+      // But valueOf() extracts the value
+      expect(name.valueOf() === 'test').toBe(true);
     });
 
     it('should compare Field instances correctly', () => {
