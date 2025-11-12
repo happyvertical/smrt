@@ -3,6 +3,16 @@ name: Changeset Check
 on:
   pull_request:
     types: [opened, reopened, synchronize, labeled, unlabeled]
+  workflow_call:
+    inputs:
+      pr_number:
+        description: 'Pull request number'
+        required: false
+        type: number
+      pr_title:
+        description: 'Pull request title'
+        required: false
+        type: string
 
 permissions:
   pull-requests: read
@@ -22,15 +32,17 @@ jobs:
       - name: Check for changeset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+          PR_TITLE: ${{ inputs.pr_title || github.event.pull_request.title }}
         run: |
           # Skip if PR has 'skip-changeset' label
-          if gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -q 'skip-changeset'; then
+          if gh pr view $PR_NUMBER --json labels --jq '.labels[].name' | grep -q 'skip-changeset'; then
             echo "✅ Skipping changeset check (skip-changeset label present)"
             exit 0
           fi
 
           # Skip if PR title starts with 'chore: version packages'
-          if echo "${{ github.event.pull_request.title }}" | grep -qi '^chore: version packages'; then
+          if echo "$PR_TITLE" | grep -qi '^chore: version packages'; then
             echo "✅ Skipping changeset check (version packages PR)"
             exit 0
           fi

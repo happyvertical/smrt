@@ -11,6 +11,7 @@ import type { AssetType } from './asset-type';
 import type { AssetOptions } from './types';
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
   cli: true,

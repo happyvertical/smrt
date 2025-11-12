@@ -9,6 +9,7 @@ import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { GeoData, PlaceOptions } from '../types';
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
   cli: true,

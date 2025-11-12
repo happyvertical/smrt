@@ -30,6 +30,8 @@ export type { ProfileRelationshipTypeOptions } from './models/ProfileRelationshi
 export { ProfileRelationshipType } from './models/ProfileRelationshipType';
 export type { ProfileTypeOptions } from './models/ProfileType';
 export { ProfileType } from './models/ProfileType';
+// Export profile subclasses (STI)
+export { Bot, Organization, Person } from './models/ProfileTypes';
 // Export types
 export type {
   ReciprocalHandler,

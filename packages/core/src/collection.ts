@@ -447,7 +447,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
      * ```
      */
     include?: string[];
-  }) {
+  }): Promise<ModelType[]> {
     await this.setupDb();
 
     // Ensure manifest is loaded for external packages before validating WHERE clause
@@ -778,7 +778,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   private async createPolymorphic(
     className: string | null | undefined,
     options: any,
-  ) {
+  ): Promise<ModelType> {
     // Ensure table exists before creating objects
     await this.setupDb();
 
@@ -811,7 +811,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Instantiate the correct subclass
     const instance = new registeredClass.constructor(params);
     await instance.initialize();
-    return instance;
+    return instance as ModelType;
   }
 
   /**
