@@ -52,7 +52,7 @@
   "scripts": {
     "generate": "node scripts/generate-manifest.js",
     "generate:test": "node scripts/generate-test-manifest.js",
-    "test": "smrt test",
+    "test": "(command -v smrt >/dev/null 2>&1 && smrt test) || (node scripts/generate-test-manifest.js && npx vitest run)",
     "test:watch": "smrt test && npx vitest",
     "build": "vite build && cp -r src/vite-plugin/templates dist/vite-plugin/",
     "build:watch": "vite build --watch",
