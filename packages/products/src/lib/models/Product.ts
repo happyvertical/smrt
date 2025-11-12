@@ -29,6 +29,7 @@ export interface ProductOptions extends SmrtObjectOptions {
  * Product information for knowledge base queries
  */
 @smrt({
+  tableStrategy: 'sti',
   api: {
     include: ['list', 'get', 'create', 'update'], // Standard CRUD except delete
   },

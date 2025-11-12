@@ -9,6 +9,7 @@ import { SmrtObject, smrt, text } from '@happyvertical/smrt-core';
 import type { TagMetadata, TagOptions } from './types';
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
   cli: true,

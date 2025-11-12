@@ -97,6 +97,7 @@ export interface ContentOptions extends SmrtObjectOptions {
  * referencing related content objects.
  */
 @smrt({
+  tableStrategy: 'sti',
   api: {
     include: ['list', 'get', 'create', 'update', 'delete'], // Full CRUD operations
   },
