@@ -264,8 +264,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * (SmrtClassOptions) and handles option extraction internally, then returns a
    * fully initialized, ready-to-use collection instance.
    *
-   * TypeScript Note: Uses InstanceType<T> to preserve subclass types through the
-   * static factory method, ensuring custom collection methods are properly typed.
+   * TypeScript Note: Uses instance type constraint (T extends SmrtCollection<any>)
+   * with constructor type for 'this' parameter to properly preserve subclass types
+   * through the static factory method. This ensures custom collection methods are
+   * properly typed and subclass constructors are compatible.
    *
    * @param options - Configuration options (accepts both SmrtClassOptions and SmrtCollectionOptions)
    * @returns Promise resolving to a fully initialized collection instance
@@ -273,19 +275,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @example
    * ```typescript
    * // Create collection from object options
-   * const collection = await (ProductCollection as any).create(smrtObject.options);
+   * const collection = await ProductCollection.create(smrtObject.options);
    *
    * // Create collection with specific config
-   * const collection = await (ProductCollection as any).create({
+   * const collection = await ProductCollection.create({
    *   persistence: { type: 'sql', url: 'products.db' },
    *   ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
    * });
    * ```
    */
-  static async create<T extends typeof SmrtCollection>(
-    this: T,
+  static async create<T extends SmrtCollection<any>>(
+    this: new (
+      options?: SmrtCollectionOptions,
+    ) => T,
     options: SmrtClassOptions = {},
-  ): Promise<any> {
+  ): Promise<T> {
     // Extract only collection-compatible options from broader SmrtClassOptions
     const {
       _className,
@@ -321,7 +325,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     await instance.initialize();
 
     // Return fully initialized instance
-    return instance as any;
+    return instance;
   }
 
   /**
