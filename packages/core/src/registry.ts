@@ -2210,12 +2210,15 @@ export function smrt(config: SmartObjectConfig = {}) {
         const tableName =
           config.tableName || classnameToTablename(itemClass.name);
 
-        Object.defineProperty(itemClass, 'SMRT_TABLE_NAME', {
-          value: tableName,
-          writable: false,
-          enumerable: false,
-          configurable: false,
-        });
+        // Only define SMRT_TABLE_NAME if it doesn't exist (avoid redefinition errors)
+        if (!Object.hasOwn(itemClass, 'SMRT_TABLE_NAME')) {
+          Object.defineProperty(itemClass, 'SMRT_TABLE_NAME', {
+            value: tableName,
+            writable: false,
+            enumerable: false,
+            configurable: false,
+          });
+        }
 
         ObjectRegistry.register(itemClass, { ...config, tableName });
 
