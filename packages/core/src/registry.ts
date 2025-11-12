@@ -2176,6 +2176,8 @@ export class ObjectRegistry {
  * Captures the original class name before minification and stores it as
  * a static property, ensuring table names remain consistent in production builds.
  *
+ * Supports both SmrtObject and SmrtCollection subclasses.
+ *
  * @example
  * ```typescript
  * @smrt()
@@ -2185,8 +2187,8 @@ export class ObjectRegistry {
  * }
  *
  * @smrt({ tableName: 'custom_products' })
- * class Product extends SmrtObject {
- *   name = text({ required: true });
+ * class ProductCollection extends SmrtCollection<Product> {
+ *   static readonly _itemClass = Product;
  * }
  *
  * @smrt({ api: { exclude: ['delete'] } })
@@ -2196,7 +2198,7 @@ export class ObjectRegistry {
  * ```
  */
 export function smrt(config: SmartObjectConfig = {}) {
-  return <T extends typeof SmrtObject>(ctor: T): T => {
+  return <T extends new (...args: any[]) => any>(ctor: T): T => {
     // Check if this is a SmrtCollection class
     const isCollection = ctor.prototype instanceof SmrtCollection;
 

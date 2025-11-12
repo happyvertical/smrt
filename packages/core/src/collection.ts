@@ -340,6 +340,64 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Find a single record by criteria (convenience method - delegates to get())
+   *
+   * @param options - Query options with where clause
+   * @returns Promise resolving to the object or null if not found
+   *
+   * @example
+   * ```typescript
+   * const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+   * const council = await councils.findOne({ where: { name: 'Example Council' } });
+   * ```
+   */
+  public async findOne(options: {
+    where: Record<string, any>;
+  }): Promise<ModelType | null> {
+    return await this.get(options.where);
+  }
+
+  /**
+   * Find a record by ID (convenience method - delegates to get())
+   *
+   * @param id - Record ID to find
+   * @returns Promise resolving to the object or null if not found
+   *
+   * @example
+   * ```typescript
+   * const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+   * const council = await councils.findById('uuid-123');
+   * ```
+   */
+  public async findById(id: string): Promise<ModelType | null> {
+    return await this.get(id);
+  }
+
+  /**
+   * Find all records matching criteria (convenience method - delegates to list())
+   *
+   * @param options - Query options (where, orderBy, limit, etc.)
+   * @returns Promise resolving to array of objects
+   *
+   * @example
+   * ```typescript
+   * const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+   * const active = await councils.findAll({ where: { status: 'active' } });
+   * ```
+   */
+  public async findAll(
+    options: {
+      where?: Record<string, any>;
+      orderBy?: string | string[];
+      limit?: number;
+      offset?: number;
+      include?: string[];
+    } = {},
+  ): Promise<ModelType[]> {
+    return await this.list(options);
+  }
+
+  /**
    * Retrieves a single object from the collection by ID, slug, or custom filter
    *
    * @param filter - String ID/slug or object with filter conditions
