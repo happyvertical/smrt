@@ -54,10 +54,14 @@ jobs:
         with:
           path: |
             packages/*/dist
+            packages/core/src/manifest/static-manifest.ts
+            packages/core/src/manifest/static-manifest.json
+            packages/core/src/manifest/test-manifest.json
+            packages/core/src/manifest/test-manifest-stub.ts
             .turbo
-          key: ${{ runner.os }}-build-v3-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsconfig.json', 'packages/*/vite.config.ts', 'vite.config.base.ts', 'pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-build-v4-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsconfig.json', 'packages/*/vite.config.ts', 'vite.config.base.ts', 'pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-build-v3-
+            ${{ runner.os }}-build-v4-
 
       - name: Build packages
         run: pnpm run build
