@@ -52,8 +52,8 @@
   "scripts": {
     "generate": "node scripts/generate-manifest.js",
     "generate:test": "node scripts/generate-test-manifest.js",
-    "test": "npx vitest run",
-    "test:watch": "npx vitest",
+    "test": "smrt test",
+    "test:watch": "smrt test && npx vitest",
     "build": "vite build && cp -r src/vite-plugin/templates dist/vite-plugin/",
     "build:watch": "vite build --watch",
     "docs": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules",

@@ -169,16 +169,41 @@ export class Field {
   }
 
   /**
+   * Primitive type coercion - makes Field instances transparently coerce to their values
+   * Called automatically by JavaScript in various contexts (string concat, arithmetic, comparisons)
+   * @param hint - Type hint from JavaScript engine ('string', 'number', or 'default')
+   * @returns The field's value coerced to the appropriate type
+   * @example
+   * ```typescript
+   * const age = integer({ default: 25 });
+   * console.log(age + 5);        // 30 - hint='number'
+   * console.log('Age: ' + age);  // 'Age: 25' - hint='string'
+   * if (age == 25) { }           // true - hint='default'
+   * ```
+   */
+  [Symbol.toPrimitive](hint: string): any {
+    if (hint === 'string') {
+      return String(this.value ?? '');
+    }
+    if (hint === 'number') {
+      return Number(this.value ?? 0);
+    }
+    // 'default' hint - used in comparisons and loose equality
+    return this.value;
+  }
+
+  /**
    * String coercion - allows Field instances to be used naturally in string contexts
    * @returns String representation of the field's value
    * @example
    * ```typescript
    * const name = text({ default: 'John' });
    * console.log(name.toLowerCase()); // 'john' - toString() called automatically
+   * console.log(String(name));       // 'John'
    * ```
    */
   toString(): string {
-    return this.value?.toString() || '';
+    return String(this.value ?? '');
   }
 
   /**
@@ -188,6 +213,7 @@ export class Field {
    * ```typescript
    * const age = integer({ default: 25 });
    * console.log(age + 5); // 30 - valueOf() called automatically
+   * console.log(+age);    // 25 - unary plus operator
    * ```
    */
   valueOf(): any {

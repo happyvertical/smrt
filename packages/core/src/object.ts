@@ -93,7 +93,7 @@ export class SmrtObject extends SmrtClass {
    * Override options with SmrtObjectOptions type for proper type narrowing.
    * Initialized by parent constructor via super() call.
    */
-  protected declare options: SmrtObjectOptions;
+  public declare options: SmrtObjectOptions;
 
   /**
    * Unique identifier for the object

@@ -159,6 +159,39 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Normalize Field instances to their values
+   *
+   * Handles Field instances transparently by extracting their values.
+   * Non-Field values pass through unchanged.
+   *
+   * @param value - Value to normalize (string, Field, or Record)
+   * @returns Normalized value with Fields converted to their values
+   * @private
+   *
+   * @example
+   * ```typescript
+   * const id = foreignKey('Council');
+   * id.value = 'uuid-123';
+   * this.normalizeFieldValue(id); // 'uuid-123'
+   * this.normalizeFieldValue('direct-string'); // 'direct-string'
+   * ```
+   */
+  private normalizeFieldValue<T>(
+    value: T,
+  ): T extends import('./fields/index.js').Field ? string : T {
+    // Check if value is a Field instance
+    if (
+      value &&
+      typeof value === 'object' &&
+      'value' in value &&
+      'type' in value
+    ) {
+      return (value as any).value;
+    }
+    return value as any;
+  }
+
+  /**
    * Gets the class constructor for items in this collection
    */
   protected get _itemClass(): (new (
@@ -364,17 +397,25 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
    * Find a record by ID (convenience method - delegates to get())
    *
-   * @param id - Record ID to find
+   * @param id - Record ID to find (string or Field instance)
    * @returns Promise resolving to the object or null if not found
    *
    * @example
    * ```typescript
    * const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
    * const council = await councils.findById('uuid-123');
+   *
+   * // Also works with Field instances (e.g., from foreignKey fields)
+   * const meeting = new Meeting({ councilId: 'uuid-123' });
+   * const council = await councils.findById(meeting.councilId);
    * ```
    */
-  public async findById(id: string): Promise<ModelType | null> {
-    return await this.get(id);
+  public async findById(
+    id: string | import('./fields/index.js').Field,
+  ): Promise<ModelType | null> {
+    // Normalize Field instances to their string values
+    const normalizedId = this.normalizeFieldValue(id);
+    return await this.get(normalizedId);
   }
 
   /**
@@ -404,23 +445,28 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
    * Retrieves a single object from the collection by ID, slug, or custom filter
    *
-   * @param filter - String ID/slug or object with filter conditions
+   * @param filter - String ID/slug, Field instance, or object with filter conditions
    * @returns Promise resolving to the object or null if not found
    */
-  public async get(filter: string | Record<string, any>) {
+  public async get(
+    filter: string | import('./fields/index.js').Field | Record<string, any>,
+  ) {
     await this.setupDb();
 
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
+    // Normalize Field instances to string values
+    const normalizedFilter = this.normalizeFieldValue(filter);
+
     const where =
-      typeof filter === 'string'
+      typeof normalizedFilter === 'string'
         ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            filter,
+            normalizedFilter,
           )
-          ? { id: filter }
-          : { slug: filter, context: '' }
-        : filter;
+          ? { id: normalizedFilter }
+          : { slug: normalizedFilter, context: '' }
+        : normalizedFilter;
 
     const { sql: whereSql, values: whereValues } = buildWhere(
       await this.convertWhereKeys(where),

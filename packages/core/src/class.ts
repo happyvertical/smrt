@@ -139,7 +139,7 @@ export class SmrtClass {
   /**
    * Configuration options provided to the class
    */
-  protected options: SmrtClassOptions;
+  public options: SmrtClassOptions;
 
   /**
    * Track which databases have had system tables initialized
