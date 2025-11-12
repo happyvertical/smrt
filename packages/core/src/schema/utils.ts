@@ -62,10 +62,25 @@ export async function generateSchema(
 
   // Throw error if class is not registered AND no fields provided
   if (cachedFields.size === 0) {
+    // Detect if running in test environment
+    const isTestEnv =
+      process.env.NODE_ENV === 'test' ||
+      process.env.VITEST === 'true' ||
+      typeof globalThis.describe !== 'undefined' ||
+      typeof globalThis.it !== 'undefined';
+
+    const testHint = isTestEnv
+      ? `\n\n⚠️  Are you using 'smrt test'? ` +
+        `Tests require manifest generation.\n` +
+        `   ✅ Use: smrt test\n` +
+        `   ❌ NOT:  npx vitest\n`
+      : '';
+
     throw new Error(
       `Cannot generate schema for unregistered class '${className}'. ` +
         `Ensure the class is decorated with @smrt() for schema generation to work. ` +
-        `Runtime introspection has been removed per issue #131.`,
+        `Runtime introspection has been removed per issue #131.` +
+        testHint,
     );
   }
 

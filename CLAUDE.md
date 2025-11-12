@@ -472,8 +472,8 @@ npm run build
 npm run dev
 
 # Run tests
-npm test
-npm run test:watch
+npm test           # Uses 'smrt test' - generates manifests + runs tests
+npm run test:watch # Watch mode
 
 # Type checking
 npm run typecheck
@@ -486,6 +486,37 @@ npm run format-check
 
 # Clean build artifacts
 npm run clean
+```
+
+### ⚠️ CRITICAL: Running Tests
+
+**ALWAYS use `smrt test` or `npm test` - NEVER use `npx vitest` directly!**
+
+```bash
+# ✅ CORRECT - Generates test manifest first
+smrt test
+npm test           # Aliases to 'smrt test'
+
+# ❌ WRONG - Will fail with "unregistered class" errors
+npx vitest
+npx vitest run
+```
+
+**Why?** Tests require a manifest file that maps SMRT objects for schema generation. The `smrt test` command:
+1. **Generates the test manifest** from `@smrt()` decorated classes
+2. **Runs vitest** with the manifest loaded
+
+Without the manifest, tests fail with errors like:
+```
+Cannot generate schema for unregistered class 'Council'.
+Ensure the class is decorated with @smrt() for schema generation to work.
+```
+
+**For individual test files:**
+```bash
+# Generate manifest first, then run specific test
+smrt test --manifest-only
+npx vitest run src/specific-test.test.ts
 ```
 
 ### Build System
