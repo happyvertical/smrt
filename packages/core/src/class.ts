@@ -305,16 +305,29 @@ export class SmrtClass {
 
     try {
       // Create all system tables
+      // Split multi-statement SQL into individual statements to avoid race conditions
+      // Each ALL_SYSTEM_TABLES entry contains CREATE TABLE + CREATE INDEX statements
+      const allStatements: string[] = [];
+      for (const multiStatementSQL of ALL_SYSTEM_TABLES) {
+        // Split on semicolon, filter out empty statements
+        const statements = multiStatementSQL
+          .split(';')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        allStatements.push(...statements);
+      }
+
       // Use syncSchema() if available (works with JSON adapter SDK fix)
       // Fall back to query() for adapters without syncSchema()
       if (this._db.syncSchema) {
-        // syncSchema() triggers SDK fix for JSON adapter to export empty tables
-        const schema = ALL_SYSTEM_TABLES.join(';\n');
-        await this._db.syncSchema(schema);
+        // Execute statements one by one to ensure proper ordering
+        for (const statement of allStatements) {
+          await this._db.syncSchema(statement);
+        }
       } else {
         // Fallback for adapters without syncSchema()
-        for (const createTableSQL of ALL_SYSTEM_TABLES) {
-          await this._db.query(createTableSQL);
+        for (const statement of allStatements) {
+          await this._db.query(statement);
         }
       }
 

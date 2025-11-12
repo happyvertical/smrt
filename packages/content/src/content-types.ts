@@ -22,15 +22,15 @@ export class Article extends Content {
 }
 
 /**
- * Document content type
+ * ContentDocument content type
  *
  * Represents structured documents like PDFs, reports, and technical documentation.
  */
 @smrt()
-export class Document extends Content {
+export class ContentDocument extends Content {
   constructor(options: ContentOptions = {}) {
     super(options);
-    // Document-specific initialization can go here
+    // ContentDocument-specific initialization can go here
   }
 }
 

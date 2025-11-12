@@ -17,11 +17,11 @@
     "./manifest": "./dist/manifest.json"
   },
   "scripts": {
+    "generate:test": "node scripts/generate-test-manifest.js",
     "build": "vite build --mode library",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "pretest": "node scripts/generate-test-manifest.js",
     "test": "npx vitest run",
     "test:watch": "npx vitest"
   },
