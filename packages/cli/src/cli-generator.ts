@@ -1144,7 +1144,7 @@ export class CLIGenerator {
       // Confirmation prompt
       if (!options.force && this.config.prompt) {
         const confirmed = await this.confirm(
-          `Are you sure you want to delete ${objectName} "${existing.name || existing.id}"?`,
+          `Are you sure you want to delete ${objectName} "${(existing as any).name || existing.slug || existing.id}"?`,
         );
         if (!confirmed) {
           console.log('Cancelled');
