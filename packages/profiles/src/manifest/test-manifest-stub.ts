@@ -9,7 +9,7 @@ import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762890762217,
+  "timestamp": 1762990245814,
   "objects": {
     "profilerelationshipterm": {
       "name": "profilerelationshipterm",
@@ -1130,6 +1130,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {
+        "tableStrategy": "sti",
         "api": {
           "include": [
             "list",
@@ -1295,6 +1296,57 @@ export const testManifest: SmartObjectManifest = {
       "packageName": "@happyvertical/smrt-profiles",
       "exportName": "ProfileTypeCollection",
       "collectionExportName": "ProfileTypeCollectionCollection"
+    },
+    "person": {
+      "name": "person",
+      "className": "Person",
+      "collection": "persons",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileTypes.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Profile",
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "Person",
+      "collectionExportName": "PersonCollection"
+    },
+    "organization": {
+      "name": "organization",
+      "className": "Organization",
+      "collection": "organizations",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileTypes.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Profile",
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "Organization",
+      "collectionExportName": "OrganizationCollection"
+    },
+    "bot": {
+      "name": "bot",
+      "className": "Bot",
+      "collection": "bots",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileTypes.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Profile",
+      "packageName": "@happyvertical/smrt-profiles",
+      "exportName": "Bot",
+      "collectionExportName": "BotCollection"
     }
   },
   "packageName": "@happyvertical/smrt-profiles"
