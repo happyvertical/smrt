@@ -105,16 +105,22 @@ export const utilityCommands: Record<string, CLICommand> = {
         const fg = await import('fast-glob');
         const { writeFileSync, mkdirSync } = await import('node:fs');
 
-        // Find test files AND source files with SMRT objects
+        // Scan source files excluding test files
+        // Test files can have duplicate fixture classes which shouldn't be in manifest
         const testFiles = fg.default.sync(
           [
-            'src/**/*.test.ts',
-            'src/**/*.spec.ts',
             'src/**/*.ts', // Include all source files for SMRT object definitions
           ],
           {
             absolute: true,
-            ignore: ['src/**/*.d.ts', 'node_modules/**', 'dist/**', 'build/**'],
+            ignore: [
+              'src/**/*.d.ts',
+              'src/**/*.test.ts',
+              'src/**/*.spec.ts',
+              'node_modules/**',
+              'dist/**',
+              'build/**',
+            ],
           },
         );
 
@@ -149,8 +155,12 @@ export const utilityCommands: Record<string, CLICommand> = {
 
             // Extract all class names from this package
             for (const objDef of Object.values(manifest.objects)) {
-              if (objDef.className) {
-                externalBaseClasses.push(objDef.className);
+              if (
+                objDef &&
+                typeof objDef === 'object' &&
+                'className' in objDef
+              ) {
+                externalBaseClasses.push(objDef.className as string);
               }
             }
           } catch {

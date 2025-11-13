@@ -30,12 +30,14 @@ import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 async function runTestScanner() {
-  // Scan ALL source files (not just test files)
-  // This is needed to detect SMRT objects defined in src/ that are used in tests
+  // Scan source files excluding test files
+  // Test files can have duplicate fixture classes which shouldn't be in manifest
   const sourceFiles = fg.sync(['src/**/*.ts'], {
     absolute: true,
     ignore: [
       'src/**/*.d.ts',
+      'src/**/*.test.ts',
+      'src/**/*.spec.ts',
       'node_modules/**',
     ],
   });
@@ -105,6 +107,49 @@ async function runTestScanner() {
   } catch (error) {
     console.log('[smrt] Error loading vite.config.ts:', error.message);
     console.log('[smrt] Using default baseClasses');
+  }
+
+  // Discover external SMRT packages and load base classes from their manifests
+  console.log('[smrt] Discovering external SMRT packages...');
+  const smrtDependencies = discoverSmrtPackages();
+  console.log(\`[smrt] Found \${smrtDependencies.length} SMRT package(s): \${smrtDependencies.join(', ')}\`);
+
+  // Load external base classes from SMRT package manifests
+  const externalBaseClasses = [];
+  for (const pkgName of smrtDependencies) {
+    try {
+      const manifestPath = resolve(
+        process.cwd(),
+        'node_modules',
+        pkgName,
+        'dist',
+        'manifest.json'
+      );
+      const manifestContent = readFileSync(manifestPath, 'utf-8');
+      const manifest = JSON.parse(manifestContent);
+
+      // Extract all class names from this package
+      const classNames = [];
+      for (const objDef of Object.values(manifest.objects)) {
+        if (objDef.className) {
+          classNames.push(objDef.className);
+          externalBaseClasses.push(objDef.className);
+        }
+      }
+      console.log(\`[smrt]   \${pkgName}: found \${classNames.length} class(es) - \${classNames.join(', ')}\`);
+    } catch (error) {
+      console.log(\`[smrt]   \${pkgName}: manifest not found or invalid - \${error.message}\`);
+    }
+  }
+
+  // Add discovered external classes to baseClasses
+  if (externalBaseClasses.length > 0) {
+    scannerOptions.baseClasses = [
+      ...scannerOptions.baseClasses,
+      ...externalBaseClasses
+    ];
+    console.log(\`[smrt] Added \${externalBaseClasses.length} external base class(es) to scanner\`);
+    console.log(\`[smrt] Total baseClasses: \${scannerOptions.baseClasses.length}\`);
   }
 
   const scanner = new ASTScanner(sourceFiles, scannerOptions);
