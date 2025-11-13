@@ -10,6 +10,10 @@
  * Cache Strategy:
  * - DISABLED by default (ensures fresh manifests during development)
  * - Enable with SMRT_ENABLE_DISCOVERY_CACHE=true for production/CI builds
+ *
+ * Configuration:
+ * - SMRT_DISCOVERY_MAX_BUFFER: Buffer size for npm/pnpm list output (default: 100MB)
+ *   Increase if you get ENOBUFS errors with very large dependency trees
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -20,6 +24,11 @@ import { createRequire } from 'node:module';
 
 const CACHE_DIR = '.smrt';
 const CACHE_FILE = 'discovery-cache.json';
+
+// Configurable buffer size for package manager commands (default: 100MB)
+const MAX_BUFFER = process.env.SMRT_DISCOVERY_MAX_BUFFER
+  ? parseInt(process.env.SMRT_DISCOVERY_MAX_BUFFER, 10)
+  : 100 * 1024 * 1024;
 
 /**
  * Detect which package manager is in use
@@ -180,7 +189,7 @@ function performDiscovery(): string[] {
     try {
       output = execSync(cmd, {
         encoding: 'utf-8',
-        maxBuffer: 100 * 1024 * 1024, // 100MB buffer (npm list can be very large)
+        maxBuffer: MAX_BUFFER,
         stdio: ['ignore', 'pipe', 'ignore'] // Only capture stdout, ignore stdin/stderr
       });
     } catch (error: any) {
