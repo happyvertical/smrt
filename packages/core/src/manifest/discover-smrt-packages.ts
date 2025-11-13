@@ -18,7 +18,13 @@
 
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
@@ -100,68 +106,34 @@ function saveCachedDiscovery(packages: string[]): void {
 
 /**
  * Check if a package exports a SMRT manifest
+ *
+ * Supports both regular npm dependencies and workspace: symlinks
  */
 function hasManifestExport(packageName: string): boolean {
   try {
-    const require = createRequire(`${process.cwd()}/package.json`);
+    // Try direct node_modules lookup first (handles workspace: symlinks)
+    let pkgPath = join(process.cwd(), 'node_modules', packageName);
 
-    // Try to resolve package.json
-    let pkgJsonPath: string | undefined;
+    // If it doesn't exist, return false
+    if (!existsSync(pkgPath)) {
+      return false;
+    }
+
+    // Follow symlinks to get real path (for workspace: dependencies)
     try {
-      const pkgMainPath = require.resolve(packageName);
-      let dir = dirname(pkgMainPath);
-
-      // Walk up to find package.json
-      for (let i = 0; i < 10; i++) {
-        const testPath = join(dir, 'package.json');
-        if (existsSync(testPath)) {
-          const content = JSON.parse(readFileSync(testPath, 'utf-8'));
-          if (content.name === packageName) {
-            pkgJsonPath = testPath;
-            break;
-          }
-        }
-        const parent = dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
-      }
+      pkgPath = realpathSync(pkgPath);
     } catch {
-      // Try direct node_modules lookup
-      const nodeModulesPath = join(
-        process.cwd(),
-        'node_modules',
-        packageName,
-        'package.json',
-      );
-      if (existsSync(nodeModulesPath)) {
-        pkgJsonPath = nodeModulesPath;
-      }
+      // If realpath fails, continue with original path
     }
 
-    if (!pkgJsonPath) {
-      return false;
-    }
-
-    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
-
-    // Check if package exports ./manifest
-    if (!pkgJson.exports || !pkgJson.exports['./manifest']) {
-      return false;
-    }
-
-    // Load manifest and validate moduleType
-    const manifestExport = pkgJson.exports['./manifest'];
-    const manifestRelPath =
-      typeof manifestExport === 'string'
-        ? manifestExport
-        : manifestExport.default || manifestExport.import;
-
-    const manifestPath = join(dirname(pkgJsonPath), manifestRelPath);
+    // Check for dist/manifest.json directly (standard SMRT build output)
+    const manifestPath = join(pkgPath, 'dist', 'manifest.json');
 
     if (!existsSync(manifestPath)) {
       return false;
     }
 
+    // Load and validate manifest
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
 
     // Validate moduleType
