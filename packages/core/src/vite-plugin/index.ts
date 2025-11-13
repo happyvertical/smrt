@@ -411,6 +411,20 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       const scanResults = scanner.scanFiles();
 
+      // Check for scan errors and fail build if any exist
+      const allErrors = scanResults.flatMap((result) => result.errors);
+      if (allErrors.length > 0) {
+        console.error(
+          `\n[smrt] ❌ Build failed: ${allErrors.length} error(s) during scanning:\n`,
+        );
+        for (const error of allErrors) {
+          console.error(`  ${error.message}\n`);
+        }
+        throw new Error(
+          '[smrt] Build aborted due to scan errors. See above for details.',
+        );
+      }
+
       // Read package.json for package metadata
       let packageName: string | undefined;
       let packageVersion: string | undefined;
@@ -454,7 +468,8 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       return newManifest;
     } catch (error) {
       console.error('[smrt] Error scanning files:', error);
-      return createEmptyManifest();
+      // Re-throw to fail the build - don't silently continue with empty manifest
+      throw error;
     }
   }
 
