@@ -29,27 +29,29 @@ import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 async function runTestScanner() {
-  // Scan ONLY test files
-  const testFiles = fg.sync(['src/**/*.test.ts', 'src/**/*.spec.ts'], {
+  // Scan ALL source files (not just test files)
+  // This is needed to detect SMRT objects defined in src/ that are used in tests
+  const sourceFiles = fg.sync(['src/**/*.ts'], {
     absolute: true,
     ignore: [
       'src/**/*.d.ts',
+      'node_modules/**',
     ],
   });
 
-  if (testFiles.length === 0) {
-    console.log('[smrt] No test files found');
+  if (sourceFiles.length === 0) {
+    console.log('[smrt] No source files found');
     return { version: '1.0.0', timestamp: Date.now(), objects: {} };
   }
 
-  console.log(\`[smrt] Scanning \${testFiles.length} test files...\`);
+  console.log(\`[smrt] Scanning \${sourceFiles.length} source file(s)...\`);
 
-  // Try to load vite config to get custom baseClasses
+  // Try to load vite config to get custom baseClasses and followImports
   let scannerOptions = {
     baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
     includePrivateMethods: false,
     includeStaticMethods: true,
-    followImports: false,
+    followImports: true, // Default true: needed for multi-package inheritance (e.g., Meeting extends Event from external package)
   };
 
   try {
@@ -104,7 +106,7 @@ async function runTestScanner() {
     console.log('[smrt] Using default baseClasses');
   }
 
-  const scanner = new ASTScanner(testFiles, scannerOptions);
+  const scanner = new ASTScanner(sourceFiles, scannerOptions);
 
   const scanResults = scanner.scanFiles();
   const generator = new ManifestGenerator();
