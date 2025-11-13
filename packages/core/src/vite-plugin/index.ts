@@ -89,6 +89,16 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   return {
     name: 'smrt-auto-service',
 
+    // Expose options for external access (e.g., test manifest generation)
+    api: {
+      options: {
+        baseClasses,
+        followImports: false, // Currently hardcoded in scanner initialization
+        include,
+        exclude,
+      },
+    },
+
     async configResolved(resolvedConfig) {
       // Store config for closeBundle hook
       config = resolvedConfig;
