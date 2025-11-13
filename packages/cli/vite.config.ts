@@ -14,6 +14,7 @@ export default defineConfig({
         '@happyvertical/smrt-core',
         '@happyvertical/smrt-core/generators',
         '@happyvertical/smrt-core/manifest',
+        '@happyvertical/smrt-core/manifest/discover-smrt-packages',
         '@happyvertical/smrt-core/prebuild',
         '@happyvertical/smrt-core/scanner',
         '@happyvertical/smrt-types',

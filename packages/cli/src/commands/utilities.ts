@@ -126,12 +126,19 @@ export const utilityCommands: Record<string, CLICommand> = {
 
         console.log(`📄 Scanning ${testFiles.length} test file(s)...\n`);
 
+        // Discover external SMRT packages (same as production builds)
+        const { discoverSmrtPackages } = await import(
+          '@happyvertical/smrt-core/manifest/discover-smrt-packages'
+        );
+
+        const smrtDependencies = discoverSmrtPackages();
+
         // Scan files for SMRT objects
         const scanner = new ASTScanner(testFiles, {
           baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
           includePrivateMethods: false,
           includeStaticMethods: true,
-          followImports: true, // Follow imports to find STI base classes
+          followImports: true,
         });
 
         const scanResults = scanner.scanFiles();
@@ -152,6 +159,9 @@ export const utilityCommands: Record<string, CLICommand> = {
         const manifest = generator.generateManifest(scanResults, {
           packageName,
         });
+
+        // Add discovered SMRT dependencies (same as production builds)
+        manifest.smrtDependencies = smrtDependencies;
 
         // Create output directory
         const outputDir = resolve(
