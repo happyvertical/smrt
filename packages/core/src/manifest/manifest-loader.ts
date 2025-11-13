@@ -91,7 +91,10 @@ let localTestManifest: Manifest | null | undefined;
  * @returns Loaded manifest or null if not found or undefined if not yet attempted
  */
 export function loadLocalTestManifestSync(): Manifest | null | undefined {
-  if (localTestManifest !== undefined) {
+  // Only return cached manifest if it was successfully loaded
+  // Don't cache null (failed loads) - allow retries
+  if (localTestManifest !== undefined && localTestManifest !== null) {
+    console.log('[manifest-loader] Returning cached test manifest');
     return localTestManifest;
   }
 
@@ -101,21 +104,33 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     resolve(process.cwd(), 'dist/manifest.json'),
   ];
 
+  console.log(
+    '[manifest-loader] Attempting to load test manifest from:',
+    possiblePaths,
+  );
+
   for (const manifestPath of possiblePaths) {
     try {
       const manifestJson = readFileSync(manifestPath, 'utf-8');
       localTestManifest = JSON.parse(manifestJson);
 
+      const objectCount = Object.keys(localTestManifest.objects).length;
       console.log(
-        `[manifest-loader] Loaded local test manifest from ${manifestPath}`,
+        `[manifest-loader] ✅ Loaded local test manifest from ${manifestPath} (${objectCount} objects)`,
       );
       return localTestManifest;
-    } catch {}
+    } catch (error) {
+      console.log(
+        `[manifest-loader] ✗ Failed to load from ${manifestPath}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
   }
 
-  // No manifest found - this is OK for production
-  // Mark as attempted so we don't try again
-  localTestManifest = null;
+  // No manifest found - DON'T cache null, allow retries
+  // This is important because the manifest may be generated later
+  console.log(
+    '[manifest-loader] ⚠️  No test manifest found (will retry on next call)',
+  );
   return null;
 }
 
@@ -373,22 +388,43 @@ export function discoverManifestSync(
 ): ManifestEntry | undefined {
   const name = className.toLowerCase();
 
-  // 1. Check localTestManifest (domain package test classes) - try to load if not attempted yet
-  if (localTestManifest === undefined) {
+  console.log(
+    `[manifest-loader] discoverManifestSync called for: ${className}`,
+  );
+
+  // 1. Check localTestManifest (domain package test classes) - try to load if not loaded
+  // IMPORTANT: Always try to load if not cached (null or undefined), in case manifest was generated after first attempt
+  if (!localTestManifest) {
+    console.log(
+      `[manifest-loader] LocalTestManifest not cached, attempting to load...`,
+    );
     loadLocalTestManifestSync();
   }
+
   if (localTestManifest?.objects[name]) {
+    console.log(
+      `[manifest-loader] ✅ Found ${className} in localTestManifest (lowercase key)`,
+    );
     return localTestManifest.objects[name];
   }
   if (localTestManifest?.objects[className]) {
+    console.log(
+      `[manifest-loader] ✅ Found ${className} in localTestManifest (exact key)`,
+    );
     return localTestManifest.objects[className];
   }
 
   // 2. Check testManifest (core test classes)
   if (testManifest?.objects[name]) {
+    console.log(
+      `[manifest-loader] ✅ Found ${className} in testManifest (lowercase key)`,
+    );
     return testManifest.objects[name];
   }
   if (testManifest?.objects[className]) {
+    console.log(
+      `[manifest-loader] ✅ Found ${className} in testManifest (exact key)`,
+    );
     return testManifest.objects[className];
   }
 
@@ -398,9 +434,15 @@ export function discoverManifestSync(
     ManifestEntry
   >;
   if (staticObjects[name]) {
+    console.log(
+      `[manifest-loader] ✅ Found ${className} in staticManifest (lowercase key)`,
+    );
     return staticObjects[name];
   }
   if (staticObjects[className]) {
+    console.log(
+      `[manifest-loader] ✅ Found ${className} in staticManifest (exact key)`,
+    );
     return staticObjects[className];
   }
 
@@ -408,6 +450,9 @@ export function discoverManifestSync(
   for (const manifest of manifestCache.values()) {
     const entry = manifest.objects[name] || manifest.objects[className];
     if (entry) {
+      console.log(
+        `[manifest-loader] ✅ Found ${className} in external manifest cache`,
+      );
       // Enrich entry with packageName from manifest if not already present
       if (!entry.packageName && manifest.packageName) {
         return { ...entry, packageName: manifest.packageName };
@@ -416,6 +461,7 @@ export function discoverManifestSync(
     }
   }
 
+  console.log(`[manifest-loader] ❌ ${className} not found in any manifest`);
   return undefined;
 }
 

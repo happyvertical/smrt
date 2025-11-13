@@ -393,6 +393,17 @@ export class ObjectRegistry {
     const methods = new Map<string, any>();
     let packageName: string | undefined;
 
+    console.log(
+      `[registry] Registering ${name}: manifestEntry =`,
+      manifestEntry ? 'found' : 'not found',
+    );
+    if (manifestEntry?.fields) {
+      console.log(
+        `[registry] Manifest has ${Object.keys(manifestEntry.fields).length} fields:`,
+        Object.keys(manifestEntry.fields),
+      );
+    }
+
     if (manifestEntry?.fields) {
       // Use manifest fields (from build-time AST scanning)
       // Convert FieldDefinition to Field objects so getSqlType() works in schema generator
@@ -412,6 +423,10 @@ export class ObjectRegistry {
         );
       }
 
+      console.log(
+        `[registry] ✅ Loaded ${fields.size} fields for ${name} from manifest`,
+      );
+
       // Use packageName from manifest if available, otherwise from stack trace
       // Priority: explicit manifest > manifestEntry > stack trace
       packageName =
@@ -421,6 +436,9 @@ export class ObjectRegistry {
     } else {
       // No manifest found yet - use package name from stack trace
       // This will be used later by ensureManifestLoaded() to load the external manifest
+      console.log(
+        `[registry] ⚠️  No manifest entry for ${name} - fields will be loaded later`,
+      );
       packageName = packageNameFromStack;
     }
 
