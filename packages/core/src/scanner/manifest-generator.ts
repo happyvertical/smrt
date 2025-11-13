@@ -78,6 +78,17 @@ export class ManifestGenerator {
           }
         }
 
+        // Check for class name collisions
+        if (manifest.objects[objectDef.name]) {
+          const existing = manifest.objects[objectDef.name];
+          throw new Error(
+            `Class name collision detected: '${objectDef.className}' is defined in multiple files:\n` +
+              `  1. ${existing.filePath}\n` +
+              `  2. ${objectDef.filePath}\n\n` +
+              `Class names must be unique across the entire codebase. Please rename one of these classes.`,
+          );
+        }
+
         manifest.objects[objectDef.name] = objectDef;
       }
     }

@@ -342,6 +342,28 @@ export class ASTScanner {
           ) {
             return true;
           }
+
+          // Parent class not found - might be in external package
+          // Fail build if followImports is disabled and class has @smrt() decorator
+          if (!parentClassNode && !this.options.followImports) {
+            const hasDecorator = this.findSmrtDecorator(node);
+            if (hasDecorator) {
+              throw new Error(
+                `[ast-scanner] Cannot verify inheritance for '@smrt() class ${className} extends ${baseClassName}'.\n\n` +
+                  `The parent class '${baseClassName}' is not found in scanned files.\n` +
+                  `This is likely because it's imported from an external package.\n\n` +
+                  `To fix this, add 'followImports: true' to your smrtPlugin config in vite.config.ts:\n\n` +
+                  `  smrtPlugin({\n` +
+                  `    include: ['src/**/*.ts'],\n` +
+                  `    followImports: true,  // ← Add this\n` +
+                  `    // ... other options\n` +
+                  `  })\n\n` +
+                  `Without followImports enabled, '${className}' will be excluded from the manifest\n` +
+                  `and will not be available at runtime (no fields, no queries, no persistence).\n\n` +
+                  `File: ${node.getSourceFile?.().fileName || 'unknown'}`,
+              );
+            }
+          }
         }
       }
     }

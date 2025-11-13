@@ -23,7 +23,7 @@ async function generateTestManifest() {
 
     // Create a temporary TypeScript runner for test files
     const tsCode = `
-import { ASTScanner, ManifestGenerator } from './src/scanner/index.js';
+import { ASTScanner, ManifestGenerator } from '@happyvertical/smrt-core/scanner';
 import fg from 'fast-glob';
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -44,12 +44,67 @@ async function runTestScanner() {
 
   console.log(\`[smrt] Scanning \${testFiles.length} test files...\`);
 
-  const scanner = new ASTScanner(testFiles, {
+  // Try to load vite config to get custom baseClasses
+  let scannerOptions = {
     baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
     includePrivateMethods: false,
     includeStaticMethods: true,
     followImports: false,
-  });
+  };
+
+  try {
+    const viteConfigPath = resolve(process.cwd(), 'vite.config.ts');
+    const { existsSync } = await import('node:fs');
+    if (existsSync(viteConfigPath)) {
+      console.log('[smrt] Found vite.config.ts, attempting to load...');
+      // Use vite to load config which handles TypeScript
+      const { loadConfigFromFile } = await import('vite');
+      const loaded = await loadConfigFromFile({ command: 'build', mode: 'test' }, viteConfigPath);
+      console.log('[smrt] Vite config loaded, plugins:', loaded?.config?.plugins?.map(p => p?.name));
+      if (loaded?.config?.plugins) {
+        // Find smrtPlugin in plugins array (name is 'smrt-auto-service')
+        const smrtPlugin = loaded.config.plugins.find(p => p?.name === 'smrt-auto-service');
+        if (smrtPlugin) {
+          console.log('[smrt] Found smrt-auto-service plugin');
+          // The plugin instance should expose its options
+          // Try different ways to access options
+          let opts = smrtPlugin.api?.options || smrtPlugin.options || smrtPlugin._options;
+
+          if (!opts && typeof smrtPlugin.api === 'function') {
+            try {
+              const api = smrtPlugin.api();
+              opts = api.options;
+            } catch (e) {
+              console.log('[smrt] Could not call plugin.api()');
+            }
+          }
+
+          if (opts) {
+            console.log('[smrt] Plugin options:', JSON.stringify({ baseClasses: opts.baseClasses, followImports: opts.followImports }));
+            if (opts.baseClasses) {
+              scannerOptions.baseClasses = opts.baseClasses;
+              console.log(\`[smrt] Using baseClasses from vite.config.ts: \${opts.baseClasses.join(', ')}\`);
+            }
+            if (opts.followImports !== undefined) {
+              scannerOptions.followImports = opts.followImports;
+              console.log(\`[smrt] Using followImports from vite.config.ts: \${opts.followImports}\`);
+            }
+          } else {
+            console.log('[smrt] Could not access plugin options');
+          }
+        } else {
+          console.log('[smrt] smrt-auto-service plugin not found in plugins array');
+        }
+      }
+    } else {
+      console.log('[smrt] vite.config.ts not found');
+    }
+  } catch (error) {
+    console.log('[smrt] Error loading vite.config.ts:', error.message);
+    console.log('[smrt] Using default baseClasses');
+  }
+
+  const scanner = new ASTScanner(testFiles, scannerOptions);
 
   const scanResults = scanner.scanFiles();
   const generator = new ManifestGenerator();

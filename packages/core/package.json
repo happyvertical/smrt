@@ -54,7 +54,7 @@
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "(command -v smrt >/dev/null 2>&1 && smrt test) || (node scripts/generate-test-manifest.js && npx vitest run)",
     "test:watch": "smrt test && npx vitest",
-    "build": "vite build && cp -r src/vite-plugin/templates dist/vite-plugin/",
+    "build": "vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/",
     "build:watch": "vite build --watch",
     "docs": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules",
     "docs:watch": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules --watch",
