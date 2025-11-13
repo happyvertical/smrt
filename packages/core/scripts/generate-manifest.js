@@ -23,6 +23,7 @@ async function generateManifest() {
     // Create a temporary TypeScript runner
     const tsCode = `
 import { ASTScanner, ManifestGenerator } from './src/scanner/index.js';
+import { discoverSmrtPackages } from './src/manifest/discover-smrt-packages.js';
 import fg from 'fast-glob';
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -59,6 +60,14 @@ async function runScanner() {
 }
 
 runScanner().then(manifest => {
+  // Add moduleType identifier
+  manifest.moduleType = 'smrt';
+
+  // Discover and add SMRT dependencies
+  console.log('[smrt] Discovering SMRT packages...');
+  const smrtDependencies = discoverSmrtPackages();
+  manifest.smrtDependencies = smrtDependencies;
+
   // Inject package name from package.json
   try {
     const packageJsonPath = resolve(process.cwd(), 'package.json');

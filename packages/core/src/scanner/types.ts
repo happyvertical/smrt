@@ -74,6 +74,8 @@ export interface SmartObjectManifest {
   packageName?: string; // Root package name
   packageVersion?: string; // Root package version
   objects: Record<string, SmartObjectDefinition>;
+  moduleType?: string; // Module type identifier (e.g., "smrt") for package discovery
+  smrtDependencies?: string[]; // Discovered SMRT packages from dependency tree
 }
 
 export interface ScanResult {

@@ -31,7 +31,8 @@
     "./prebuild/cli": "./dist/prebuild/cli.js",
     "./consumer-plugin": "./dist/consumer-plugin.js",
     "./scanner": "./dist/scanner.js",
-    "./scanner/types": "./dist/scanner/types.js"
+    "./scanner/types": "./dist/scanner/types.js",
+    "./manifest/discover-smrt-packages": "./dist/manifest/discover-smrt-packages.js"
   },
   "dependencies": {
     "@happyvertical/ai": "^0.55.0",

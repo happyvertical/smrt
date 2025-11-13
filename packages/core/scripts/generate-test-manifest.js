@@ -24,6 +24,7 @@ async function generateTestManifest() {
     // Create a temporary TypeScript runner for test files
     const tsCode = `
 import { ASTScanner, ManifestGenerator } from '@happyvertical/smrt-core/scanner';
+import { discoverSmrtPackages } from '@happyvertical/smrt-core/manifest/discover-smrt-packages';
 import fg from 'fast-glob';
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -114,6 +115,14 @@ async function runTestScanner() {
 }
 
 runTestScanner().then(manifest => {
+  // Add moduleType identifier
+  manifest.moduleType = 'smrt';
+
+  // Discover and add SMRT dependencies
+  console.log('[smrt] Discovering SMRT packages...');
+  const smrtDependencies = discoverSmrtPackages();
+  manifest.smrtDependencies = smrtDependencies;
+
   // Inject package name from package.json
   try {
     const packageJsonPath = resolve(process.cwd(), 'package.json');

@@ -493,17 +493,14 @@ export function discoverManifestSync(
     `[manifest-loader] ${className} not found in cached manifests, trying external packages...`,
   );
 
-  const smrtPackages = [
-    '@happyvertical/smrt-events',
-    '@happyvertical/smrt-places',
-    '@happyvertical/smrt-profiles',
-    '@happyvertical/smrt-content',
-    '@happyvertical/smrt-assets',
-    '@happyvertical/smrt-products',
-    '@happyvertical/smrt-tags',
-    '@happyvertical/smrt-accounts',
-    '@happyvertical/smrt-agents',
-  ];
+  // Read discovered packages from manifest (populated at build time)
+  const smrtPackages = localTestManifest?.smrtDependencies || [];
+
+  if (smrtPackages.length === 0) {
+    console.log(
+      '[manifest-loader] No SMRT dependencies discovered. Run manifest generation if external packages are expected.',
+    );
+  }
 
   for (const pkg of smrtPackages) {
     const manifest = loadExternalManifestSync(pkg);

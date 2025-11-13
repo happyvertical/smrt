@@ -460,6 +460,24 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         packageJson,
       });
 
+      // Add moduleType identifier for SMRT package discovery
+      newManifest.moduleType = 'smrt';
+
+      // Discover SMRT dependencies
+      try {
+        const { discoverSmrtPackages } = await import(
+          '../manifest/discover-smrt-packages.js'
+        );
+        const smrtDependencies = discoverSmrtPackages();
+        newManifest.smrtDependencies = smrtDependencies;
+      } catch (error) {
+        console.warn(
+          '[smrt] Failed to discover SMRT dependencies:',
+          error instanceof Error ? error.message : error,
+        );
+        newManifest.smrtDependencies = [];
+      }
+
       // Log scan results
       const objectCount = Object.keys(newManifest.objects).length;
       if (objectCount > 0) {
