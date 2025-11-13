@@ -112,13 +112,14 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   for (const manifestPath of possiblePaths) {
     try {
       const manifestJson = readFileSync(manifestPath, 'utf-8');
-      localTestManifest = JSON.parse(manifestJson);
+      const manifest: Manifest = JSON.parse(manifestJson);
+      localTestManifest = manifest;
 
-      const objectCount = Object.keys(localTestManifest.objects).length;
+      const objectCount = Object.keys(manifest.objects).length;
       console.log(
         `[manifest-loader] ✅ Loaded local test manifest from ${manifestPath} (${objectCount} objects)`,
       );
-      return localTestManifest;
+      return manifest;
     } catch (error) {
       console.log(
         `[manifest-loader] ✗ Failed to load from ${manifestPath}: ${error instanceof Error ? error.message : 'unknown error'}`,
@@ -262,13 +263,20 @@ export function getPackageName(
  * @param packageName - Package name (e.g., '@happyvertical/smrt-places')
  * @returns Manifest object or null if not found
  */
-export async function loadExternalManifest(
-  packageName: string,
-): Promise<Manifest | null> {
+/**
+ * Load external package manifest synchronously
+ * This is the synchronous version of loadExternalManifest for use during class registration
+ */
+export function loadExternalManifestSync(packageName: string): Manifest | null {
   // Check cache first
   if (manifestCache.has(packageName)) {
+    console.log(`[manifest-loader] Using cached manifest for ${packageName}`);
     return manifestCache.get(packageName)!;
   }
+
+  console.log(
+    `[manifest-loader] Attempting to load external manifest for ${packageName}`,
+  );
 
   let pkgPath: string | null = null;
 
@@ -321,6 +329,9 @@ export async function loadExternalManifest(
   }
 
   if (!pkgPath) {
+    console.log(
+      `[manifest-loader] Could not find package.json for ${packageName}`,
+    );
     return null;
   }
 
@@ -332,6 +343,9 @@ export async function loadExternalManifest(
     const manifestExport = pkgJson.exports?.['./manifest'];
 
     if (!manifestExport) {
+      console.log(
+        `[manifest-loader] Package ${packageName} does not export manifest`,
+      );
       return null;
     }
 
@@ -362,13 +376,24 @@ export async function loadExternalManifest(
 
     // Cache the loaded manifest
     manifestCache.set(packageName, manifest);
+    console.log(
+      `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(manifest.objects).length} objects)`,
+    );
 
     return manifest;
   } catch (error) {
-    // Package doesn't export manifest or doesn't exist
-    // This is expected for core framework classes
+    console.warn(
+      `Failed to load manifest for package ${packageName}: ${error instanceof Error ? error.message : error}`,
+    );
     return null;
   }
+}
+
+export async function loadExternalManifest(
+  packageName: string,
+): Promise<Manifest | null> {
+  // Delegate to synchronous version since all operations are sync anyway
+  return loadExternalManifestSync(packageName);
 }
 
 /**
@@ -458,6 +483,42 @@ export function discoverManifestSync(
         return { ...entry, packageName: manifest.packageName };
       }
       return entry;
+    }
+  }
+
+  // 5. Try loading from external SMRT packages
+  // This handles STI inheritance where child class is in one package
+  // but parent class is in another (e.g., Meeting in praeco extends Event from smrt-events)
+  console.log(
+    `[manifest-loader] ${className} not found in cached manifests, trying external packages...`,
+  );
+
+  const smrtPackages = [
+    '@happyvertical/smrt-events',
+    '@happyvertical/smrt-places',
+    '@happyvertical/smrt-profiles',
+    '@happyvertical/smrt-content',
+    '@happyvertical/smrt-assets',
+    '@happyvertical/smrt-products',
+    '@happyvertical/smrt-tags',
+    '@happyvertical/smrt-accounts',
+    '@happyvertical/smrt-agents',
+  ];
+
+  for (const pkg of smrtPackages) {
+    const manifest = loadExternalManifestSync(pkg);
+    if (manifest) {
+      const entry = manifest.objects[name] || manifest.objects[className];
+      if (entry) {
+        console.log(
+          `[manifest-loader] ✅ Found ${className} in external package ${pkg}`,
+        );
+        // Enrich entry with packageName from manifest if not already present
+        if (!entry.packageName && manifest.packageName) {
+          return { ...entry, packageName: manifest.packageName };
+        }
+        return entry;
+      }
     }
   }
 
