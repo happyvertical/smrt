@@ -25,8 +25,6 @@ export interface SmrtPluginOptions {
   generateTypes?: boolean;
   /** Custom base classes to scan for */
   baseClasses?: string[];
-  /** Follow import chains to detect inheritance (e.g., Event extends SmrtObject) */
-  followImports?: boolean;
   /** Directory to write TypeScript declarations (relative to project root) */
   typeDeclarationsPath?: string;
   /** Plugin execution mode - controls Node.js vs browser compatibility */
@@ -69,7 +67,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     watch = true,
     generateTypes = true,
     baseClasses = ['SmrtObject', 'SmartObject'],
-    followImports = true, // Default true: needed for multi-package inheritance
     typeDeclarationsPath = 'src/types',
     mode = 'auto',
     manifestPath,
@@ -96,7 +93,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     api: {
       options: {
         baseClasses,
-        followImports,
+        followImports: false, // Currently hardcoded in scanner initialization
         include,
         exclude,
       },
@@ -419,7 +416,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         baseClasses,
         includePrivateMethods: false,
         includeStaticMethods: true,
-        followImports,
+        followImports: false,
       });
 
       const scanResults = scanner.scanFiles();

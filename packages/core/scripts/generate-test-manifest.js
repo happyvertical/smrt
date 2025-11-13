@@ -29,116 +29,82 @@ import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 async function runTestScanner() {
-  // Scan ALL source files (both test files and regular source files)
-  // This ensures test manifest includes classes defined outside test files
-  const sourceFiles = fg.sync(['src/**/*.ts'], {
+  // Scan ONLY test files
+  const testFiles = fg.sync(['src/**/*.test.ts', 'src/**/*.spec.ts'], {
     absolute: true,
     ignore: [
       'src/**/*.d.ts',
-      'node_modules/**',
     ],
   });
 
-  if (sourceFiles.length === 0) {
-    console.log('[smrt] No source files found');
+  if (testFiles.length === 0) {
+    console.log('[smrt] No test files found');
     return { version: '1.0.0', timestamp: Date.now(), objects: {} };
   }
 
-  console.log(\`[smrt] Scanning \${sourceFiles.length} source file(s)...\`);
+  console.log(\`[smrt] Scanning \${testFiles.length} test files...\`);
 
   // Try to load vite config to get custom baseClasses
   let scannerOptions = {
     baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
     includePrivateMethods: false,
     includeStaticMethods: true,
-    followImports: true, // Default true: needed for multi-package inheritance
+    followImports: false,
   };
 
   try {
     const viteConfigPath = resolve(process.cwd(), 'vite.config.ts');
     const { existsSync } = await import('node:fs');
-
-    console.log(\`[smrt] Checking for vite.config.ts at: \${viteConfigPath}\`);
-
     if (existsSync(viteConfigPath)) {
-      console.log('[smrt] ✓ vite.config.ts found, attempting to load...');
-
+      console.log('[smrt] Found vite.config.ts, attempting to load...');
       // Use vite to load config which handles TypeScript
       const { loadConfigFromFile } = await import('vite');
       const loaded = await loadConfigFromFile({ command: 'build', mode: 'test' }, viteConfigPath);
-
-      console.log('[smrt] Vite config loaded:', loaded ? 'success' : 'failed');
-
-      if (!loaded) {
-        console.log('[smrt] ✗ loadConfigFromFile returned null/undefined');
-      } else if (!loaded.config) {
-        console.log('[smrt] ✗ loaded.config is null/undefined');
-      } else if (!loaded.config.plugins) {
-        console.log('[smrt] ✗ loaded.config.plugins is null/undefined');
-      } else {
-        const pluginNames = loaded.config.plugins.map(p => p?.name).filter(Boolean);
-        console.log(\`[smrt] Found \${pluginNames.length} plugins:\`, pluginNames.join(', '));
-
+      console.log('[smrt] Vite config loaded, plugins:', loaded?.config?.plugins?.map(p => p?.name));
+      if (loaded?.config?.plugins) {
         // Find smrtPlugin in plugins array (name is 'smrt-auto-service')
         const smrtPlugin = loaded.config.plugins.find(p => p?.name === 'smrt-auto-service');
-
-        if (!smrtPlugin) {
-          console.log('[smrt] ✗ smrt-auto-service plugin not found in plugins array');
-          console.log('[smrt]   Available plugins:', pluginNames);
-        } else {
-          console.log('[smrt] ✓ Found smrt-auto-service plugin');
-
-          // Debug plugin structure
-          console.log('[smrt] Plugin keys:', Object.keys(smrtPlugin));
-          console.log('[smrt] Has api property?', 'api' in smrtPlugin);
-          console.log('[smrt] api type:', typeof smrtPlugin.api);
-
+        if (smrtPlugin) {
+          console.log('[smrt] Found smrt-auto-service plugin');
           // The plugin instance should expose its options
           // Try different ways to access options
           let opts = smrtPlugin.api?.options || smrtPlugin.options || smrtPlugin._options;
 
           if (!opts && typeof smrtPlugin.api === 'function') {
-            console.log('[smrt] Trying to call plugin.api() function...');
             try {
               const api = smrtPlugin.api();
-              opts = api?.options;
-              console.log('[smrt] plugin.api() returned:', api ? 'object' : 'null/undefined');
+              opts = api.options;
             } catch (e) {
-              console.log('[smrt] ✗ Error calling plugin.api():', e.message);
+              console.log('[smrt] Could not call plugin.api()');
             }
           }
 
           if (opts) {
-            console.log('[smrt] ✓ Plugin options found!');
-            console.log('[smrt] Options:', JSON.stringify({
-              baseClasses: opts.baseClasses,
-              followImports: opts.followImports
-            }, null, 2));
-
+            console.log('[smrt] Plugin options:', JSON.stringify({ baseClasses: opts.baseClasses, followImports: opts.followImports }));
             if (opts.baseClasses) {
               scannerOptions.baseClasses = opts.baseClasses;
-              console.log(\`[smrt] ✓ Using baseClasses from vite.config.ts: \${opts.baseClasses.join(', ')}\`);
+              console.log(\`[smrt] Using baseClasses from vite.config.ts: \${opts.baseClasses.join(', ')}\`);
             }
             if (opts.followImports !== undefined) {
               scannerOptions.followImports = opts.followImports;
-              console.log(\`[smrt] ✓ Using followImports from vite.config.ts: \${opts.followImports}\`);
+              console.log(\`[smrt] Using followImports from vite.config.ts: \${opts.followImports}\`);
             }
           } else {
-            console.log('[smrt] ✗ Could not access plugin options');
-            console.log('[smrt]   Tried: smrtPlugin.api.options, smrtPlugin.options, smrtPlugin._options');
+            console.log('[smrt] Could not access plugin options');
           }
+        } else {
+          console.log('[smrt] smrt-auto-service plugin not found in plugins array');
         }
       }
     } else {
-      console.log('[smrt] ✗ vite.config.ts not found at path');
+      console.log('[smrt] vite.config.ts not found');
     }
   } catch (error) {
-    console.log('[smrt] ✗ Error loading vite.config.ts:', error.message);
-    console.log('[smrt] Stack:', error.stack);
+    console.log('[smrt] Error loading vite.config.ts:', error.message);
     console.log('[smrt] Using default baseClasses');
   }
 
-  const scanner = new ASTScanner(sourceFiles, scannerOptions);
+  const scanner = new ASTScanner(testFiles, scannerOptions);
 
   const scanResults = scanner.scanFiles();
   const generator = new ManifestGenerator();
@@ -176,7 +142,7 @@ export default testManifest;
   writeFileSync('src/manifest/test-manifest-stub.ts', tsContent);
 
   const objectCount = Object.keys(manifest.objects).length;
-  console.log(\`[smrt] ✅ Generated test manifest with \${objectCount} object(s)\`);
+  console.log(\`[smrt] ✅ Generated test manifest with \${objectCount} test objects\`);
 }).catch(console.error);
 `;
 
