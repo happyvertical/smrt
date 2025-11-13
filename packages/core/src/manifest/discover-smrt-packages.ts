@@ -1,56 +1,40 @@
 /**
  * SMRT Package Discovery
  *
- * Discovers all SMRT packages in the dependency tree by:
- * 1. Detecting package manager (pnpm/npm)
- * 2. Running package list command
- * 3. Validating packages have moduleType: "smrt" in manifest
+ * Discovers all SMRT packages in node_modules by:
+ * 1. Scanning node_modules directory for installed packages
+ * 2. Following symlinks for workspace: dependencies
+ * 3. Checking for dist/manifest.json with moduleType: "smrt"
  * 4. Optionally caching results based on lockfile hash
  *
  * Cache Strategy:
  * - DISABLED by default (ensures fresh manifests during development)
  * - Enable with SMRT_ENABLE_DISCOVERY_CACHE=true for production/CI builds
- *
- * Configuration:
- * - SMRT_DISCOVERY_MAX_BUFFER: Buffer size for npm/pnpm list output (default: 100MB)
- *   Increase if you get ENOBUFS errors with very large dependency trees
  */
 
-import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 const CACHE_DIR = '.smrt';
 const CACHE_FILE = 'discovery-cache.json';
 
-// Configurable buffer size for package manager commands (default: 100MB)
-const MAX_BUFFER = process.env.SMRT_DISCOVERY_MAX_BUFFER
-  ? parseInt(process.env.SMRT_DISCOVERY_MAX_BUFFER, 10)
-  : 100 * 1024 * 1024;
-
-/**
- * Detect which package manager is in use
- */
-function getPackageManager() {
-  if (existsSync('pnpm-lock.yaml')) return 'pnpm';
-  if (existsSync('package-lock.json')) return 'npm';
-  return 'npm'; // fallback
-}
-
 /**
  * Get hash of lockfile for cache invalidation
  */
 function getLockfileHash() {
-  const pm = getPackageManager();
-  const lockfile = pm === 'pnpm' ? 'pnpm-lock.yaml' : 'package-lock.json';
+  // Check for pnpm or npm lockfile
+  const lockfile = existsSync('pnpm-lock.yaml')
+    ? 'pnpm-lock.yaml'
+    : 'package-lock.json';
 
   if (!existsSync(lockfile)) {
     return null;
@@ -148,73 +132,62 @@ function hasManifestExport(packageName: string): boolean {
 }
 
 /**
+ * Scan node_modules recursively for packages
+ */
+function* scanNodeModules(baseDir: string): Generator<string> {
+  const nodeModulesPath = join(baseDir, 'node_modules');
+
+  if (!existsSync(nodeModulesPath)) {
+    return;
+  }
+
+  try {
+    const entries = readdirSync(nodeModulesPath);
+
+    for (const entry of entries) {
+      if (entry === '.bin' || entry === '.pnpm' || entry === '.cache') {
+        continue;
+      }
+
+      const entryPath = join(nodeModulesPath, entry);
+
+      try {
+        const stats = statSync(entryPath);
+
+        if (stats.isDirectory() || stats.isSymbolicLink()) {
+          // Scoped packages (e.g., @happyvertical/smrt-core)
+          if (entry.startsWith('@')) {
+            const scopeEntries = readdirSync(entryPath);
+            for (const scopedPkg of scopeEntries) {
+              yield `${entry}/${scopedPkg}`;
+            }
+          } else {
+            // Regular packages
+            yield entry;
+          }
+        }
+      } catch {
+        // Skip entries we can't read
+        continue;
+      }
+    }
+  } catch (error) {
+    // node_modules doesn't exist or can't be read
+    return;
+  }
+}
+
+/**
  * Perform fresh discovery of SMRT packages
  */
 function performDiscovery(): string[] {
-  const pm = getPackageManager();
-  console.log(`[discovery] Using package manager: ${pm}`);
+  console.log('[discovery] Scanning node_modules for SMRT packages...');
 
   try {
-    // Get full dependency tree
-    const cmd =
-      pm === 'pnpm'
-        ? 'pnpm list --json --depth=Infinity'
-        : 'npm list --json --all';
-
-    let output: string;
-    try {
-      output = execSync(cmd, {
-        encoding: 'utf-8',
-        maxBuffer: MAX_BUFFER,
-        stdio: ['ignore', 'pipe', 'ignore'], // Only capture stdout, ignore stdin/stderr
-      });
-    } catch (error: any) {
-      // npm list exits with non-zero code when there are dependency issues
-      // but still provides valid JSON output
-      if (error.stdout) {
-        output = error.stdout.toString();
-      } else {
-        throw error;
-      }
-    }
-
-    const data = JSON.parse(output);
-
-    // Extract all unique package names from dependency tree
-    const packages = new Set<string>();
-
-    function extractPackages(deps: Record<string, any>): void {
-      if (!deps) return;
-
-      for (const [name, info] of Object.entries(deps)) {
-        packages.add(name);
-
-        // Recursively check nested dependencies
-        if ((info as any).dependencies) {
-          extractPackages((info as any).dependencies);
-        }
-      }
-    }
-
-    // Handle pnpm vs npm structure differences
-    if (Array.isArray(data)) {
-      // pnpm returns array
-      for (const pkg of data) {
-        if (pkg.dependencies) {
-          extractPackages(pkg.dependencies);
-        }
-      }
-    } else {
-      // npm returns single object
-      if (data.dependencies) {
-        extractPackages(data.dependencies);
-      }
-    }
-
-    // Filter to only SMRT packages (have moduleType: "smrt" in manifest)
     const smrtPackages: string[] = [];
 
-    for (const pkgName of packages) {
+    // Scan node_modules for all packages
+    for (const pkgName of scanNodeModules(process.cwd())) {
       if (hasManifestExport(pkgName)) {
         smrtPackages.push(pkgName);
         console.log(`[discovery] ✅ Found SMRT package: ${pkgName}`);
