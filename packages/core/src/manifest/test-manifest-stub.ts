@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1762994963366,
+  "timestamp": 1763019455771,
   "objects": {
     "testproduct": {
       "name": "testproduct",
@@ -1519,53 +1519,45 @@ export const testManifest: SmartObjectManifest = {
       "exportName": "CouncilIssue208Collection",
       "collectionExportName": "CouncilIssue208CollectionCollection"
     },
-    "article": {
-      "name": "article",
-      "className": "Article",
-      "collection": "articles",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/vite-plugin/cli-module.test.ts",
+    "testarticle": {
+      "name": "testarticle",
+      "className": "TestArticle",
+      "collection": "testarticles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-288-289-reproduction.test.ts",
       "fields": {
         "title": {
           "type": "text",
           "required": true,
           "default": ""
         },
-        "author": {
+        "body": {
           "type": "text",
           "required": true,
           "default": ""
+        },
+        "published_at": {
+          "type": "datetime",
+          "required": true,
+          "default": null
+        },
+        "word_count": {
+          "type": "integer",
+          "required": true,
+          "default": 0
         }
       },
-      "methods": {
-        "analyze": {
-          "name": "analyze",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
+      "methods": {},
       "decoratorConfig": {
-        "cli": {
-          "include": [
-            "list",
-            "get",
-            "analyze"
-          ],
-          "exclude": [
-            "delete"
-          ]
-        }
+        "tableStrategy": "sti"
       },
       "extends": "SmrtObject",
-      "exportName": "Article",
-      "collectionExportName": "ArticleCollection"
+      "exportName": "TestArticle",
+      "collectionExportName": "TestArticleCollection"
     },
-    "meetingannouncement": {
-      "name": "meetingannouncement",
-      "className": "MeetingAnnouncement",
-      "collection": "meetingannouncements",
+    "testmeetingannouncement": {
+      "name": "testmeetingannouncement",
+      "className": "TestMeetingAnnouncement",
+      "collection": "testmeetingannouncements",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-288-289-reproduction.test.ts",
       "fields": {
         "meetingId": {
@@ -1583,33 +1575,33 @@ export const testManifest: SmartObjectManifest = {
         "mcp": {},
         "cli": false
       },
-      "extends": "Article",
-      "exportName": "MeetingAnnouncement",
-      "collectionExportName": "MeetingAnnouncementCollection"
+      "extends": "TestArticle",
+      "exportName": "TestMeetingAnnouncement",
+      "collectionExportName": "TestMeetingAnnouncementCollection"
     },
-    "articlecollection": {
-      "name": "articlecollection",
-      "className": "ArticleCollection",
-      "collection": "articlecollections",
+    "testarticlecollection": {
+      "name": "testarticlecollection",
+      "className": "TestArticleCollection",
+      "collection": "testarticlecollections",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-288-289-reproduction.test.ts",
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
       "extends": "SmrtCollection",
-      "exportName": "ArticleCollection",
-      "collectionExportName": "ArticleCollectionCollection"
+      "exportName": "TestArticleCollection",
+      "collectionExportName": "TestArticleCollectionCollection"
     },
-    "meetingannouncementcollection": {
-      "name": "meetingannouncementcollection",
-      "className": "MeetingAnnouncementCollection",
-      "collection": "meetingannouncementcollections",
+    "testmeetingannouncementcollection": {
+      "name": "testmeetingannouncementcollection",
+      "className": "TestMeetingAnnouncementCollection",
+      "collection": "testmeetingannouncementcollections",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-288-289-reproduction.test.ts",
       "fields": {},
       "methods": {},
       "decoratorConfig": {},
       "extends": "SmrtCollection",
-      "exportName": "MeetingAnnouncementCollection",
-      "collectionExportName": "MeetingAnnouncementCollectionCollection"
+      "exportName": "TestMeetingAnnouncementCollection",
+      "collectionExportName": "TestMeetingAnnouncementCollectionCollection"
     },
     "issue35testobject1": {
       "name": "issue35testobject1",
@@ -3005,6 +2997,49 @@ export const testManifest: SmartObjectManifest = {
       "extends": "SmrtObject",
       "exportName": "Secret",
       "collectionExportName": "SecretCollection"
+    },
+    "article": {
+      "name": "article",
+      "className": "Article",
+      "collection": "articles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/vite-plugin/cli-module.test.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "author": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {
+        "analyze": {
+          "name": "analyze",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "analyze"
+          ],
+          "exclude": [
+            "delete"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Article",
+      "collectionExportName": "ArticleCollection"
     }
   },
   "packageName": "@happyvertical/smrt-core"
