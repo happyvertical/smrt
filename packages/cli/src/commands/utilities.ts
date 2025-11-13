@@ -105,22 +105,14 @@ export const utilityCommands: Record<string, CLICommand> = {
         const fg = await import('fast-glob');
         const { writeFileSync, mkdirSync } = await import('node:fs');
 
-        // Scan source files excluding test files
-        // Test files can have duplicate fixture classes which shouldn't be in manifest
+        // Scan source files (including test files for packages that define fixtures there)
         const testFiles = fg.default.sync(
           [
             'src/**/*.ts', // Include all source files for SMRT object definitions
           ],
           {
             absolute: true,
-            ignore: [
-              'src/**/*.d.ts',
-              'src/**/*.test.ts',
-              'src/**/*.spec.ts',
-              'node_modules/**',
-              'dist/**',
-              'build/**',
-            ],
+            ignore: ['src/**/*.d.ts', 'node_modules/**', 'dist/**', 'build/**'],
           },
         );
 
