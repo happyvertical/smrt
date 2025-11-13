@@ -176,10 +176,22 @@ function performDiscovery(): string[] {
       ? 'pnpm list --json --depth=Infinity'
       : 'npm list --json --all';
 
-    const output = execSync(cmd, {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'] // Suppress stderr
-    });
+    let output: string;
+    try {
+      output = execSync(cmd, {
+        encoding: 'utf-8',
+        maxBuffer: 100 * 1024 * 1024, // 100MB buffer (npm list can be very large)
+        stdio: ['ignore', 'pipe', 'ignore'] // Only capture stdout, ignore stdin/stderr
+      });
+    } catch (error: any) {
+      // npm list exits with non-zero code when there are dependency issues
+      // but still provides valid JSON output
+      if (error.stdout) {
+        output = error.stdout.toString();
+      } else {
+        throw error;
+      }
+    }
 
     const data = JSON.parse(output);
 
