@@ -105,18 +105,22 @@ export const utilityCommands: Record<string, CLICommand> = {
         const fg = await import('fast-glob');
         const { writeFileSync, mkdirSync } = await import('node:fs');
 
-        // Find test files
+        // Find test files AND source files with SMRT objects
         const testFiles = fg.default.sync(
-          ['src/**/*.test.ts', 'src/**/*.spec.ts'],
+          [
+            'src/**/*.test.ts',
+            'src/**/*.spec.ts',
+            'src/**/*.ts', // Include all source files for SMRT object definitions
+          ],
           {
             absolute: true,
-            ignore: ['src/**/*.d.ts'],
+            ignore: ['src/**/*.d.ts', 'node_modules/**', 'dist/**', 'build/**'],
           },
         );
 
         if (testFiles.length === 0) {
           console.log('⚠️  No test files found');
-          console.log('\nSearched for: src/**/*.test.ts, src/**/*.spec.ts');
+          console.log('\nSearched for: src/**/*.ts');
           return;
         }
 
@@ -127,7 +131,7 @@ export const utilityCommands: Record<string, CLICommand> = {
           baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
           includePrivateMethods: false,
           includeStaticMethods: true,
-          followImports: false,
+          followImports: true, // Follow imports to find STI base classes
         });
 
         const scanResults = scanner.scanFiles();
