@@ -16,11 +16,11 @@
  *   Increase if you get ENOBUFS errors with very large dependency trees
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 
 const CACHE_DIR = '.smrt';
 const CACHE_FILE = 'discovery-cache.json';
@@ -87,15 +87,12 @@ function saveCachedDiscovery(packages: string[]): void {
   const cache = {
     lockfileHash: getLockfileHash(),
     timestamp: Date.now(),
-    packages: packages
+    packages: packages,
   };
 
   try {
     mkdirSync(CACHE_DIR, { recursive: true });
-    writeFileSync(
-      join(CACHE_DIR, CACHE_FILE),
-      JSON.stringify(cache, null, 2)
-    );
+    writeFileSync(join(CACHE_DIR, CACHE_FILE), JSON.stringify(cache, null, 2));
   } catch (error) {
     console.warn('[discovery] Failed to save cache:', (error as Error).message);
   }
@@ -109,7 +106,7 @@ function hasManifestExport(packageName: string): boolean {
     const require = createRequire(`${process.cwd()}/package.json`);
 
     // Try to resolve package.json
-    let pkgJsonPath;
+    let pkgJsonPath: string | undefined;
     try {
       const pkgMainPath = require.resolve(packageName);
       let dir = dirname(pkgMainPath);
@@ -130,7 +127,12 @@ function hasManifestExport(packageName: string): boolean {
       }
     } catch {
       // Try direct node_modules lookup
-      const nodeModulesPath = join(process.cwd(), 'node_modules', packageName, 'package.json');
+      const nodeModulesPath = join(
+        process.cwd(),
+        'node_modules',
+        packageName,
+        'package.json',
+      );
       if (existsSync(nodeModulesPath)) {
         pkgJsonPath = nodeModulesPath;
       }
@@ -149,9 +151,10 @@ function hasManifestExport(packageName: string): boolean {
 
     // Load manifest and validate moduleType
     const manifestExport = pkgJson.exports['./manifest'];
-    const manifestRelPath = typeof manifestExport === 'string'
-      ? manifestExport
-      : manifestExport.default || manifestExport.import;
+    const manifestRelPath =
+      typeof manifestExport === 'string'
+        ? manifestExport
+        : manifestExport.default || manifestExport.import;
 
     const manifestPath = join(dirname(pkgJsonPath), manifestRelPath);
 
@@ -181,16 +184,17 @@ function performDiscovery(): string[] {
 
   try {
     // Get full dependency tree
-    const cmd = pm === 'pnpm'
-      ? 'pnpm list --json --depth=Infinity'
-      : 'npm list --json --all';
+    const cmd =
+      pm === 'pnpm'
+        ? 'pnpm list --json --depth=Infinity'
+        : 'npm list --json --all';
 
     let output: string;
     try {
       output = execSync(cmd, {
         encoding: 'utf-8',
         maxBuffer: MAX_BUFFER,
-        stdio: ['ignore', 'pipe', 'ignore'] // Only capture stdout, ignore stdin/stderr
+        stdio: ['ignore', 'pipe', 'ignore'], // Only capture stdout, ignore stdin/stderr
       });
     } catch (error: any) {
       // npm list exits with non-zero code when there are dependency issues
@@ -245,11 +249,16 @@ function performDiscovery(): string[] {
       }
     }
 
-    console.log(`[discovery] Discovered ${smrtPackages.length} SMRT package(s)`);
+    console.log(
+      `[discovery] Discovered ${smrtPackages.length} SMRT package(s)`,
+    );
 
     return smrtPackages;
   } catch (error) {
-    console.error('[discovery] Failed to discover packages:', (error as Error).message);
+    console.error(
+      '[discovery] Failed to discover packages:',
+      (error as Error).message,
+    );
     return [];
   }
 }
@@ -278,7 +287,9 @@ export function discoverSmrtPackages() {
 
   const cached = getCachedDiscovery();
   if (cached) {
-    console.log(`[discovery] ✅ Using cached SMRT packages (${cached.length} package(s))`);
+    console.log(
+      `[discovery] ✅ Using cached SMRT packages (${cached.length} package(s))`,
+    );
     return cached;
   }
 
