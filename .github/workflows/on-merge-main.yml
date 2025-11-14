@@ -126,7 +126,7 @@ jobs:
     if: |
       always() &&
       github.event_name == 'push' &&
-      (needs.test.result == 'success' || needs.test.outputs.conclusion == 'success')
+      (needs.test.result == 'success' || needs.test.outputs.tests-passed == 'true')
     uses: ./.github/workflows/build.yml
     permissions:
       contents: read
@@ -138,7 +138,7 @@ jobs:
     needs: build
     if: |
       always() &&
-      (needs.build.result == 'success' || needs.build.outputs.conclusion == 'success')
+      needs.build.result == 'success'
     uses: ./.github/workflows/publish.yml
     secrets: inherit
     permissions:
