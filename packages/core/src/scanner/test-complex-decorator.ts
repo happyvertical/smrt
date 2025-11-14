@@ -44,7 +44,7 @@ export class PraecoSource extends SmrtObject {
   },
   cli: true,
 })
-export class Document extends SmrtObject {
+export class ComplexDecoratorTestDocument extends SmrtObject {
   title = '';
   content = '';
   wordCount = 0;

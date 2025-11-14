@@ -11,93 +11,20 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { decimal, integer, text } from '../fields/index.js';
-import { SmrtObject } from '../object.js';
-import { ObjectRegistry, smrt } from '../registry.js';
+import { ObjectRegistry } from '../registry.js';
 import { SchemaGenerator } from '../schema/generator.js';
-
-// Level 1: Base Content class (like @happyvertical/smrt-content)
-@smrt()
-class Content extends SmrtObject {
-  title: string = '';
-  body: string = '';
-  publishedAt: Date | null = null;
-  wordCount: number = 0; // INTEGER (no decimal)
-
-  async generateSummary(): Promise<string> {
-    return 'Summary from Content';
-  }
-}
-
-// Level 2: Praeco Content extends Content (like praeco package)
-@smrt()
-class PraecoContent extends Content {
-  praecoCustom1: string = '';
-  sourceUrl: string = '';
-  rating: number = 0.0; // DECIMAL (has decimal)
-
-  async analyzeSentiment(): Promise<string> {
-    return 'Sentiment from PraecoContent';
-  }
-}
-
-// Level 3: Bentley Content extends PraecoContent (like bentleyalberta.com)
-@smrt()
-class BentleyContent extends PraecoContent {
-  bentleyCustom1: string = '';
-  localTags: string[] = [];
-
-  async analyzeLocal(): Promise<string> {
-    return 'Analysis from BentleyContent';
-  }
-}
-
-// Test field override with config merging
-@smrt()
-class ParentWithConstraints extends SmrtObject {
-  age = integer({ min: 0, max: 150 });
-  score = decimal({ min: 0.0, max: 100.0 });
-}
-
-@smrt()
-class ChildWithConstraints extends ParentWithConstraints {
-  // Override with stricter constraints (should merge: max of mins, min of maxes)
-  age = integer({ min: 18, max: 65 }); // Result: min=18 (stricter), max=65 (stricter)
-  score = decimal({ min: 50.0, max: 90.0 }); // Result: min=50 (stricter), max=90 (stricter)
-}
-
-// Test classes for type mismatch warning (top-level so they're in manifest)
-@smrt()
-class ParentTypeMismatch extends SmrtObject {
-  myField: string = '';
-}
-
-@smrt()
-class ChildTypeMismatch extends ParentTypeMismatch {
-  // Type changed from string to number (will trigger warning)
-  myField: number = 0;
-}
-
-// Test classes for method override (top-level so they're in manifest)
-@smrt()
-class ParentWithMethod extends SmrtObject {
-  async doSomething(): Promise<string> {
-    return 'parent';
-  }
-}
-
-@smrt()
-class ChildWithMethod extends ParentWithMethod {
-  async doSomething(): Promise<string> {
-    return 'child';
-  }
-}
-
-// Test class for missing ancestor warning
-@smrt()
-class OrphanClass extends SmrtObject {
-  orphanField: string = '';
-}
+import {
+  ChildTypeMismatch,
+  ChildWithConstraints,
+  ChildWithMethod,
+  InheritanceTestBentleyContent,
+  InheritanceTestContent,
+  InheritanceTestPraecoContent,
+  OrphanClass,
+  ParentTypeMismatch,
+  ParentWithConstraints,
+  ParentWithMethod,
+} from './fixtures/inheritance-test-classes.js';
 
 describe('Multi-level Class Inheritance', () => {
   beforeEach(() => {
@@ -107,21 +34,34 @@ describe('Multi-level Class Inheritance', () => {
 
   describe('Inheritance Chain Building', () => {
     it('should build correct inheritance chain for 3-level hierarchy', () => {
-      const chain = ObjectRegistry.getInheritanceChain('BentleyContent');
+      const chain = ObjectRegistry.getInheritanceChain(
+        'InheritanceTestBentleyContent',
+      );
       // SmrtObject is excluded from chains (fixed in #265)
-      expect(chain).toEqual(['Content', 'PraecoContent', 'BentleyContent']);
+      expect(chain).toEqual([
+        'InheritanceTestContent',
+        'InheritanceTestPraecoContent',
+        'InheritanceTestBentleyContent',
+      ]);
     });
 
     it('should build correct inheritance chain for 2-level hierarchy', () => {
-      const chain = ObjectRegistry.getInheritanceChain('PraecoContent');
+      const chain = ObjectRegistry.getInheritanceChain(
+        'InheritanceTestPraecoContent',
+      );
       // SmrtObject is excluded from chains (fixed in #265)
-      expect(chain).toEqual(['Content', 'PraecoContent']);
+      expect(chain).toEqual([
+        'InheritanceTestContent',
+        'InheritanceTestPraecoContent',
+      ]);
     });
 
     it('should build correct inheritance chain for 1-level hierarchy', () => {
-      const chain = ObjectRegistry.getInheritanceChain('Content');
+      const chain = ObjectRegistry.getInheritanceChain(
+        'InheritanceTestContent',
+      );
       // SmrtObject is excluded from chains (fixed in #265)
-      expect(chain).toEqual(['Content']);
+      expect(chain).toEqual(['InheritanceTestContent']);
     });
 
     it('should return empty array for unregistered class', () => {
@@ -131,10 +71,14 @@ describe('Multi-level Class Inheritance', () => {
 
     it('should cache inheritance chains for performance', () => {
       // First call builds and caches
-      const chain1 = ObjectRegistry.getInheritanceChain('BentleyContent');
+      const chain1 = ObjectRegistry.getInheritanceChain(
+        'InheritanceTestBentleyContent',
+      );
 
       // Second call should return cached value
-      const chain2 = ObjectRegistry.getInheritanceChain('BentleyContent');
+      const chain2 = ObjectRegistry.getInheritanceChain(
+        'InheritanceTestBentleyContent',
+      );
 
       expect(chain1).toBe(chain2); // Same reference = cached
     });
@@ -142,7 +86,9 @@ describe('Multi-level Class Inheritance', () => {
 
   describe('Field Inheritance', () => {
     it('should include fields from all ancestors (3 levels)', async () => {
-      const allFields = await ObjectRegistry.getAllFields('BentleyContent');
+      const allFields = await ObjectRegistry.getAllFields(
+        'InheritanceTestBentleyContent',
+      );
 
       // Level 1 (Content) fields
       expect(allFields.has('title')).toBe(true);
@@ -161,7 +107,9 @@ describe('Multi-level Class Inheritance', () => {
     });
 
     it('should include fields from parent only (2 levels)', async () => {
-      const allFields = await ObjectRegistry.getAllFields('PraecoContent');
+      const allFields = await ObjectRegistry.getAllFields(
+        'InheritanceTestPraecoContent',
+      );
 
       // Level 1 (Content) fields
       expect(allFields.has('title')).toBe(true);
@@ -177,7 +125,9 @@ describe('Multi-level Class Inheritance', () => {
     });
 
     it('should only include own fields (1 level)', async () => {
-      const allFields = await ObjectRegistry.getAllFields('Content');
+      const allFields = await ObjectRegistry.getAllFields(
+        'InheritanceTestContent',
+      );
 
       // Level 1 (Content) fields
       expect(allFields.has('title')).toBe(true);
@@ -189,7 +139,9 @@ describe('Multi-level Class Inheritance', () => {
     });
 
     it('should exclude framework base class fields (SmrtObject)', async () => {
-      const allFields = await ObjectRegistry.getAllFields('Content');
+      const allFields = await ObjectRegistry.getAllFields(
+        'InheritanceTestContent',
+      );
 
       // Framework base fields should be excluded from count
       // (id, slug, context are added separately by schema generator)
@@ -201,10 +153,14 @@ describe('Multi-level Class Inheritance', () => {
 
     it('should cache merged fields for performance', async () => {
       // First call builds and caches
-      const fields1 = await ObjectRegistry.getAllFields('BentleyContent');
+      const fields1 = await ObjectRegistry.getAllFields(
+        'InheritanceTestBentleyContent',
+      );
 
       // Second call should return cached value
-      const fields2 = await ObjectRegistry.getAllFields('BentleyContent');
+      const fields2 = await ObjectRegistry.getAllFields(
+        'InheritanceTestBentleyContent',
+      );
 
       // Both should have same content
       expect(fields1.size).toBe(fields2.size);
@@ -251,7 +207,9 @@ describe('Multi-level Class Inheritance', () => {
 
   describe('Method Inheritance', () => {
     it('should include methods from all ancestors (3 levels)', async () => {
-      const allMethods = await ObjectRegistry.getAllMethods('BentleyContent');
+      const allMethods = await ObjectRegistry.getAllMethods(
+        'InheritanceTestBentleyContent',
+      );
 
       // Level 1 (Content) methods
       expect(allMethods.has('generateSummary')).toBe(true);
@@ -273,8 +231,12 @@ describe('Multi-level Class Inheritance', () => {
     });
 
     it('should cache merged methods for performance', async () => {
-      const methods1 = await ObjectRegistry.getAllMethods('BentleyContent');
-      const methods2 = await ObjectRegistry.getAllMethods('BentleyContent');
+      const methods1 = await ObjectRegistry.getAllMethods(
+        'InheritanceTestBentleyContent',
+      );
+      const methods2 = await ObjectRegistry.getAllMethods(
+        'InheritanceTestBentleyContent',
+      );
 
       expect(methods1.size).toBe(methods2.size);
       expect(Array.from(methods1.keys())).toEqual(Array.from(methods2.keys()));
@@ -284,10 +246,12 @@ describe('Multi-level Class Inheritance', () => {
   describe('Schema Generation with Inheritance', () => {
     it('should generate schema with all inherited fields', async () => {
       const generator = new SchemaGenerator();
-      const allFields = await ObjectRegistry.getAllFields('BentleyContent');
+      const allFields = await ObjectRegistry.getAllFields(
+        'InheritanceTestBentleyContent',
+      );
 
       const schema = generator.generateSchemaFromRegistry(
-        'BentleyContent',
+        'InheritanceTestBentleyContent',
         'bentley_contents',
         allFields,
       );
@@ -305,7 +269,9 @@ describe('Multi-level Class Inheritance', () => {
     });
 
     it('should maintain field order (base class first, child class last)', async () => {
-      const allFields = await ObjectRegistry.getAllFields('BentleyContent');
+      const allFields = await ObjectRegistry.getAllFields(
+        'InheritanceTestBentleyContent',
+      );
       const fieldNames = Array.from(allFields.keys());
 
       // Content fields should come before PraecoContent fields
@@ -321,7 +287,7 @@ describe('Multi-level Class Inheritance', () => {
 
   describe('Runtime Object Behavior', () => {
     it('should allow creating and saving objects with inherited fields', async () => {
-      const bentley = new BentleyContent({
+      const bentley = new InheritanceTestBentleyContent({
         title: 'Test Article',
         body: 'Test content',
         praecoCustom1: 'Praeco data',
@@ -338,7 +304,7 @@ describe('Multi-level Class Inheritance', () => {
     });
 
     it('should allow calling inherited methods', async () => {
-      const bentley = new BentleyContent({
+      const bentley = new InheritanceTestBentleyContent({
         title: 'Test',
         db: { type: 'sqlite', url: ':memory:' },
       });
@@ -350,21 +316,21 @@ describe('Multi-level Class Inheritance', () => {
       const sentiment = await (bentley as any).analyzeSentiment(); // PraecoContent
       const local = await (bentley as any).analyzeLocal(); // BentleyContent
 
-      expect(summary).toBe('Summary from Content');
-      expect(sentiment).toBe('Sentiment from PraecoContent');
-      expect(local).toBe('Analysis from BentleyContent');
+      expect(summary).toBe('Summary from InheritanceTestContent');
+      expect(sentiment).toBe('Sentiment from InheritanceTestPraecoContent');
+      expect(local).toBe('Analysis from InheritanceTestBentleyContent');
     });
   });
 
   describe('Performance', () => {
     it('should build inheritance chain in <1ms (cached)', () => {
       // First call to build and cache
-      ObjectRegistry.getInheritanceChain('BentleyContent');
+      ObjectRegistry.getInheritanceChain('InheritanceTestBentleyContent');
 
       // Measure cached access
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
-        ObjectRegistry.getInheritanceChain('BentleyContent');
+        ObjectRegistry.getInheritanceChain('InheritanceTestBentleyContent');
       }
       const end = performance.now();
       const avgTime = (end - start) / 1000;
@@ -374,12 +340,12 @@ describe('Multi-level Class Inheritance', () => {
 
     it('should merge fields in <10ms (cached)', async () => {
       // First call to merge and cache
-      await ObjectRegistry.getAllFields('BentleyContent');
+      await ObjectRegistry.getAllFields('InheritanceTestBentleyContent');
 
       // Measure cached access
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
-        await ObjectRegistry.getAllFields('BentleyContent');
+        await ObjectRegistry.getAllFields('InheritanceTestBentleyContent');
       }
       const end = performance.now();
       const avgTime = (end - start) / 1000;
@@ -391,38 +357,48 @@ describe('Multi-level Class Inheritance', () => {
   describe('Cache Invalidation', () => {
     it('should invalidate cache for specific class', async () => {
       // Build and cache inheritance chain
-      const chain1 = ObjectRegistry.getInheritanceChain('BentleyContent');
-      const fields1 = await ObjectRegistry.getAllFields('BentleyContent');
+      const chain1 = ObjectRegistry.getInheritanceChain(
+        'InheritanceTestBentleyContent',
+      );
+      const fields1 = await ObjectRegistry.getAllFields(
+        'InheritanceTestBentleyContent',
+      );
 
       expect(chain1.length).toBeGreaterThan(0);
       expect(fields1.size).toBeGreaterThan(0);
 
       // Invalidate cache
-      ObjectRegistry.invalidateInheritanceCache('BentleyContent');
+      ObjectRegistry.invalidateInheritanceCache(
+        'InheritanceTestBentleyContent',
+      );
 
       // Verify cache was cleared (fields will be rebuilt on next access)
-      const registered = ObjectRegistry.classes.get('BentleyContent');
+      const registered = ObjectRegistry.classes.get(
+        'InheritanceTestBentleyContent',
+      );
       expect(registered?.inheritedFields).toBeUndefined();
       expect(registered?.inheritedMethods).toBeUndefined();
     });
 
     it('should recursively invalidate descendant caches', async () => {
       // Build and cache entire hierarchy
-      ObjectRegistry.getInheritanceChain('Content');
-      ObjectRegistry.getInheritanceChain('PraecoContent');
-      ObjectRegistry.getInheritanceChain('BentleyContent');
+      ObjectRegistry.getInheritanceChain('InheritanceTestContent');
+      ObjectRegistry.getInheritanceChain('InheritanceTestPraecoContent');
+      ObjectRegistry.getInheritanceChain('InheritanceTestBentleyContent');
 
-      await ObjectRegistry.getAllFields('Content');
-      await ObjectRegistry.getAllFields('PraecoContent');
-      await ObjectRegistry.getAllFields('BentleyContent');
+      await ObjectRegistry.getAllFields('InheritanceTestContent');
+      await ObjectRegistry.getAllFields('InheritanceTestPraecoContent');
+      await ObjectRegistry.getAllFields('InheritanceTestBentleyContent');
 
       // Invalidate parent class
-      ObjectRegistry.invalidateInheritanceCache('Content');
+      ObjectRegistry.invalidateInheritanceCache('InheritanceTestContent');
 
       // Verify all descendants were also invalidated
-      const content = ObjectRegistry.classes.get('Content');
-      const praeco = ObjectRegistry.classes.get('PraecoContent');
-      const bentley = ObjectRegistry.classes.get('BentleyContent');
+      const content = ObjectRegistry.classes.get('InheritanceTestContent');
+      const praeco = ObjectRegistry.classes.get('InheritanceTestPraecoContent');
+      const bentley = ObjectRegistry.classes.get(
+        'InheritanceTestBentleyContent',
+      );
 
       expect(content?.inheritedFields).toBeUndefined();
       expect(praeco?.inheritedFields).toBeUndefined();
@@ -431,13 +407,13 @@ describe('Multi-level Class Inheritance', () => {
 
     it('should invalidate all inheritance caches', async () => {
       // Build and cache multiple classes
-      ObjectRegistry.getInheritanceChain('Content');
-      ObjectRegistry.getInheritanceChain('PraecoContent');
-      ObjectRegistry.getInheritanceChain('BentleyContent');
+      ObjectRegistry.getInheritanceChain('InheritanceTestContent');
+      ObjectRegistry.getInheritanceChain('InheritanceTestPraecoContent');
+      ObjectRegistry.getInheritanceChain('InheritanceTestBentleyContent');
 
-      await ObjectRegistry.getAllFields('Content');
-      await ObjectRegistry.getAllFields('PraecoContent');
-      await ObjectRegistry.getAllFields('BentleyContent');
+      await ObjectRegistry.getAllFields('InheritanceTestContent');
+      await ObjectRegistry.getAllFields('InheritanceTestPraecoContent');
+      await ObjectRegistry.getAllFields('InheritanceTestBentleyContent');
 
       // Invalidate all
       ObjectRegistry.invalidateAllInheritanceCaches();
@@ -453,14 +429,20 @@ describe('Multi-level Class Inheritance', () => {
 
     it('should rebuild cache after invalidation', async () => {
       // Build and cache
-      const fields1 = await ObjectRegistry.getAllFields('BentleyContent');
+      const fields1 = await ObjectRegistry.getAllFields(
+        'InheritanceTestBentleyContent',
+      );
       expect(fields1.has('title')).toBe(true);
 
       // Invalidate
-      ObjectRegistry.invalidateInheritanceCache('BentleyContent');
+      ObjectRegistry.invalidateInheritanceCache(
+        'InheritanceTestBentleyContent',
+      );
 
       // Should rebuild cache on next access
-      const fields2 = await ObjectRegistry.getAllFields('BentleyContent');
+      const fields2 = await ObjectRegistry.getAllFields(
+        'InheritanceTestBentleyContent',
+      );
       expect(fields2.has('title')).toBe(true);
       expect(fields2.size).toBe(fields1.size);
     });
@@ -500,7 +482,9 @@ describe('Multi-level Class Inheritance', () => {
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       // Get fields for a simple class that extends SmrtObject
-      const fields = await ObjectRegistry.getAllFields('Content');
+      const fields = await ObjectRegistry.getAllFields(
+        'InheritanceTestContent',
+      );
 
       // Should NOT warn about SmrtObject being missing
       expect(consoleSpy).not.toHaveBeenCalledWith(

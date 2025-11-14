@@ -65,9 +65,9 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(RegistryRegistryTestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      expect(ObjectRegistry.hasClass('RegistryRegistryTestProduct')).toBe(true);
+      expect(ObjectRegistry.hasClass('RegistryTestProduct')).toBe(true);
       expect(ObjectRegistry.hasClass('registrytestproduct')).toBe(true); // Case insensitive
     });
 

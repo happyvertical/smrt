@@ -3,29 +3,11 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { boolean, integer, text } from './fields/index.js';
+import {
+  ObjectSpecTestCouncil,
+  TestObject,
+} from './__tests__/fixtures/object-spec-test-classes.js';
 import { SmrtObject } from './object';
-import { smrt } from './registry';
-
-// Simple test class extending SmrtObject
-// Phase 2: @smrt() decorator needed for test classes (not in AST manifest)
-@smrt()
-class TestObject extends SmrtObject {
-  static tableName = 'test_objects';
-
-  // Need to initialize properties for runtime field detection
-  name = text();
-  description? = text();
-  active = boolean();
-  count = integer();
-}
-
-// Test class for readonly property handling (Issue #61)
-@smrt({ tableName: 'custom_councils' })
-class TestCouncil extends SmrtObject {
-  name = text();
-  description? = text();
-}
 
 describe('SmrtObject', () => {
   describe('Basic Instantiation', () => {
@@ -117,7 +99,7 @@ describe('SmrtObject', () => {
       // This would previously throw:
       // "TypeError: Cannot set property tableName of #<SmrtObject> which has only a getter"
       expect(async () => {
-        const council = new TestCouncil({
+        const council = new ObjectSpecTestCouncil({
           name: 'Test Council',
           description: 'A test council',
           _skipLoad: true,
@@ -127,7 +109,7 @@ describe('SmrtObject', () => {
     });
 
     it('should allow accessing tableName getter after initialization', async () => {
-      const council = new TestCouncil({
+      const council = new ObjectSpecTestCouncil({
         name: 'Test Council',
         _skipLoad: true,
       });
@@ -138,7 +120,7 @@ describe('SmrtObject', () => {
     });
 
     it('should handle object creation with property values', async () => {
-      const council = new TestCouncil({
+      const council = new ObjectSpecTestCouncil({
         name: 'City Council',
         description: 'Main city governing body',
         _skipLoad: true,
@@ -153,7 +135,7 @@ describe('SmrtObject', () => {
 
     it('should not throw error in loadDataFromDb (Issue #63)', async () => {
       // Test loadDataFromDb() directly - it should skip readonly properties
-      const council = new TestCouncil({
+      const council = new ObjectSpecTestCouncil({
         _skipLoad: true,
       });
       await council.initialize();

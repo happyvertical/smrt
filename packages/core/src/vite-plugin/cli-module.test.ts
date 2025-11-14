@@ -19,7 +19,7 @@ function smrt(config?: any) {
 @smrt({
   cli: true,
 })
-class Document extends SmrtObject {
+class CliModuleTestDocument extends SmrtObject {
   title = '';
   content = '';
 
@@ -80,15 +80,15 @@ describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
   // Registry persists across tests to allow checking different objects
 
   it('should generate CLI module for objects with cli: true', () => {
-    // Test that Document class is registered with CLI enabled
-    const documentClass = ObjectRegistry.getClass('Document');
+    // Test that CliModuleTestDocument class is registered with CLI enabled
+    const documentClass = ObjectRegistry.getClass('CliModuleTestDocument');
     expect(documentClass).toBeDefined();
 
-    const config = ObjectRegistry.getConfig('Document');
+    const config = ObjectRegistry.getConfig('CliModuleTestDocument');
     expect(config.cli).toBe(true);
 
-    // Verify the Document instance has the analyze method
-    const documentInstance = new Document({});
+    // Verify the CliModuleTestDocument instance has the analyze method
+    const documentInstance = new CliModuleTestDocument({});
     expect(typeof documentInstance.analyze).toBe('function');
   });
 
@@ -112,11 +112,11 @@ describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
   });
 
   it('should generate commands for custom methods', () => {
-    const documentClass = ObjectRegistry.getClass('Document');
+    const documentClass = ObjectRegistry.getClass('CliModuleTestDocument');
     expect(documentClass).toBeDefined();
 
     // Check that analyze method exists
-    const documentInstance = new Document({});
+    const documentInstance = new CliModuleTestDocument({});
     expect(typeof documentInstance.analyze).toBe('function');
   });
 
@@ -130,9 +130,9 @@ describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
       version: '1.0.0',
       timestamp: Date.now(),
       objects: {
-        Document: {
-          className: 'Document',
-          collection: 'documents',
+        CliModuleTestDocument: {
+          className: 'CliModuleTestDocument',
+          collection: 'cli_module_test_documents',
           fields: {},
           methods: {
             analyze: {
@@ -153,7 +153,8 @@ describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
 
     // Verify the structure that would be generated
     const expectedCommands = ['list', 'get', 'analyze'];
-    const actualConfig = manifest.objects.Document.decoratorConfig.cli;
+    const actualConfig =
+      manifest.objects.CliModuleTestDocument.decoratorConfig.cli;
 
     if (typeof actualConfig === 'object' && actualConfig.include) {
       expect(actualConfig.include).toEqual(expectedCommands);
