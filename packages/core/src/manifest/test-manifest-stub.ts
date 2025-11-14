@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763083690343,
+  "timestamp": 1763083952278,
   "objects": {
     "testcouncil": {
       "name": "testcouncil",
@@ -424,6 +424,139 @@ export const testManifest: SmartObjectManifest = {
       "exportName": "TestAgent",
       "collectionExportName": "TestAgentCollection"
     },
+    "collectioncreatetestproduct": {
+      "name": "collectioncreatetestproduct",
+      "className": "CollectionCreateTestProduct",
+      "collection": "collectioncreatetestproducts",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/collection-create-test-classes.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "price": {
+          "type": "decimal",
+          "required": true,
+          "default": 0
+        },
+        "quantity": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "CollectionCreateTestProduct",
+      "collectionExportName": "CollectionCreateTestProductCollection"
+    },
+    "collectioncreatetestproductcollection": {
+      "name": "collectioncreatetestproductcollection",
+      "className": "CollectionCreateTestProductCollection",
+      "collection": "collectioncreatetestproductcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/collection-create-test-classes.ts",
+      "fields": {},
+      "methods": {
+        "customMethod": {
+          "name": "customMethod",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtCollection",
+      "exportName": "CollectionCreateTestProductCollection",
+      "collectionExportName": "CollectionCreateTestProductCollectionCollection"
+    },
+    "organization": {
+      "name": "organization",
+      "className": "Organization",
+      "collection": "organizations",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/collection-create-test-classes.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "type": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "Organization",
+      "collectionExportName": "OrganizationCollection"
+    },
+    "council": {
+      "name": "council",
+      "className": "Council",
+      "collection": "councils",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/collection-create-test-classes.ts",
+      "fields": {
+        "jurisdiction": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Organization",
+      "exportName": "Council",
+      "collectionExportName": "CouncilCollection"
+    },
+    "councils": {
+      "name": "councils",
+      "className": "Councils",
+      "collection": "councilses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/collection-create-test-classes.ts",
+      "fields": {},
+      "methods": {
+        "getByJurisdiction": {
+          "name": "getByJurisdiction",
+          "async": true,
+          "parameters": [
+            {
+              "name": "jurisdiction",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Council | null>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "profiles"
+      },
+      "extends": "SmrtCollection",
+      "exportName": "Councils",
+      "collectionExportName": "CouncilsCollection"
+    },
     "inheritancetestcontent": {
       "name": "inheritancetestcontent",
       "className": "InheritanceTestContent",
@@ -728,6 +861,218 @@ export const testManifest: SmartObjectManifest = {
       "extends": "SmrtObject",
       "exportName": "OrphanClass",
       "collectionExportName": "OrphanClassCollection"
+    },
+    "mcpintegrationtestproduct": {
+      "name": "mcpintegrationtestproduct",
+      "className": "McpIntegrationTestProduct",
+      "collection": "mcpintegrationtestproducts",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/mcp-integration-test-classes.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "required": true
+          }
+        },
+        "price": {
+          "type": "decimal",
+          "required": true,
+          "options": {
+            "min": 0
+          }
+        },
+        "stock": {
+          "type": "integer",
+          "required": true,
+          "options": {
+            "default": 0
+          }
+        }
+      },
+      "methods": {
+        "analyze": {
+          "name": "analyze",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "analyze"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "McpIntegrationTestProduct",
+      "collectionExportName": "McpIntegrationTestProductCollection"
+    },
+    "mcpintegrationtestproductcollection": {
+      "name": "mcpintegrationtestproductcollection",
+      "className": "McpIntegrationTestProductCollection",
+      "collection": "mcpintegrationtestproductcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/mcp-integration-test-classes.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "McpIntegrationTestProductCollection",
+      "collectionExportName": "McpIntegrationTestProductCollectionCollection"
+    },
+    "testcategory": {
+      "name": "testcategory",
+      "className": "TestCategory",
+      "collection": "testcategories",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/registry-test-classes.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "description": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestCategory",
+      "collectionExportName": "TestCategoryCollection"
+    },
+    "testcustomer": {
+      "name": "testcustomer",
+      "className": "TestCustomer",
+      "collection": "testcustomers",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/registry-test-classes.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "email": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestCustomer",
+      "collectionExportName": "TestCustomerCollection"
+    },
+    "registrytestproduct": {
+      "name": "registrytestproduct",
+      "className": "RegistryTestProduct",
+      "collection": "registrytestproducts",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/registry-test-classes.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true
+        },
+        "price": {
+          "type": "integer",
+          "required": true
+        },
+        "categoryId": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "RegistryTestProduct",
+      "collectionExportName": "RegistryTestProductCollection"
+    },
+    "testorder": {
+      "name": "testorder",
+      "className": "TestOrder",
+      "collection": "testorders",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/registry-test-classes.ts",
+      "fields": {
+        "customerId": {
+          "type": "text",
+          "required": true
+        },
+        "productId": {
+          "type": "text",
+          "required": true
+        },
+        "total": {
+          "type": "integer",
+          "required": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestOrder",
+      "collectionExportName": "TestOrderCollection"
+    },
+    "overwritetestobject": {
+      "name": "overwritetestobject",
+      "className": "OverwriteTestObject",
+      "collection": "overwritetestobjects",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/registry-test-classes.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "options": {
+            "required": true,
+            "maxLength": 100
+          }
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "OverwriteTestObject",
+      "collectionExportName": "OverwriteTestObjectCollection"
     }
   },
   "moduleType": "smrt",

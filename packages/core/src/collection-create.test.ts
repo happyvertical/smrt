@@ -6,49 +6,14 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  CollectionCreateTestProduct,
+  CollectionCreateTestProductCollection,
+  Council,
+  Councils,
+  Organization,
+} from './__tests__/fixtures/collection-create-test-classes.js';
 import { SmrtCollection } from './collection';
-import { SmrtObject } from './object';
-import { smrt } from './registry';
-
-// Test models
-@smrt()
-class CollectionCreateTestProduct extends SmrtObject {
-  name: string = '';
-  price: number = 0.0;
-  quantity: number = 0;
-}
-
-@smrt()
-class CollectionCreateTestProductCollection extends SmrtCollection<CollectionCreateTestProduct> {
-  static readonly _itemClass = CollectionCreateTestProduct;
-
-  // Custom method to verify subclass typing
-  customMethod(): string {
-    return 'custom-method';
-  }
-}
-
-// STI test models (from issue #283)
-@smrt({ tableStrategy: 'sti' })
-class Organization extends SmrtObject {
-  name: string = '';
-  type: string = '';
-}
-
-@smrt()
-class Council extends Organization {
-  jurisdiction: string = '';
-}
-
-@smrt({ tableName: 'profiles' })
-class Councils extends SmrtCollection<Council> {
-  static readonly _itemClass = Council;
-
-  // Custom method specific to Councils
-  async getByJurisdiction(jurisdiction: string): Promise<Council | null> {
-    return await this.get({ jurisdiction });
-  }
-}
 
 describe('SmrtCollection.create() - Type Signature Fix (#283)', () => {
   describe('Basic Type Inference', () => {

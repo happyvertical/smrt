@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  OverwriteTestObject,
+  RegistryTestProduct,
+  TestCategory,
+  TestCustomer,
+  TestOrder,
+} from './__tests__/fixtures/registry-test-classes.js';
+import {
   boolean as booleanField,
   datetime,
   decimal,
@@ -10,42 +17,6 @@ import {
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
 import { tableNameFromClass } from './utils';
-
-// Test classes - Need @smrt() decorator for Phase 2 registration
-// Phase 2: @smrt() decorator needed for test classes (not in AST manifest)
-
-@smrt()
-class TestCategory extends SmrtObject {
-  name = text();
-  description = text();
-}
-
-@smrt()
-class TestCustomer extends SmrtObject {
-  name = text();
-  email = text();
-}
-
-@smrt()
-class RegistryRegistryTestProduct extends SmrtObject {
-  name = text();
-  price = integer();
-  categoryId = text();
-}
-
-@smrt()
-class TestOrder extends SmrtObject {
-  customerId = text();
-  productId = text();
-  total = integer();
-}
-
-// Test class for Field helper preservation (Issue #102, #103)
-@smrt()
-class OverwriteTestObject extends SmrtObject {
-  // Field helper with specific configuration
-  name = text({ required: true, maxLength: 100 });
-}
 
 // Helper to manually register test classes with field metadata
 function registerTestClass(

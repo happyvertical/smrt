@@ -7,37 +7,12 @@ import { mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SmrtCollection } from '../collection.js';
-import { decimal, integer, text } from '../fields/index.js';
-import { SmrtObject } from '../object.js';
-import { ObjectRegistry, smrt } from '../registry.js';
+import {
+  McpIntegrationTestProduct,
+  McpIntegrationTestProductCollection,
+} from '../__tests__/fixtures/mcp-integration-test-classes.js';
+import { ObjectRegistry } from '../registry.js';
 import { MCPGenerator } from './mcp.js';
-
-// Real SMRT object for integration testing
-@smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get', 'analyze'] },
-  cli: true,
-})
-class McpIntegrationTestProduct extends SmrtObject {
-  name = text({ required: true });
-  price = decimal({ min: 0 });
-  stock = integer({ default: 0 });
-
-  async analyze(options: any = {}) {
-    return {
-      action: 'analyze',
-      product: this.name,
-      price: this.price,
-      inStock: this.stock > 0,
-      timestamp: new Date(),
-    };
-  }
-}
-
-class McpIntegrationTestProductCollection extends SmrtCollection<McpIntegrationTestProduct> {
-  static readonly _itemClass = McpIntegrationTestProduct;
-}
 
 describe('MCPGenerator - Integration Tests', () => {
   let tmpDir: string;
