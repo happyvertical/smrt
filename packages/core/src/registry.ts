@@ -1626,7 +1626,29 @@ export class ObjectRegistry {
       }
 
       // Merge parent fields into result
-      for (const [fieldName, field] of ancestor.fields) {
+      // For parent classes, if they have no direct fields but have ancestors themselves,
+      // they might be from an external package - recursively get their inherited fields
+      // For the current class or classes with fields, use direct fields
+      let fieldsToMerge = ancestor.fields;
+
+      if (ancestorName !== className && ancestor.fields.size === 0) {
+        // Parent class with no fields - might need to load from manifest
+        const ancestorChain = ObjectRegistry.getInheritanceChain(ancestorName);
+        if (ancestorChain.length > 1) {
+          // Has ancestors - recursively get all fields
+          // Check cache before recursive call to avoid redundant recursion
+          const cachedFields = ObjectRegistry._allFieldsCache?.get(ancestorName);
+          if (cachedFields) {
+            fieldsToMerge = cachedFields;
+          } else {
+            fieldsToMerge = await ObjectRegistry.getAllFields(ancestorName);
+            // Cache the result immediately after recursive call
+            ObjectRegistry._allFieldsCache?.set(ancestorName, fieldsToMerge);
+          }
+        }
+      }
+
+      for (const [fieldName, field] of fieldsToMerge) {
         if (allFields.has(fieldName)) {
           // Field exists in parent - merge configs
           const existingField = allFields.get(fieldName);
