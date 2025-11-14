@@ -9,11 +9,730 @@
 import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
-  version: '1.0.0',
-  timestamp: Date.now(),
-  objects: {},
-  moduleType: 'smrt',
-  smrtDependencies: []
+  "version": "1.0.0",
+  "timestamp": 1763080302879,
+  "objects": {
+    "testcouncil": {
+      "name": "testcouncil",
+      "className": "TestCouncil",
+      "collection": "testcouncils",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/scanner/test-complex-decorator.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "url": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "test_councils"
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestCouncil",
+      "collectionExportName": "TestCouncilCollection"
+    },
+    "praecosource": {
+      "name": "praecosource",
+      "className": "PraecoSource",
+      "collection": "praecosources",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/scanner/test-complex-decorator.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "type": {
+          "type": "text",
+          "required": true,
+          "default": "documents"
+        },
+        "url": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "praeco_sources",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "search",
+            "sync"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "PraecoSource",
+      "collectionExportName": "PraecoSourceCollection"
+    },
+    "document": {
+      "name": "document",
+      "className": "Document",
+      "collection": "documents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/scanner/test-complex-decorator.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "content": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "wordCount": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "analyze"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "Document",
+      "collectionExportName": "DocumentCollection"
+    },
+    "numerictypes": {
+      "name": "numerictypes",
+      "className": "NumericTypes",
+      "collection": "numerictypeses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/scanner/test-numeric-types.ts",
+      "fields": {
+        "count": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        },
+        "quantity": {
+          "type": "integer",
+          "required": true,
+          "default": 1
+        },
+        "viewCount": {
+          "type": "integer",
+          "required": true,
+          "default": 42
+        },
+        "negativeInt": {
+          "type": "integer",
+          "required": true,
+          "default": -5
+        },
+        "price": {
+          "type": "decimal",
+          "required": true,
+          "default": 0
+        },
+        "rating": {
+          "type": "decimal",
+          "required": true,
+          "default": 4.5
+        },
+        "percentage": {
+          "type": "decimal",
+          "required": true,
+          "default": 0.95
+        },
+        "temperature": {
+          "type": "decimal",
+          "required": true,
+          "default": -3.7
+        },
+        "sciNotation": {
+          "type": "integer",
+          "required": true,
+          "default": 10000000000
+        },
+        "wholeAsDecimal": {
+          "type": "decimal",
+          "required": true,
+          "default": 1
+        },
+        "zeroWithoutDot": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        },
+        "explicitNumber": {
+          "type": "integer",
+          "required": true,
+          "default": 100
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "active": {
+          "type": "boolean",
+          "required": true,
+          "default": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "NumericTypes",
+      "collectionExportName": "NumericTypesCollection"
+    },
+    "content": {
+      "name": "content",
+      "className": "Content",
+      "collection": "contents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/scanner/test-sample.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": false
+        },
+        "status": {
+          "type": "text",
+          "required": true,
+          "default": "draft"
+        },
+        "published": {
+          "type": "boolean",
+          "required": true,
+          "default": false
+        },
+        "category": {
+          "type": "text",
+          "required": true,
+          "default": "general"
+        },
+        "tags": {
+          "type": "json",
+          "required": true,
+          "default": []
+        }
+      },
+      "methods": {
+        "generateSummary": {
+          "name": "generateSummary",
+          "async": true,
+          "parameters": [
+            {
+              "name": "maxLength",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByCategory": {
+          "name": "findByCategory",
+          "async": false,
+          "parameters": [
+            {
+              "name": "_category",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "exclude": [
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "Content",
+      "collectionExportName": "ContentCollection"
+    },
+    "category": {
+      "name": "category",
+      "className": "Category",
+      "collection": "categories",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/scanner/test-sample.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false
+        },
+        "active": {
+          "type": "boolean",
+          "required": true,
+          "default": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "Category",
+      "collectionExportName": "CategoryCollection"
+    },
+    "testagent": {
+      "name": "testagent",
+      "className": "TestAgent",
+      "collection": "testagents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/scanner/test-sample.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "source": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "lastSynced": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "research": {
+          "name": "research",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "report": {
+          "name": "report",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "analyze": {
+          "name": "analyze",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "research",
+            "report",
+            "analyze"
+          ]
+        },
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "research",
+            "report"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "TestAgent",
+      "collectionExportName": "TestAgentCollection"
+    },
+    "inheritancetestcontent": {
+      "name": "inheritancetestcontent",
+      "className": "InheritanceTestContent",
+      "collection": "inheritancetestcontents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "publishedAt": {
+          "type": "datetime",
+          "required": true,
+          "default": null
+        },
+        "wordCount": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {
+        "generateSummary": {
+          "name": "generateSummary",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "InheritanceTestContent",
+      "collectionExportName": "InheritanceTestContentCollection"
+    },
+    "inheritancetestpraecocontent": {
+      "name": "inheritancetestpraecocontent",
+      "className": "InheritanceTestPraecoContent",
+      "collection": "inheritancetestpraecocontents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {
+        "praecoCustom1": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "sourceUrl": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "rating": {
+          "type": "decimal",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {
+        "analyzeSentiment": {
+          "name": "analyzeSentiment",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "InheritanceTestContent",
+      "exportName": "InheritanceTestPraecoContent",
+      "collectionExportName": "InheritanceTestPraecoContentCollection"
+    },
+    "inheritancetestbentleycontent": {
+      "name": "inheritancetestbentleycontent",
+      "className": "InheritanceTestBentleyContent",
+      "collection": "inheritancetestbentleycontents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {
+        "bentleyCustom1": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "localTags": {
+          "type": "json",
+          "required": true,
+          "default": []
+        }
+      },
+      "methods": {
+        "analyzeLocal": {
+          "name": "analyzeLocal",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "InheritanceTestPraecoContent",
+      "exportName": "InheritanceTestBentleyContent",
+      "collectionExportName": "InheritanceTestBentleyContentCollection"
+    },
+    "parentwithconstraints": {
+      "name": "parentwithconstraints",
+      "className": "ParentWithConstraints",
+      "collection": "parentwithconstraintses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {
+        "age": {
+          "type": "integer",
+          "required": true,
+          "options": {
+            "min": 0,
+            "max": 150
+          }
+        },
+        "score": {
+          "type": "decimal",
+          "required": true,
+          "options": {
+            "min": 0,
+            "max": 100
+          }
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "ParentWithConstraints",
+      "collectionExportName": "ParentWithConstraintsCollection"
+    },
+    "childwithconstraints": {
+      "name": "childwithconstraints",
+      "className": "ChildWithConstraints",
+      "collection": "childwithconstraintses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {
+        "age": {
+          "type": "integer",
+          "required": true,
+          "options": {
+            "min": 18,
+            "max": 65
+          }
+        },
+        "score": {
+          "type": "decimal",
+          "required": true,
+          "options": {
+            "min": 50,
+            "max": 90
+          }
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "ParentWithConstraints",
+      "exportName": "ChildWithConstraints",
+      "collectionExportName": "ChildWithConstraintsCollection"
+    },
+    "parenttypemismatch": {
+      "name": "parenttypemismatch",
+      "className": "ParentTypeMismatch",
+      "collection": "parenttypemismatches",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {
+        "myField": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "ParentTypeMismatch",
+      "collectionExportName": "ParentTypeMismatchCollection"
+    },
+    "childtypemismatch": {
+      "name": "childtypemismatch",
+      "className": "ChildTypeMismatch",
+      "collection": "childtypemismatches",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {
+        "myField": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "ParentTypeMismatch",
+      "exportName": "ChildTypeMismatch",
+      "collectionExportName": "ChildTypeMismatchCollection"
+    },
+    "parentwithmethod": {
+      "name": "parentwithmethod",
+      "className": "ParentWithMethod",
+      "collection": "parentwithmethods",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {},
+      "methods": {
+        "doSomething": {
+          "name": "doSomething",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "ParentWithMethod",
+      "collectionExportName": "ParentWithMethodCollection"
+    },
+    "childwithmethod": {
+      "name": "childwithmethod",
+      "className": "ChildWithMethod",
+      "collection": "childwithmethods",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {},
+      "methods": {
+        "doSomething": {
+          "name": "doSomething",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "ParentWithMethod",
+      "exportName": "ChildWithMethod",
+      "collectionExportName": "ChildWithMethodCollection"
+    },
+    "orphanclass": {
+      "name": "orphanclass",
+      "className": "OrphanClass",
+      "collection": "orphanclasses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/fixtures/inheritance-test-classes.ts",
+      "fields": {
+        "orphanField": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "OrphanClass",
+      "collectionExportName": "OrphanClassCollection"
+    }
+  },
+  "moduleType": "smrt",
+  "smrtDependencies": [],
+  "packageName": "@happyvertical/smrt-core"
 } as const;
 
 export default testManifest;
