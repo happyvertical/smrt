@@ -124,50 +124,20 @@ export const utilityCommands: Record<string, CLICommand> = {
 
         console.log(`📄 Scanning ${testFiles.length} file(s)...\n`);
 
-        // Discover external SMRT packages (same as production builds)
-        const { discoverSmrtPackages } = await import(
-          '@happyvertical/smrt-core/manifest/discover-smrt-packages'
+        // Discover base classes from external SMRT packages
+        const { discoverBaseClasses } = await import(
+          '@happyvertical/smrt-core/manifest/discover-base-classes'
         );
 
-        const smrtDependencies = discoverSmrtPackages();
+        const baseClasses = await discoverBaseClasses();
 
-        // Load external base classes from SMRT package manifests
-        const externalBaseClasses: string[] = [];
-        for (const pkgName of smrtDependencies) {
-          try {
-            const manifestPath = resolve(
-              process.cwd(),
-              'node_modules',
-              pkgName,
-              'dist',
-              'manifest.json',
-            );
-            const manifestContent = await readFile(manifestPath, 'utf-8');
-            const manifest = JSON.parse(manifestContent);
-
-            // Extract all class names from this package
-            for (const objDef of Object.values(manifest.objects)) {
-              if (
-                objDef &&
-                typeof objDef === 'object' &&
-                'className' in objDef
-              ) {
-                externalBaseClasses.push(objDef.className as string);
-              }
-            }
-          } catch {
-            // Manifest not found or invalid - skip this package
-          }
-        }
+        console.log(
+          `[smrt test] Discovered ${baseClasses.length} base classes (including ${baseClasses.length - 3} from external packages)`,
+        );
 
         // Scan files for SMRT objects
         const scanner = new ASTScanner(testFiles, {
-          baseClasses: [
-            'SmrtObject',
-            'SmrtClass',
-            'SmrtCollection',
-            ...externalBaseClasses,
-          ],
+          baseClasses,
           includePrivateMethods: false,
           includeStaticMethods: true,
           followImports: true,

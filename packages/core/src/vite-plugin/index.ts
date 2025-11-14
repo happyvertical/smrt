@@ -414,9 +414,19 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         `[smrt] Scanning ${sourceFiles.length} files from ${rootDir}`,
       );
 
+      // Discover base classes from external SMRT packages
+      const { discoverBaseClassesSync } = await import(
+        '../manifest/discover-base-classes.js'
+      );
+      const discoveredBaseClasses = discoverBaseClassesSync({ cwd: rootDir });
+
+      console.log(
+        `[smrt] Discovered ${discoveredBaseClasses.length} base classes (including ${discoveredBaseClasses.length - 3} from external packages)`,
+      );
+
       // Scan files with AST scanner
       const scanner = new ASTScanner(sourceFiles, {
-        baseClasses,
+        baseClasses: discoveredBaseClasses,
         includePrivateMethods: false,
         includeStaticMethods: true,
         followImports,
