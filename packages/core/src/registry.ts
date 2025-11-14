@@ -2274,9 +2274,10 @@ export function smrt(config: SmartObjectConfig = {}) {
           let stiBaseName: string | null = null;
 
           while (proto?.name && proto.name !== 'SmrtObject') {
-            const parentClass = ObjectRegistry.getClass(proto.name);
-            if (parentClass?.decorator?.tableStrategy === 'sti') {
-              stiBaseName = proto.name;
+            // Use getTableStrategy() to properly detect inherited STI strategy
+            if (ObjectRegistry.getTableStrategy(proto.name) === 'sti') {
+              // Get the actual STI base (may be higher up the chain)
+              stiBaseName = ObjectRegistry.getSTIBase(proto.name);
               break;
             }
             proto = Object.getPrototypeOf(proto);
