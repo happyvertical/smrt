@@ -162,9 +162,6 @@ export const utilityCommands: Record<string, CLICommand> = {
           packageName,
         });
 
-        // Add discovered SMRT dependencies (same as production builds)
-        manifest.smrtDependencies = smrtDependencies;
-
         console.log(
           `[MANIFEST] Generated manifest with ${Object.keys(manifest.objects).length} objects`,
         );
