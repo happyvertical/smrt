@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  OverwriteTestObject,
+  RegistryTestProduct,
+  TestCategory,
+  TestCustomer,
+  TestOrder,
+} from './__tests__/fixtures/registry-test-classes.js';
+import {
   boolean as booleanField,
   datetime,
   decimal,
@@ -10,42 +17,6 @@ import {
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
 import { tableNameFromClass } from './utils';
-
-// Test classes - Need @smrt() decorator for Phase 2 registration
-// Phase 2: @smrt() decorator needed for test classes (not in AST manifest)
-
-@smrt()
-class TestCategory extends SmrtObject {
-  name = text();
-  description = text();
-}
-
-@smrt()
-class TestCustomer extends SmrtObject {
-  name = text();
-  email = text();
-}
-
-@smrt()
-class TestProduct extends SmrtObject {
-  name = text();
-  price = integer();
-  categoryId = text();
-}
-
-@smrt()
-class TestOrder extends SmrtObject {
-  customerId = text();
-  productId = text();
-  total = integer();
-}
-
-// Test class for Field helper preservation (Issue #102, #103)
-@smrt()
-class OverwriteTestObject extends SmrtObject {
-  // Field helper with specific configuration
-  name = text({ required: true, maxLength: 100 });
-}
 
 // Helper to manually register test classes with field metadata
 function registerTestClass(
@@ -94,10 +65,10 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      expect(ObjectRegistry.hasClass('TestProduct')).toBe(true);
-      expect(ObjectRegistry.hasClass('testproduct')).toBe(true); // Case insensitive
+      expect(ObjectRegistry.hasClass('RegistryTestProduct')).toBe(true);
+      expect(ObjectRegistry.hasClass('registrytestproduct')).toBe(true); // Case insensitive
     });
 
     it('should get class names', () => {
@@ -105,7 +76,7 @@ describe('ObjectRegistry', () => {
       const productFields = new Map();
       productFields.set('name', new Field('text', { required: true }));
       productFields.set('price', new Field('decimal', {}));
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       const categoryFields = new Map();
       categoryFields.set('name', new Field('text', { required: true }));
@@ -113,18 +84,18 @@ describe('ObjectRegistry', () => {
       registerTestClass(TestCategory, categoryFields);
 
       const names = ObjectRegistry.getClassNames();
-      expect(names).toContain('TestProduct');
+      expect(names).toContain('RegistryTestProduct');
       expect(names).toContain('TestCategory');
     });
 
     it('should handle case-insensitive lookups', () => {
       const fields = new Map();
       fields.set('name', new Field('text', {}));
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      expect(ObjectRegistry.hasClass('TestProduct')).toBe(true);
-      expect(ObjectRegistry.hasClass('testproduct')).toBe(true);
-      expect(ObjectRegistry.hasClass('TESTPRODUCT')).toBe(true);
+      expect(ObjectRegistry.hasClass('RegistryTestProduct')).toBe(true);
+      expect(ObjectRegistry.hasClass('registrytestproduct')).toBe(true);
+      expect(ObjectRegistry.hasClass('REGISTRYTESTPRODUCT')).toBe(true);
     });
   });
 
@@ -143,13 +114,13 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const metadata = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
 
       expect(metadata).not.toBeNull();
-      expect(metadata?.name).toBe('TestProduct');
-      expect(metadata?.constructor).toBe(TestProduct);
+      expect(metadata?.name).toBe('RegistryTestProduct');
+      expect(metadata?.constructor).toBe(RegistryTestProduct);
       expect(metadata?.config.api).toEqual({
         include: ['list', 'get', 'create'],
       });
@@ -166,9 +137,9 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const metadata = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
 
       expect(metadata).not.toBeNull();
       expect(metadata?.fields).toBeInstanceOf(Map);
@@ -191,13 +162,13 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const metadata = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
 
       expect(metadata).not.toBeNull();
       expect(metadata?.schema).toBeDefined();
-      expect(metadata?.schema?.tableName).toBe('test_products');
+      expect(metadata?.schema?.tableName).toBe('registry_test_products');
       // Schema DDL is now generated lazily (deferred until needed)
       expect(metadata?.schema?.ddl).toBeDefined();
       expect(metadata?.schema?.triggers).toBeInstanceOf(Array);
@@ -212,9 +183,9 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const metadata = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
 
       expect(metadata).not.toBeNull();
       expect(metadata?.validators).toBeInstanceOf(Array);
@@ -228,7 +199,7 @@ describe('ObjectRegistry', () => {
       categoryFields.set('description', new Field('text', {}));
       registerTestClass(TestCategory, categoryFields);
 
-      // Register TestProduct with foreign key to TestCategory
+      // Register RegistryTestProduct with foreign key to TestCategory
       const productFields = new Map();
       productFields.set(
         'name',
@@ -239,9 +210,9 @@ describe('ObjectRegistry', () => {
         'categoryId',
         new Field('foreignKey', { related: 'TestCategory' }),
       );
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
-      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const metadata = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
 
       expect(metadata).not.toBeNull();
       expect(metadata?.relationships).toBeInstanceOf(Array);
@@ -261,7 +232,7 @@ describe('ObjectRegistry', () => {
       categoryFields.set('description', new Field('text', {}));
       registerTestClass(TestCategory, categoryFields);
 
-      // Register TestProduct with foreign key to TestCategory
+      // Register RegistryTestProduct with foreign key to TestCategory
       const productFields = new Map();
       productFields.set(
         'name',
@@ -272,16 +243,18 @@ describe('ObjectRegistry', () => {
         'categoryId',
         new Field('foreignKey', { related: 'TestCategory' }),
       );
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       const metadata = ObjectRegistry.getObjectMetadata('TestCategory');
 
       expect(metadata).not.toBeNull();
       expect(metadata?.inverseRelationships).toBeInstanceOf(Array);
 
-      // TestCategory should have inverse relationship from TestProduct.categoryId
+      // TestCategory should have inverse relationship from RegistryTestProduct.categoryId
       const inverseRel = metadata?.inverseRelationships.find(
-        (r) => r.sourceClass === 'TestProduct' && r.fieldName === 'categoryId',
+        (r) =>
+          r.sourceClass === 'RegistryTestProduct' &&
+          r.fieldName === 'categoryId',
       );
       expect(inverseRel).toBeDefined();
       expect(inverseRel?.targetClass).toBe('TestCategory');
@@ -296,11 +269,11 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      const metadata1 = ObjectRegistry.getObjectMetadata('TestProduct');
-      const metadata2 = ObjectRegistry.getObjectMetadata('testproduct');
-      const metadata3 = ObjectRegistry.getObjectMetadata('TESTPRODUCT');
+      const metadata1 = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
+      const metadata2 = ObjectRegistry.getObjectMetadata('registrytestproduct');
+      const metadata3 = ObjectRegistry.getObjectMetadata('REGISTRYTESTPRODUCT');
 
       expect(metadata1).not.toBeNull();
       expect(metadata2).not.toBeNull();
@@ -323,7 +296,7 @@ describe('ObjectRegistry', () => {
       categoryFields.set('description', new Field('text', {}));
       registerTestClass(TestCategory, categoryFields);
 
-      // Register TestProduct
+      // Register RegistryTestProduct
       const productFields = new Map();
       productFields.set(
         'name',
@@ -334,7 +307,7 @@ describe('ObjectRegistry', () => {
         'categoryId',
         new Field('foreignKey', { related: 'TestCategory' }),
       );
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       // Register TestOrder
       const orderFields = new Map();
@@ -344,7 +317,7 @@ describe('ObjectRegistry', () => {
       );
       orderFields.set(
         'productId',
-        new Field('foreignKey', { related: 'TestProduct' }),
+        new Field('foreignKey', { related: 'RegistryTestProduct' }),
       );
       orderFields.set('total', new Field('decimal', { min: 0 }));
       registerTestClass(TestOrder, orderFields);
@@ -352,7 +325,7 @@ describe('ObjectRegistry', () => {
       const allMetadata = ObjectRegistry.getAllObjectMetadata();
 
       expect(allMetadata.length).toBe(3);
-      expect(allMetadata.map((m) => m.name)).toContain('TestProduct');
+      expect(allMetadata.map((m) => m.name)).toContain('RegistryTestProduct');
       expect(allMetadata.map((m) => m.name)).toContain('TestCategory');
       expect(allMetadata.map((m) => m.name)).toContain('TestOrder');
     });
@@ -364,7 +337,7 @@ describe('ObjectRegistry', () => {
       categoryFields.set('description', new Field('text', {}));
       registerTestClass(TestCategory, categoryFields);
 
-      // Register TestProduct
+      // Register RegistryTestProduct
       const productFields = new Map();
       productFields.set(
         'name',
@@ -375,7 +348,7 @@ describe('ObjectRegistry', () => {
         'categoryId',
         new Field('foreignKey', { related: 'TestCategory' }),
       );
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       const allMetadata = ObjectRegistry.getAllObjectMetadata();
 
@@ -406,7 +379,7 @@ describe('ObjectRegistry', () => {
       customerFields.set('email', new Field('text', { required: true }));
       registerTestClass(TestCustomer, customerFields);
 
-      // Register TestProduct
+      // Register RegistryTestProduct
       const productFields = new Map();
       productFields.set(
         'name',
@@ -417,7 +390,7 @@ describe('ObjectRegistry', () => {
         'categoryId',
         new Field('foreignKey', { related: 'TestCategory' }),
       );
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       // Register TestOrder
       const orderFields = new Map();
@@ -427,7 +400,7 @@ describe('ObjectRegistry', () => {
       );
       orderFields.set(
         'productId',
-        new Field('foreignKey', { related: 'TestProduct' }),
+        new Field('foreignKey', { related: 'RegistryTestProduct' }),
       );
       orderFields.set('total', new Field('decimal', { min: 0 }));
       registerTestClass(TestOrder, orderFields);
@@ -448,7 +421,9 @@ describe('ObjectRegistry', () => {
       // Verify all classes are registered with correct field counts and relationships
       expect(dashboardData.length).toBe(4);
 
-      const testProduct = dashboardData.find((d) => d.name === 'TestProduct');
+      const testProduct = dashboardData.find(
+        (d) => d.name === 'RegistryTestProduct',
+      );
       expect(testProduct).toBeDefined();
       expect(testProduct?.fieldCount).toBe(3);
       expect(testProduct?.hasAPI).toBe(true);
@@ -484,7 +459,7 @@ describe('ObjectRegistry', () => {
       categoryFields.set('description', new Field('text', {}));
       registerTestClass(TestCategory, categoryFields);
 
-      // Register TestProduct
+      // Register RegistryTestProduct
       const productFields = new Map();
       productFields.set(
         'name',
@@ -495,7 +470,7 @@ describe('ObjectRegistry', () => {
         'categoryId',
         new Field('foreignKey', { related: 'TestCategory' }),
       );
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       const allMetadata = ObjectRegistry.getAllObjectMetadata();
 
@@ -517,10 +492,12 @@ describe('ObjectRegistry', () => {
 
       expect(schemaDoc.length).toBe(2);
 
-      // Check TestProduct schema
-      const productDoc = schemaDoc.find((doc) => doc.name === 'TestProduct');
+      // Check RegistryTestProduct schema
+      const productDoc = schemaDoc.find(
+        (doc) => doc.name === 'RegistryTestProduct',
+      );
       expect(productDoc).toBeDefined();
-      expect(productDoc?.table).toBe('test_products');
+      expect(productDoc?.table).toBe('registry_test_products');
       expect(productDoc?.fields).toContainEqual({
         name: 'name',
         type: 'text',
@@ -552,17 +529,19 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       // Get via convenience method
-      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const metadata = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
 
       // Get via direct queries
-      const config = ObjectRegistry.getConfig('TestProduct');
-      const fields = ObjectRegistry.getFields('TestProduct');
-      const schema = ObjectRegistry.getSchema('TestProduct');
-      const validators = ObjectRegistry.getValidators('TestProduct');
-      const relationships = ObjectRegistry.getRelationships('TestProduct');
+      const config = ObjectRegistry.getConfig('RegistryTestProduct');
+      const fields = ObjectRegistry.getFields('RegistryTestProduct');
+      const schema = ObjectRegistry.getSchema('RegistryTestProduct');
+      const validators = ObjectRegistry.getValidators('RegistryTestProduct');
+      const relationships = ObjectRegistry.getRelationships(
+        'RegistryTestProduct',
+      );
 
       // Compare
       expect(metadata?.config).toEqual(config);
@@ -581,16 +560,18 @@ describe('ObjectRegistry', () => {
         new Field('foreignKey', { related: 'TestCategory' }),
       );
 
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
-      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const metadata = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
       const originalSize = metadata?.fields.size;
 
       // Attempt to mutate
       metadata?.fields.set('newField', { type: 'text' });
 
       // Get fresh metadata
-      const freshMetadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const freshMetadata = ObjectRegistry.getObjectMetadata(
+        'RegistryTestProduct',
+      );
 
       expect(freshMetadata?.fields.size).toBe(originalSize);
       expect(freshMetadata?.fields.has('newField')).toBe(false);
@@ -612,10 +593,12 @@ describe('ObjectRegistry', () => {
       // Register class with methods metadata
       const fields = new Map();
       fields.set('name', new Field('text', { required: true }));
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
       // Manually add method metadata (simulating what would come from manifest)
-      const registered = (ObjectRegistry as any).classes.get('TestProduct');
+      const registered = (ObjectRegistry as any).classes.get(
+        'RegistryTestProduct',
+      );
       if (registered) {
         registered.methods.set('analyze', {
           name: 'analyze',
@@ -639,7 +622,7 @@ describe('ObjectRegistry', () => {
         });
       }
 
-      const methods = ObjectRegistry.getMethods('TestProduct');
+      const methods = ObjectRegistry.getMethods('RegistryTestProduct');
 
       expect(methods).toBeInstanceOf(Map);
       expect(methods.size).toBe(2);
@@ -669,10 +652,12 @@ describe('ObjectRegistry', () => {
     it('should include methods in getObjectMetadata', () => {
       const fields = new Map();
       fields.set('name', new Field('text', { required: true }));
-      registerTestClass(TestProduct, fields);
+      registerTestClass(RegistryTestProduct, fields);
 
       // Add method metadata
-      const registered = (ObjectRegistry as any).classes.get('TestProduct');
+      const registered = (ObjectRegistry as any).classes.get(
+        'RegistryTestProduct',
+      );
       if (registered) {
         registered.methods.set('research', {
           name: 'research',
@@ -684,7 +669,7 @@ describe('ObjectRegistry', () => {
         });
       }
 
-      const metadata = ObjectRegistry.getObjectMetadata('TestProduct');
+      const metadata = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
 
       expect(metadata).not.toBeNull();
       expect(metadata?.methods).toBeInstanceOf(Map);
@@ -712,7 +697,7 @@ describe('ObjectRegistry', () => {
       customerFields.set('email', new Field('text', { required: true }));
       registerTestClass(TestCustomer, customerFields);
 
-      // Register TestProduct
+      // Register RegistryTestProduct
       const productFields = new Map();
       productFields.set(
         'name',
@@ -723,7 +708,7 @@ describe('ObjectRegistry', () => {
         'categoryId',
         new Field('foreignKey', { related: 'TestCategory' }),
       );
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       // Register TestOrder
       const orderFields = new Map();
@@ -733,7 +718,7 @@ describe('ObjectRegistry', () => {
       );
       orderFields.set(
         'productId',
-        new Field('foreignKey', { related: 'TestProduct' }),
+        new Field('foreignKey', { related: 'RegistryTestProduct' }),
       );
       orderFields.set('total', new Field('decimal', { min: 0 }));
       registerTestClass(TestOrder, orderFields);
@@ -741,8 +726,8 @@ describe('ObjectRegistry', () => {
       const graph = ObjectRegistry.getDependencyGraph();
 
       expect(graph.get('TestOrder')).toContain('TestCustomer');
-      expect(graph.get('TestOrder')).toContain('TestProduct');
-      expect(graph.get('TestProduct')).toContain('TestCategory');
+      expect(graph.get('TestOrder')).toContain('RegistryTestProduct');
+      expect(graph.get('RegistryTestProduct')).toContain('TestCategory');
       expect(graph.get('TestCategory')).toEqual([]);
       expect(graph.get('TestCustomer')).toEqual([]);
     });
@@ -760,7 +745,7 @@ describe('ObjectRegistry', () => {
       customerFields.set('email', new Field('text', { required: true }));
       registerTestClass(TestCustomer, customerFields);
 
-      // Register TestProduct
+      // Register RegistryTestProduct
       const productFields = new Map();
       productFields.set(
         'name',
@@ -771,7 +756,7 @@ describe('ObjectRegistry', () => {
         'categoryId',
         new Field('foreignKey', { related: 'TestCategory' }),
       );
-      registerTestClass(TestProduct, productFields);
+      registerTestClass(RegistryTestProduct, productFields);
 
       // Register TestOrder
       const orderFields = new Map();
@@ -781,7 +766,7 @@ describe('ObjectRegistry', () => {
       );
       orderFields.set(
         'productId',
-        new Field('foreignKey', { related: 'TestProduct' }),
+        new Field('foreignKey', { related: 'RegistryTestProduct' }),
       );
       orderFields.set('total', new Field('decimal', { min: 0 }));
       registerTestClass(TestOrder, orderFields);
@@ -789,12 +774,12 @@ describe('ObjectRegistry', () => {
       const order = ObjectRegistry.getInitializationOrder();
 
       // TestCategory and TestCustomer have no dependencies (can be in any order)
-      // TestProduct depends on TestCategory
-      // TestOrder depends on TestCustomer and TestProduct
+      // RegistryTestProduct depends on TestCategory
+      // TestOrder depends on TestCustomer and RegistryTestProduct
 
       const categoryIndex = order.indexOf('TestCategory');
       const customerIndex = order.indexOf('TestCustomer');
-      const productIndex = order.indexOf('TestProduct');
+      const productIndex = order.indexOf('RegistryTestProduct');
       const orderIndex = order.indexOf('TestOrder');
 
       expect(categoryIndex).toBeLessThan(productIndex);

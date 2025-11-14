@@ -22,13 +22,13 @@ describe('AST Scanner', () => {
     expect(results[0].objects).toHaveLength(3);
 
     const contentObj = results[0].objects.find(
-      (obj) => obj.className === 'Content',
+      (obj) => obj.className === 'ScannerTestContent',
     );
     const categoryObj = results[0].objects.find(
       (obj) => obj.className === 'Category',
     );
     const testAgentObj = results[0].objects.find(
-      (obj) => obj.className === 'TestAgent',
+      (obj) => obj.className === 'ScannerTestAgent',
     );
 
     expect(contentObj).toBeDefined();
@@ -36,17 +36,17 @@ describe('AST Scanner', () => {
     expect(testAgentObj).toBeDefined();
   });
 
-  it('should parse Content class correctly', () => {
+  it('should parse ScannerTestContent class correctly', () => {
     const scanner = new ASTScanner([testFilePath]);
     const results = scanner.scanFiles();
     const contentObj = results[0].objects.find(
-      (obj) => obj.className === 'Content',
+      (obj) => obj.className === 'ScannerTestContent',
     );
 
     expect(contentObj).toMatchObject({
-      name: 'content',
-      className: 'Content',
-      collection: 'contents',
+      name: 'scannertestcontent',
+      className: 'ScannerTestContent',
+      collection: 'scannertestcontents',
       decoratorConfig: {
         api: { exclude: ['delete'] },
         mcp: { include: ['list', 'get', 'create'] },
@@ -86,7 +86,7 @@ describe('AST Scanner', () => {
     });
     const results = scanner.scanFiles();
     const contentObj = results[0].objects.find(
-      (obj) => obj.className === 'Content',
+      (obj) => obj.className === 'ScannerTestContent',
     );
 
     expect(contentObj?.methods.generateSummary).toMatchObject({
@@ -116,9 +116,9 @@ describe('AST Scanner', () => {
     expect(manifest.version).toBe('1.0.0');
     expect(manifest.timestamp).toBeGreaterThan(0);
     expect(Object.keys(manifest.objects)).toEqual([
-      'content',
+      'scannertestcontent',
       'category',
-      'testagent',
+      'scannertestagent',
     ]);
   });
 
@@ -129,7 +129,7 @@ describe('AST Scanner', () => {
     const manifest = generator.generateManifest(results);
     const interfaces = generator.generateTypeDefinitions(manifest);
 
-    expect(interfaces).toContain('export interface ContentData');
+    expect(interfaces).toContain('export interface ScannerTestContentData');
     expect(interfaces).toContain('title: string;');
     expect(interfaces).toContain('body?: string;');
     expect(interfaces).toContain('status: string;');
@@ -143,10 +143,10 @@ describe('AST Scanner', () => {
     const manifest = generator.generateManifest(results);
     const endpoints = generator.generateRestEndpoints(manifest);
 
-    expect(endpoints).toContain('GET /contents');
-    expect(endpoints).toContain('POST /contents');
-    expect(endpoints).toContain('GET /contents/:id');
-    expect(endpoints).not.toContain('DELETE /contents'); // Excluded in config
+    expect(endpoints).toContain('GET /scannertestcontents');
+    expect(endpoints).toContain('POST /scannertestcontents');
+    expect(endpoints).toContain('GET /scannertestcontents/:id');
+    expect(endpoints).not.toContain('DELETE /scannertestcontents'); // Excluded in config
   });
 
   it('should generate MCP tools', () => {
@@ -156,10 +156,10 @@ describe('AST Scanner', () => {
     const manifest = generator.generateManifest(results);
     const tools = generator.generateMCPTools(manifest);
 
-    expect(tools).toContain('list_contents');
-    expect(tools).toContain('get_content');
-    expect(tools).toContain('create_content');
-    expect(tools).not.toContain('delete_content'); // Not in include list
+    expect(tools).toContain('list_scannertestcontents');
+    expect(tools).toContain('get_scannertestcontent');
+    expect(tools).toContain('create_scannertestcontent');
+    expect(tools).not.toContain('delete_scannertestcontent'); // Not in include list
   });
 
   describe('Complex Decorator Parsing (Issue #166)', () => {
@@ -173,7 +173,7 @@ describe('AST Scanner', () => {
       const results = scanner.scanFiles();
 
       expect(results).toHaveLength(1);
-      // Should find all 3 classes: TestCouncil (simple), PraecoSource (complex), Document (complex)
+      // Should find all 3 classes: TestCouncil (simple), PraecoSource (complex), ComplexDecoratorTestDocument (complex)
       expect(results[0].objects).toHaveLength(3);
 
       const council = results[0].objects.find(
@@ -183,7 +183,7 @@ describe('AST Scanner', () => {
         (obj) => obj.className === 'PraecoSource',
       );
       const document = results[0].objects.find(
-        (obj) => obj.className === 'Document',
+        (obj) => obj.className === 'ComplexDecoratorTestDocument',
       );
 
       expect(council).toBeDefined();
@@ -223,11 +223,11 @@ describe('AST Scanner', () => {
       });
     });
 
-    it('should parse complex nested decorator config (Document)', () => {
+    it('should parse complex nested decorator config (ComplexDecoratorTestDocument)', () => {
       const scanner = new ASTScanner([complexDecoratorPath]);
       const results = scanner.scanFiles();
       const document = results[0].objects.find(
-        (obj) => obj.className === 'Document',
+        (obj) => obj.className === 'ComplexDecoratorTestDocument',
       );
 
       expect(document).toBeDefined();

@@ -7,42 +7,17 @@ import { mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SmrtCollection } from '../collection.js';
-import { decimal, integer, text } from '../fields/index.js';
-import { SmrtObject } from '../object.js';
-import { ObjectRegistry, smrt } from '../registry.js';
+import {
+  McpIntegrationTestProduct,
+  McpIntegrationTestProductCollection,
+} from '../__tests__/fixtures/mcp-integration-test-classes.js';
+import { ObjectRegistry } from '../registry.js';
 import { MCPGenerator } from './mcp.js';
-
-// Real SMRT object for integration testing
-@smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get', 'analyze'] },
-  cli: true,
-})
-class TestProduct extends SmrtObject {
-  name = text({ required: true });
-  price = decimal({ min: 0 });
-  stock = integer({ default: 0 });
-
-  async analyze(options: any = {}) {
-    return {
-      action: 'analyze',
-      product: this.name,
-      price: this.price,
-      inStock: this.stock > 0,
-      timestamp: new Date(),
-    };
-  }
-}
-
-class TestProductCollection extends SmrtCollection<TestProduct> {
-  static readonly _itemClass = TestProduct;
-}
 
 describe('MCPGenerator - Integration Tests', () => {
   let tmpDir: string;
   let generator: MCPGenerator;
-  let collection: TestProductCollection;
+  let collection: McpIntegrationTestProductCollection;
 
   beforeEach(async () => {
     // Create temp directory
@@ -50,7 +25,10 @@ describe('MCPGenerator - Integration Tests', () => {
     await mkdir(tmpDir, { recursive: true });
 
     // Register the collection for the test object
-    ObjectRegistry.registerCollection('TestProduct', TestProductCollection);
+    ObjectRegistry.registerCollection(
+      'McpIntegrationTestProduct',
+      McpIntegrationTestProductCollection,
+    );
 
     generator = new MCPGenerator({
       name: 'test-integration-server',
@@ -59,7 +37,7 @@ describe('MCPGenerator - Integration Tests', () => {
     });
 
     // Create collection with in-memory database
-    collection = await TestProductCollection.create({
+    collection = await McpIntegrationTestProductCollection.create({
       db: {
         type: 'sqlite',
         url: ':memory:',
@@ -92,27 +70,29 @@ describe('MCPGenerator - Integration Tests', () => {
       const content = await readFile(outputPath, 'utf-8');
 
       // Verify generated server includes our test product
-      expect(content).toContain('testproduct_list');
-      expect(content).toContain('testproduct_get');
-      expect(content).toContain('testproduct_analyze');
+      expect(content).toContain('mcpintegrationtestproduct_list');
+      expect(content).toContain('mcpintegrationtestproduct_get');
+      expect(content).toContain('mcpintegrationtestproduct_analyze');
     });
 
     it('should include proper tool definitions for real object methods', async () => {
       const tools = await generator.generateTools();
 
       const productTools = tools.filter((t) =>
-        t.name.startsWith('testproduct_'),
+        t.name.startsWith('mcpintegrationtestproduct_'),
       );
 
       // Verify standard CRUD tools
-      expect(productTools.some((t) => t.name === 'testproduct_list')).toBe(
-        true,
-      );
-      expect(productTools.some((t) => t.name === 'testproduct_get')).toBe(true);
+      expect(
+        productTools.some((t) => t.name === 'mcpintegrationtestproduct_list'),
+      ).toBe(true);
+      expect(
+        productTools.some((t) => t.name === 'mcpintegrationtestproduct_get'),
+      ).toBe(true);
 
       // Verify custom action tool
       const analyzeTool = productTools.find(
-        (t) => t.name === 'testproduct_analyze',
+        (t) => t.name === 'mcpintegrationtestproduct_analyze',
       );
       expect(analyzeTool).toBeDefined();
       expect(analyzeTool?.description).toContain('analyze');
@@ -150,8 +130,8 @@ describe('MCPGenerator - Integration Tests', () => {
       const content = await readFile(outputPath, 'utf-8');
 
       // Verify server structure
-      expect(content).toContain('testproduct_list');
-      expect(content).toContain('testproduct_get');
+      expect(content).toContain('mcpintegrationtestproduct_list');
+      expect(content).toContain('mcpintegrationtestproduct_get');
 
       // Verify it includes database-related logic
       expect(content).toContain('ObjectRegistry');
@@ -160,19 +140,23 @@ describe('MCPGenerator - Integration Tests', () => {
 
     it('should handle collections with different persistence configs', async () => {
       // Create multiple collections
-      const sqliteCollection = await TestProductCollection.create({
-        db: {
-          type: 'sqlite',
-          url: join(tmpDir, 'test.db'),
+      const sqliteCollection = await McpIntegrationTestProductCollection.create(
+        {
+          db: {
+            type: 'sqlite',
+            url: join(tmpDir, 'test.db'),
+          },
         },
-      });
+      );
 
-      const memoryCollection = await TestProductCollection.create({
-        db: {
-          type: 'sqlite',
-          url: ':memory:',
+      const memoryCollection = await McpIntegrationTestProductCollection.create(
+        {
+          db: {
+            type: 'sqlite',
+            url: ':memory:',
+          },
         },
-      });
+      );
 
       // Generate server
       const outputPath = join(tmpDir, 'multi-db-server.js');
@@ -225,10 +209,10 @@ describe('MCPGenerator - Integration Tests', () => {
       const content = await readFile(outputPath, 'utf-8');
 
       // Verify custom action is included
-      expect(content).toContain('testproduct_analyze');
+      expect(content).toContain('mcpintegrationtestproduct_analyze');
 
       // Verify handler logic
-      expect(content).toContain("case 'testproduct_analyze'");
+      expect(content).toContain("case 'mcpintegrationtestproduct_analyze'");
     });
   });
 
@@ -264,14 +248,18 @@ describe('MCPGenerator - Integration Tests', () => {
       expect(configContent).toContain('modular-integrated');
 
       // Verify tools include real object tools
-      expect(toolsContent).toContain('testproduct_list');
-      expect(toolsContent).toContain('testproduct_get');
-      expect(toolsContent).toContain('testproduct_analyze');
+      expect(toolsContent).toContain('mcpintegrationtestproduct_list');
+      expect(toolsContent).toContain('mcpintegrationtestproduct_get');
+      expect(toolsContent).toContain('mcpintegrationtestproduct_analyze');
 
       // Verify handlers include real object handlers
-      expect(handlersContent).toContain("case 'testproduct_list'");
-      expect(handlersContent).toContain("case 'testproduct_get'");
-      expect(handlersContent).toContain("case 'testproduct_analyze'");
+      expect(handlersContent).toContain(
+        "case 'mcpintegrationtestproduct_list'",
+      );
+      expect(handlersContent).toContain("case 'mcpintegrationtestproduct_get'");
+      expect(handlersContent).toContain(
+        "case 'mcpintegrationtestproduct_analyze'",
+      );
 
       // Verify index imports from modules
       expect(indexContent).toContain(
@@ -361,9 +349,9 @@ describe('MCPGenerator - Integration Tests', () => {
 
       // 4. Verify generated files
       const serverContent = await readFile(outputPath, 'utf-8');
-      expect(serverContent).toContain('testproduct_list');
-      expect(serverContent).toContain('testproduct_get');
-      expect(serverContent).toContain('testproduct_analyze');
+      expect(serverContent).toContain('mcpintegrationtestproduct_list');
+      expect(serverContent).toContain('mcpintegrationtestproduct_get');
+      expect(serverContent).toContain('mcpintegrationtestproduct_analyze');
 
       // 5. Verify optional files
       const configPath = join(tmpDir, 'claude-config.example.json');

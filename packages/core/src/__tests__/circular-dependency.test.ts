@@ -14,7 +14,7 @@ import { ObjectRegistry } from '../registry.js';
 @smrt({
   api: { include: ['list', 'get'] },
 })
-class TestProfile extends SmrtObject {
+class CircularDepTestProfile extends SmrtObject {
   name = text({ required: true });
 }
 
@@ -22,7 +22,7 @@ class TestProfile extends SmrtObject {
   api: { include: ['list', 'get'] },
 })
 class TestMetadata extends SmrtObject {
-  profileId = foreignKey('TestProfile', { required: true });
+  profileId = foreignKey('CircularDepTestProfile', { required: true });
   key = text({ required: true });
   value = text({ required: true });
 }
@@ -39,12 +39,12 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
 
     // Verify foreign key field is initialized with string reference
     expect(metadata.profileId).toBeDefined();
-    expect(metadata.profileId.options.related).toBe('TestProfile');
+    expect(metadata.profileId.options.related).toBe('CircularDepTestProfile');
   });
 
   it('should register classes without circular dependency errors', () => {
     // Verify both classes are registered
-    expect(ObjectRegistry.hasClass('TestProfile')).toBe(true);
+    expect(ObjectRegistry.hasClass('CircularDepTestProfile')).toBe(true);
     expect(ObjectRegistry.hasClass('TestMetadata')).toBe(true);
   });
 
@@ -61,23 +61,25 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
     );
 
     expect(profileRelationship).toBeDefined();
-    expect(profileRelationship?.targetClass).toBe('TestProfile');
+    expect(profileRelationship?.targetClass).toBe('CircularDepTestProfile');
     expect(profileRelationship?.type).toBe('foreignKey');
   });
 
   it('should support lazy function references as alternative to strings', () => {
     // Test lazy function reference (alternative syntax)
-    const lazyField = foreignKey(() => TestProfile, { required: true });
+    const lazyField = foreignKey(() => CircularDepTestProfile, {
+      required: true,
+    });
 
     expect(lazyField).toBeDefined();
-    expect(lazyField.options.related).toBe('TestProfile');
+    expect(lazyField.options.related).toBe('CircularDepTestProfile');
   });
 
   it('should maintain backward compatibility with direct class references', () => {
     // Test direct class reference (legacy syntax)
-    const directField = foreignKey(TestProfile, { required: true });
+    const directField = foreignKey(CircularDepTestProfile, { required: true });
 
     expect(directField).toBeDefined();
-    expect(directField.options.related).toBe('TestProfile');
+    expect(directField.options.related).toBe('CircularDepTestProfile');
   });
 });

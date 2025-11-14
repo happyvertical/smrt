@@ -9,7 +9,7 @@ function smrt(_config?: any) {
   return (target: any) => target;
 }
 
-// Simple Content class
+// Simple ScannerTestContent class
 @smrt({
   api: {
     exclude: ['delete'],
@@ -19,7 +19,7 @@ function smrt(_config?: any) {
   },
   cli: true,
 })
-class Content extends SmrtObject {
+class ScannerTestContent extends SmrtObject {
   title = '';
   body?: string;
   status = 'draft';
@@ -59,7 +59,7 @@ class Category extends SmrtObject {
     include: ['list', 'get', 'research', 'report'],
   },
 })
-class TestAgent extends SmrtObject {
+class ScannerTestAgent extends SmrtObject {
   name = '';
   source = '';
   lastSynced?: Date;
@@ -95,4 +95,4 @@ class TestAgent extends SmrtObject {
   }
 }
 
-export { Content, Category, TestAgent };
+export { ScannerTestContent, Category, ScannerTestAgent };

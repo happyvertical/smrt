@@ -23,7 +23,7 @@ class TestEvent extends SmrtObject {
 }
 
 @smrt()
-class TestProfile extends SmrtObject {
+class Issue144TestProfile extends SmrtObject {
   firstName = text();
   lastName = text();
   email = text();
@@ -34,8 +34,8 @@ class TestEventCollection extends SmrtCollection<TestEvent> {
   static readonly _itemClass = TestEvent;
 }
 
-class TestProfileCollection extends SmrtCollection<TestProfile> {
-  static readonly _itemClass = TestProfile;
+class Issue144TestProfileCollection extends SmrtCollection<Issue144TestProfile> {
+  static readonly _itemClass = Issue144TestProfile;
 }
 
 describe('Issue #144: Integration Test with Real Collections', () => {
@@ -64,7 +64,7 @@ describe('Issue #144: Integration Test with Real Collections', () => {
 
   it('should create ProfileCollection without duplicate column errors', async () => {
     // This should not throw duplicate column errors
-    const profiles = await (TestProfileCollection as any).create({
+    const profiles = await (Issue144TestProfileCollection as any).create({
       db: {
         type: 'sqlite',
         url: `file:${testDbPath}`,
@@ -90,7 +90,7 @@ describe('Issue #144: Integration Test with Real Collections', () => {
   });
 
   it('should generate valid schema for Profile class', async () => {
-    const schema = await generateSchema(TestProfile);
+    const schema = await generateSchema(Issue144TestProfile);
 
     // Verify no duplicate columns
     const createdMatches = schema.match(/created_at/g) || [];

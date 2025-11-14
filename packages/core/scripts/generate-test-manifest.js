@@ -30,14 +30,12 @@ import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 async function runTestScanner() {
-  // Scan source files excluding test files
-  // Test files can have duplicate fixture classes which shouldn't be in manifest
+  // Scan all source files including test files for test manifest
+  // Test classes defined inline need to be in the manifest for proper field detection
   const sourceFiles = fg.sync(['src/**/*.ts'], {
     absolute: true,
     ignore: [
       'src/**/*.d.ts',
-      'src/**/*.test.ts',
-      'src/**/*.spec.ts',
       'node_modules/**',
     ],
   });

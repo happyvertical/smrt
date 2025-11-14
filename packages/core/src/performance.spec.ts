@@ -378,7 +378,7 @@ describe.skip('Performance Benchmarks', () => {
       // Test creating multiple object types
       // Phase 2: @smrt() decorator needed for test classes
       @smrt()
-      class TestProduct extends SmrtObject {
+      class PerformanceTestProduct extends SmrtObject {
         static tableName = 'test_products';
         productName = text();
         price = integer();
@@ -391,8 +391,8 @@ describe.skip('Performance Benchmarks', () => {
           });
         }
 
-        static async create(options: any): Promise<TestProduct> {
-          const product = new TestProduct(options);
+        static async create(options: any): Promise<PerformanceTestProduct> {
+          const product = new PerformanceTestProduct(options);
           await product.initialize();
           return product;
         }
@@ -421,7 +421,7 @@ describe.skip('Performance Benchmarks', () => {
 
       const { duration } = await measureTime(async () => {
         // Creating instances should trigger table creation via static create methods
-        const product = await TestProduct.create({
+        const product = await PerformanceTestProduct.create({
           productName: 'Test Product',
           price: 100,
         });
