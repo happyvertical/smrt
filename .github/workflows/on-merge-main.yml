@@ -124,8 +124,9 @@ jobs:
     needs: test
     # Only run on direct pushes to main (not cascade events)
     if: |
+      always() &&
       github.event_name == 'push' &&
-      needs.test.result == 'success'
+      (needs.test.result == 'success' || needs.test.outputs.tests-passed == 'true')
     uses: ./.github/workflows/build.yml
     permissions:
       contents: read
@@ -135,7 +136,9 @@ jobs:
   publish:
     name: Publish
     needs: build
-    if: needs.build.result == 'success'
+    if: |
+      always() &&
+      needs.build.result == 'success'
     uses: ./.github/workflows/publish.yml
     secrets: inherit
     permissions:
