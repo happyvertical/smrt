@@ -12,15 +12,15 @@ import { smrt } from './registry';
 
 // Test models
 @smrt()
-class TestProduct extends SmrtObject {
+class CollectionCreateTestProduct extends SmrtObject {
   name: string = '';
   price: number = 0.0;
   quantity: number = 0;
 }
 
 @smrt()
-class TestProductCollection extends SmrtCollection<TestProduct> {
-  static readonly _itemClass = TestProduct;
+class CollectionCreateTestProductCollection extends SmrtCollection<CollectionCreateTestProduct> {
+  static readonly _itemClass = CollectionCreateTestProduct;
 
   // Custom method to verify subclass typing
   customMethod(): string {
@@ -54,16 +54,16 @@ describe('SmrtCollection.create() - Type Signature Fix (#283)', () => {
   describe('Basic Type Inference', () => {
     it('should create collection instance without type errors', async () => {
       // This should not require 'as any' cast (issue #283)
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
-      expect(collection).toBeInstanceOf(TestProductCollection);
+      expect(collection).toBeInstanceOf(CollectionCreateTestProductCollection);
       expect(collection).toBeInstanceOf(SmrtCollection);
     });
 
     it('should preserve subclass type through factory method', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
@@ -72,7 +72,7 @@ describe('SmrtCollection.create() - Type Signature Fix (#283)', () => {
     });
 
     it('should return properly typed instance', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
@@ -127,48 +127,48 @@ describe('SmrtCollection.create() - Type Signature Fix (#283)', () => {
 
   describe('Constructor Type Compatibility', () => {
     it('should work with base SmrtCollectionOptions', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
-      expect(collection).toBeInstanceOf(TestProductCollection);
+      expect(collection).toBeInstanceOf(CollectionCreateTestProductCollection);
     });
 
     it('should work with SmrtClassOptions (broader type)', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
-        _className: 'TestProductCollection',
+        _className: 'CollectionCreateTestProductCollection',
       });
 
-      expect(collection).toBeInstanceOf(TestProductCollection);
+      expect(collection).toBeInstanceOf(CollectionCreateTestProductCollection);
     });
 
     it('should extract relevant options from broader config', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
         persistence: { type: 'sql', url: ':memory:' }, // Alias for db
         fs: { basePath: '/tmp' },
         logging: { level: 'info' },
       });
 
-      expect(collection).toBeInstanceOf(TestProductCollection);
+      expect(collection).toBeInstanceOf(CollectionCreateTestProductCollection);
     });
   });
 
   describe('Return Type Preservation', () => {
     it('should return Promise<T> not Promise<any>', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
-      // TypeScript should infer this as TestProductCollection
+      // TypeScript should infer this as CollectionCreateTestProductCollection
       // If it's typed as 'any', we would lose type safety
       const customResult = collection.customMethod();
       expect(customResult).toBe('custom-method');
     });
 
     it('should allow chaining with typed methods', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
@@ -180,7 +180,7 @@ describe('SmrtCollection.create() - Type Signature Fix (#283)', () => {
 
   describe('Multiple Subclass Creation', () => {
     it('should work with different collection subclasses', async () => {
-      const products = await TestProductCollection.create({
+      const products = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
@@ -189,7 +189,7 @@ describe('SmrtCollection.create() - Type Signature Fix (#283)', () => {
       });
 
       // Each should be their own type
-      expect(products).toBeInstanceOf(TestProductCollection);
+      expect(products).toBeInstanceOf(CollectionCreateTestProductCollection);
       expect(councils).toBeInstanceOf(Councils);
 
       // With their own custom methods
@@ -200,7 +200,7 @@ describe('SmrtCollection.create() - Type Signature Fix (#283)', () => {
 
   describe('Initialization State', () => {
     it('should return fully initialized instance', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
@@ -210,7 +210,7 @@ describe('SmrtCollection.create() - Type Signature Fix (#283)', () => {
     });
 
     it('should have initialized database connection', async () => {
-      const collection = await TestProductCollection.create({
+      const collection = await CollectionCreateTestProductCollection.create({
         db: { url: ':memory:' },
       });
 
