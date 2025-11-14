@@ -89,16 +89,6 @@ const config: Config = {
     [
       'docusaurus-plugin-typedoc',
       {
-        id: 'accounts',
-        entryPoints: ['../packages/accounts/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/accounts',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
         id: 'agents',
         entryPoints: ['../packages/agents/src/index.ts'],
         tsconfig: './typedoc.tsconfig.json',

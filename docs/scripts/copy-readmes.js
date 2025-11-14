@@ -22,7 +22,6 @@ const packagesDir = join(repoRoot, 'packages');
 const packages = [
   'types',
   'core',
-  'accounts',
   'agents',
   'assets',
   'content',
