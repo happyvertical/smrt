@@ -94,8 +94,8 @@ describe('ObjectRegistry', () => {
       registerTestClass(RegistryTestProduct, fields);
 
       expect(ObjectRegistry.hasClass('RegistryTestProduct')).toBe(true);
-      expect(ObjectRegistry.hasClass('testproduct')).toBe(true);
-      expect(ObjectRegistry.hasClass('TESTPRODUCT')).toBe(true);
+      expect(ObjectRegistry.hasClass('registrytestproduct')).toBe(true);
+      expect(ObjectRegistry.hasClass('REGISTRYTESTPRODUCT')).toBe(true);
     });
   });
 
@@ -168,7 +168,7 @@ describe('ObjectRegistry', () => {
 
       expect(metadata).not.toBeNull();
       expect(metadata?.schema).toBeDefined();
-      expect(metadata?.schema?.tableName).toBe('test_products');
+      expect(metadata?.schema?.tableName).toBe('registry_test_products');
       // Schema DDL is now generated lazily (deferred until needed)
       expect(metadata?.schema?.ddl).toBeDefined();
       expect(metadata?.schema?.triggers).toBeInstanceOf(Array);
@@ -272,8 +272,8 @@ describe('ObjectRegistry', () => {
       registerTestClass(RegistryTestProduct, fields);
 
       const metadata1 = ObjectRegistry.getObjectMetadata('RegistryTestProduct');
-      const metadata2 = ObjectRegistry.getObjectMetadata('testproduct');
-      const metadata3 = ObjectRegistry.getObjectMetadata('TESTPRODUCT');
+      const metadata2 = ObjectRegistry.getObjectMetadata('registrytestproduct');
+      const metadata3 = ObjectRegistry.getObjectMetadata('REGISTRYTESTPRODUCT');
 
       expect(metadata1).not.toBeNull();
       expect(metadata2).not.toBeNull();
@@ -497,7 +497,7 @@ describe('ObjectRegistry', () => {
         (doc) => doc.name === 'RegistryTestProduct',
       );
       expect(productDoc).toBeDefined();
-      expect(productDoc?.table).toBe('test_products');
+      expect(productDoc?.table).toBe('registry_test_products');
       expect(productDoc?.fields).toContainEqual({
         name: 'name',
         type: 'text',
