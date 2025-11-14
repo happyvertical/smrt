@@ -4,7 +4,6 @@
   "commit": false,
   "fixed": [
     [
-      "@happyvertical/smrt-accounts",
       "@happyvertical/smrt-agents",
       "@happyvertical/smrt-assets",
       "@happyvertical/smrt-cli",

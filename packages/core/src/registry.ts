@@ -1637,7 +1637,8 @@ export class ObjectRegistry {
         if (ancestorChain.length > 1) {
           // Has ancestors - recursively get all fields
           // Check cache before recursive call to avoid redundant recursion
-          const cachedFields = ObjectRegistry._allFieldsCache?.get(ancestorName);
+          const cachedFields =
+            ObjectRegistry._allFieldsCache?.get(ancestorName);
           if (cachedFields) {
             fieldsToMerge = cachedFields;
           } else {
