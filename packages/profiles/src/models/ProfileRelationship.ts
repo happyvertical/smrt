@@ -22,6 +22,7 @@ export interface ProfileRelationshipOptions extends SmrtObjectOptions {
 }
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
