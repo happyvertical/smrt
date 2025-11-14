@@ -1636,7 +1636,15 @@ export class ObjectRegistry {
         const ancestorChain = ObjectRegistry.getInheritanceChain(ancestorName);
         if (ancestorChain.length > 1) {
           // Has ancestors - recursively get all fields
-          fieldsToMerge = await ObjectRegistry.getAllFields(ancestorName);
+          // Check cache before recursive call to avoid redundant recursion
+          const cachedFields = ObjectRegistry._allFieldsCache?.get(ancestorName);
+          if (cachedFields) {
+            fieldsToMerge = cachedFields;
+          } else {
+            fieldsToMerge = await ObjectRegistry.getAllFields(ancestorName);
+            // Cache the result immediately after recursive call
+            ObjectRegistry._allFieldsCache?.set(ancestorName, fieldsToMerge);
+          }
         }
       }
 
