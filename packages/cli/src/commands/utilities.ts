@@ -81,7 +81,7 @@ export const utilityCommands: Record<string, CLICommand> = {
   test: {
     name: 'test',
     description: 'Generate test manifest and run tests',
-    args: [],
+    args: ['[pattern...]'],
     options: {
       'manifest-only': {
         type: 'boolean',
@@ -94,7 +94,7 @@ export const utilityCommands: Record<string, CLICommand> = {
         default: 'src/manifest',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (args: string[], options: any) => {
       console.log('\n🧪 Generating test manifest...\n');
 
       try {
@@ -216,8 +216,9 @@ export default testManifest;
             const { access } = await import('node:fs/promises');
             await access(resolve(process.cwd(), 'node_modules/.bin/vitest'));
 
-            // Run vitest
-            const proc = spawn('npx', ['vitest', 'run'], {
+            // Run vitest with forwarded arguments (file patterns)
+            const vitestArgs = ['vitest', 'run', ...args];
+            const proc = spawn('npx', vitestArgs, {
               stdio: 'inherit',
               shell: true,
             });
