@@ -27,10 +27,10 @@ export async function getObjectSchema(
       fields.push({
         name,
         type: field.type,
-        required: field.options?.required || false,
-        default: field.options?.default,
-        description: field.options?.description,
-        constraints: extractConstraints(field.options || {}),
+        required: field._meta?.required || false,
+        default: field._meta?.default,
+        description: field._meta?.description,
+        constraints: extractConstraints(field._meta || {}),
       });
     }
 

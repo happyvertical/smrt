@@ -107,11 +107,9 @@ export class SchemaGenerator {
 
       const column: ColumnDefinition = {
         type: this.mapFieldTypeToSQL(fieldDef.type),
-        // If options.nullable is true, the field can be null regardless of required
+        // If _meta.nullable is true, the field can be null regardless of required
         // This handles field helpers like text({ required: true, nullable: true })
-        notNull: fieldDef.options?.nullable
-          ? false
-          : fieldDef.required || false,
+        notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
         description: fieldDef.description,
       };
 
@@ -315,7 +313,7 @@ export class SchemaGenerator {
     // Check for custom primary key
     let hasCustomPK = false;
     for (const [_fieldName, field] of fields.entries()) {
-      if (field.options?.primaryKey) {
+      if (field._meta?.primaryKey) {
         hasCustomPK = true;
         break;
       }
@@ -351,7 +349,7 @@ export class SchemaGenerator {
     // Add fields from ObjectRegistry
     for (const [fieldName, field] of fields.entries()) {
       // Skip transient fields (non-persisted)
-      if (field.transient || field.options?.transient) {
+      if (field.transient || field._meta?.transient) {
         continue;
       }
 
@@ -390,18 +388,16 @@ export class SchemaGenerator {
 
       const columnDef: ColumnDefinition = {
         type: sqlType,
-        // If options.nullable is true, the field can be null regardless of required
-        notNull: field.options?.nullable
-          ? false
-          : field.options?.required || false,
-        primaryKey: field.options?.primaryKey || false,
-        unique: field.options?.unique || false,
-        description: field.options?.description,
+        // If _meta.nullable is true, the field can be null regardless of required
+        notNull: field._meta?.nullable ? false : field._meta?.required || false,
+        primaryKey: field._meta?.primaryKey || false,
+        unique: field._meta?.unique || false,
+        description: field._meta?.description,
       };
 
       // Get default value
-      if (field.options?.default !== undefined) {
-        columnDef.defaultValue = field.options.default;
+      if (field._meta?.default !== undefined) {
+        columnDef.defaultValue = field._meta.default;
       }
       // Note: Removed automatic NOT NULL DEFAULT '' for TEXT columns
       // This was forcing all TEXT fields to be NOT NULL regardless of required option
@@ -411,8 +407,8 @@ export class SchemaGenerator {
       // Handle foreign keys
       if (field.type === 'foreignKey') {
         // Type cast to access relationship-specific properties
-        const relatedName = (field.options as any).related;
-        const onDeleteAction = (field.options as any).onDelete;
+        const relatedName = field.related; // Top-level property
+        const onDeleteAction = (field._meta as any)?.onDelete;
 
         if (relatedName) {
           columnDef.foreignKey = {
@@ -595,7 +591,7 @@ export class SchemaGenerator {
 
       for (const [fieldName, field] of classFields.entries()) {
         // Skip transient fields
-        if (field.transient || field.options?.transient) {
+        if (field.transient || field._meta?.transient) {
           continue;
         }
 
@@ -643,18 +639,18 @@ export class SchemaGenerator {
           notNull: false,
           primaryKey: false,
           unique: false,
-          description: field.options?.description,
+          description: field._meta?.description,
         };
 
         // Get default value (but not applied in STI - defaults handled by application)
-        if (field.options?.default !== undefined) {
-          columnDef.defaultValue = field.options.default;
+        if (field._meta?.default !== undefined) {
+          columnDef.defaultValue = field._meta.default;
         }
 
         // Handle foreign keys
         if (field.type === 'foreignKey') {
-          const relatedName = (field.options as any).related;
-          const onDeleteAction = (field.options as any).onDelete;
+          const relatedName = field.related; // Top-level property
+          const onDeleteAction = (field._meta as any)?.onDelete;
 
           if (relatedName) {
             columnDef.foreignKey = {

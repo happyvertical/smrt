@@ -39,24 +39,24 @@ describe('Issue #140: @field() decorator options parsing', () => {
     // Required field should have required: true option
     const requiredField = fields.get('requiredField');
     expect(requiredField).toBeDefined();
-    expect(requiredField?.options?.required).toBe(true);
+    expect(requiredField?._meta?.required).toBe(true);
 
     // Optional field should have required: false option
     const optionalField = fields.get('optionalField');
     expect(optionalField).toBeDefined();
-    expect(optionalField?.options?.required).toBe(false);
+    expect(optionalField?._meta?.required).toBe(false);
 
     // Length constrained field should have min/maxLength
     const lengthField = fields.get('lengthConstrainedField');
     expect(lengthField).toBeDefined();
-    expect(lengthField?.options?.minLength).toBe(3);
-    expect(lengthField?.options?.maxLength).toBe(20);
+    expect(lengthField?._meta?.minLength).toBe(3);
+    expect(lengthField?._meta?.maxLength).toBe(20);
 
     // Complex field should have multiple options
     const complexField = fields.get('complexField');
     expect(complexField).toBeDefined();
-    expect(complexField?.options?.required).toBe(true);
-    expect(complexField?.options?.maxLength).toBe(100);
+    expect(complexField?._meta?.required).toBe(true);
+    expect(complexField?._meta?.maxLength).toBe(100);
     expect(complexField?.options?.default).toBe('default value');
   });
 
@@ -73,7 +73,7 @@ describe('Issue #140: @field() decorator options parsing', () => {
     const requiredField = fields.get('requiredField');
     expect(requiredField).toBeDefined();
     expect(requiredField?.options).toBeDefined();
-    expect(requiredField?.options?.required).toBe(true);
+    expect(requiredField?._meta?.required).toBe(true);
   });
 
   it('should handle fields with minimal decorator options', async () => {
@@ -85,6 +85,6 @@ describe('Issue #140: @field() decorator options parsing', () => {
 
     // Options object exists even if just one option is set
     expect(optionalField?.options).toBeDefined();
-    expect(optionalField?.options?.required).toBe(false);
+    expect(optionalField?._meta?.required).toBe(false);
   });
 });

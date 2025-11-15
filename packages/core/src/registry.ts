@@ -517,7 +517,7 @@ export class ObjectRegistry {
         manifestEntry.fields,
       ) as [string, import('./scanner/types.js').FieldDefinition][]) {
         // Build options object, only including defined values
-        const options: any = { ...fieldDef.options };
+        const options: any = { ...fieldDef._meta };
         if (fieldDef.required !== undefined)
           options.required = fieldDef.required;
         if (fieldDef.default !== undefined) options.default = fieldDef.default;
@@ -533,7 +533,7 @@ export class ObjectRegistry {
 
         // Only include options if not empty
         if (Object.keys(options).length > 0) {
-          field.options = options;
+          field._meta = options;
         }
 
         // Preserve top-level flags from manifest
@@ -1091,7 +1091,7 @@ export class ObjectRegistry {
     const validators: ValidatorFunction[] = [];
 
     for (const [fieldName, field] of fields) {
-      const options = field.options || {};
+      const options = field._meta || {};
 
       // Required field validator
       if (options.required) {
@@ -1349,11 +1349,11 @@ export class ObjectRegistry {
         if (!registered.fields.has(fieldName)) {
           registered.fields.set(fieldName, {
             type: fieldDef.type,
-            options: {
+            _meta: {
               required: fieldDef.required,
               default: fieldDef.default,
               description: fieldDef.description,
-              ...fieldDef.options, // Includes unique, primaryKey, index, etc.
+              ...fieldDef._meta, // Includes unique, primaryKey, index, etc.
             },
           });
         }
@@ -1494,8 +1494,8 @@ export class ObjectRegistry {
       const dependencies: string[] = [];
 
       for (const [_fieldName, field] of registered.fields) {
-        if (field.type === 'foreignKey' && field.options?.related) {
-          const relatedClass = field.options.related;
+        if (field.type === 'foreignKey' && field._meta?.related) {
+          const relatedClass = field._meta.related;
           // Only add if the related class is registered
           if (ObjectRegistry.classes.has(relatedClass)) {
             dependencies.push(relatedClass);
@@ -1603,35 +1603,35 @@ export class ObjectRegistry {
 
       for (const [fieldName, field] of registered.fields) {
         // Check for foreignKey relationships
-        if (field.type === 'foreignKey' && field.options?.related) {
+        if (field.type === 'foreignKey' && field._meta?.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field.options.related,
+            targetClass: field._meta.related,
             type: 'foreignKey',
-            options: field.options,
+            options: field._meta,
           });
         }
 
         // Check for oneToMany relationships
-        if (field.type === 'oneToMany' && field.options?.related) {
+        if (field.type === 'oneToMany' && field._meta?.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field.options.related,
+            targetClass: field._meta.related,
             type: 'oneToMany',
-            options: field.options,
+            options: field._meta,
           });
         }
 
         // Check for manyToMany relationships
-        if (field.type === 'manyToMany' && field.options?.related) {
+        if (field.type === 'manyToMany' && field._meta?.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field.options.related,
+            targetClass: field._meta.related,
             type: 'manyToMany',
-            options: field.options,
+            options: field._meta,
           });
         }
       }
@@ -2132,7 +2132,7 @@ export class ObjectRegistry {
    *   fields: Array.from(meta.fields.entries()).map(([name, field]) => ({
    *     name,
    *     type: field.type,
-   *     required: field.options?.required || false
+   *     required: field._meta?.required || false
    *   })),
    *   relationships: meta.relationships.map(rel => ({
    *     field: rel.fieldName,

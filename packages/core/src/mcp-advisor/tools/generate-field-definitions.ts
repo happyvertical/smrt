@@ -23,10 +23,9 @@ export async function generateFieldDefinitions(
     // Generate field definitions with decorators
     const fieldDefinitions = fields
       .map((field) => {
-        const hasDecorator =
-          field.options && Object.keys(field.options).length > 0;
+        const hasDecorator = field._meta && Object.keys(field._meta).length > 0;
         const decorator = hasDecorator
-          ? `  @field(${JSON.stringify(field.options)})\n`
+          ? `  @field(${JSON.stringify(field._meta)})\n`
           : '';
         const tsType = getTypeScriptType(field.type);
         const defaultValue = getDefaultValue(field.type);

@@ -488,7 +488,7 @@ describe('ObjectRegistry', () => {
         fields: Array.from(meta.fields.entries()).map(([name, field]) => ({
           name,
           type: field.type,
-          required: field.options?.required || false,
+          required: field._meta?.required || false,
         })),
         relationships: meta.relationships.map((rel) => ({
           field: rel.fieldName,
