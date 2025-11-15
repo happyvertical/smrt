@@ -361,7 +361,11 @@ export class ObjectRegistry {
     }
 
     // Merge with existing decorator options to support multiple decorators on same field
-    const classDecorators = ObjectRegistry.fieldDecorators.get(className)!;
+    const classDecorators = ObjectRegistry.fieldDecorators.get(className);
+    if (!classDecorators) {
+      // Should not happen since we just set it above, but TypeScript doesn't know that
+      return;
+    }
     const existing = classDecorators.get(propertyKey);
 
     if (existing) {
@@ -542,6 +546,50 @@ export class ObjectRegistry {
         `[registry] ⚠️  No manifest entry for ${name} - fields will be loaded later`,
       );
       packageName = packageNameFromStack;
+    }
+
+    // Apply decorator metadata to override/extend manifest fields
+    // Decorators take priority over AST-scanned types (Issue #316)
+    const decorators = ObjectRegistry.fieldDecorators.get(name);
+    if (decorators && decorators.size > 0) {
+      console.log(
+        `[registry] Applying ${decorators.size} field decorators for ${name}`,
+      );
+
+      for (const [fieldName, decoratorOptions] of decorators) {
+        const existingField = fields.get(fieldName);
+
+        if (existingField) {
+          // Merge decorator options with manifest field
+          // Decorator type takes priority over AST-scanned type
+          const mergedField = {
+            type: decoratorOptions.type || existingField.type,
+            options: {
+              ...existingField.options,
+              ...decoratorOptions,
+            },
+          };
+
+          // Remove 'type' from options if it was moved to top level
+          if (mergedField.options.type) {
+            delete mergedField.options.type;
+          }
+
+          fields.set(fieldName, mergedField);
+          console.log(
+            `[registry]   ✅ Merged decorator for ${fieldName}: type=${mergedField.type}`,
+          );
+        } else {
+          // Decorator for field not in manifest - add it
+          fields.set(fieldName, {
+            type: decoratorOptions.type || 'text',
+            options: decoratorOptions,
+          });
+          console.log(
+            `[registry]   ✅ Added field ${fieldName} from decorator: type=${decoratorOptions.type || 'text'}`,
+          );
+        }
+      }
     }
 
     if (manifestEntry?.methods) {
