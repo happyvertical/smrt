@@ -14,7 +14,7 @@
     "test:ui": "npx vitest --ui",
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
-    "clean": "turbo clean",
+    "clean": "turbo clean && rm -rf .turbo node_modules/.cache",
     "build": "turbo build",
     "build:clean": "pnpm run clean && pnpm run build",
     "typecheck": "turbo typecheck",
