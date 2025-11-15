@@ -303,11 +303,8 @@ export class SmrtObject extends SmrtClass {
 
     // Initialize properties from options AFTER all field initializers have run
     // This prevents TypeScript field initializers from overwriting option values
-    //
-    // OPTIMIZATION: Skip this for decorator-based classes since they handle
-    // property assignment in their constructor. This avoids redundant work
-    // and Field instance handling that's only needed for legacy field helpers.
-    if (!this.options._extractingFields && this.needsPropertyInitialization()) {
+    // This must run for all classes (decorator-based or not) unless explicitly skipped
+    if (!this.options._extractingFields) {
       await this.initializePropertiesFromOptions();
     }
 

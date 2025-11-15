@@ -517,7 +517,7 @@ export class ObjectRegistry {
         manifestEntry.fields,
       ) as [string, import('./scanner/types.js').FieldDefinition][]) {
         // Store field definition as plain object maintaining Field-like structure
-        fields.set(fieldName, {
+        const field: any = {
           type: fieldDef.type,
           options: {
             required: fieldDef.required,
@@ -526,7 +526,17 @@ export class ObjectRegistry {
             transient: fieldDef.transient, // Mark transient fields (non-persisted)
             ...fieldDef.options, // Includes unique, primaryKey, index, etc.
           },
-        });
+        };
+
+        // Preserve top-level flags from manifest
+        if (fieldDef.transient !== undefined) {
+          field.transient = fieldDef.transient;
+        }
+        if (fieldDef.required !== undefined) {
+          field.required = fieldDef.required;
+        }
+
+        fields.set(fieldName, field);
       }
 
       console.log(
@@ -562,7 +572,7 @@ export class ObjectRegistry {
         if (existingField) {
           // Merge decorator options with manifest field
           // Decorator type takes priority over AST-scanned type
-          const mergedField = {
+          const mergedField: any = {
             type: decoratorOptions.type || existingField.type,
             options: {
               ...existingField.options,
@@ -575,16 +585,39 @@ export class ObjectRegistry {
             delete mergedField.options.type;
           }
 
+          // Preserve top-level flags (transient, required, etc.)
+          if (decoratorOptions.transient !== undefined) {
+            mergedField.transient = decoratorOptions.transient;
+          } else if (existingField.transient !== undefined) {
+            mergedField.transient = existingField.transient;
+          }
+
+          if (decoratorOptions.required !== undefined) {
+            mergedField.required = decoratorOptions.required;
+          } else if (existingField.required !== undefined) {
+            mergedField.required = existingField.required;
+          }
+
           fields.set(fieldName, mergedField);
           console.log(
             `[registry]   ✅ Merged decorator for ${fieldName}: type=${mergedField.type}`,
           );
         } else {
           // Decorator for field not in manifest - add it
-          fields.set(fieldName, {
+          const newField: any = {
             type: decoratorOptions.type || 'text',
             options: decoratorOptions,
-          });
+          };
+
+          // Set top-level flags from decorator options
+          if (decoratorOptions.transient !== undefined) {
+            newField.transient = decoratorOptions.transient;
+          }
+          if (decoratorOptions.required !== undefined) {
+            newField.required = decoratorOptions.required;
+          }
+
+          fields.set(fieldName, newField);
           console.log(
             `[registry]   ✅ Added field ${fieldName} from decorator: type=${decoratorOptions.type || 'text'}`,
           );
