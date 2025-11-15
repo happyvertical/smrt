@@ -1,5 +1,36 @@
 # @happyvertical/smrt-cli
 
+## 0.14.5
+
+### Patch Changes
+
+- 5e8977e: fix(cli): forward file patterns to Vitest in test command
+
+  The `smrt test [pattern]` command now properly forwards file patterns to Vitest, enabling targeted test execution. Previously, all test files would run regardless of the pattern provided.
+
+  Fixes #309
+
+  **Before:**
+
+  ```bash
+  smrt test Council.spec  # Ran all test files
+  ```
+
+  **After:**
+
+  ```bash
+  smrt test Council.spec  # Runs only Council.spec.ts
+  smrt test src/models/Council.spec.ts  # Runs specific file
+  ```
+
+  **Performance Impact:**
+
+  - Single file: ~800ms (vs 181s for all files)
+  - Enables practical TDD workflow
+  - @happyvertical/smrt-config@0.14.5
+  - @happyvertical/smrt-core@0.14.5
+  - @happyvertical/smrt-types@0.14.5
+
 ## 0.14.4
 
 ### Patch Changes
