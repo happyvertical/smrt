@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { foreignKey, SmrtObject, smrt, text } from '../index.js';
+import { field, foreignKey, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry.js';
 
 // Simple test classes to demonstrate circular dependency resolution
@@ -15,16 +15,22 @@ import { ObjectRegistry } from '../registry.js';
   api: { include: ['list', 'get'] },
 })
 class CircularDepTestProfile extends SmrtObject {
-  name = text({ required: true });
+  @field({ required: true })
+  name: string = '';
 }
 
 @smrt({
   api: { include: ['list', 'get'] },
 })
 class TestMetadata extends SmrtObject {
-  profileId = foreignKey('CircularDepTestProfile', { required: true });
-  key = text({ required: true });
-  value = text({ required: true });
+  @foreignKey('CircularDepTestProfile', { required: true })
+  profileId: string = '';
+
+  @field({ required: true })
+  key: string = '';
+
+  @field({ required: true })
+  value: string = '';
 }
 
 describe('Issue #142: Foreign Key Circular Dependencies', () => {
@@ -37,9 +43,17 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
       _skipRegistration: true,
     });
 
-    // Verify foreign key field is initialized with string reference
+    // Verify foreign key field is initialized with string value
     expect(metadata.profileId).toBeDefined();
-    expect(metadata.profileId.options.related).toBe('CircularDepTestProfile');
+    expect(metadata.profileId).toBe('test-profile-id');
+
+    // Verify decorator metadata is registered
+    const fieldDecorator = ObjectRegistry.getFieldDecorator(
+      'TestMetadata',
+      'profileId',
+    );
+    expect(fieldDecorator).toBeDefined();
+    expect(fieldDecorator.related).toBe('CircularDepTestProfile');
   });
 
   it('should register classes without circular dependency errors', () => {
