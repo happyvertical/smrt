@@ -28,10 +28,31 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
-// Property decorators for field definition (Phase 2: Temporarily disabled during migration)
-// export * from './decorators/index';
+// Property decorators for field definition
+// Re-export decorator versions with priority over field helpers
+export {
+  type FieldOptions,
+  field,
+  foreignKey,
+  manyToMany,
+  type NumericFieldOptions,
+  oneToMany,
+  type RelationshipFieldOptions,
+  type TextFieldOptions,
+} from './decorators/index';
 export * from './errors';
-export * from './fields/index';
+// Field helpers (deprecated, use decorators instead)
+export {
+  boolean,
+  datetime,
+  decimal,
+  Field,
+  integer,
+  json,
+  type Meta,
+  meta,
+  text,
+} from './fields/index';
 // Code generators (tree-shakeable)
 export * from './generators/index';
 // Static manifest (generated at build time)

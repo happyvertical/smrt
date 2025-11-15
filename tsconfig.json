@@ -5,6 +5,8 @@
     "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": false,
 
     // Strict Type Checking
     "strict": true,
