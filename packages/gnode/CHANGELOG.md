@@ -1,5 +1,11 @@
 # @happyvertical/smrt-gnode
 
+## 0.14.7
+
+### Patch Changes
+
+- @happyvertical/smrt-core@0.14.7
+
 ## 0.14.6
 
 ### Patch Changes
