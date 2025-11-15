@@ -9,10 +9,10 @@ describe('PlaceType Schema Generation', () => {
 
     // Verify name field is extracted
     expect(fields).toHaveProperty('name');
-    expect(fields.name).toEqual({
-      name: 'name',
-      type: 'text',
-    });
+    expect(fields.name.name).toBe('name');
+    expect(fields.name.type).toBe('text');
+    expect(fields.name.options).toBeDefined();
+    expect(fields.name.options.required).toBe(true);
   });
 
   it('should include name column in generated schema', async () => {

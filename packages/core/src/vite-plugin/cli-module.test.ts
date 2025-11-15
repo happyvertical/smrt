@@ -3,7 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { boolean, datetime, decimal, integer, text } from '../fields/index.js';
+
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 
@@ -165,7 +165,7 @@ describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
     // Create test class with private method
     @smrt({ cli: true })
     class TestWithPrivate extends SmrtObject {
-      name = text();
+      name: string = '';
 
       constructor(options: any) {
         super(options);

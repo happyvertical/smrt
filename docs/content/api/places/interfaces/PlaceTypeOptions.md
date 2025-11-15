@@ -1,6 +1,6 @@
 # Interface: PlaceTypeOptions
 
-Defined in: [places/src/types.ts:59](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L59)
+Defined in: [places/src/types.ts:59](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/types.ts#L59)
 
 Options for creating/updating a PlaceType
 
@@ -34,7 +34,7 @@ Optional custom class name override
 
 > `optional` **\_extractingFields**: `boolean`
 
-Defined in: core/dist/object.d.ts:36
+Defined in: core/dist/object.d.ts:31
 
 Flag to skip automatic field extraction (internal use)
 
@@ -48,7 +48,7 @@ Flag to skip automatic field extraction (internal use)
 
 > `optional` **\_skipLoad**: `boolean`
 
-Defined in: core/dist/object.d.ts:40
+Defined in: core/dist/object.d.ts:35
 
 Flag to skip database loading (internal use)
 
@@ -62,7 +62,7 @@ Flag to skip database loading (internal use)
 
 > `optional` **ai**: `AIClient` \| `AIClientOptions`
 
-Defined in: core/dist/class.d.ts:37
+Defined in: core/dist/class.d.ts:48
 
 AI client configuration options or instance
 
@@ -76,7 +76,7 @@ AI client configuration options or instance
 
 > `optional` **context**: `string`
 
-Defined in: core/dist/object.d.ts:24
+Defined in: core/dist/object.d.ts:19
 
 Optional context to scope the slug (could be a path, domain, etc.)
 
@@ -90,7 +90,7 @@ Optional context to scope the slug (could be a path, domain, etc.)
 
 > `optional` **created\_at**: `Date`
 
-Defined in: core/dist/object.d.ts:28
+Defined in: core/dist/object.d.ts:23
 
 Creation timestamp
 
@@ -104,13 +104,13 @@ Creation timestamp
 
 > `optional` **createdAt**: `Date`
 
-Defined in: [places/src/types.ts:64](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L64)
+Defined in: [places/src/types.ts:64](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/types.ts#L64)
 
 ***
 
 ### db?
 
-> `optional` **db**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"`; `url?`: `string`; \}
+> `optional` **db**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"` \| `"sql"`; `url?`: `string`; \}
 
 Defined in: core/dist/class.d.ts:24
 
@@ -131,7 +131,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: [places/src/types.ts:63](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L63)
+Defined in: [places/src/types.ts:63](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/types.ts#L63)
 
 ***
 
@@ -139,7 +139,7 @@ Defined in: [places/src/types.ts:63](https://github.com/happyvertical/smrt/blob/
 
 > `optional` **fs**: `FilesystemAdapterOptions`
 
-Defined in: core/dist/class.d.ts:33
+Defined in: core/dist/class.d.ts:44
 
 Filesystem adapter configuration options
 
@@ -153,7 +153,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: [places/src/types.ts:60](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L60)
+Defined in: [places/src/types.ts:60](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/types.ts#L60)
 
 Unique identifier for the object
 
@@ -167,7 +167,7 @@ Unique identifier for the object
 
 > `optional` **logging**: `LoggerConfig`
 
-Defined in: core/dist/class.d.ts:41
+Defined in: core/dist/class.d.ts:52
 
 Logging configuration (overrides global default)
 
@@ -181,7 +181,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metrics**: `MetricsConfig`
 
-Defined in: core/dist/class.d.ts:45
+Defined in: core/dist/class.d.ts:56
 
 Metrics configuration (overrides global default)
 
@@ -195,13 +195,25 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: [places/src/types.ts:62](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L62)
+Defined in: [places/src/types.ts:62](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/types.ts#L62)
 
-Human-readable name for the object
+***
 
-#### Overrides
+### ~~persistence?~~
 
-`SmrtObjectOptions.name`
+> `optional` **persistence**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"` \| `"sql"`; `url?`: `string`; \}
+
+Defined in: core/dist/class.d.ts:35
+
+Alias for db option - for backward compatibility with documentation
+
+#### Deprecated
+
+Use 'db' instead. This alias exists for backward compatibility.
+
+#### Inherited from
+
+`SmrtObjectOptions.persistence`
 
 ***
 
@@ -209,7 +221,7 @@ Human-readable name for the object
 
 > `optional` **pubsub**: `PubSubConfig`
 
-Defined in: core/dist/class.d.ts:49
+Defined in: core/dist/class.d.ts:60
 
 Pub/Sub configuration (overrides global default)
 
@@ -223,7 +235,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **sanitization**: `false` \| `SanitizationConfig`
 
-Defined in: core/dist/class.d.ts:53
+Defined in: core/dist/class.d.ts:64
 
 Sanitization configuration (overrides global default)
 
@@ -237,7 +249,7 @@ Sanitization configuration (overrides global default)
 
 > `optional` **signals**: `object`
 
-Defined in: core/dist/class.d.ts:57
+Defined in: core/dist/class.d.ts:68
 
 Custom signal configuration (overrides global default)
 
@@ -263,7 +275,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: [places/src/types.ts:61](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L61)
+Defined in: [places/src/types.ts:61](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/types.ts#L61)
 
 URL-friendly identifier
 
@@ -277,7 +289,7 @@ URL-friendly identifier
 
 > `optional` **updated\_at**: `Date`
 
-Defined in: core/dist/object.d.ts:32
+Defined in: core/dist/object.d.ts:27
 
 Last update timestamp
 
@@ -291,4 +303,4 @@ Last update timestamp
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: [places/src/types.ts:65](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/types.ts#L65)
+Defined in: [places/src/types.ts:65](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/types.ts#L65)

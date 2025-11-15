@@ -1,6 +1,6 @@
 # Class: SmrtObject
 
-Defined in: [smrt/packages/core/src/object.ts:83](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L83)
+Defined in: [packages/core/src/object.ts:74](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L74)
 
 Core persistent object with unique identifiers and database storage
 
@@ -18,7 +18,7 @@ slugs, with optional context scoping.
 
 > **new SmrtObject**(`options`): `SmrtObject`
 
-Defined in: [smrt/packages/core/src/object.ts:138](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L138)
+Defined in: [packages/core/src/object.ts:129](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L129)
 
 Creates a new SmrtObject instance
 
@@ -48,7 +48,7 @@ Error if options is null
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: [smrt/packages/core/src/class.ts:97](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L97)
+Defined in: [packages/core/src/class.ts:112](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L112)
 
 AI client instance for interacting with AI models
 
@@ -62,7 +62,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: [smrt/packages/core/src/class.ts:112](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L112)
+Defined in: [packages/core/src/class.ts:127](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L127)
 
 Class name used for identification
 
@@ -76,7 +76,7 @@ Class name used for identification
 
 > `protected` **\_context**: `string` \| `null` \| `undefined`
 
-Defined in: [smrt/packages/core/src/object.ts:114](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L114)
+Defined in: [packages/core/src/object.ts:111](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L111)
 
 Optional context to scope the slug
 
@@ -86,7 +86,7 @@ Optional context to scope the slug
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:107](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L107)
+Defined in: [packages/core/src/class.ts:122](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L122)
 
 Database interface for data persistence
 
@@ -100,7 +100,7 @@ Database interface for data persistence
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: [smrt/packages/core/src/class.ts:102](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L102)
+Defined in: [packages/core/src/class.ts:117](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L117)
 
 Filesystem adapter for file operations
 
@@ -114,7 +114,7 @@ Filesystem adapter for file operations
 
 > `protected` **\_id**: `string` \| `null` \| `undefined`
 
-Defined in: [smrt/packages/core/src/object.ts:104](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L104)
+Defined in: [packages/core/src/object.ts:101](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L101)
 
 Unique identifier for the object
 
@@ -124,7 +124,7 @@ Unique identifier for the object
 
 > `protected` `optional` **\_signalBus**: [`SignalBus`](SignalBus.md)
 
-Defined in: [smrt/packages/core/src/class.ts:117](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L117)
+Defined in: [packages/core/src/class.ts:132](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L132)
 
 Signal bus for method execution tracking
 
@@ -138,7 +138,7 @@ Signal bus for method execution tracking
 
 > `protected` **\_slug**: `string` \| `null` \| `undefined`
 
-Defined in: [smrt/packages/core/src/object.ts:109](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L109)
+Defined in: [packages/core/src/object.ts:106](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L106)
 
 URL-friendly identifier
 
@@ -148,7 +148,7 @@ URL-friendly identifier
 
 > **\_tableName**: `string`
 
-Defined in: [smrt/packages/core/src/object.ts:87](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L87)
+Defined in: [packages/core/src/object.ts:78](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L78)
 
 Database table name for this object
 
@@ -158,28 +158,17 @@ Database table name for this object
 
 > **created\_at**: `Date` \| `null` \| `undefined` = `null`
 
-Defined in: [smrt/packages/core/src/object.ts:125](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L125)
+Defined in: [packages/core/src/object.ts:116](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L116)
 
 Creation timestamp
 
 ***
 
-### name?
-
-> `optional` **name**: `string` \| [`Field`](Field.md) \| `null` = `null`
-
-Defined in: [smrt/packages/core/src/object.ts:120](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L120)
-
-Human-readable name, primarily for display purposes
-Can be a string value or a Field instance (for Field-based schema definition)
-
-***
-
 ### options
 
-> `protected` **options**: [`SmrtObjectOptions`](../interfaces/SmrtObjectOptions.md)
+> **options**: [`SmrtObjectOptions`](../interfaces/SmrtObjectOptions.md)
 
-Defined in: [smrt/packages/core/src/object.ts:99](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L99)
+Defined in: [packages/core/src/object.ts:96](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L96)
 
 Override options with SmrtObjectOptions type for proper type narrowing.
 Initialized by parent constructor via super() call.
@@ -194,7 +183,7 @@ Initialized by parent constructor via super() call.
 
 > **updated\_at**: `Date` \| `null` \| `undefined` = `null`
 
-Defined in: [smrt/packages/core/src/object.ts:130](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L130)
+Defined in: [packages/core/src/object.ts:121](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L121)
 
 Last update timestamp
 
@@ -206,7 +195,7 @@ Last update timestamp
 
 > **get** **ai**(): `AIClient`
 
-Defined in: [smrt/packages/core/src/class.ts:458](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L458)
+Defined in: [packages/core/src/class.ts:507](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L507)
 
 Gets the AI client instance
 
@@ -226,7 +215,7 @@ Gets the AI client instance
 
 > **get** **context**(): `string`
 
-Defined in: [smrt/packages/core/src/object.ts:239](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L239)
+Defined in: [packages/core/src/object.ts:288](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L288)
 
 Gets the context that scopes this object's slug
 
@@ -238,7 +227,7 @@ Gets the context that scopes this object's slug
 
 > **set** **context**(`value`): `void`
 
-Defined in: [smrt/packages/core/src/object.ts:249](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L249)
+Defined in: [packages/core/src/object.ts:298](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L298)
 
 Sets the context that scopes this object's slug
 
@@ -266,7 +255,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:451](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L451)
+Defined in: [packages/core/src/class.ts:493](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L493)
 
 Gets the database interface instance
 
@@ -286,7 +275,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: [smrt/packages/core/src/class.ts:444](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L444)
+Defined in: [packages/core/src/class.ts:486](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L486)
 
 Gets the filesystem adapter instance
 
@@ -306,7 +295,7 @@ Gets the filesystem adapter instance
 
 > **get** **id**(): `string` \| `null` \| `undefined`
 
-Defined in: [smrt/packages/core/src/object.ts:198](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L198)
+Defined in: [packages/core/src/object.ts:247](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L247)
 
 Gets the unique identifier for this object
 
@@ -318,7 +307,7 @@ Gets the unique identifier for this object
 
 > **set** **id**(`value`): `void`
 
-Defined in: [smrt/packages/core/src/object.ts:208](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L208)
+Defined in: [packages/core/src/object.ts:257](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L257)
 
 Sets the unique identifier for this object
 
@@ -346,7 +335,7 @@ The ID to set
 
 > **get** **signalBus**(): [`SignalBus`](SignalBus.md) \| `undefined`
 
-Defined in: [smrt/packages/core/src/class.ts:467](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L467)
+Defined in: [packages/core/src/class.ts:516](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L516)
 
 Gets the signal bus instance
 
@@ -368,7 +357,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** **slug**(): `string` \| `null` \| `undefined`
 
-Defined in: [smrt/packages/core/src/object.ts:218](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L218)
+Defined in: [packages/core/src/object.ts:267](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L267)
 
 Gets the URL-friendly slug for this object
 
@@ -380,7 +369,7 @@ Gets the URL-friendly slug for this object
 
 > **set** **slug**(`value`): `void`
 
-Defined in: [smrt/packages/core/src/object.ts:228](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L228)
+Defined in: [packages/core/src/object.ts:277](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L277)
 
 Sets the URL-friendly slug for this object
 
@@ -408,7 +397,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:325](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L325)
+Defined in: [packages/core/src/class.ts:365](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L365)
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -429,7 +418,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: [smrt/packages/core/src/object.ts:314](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L314)
+Defined in: [packages/core/src/object.ts:467](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L467)
 
 Gets the database table name for this object
 
@@ -443,7 +432,7 @@ Gets the database table name for this object
 
 > **allDescriptors**(): `object` & `object`
 
-Defined in: [smrt/packages/core/src/object.ts:305](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L305)
+Defined in: [packages/core/src/object.ts:458](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L458)
 
 Gets all property descriptors from this object's prototype
 
@@ -459,7 +448,7 @@ Object containing all property descriptors
 
 > **delete**(): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/object.ts:765](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L765)
+Defined in: [packages/core/src/object.ts:1110](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1110)
 
 Delete this object from the database
 
@@ -471,11 +460,50 @@ Promise that resolves when deletion is complete
 
 ***
 
+### describe()
+
+> **describe**(`options`): `Promise`\<`string`\>
+
+Defined in: [packages/core/src/object.ts:1061](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1061)
+
+Generates a description of this object using AI (Issue #52)
+
+Creates a concise, human-readable description based on the object's content
+and properties. Useful for summaries, previews, and documentation.
+
+#### Parameters
+
+##### options
+
+`any` = `{}`
+
+AI message options (can include style, length, focus, etc.)
+
+#### Returns
+
+`Promise`\<`string`\>
+
+Promise resolving to the AI-generated description
+
+#### Example
+
+```typescript
+const product = await products.get('product-123');
+const description = await product.describe();
+// "A high-quality widget for home improvement..."
+
+// With custom options
+const shortDesc = await product.describe({ maxTokens: 50 });
+// "Premium widget, steel construction"
+```
+
+***
+
 ### destroy()
 
 > **destroy**(): `void`
 
-Defined in: [smrt/packages/core/src/class.ts:486](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L486)
+Defined in: [packages/core/src/class.ts:535](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L535)
 
 Cleanup method to prevent memory leaks
 
@@ -506,7 +534,7 @@ product.destroy(); // Clean up when done
 
 > **do**(`instructions`, `options`): `Promise`\<`string`\>
 
-Defined in: [smrt/packages/core/src/object.ts:716](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L716)
+Defined in: [packages/core/src/object.ts:1027](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1027)
 
 Performs actions on this object based on instructions using AI
 
@@ -532,11 +560,33 @@ Promise resolving to the AI response
 
 ***
 
+### ensureDbSetup()
+
+> `protected` **ensureDbSetup**(): `Promise`\<`void`\>
+
+Defined in: [packages/core/src/object.ts:342](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L342)
+
+Ensures database tables are set up before performing database operations
+
+This method implements lazy initialization - tables are created on first use
+rather than during initialize(). This prevents database connections during
+import/prerendering phases (issue #237).
+
+ - Available for custom methods that need direct database access
+
+#### Returns
+
+`Promise`\<`void`\>
+
+Promise that resolves when setup is complete
+
+***
+
 ### executeToolCall()
 
 > **executeToolCall**(`toolCall`): `Promise`\<[`ToolCallResult`](../interfaces/ToolCallResult.md)\>
 
-Defined in: [smrt/packages/core/src/object.ts:1024](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L1024)
+Defined in: [packages/core/src/object.ts:1368](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1368)
 
 Execute a tool call from AI on this object instance
 
@@ -579,7 +629,7 @@ console.log(result.success ? result.result : result.error);
 
 > `protected` **extractConstraintField**(`errorMessage`): `string`
 
-Defined in: [smrt/packages/core/src/object.ts:599](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L599)
+Defined in: [packages/core/src/object.ts:910](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L910)
 
 Extracts field name from database constraint error messages
 
@@ -599,7 +649,7 @@ Extracts field name from database constraint error messages
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/object.ts:1262](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L1262)
+Defined in: [packages/core/src/object.ts:1607](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1607)
 
 Forget specific remembered context for this object
 
@@ -642,7 +692,7 @@ await agent.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: [smrt/packages/core/src/object.ts:1295](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L1295)
+Defined in: [packages/core/src/object.ts:1638](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1638)
 
 Forget all remembered context in a scope for this object
 
@@ -686,7 +736,7 @@ console.log(`Cleared ${count} cached strategies`);
 
 > **getAvailableTools**(): `AITool`[]
 
-Defined in: [smrt/packages/core/src/object.ts:996](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L996)
+Defined in: [packages/core/src/object.ts:1340](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1340)
 
 Get available AI-callable tools for this object
 
@@ -714,15 +764,15 @@ console.log(`${tools.length} AI-callable methods available`);
 
 ### getFields()
 
-> **getFields**(): `Record`\<`string`, `any`\>
+> **getFields**(): `Promise`\<`Record`\<`string`, `any`\>\>
 
-Defined in: [smrt/packages/core/src/object.ts:326](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L326)
+Defined in: [packages/core/src/object.ts:501](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L501)
 
 Gets field definitions and current values for this object
 
 #### Returns
 
-`Record`\<`string`, `any`\>
+`Promise`\<`Record`\<`string`, `any`\>\>
 
 Object containing field definitions with current values
 
@@ -732,7 +782,7 @@ Object containing field definitions with current values
 
 > `protected` **getFieldValue**(`fieldName`): `any`
 
-Defined in: [smrt/packages/core/src/object.ts:570](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L570)
+Defined in: [packages/core/src/object.ts:881](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L881)
 
 Gets the value of a field on this object
 
@@ -752,7 +802,7 @@ Gets the value of a field on this object
 
 > **getId**(): `Promise`\<`string`\>
 
-Defined in: [smrt/packages/core/src/object.ts:374](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L374)
+Defined in: [packages/core/src/object.ts:632](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L632)
 
 Gets or generates a unique ID for this object
 
@@ -768,7 +818,7 @@ Promise resolving to the object's ID
 
 > `protected` **getPropertyValue**(`key`): `any`
 
-Defined in: [smrt/packages/core/src/object.ts:584](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L584)
+Defined in: [packages/core/src/object.ts:895](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L895)
 
 Gets the actual value from a property, whether it's a plain value or a Field instance
 
@@ -796,7 +846,7 @@ The actual value (unwrapped from Field if necessary)
 
 > **getRelated**(`fieldName`): `Promise`\<`any`\>
 
-Defined in: [smrt/packages/core/src/object.ts:957](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L957)
+Defined in: [packages/core/src/object.ts:1301](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1301)
 
 Get a related object, loading it if not already loaded
 
@@ -833,7 +883,7 @@ const orders = await customer.getRelated('orders');
 
 > **getSavedId**(): `Promise`\<`any`\>
 
-Defined in: [smrt/packages/core/src/object.ts:413](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L413)
+Defined in: [packages/core/src/object.ts:689](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L689)
 
 Gets the ID of this object if it's already saved in the database
 
@@ -849,9 +899,11 @@ Promise resolving to the saved ID or null if not saved
 
 > **getSlug**(): `Promise`\<`string` \| `null` \| `undefined`\>
 
-Defined in: [smrt/packages/core/src/object.ts:393](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L393)
+Defined in: [packages/core/src/object.ts:657](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L657)
 
-Gets or generates a slug for this object based on its name
+Gets or generates a slug for this object
+
+Fallback order: name → title → label → id
 
 #### Returns
 
@@ -865,7 +917,7 @@ Promise resolving to the object's slug
 
 > **initialize**(): `Promise`\<`SmrtObject`\>
 
-Defined in: [smrt/packages/core/src/object.ts:261](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L261)
+Defined in: [packages/core/src/object.ts:310](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L310)
 
 Initializes this object, setting up database tables and loading data if identifiers are provided
 
@@ -885,7 +937,7 @@ Promise that resolves to this instance for chaining
 
 > **is**(`criteria`, `options`): `Promise`\<`any`\>
 
-Defined in: [smrt/packages/core/src/object.ts:687](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L687)
+Defined in: [packages/core/src/object.ts:998](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L998)
 
 Evaluates whether this object meets given criteria using AI
 
@@ -919,7 +971,7 @@ Error if the AI response is invalid
 
 > **isRelatedLoaded**(`fieldName`): `boolean`
 
-Defined in: [smrt/packages/core/src/object.ts:787](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L787)
+Defined in: [packages/core/src/object.ts:1131](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1131)
 
 Check if a relationship has been loaded
 
@@ -951,7 +1003,7 @@ if (order.isRelatedLoaded('customer')) {
 
 > **isSaved**(): `Promise`\<`boolean`\>
 
-Defined in: [smrt/packages/core/src/object.ts:425](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L425)
+Defined in: [packages/core/src/object.ts:712](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L712)
 
 Checks if this object is already saved in the database
 
@@ -965,11 +1017,15 @@ Promise resolving to true if saved, false otherwise
 
 ### loadDataFromDb()
 
-> **loadDataFromDb**(`data`): `void`
+> **loadDataFromDb**(`data`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/object.ts:291](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L291)
+Defined in: [packages/core/src/object.ts:370](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L370)
 
 Loads data from a database row into this object's properties
+
+STI Support: If using Single Table Inheritance (tableStrategy: 'sti'):
+- Merges _meta_data JSONB fields into the main data object
+- Validates _meta_type discriminator matches class name
 
 #### Parameters
 
@@ -981,7 +1037,11 @@ Database row data
 
 #### Returns
 
-`void`
+`Promise`\<`void`\>
+
+#### Throws
+
+Error if STI validation fails
 
 ***
 
@@ -989,7 +1049,7 @@ Database row data
 
 > **loadFromId**(): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/object.ts:622](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L622)
+Defined in: [packages/core/src/object.ts:933](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L933)
 
 Loads this object's data from the database using its ID
 
@@ -1005,7 +1065,7 @@ Promise that resolves when loading is complete
 
 > **loadFromSlug**(): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/object.ts:667](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L667)
+Defined in: [packages/core/src/object.ts:978](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L978)
 
 Loads this object's data from the database using its slug and context
 
@@ -1021,7 +1081,7 @@ Promise that resolves when loading is complete
 
 > **loadRelated**(`fieldName`): `Promise`\<`any`\>
 
-Defined in: [smrt/packages/core/src/object.ts:807](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L807)
+Defined in: [packages/core/src/object.ts:1151](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1151)
 
 Load a related object for a foreignKey field (lazy loading)
 
@@ -1060,7 +1120,7 @@ console.log(customer.name); // Access customer properties
 
 > **loadRelatedMany**(`fieldName`): `Promise`\<`any`[]\>
 
-Defined in: [smrt/packages/core/src/object.ts:872](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L872)
+Defined in: [packages/core/src/object.ts:1216](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1216)
 
 Load related objects for oneToMany or manyToMany fields (lazy loading)
 
@@ -1099,7 +1159,7 @@ console.log(`${orders.length} orders found`);
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: [smrt/packages/core/src/object.ts:1117](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L1117)
+Defined in: [packages/core/src/object.ts:1466](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1466)
 
 Recall remembered context for this object
 
@@ -1152,7 +1212,7 @@ const strategy = await agent.recall({
 
 > **recallAll**(`options`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: [smrt/packages/core/src/object.ts:1199](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L1199)
+Defined in: [packages/core/src/object.ts:1548](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1548)
 
 Recall all remembered context for this object in a scope
 
@@ -1203,7 +1263,7 @@ for (const [url, pattern] of strategies) {
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/object.ts:1060](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L1060)
+Defined in: [packages/core/src/object.ts:1404](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1404)
 
 Remember context about this object
 
@@ -1282,7 +1342,7 @@ await agent.remember({
 
 > `protected` **requiresDatabase**(): `boolean`
 
-Defined in: [smrt/packages/core/src/class.ts:161](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L161)
+Defined in: [packages/core/src/class.ts:178](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L178)
 
 Determines whether this class requires a database to function
 
@@ -1315,7 +1375,7 @@ class MyDataModel extends SmrtClass {
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/object.ts:736](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L736)
+Defined in: [packages/core/src/object.ts:1081](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L1081)
 
 Runs a lifecycle hook if it's defined in the object's configuration
 
@@ -1339,7 +1399,7 @@ Promise that resolves when the hook completes
 
 > **save**(): `Promise`\<`SmrtObject`\>
 
-Defined in: [smrt/packages/core/src/object.ts:435](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L435)
+Defined in: [packages/core/src/object.ts:722](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L722)
 
 Saves this object to the database
 
@@ -1355,11 +1415,20 @@ Promise resolving to this object
 
 > **toJSON**(): `any`
 
-Defined in: [smrt/packages/core/src/object.ts:349](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L349)
+Defined in: [packages/core/src/object.ts:533](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L533)
 
 Custom JSON serialization
 Returns a plain object with all field values for proper JSON.stringify() behavior
 Field instances automatically call their toJSON() method during serialization
+
+Issue #205: Filters out undefined values to prevent database errors
+
+Note: This method cannot be async because JSON.stringify() expects synchronous toJSON()
+It uses direct property access instead of getFields() to avoid async issues
+
+STI Support: If using Single Table Inheritance (tableStrategy: 'sti'):
+- Sets _meta_type discriminator to class name
+- Extracts meta fields to _meta_data JSONB column
 
 #### Returns
 
@@ -1371,7 +1440,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > `protected` **validateBeforeSave**(): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/object.ts:528](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/object.ts#L528)
+Defined in: [packages/core/src/object.ts:839](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/object.ts#L839)
 
 Validates object state before saving
 Override in subclasses to add custom validation logic

@@ -2,8 +2,11 @@
 
 ## Classes
 
+- [Article](classes/Article.md)
 - [Content](classes/Content.md)
+- [ContentDocument](classes/ContentDocument.md)
 - [Contents](classes/Contents.md)
+- [Mirror](classes/Mirror.md)
 
 ## Interfaces
 

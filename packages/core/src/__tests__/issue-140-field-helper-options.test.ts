@@ -1,37 +1,38 @@
 /**
- * Test for Issue #140: AST scanner should parse field helper options
+ * Test for Issue #140: AST scanner should parse @field() decorator options
  *
  * This tests whether the AST scanner correctly extracts options from
- * field helper calls like text({ required: false, maxLength: 100 })
+ * @field() decorators like @field({ required: true, maxLength: 100 })
  */
 
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { text } from '../fields';
+import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
-// Test class with field helper options
+// Test class with @field() decorator options
 @smrt({ tableName: 'test_field_options' })
 class TestFieldOptions extends SmrtObject {
-  requiredField = text({ required: true });
-  optionalField = text({ required: false });
-  lengthConstrainedField = text({ minLength: 3, maxLength: 20 });
-  complexField = text({
-    required: true,
-    maxLength: 100,
-    default: 'default value',
-  });
+  @field({ required: true })
+  requiredField: string = '';
+
+  @field({ required: false })
+  optionalField: string = '';
+
+  @field({ minLength: 3, maxLength: 20 })
+  lengthConstrainedField: string = '';
+
+  @field({ required: true, maxLength: 100, default: 'default value' })
+  complexField: string = 'default value';
 }
 
 class TestFieldOptionsCollection extends SmrtCollection<TestFieldOptions> {
   static readonly _itemClass = TestFieldOptions;
 }
 
-describe('Issue #140: Field helper options parsing', () => {
-  it('should extract options from field helper calls', async () => {
+describe('Issue #140: @field() decorator options parsing', () => {
+  it('should extract options from @field() decorators', async () => {
     // Get field definitions from manifest
     const fields = await ObjectRegistry.getAllFields('TestFieldOptions');
 
@@ -59,7 +60,7 @@ describe('Issue #140: Field helper options parsing', () => {
     expect(complexField?.options?.default).toBe('default value');
   });
 
-  it('should store options in the manifest', async () => {
+  it('should store decorator options in the manifest', async () => {
     // Get class definition from registry
     const classDef = ObjectRegistry.getClass('TestFieldOptions');
     expect(classDef).toBeDefined();
@@ -75,13 +76,9 @@ describe('Issue #140: Field helper options parsing', () => {
     expect(requiredField?.options?.required).toBe(true);
   });
 
-  it('should handle field helpers without options', async () => {
-    // Use the TestFieldOptions class which has a manifest
-    // Test a field that doesn't have explicit options
+  it('should handle fields with minimal decorator options', async () => {
     const fields = await ObjectRegistry.getAllFields('TestFieldOptions');
 
-    // TestFieldOptions doesn't have a field without options, so let's verify
-    // that fields with minimal options still work
     const optionalField = fields.get('optionalField');
     expect(optionalField).toBeDefined();
     expect(optionalField?.type).toBe('text');

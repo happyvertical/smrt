@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { decimal, text } from '../fields';
+import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { SchemaGenerator } from '../schema/generator';
@@ -14,9 +14,13 @@ import { SchemaGenerator } from '../schema/generator';
 // Define test class at top level so AST scanner can find it
 @smrt({ api: true, mcp: true, cli: true })
 class Place extends SmrtObject {
-  latitude = decimal({ nullable: true });
-  longitude = decimal({ nullable: true });
-  name = text();
+  @field({ nullable: true })
+  latitude: number = 0.0;
+
+  @field({ nullable: true })
+  longitude: number = 0.0;
+
+  name: string = '';
 }
 
 describe('Issue #65: Nullable number fields', () => {

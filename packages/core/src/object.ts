@@ -9,7 +9,6 @@ import {
   RuntimeError,
   ValidationError,
 } from './errors';
-import { Field } from './fields/index';
 import { ObjectRegistry } from './registry';
 import { setupTableFromClass } from './schema/utils';
 import {
@@ -173,9 +172,6 @@ export class SmrtObject extends SmrtClass {
     // Dates - immutable, no clone needed
     if (value instanceof Date) return value;
 
-    // Field instances - framework objects, don't clone
-    if (value instanceof Field) return value;
-
     // Arrays - shallow clone to avoid aliasing
     if (Array.isArray(value)) return [...value];
 
@@ -231,11 +227,6 @@ export class SmrtObject extends SmrtClass {
         if (!descriptor || descriptor.set || descriptor.writable === true) {
           // Set the property value
           this[key as keyof this] = clonedValue;
-        }
-
-        // If it's a Field instance, also update field.value
-        if (field instanceof Field) {
-          field.value = clonedValue;
         }
       }
     }
@@ -312,6 +303,7 @@ export class SmrtObject extends SmrtClass {
 
     // Initialize properties from options AFTER all field initializers have run
     // This prevents TypeScript field initializers from overwriting option values
+    // This must run for all classes (decorator-based or not) unless explicitly skipped
     if (!this.options._extractingFields) {
       await this.initializePropertiesFromOptions();
     }
@@ -327,6 +319,33 @@ export class SmrtObject extends SmrtClass {
     }
 
     return this;
+  }
+
+  /**
+   * Determines if this class needs automatic property initialization from options
+   *
+   * Decorator-based classes handle property assignment in their constructor,
+   * so they don't need the automatic property initialization logic.
+   * This optimization avoids redundant work and Field instance handling.
+   *
+   * @returns True if property initialization is needed, false otherwise
+   * @private
+   */
+  private needsPropertyInitialization(): boolean {
+    const className = this.constructor.name;
+
+    // Check if this class has decorator metadata in the registry
+    // If it does, it's using decorators and handles its own initialization
+    if (ObjectRegistry.hasClass(className)) {
+      const hasDecorators = ObjectRegistry.hasFieldDecorators(className);
+      if (hasDecorators) {
+        // Class uses decorators - properties are set in constructor
+        return false;
+      }
+    }
+
+    // Default: assume it needs property initialization (field helpers pattern)
+    return true;
   }
 
   /**
@@ -862,7 +881,8 @@ export class SmrtObject extends SmrtClass {
       const fields = await fieldsFromClass(this.constructor as any);
 
       for (const [fieldName, field] of Object.entries(fields)) {
-        if (field instanceof Field && field.options.required) {
+        // With decorators, field definitions are plain objects with nested options
+        if ((field as any).options?.required) {
           const value = this.getFieldValue(fieldName);
           if (value === null || value === undefined || value === '') {
             throw ValidationError.requiredField(

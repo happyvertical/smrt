@@ -28,8 +28,20 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Property decorators for field definition
+// Re-export decorator versions with priority over field helpers
+export {
+  type FieldOptions,
+  field,
+  foreignKey,
+  manyToMany,
+  meta,
+  type NumericFieldOptions,
+  oneToMany,
+  type RelationshipFieldOptions,
+  type TextFieldOptions,
+} from './decorators/index';
 export * from './errors';
-export * from './fields/index';
 // Code generators (tree-shakeable)
 export * from './generators/index';
 // Static manifest (generated at build time)

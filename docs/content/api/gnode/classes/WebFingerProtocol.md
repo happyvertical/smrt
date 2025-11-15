@@ -1,6 +1,6 @@
 # Class: WebFingerProtocol
 
-Defined in: [protocols/index.ts:14](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/protocols/index.ts#L14)
+Defined in: [protocols/index.ts:14](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/gnode/src/protocols/index.ts#L14)
 
 ## Constructors
 
@@ -18,7 +18,7 @@ Defined in: [protocols/index.ts:14](https://github.com/happyvertical/smrt/blob/b
 
 > `static` **discover**(`_domain`): `Promise`\<[`WebFingerResponse`](../interfaces/WebFingerResponse.md) \| `null`\>
 
-Defined in: [protocols/index.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/gnode/src/protocols/index.ts#L15)
+Defined in: [protocols/index.ts:15](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/gnode/src/protocols/index.ts#L15)
 
 #### Parameters
 

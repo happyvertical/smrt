@@ -78,12 +78,17 @@ describe('Profiles Package Integration Tests', () => {
     let profileType: ProfileType;
 
     beforeEach(async () => {
+      // Use a temp file database so ProfileType and Profile can reference each other
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const dbUrl = join(tmpdir(), `test-${Date.now()}.db`);
+
       collection = await ProfileCollection.create({
-        persistence: { type: 'sqlite', url: ':memory:' },
+        persistence: { type: 'sqlite', url: dbUrl },
       });
 
       const typeCollection = await ProfileTypeCollection.create({
-        persistence: { type: 'sqlite', url: ':memory:' },
+        persistence: { type: 'sqlite', url: dbUrl },
       });
 
       profileType = await typeCollection.create({

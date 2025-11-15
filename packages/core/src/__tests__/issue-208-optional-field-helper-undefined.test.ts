@@ -15,15 +15,17 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { text } from '../fields';
+import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 
 // Define test class at module level for AST scanner
 @smrt({ tableName: 'councils_issue_208' })
 class CouncilIssue208 extends SmrtObject {
-  name = text({ required: true });
-  description? = text(); // Optional field helper - the problematic case
+  @field({ required: true })
+  name: string = '';
+
+  description?: string; // Optional field - TypeScript syntax
 }
 
 class CouncilIssue208Collection extends SmrtCollection<CouncilIssue208> {

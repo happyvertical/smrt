@@ -155,11 +155,11 @@ export async function fieldsFromClass(
   // Base class fields that should always be included for SmrtObject subclasses
   // These match registry.ts SCHEMA_PROPERTIES
   const BASE_FIELDS = {
-    id: { name: 'id', type: 'text' },
-    slug: { name: 'slug', type: 'text' },
-    context: { name: 'context', type: 'text' },
-    created_at: { name: 'created_at', type: 'datetime' },
-    updated_at: { name: 'updated_at', type: 'datetime' },
+    id: { name: 'id', type: 'text', options: {} },
+    slug: { name: 'slug', type: 'text', options: {} },
+    context: { name: 'context', type: 'text', options: {} },
+    created_at: { name: 'created_at', type: 'datetime', options: {} },
+    updated_at: { name: 'updated_at', type: 'datetime', options: {} },
   };
 
   // Add base fields first (will be overridden if class defines them explicitly)
@@ -172,6 +172,7 @@ export async function fieldsFromClass(
     fields[key] = {
       name: key,
       type: field.type || 'TEXT',
+      options: field.options || {},
       ...(values && key in values ? { value: values[key] } : {}),
     };
   }
@@ -306,47 +307,12 @@ export function formatDataJs(
 /**
  * Type guard to check if a value is a Field instance
  *
- * Uses instanceof check (most reliable) with structural fallback for edge cases.
- * Improves type safety over duck typing by properly narrowing the type.
- *
+ * @deprecated Field helpers have been removed. This function always returns false.
  * @param value - Value to check
- * @returns True if value is a Field instance, false otherwise
- * @example
- * ```typescript
- * import { text } from '@happyvertical/smrt-core/fields';
- *
- * const field = text({ default: 'hello' });
- * if (isFieldInstance(field)) {
- *   console.log(field.value); // TypeScript knows this is a Field
- * }
- * ```
+ * @returns Always false (Field class no longer exists)
  */
-export function isFieldInstance(
-  value: any,
-): value is import('./fields/index.js').Field {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  // Try instanceof check first (most reliable)
-  // Import Field class dynamically to avoid circular dependency issues
-  try {
-    const { Field } = require('./fields/index.js');
-    if (value instanceof Field) {
-      return true;
-    }
-  } catch {
-    // Fall through to structural check if import fails
-  }
-
-  // Structural check as fallback: Field instances have 'type', 'value', and 'options' properties
-  // This is more specific than just checking 'type' and 'value'
-  return (
-    'type' in value &&
-    'value' in value &&
-    'options' in value &&
-    typeof value.type === 'string'
-  );
+export function isFieldInstance(value: any): value is never {
+  return false;
 }
 
 /**

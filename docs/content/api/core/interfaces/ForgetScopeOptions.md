@@ -1,6 +1,6 @@
 # Interface: ForgetScopeOptions
 
-Defined in: [smrt/packages/core/src/system/types.ts:107](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L107)
+Defined in: [packages/core/src/system/types.ts:107](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L107)
 
 Options for forgetting a scope
 
@@ -10,7 +10,7 @@ Options for forgetting a scope
 
 > `optional` **includeDescendants**: `boolean`
 
-Defined in: [smrt/packages/core/src/system/types.ts:111](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L111)
+Defined in: [packages/core/src/system/types.ts:111](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L111)
 
 Delete child scopes too
 
@@ -20,6 +20,6 @@ Delete child scopes too
 
 > **scope**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:109](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L109)
+Defined in: [packages/core/src/system/types.ts:109](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L109)
 
 Scope to delete

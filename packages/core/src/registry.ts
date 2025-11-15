@@ -31,7 +31,6 @@ import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
 import { ConfigurationError } from './errors';
-import { Field } from './fields';
 import {
   discoverManifestEntry,
   discoverManifestSync,
@@ -314,6 +313,13 @@ export class ObjectRegistry {
   private static inheritanceChainCache: LRUCache<string, string[]>;
 
   /**
+   * Storage for field decorator metadata (decorator pattern)
+   * Maps className → Map<propertyKey, FieldOptions>
+   * Used by @field(), @foreignKey(), @oneToMany(), @manyToMany() decorators
+   */
+  private static fieldDecorators = new Map<string, Map<string, any>>();
+
+  /**
    * Initialize the inheritance chain cache with size from config
    */
   private static getInheritanceCache(): LRUCache<string, string[]> {
@@ -324,6 +330,101 @@ export class ObjectRegistry {
       );
     }
     return ObjectRegistry.inheritanceChainCache;
+  }
+
+  /**
+   * Register field decorator metadata
+   *
+   * Called by property decorators (@field, @foreignKey, etc.) to store
+   * field configuration metadata. This enables the decorator pattern
+   * where field metadata is attached at class definition time.
+   *
+   * @param className - Name of the class containing the field
+   * @param propertyKey - Name of the property being decorated
+   * @param options - Field options (type, constraints, etc.)
+   * @example
+   * ```typescript
+   * // Called internally by decorators
+   * ObjectRegistry.registerFieldDecorator('Product', 'name', {
+   *   type: 'text',
+   *   required: true
+   * });
+   * ```
+   */
+  static registerFieldDecorator(
+    className: string,
+    propertyKey: string,
+    options: any,
+  ): void {
+    if (!ObjectRegistry.fieldDecorators.has(className)) {
+      ObjectRegistry.fieldDecorators.set(className, new Map());
+    }
+
+    // Merge with existing decorator options to support multiple decorators on same field
+    const classDecorators = ObjectRegistry.fieldDecorators.get(className);
+    if (!classDecorators) {
+      // Should not happen since we just set it above, but TypeScript doesn't know that
+      return;
+    }
+    const existing = classDecorators.get(propertyKey);
+
+    if (existing) {
+      // Merge options, with new options taking precedence
+      classDecorators.set(propertyKey, { ...existing, ...options });
+    } else {
+      classDecorators.set(propertyKey, options);
+    }
+  }
+
+  /**
+   * Get field decorator metadata for a specific field
+   *
+   * @param className - Name of the class
+   * @param propertyKey - Name of the property
+   * @returns Field options or undefined if not decorated
+   * @example
+   * ```typescript
+   * const options = ObjectRegistry.getFieldDecorator('Product', 'name');
+   * // { type: 'text', required: true }
+   * ```
+   */
+  static getFieldDecorator(
+    className: string,
+    propertyKey: string,
+  ): any | undefined {
+    return ObjectRegistry.fieldDecorators.get(className)?.get(propertyKey);
+  }
+
+  /**
+   * Get all field decorator metadata for a class
+   *
+   * @param className - Name of the class
+   * @returns Map of property names to field options
+   * @example
+   * ```typescript
+   * const fields = ObjectRegistry.getFieldDecorators('Product');
+   * // Map { 'name' => { type: 'text', required: true }, ... }
+   * ```
+   */
+  static getFieldDecorators(className: string): Map<string, any> {
+    return ObjectRegistry.fieldDecorators.get(className) || new Map();
+  }
+
+  /**
+   * Check if a class has any field decorators registered
+   *
+   * @param className - Name of the class
+   * @returns True if the class has field decorators, false otherwise
+   * @example
+   * ```typescript
+   * if (ObjectRegistry.hasFieldDecorators('Product')) {
+   *   // Class uses decorators - skip legacy field initialization
+   * }
+   * ```
+   */
+  static hasFieldDecorators(className: string): boolean {
+    const decorators = ObjectRegistry.fieldDecorators.get(className);
+    return decorators !== undefined && decorators.size > 0;
   }
 
   /**
@@ -349,7 +450,12 @@ export class ObjectRegistry {
 
     // Prevent duplicate registrations
     if (ObjectRegistry.classes.has(name)) {
-      const existing = ObjectRegistry.classes.get(name)!;
+      const existing = ObjectRegistry.classes.get(name);
+      if (!existing) {
+        throw new Error(
+          `Registry inconsistency: ${name} exists in classes Map but get() returned undefined`,
+        );
+      }
 
       // Check if this is the exact same constructor (re-registration is OK)
       if (existing.constructor === ctor) {
@@ -406,21 +512,39 @@ export class ObjectRegistry {
 
     if (manifestEntry?.fields) {
       // Use manifest fields (from build-time AST scanning)
-      // Convert FieldDefinition to Field objects so getSqlType() works in schema generator
+      // Store field definitions as plain objects with nested options
       for (const [fieldName, fieldDef] of Object.entries(
         manifestEntry.fields,
       ) as [string, import('./scanner/types.js').FieldDefinition][]) {
-        // Create Field instance from FieldDefinition
-        fields.set(
-          fieldName,
-          new Field(fieldDef.type, {
-            required: fieldDef.required,
-            default: fieldDef.default,
-            description: fieldDef.description,
-            transient: fieldDef.transient, // Mark transient fields (non-persisted)
-            ...fieldDef.options, // Includes unique, primaryKey, index, etc.
-          }),
-        );
+        // Build options object, only including defined values
+        const options: any = { ...fieldDef.options };
+        if (fieldDef.required !== undefined)
+          options.required = fieldDef.required;
+        if (fieldDef.default !== undefined) options.default = fieldDef.default;
+        if (fieldDef.description !== undefined)
+          options.description = fieldDef.description;
+        if (fieldDef.transient !== undefined)
+          options.transient = fieldDef.transient;
+
+        // Store field definition as plain object maintaining Field-like structure
+        const field: any = {
+          type: fieldDef.type,
+        };
+
+        // Only include options if not empty
+        if (Object.keys(options).length > 0) {
+          field.options = options;
+        }
+
+        // Preserve top-level flags from manifest
+        if (fieldDef.transient !== undefined) {
+          field.transient = fieldDef.transient;
+        }
+        if (fieldDef.required !== undefined) {
+          field.required = fieldDef.required;
+        }
+
+        fields.set(fieldName, field);
       }
 
       console.log(
@@ -440,6 +564,82 @@ export class ObjectRegistry {
         `[registry] ⚠️  No manifest entry for ${name} - fields will be loaded later`,
       );
       packageName = packageNameFromStack;
+    }
+
+    // Apply decorator metadata to override/extend manifest fields
+    // Decorators take priority over AST-scanned types (Issue #316)
+    const decorators = ObjectRegistry.fieldDecorators.get(name);
+    if (decorators && decorators.size > 0) {
+      console.log(
+        `[registry] Applying ${decorators.size} field decorators for ${name}`,
+      );
+
+      for (const [fieldName, decoratorOptions] of decorators) {
+        const existingField = fields.get(fieldName);
+
+        if (existingField) {
+          // Merge decorator options with manifest field
+          // Decorator type takes priority over AST-scanned type
+          const mergedField: any = {
+            type: decoratorOptions.type || existingField.type,
+            options: {
+              ...existingField.options,
+              ...decoratorOptions,
+            },
+          };
+
+          // Remove 'type' from options if it was moved to top level
+          if (mergedField.options.type) {
+            delete mergedField.options.type;
+          }
+
+          // Preserve top-level flags (transient, required, etc.)
+          if (decoratorOptions.transient !== undefined) {
+            mergedField.transient = decoratorOptions.transient;
+          } else if (existingField.transient !== undefined) {
+            mergedField.transient = existingField.transient;
+          }
+
+          // Handle required flag: nullable fields should not be required
+          if (decoratorOptions.nullable === true) {
+            // Nullable explicitly set to true means field is NOT required
+            mergedField.required = false;
+            mergedField.options.required = false;
+          } else if (decoratorOptions.required !== undefined) {
+            mergedField.required = decoratorOptions.required;
+          } else if (existingField.required !== undefined) {
+            mergedField.required = existingField.required;
+          }
+
+          fields.set(fieldName, mergedField);
+          console.log(
+            `[registry]   ✅ Merged decorator for ${fieldName}: type=${mergedField.type}`,
+          );
+        } else {
+          // Decorator for field not in manifest - add it
+          const newField: any = {
+            type: decoratorOptions.type || 'text',
+            options: decoratorOptions,
+          };
+
+          // Set top-level flags from decorator options
+          if (decoratorOptions.transient !== undefined) {
+            newField.transient = decoratorOptions.transient;
+          }
+          // Handle required flag: nullable fields should not be required
+          if (decoratorOptions.nullable === true) {
+            newField.required = false;
+            newField.options.required = false;
+          } else if (decoratorOptions.required !== undefined) {
+            newField.required = decoratorOptions.required;
+          }
+
+          fields.set(fieldName, newField);
+          console.log(
+            `[registry]   ✅ Added field ${fieldName} from decorator: type=${decoratorOptions.type || 'text'}`,
+          );
+        }
+      }
     }
 
     if (manifestEntry?.methods) {
@@ -579,15 +779,15 @@ export class ObjectRegistry {
         objectDef.fields as any,
       )) {
         const fd = fieldDef as any;
-        fields.set(
-          fieldName,
-          new Field(fd.type, {
+        fields.set(fieldName, {
+          type: fd.type,
+          options: {
             required: fd.required,
             default: fd.default,
             description: fd.description,
             ...fd.options,
-          }),
-        );
+          },
+        });
       }
     }
 
@@ -715,6 +915,7 @@ export class ObjectRegistry {
     ObjectRegistry.collections.clear();
     ObjectRegistry.collectionCache.clear();
     ObjectRegistry.getInheritanceCache().clear();
+    ObjectRegistry.fieldDecorators.clear();
   }
 
   /**
@@ -1146,15 +1347,15 @@ export class ObjectRegistry {
       )) {
         // Only add if not already present (don't overwrite AST-scanned fields)
         if (!registered.fields.has(fieldName)) {
-          registered.fields.set(
-            fieldName,
-            new Field(fieldDef.type, {
+          registered.fields.set(fieldName, {
+            type: fieldDef.type,
+            options: {
               required: fieldDef.required,
               default: fieldDef.default,
               description: fieldDef.description,
               ...fieldDef.options, // Includes unique, primaryKey, index, etc.
-            }),
-          );
+            },
+          });
         }
       }
 

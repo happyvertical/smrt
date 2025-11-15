@@ -4,7 +4,7 @@
 
 > **createMCPServer**(): `object`
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-mcp.d.ts:16
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-mcp.d.ts:16
 
 ### Returns
 
@@ -26,29 +26,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-mcp.d.ts:16
 
 > **createMCPServer**(): `object`
 
-Defined in: packages/products/src/lib/types/virtual-modules.d.ts:97
-
-### Returns
-
-`object`
-
-#### name
-
-> **name**: `string`
-
-#### tools
-
-> **tools**: `McpTool`[]
-
-#### version
-
-> **version**: `string`
-
-## Call Signature
-
-> **createMCPServer**(): `object`
-
-Defined in: packages/products/src/global.d.ts:116
+Defined in: smrt/packages/products/src/global.d.ts:116
 
 ### Returns
 

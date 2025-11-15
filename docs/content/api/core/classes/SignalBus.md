@@ -1,6 +1,6 @@
 # Class: SignalBus
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/bus.ts#L19)
+Defined in: [packages/core/src/signals/bus.ts:19](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/signals/bus.ts#L19)
 
 Central signal distribution bus
 
@@ -13,7 +13,7 @@ with fire-and-forget error handling.
 
 > **new SignalBus**(`options?`): `SignalBus`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/bus.ts#L28)
+Defined in: [packages/core/src/signals/bus.ts:28](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/signals/bus.ts#L28)
 
 Create a new SignalBus
 
@@ -39,7 +39,7 @@ Configuration options
 
 > **get** **adapterCount**(): `number`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:132](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/bus.ts#L132)
+Defined in: [packages/core/src/signals/bus.ts:132](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/signals/bus.ts#L132)
 
 Get count of registered adapters
 
@@ -55,7 +55,7 @@ Number of registered adapters
 
 > **clear**(): `void`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:65](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/bus.ts#L65)
+Defined in: [packages/core/src/signals/bus.ts:65](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/signals/bus.ts#L65)
 
 Clear all registered adapters
 
@@ -71,7 +71,7 @@ Removes all adapters from the bus. Useful for cleanup or testing.
 
 > **emit**(`signal`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:78](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/bus.ts#L78)
+Defined in: [packages/core/src/signals/bus.ts:78](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/signals/bus.ts#L78)
 
 Emit a signal to all registered adapters
 
@@ -83,7 +83,7 @@ but don't interrupt the main execution flow.
 
 ##### signal
 
-`Signal`
+[`Signal`](../interfaces/Signal.md)
 
 Signal to emit
 
@@ -97,7 +97,7 @@ Signal to emit
 
 > **generateExecutionId**(): `string`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:123](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/bus.ts#L123)
+Defined in: [packages/core/src/signals/bus.ts:123](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/signals/bus.ts#L123)
 
 Generate unique execution ID for method invocations
 
@@ -113,7 +113,7 @@ Unique execution ID (CUID2)
 
 > **register**(`adapter`): `void`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/bus.ts#L39)
+Defined in: [packages/core/src/signals/bus.ts:39](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/signals/bus.ts#L39)
 
 Register a signal adapter
 
@@ -121,7 +121,7 @@ Register a signal adapter
 
 ##### adapter
 
-`SignalAdapter`
+[`SignalAdapter`](../interfaces/SignalAdapter.md)
 
 Adapter to register
 
@@ -135,7 +135,7 @@ Adapter to register
 
 > **unregister**(`adapter`): `boolean`
 
-Defined in: [smrt/packages/core/src/signals/bus.ts:51](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/signals/bus.ts#L51)
+Defined in: [packages/core/src/signals/bus.ts:51](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/signals/bus.ts#L51)
 
 Unregister a signal adapter
 
@@ -145,7 +145,7 @@ Removes the adapter from the bus to prevent memory leaks.
 
 ##### adapter
 
-`SignalAdapter`
+[`SignalAdapter`](../interfaces/SignalAdapter.md)
 
 Adapter to unregister
 

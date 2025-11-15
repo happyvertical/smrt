@@ -1,6 +1,6 @@
 # Interface: SmrtCollectionOptions
 
-Defined in: [smrt/packages/core/src/collection.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L18)
+Defined in: [packages/core/src/collection.ts:19](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L19)
 
 Configuration options for SmrtCollection
 
@@ -14,7 +14,7 @@ Configuration options for SmrtCollection
 
 > `optional` **\_className**: `string`
 
-Defined in: [smrt/packages/core/src/class.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L25)
+Defined in: [packages/core/src/class.ts:25](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L25)
 
 Optional custom class name override
 
@@ -28,7 +28,7 @@ Optional custom class name override
 
 > `optional` **ai**: `AIClientOptions` \| `AIClient`
 
-Defined in: [smrt/packages/core/src/class.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L53)
+Defined in: [packages/core/src/class.ts:68](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L68)
 
 AI client configuration options or instance
 
@@ -40,11 +40,11 @@ AI client configuration options or instance
 
 ### db?
 
-> `optional` **db**: `string` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"`; `url?`: `string`; \} \| `DatabaseInterface`
+> `optional` **db**: `string` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"` \| `"sql"`; `url?`: `string`; \} \| `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L35)
+Defined in: [packages/core/src/class.ts:35](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L35)
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -61,7 +61,7 @@ Supports three formats:
 
 > `optional` **fs**: `FilesystemAdapterOptions`
 
-Defined in: [smrt/packages/core/src/class.ts:48](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L48)
+Defined in: [packages/core/src/class.ts:63](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L63)
 
 Filesystem adapter configuration options
 
@@ -75,7 +75,7 @@ Filesystem adapter configuration options
 
 > `optional` **logging**: `LoggerConfig`
 
-Defined in: [smrt/packages/core/src/class.ts:58](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L58)
+Defined in: [packages/core/src/class.ts:73](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L73)
 
 Logging configuration (overrides global default)
 
@@ -89,7 +89,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metrics**: [`MetricsConfig`](MetricsConfig.md)
 
-Defined in: [smrt/packages/core/src/class.ts:63](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L63)
+Defined in: [packages/core/src/class.ts:78](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L78)
 
 Metrics configuration (overrides global default)
 
@@ -99,11 +99,29 @@ Metrics configuration (overrides global default)
 
 ***
 
+### ~~persistence?~~
+
+> `optional` **persistence**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"` \| `"sql"`; `url?`: `string`; \}
+
+Defined in: [packages/core/src/class.ts:50](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L50)
+
+Alias for db option - for backward compatibility with documentation
+
+#### Deprecated
+
+Use 'db' instead. This alias exists for backward compatibility.
+
+#### Inherited from
+
+[`SmrtClassOptions`](SmrtClassOptions.md).[`persistence`](SmrtClassOptions.md#persistence)
+
+***
+
 ### pubsub?
 
 > `optional` **pubsub**: [`PubSubConfig`](PubSubConfig.md)
 
-Defined in: [smrt/packages/core/src/class.ts:68](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L68)
+Defined in: [packages/core/src/class.ts:83](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L83)
 
 Pub/Sub configuration (overrides global default)
 
@@ -117,7 +135,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **sanitization**: `false` \| [`SanitizationConfig`](SanitizationConfig.md)
 
-Defined in: [smrt/packages/core/src/class.ts:73](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L73)
+Defined in: [packages/core/src/class.ts:88](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L88)
 
 Sanitization configuration (overrides global default)
 
@@ -131,13 +149,13 @@ Sanitization configuration (overrides global default)
 
 > `optional` **signals**: `object`
 
-Defined in: [smrt/packages/core/src/class.ts:78](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L78)
+Defined in: [packages/core/src/class.ts:93](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L93)
 
 Custom signal configuration (overrides global default)
 
 #### adapters?
 
-> `optional` **adapters**: `SignalAdapter`[]
+> `optional` **adapters**: [`SignalAdapter`](SignalAdapter.md)[]
 
 Additional custom adapters
 

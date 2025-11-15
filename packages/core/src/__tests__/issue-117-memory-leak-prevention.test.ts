@@ -10,15 +10,14 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
 // Test class for cache testing - defined at top level for AST scanner
 @smrt({ api: true, mcp: true, cli: true })
 class CacheTestObject extends SmrtObject {
-  name = text();
-  value = integer();
+  name: string = '';
+  value: number = 0;
 }
 
 class CacheTestCollection extends SmrtCollection<CacheTestObject> {

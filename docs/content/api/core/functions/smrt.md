@@ -2,7 +2,7 @@
 
 > **smrt**(`config`): \<`T`\>(`ctor`) => `T`
 
-Defined in: [smrt/packages/core/src/registry.ts:1309](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L1309)
+Defined in: [packages/core/src/registry.ts:2256](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L2256)
 
 ## Parameters
 
@@ -18,7 +18,7 @@ Defined in: [smrt/packages/core/src/registry.ts:1309](https://github.com/happyve
 
 #### T
 
-`T` *extends* *typeof* [`SmrtObject`](../classes/SmrtObject.md)
+`T` *extends* (...`args`) => `any`
 
 ### Parameters
 
@@ -37,6 +37,8 @@ decorator for registering classes with the global registry
 Captures the original class name before minification and stores it as
 a static property, ensuring table names remain consistent in production builds.
 
+Supports both SmrtObject and SmrtCollection subclasses.
+
 ## Example
 
 ```typescript
@@ -47,8 +49,8 @@ class Product extends SmrtObject {
 }
 
 @smrt({ tableName: 'custom_products' })
-class Product extends SmrtObject {
-  name = text({ required: true });
+class ProductCollection extends SmrtCollection<Product> {
+  static readonly _itemClass = Product;
 }
 
 @smrt({ api: { exclude: ['delete'] } })

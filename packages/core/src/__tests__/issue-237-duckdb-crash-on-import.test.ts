@@ -10,7 +10,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { text } from '../fields/index.js';
 import { SmrtObject } from '../object.js';
 import { smrt } from '../registry.js';
 
@@ -42,8 +41,8 @@ describe('Issue #237: DuckDB crash on import', () => {
     // Simulate importing a SMRT class (this happens when importing .smrt/register.js)
     @smrt()
     class TestArticle extends SmrtObject {
-      title = text();
-      content = text();
+      title: string = '';
+      content: string = '';
     }
 
     // The class is now imported and decorated
@@ -58,17 +57,17 @@ describe('Issue #237: DuckDB crash on import', () => {
     // Simulate importing multiple classes (typical .smrt/register.js scenario)
     @smrt()
     class Content1 extends SmrtObject {
-      title = text();
+      title: string = '';
     }
 
     @smrt()
     class Content2 extends SmrtObject {
-      name = text();
+      name: string = '';
     }
 
     @smrt()
     class Content3 extends SmrtObject {
-      label = text();
+      label: string = '';
     }
 
     // Multiple classes imported, but database should still NOT be initialized
@@ -78,7 +77,7 @@ describe('Issue #237: DuckDB crash on import', () => {
   it('should only initialize database when explicitly creating an instance', async () => {
     @smrt()
     class Article extends SmrtObject {
-      title = text();
+      title: string = '';
     }
 
     // Import/decoration complete - no database yet

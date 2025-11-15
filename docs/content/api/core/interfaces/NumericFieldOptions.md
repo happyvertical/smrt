@@ -1,6 +1,6 @@
 # Interface: NumericFieldOptions
 
-Defined in: [smrt/packages/core/src/fields/index.ts:79](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L79)
+Defined in: [packages/core/src/fields/index.ts:83](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L83)
 
 Configuration options for numeric fields (integer, decimal)
 
@@ -16,7 +16,7 @@ Configuration options for numeric fields (integer, decimal)
 
 > `optional` **customMessage**: `string`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:70](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L70)
+Defined in: [packages/core/src/fields/index.ts:74](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L74)
 
 Custom error message to display when validation fails
 Works with both built-in validators and custom validate functions
@@ -31,7 +31,7 @@ Works with both built-in validators and custom validate functions
 
 > `optional` **default**: `any`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:45](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L45)
+Defined in: [packages/core/src/fields/index.ts:47](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L47)
 
 Default value for this field when creating new objects
 
@@ -45,7 +45,7 @@ Default value for this field when creating new objects
 
 > `optional` **description**: `string`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:51](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L51)
+Defined in: [packages/core/src/fields/index.ts:53](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L53)
 
 Human-readable description of the field's purpose
 
@@ -59,7 +59,7 @@ Human-readable description of the field's purpose
 
 > `optional` **index**: `boolean`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:49](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L49)
+Defined in: [packages/core/src/fields/index.ts:51](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L51)
 
 Whether to create a database index on this field for faster queries
 
@@ -73,7 +73,7 @@ Whether to create a database index on this field for faster queries
 
 > `optional` **max**: `number`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:83](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L83)
+Defined in: [packages/core/src/fields/index.ts:87](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L87)
 
 Maximum allowed value for this field
 
@@ -83,9 +83,23 @@ Maximum allowed value for this field
 
 > `optional` **min**: `number`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:81](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L81)
+Defined in: [packages/core/src/fields/index.ts:85](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L85)
 
 Minimum allowed value for this field
+
+***
+
+### nullable?
+
+> `optional` **nullable**: `boolean`
+
+Defined in: [packages/core/src/fields/index.ts:45](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L45)
+
+Whether this field can be null (allows NULL values, opposite of required)
+
+#### Inherited from
+
+[`FieldOptions`](FieldOptions.md).[`nullable`](FieldOptions.md#nullable)
 
 ***
 
@@ -93,7 +107,7 @@ Minimum allowed value for this field
 
 > `optional` **primaryKey**: `boolean`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:41](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L41)
+Defined in: [packages/core/src/fields/index.ts:41](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L41)
 
 Whether this field is the primary key (default: false, 'id' field is auto-generated)
 
@@ -107,7 +121,7 @@ Whether this field is the primary key (default: false, 'id' field is auto-genera
 
 > `optional` **required**: `boolean`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L43)
+Defined in: [packages/core/src/fields/index.ts:43](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L43)
 
 Whether this field is required (NOT NULL constraint)
 
@@ -117,11 +131,25 @@ Whether this field is required (NOT NULL constraint)
 
 ***
 
+### transient?
+
+> `optional` **transient**: `boolean`
+
+Defined in: [packages/core/src/fields/index.ts:55](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L55)
+
+Whether this field is transient (not persisted to database) - useful for computed properties, functions, etc.
+
+#### Inherited from
+
+[`FieldOptions`](FieldOptions.md).[`transient`](FieldOptions.md#transient)
+
+***
+
 ### unique?
 
 > `optional` **unique**: `boolean`
 
-Defined in: [smrt/packages/core/src/fields/index.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L47)
+Defined in: [packages/core/src/fields/index.ts:49](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L49)
 
 Whether this field must have unique values (UNIQUE constraint)
 
@@ -135,7 +163,7 @@ Whether this field must have unique values (UNIQUE constraint)
 
 > `optional` **validate**: (`value`) => `boolean` \| `Promise`\<`boolean`\>
 
-Defined in: [smrt/packages/core/src/fields/index.ts:65](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L65)
+Defined in: [packages/core/src/fields/index.ts:69](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L69)
 
 Custom validation function (synchronous or asynchronous)
 Should return true if valid, false if invalid

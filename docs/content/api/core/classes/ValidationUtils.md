@@ -1,6 +1,6 @@
 # Class: ValidationUtils
 
-Defined in: [smrt/packages/core/src/errors.ts:621](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L621)
+Defined in: [packages/core/src/errors.ts:697](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/errors.ts#L697)
 
 Validation utility functions
 
@@ -20,7 +20,7 @@ Validation utility functions
 
 > `static` **validateField**(`fieldName`, `value`, `options`, `objectType`): `Promise`\<[`ValidationError`](ValidationError.md) \| `null`\>
 
-Defined in: [smrt/packages/core/src/errors.ts:630](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L630)
+Defined in: [packages/core/src/errors.ts:706](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/errors.ts#L706)
 
 Validate a single field value
 
@@ -94,7 +94,7 @@ ValidationError if validation fails, null otherwise
 
 > `static` **validateLength**(`fieldName`, `value`, `minLength?`, `maxLength?`): [`ValidationError`](ValidationError.md) \| `null`
 
-Defined in: [smrt/packages/core/src/errors.ts:770](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L770)
+Defined in: [packages/core/src/errors.ts:846](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/errors.ts#L846)
 
 Validate string length
 
@@ -126,7 +126,7 @@ Validate string length
 
 > `static` **validatePattern**(`fieldName`, `value`, `pattern`): [`ValidationError`](ValidationError.md) \| `null`
 
-Defined in: [smrt/packages/core/src/errors.ts:796](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L796)
+Defined in: [packages/core/src/errors.ts:872](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/errors.ts#L872)
 
 Validate string pattern
 
@@ -154,7 +154,7 @@ Validate string pattern
 
 > `static` **validateRange**(`fieldName`, `value`, `min?`, `max?`): [`ValidationError`](ValidationError.md) \| `null`
 
-Defined in: [smrt/packages/core/src/errors.ts:752](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L752)
+Defined in: [packages/core/src/errors.ts:828](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/errors.ts#L828)
 
 Validate numeric range
 
@@ -186,7 +186,7 @@ Validate numeric range
 
 > `static` **validateRequired**(`fieldName`, `value`, `objectType`): [`ValidationError`](ValidationError.md) \| `null`
 
-Defined in: [smrt/packages/core/src/errors.ts:738](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/errors.ts#L738)
+Defined in: [packages/core/src/errors.ts:814](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/errors.ts#L814)
 
 Validate required field
 

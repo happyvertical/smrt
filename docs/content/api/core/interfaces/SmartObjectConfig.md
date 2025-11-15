@@ -1,6 +1,6 @@
 # Interface: SmartObjectConfig
 
-Defined in: [smrt/packages/core/src/registry.ts:47](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L47)
+Defined in: [packages/core/src/registry.ts:66](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L66)
 
 Configuration options for SMRT objects registered in the system
 
@@ -11,11 +11,25 @@ Each section configures a different aspect of code generation and runtime behavi
 
 ## Properties
 
+### \_manifest?
+
+> `optional` **\_manifest**: [`SmartObjectManifest`](SmartObjectManifest.md)
+
+Defined in: [packages/core/src/registry.ts:204](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L204)
+
+**`Internal`**
+
+Synchronous manifest for build-time imports (Issue #270 Phase 1)
+Allows passing manifest directly instead of async loading
+ Advanced usage - typically set by build tools
+
+***
+
 ### ai?
 
 > `optional` **ai**: `object`
 
-Defined in: [smrt/packages/core/src/registry.ts:119](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L119)
+Defined in: [packages/core/src/registry.ts:165](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L165)
 
 AI callable configuration
 
@@ -44,11 +58,17 @@ Methods to exclude from AI calling (higher priority than callable)
 
 ### api?
 
-> `optional` **api**: `object`
+> `optional` **api**: `boolean` \| \{ `customize?`: `Record`\<`string`, (`req`, `collection`) => `Promise`\<`any`\>\>; `exclude?`: `string`[]; `include?`: `string`[]; `middleware?`: `any`[]; \}
 
-Defined in: [smrt/packages/core/src/registry.ts:62](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L62)
+Defined in: [packages/core/src/registry.ts:104](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L104)
 
 API configuration
+
+#### Type Declaration
+
+`boolean`
+
+\{ `customize?`: `Record`\<`string`, (`req`, `collection`) => `Promise`\<`any`\>\>; `exclude?`: `string`[]; `include?`: `string`[]; `middleware?`: `any`[]; \}
 
 #### customize?
 
@@ -80,7 +100,7 @@ Custom middleware for this object's endpoints
 
 > `optional` **cli**: `boolean` \| \{ `exclude?`: `string`[]; `include?`: `string`[]; \}
 
-Defined in: [smrt/packages/core/src/registry.ts:102](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L102)
+Defined in: [packages/core/src/registry.ts:148](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L148)
 
 CLI configuration
 
@@ -108,7 +128,7 @@ Include specific commands (supports both standard CRUD actions and custom method
 
 > `optional` **hooks**: `object`
 
-Defined in: [smrt/packages/core/src/registry.ts:142](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L142)
+Defined in: [packages/core/src/registry.ts:188](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L188)
 
 Lifecycle hooks
 
@@ -148,11 +168,17 @@ Lifecycle hooks
 
 ### mcp?
 
-> `optional` **mcp**: `object`
+> `optional` **mcp**: `boolean` \| \{ `exclude?`: `string`[]; `include?`: `string`[]; \}
 
-Defined in: [smrt/packages/core/src/registry.ts:87](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L87)
+Defined in: [packages/core/src/registry.ts:131](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L131)
 
 MCP server configuration
+
+#### Type Declaration
+
+`boolean`
+
+\{ `exclude?`: `string`[]; `include?`: `string`[]; \}
 
 #### exclude?
 
@@ -172,7 +198,7 @@ Include specific tools (supports both standard CRUD actions and custom methods)
 
 > `optional` **name**: `string`
 
-Defined in: [smrt/packages/core/src/registry.ts:51](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L51)
+Defined in: [packages/core/src/registry.ts:70](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L70)
 
 Custom name for the object (defaults to class name)
 
@@ -182,7 +208,36 @@ Custom name for the object (defaults to class name)
 
 > `optional` **tableName**: `string`
 
-Defined in: [smrt/packages/core/src/registry.ts:57](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L57)
+Defined in: [packages/core/src/registry.ts:76](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L76)
 
 Custom table name for database storage (defaults to pluralized snake_case class name)
 Explicitly setting this ensures the table name survives code minification
+
+***
+
+### tableStrategy?
+
+> `optional` **tableStrategy**: `"cti"` \| `"sti"`
+
+Defined in: [packages/core/src/registry.ts:99](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L99)
+
+Table inheritance strategy (defaults to 'cti')
+- 'cti': Class Table Inheritance - one table per class (current default)
+- 'sti': Single Table Inheritance - shared table with discriminator column
+
+Set once on base class, children inherit automatically.
+
+#### Example
+
+```typescript
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject {
+  title: string = '';
+}
+
+// Meeting inherits 'sti' strategy
+@smrt()
+class Meeting extends Event {
+  roomId = foreignKey(Room);
+}
+```

@@ -109,12 +109,36 @@ export async function introspectProject(
 
       // Extract fields if requested
       if (includeFields) {
-        const fieldMatches = content.matchAll(/^\s*(\w+)\s*=\s*(\w+)\(/gm);
         objInfo.fields = [];
-        for (const match of fieldMatches) {
+
+        // Pattern 1: TypeScript property declarations (new decorator pattern)
+        // Example: name: string = ''; or price: number = 0.0;
+        const tsFieldMatches = content.matchAll(
+          /^\s*(?:@field\([^)]*\)\s*)?(\w+):\s*(\w+)(?:<[^>]+>)?\s*=/gm,
+        );
+        for (const match of tsFieldMatches) {
+          const fieldName = match[1];
+          const tsType = match[2];
+
+          // Skip constructor, methods, etc.
+          if (fieldName === 'constructor') continue;
+
+          // Map TypeScript types to field types
+          let fieldType = tsType;
+          if (tsType === 'string') fieldType = 'text';
+          else if (tsType === 'number') {
+            // Check if it's decimal (0.0) or integer (0)
+            const valueMatch = content.match(
+              new RegExp(`${fieldName}:\\s*number\\s*=\\s*([\\d.]+)`),
+            );
+            fieldType = valueMatch?.[1].includes('.') ? 'decimal' : 'integer';
+          } else if (tsType === 'boolean') fieldType = 'boolean';
+          else if (tsType === 'Date') fieldType = 'datetime';
+          else if (tsType === 'any' || tsType === 'object') fieldType = 'json';
+
           objInfo.fields.push({
-            name: match[1],
-            type: match[2],
+            name: fieldName,
+            type: fieldType,
           });
         }
       }

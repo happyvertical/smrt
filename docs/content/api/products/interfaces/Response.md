@@ -1,6 +1,6 @@
 # Interface: Response
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:14
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:14
 
 ## Methods
 
@@ -10,7 +10,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:14
 
 > **json**(`data`, `init?`): `Response`
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:15
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:15
 
 ##### Parameters
 
@@ -32,7 +32,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:15
 
 > **json**(`data`, `init?`): `Response`
 
-Defined in: packages/products/src/global.d.ts:149
+Defined in: smrt/packages/products/src/global.d.ts:149
 
 ##### Parameters
 
@@ -58,7 +58,7 @@ Defined in: packages/products/src/global.d.ts:149
 
 > **status**(`code`): `Response`
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:16
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:16
 
 ##### Parameters
 
@@ -74,7 +74,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:16
 
 > **status**(`code`): `Response`
 
-Defined in: packages/products/src/global.d.ts:150
+Defined in: smrt/packages/products/src/global.d.ts:150
 
 ##### Parameters
 

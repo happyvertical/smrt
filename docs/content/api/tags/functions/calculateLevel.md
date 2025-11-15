@@ -2,7 +2,7 @@
 
 > **calculateLevel**(`parentSlug`, `tagCollection`): `Promise`\<`number`\>
 
-Defined in: tags/src/utils.ts:78
+Defined in: [tags/src/utils.ts:78](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/utils.ts#L78)
 
 Calculate hierarchy level
 

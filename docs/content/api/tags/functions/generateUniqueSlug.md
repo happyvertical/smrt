@@ -2,7 +2,7 @@
 
 > **generateUniqueSlug**(`name`, `context`, `tagCollection`): `Promise`\<`string`\>
 
-Defined in: tags/src/utils.ts:100
+Defined in: [tags/src/utils.ts:100](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/utils.ts#L100)
 
 Generate a unique slug from a name
 

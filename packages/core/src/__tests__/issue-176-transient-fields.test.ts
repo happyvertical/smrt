@@ -11,7 +11,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { text } from '../fields';
+import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { generateSchema } from '../schema/utils';
@@ -20,7 +20,8 @@ import { generateSchema } from '../schema/utils';
 @smrt({ tableName: 'transient_test' })
 class TransientTest extends SmrtObject {
   // Regular persisted field
-  name = text({ required: true });
+  @field({ required: true })
+  name: string = '';
 
   // Function type (automatically transient)
   filterFn: (value: string) => boolean;
@@ -28,8 +29,9 @@ class TransientTest extends SmrtObject {
   // Arrow function (automatically transient)
   processFn: (data: any) => string;
 
-  // Explicitly transient via field option
-  computedValue = text({ transient: true });
+  // Explicitly transient via @field decorator
+  @field({ transient: true })
+  computedValue: string = '';
 
   // Regular field that should be persisted
   status: string = 'active';
@@ -42,8 +44,11 @@ class TransientTestCollection extends SmrtCollection<TransientTest> {
 // Test class with explicit transient option
 @smrt()
 class WithTransientOption extends SmrtObject {
-  name = text({ required: true });
-  temp = text({ transient: true, default: 'temporary' });
+  @field({ required: true })
+  name: string = '';
+
+  @field({ transient: true, default: 'temporary' })
+  temp: string = 'temporary';
 }
 
 describe('Issue #176: Transient fields', () => {

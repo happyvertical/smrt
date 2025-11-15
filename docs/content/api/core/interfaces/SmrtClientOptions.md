@@ -1,6 +1,6 @@
 # Interface: SmrtClientOptions
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L22)
+Defined in: [packages/core/src/runtime/types.ts:22](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/runtime/types.ts#L22)
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: [smrt/packages/core/src/runtime/types.ts:22](https://github.com/happ
 
 > `optional` **auth**: `object`
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L25)
+Defined in: [packages/core/src/runtime/types.ts:25](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/runtime/types.ts#L25)
 
 #### password?
 
@@ -32,7 +32,7 @@ Defined in: [smrt/packages/core/src/runtime/types.ts:25](https://github.com/happ
 
 > `optional` **basePath**: `string`
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L24)
+Defined in: [packages/core/src/runtime/types.ts:24](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/runtime/types.ts#L24)
 
 ***
 
@@ -40,26 +40,52 @@ Defined in: [smrt/packages/core/src/runtime/types.ts:24](https://github.com/happ
 
 > `optional` **baseUrl**: `string`
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L23)
+Defined in: [packages/core/src/runtime/types.ts:23](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/runtime/types.ts#L23)
 
 ***
 
 ### fetch()?
 
-> `optional` **fetch**: (`input`, `init?`) => `Promise`\<`Response`\>
+> `optional` **fetch**: \{(`input`, `init?`): `Promise`\<`Response`\>; (`input`, `init?`): `Promise`\<`Response`\>; \}
 
-Defined in: [smrt/packages/core/src/runtime/types.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/types.ts#L31)
+Defined in: [packages/core/src/runtime/types.ts:31](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/runtime/types.ts#L31)
 
-#### Parameters
+#### Call Signature
 
-##### input
+> (`input`, `init?`): `Promise`\<`Response`\>
 
-`string` | `Request` | `URL`
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
 
-##### init?
+##### Parameters
+
+###### input
+
+`URL` | `RequestInfo`
+
+###### init?
 
 `RequestInit`
 
-#### Returns
+##### Returns
+
+`Promise`\<`Response`\>
+
+#### Call Signature
+
+> (`input`, `init?`): `Promise`\<`Response`\>
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+##### Parameters
+
+###### input
+
+`string` | `Request` | `URL`
+
+###### init?
+
+`RequestInit`
+
+##### Returns
 
 `Promise`\<`Response`\>

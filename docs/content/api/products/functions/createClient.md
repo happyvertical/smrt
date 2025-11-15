@@ -11,7 +11,7 @@ Complete library export for triple-purpose usage:
 
 > **createClient**(`basePath?`): `ApiClient`
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-client.d.ts:25
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-client.d.ts:25
 
 ### Parameters
 
@@ -27,23 +27,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-client.d.ts:25
 
 > **createClient**(`basePath?`): `ApiClient`
 
-Defined in: packages/products/src/lib/types/virtual-modules.d.ts:80
-
-### Parameters
-
-#### basePath?
-
-`string`
-
-### Returns
-
-`ApiClient`
-
-## Call Signature
-
-> **createClient**(`basePath?`): `ApiClient`
-
-Defined in: packages/products/src/global.d.ts:56
+Defined in: smrt/packages/products/src/global.d.ts:56
 
 ### Parameters
 

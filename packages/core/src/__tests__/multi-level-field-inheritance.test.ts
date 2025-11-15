@@ -24,7 +24,6 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { text } from '../fields';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 

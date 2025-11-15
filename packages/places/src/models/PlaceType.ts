@@ -4,8 +4,7 @@
  * Examples: 'country', 'city', 'building', 'zone', 'room', 'region'
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { text } from '@happyvertical/smrt-core/fields';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { PlaceTypeOptions } from '../types';
 
 @smrt({
@@ -16,8 +15,10 @@ import type { PlaceTypeOptions } from '../types';
 })
 export class PlaceType extends SmrtObject {
   // id and slug are inherited from SmrtObject
-  name = text({ required: true }); // Type name (e.g., 'Town', 'City', 'Country')
-  description = ''; // Optional description
+  @field({ required: true })
+  name: string = ''; // Type name (e.g., 'Town', 'City', 'Country')
+
+  description?: string; // Optional description
 
   // Timestamps
   createdAt = new Date();
@@ -25,6 +26,7 @@ export class PlaceType extends SmrtObject {
 
   constructor(options: PlaceTypeOptions = {}) {
     super(options);
+    if (options.name) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
     if (options.createdAt) this.createdAt = options.createdAt;

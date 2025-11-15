@@ -1,6 +1,8 @@
 # Interface: MCPConfig
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L20)
+Defined in: [packages/core/src/generators/mcp.ts:20](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L20)
+
+@smrt/core generators - Create REST APIs and MCP servers from SMRT objects
 
 ## Properties
 
@@ -8,7 +10,7 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:20](https://github.com/hap
 
 > `optional` **description**: `string`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L23)
+Defined in: [packages/core/src/generators/mcp.ts:23](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L23)
 
 ***
 
@@ -16,7 +18,7 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:23](https://github.com/hap
 
 > `optional` **name**: `string`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L21)
+Defined in: [packages/core/src/generators/mcp.ts:21](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L21)
 
 ***
 
@@ -24,7 +26,7 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:21](https://github.com/hap
 
 > `optional` **server**: `object`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L24)
+Defined in: [packages/core/src/generators/mcp.ts:24](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L24)
 
 #### name
 
@@ -40,4 +42,4 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:24](https://github.com/hap
 
 > `optional` **version**: `string`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L22)
+Defined in: [packages/core/src/generators/mcp.ts:22](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L22)

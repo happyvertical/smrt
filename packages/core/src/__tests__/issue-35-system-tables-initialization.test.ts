@@ -14,7 +14,6 @@ import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 
 // Helper to create unique test database paths
@@ -24,35 +23,35 @@ function getTempDbPath(name: string): string {
 
 // Move test classes to module level so AST scanner can pick them up during test manifest generation
 class Issue35TestObject1 extends SmrtObject {
-  value1 = text();
+  value1: string = '';
 }
 
 class Issue35TestObject2 extends SmrtObject {
-  value2 = text();
+  value2: string = '';
 }
 
 class Issue35TestObjectDiffDb extends SmrtObject {
-  value = text();
+  value: string = '';
 }
 
 class Issue35TestDocument extends SmrtObject {
-  content = text();
+  content: string = '';
 }
 
 class Issue35TestObjectStringConfig extends SmrtObject {
-  value = text();
+  value: string = '';
 }
 
 class Issue35TestObjectConfigObj extends SmrtObject {
-  value = text();
+  value: string = '';
 }
 
 class Issue35TestObjectConcurrent extends SmrtObject {
-  value = text();
+  value: string = '';
 }
 
 class Issue35TestObjectWeakSet extends SmrtObject {
-  value = text();
+  value: string = '';
 }
 
 describe('Issue #35: System Tables Initialization', () => {

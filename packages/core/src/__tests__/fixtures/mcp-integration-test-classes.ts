@@ -1,5 +1,5 @@
 import { SmrtCollection } from '../../collection.js';
-import { decimal, integer, text } from '../../fields/index.js';
+import { field } from '../../decorators/index.js';
 import { SmrtObject } from '../../object.js';
 import { smrt } from '../../registry.js';
 
@@ -10,9 +10,14 @@ import { smrt } from '../../registry.js';
   cli: true,
 })
 export class McpIntegrationTestProduct extends SmrtObject {
-  name = text({ required: true });
-  price = decimal({ min: 0 });
-  stock = integer({ default: 0 });
+  @field({ required: true })
+  name: string = '';
+
+  @field({ min: 0 })
+  price: number = 0.0;
+
+  @field({ default: 0 })
+  stock: number = 0;
 
   async analyze(options: any = {}) {
     return {

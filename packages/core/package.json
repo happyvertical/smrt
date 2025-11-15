@@ -17,7 +17,6 @@
       "browser": "./dist/browser.js",
       "default": "./dist/index.js"
     },
-    "./fields": "./dist/fields.js",
     "./utils": "./dist/utils.js",
     "./schema/utils": "./dist/schema/utils.js",
     "./generators": "./dist/generators.js",

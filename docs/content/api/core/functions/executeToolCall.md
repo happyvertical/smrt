@@ -2,7 +2,7 @@
 
 > **executeToolCall**(`instance`, `toolCall`, `allowedMethods`, `signalBus?`): `Promise`\<[`ToolCallResult`](../interfaces/ToolCallResult.md)\>
 
-Defined in: [smrt/packages/core/src/tools/tool-executor.ts:122](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-executor.ts#L122)
+Defined in: [packages/core/src/tools/tool-executor.ts:122](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/tools/tool-executor.ts#L122)
 
 Executes a tool call on an object instance
 

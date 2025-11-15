@@ -4,7 +4,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { Field } from '../fields/index';
 import type { FieldDefinition, SmartObjectDefinition } from '../scanner/types';
 import type {
   ColumnDefinition,
@@ -309,7 +308,7 @@ export class SchemaGenerator {
   generateSchemaFromRegistry(
     _className: string,
     tableName: string,
-    fields: Map<string, Field>,
+    fields: Map<string, any>,
   ): SchemaDefinition {
     const columns: Record<string, ColumnDefinition> = {};
 
@@ -387,7 +386,7 @@ export class SchemaGenerator {
         continue;
       }
 
-      const sqlType = (field.getSqlType?.() || 'TEXT') as SQLDataType;
+      const sqlType = this.mapFieldTypeToSQL(field.type);
 
       const columnDef: ColumnDefinition = {
         type: sqlType,
@@ -538,7 +537,7 @@ export class SchemaGenerator {
   async generateSTISchemaFromRegistry(
     baseClassName: string,
     tableName: string,
-    _fields: Map<string, Field>,
+    _fields: Map<string, any>,
   ): Promise<SchemaDefinition> {
     const { ObjectRegistry } = await import('../registry');
     const columns: Record<string, ColumnDefinition> = {};
@@ -636,7 +635,7 @@ export class SchemaGenerator {
           continue;
         }
 
-        const sqlType = (field.getSqlType?.() || 'TEXT') as SQLDataType;
+        const sqlType = this.mapFieldTypeToSQL(field.type);
 
         const columnDef: ColumnDefinition = {
           type: sqlType,

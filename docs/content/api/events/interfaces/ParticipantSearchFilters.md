@@ -1,6 +1,6 @@
 # Interface: ParticipantSearchFilters
 
-Defined in: [events/src/types.ts:159](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L159)
+Defined in: [events/src/types.ts:159](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L159)
 
 Search filters for participants
 
@@ -10,7 +10,7 @@ Search filters for participants
 
 > `optional` **eventId**: `string`
 
-Defined in: [events/src/types.ts:160](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L160)
+Defined in: [events/src/types.ts:160](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L160)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [events/src/types.ts:160](https://github.com/happyvertical/smrt/blob
 
 > `optional` **groupId**: `string`
 
-Defined in: [events/src/types.ts:163](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L163)
+Defined in: [events/src/types.ts:163](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L163)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [events/src/types.ts:163](https://github.com/happyvertical/smrt/blob
 
 > `optional` **profileId**: `string`
 
-Defined in: [events/src/types.ts:161](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L161)
+Defined in: [events/src/types.ts:161](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L161)
 
 ***
 
@@ -34,4 +34,4 @@ Defined in: [events/src/types.ts:161](https://github.com/happyvertical/smrt/blob
 
 > `optional` **role**: `string`
 
-Defined in: [events/src/types.ts:162](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L162)
+Defined in: [events/src/types.ts:162](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L162)

@@ -1,6 +1,8 @@
 # Interface: MCPResponse
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:57](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L57)
+Defined in: [packages/core/src/generators/mcp.ts:57](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L57)
+
+@smrt/core generators - Create REST APIs and MCP servers from SMRT objects
 
 ## Properties
 
@@ -8,7 +10,7 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:57](https://github.com/hap
 
 > **content**: `object`[]
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:58](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L58)
+Defined in: [packages/core/src/generators/mcp.ts:58](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L58)
 
 #### text
 

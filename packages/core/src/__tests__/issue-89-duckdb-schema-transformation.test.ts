@@ -9,7 +9,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
-import { integer, text } from '../fields/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 
@@ -18,8 +17,8 @@ import { ObjectRegistry, smrt } from '../registry.js';
   api: { include: ['list', 'get'] },
 })
 class TestDocumentForDuckDB extends SmrtObject {
-  title = text();
-  content = text();
+  title: string = '';
+  content: string = '';
 }
 
 class TestDocumentCollection extends SmrtCollection<TestDocumentForDuckDB> {
@@ -30,9 +29,9 @@ class TestDocumentCollection extends SmrtCollection<TestDocumentForDuckDB> {
   api: { include: ['list', 'get'] },
 })
 class IndexedDocument extends SmrtObject {
-  title = text();
-  category = text();
-  priority = integer();
+  title: string = '';
+  category: string = '';
+  priority: number = 0;
 }
 
 class IndexedDocumentCollection extends SmrtCollection<IndexedDocument> {
@@ -43,8 +42,8 @@ class IndexedDocumentCollection extends SmrtCollection<IndexedDocument> {
   api: { include: ['list', 'get'] },
 })
 class ScopedDocument extends SmrtObject {
-  title = text();
-  content? = text(); // Optional field (TypeScript optional property)
+  title: string = '';
+  content?: string; // Optional field (TypeScript optional property)
 }
 
 class ScopedDocumentCollection extends SmrtCollection<ScopedDocument> {

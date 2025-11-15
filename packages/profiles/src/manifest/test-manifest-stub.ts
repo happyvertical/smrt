@@ -9,7 +9,7 @@ import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763080270507,
+  "timestamp": 1763175911302,
   "objects": {
     "profilerelationshipterm": {
       "name": "profilerelationshipterm",
@@ -231,6 +231,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {
+        "tableStrategy": "sti",
         "api": {
           "include": [
             "list",
@@ -287,6 +288,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {
+        "tableStrategy": "sti",
         "api": {
           "include": [
             "list",
@@ -394,6 +396,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {
+        "tableStrategy": "sti",
         "api": {
           "include": [
             "list",
@@ -503,6 +506,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {
+        "tableStrategy": "sti",
         "api": {
           "include": [
             "list",
@@ -671,6 +675,7 @@ export const testManifest: SmartObjectManifest = {
         }
       },
       "decoratorConfig": {
+        "tableStrategy": "sti",
         "api": {
           "include": [
             "list",
@@ -1305,9 +1310,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {
-        "api": {},
-        "mcp": {},
-        "cli": false
+        "tableStrategy": "sti"
       },
       "extends": "Profile",
       "packageName": "@happyvertical/smrt-profiles",
@@ -1322,9 +1325,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {
-        "api": {},
-        "mcp": {},
-        "cli": false
+        "tableStrategy": "sti"
       },
       "extends": "Profile",
       "packageName": "@happyvertical/smrt-profiles",
@@ -1339,9 +1340,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {},
       "methods": {},
       "decoratorConfig": {
-        "api": {},
-        "mcp": {},
-        "cli": false
+        "tableStrategy": "sti"
       },
       "extends": "Profile",
       "packageName": "@happyvertical/smrt-profiles",
@@ -1349,8 +1348,7 @@ export const testManifest: SmartObjectManifest = {
       "collectionExportName": "BotCollection"
     }
   },
-  "packageName": "@happyvertical/smrt-profiles",
-  "smrtDependencies": []
+  "packageName": "@happyvertical/smrt-profiles"
 } as const;
 
 export default testManifest;

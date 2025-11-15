@@ -1,6 +1,6 @@
 # Interface: AiConfig
 
-Defined in: [smrt/packages/core/src/tools/tool-generator.ts:14](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-generator.ts#L14)
+Defined in: [packages/core/src/tools/tool-generator.ts:14](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/tools/tool-generator.ts#L14)
 
 Configuration for AI-callable methods
 
@@ -10,7 +10,7 @@ Configuration for AI-callable methods
 
 > `optional` **callable**: `string`[] \| `"public-async"` \| `"all"`
 
-Defined in: [smrt/packages/core/src/tools/tool-generator.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-generator.ts#L21)
+Defined in: [packages/core/src/tools/tool-generator.ts:21](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/tools/tool-generator.ts#L21)
 
 Methods that AI can call
 - Array of method names, e.g., ['analyze', 'validate']
@@ -23,7 +23,7 @@ Methods that AI can call
 
 > `optional` **descriptions**: `Record`\<`string`, `string`\>
 
-Defined in: [smrt/packages/core/src/tools/tool-generator.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-generator.ts#L31)
+Defined in: [packages/core/src/tools/tool-generator.ts:31](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/tools/tool-generator.ts#L31)
 
 Additional tool descriptions to override method JSDoc
 
@@ -33,6 +33,6 @@ Additional tool descriptions to override method JSDoc
 
 > `optional` **exclude**: `string`[]
 
-Defined in: [smrt/packages/core/src/tools/tool-generator.ts:26](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/tools/tool-generator.ts#L26)
+Defined in: [packages/core/src/tools/tool-generator.ts:26](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/tools/tool-generator.ts#L26)
 
 Methods to exclude from AI calling (higher priority than callable)

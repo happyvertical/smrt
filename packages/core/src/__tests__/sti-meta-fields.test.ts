@@ -10,19 +10,21 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { type Meta, meta } from '../fields';
+import { field, meta } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
 // Test classes for loadDataFromDb tests (must be at top level for manifest)
 @smrt({ tableStrategy: 'sti' })
 class TestLoad1 extends SmrtObject {
-  metaField: Meta<string> = '';
+  @meta()
+  metaField: string = '';
 }
 
 @smrt({ tableStrategy: 'sti' })
 class TestLoad2 extends SmrtObject {
-  metaField: Meta<string> = '';
+  @meta()
+  metaField: string = '';
 }
 
 @smrt({ tableStrategy: 'sti' })
@@ -32,12 +34,12 @@ class TestLoad3 extends SmrtObject {}
 class TestLoad4 extends SmrtObject {}
 
 describe('STI Meta Field Detection', () => {
-  describe('Meta<T> type wrapper', () => {
-    it('should be a type alias that passes through the underlying type', () => {
-      // Meta<T> is just a type alias, should not change runtime behavior
-      const value1: Meta<string> = 'hello';
-      const value2: Meta<number> = 42;
-      const value3: Meta<boolean> = true;
+  describe('@meta() decorator', () => {
+    it('should mark fields as meta type', () => {
+      // @meta() decorator marks TypeScript properties as meta fields
+      const value1: string = 'hello';
+      const value2: number = 42;
+      const value3: boolean = true;
 
       expect(value1).toBe('hello');
       expect(value2).toBe(42);
@@ -45,37 +47,47 @@ describe('STI Meta Field Detection', () => {
     });
   });
 
-  describe('meta() field helper', () => {
-    it('should create a Field with type "meta"', () => {
-      const field = meta();
-      expect(field.type).toBe('meta');
+  describe('Field type validation', () => {
+    it('should validate meta field registration', () => {
+      const fields = ObjectRegistry.getFields('TestLoad1');
+      const metaField = fields.get('metaField');
+      expect(metaField?.type).toBe('meta');
     });
 
-    it('should accept options like other field helpers', () => {
-      const field = meta({ required: true, description: 'Test meta field' });
-      expect(field.type).toBe('meta');
-      expect(field.options.required).toBe(true);
-      expect(field.options.description).toBe('Test meta field');
+    it('should mark meta fields with correct type in registry', () => {
+      @smrt({ tableStrategy: 'sti' })
+      class TestMetaOptions extends SmrtObject {
+        @meta()
+        testField: string = '';
+      }
+
+      const fields = ObjectRegistry.getFields('TestMetaOptions');
+      const metaField = fields.get('testField');
+      expect(metaField?.type).toBe('meta');
     });
   });
 
   describe('ObjectRegistry field detection', () => {
-    it('should mark meta() helper fields as type "meta"', () => {
+    it('should mark @meta() decorated fields as type "meta"', () => {
+      @smrt({ tableStrategy: 'sti' })
       class TestClass1 extends SmrtObject {
+        @field()
         regularField: string = '';
-        metaField = meta<string>();
+
+        @meta()
+        metaField: string = '';
       }
 
-      // Get registered fields (assuming they were registered by decorator)
+      // Get registered fields
       const fields = ObjectRegistry.getFields('TestClass1');
 
-      // If meta field was registered, it should have type 'meta'
-      if (fields.size > 0) {
-        const metaFieldDef = fields.get('metaField');
-        if (metaFieldDef) {
-          expect(metaFieldDef.type).toBe('meta');
-        }
-      }
+      // Regular field should be type 'text'
+      const regularFieldDef = fields.get('regularField');
+      expect(regularFieldDef?.type).toBe('text');
+
+      // Meta field should be type 'meta'
+      const metaFieldDef = fields.get('metaField');
+      expect(metaFieldDef?.type).toBe('meta');
     });
   });
 

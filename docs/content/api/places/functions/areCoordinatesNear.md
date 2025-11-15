@@ -2,7 +2,7 @@
 
 > **areCoordinatesNear**(`lat1`, `lng1`, `lat2`, `lng2`, `thresholdKm`): `boolean`
 
-Defined in: [places/src/utils.ts:227](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/utils.ts#L227)
+Defined in: [places/src/utils.ts:227](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/utils.ts#L227)
 
 Check if two coordinates are within a threshold distance
 
