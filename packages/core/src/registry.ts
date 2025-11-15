@@ -314,6 +314,13 @@ export class ObjectRegistry {
   private static inheritanceChainCache: LRUCache<string, string[]>;
 
   /**
+   * Storage for field decorator metadata (decorator pattern)
+   * Maps className → Map<propertyKey, FieldOptions>
+   * Used by @field(), @foreignKey(), @oneToMany(), @manyToMany() decorators
+   */
+  private static fieldDecorators = new Map<string, Map<string, any>>();
+
+  /**
    * Initialize the inheritance chain cache with size from config
    */
   private static getInheritanceCache(): LRUCache<string, string[]> {
@@ -324,6 +331,70 @@ export class ObjectRegistry {
       );
     }
     return ObjectRegistry.inheritanceChainCache;
+  }
+
+  /**
+   * Register field decorator metadata
+   *
+   * Called by property decorators (@field, @foreignKey, etc.) to store
+   * field configuration metadata. This enables the decorator pattern
+   * where field metadata is attached at class definition time.
+   *
+   * @param className - Name of the class containing the field
+   * @param propertyKey - Name of the property being decorated
+   * @param options - Field options (type, constraints, etc.)
+   * @example
+   * ```typescript
+   * // Called internally by decorators
+   * ObjectRegistry.registerFieldDecorator('Product', 'name', {
+   *   type: 'text',
+   *   required: true
+   * });
+   * ```
+   */
+  static registerFieldDecorator(
+    className: string,
+    propertyKey: string,
+    options: any,
+  ): void {
+    if (!ObjectRegistry.fieldDecorators.has(className)) {
+      ObjectRegistry.fieldDecorators.set(className, new Map());
+    }
+    ObjectRegistry.fieldDecorators.get(className)?.set(propertyKey, options);
+  }
+
+  /**
+   * Get field decorator metadata for a specific field
+   *
+   * @param className - Name of the class
+   * @param propertyKey - Name of the property
+   * @returns Field options or undefined if not decorated
+   * @example
+   * ```typescript
+   * const options = ObjectRegistry.getFieldDecorator('Product', 'name');
+   * // { type: 'text', required: true }
+   * ```
+   */
+  static getFieldDecorator(
+    className: string,
+    propertyKey: string,
+  ): any | undefined {
+    return ObjectRegistry.fieldDecorators.get(className)?.get(propertyKey);
+  }
+
+  /**
+   * Get all field decorator metadata for a class
+   *
+   * @param className - Name of the class
+   * @returns Map of property names to field options
+   * @example
+   * ```typescript
+   * const fields = ObjectRegistry.getFieldDecorators('Product');
+   * // Map { 'name' => { type: 'text', required: true }, ... }
+   * ```
+   */
+  static getFieldDecorators(className: string): Map<string, any> {
+    return ObjectRegistry.fieldDecorators.get(className) || new Map();
   }
 
   /**
@@ -715,6 +786,7 @@ export class ObjectRegistry {
     ObjectRegistry.collections.clear();
     ObjectRegistry.collectionCache.clear();
     ObjectRegistry.getInheritanceCache().clear();
+    ObjectRegistry.fieldDecorators.clear();
   }
 
   /**

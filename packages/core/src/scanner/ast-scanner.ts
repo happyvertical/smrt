@@ -540,6 +540,98 @@ export class ASTScanner {
   }
 
   /**
+   * Find field decorator on property (@field, @foreignKey, @oneToMany, @manyToMany)
+   */
+  private findFieldDecorator(
+    node: ts.PropertyDeclaration,
+  ): ts.Decorator | null {
+    if (!node.modifiers) return null;
+
+    const FIELD_DECORATORS = ['field', 'foreignKey', 'oneToMany', 'manyToMany'];
+
+    for (const modifier of node.modifiers) {
+      if (ts.isDecorator(modifier)) {
+        const expression = modifier.expression;
+
+        // Handle @field() or @field
+        if (ts.isCallExpression(expression)) {
+          if (
+            ts.isIdentifier(expression.expression) &&
+            FIELD_DECORATORS.includes(expression.expression.text)
+          ) {
+            return modifier;
+          }
+        } else if (
+          ts.isIdentifier(expression) &&
+          FIELD_DECORATORS.includes(expression.text)
+        ) {
+          return modifier;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Parse field decorator to extract options
+   *
+   * Handles:
+   * - @field({ required: true, min: 0, ... })
+   * - @foreignKey(RelatedClass, { onDelete: 'cascade' })
+   * - @oneToMany(RelatedClass, { foreignKey: 'parentId' })
+   * - @manyToMany(RelatedClass, { through: 'junction_table' })
+   */
+  private parseFieldDecorator(
+    decorator: ts.Decorator,
+    _sourceFile: ts.SourceFile,
+  ): any {
+    if (!ts.isCallExpression(decorator.expression)) {
+      return {};
+    }
+
+    const decoratorName = ts.isIdentifier(decorator.expression.expression)
+      ? decorator.expression.expression.text
+      : '';
+    const args = decorator.expression.arguments;
+
+    // @field({ options })
+    if (decoratorName === 'field') {
+      if (args.length > 0 && ts.isObjectLiteralExpression(args[0])) {
+        return this.parseObjectLiteralExpression(args[0]);
+      }
+      return {};
+    }
+
+    // @foreignKey(RelatedClass, { options })
+    // @oneToMany(RelatedClass, { options })
+    // @manyToMany(RelatedClass, { options })
+    if (['foreignKey', 'oneToMany', 'manyToMany'].includes(decoratorName)) {
+      const options: any = { type: decoratorName };
+
+      // First arg is the related class (identifier or string)
+      if (args.length > 0) {
+        const relatedClassArg = args[0];
+        if (ts.isIdentifier(relatedClassArg)) {
+          options.related = relatedClassArg.text;
+        } else if (ts.isStringLiteral(relatedClassArg)) {
+          options.related = relatedClassArg.text;
+        }
+      }
+
+      // Second arg is options object (optional)
+      if (args.length > 1 && ts.isObjectLiteralExpression(args[1])) {
+        const additionalOptions = this.parseObjectLiteralExpression(args[1]);
+        Object.assign(options, additionalOptions);
+      }
+
+      return options;
+    }
+
+    return {};
+  }
+
+  /**
    * Parse property declaration to field definition
    */
   private parsePropertyDeclaration(
@@ -582,14 +674,25 @@ export class ASTScanner {
       }
     }
 
+    // NEW: Check for field decorators (@field, @foreignKey, @oneToMany, @manyToMany)
+    const decorator = this.findFieldDecorator(node);
+    let decoratorOptions: any = null;
+    if (decorator) {
+      decoratorOptions = this.parseFieldDecorator(decorator, sourceFile);
+    }
+
     // Check if this is a function type (transient by default)
     const isFunction = this.isFunctionType(node, sourceFile);
 
-    // Determine field type from initializer or type annotation
-    const fieldType = this.inferFieldType(node, sourceFile);
-    // Required if no question token and no undefined/null type
+    // Determine field type from decorator (priority 1) or infer from TS type (priority 2)
+    const fieldType =
+      decoratorOptions?.type || this.inferFieldType(node, sourceFile);
+
+    // Required if explicitly set in decorator, or inferred from TS (no question token)
     const isRequired =
-      !node.questionToken && !this.hasOptionalType(node, sourceFile);
+      decoratorOptions?.required !== undefined
+        ? decoratorOptions.required
+        : !node.questionToken && !this.hasOptionalType(node, sourceFile);
 
     const field: FieldDefinition = {
       type: fieldType,
@@ -601,17 +704,35 @@ export class ASTScanner {
       field.transient = true;
     }
 
+    // Merge decorator options (highest priority)
+    if (decoratorOptions) {
+      field.options = { ...decoratorOptions };
+      // Remove type and required from options (they're top-level fields)
+      if (field.options) {
+        delete field.options.type;
+        delete field.options.required;
+      }
+
+      // Check if explicitly marked as transient via decorator
+      if (decoratorOptions.transient !== undefined) {
+        field.transient = decoratorOptions.transient;
+      }
+    }
+
     // Extract default value from initializer
     if (node.initializer) {
       field.default = this.extractDefaultValue(node.initializer);
 
       // Extract options from field helper calls (e.g., integer({ min: 0, max: 100 }))
-      const options = this.extractFieldOptions(node.initializer, sourceFile);
-      if (options && Object.keys(options).length > 0) {
-        field.options = options;
-        // Check if explicitly marked as transient via option
-        if (options.transient !== undefined) {
-          field.transient = options.transient;
+      // Only if no decorator (decorator takes priority)
+      if (!decoratorOptions) {
+        const options = this.extractFieldOptions(node.initializer, sourceFile);
+        if (options && Object.keys(options).length > 0) {
+          field.options = options;
+          // Check if explicitly marked as transient via option
+          if (options.transient !== undefined) {
+            field.transient = options.transient;
+          }
         }
       }
     }

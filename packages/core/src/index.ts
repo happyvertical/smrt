@@ -28,6 +28,8 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Property decorators for field definition (Phase 2: Temporarily disabled during migration)
+// export * from './decorators/index';
 export * from './errors';
 export * from './fields/index';
 // Code generators (tree-shakeable)
