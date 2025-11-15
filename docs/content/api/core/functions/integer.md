@@ -2,7 +2,7 @@
 
 > **integer**(`options`): [`Field`](../classes/Field.md)
 
-Defined in: [smrt/packages/core/src/fields/index.ts:308](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/fields/index.ts#L308)
+Defined in: [packages/core/src/fields/index.ts:369](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/fields/index.ts#L369)
 
 Creates an integer field for storing whole numbers
 

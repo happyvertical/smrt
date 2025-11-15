@@ -2,7 +2,7 @@
 
 > **SignalFilter** = (`signal`) => `boolean`
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:16](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L16)
+Defined in: [packages/core/src/adapters/pubsub.ts:16](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L16)
 
 Signal filter function
 
@@ -10,7 +10,7 @@ Signal filter function
 
 ### signal
 
-[`Signal`](Signal.md)
+[`Signal`](../interfaces/Signal.md)
 
 Signal to evaluate
 

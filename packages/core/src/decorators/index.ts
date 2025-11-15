@@ -16,22 +16,24 @@ import { ObjectRegistry } from '../registry.js';
 /**
  * Generic field decorator for marking properties with constraints
  *
- * @param options - Field options (required, default, min, max, etc.)
+ * @param options - Field options (required, default, min, max, minLength, maxLength, etc.)
  * @returns Property decorator
  *
  * @example
  * ```typescript
  * @smrt()
  * class Product extends SmrtObject {
- *   @field({ required: true })
+ *   @field({ required: true, maxLength: 100 })
  *   name: string = '';
  *
- *   @field({ min: 0, default: 0 })
+ *   @field({ min: 0, max: 1000, default: 0 })
  *   stock: number = 0;
  * }
  * ```
  */
-export function field(options: FieldOptions = {}) {
+export function field(
+  options: FieldOptions | NumericFieldOptions | TextFieldOptions = {},
+) {
   return (target: any, propertyKey: string) => {
     const className = target.constructor.name;
     ObjectRegistry.registerFieldDecorator(className, propertyKey, options);

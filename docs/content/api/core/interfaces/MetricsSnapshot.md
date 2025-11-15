@@ -1,6 +1,6 @@
 # Interface: MetricsSnapshot
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/metrics.ts#L33)
+Defined in: [packages/core/src/adapters/metrics.ts:33](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/metrics.ts#L33)
 
 Aggregated metrics storage
 
@@ -10,7 +10,7 @@ Aggregated metrics storage
 
 > **methods**: `Record`\<`string`, [`MethodMetrics`](MethodMetrics.md)\>
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:35](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/metrics.ts#L35)
+Defined in: [packages/core/src/adapters/metrics.ts:35](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/metrics.ts#L35)
 
 Metrics per class.method combination
 
@@ -20,7 +20,7 @@ Metrics per class.method combination
 
 > **startTime**: `number`
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:39](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/metrics.ts#L39)
+Defined in: [packages/core/src/adapters/metrics.ts:39](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/metrics.ts#L39)
 
 Metrics collection start time
 
@@ -30,6 +30,6 @@ Metrics collection start time
 
 > **totalSignals**: `number`
 
-Defined in: [smrt/packages/core/src/adapters/metrics.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/metrics.ts#L37)
+Defined in: [packages/core/src/adapters/metrics.ts:37](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/metrics.ts#L37)
 
 Total signals processed

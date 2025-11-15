@@ -1,6 +1,6 @@
 # Interface: RelationshipMetadata
 
-Defined in: [smrt/packages/core/src/registry.ts:192](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L192)
+Defined in: [packages/core/src/registry.ts:245](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L245)
 
 Metadata about a relationship between classes
 
@@ -10,7 +10,7 @@ Metadata about a relationship between classes
 
 > **fieldName**: `string`
 
-Defined in: [smrt/packages/core/src/registry.ts:196](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L196)
+Defined in: [packages/core/src/registry.ts:249](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L249)
 
 Field name on the source class
 
@@ -20,7 +20,7 @@ Field name on the source class
 
 > **options**: `any`
 
-Defined in: [smrt/packages/core/src/registry.ts:202](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L202)
+Defined in: [packages/core/src/registry.ts:255](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L255)
 
 Options for the relationship (onDelete, etc.)
 
@@ -30,7 +30,7 @@ Options for the relationship (onDelete, etc.)
 
 > **sourceClass**: `string`
 
-Defined in: [smrt/packages/core/src/registry.ts:194](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L194)
+Defined in: [packages/core/src/registry.ts:247](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L247)
 
 Source class name
 
@@ -40,7 +40,7 @@ Source class name
 
 > **targetClass**: `string`
 
-Defined in: [smrt/packages/core/src/registry.ts:198](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L198)
+Defined in: [packages/core/src/registry.ts:251](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L251)
 
 Target/related class name
 
@@ -50,6 +50,6 @@ Target/related class name
 
 > **type**: [`RelationshipType`](../type-aliases/RelationshipType.md)
 
-Defined in: [smrt/packages/core/src/registry.ts:200](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/registry.ts#L200)
+Defined in: [packages/core/src/registry.ts:253](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L253)
 
 Type of relationship

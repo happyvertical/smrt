@@ -23,8 +23,6 @@
 - [manifest](variables/manifest.md)
 - [ProductCard](variables/ProductCard.md)
 - [productStore](variables/productStore.md)
-- [startMCPServer](variables/startMCPServer.md)
-- [types](variables/types.md)
 
 ## Functions
 
@@ -34,6 +32,7 @@
 - [formatDate](functions/formatDate.md)
 - [formatPrice](functions/formatPrice.md)
 - [generateId](functions/generateId.md)
+- [generateMCPServer](functions/generateMCPServer.md)
 - [setupRoutes](functions/setupRoutes.md)
 - [slugify](functions/slugify.md)
 - [startAll](functions/startAll.md)

@@ -1,14 +1,22 @@
 # Interface: SmartObjectManifest
 
-Defined in: [smrt/packages/core/src/scanner/types.ts:83](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L83)
+Defined in: [packages/core/src/scanner/types.ts:71](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/scanner/types.ts#L71)
 
 ## Properties
+
+### moduleType?
+
+> `optional` **moduleType**: `string`
+
+Defined in: [packages/core/src/scanner/types.ts:77](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/scanner/types.ts#L77)
+
+***
 
 ### objects
 
 > **objects**: `Record`\<`string`, [`SmartObjectDefinition`](SmartObjectDefinition.md)\>
 
-Defined in: [smrt/packages/core/src/scanner/types.ts:87](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L87)
+Defined in: [packages/core/src/scanner/types.ts:76](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/scanner/types.ts#L76)
 
 ***
 
@@ -16,7 +24,23 @@ Defined in: [smrt/packages/core/src/scanner/types.ts:87](https://github.com/happ
 
 > `optional` **packageName**: `string`
 
-Defined in: [smrt/packages/core/src/scanner/types.ts:86](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L86)
+Defined in: [packages/core/src/scanner/types.ts:74](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/scanner/types.ts#L74)
+
+***
+
+### packageVersion?
+
+> `optional` **packageVersion**: `string`
+
+Defined in: [packages/core/src/scanner/types.ts:75](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/scanner/types.ts#L75)
+
+***
+
+### smrtDependencies?
+
+> `optional` **smrtDependencies**: `string`[]
+
+Defined in: [packages/core/src/scanner/types.ts:78](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/scanner/types.ts#L78)
 
 ***
 
@@ -24,7 +48,7 @@ Defined in: [smrt/packages/core/src/scanner/types.ts:86](https://github.com/happ
 
 > **timestamp**: `number`
 
-Defined in: [smrt/packages/core/src/scanner/types.ts:85](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L85)
+Defined in: [packages/core/src/scanner/types.ts:73](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/scanner/types.ts#L73)
 
 ***
 
@@ -32,4 +56,4 @@ Defined in: [smrt/packages/core/src/scanner/types.ts:85](https://github.com/happ
 
 > **version**: `string`
 
-Defined in: [smrt/packages/core/src/scanner/types.ts:84](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/scanner/types.ts#L84)
+Defined in: [packages/core/src/scanner/types.ts:72](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/scanner/types.ts#L72)

@@ -1,8 +1,8 @@
 # Function: createMCPServer()
 
-> **createMCPServer**(`options?`): `SmrtMCPServer`
+> **createMCPServer**(`options?`): [`SmrtMCPServer`](../classes/SmrtMCPServer.md)
 
-Defined in: [smrt/packages/core/src/runtime/mcp.ts:91](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/runtime/mcp.ts#L91)
+Defined in: [packages/core/src/runtime/mcp.ts:91](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/runtime/mcp.ts#L91)
 
 Create a new SMRT MCP server instance
 
@@ -10,8 +10,8 @@ Create a new SMRT MCP server instance
 
 ### options?
 
-`MCPServerOptions`
+[`MCPServerOptions`](../interfaces/MCPServerOptions.md)
 
 ## Returns
 
-`SmrtMCPServer`
+[`SmrtMCPServer`](../classes/SmrtMCPServer.md)

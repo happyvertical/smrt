@@ -1,6 +1,6 @@
 # Interface: ValidationSchema
 
-Defined in: [profiles/src/types.ts:23](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L23)
+Defined in: [profiles/src/types.ts:23](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L23)
 
 Validation schema structure for profile metadata fields
 
@@ -10,7 +10,7 @@ Validation schema structure for profile metadata fields
 
 > `optional` **custom**: `string`
 
-Defined in: [profiles/src/types.ts:43](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L43)
+Defined in: [profiles/src/types.ts:43](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L43)
 
 Custom validator function name
 
@@ -20,7 +20,7 @@ Custom validator function name
 
 > `optional` **max**: `number`
 
-Defined in: [profiles/src/types.ts:40](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L40)
+Defined in: [profiles/src/types.ts:40](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L40)
 
 Maximum numeric value
 
@@ -30,7 +30,7 @@ Maximum numeric value
 
 > `optional` **maxLength**: `number`
 
-Defined in: [profiles/src/types.ts:34](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L34)
+Defined in: [profiles/src/types.ts:34](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L34)
 
 Maximum string length
 
@@ -40,7 +40,7 @@ Maximum string length
 
 > `optional` **message**: `string`
 
-Defined in: [profiles/src/types.ts:46](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L46)
+Defined in: [profiles/src/types.ts:46](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L46)
 
 Custom validation error message
 
@@ -50,7 +50,7 @@ Custom validation error message
 
 > `optional` **min**: `number`
 
-Defined in: [profiles/src/types.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L37)
+Defined in: [profiles/src/types.ts:37](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L37)
 
 Minimum numeric value
 
@@ -60,7 +60,7 @@ Minimum numeric value
 
 > `optional` **minLength**: `number`
 
-Defined in: [profiles/src/types.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L31)
+Defined in: [profiles/src/types.ts:31](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L31)
 
 Minimum string length
 
@@ -70,7 +70,7 @@ Minimum string length
 
 > `optional` **pattern**: `string`
 
-Defined in: [profiles/src/types.ts:28](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L28)
+Defined in: [profiles/src/types.ts:28](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L28)
 
 Regex pattern for string validation
 
@@ -80,6 +80,6 @@ Regex pattern for string validation
 
 > `optional` **type**: `"string"` \| `"number"` \| `"boolean"` \| `"date"` \| `"json"`
 
-Defined in: [profiles/src/types.ts:25](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/profiles/src/types.ts#L25)
+Defined in: [profiles/src/types.ts:25](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/profiles/src/types.ts#L25)
 
 Type constraint

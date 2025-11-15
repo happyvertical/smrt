@@ -38,19 +38,25 @@ bun add @happyvertical/smrt-core
 
 ## Usage
 
-### Define SMRT Objects with Fields
+### Define SMRT Objects with TypeScript Types
 
 ```typescript
 import { SmrtObject } from '@happyvertical/smrt-core';
-import { text, integer, boolean, datetime } from '@happyvertical/smrt-core/fields';
+import { text } from '@happyvertical/smrt-core/fields';
 
-// Define a document object with typed fields
+// Define a document object using TypeScript types (primary pattern)
 class Document extends SmrtObject {
-  title = text({ required: true, maxLength: 200 });
-  content = text({ required: true });
-  wordCount = integer({ min: 0, default: 0 });
-  isPublished = boolean({ default: false });
-  publishedAt = datetime();
+  // TypeScript types → Automatic schema generation
+  title: string = '';
+  content: string = '';
+  wordCount: number = 0;        // INTEGER (no decimal point)
+  rating: number = 0.0;          // DECIMAL (has decimal point)
+  isPublished: boolean = false;
+  publishedAt: Date = new Date();
+  tags: string[] = [];
+
+  // Field helpers only when constraints needed
+  slug = text({ required: true, unique: true });
 
   constructor(options: any = {}) {
     super(options);
@@ -75,6 +81,28 @@ class Document extends SmrtObject {
   }
 }
 ```
+
+#### When to Use Field Helpers
+
+**Use TypeScript types** for most properties (preferred):
+```typescript
+name: string = '';           // → TEXT
+count: number = 0;           // → INTEGER (no decimal point)
+price: number = 0.0;         // → DECIMAL (has decimal point)
+active: boolean = true;      // → BOOLEAN
+created: Date = new Date();  // → DATETIME
+tags: string[] = [];         // → JSON
+```
+
+**Use field helpers** only when you need:
+1. **Relationships**: `categoryId = foreignKey(Category)`
+2. **Constraints**: `email = text({ required: true, pattern: /^.+@.+$/ })`
+3. **Nullable decimals**: `latitude = decimal({ nullable: true })`
+
+**The 0 vs 0.0 Heuristic**:
+- `quantity: number = 0` → INTEGER column (no decimal point)
+- `price: number = 0.0` → DECIMAL column (has decimal point)
+- `rating: number = 4.5` → DECIMAL column (has decimal point)
 
 ### Create and Manage Collections
 

@@ -1,6 +1,6 @@
 # Interface: RecurrencePattern
 
-Defined in: [events/src/types.ts:48](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L48)
+Defined in: [events/src/types.ts:48](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L48)
 
 Recurrence pattern for repeating events
 
@@ -10,7 +10,7 @@ Recurrence pattern for repeating events
 
 > `optional` **byDay**: `string`[]
 
-Defined in: [events/src/types.ts:53](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L53)
+Defined in: [events/src/types.ts:53](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L53)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [events/src/types.ts:53](https://github.com/happyvertical/smrt/blob/
 
 > `optional` **byMonth**: `number`[]
 
-Defined in: [events/src/types.ts:55](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L55)
+Defined in: [events/src/types.ts:55](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L55)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [events/src/types.ts:55](https://github.com/happyvertical/smrt/blob/
 
 > `optional` **byMonthDay**: `number`[]
 
-Defined in: [events/src/types.ts:54](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L54)
+Defined in: [events/src/types.ts:54](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L54)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [events/src/types.ts:54](https://github.com/happyvertical/smrt/blob/
 
 > `optional` **bySetPos**: `number`[]
 
-Defined in: [events/src/types.ts:56](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L56)
+Defined in: [events/src/types.ts:56](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L56)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [events/src/types.ts:56](https://github.com/happyvertical/smrt/blob/
 
 > `optional` **count**: `number`
 
-Defined in: [events/src/types.ts:51](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L51)
+Defined in: [events/src/types.ts:51](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L51)
 
 ***
 
@@ -50,7 +50,7 @@ Defined in: [events/src/types.ts:51](https://github.com/happyvertical/smrt/blob/
 
 > **frequency**: [`RecurrenceFrequency`](../type-aliases/RecurrenceFrequency.md)
 
-Defined in: [events/src/types.ts:49](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L49)
+Defined in: [events/src/types.ts:49](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L49)
 
 ***
 
@@ -58,7 +58,7 @@ Defined in: [events/src/types.ts:49](https://github.com/happyvertical/smrt/blob/
 
 > `optional` **interval**: `number`
 
-Defined in: [events/src/types.ts:50](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L50)
+Defined in: [events/src/types.ts:50](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L50)
 
 ***
 
@@ -66,4 +66,4 @@ Defined in: [events/src/types.ts:50](https://github.com/happyvertical/smrt/blob/
 
 > `optional` **until**: `Date`
 
-Defined in: [events/src/types.ts:52](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/events/src/types.ts#L52)
+Defined in: [events/src/types.ts:52](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/events/src/types.ts#L52)

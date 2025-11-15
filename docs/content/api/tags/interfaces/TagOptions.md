@@ -1,6 +1,6 @@
 # Interface: TagOptions
 
-Defined in: tags/src/types.ts:10
+Defined in: [tags/src/types.ts:10](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L10)
 
 Options for creating a Tag instance
 
@@ -34,7 +34,7 @@ Optional custom class name override
 
 > `optional` **\_extractingFields**: `boolean`
 
-Defined in: core/dist/object.d.ts:36
+Defined in: core/dist/object.d.ts:31
 
 Flag to skip automatic field extraction (internal use)
 
@@ -48,7 +48,7 @@ Flag to skip automatic field extraction (internal use)
 
 > `optional` **\_skipLoad**: `boolean`
 
-Defined in: core/dist/object.d.ts:40
+Defined in: core/dist/object.d.ts:35
 
 Flag to skip database loading (internal use)
 
@@ -62,7 +62,7 @@ Flag to skip database loading (internal use)
 
 > `optional` **ai**: `AIClient` \| `AIClientOptions`
 
-Defined in: core/dist/class.d.ts:37
+Defined in: core/dist/class.d.ts:48
 
 AI client configuration options or instance
 
@@ -76,7 +76,7 @@ AI client configuration options or instance
 
 > `optional` **context**: `string`
 
-Defined in: tags/src/types.ts:13
+Defined in: [tags/src/types.ts:13](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L13)
 
 Optional context to scope the slug (could be a path, domain, etc.)
 
@@ -90,7 +90,7 @@ Optional context to scope the slug (could be a path, domain, etc.)
 
 > `optional` **created\_at**: `Date`
 
-Defined in: core/dist/object.d.ts:28
+Defined in: core/dist/object.d.ts:23
 
 Creation timestamp
 
@@ -102,11 +102,11 @@ Creation timestamp
 
 ### db?
 
-> `optional` **db**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"`; `url?`: `string`; \}
+> `optional` **db**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"` \| `"sql"`; `url?`: `string`; \}
 
 Defined in: core/dist/class.d.ts:24
 
-Database configuration - unified approach matching @have/sql
+Database configuration - unified approach matching @happyvertical/sql
 
 Supports three formats:
 - String shortcut: 'products.db' (auto-detects database type)
@@ -123,7 +123,7 @@ Supports three formats:
 
 > `optional` **description**: `string`
 
-Defined in: tags/src/types.ts:16
+Defined in: [tags/src/types.ts:16](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L16)
 
 ***
 
@@ -131,7 +131,7 @@ Defined in: tags/src/types.ts:16
 
 > `optional` **fs**: `FilesystemAdapterOptions`
 
-Defined in: core/dist/class.d.ts:33
+Defined in: core/dist/class.d.ts:44
 
 Filesystem adapter configuration options
 
@@ -145,7 +145,7 @@ Filesystem adapter configuration options
 
 > `optional` **id**: `string`
 
-Defined in: core/dist/object.d.ts:12
+Defined in: core/dist/object.d.ts:11
 
 Unique identifier for the object
 
@@ -159,7 +159,7 @@ Unique identifier for the object
 
 > `optional` **level**: `number`
 
-Defined in: tags/src/types.ts:15
+Defined in: [tags/src/types.ts:15](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L15)
 
 ***
 
@@ -167,7 +167,7 @@ Defined in: tags/src/types.ts:15
 
 > `optional` **logging**: `LoggerConfig`
 
-Defined in: core/dist/class.d.ts:41
+Defined in: core/dist/class.d.ts:52
 
 Logging configuration (overrides global default)
 
@@ -181,7 +181,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metadata**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: tags/src/types.ts:17
+Defined in: [tags/src/types.ts:17](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L17)
 
 ***
 
@@ -189,7 +189,7 @@ Defined in: tags/src/types.ts:17
 
 > `optional` **metrics**: `MetricsConfig`
 
-Defined in: core/dist/class.d.ts:45
+Defined in: core/dist/class.d.ts:56
 
 Metrics configuration (overrides global default)
 
@@ -203,13 +203,7 @@ Metrics configuration (overrides global default)
 
 > `optional` **name**: `string`
 
-Defined in: tags/src/types.ts:12
-
-Human-readable name for the object
-
-#### Overrides
-
-`SmrtObjectOptions.name`
+Defined in: [tags/src/types.ts:12](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L12)
 
 ***
 
@@ -217,7 +211,25 @@ Human-readable name for the object
 
 > `optional` **parentSlug**: `string`
 
-Defined in: tags/src/types.ts:14
+Defined in: [tags/src/types.ts:14](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L14)
+
+***
+
+### ~~persistence?~~
+
+> `optional` **persistence**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"` \| `"sql"`; `url?`: `string`; \}
+
+Defined in: core/dist/class.d.ts:35
+
+Alias for db option - for backward compatibility with documentation
+
+#### Deprecated
+
+Use 'db' instead. This alias exists for backward compatibility.
+
+#### Inherited from
+
+`SmrtObjectOptions.persistence`
 
 ***
 
@@ -225,7 +237,7 @@ Defined in: tags/src/types.ts:14
 
 > `optional` **pubsub**: `PubSubConfig`
 
-Defined in: core/dist/class.d.ts:49
+Defined in: core/dist/class.d.ts:60
 
 Pub/Sub configuration (overrides global default)
 
@@ -239,7 +251,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **sanitization**: `false` \| `SanitizationConfig`
 
-Defined in: core/dist/class.d.ts:53
+Defined in: core/dist/class.d.ts:64
 
 Sanitization configuration (overrides global default)
 
@@ -253,7 +265,7 @@ Sanitization configuration (overrides global default)
 
 > `optional` **signals**: `object`
 
-Defined in: core/dist/class.d.ts:57
+Defined in: core/dist/class.d.ts:68
 
 Custom signal configuration (overrides global default)
 
@@ -279,7 +291,7 @@ Shared signal bus instance
 
 > `optional` **slug**: `string`
 
-Defined in: tags/src/types.ts:11
+Defined in: [tags/src/types.ts:11](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L11)
 
 URL-friendly identifier
 
@@ -293,7 +305,7 @@ URL-friendly identifier
 
 > `optional` **updated\_at**: `Date`
 
-Defined in: core/dist/object.d.ts:32
+Defined in: core/dist/object.d.ts:27
 
 Last update timestamp
 

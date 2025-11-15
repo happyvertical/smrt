@@ -1,6 +1,6 @@
 # Interface: NoteOptions
 
-Defined in: [smrt/packages/core/src/system/types.ts:8](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L8)
+Defined in: [packages/core/src/system/types.ts:8](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L8)
 
 Options for storing a note
 
@@ -10,7 +10,7 @@ Options for storing a note
 
 > `optional` **confidence**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L18)
+Defined in: [packages/core/src/system/types.ts:18](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L18)
 
 Confidence score (0.0 to 1.0)
 
@@ -20,7 +20,7 @@ Confidence score (0.0 to 1.0)
 
 > `optional` **expiresAt**: `Date`
 
-Defined in: [smrt/packages/core/src/system/types.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L22)
+Defined in: [packages/core/src/system/types.ts:22](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L22)
 
 Expiration date
 
@@ -30,7 +30,7 @@ Expiration date
 
 > **key**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:12](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L12)
+Defined in: [packages/core/src/system/types.ts:12](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L12)
 
 Normalized identifier (e.g., URL, entity ID)
 
@@ -40,7 +40,7 @@ Normalized identifier (e.g., URL, entity ID)
 
 > `optional` **metadata**: [`NoteMetadata`](NoteMetadata.md)
 
-Defined in: [smrt/packages/core/src/system/types.ts:16](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L16)
+Defined in: [packages/core/src/system/types.ts:16](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L16)
 
 Additional metadata
 
@@ -50,7 +50,7 @@ Additional metadata
 
 > **scope**: `string`
 
-Defined in: [smrt/packages/core/src/system/types.ts:10](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L10)
+Defined in: [packages/core/src/system/types.ts:10](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L10)
 
 Hierarchical scope (e.g., 'discovery/parser/domain.com')
 
@@ -60,7 +60,7 @@ Hierarchical scope (e.g., 'discovery/parser/domain.com')
 
 > **value**: `any`
 
-Defined in: [smrt/packages/core/src/system/types.ts:14](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L14)
+Defined in: [packages/core/src/system/types.ts:14](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L14)
 
 Strategy data (regex patterns, selectors, etc.)
 
@@ -70,6 +70,6 @@ Strategy data (regex patterns, selectors, etc.)
 
 > `optional` **version**: `number`
 
-Defined in: [smrt/packages/core/src/system/types.ts:20](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/system/types.ts#L20)
+Defined in: [packages/core/src/system/types.ts:20](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/system/types.ts#L20)
 
 Strategy version number

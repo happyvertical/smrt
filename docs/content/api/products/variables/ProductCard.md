@@ -2,7 +2,7 @@
 
 > `const` **ProductCard**: `LegacyComponentType`
 
-Defined in: node\_modules/.pnpm/svelte@5.41.1/node\_modules/svelte/types/index.d.ts:3104
+Defined in: node\_modules/.pnpm/svelte@5.43.2/node\_modules/svelte/types/index.d.ts:3138
 
 SMRT Template UI Components
 

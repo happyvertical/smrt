@@ -1,6 +1,8 @@
 # Interface: MCPContext
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:30](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L30)
+Defined in: [packages/core/src/generators/mcp.ts:30](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L30)
+
+@smrt/core generators - Create REST APIs and MCP servers from SMRT objects
 
 ## Properties
 
@@ -8,7 +10,7 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:30](https://github.com/hap
 
 > `optional` **ai**: `any`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:32](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L32)
+Defined in: [packages/core/src/generators/mcp.ts:32](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L32)
 
 ***
 
@@ -16,7 +18,7 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:32](https://github.com/hap
 
 > `optional` **db**: `any`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L31)
+Defined in: [packages/core/src/generators/mcp.ts:31](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L31)
 
 ***
 
@@ -24,7 +26,7 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:31](https://github.com/hap
 
 > `optional` **user**: `object`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:33](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L33)
+Defined in: [packages/core/src/generators/mcp.ts:33](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L33)
 
 #### id
 

@@ -1,6 +1,6 @@
 # Interface: Request
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:8
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:8
 
 ## Properties
 
@@ -8,7 +8,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:8
 
 > **params**: `Record`\<`string`, `string`\>
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:9
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:9
 
 ***
 
@@ -16,7 +16,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:9
 
 > **query**: `Record`\<`string`, `any`\>
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:10
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:10
 
 ## Methods
 
@@ -26,7 +26,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:10
 
 > **json**(): `Promise`\<`any`\>
 
-Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:11
+Defined in: smrt/packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:11
 
 ##### Returns
 
@@ -36,7 +36,7 @@ Defined in: packages/products/src/lib/types/smrt-generated/smrt-types.d.ts:11
 
 > **json**(): `Promise`\<`any`\>
 
-Defined in: packages/products/src/global.d.ts:145
+Defined in: smrt/packages/products/src/global.d.ts:145
 
 ##### Returns
 

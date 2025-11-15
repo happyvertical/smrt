@@ -1,6 +1,6 @@
 # Class: TagCollection
 
-Defined in: tags/src/tags.ts:11
+Defined in: [tags/src/tags.ts:11](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L11)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: tags/src/tags.ts:11
 
 > `protected` **new TagCollection**(`options?`): `TagCollection`
 
-Defined in: core/dist/collection.d.ts:45
+Defined in: core/dist/collection.d.ts:79
 
 Creates a new SmrtCollection instance
 
@@ -42,7 +42,7 @@ Use the static create() factory method instead
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: core/dist/class.d.ts:75
+Defined in: core/dist/class.d.ts:86
 
 AI client instance for interacting with AI models
 
@@ -56,7 +56,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: core/dist/class.d.ts:87
+Defined in: core/dist/class.d.ts:98
 
 Class name used for identification
 
@@ -70,7 +70,7 @@ Class name used for identification
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:83
+Defined in: core/dist/class.d.ts:94
 
 Database interface for data persistence
 
@@ -98,7 +98,7 @@ Promise tracking the database setup operation
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:79
+Defined in: core/dist/class.d.ts:90
 
 Filesystem adapter for file operations
 
@@ -112,7 +112,7 @@ Filesystem adapter for file operations
 
 > `protected` `optional` **\_signalBus**: `SignalBus`
 
-Defined in: core/dist/class.d.ts:91
+Defined in: core/dist/class.d.ts:102
 
 Signal bus for method execution tracking
 
@@ -126,7 +126,7 @@ Signal bus for method execution tracking
 
 > **\_tableName**: `string`
 
-Defined in: core/dist/collection.d.ts:38
+Defined in: core/dist/collection.d.ts:72
 
 Database table name for this collection
 
@@ -138,9 +138,9 @@ Database table name for this collection
 
 ### options
 
-> `protected` **options**: `SmrtClassOptions`
+> **options**: `SmrtClassOptions`
 
-Defined in: core/dist/class.d.ts:99
+Defined in: core/dist/class.d.ts:110
 
 Configuration options provided to the class
 
@@ -154,7 +154,7 @@ Configuration options provided to the class
 
 > `readonly` `static` **\_itemClass**: *typeof* [`Tag`](Tag.md) = `Tag`
 
-Defined in: tags/src/tags.ts:12
+Defined in: [tags/src/tags.ts:12](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L12)
 
 Static reference to the item class constructor
 
@@ -170,7 +170,7 @@ Static reference to the item class constructor
 
 > **get** `protected` **\_itemClass**(): (`options`) => `ModelType` & `object`
 
-Defined in: core/dist/collection.d.ts:23
+Defined in: core/dist/collection.d.ts:57
 
 Gets the class constructor for items in this collection
 
@@ -190,7 +190,7 @@ Gets the class constructor for items in this collection
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:185
+Defined in: core/dist/class.d.ts:211
 
 Gets the AI client instance
 
@@ -210,7 +210,7 @@ Gets the AI client instance
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:181
+Defined in: core/dist/class.d.ts:207
 
 Gets the database interface instance
 
@@ -230,7 +230,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:177
+Defined in: core/dist/class.d.ts:203
 
 Gets the filesystem adapter instance
 
@@ -250,7 +250,7 @@ Gets the filesystem adapter instance
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:191
+Defined in: core/dist/class.d.ts:217
 
 Gets the signal bus instance
 
@@ -272,7 +272,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:142
+Defined in: core/dist/class.d.ts:168
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -293,7 +293,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: core/dist/collection.d.ts:217
+Defined in: core/dist/collection.d.ts:313
 
 Gets the database table name for this collection
 
@@ -311,7 +311,7 @@ Gets the database table name for this collection
 
 > **calculateLevel**(`parentSlug`): `Promise`\<`number`\>
 
-Defined in: tags/src/tags.ts:211
+Defined in: [tags/src/tags.ts:215](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L215)
 
 Calculate hierarchy level for a tag
 
@@ -335,7 +335,7 @@ The calculated level
 
 > **cleanupUnused**(`context?`): `Promise`\<`number`\>
 
-Defined in: tags/src/tags.ts:176
+Defined in: [tags/src/tags.ts:178](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L178)
 
 Remove tags with no references (cleanup unused tags)
 
@@ -360,7 +360,7 @@ Optional context to filter cleanup
 
 > **count**(`options?`): `Promise`\<`number`\>
 
-Defined in: core/dist/collection.d.ts:233
+Defined in: core/dist/collection.d.ts:329
 
 Counts records in the collection matching the given filters
 
@@ -394,7 +394,7 @@ Promise resolving to the total count of matching records
 
 > **create**(`options`): `Promise`\<[`Tag`](Tag.md)\>
 
-Defined in: core/dist/collection.d.ts:177
+Defined in: core/dist/collection.d.ts:264
 
 Creates a new instance of the collection's item class
 
@@ -422,7 +422,7 @@ New item instance
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:207
+Defined in: core/dist/class.d.ts:233
 
 Cleanup method to prevent memory leaks
 
@@ -449,11 +449,140 @@ product.destroy(); // Clean up when done
 
 ***
 
+### findAll()
+
+> **findAll**(`options?`): `Promise`\<[`Tag`](Tag.md)[]\>
+
+Defined in: core/dist/collection.d.ts:158
+
+Find all records matching criteria (convenience method - delegates to list())
+
+#### Parameters
+
+##### options?
+
+Query options (where, orderBy, limit, etc.)
+
+###### include?
+
+`string`[]
+
+###### limit?
+
+`number`
+
+###### offset?
+
+`number`
+
+###### orderBy?
+
+`string` \| `string`[]
+
+###### where?
+
+`Record`\<`string`, `any`\>
+
+#### Returns
+
+`Promise`\<[`Tag`](Tag.md)[]\>
+
+Promise resolving to array of objects
+
+#### Example
+
+```typescript
+const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+const active = await councils.findAll({ where: { status: 'active' } });
+```
+
+#### Inherited from
+
+`SmrtCollection.findAll`
+
+***
+
+### findById()
+
+> **findById**(`id`): `Promise`\<[`Tag`](Tag.md) \| `null`\>
+
+Defined in: core/dist/collection.d.ts:145
+
+Find a record by ID (convenience method - delegates to get())
+
+#### Parameters
+
+##### id
+
+Record ID to find (string or Field instance)
+
+`string` | `Field`
+
+#### Returns
+
+`Promise`\<[`Tag`](Tag.md) \| `null`\>
+
+Promise resolving to the object or null if not found
+
+#### Example
+
+```typescript
+const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+const council = await councils.findById('uuid-123');
+
+// Also works with Field instances (e.g., from foreignKey fields)
+const meeting = new Meeting({ councilId: 'uuid-123' });
+const council = await councils.findById(meeting.councilId);
+```
+
+#### Inherited from
+
+`SmrtCollection.findById`
+
+***
+
+### findOne()
+
+> **findOne**(`options`): `Promise`\<[`Tag`](Tag.md) \| `null`\>
+
+Defined in: core/dist/collection.d.ts:126
+
+Find a single record by criteria (convenience method - delegates to get())
+
+#### Parameters
+
+##### options
+
+Query options with where clause
+
+###### where
+
+`Record`\<`string`, `any`\>
+
+#### Returns
+
+`Promise`\<[`Tag`](Tag.md) \| `null`\>
+
+Promise resolving to the object or null if not found
+
+#### Example
+
+```typescript
+const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+const council = await councils.findOne({ where: { name: 'Example Council' } });
+```
+
+#### Inherited from
+
+`SmrtCollection.findOne`
+
+***
+
 ### forget()
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:334
+Defined in: core/dist/collection.d.ts:430
 
 Forget collection-level context
 
@@ -499,7 +628,7 @@ await documentCollection.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: core/dist/collection.d.ts:354
+Defined in: core/dist/collection.d.ts:450
 
 Forget all collection-level context in a scope
 
@@ -543,9 +672,9 @@ const count = await documentCollection.forgetScope({
 
 ### generateSchema()
 
-> **generateSchema**(): `string`
+> **generateSchema**(): `Promise`\<`string`\>
 
-Defined in: core/dist/collection.d.ts:213
+Defined in: core/dist/collection.d.ts:309
 
 Generates database schema for the collection's item class
 
@@ -553,7 +682,7 @@ Leverages ObjectRegistry's cached schema for instant retrieval.
 
 #### Returns
 
-`string`
+`Promise`\<`string`\>
 
 Schema object for database setup
 
@@ -567,7 +696,7 @@ Schema object for database setup
 
 > **generateTableName**(): `string`
 
-Defined in: core/dist/collection.d.ts:223
+Defined in: core/dist/collection.d.ts:319
 
 Generates a table name from the collection class name
 
@@ -587,7 +716,7 @@ Generated table name
 
 > **get**(`filter`): `Promise`\<[`Tag`](Tag.md) \| `null`\>
 
-Defined in: core/dist/collection.d.ts:84
+Defined in: core/dist/collection.d.ts:171
 
 Retrieves a single object from the collection by ID, slug, or custom filter
 
@@ -595,9 +724,9 @@ Retrieves a single object from the collection by ID, slug, or custom filter
 
 ##### filter
 
-String ID/slug or object with filter conditions
+String ID/slug, Field instance, or object with filter conditions
 
-`string` | `Record`\<`string`, `any`\>
+`string` | `Field` | `Record`\<`string`, `any`\>
 
 #### Returns
 
@@ -615,7 +744,7 @@ Promise resolving to the object or null if not found
 
 > **getChildren**(`parentSlug`): `Promise`\<[`Tag`](Tag.md)[]\>
 
-Defined in: tags/src/tags.ts:74
+Defined in: [tags/src/tags.ts:74](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L74)
 
 Get immediate children of a parent tag
 
@@ -637,9 +766,9 @@ Array of child tags
 
 ### getDiff()
 
-> **getDiff**(`existing`, `data`): `Record`\<`string`, `any`\>
+> **getDiff**(`existing`, `data`): `Promise`\<`Record`\<`string`, `any`\>\>
 
-Defined in: core/dist/collection.d.ts:193
+Defined in: core/dist/collection.d.ts:289
 
 Gets differences between an existing object and new data
 
@@ -659,7 +788,7 @@ New data
 
 #### Returns
 
-`Record`\<`string`, `any`\>
+`Promise`\<`Record`\<`string`, `any`\>\>
 
 Object containing only the changed fields
 
@@ -671,15 +800,15 @@ Object containing only the changed fields
 
 ### getFields()
 
-> **getFields**(): `Record`\<`string`, `any`\>
+> **getFields**(): `Promise`\<`Record`\<`string`, `any`\>\>
 
-Defined in: core/dist/collection.d.ts:205
+Defined in: core/dist/collection.d.ts:301
 
 Gets field definitions for the collection's item class
 
 #### Returns
 
-`Record`\<`string`, `any`\>
+`Promise`\<`Record`\<`string`, `any`\>\>
 
 Object containing field definitions
 
@@ -693,7 +822,7 @@ Object containing field definitions
 
 > **getHierarchy**(`slug`): `Promise`\<[`TagHierarchy`](../interfaces/TagHierarchy.md)\>
 
-Defined in: tags/src/tags.ts:86
+Defined in: [tags/src/tags.ts:86](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L86)
 
 Get tag hierarchy (all ancestors and descendants)
 
@@ -717,7 +846,7 @@ Object with ancestors, current tag, and descendants
 
 > **getOrCreate**(`slug`, `context`): `Promise`\<[`Tag`](Tag.md)\>
 
-Defined in: tags/src/tags.ts:21
+Defined in: [tags/src/tags.ts:21](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L21)
 
 Get or create a tag with context
 
@@ -747,7 +876,7 @@ Tag instance
 
 > **getOrUpsert**(`data`, `defaults?`): `Promise`\<[`Tag`](Tag.md)\>
 
-Defined in: core/dist/collection.d.ts:185
+Defined in: core/dist/collection.d.ts:281
 
 Gets an existing item or creates a new one if it doesn't exist
 
@@ -781,7 +910,7 @@ Promise resolving to the existing or new object
 
 > **getRootTags**(`context`): `Promise`\<[`Tag`](Tag.md)[]\>
 
-Defined in: tags/src/tags.ts:62
+Defined in: [tags/src/tags.ts:62](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L62)
 
 Get root tags (no parent) for a context
 
@@ -805,7 +934,7 @@ Array of root tags
 
 > **initialize**(): `Promise`\<`TagCollection`\>
 
-Defined in: core/dist/collection.d.ts:77
+Defined in: core/dist/collection.d.ts:113
 
 Initializes the collection, setting up database tables
 
@@ -825,7 +954,7 @@ Promise that resolves to this instance for chaining
 
 > **list**(`options`): `Promise`\<[`Tag`](Tag.md)[]\>
 
-Defined in: core/dist/collection.d.ts:124
+Defined in: core/dist/collection.d.ts:211
 
 Lists records from the collection with flexible filtering options
 
@@ -921,7 +1050,7 @@ await users.list({
 
 > **listByContext**(`context`, `parentSlug?`): `Promise`\<[`Tag`](Tag.md)[]\>
 
-Defined in: tags/src/tags.ts:48
+Defined in: [tags/src/tags.ts:48](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L48)
 
 List tags by context with optional parent filtering
 
@@ -951,7 +1080,7 @@ Array of matching tags
 
 > **mergeTag**(`fromSlug`, `toSlug`): `Promise`\<`void`\>
 
-Defined in: tags/src/tags.ts:138
+Defined in: [tags/src/tags.ts:138](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L138)
 
 Merge one tag into another (updates all references)
 
@@ -982,7 +1111,7 @@ The tag to merge into
 
 > **moveTag**(`slug`, `newParentSlug`): `Promise`\<`void`\>
 
-Defined in: tags/src/tags.ts:103
+Defined in: [tags/src/tags.ts:103](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/tags.ts#L103)
 
 Move a tag to a new parent (updates level automatically)
 
@@ -1014,7 +1143,7 @@ Error if circular reference detected
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: core/dist/collection.d.ts:291
+Defined in: core/dist/collection.d.ts:387
 
 Recall collection-level context
 
@@ -1069,7 +1198,7 @@ const strategy = await documentCollection.recall({
 
 > **recallAll**(`options?`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: core/dist/collection.d.ts:313
+Defined in: core/dist/collection.d.ts:409
 
 Recall all collection-level context in a scope
 
@@ -1119,7 +1248,7 @@ const strategies = await documentCollection.recallAll({
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:264
+Defined in: core/dist/collection.d.ts:360
 
 Remember collection-level context
 
@@ -1197,11 +1326,44 @@ await documentCollection.remember({
 
 ***
 
+### requiresDatabase()
+
+> `protected` **requiresDatabase**(): `boolean`
+
+Defined in: core/dist/class.d.ts:140
+
+Determines whether this class requires a database to function
+
+Override this method in subclasses that require database access
+to enable early validation during initialization.
+
+#### Returns
+
+`boolean`
+
+True if database is required, false otherwise
+
+#### Example
+
+```typescript
+class MyDataModel extends SmrtClass {
+  protected requiresDatabase(): boolean {
+    return true; // This class needs database access
+  }
+}
+```
+
+#### Inherited from
+
+`SmrtCollection.requiresDatabase`
+
+***
+
 ### setupDb()
 
 > **setupDb**(): `Promise`\<`void`\>
 
-Defined in: core/dist/collection.d.ts:199
+Defined in: core/dist/collection.d.ts:295
 
 Sets up the database schema for this collection
 
@@ -1219,9 +1381,9 @@ Promise that resolves when setup is complete
 
 ### create()
 
-> `static` **create**\<`T`\>(`this`, `options?`): `Promise`\<`any`\>
+> `static` **create**\<`T`\>(`this`, `options?`): `Promise`\<`T`\>
 
-Defined in: core/dist/collection.d.ts:71
+Defined in: core/dist/collection.d.ts:107
 
 Static factory method for creating fully initialized collection instances
 
@@ -1229,20 +1391,22 @@ This is the recommended way to create collections. It accepts broad option types
 (SmrtClassOptions) and handles option extraction internally, then returns a
 fully initialized, ready-to-use collection instance.
 
-TypeScript Note: Uses InstanceType<T> to preserve subclass types through the
-static factory method, ensuring custom collection methods are properly typed.
+TypeScript Note: Uses instance type constraint (T extends SmrtCollection<any>)
+with constructor type for 'this' parameter to properly preserve subclass types
+through the static factory method. This ensures custom collection methods are
+properly typed and subclass constructors are compatible.
 
 #### Type Parameters
 
 ##### T
 
-`T` *extends* *typeof* `SmrtCollection`
+`T` *extends* `SmrtCollection`\<`any`\>
 
 #### Parameters
 
 ##### this
 
-`T`
+(`options?`) => `T`
 
 ##### options?
 
@@ -1252,7 +1416,7 @@ Configuration options (accepts both SmrtClassOptions and SmrtCollectionOptions)
 
 #### Returns
 
-`Promise`\<`any`\>
+`Promise`\<`T`\>
 
 Promise resolving to a fully initialized collection instance
 
@@ -1260,10 +1424,10 @@ Promise resolving to a fully initialized collection instance
 
 ```typescript
 // Create collection from object options
-const collection = await (ProductCollection as any).create(smrtObject.options);
+const collection = await ProductCollection.create(smrtObject.options);
 
 // Create collection with specific config
-const collection = await (ProductCollection as any).create({
+const collection = await ProductCollection.create({
   persistence: { type: 'sql', url: 'products.db' },
   ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
 });
@@ -1279,7 +1443,7 @@ const collection = await (ProductCollection as any).create({
 
 > `static` **validate**(): `void`
 
-Defined in: core/dist/collection.d.ts:34
+Defined in: core/dist/collection.d.ts:68
 
 Validates that the collection is properly configured
 Call this during development to catch configuration issues early

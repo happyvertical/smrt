@@ -1,6 +1,6 @@
 # Class: SmrtCollection\<ModelType\>
 
-Defined in: [smrt/packages/core/src/collection.ts:27](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L27)
+Defined in: [packages/core/src/collection.ts:28](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L28)
 
 Collection interface for managing sets of SmrtObjects
 
@@ -24,7 +24,7 @@ generation, and provides a fluent interface for querying objects.
 
 > `protected` **new SmrtCollection**\<`ModelType`\>(`options`): `SmrtCollection`\<`ModelType`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:155](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L155)
+Defined in: [packages/core/src/collection.ts:280](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L280)
 
 Creates a new SmrtCollection instance
 
@@ -54,7 +54,7 @@ Use the static create() factory method instead
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: [smrt/packages/core/src/class.ts:97](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L97)
+Defined in: [packages/core/src/class.ts:112](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L112)
 
 AI client instance for interacting with AI models
 
@@ -68,7 +68,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: [smrt/packages/core/src/class.ts:112](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L112)
+Defined in: [packages/core/src/class.ts:127](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L127)
 
 Class name used for identification
 
@@ -82,7 +82,7 @@ Class name used for identification
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:107](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L107)
+Defined in: [packages/core/src/class.ts:122](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L122)
 
 Database interface for data persistence
 
@@ -96,7 +96,7 @@ Database interface for data persistence
 
 > `protected` **\_db\_setup\_promise**: `Promise`\<`void`\> \| `null` = `null`
 
-Defined in: [smrt/packages/core/src/collection.ts:31](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L31)
+Defined in: [packages/core/src/collection.ts:32](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L32)
 
 Promise tracking the database setup operation
 
@@ -106,7 +106,7 @@ Promise tracking the database setup operation
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: [smrt/packages/core/src/class.ts:102](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L102)
+Defined in: [packages/core/src/class.ts:117](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L117)
 
 Filesystem adapter for file operations
 
@@ -120,7 +120,7 @@ Filesystem adapter for file operations
 
 > `protected` `optional` **\_signalBus**: [`SignalBus`](SignalBus.md)
 
-Defined in: [smrt/packages/core/src/class.ts:117](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L117)
+Defined in: [packages/core/src/class.ts:132](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L132)
 
 Signal bus for method execution tracking
 
@@ -134,7 +134,7 @@ Signal bus for method execution tracking
 
 > **\_tableName**: `string`
 
-Defined in: [smrt/packages/core/src/collection.ts:147](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L147)
+Defined in: [packages/core/src/collection.ts:272](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L272)
 
 Database table name for this collection
 
@@ -142,9 +142,9 @@ Database table name for this collection
 
 ### options
 
-> `protected` **options**: [`SmrtClassOptions`](../interfaces/SmrtClassOptions.md)
+> **options**: [`SmrtClassOptions`](../interfaces/SmrtClassOptions.md)
 
-Defined in: [smrt/packages/core/src/class.ts:127](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L127)
+Defined in: [packages/core/src/class.ts:142](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L142)
 
 Configuration options provided to the class
 
@@ -158,7 +158,7 @@ Configuration options provided to the class
 
 > `readonly` `static` **\_itemClass**: `any`
 
-Defined in: [smrt/packages/core/src/collection.ts:105](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L105)
+Defined in: [packages/core/src/collection.ts:230](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L230)
 
 Static reference to the item class constructor
 
@@ -170,7 +170,7 @@ Static reference to the item class constructor
 
 > **get** `protected` **\_itemClass**(): (`options`) => `ModelType` & `object`
 
-Defined in: [smrt/packages/core/src/collection.ts:72](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L72)
+Defined in: [packages/core/src/collection.ts:197](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L197)
 
 Gets the class constructor for items in this collection
 
@@ -186,7 +186,7 @@ Gets the class constructor for items in this collection
 
 > **get** **ai**(): `AIClient`
 
-Defined in: [smrt/packages/core/src/class.ts:458](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L458)
+Defined in: [packages/core/src/class.ts:507](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L507)
 
 Gets the AI client instance
 
@@ -206,7 +206,7 @@ Gets the AI client instance
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:451](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L451)
+Defined in: [packages/core/src/class.ts:493](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L493)
 
 Gets the database interface instance
 
@@ -216,7 +216,7 @@ Gets the database interface instance
 
 #### Inherited from
 
-[`SmrtObject`](SmrtObject.md).[`db`](SmrtObject.md#db)
+[`SmrtClass`](SmrtClass.md).[`db`](SmrtClass.md#db)
 
 ***
 
@@ -226,7 +226,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: [smrt/packages/core/src/class.ts:444](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L444)
+Defined in: [packages/core/src/class.ts:486](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L486)
 
 Gets the filesystem adapter instance
 
@@ -246,7 +246,7 @@ Gets the filesystem adapter instance
 
 > **get** **signalBus**(): [`SignalBus`](SignalBus.md) \| `undefined`
 
-Defined in: [smrt/packages/core/src/class.ts:467](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L467)
+Defined in: [packages/core/src/class.ts:516](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L516)
 
 Gets the signal bus instance
 
@@ -268,7 +268,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: [smrt/packages/core/src/class.ts:325](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L325)
+Defined in: [packages/core/src/class.ts:365](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L365)
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -289,7 +289,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: [smrt/packages/core/src/collection.ts:711](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L711)
+Defined in: [packages/core/src/collection.ts:1056](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1056)
 
 Gets the database table name for this collection
 
@@ -303,7 +303,7 @@ Gets the database table name for this collection
 
 > **count**(`options`): `Promise`\<`number`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:747](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L747)
+Defined in: [packages/core/src/collection.ts:1114](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1114)
 
 Counts records in the collection matching the given filters
 
@@ -333,7 +333,7 @@ Promise resolving to the total count of matching records
 
 > **create**(`options`): `Promise`\<`ModelType`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:590](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L590)
+Defined in: [packages/core/src/collection.ts:857](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L857)
 
 Creates a new instance of the collection's item class
 
@@ -357,7 +357,7 @@ New item instance
 
 > **destroy**(): `void`
 
-Defined in: [smrt/packages/core/src/class.ts:486](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L486)
+Defined in: [packages/core/src/class.ts:535](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L535)
 
 Cleanup method to prevent memory leaks
 
@@ -384,11 +384,128 @@ product.destroy(); // Clean up when done
 
 ***
 
+### findAll()
+
+> **findAll**(`options`): `Promise`\<`ModelType`[]\>
+
+Defined in: [packages/core/src/collection.ts:433](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L433)
+
+Find all records matching criteria (convenience method - delegates to list())
+
+#### Parameters
+
+##### options
+
+Query options (where, orderBy, limit, etc.)
+
+###### include?
+
+`string`[]
+
+###### limit?
+
+`number`
+
+###### offset?
+
+`number`
+
+###### orderBy?
+
+`string` \| `string`[]
+
+###### where?
+
+`Record`\<`string`, `any`\>
+
+#### Returns
+
+`Promise`\<`ModelType`[]\>
+
+Promise resolving to array of objects
+
+#### Example
+
+```typescript
+const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+const active = await councils.findAll({ where: { status: 'active' } });
+```
+
+***
+
+### findById()
+
+> **findById**(`id`): `Promise`\<`ModelType` \| `null`\>
+
+Defined in: [packages/core/src/collection.ts:413](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L413)
+
+Find a record by ID (convenience method - delegates to get())
+
+#### Parameters
+
+##### id
+
+Record ID to find (string or Field instance)
+
+`string` | [`Field`](Field.md)
+
+#### Returns
+
+`Promise`\<`ModelType` \| `null`\>
+
+Promise resolving to the object or null if not found
+
+#### Example
+
+```typescript
+const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+const council = await councils.findById('uuid-123');
+
+// Also works with Field instances (e.g., from foreignKey fields)
+const meeting = new Meeting({ councilId: 'uuid-123' });
+const council = await councils.findById(meeting.councilId);
+```
+
+***
+
+### findOne()
+
+> **findOne**(`options`): `Promise`\<`ModelType` \| `null`\>
+
+Defined in: [packages/core/src/collection.ts:391](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L391)
+
+Find a single record by criteria (convenience method - delegates to get())
+
+#### Parameters
+
+##### options
+
+Query options with where clause
+
+###### where
+
+`Record`\<`string`, `any`\>
+
+#### Returns
+
+`Promise`\<`ModelType` \| `null`\>
+
+Promise resolving to the object or null if not found
+
+#### Example
+
+```typescript
+const councils = await Councils.create({ persistence: { type: 'sql', url: 'db.sqlite' } });
+const council = await councils.findOne({ where: { name: 'Example Council' } });
+```
+
+***
+
 ### forget()
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:983](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L983)
+Defined in: [packages/core/src/collection.ts:1358](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1358)
 
 Forget collection-level context
 
@@ -430,7 +547,7 @@ await documentCollection.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:1014](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L1014)
+Defined in: [packages/core/src/collection.ts:1389](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1389)
 
 Forget all collection-level context in a scope
 
@@ -470,9 +587,9 @@ const count = await documentCollection.forgetScope({
 
 ### generateSchema()
 
-> **generateSchema**(): `string`
+> **generateSchema**(): `Promise`\<`string`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:703](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L703)
+Defined in: [packages/core/src/collection.ts:1048](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1048)
 
 Generates database schema for the collection's item class
 
@@ -480,7 +597,7 @@ Leverages ObjectRegistry's cached schema for instant retrieval.
 
 #### Returns
 
-`string`
+`Promise`\<`string`\>
 
 Schema object for database setup
 
@@ -490,7 +607,7 @@ Schema object for database setup
 
 > **generateTableName**(): `string`
 
-Defined in: [smrt/packages/core/src/collection.ts:723](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L723)
+Defined in: [packages/core/src/collection.ts:1090](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1090)
 
 Generates a table name from the collection class name
 
@@ -506,7 +623,7 @@ Generated table name
 
 > **get**(`filter`): `Promise`\<`ModelType` \| `null`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:255](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L255)
+Defined in: [packages/core/src/collection.ts:451](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L451)
 
 Retrieves a single object from the collection by ID, slug, or custom filter
 
@@ -514,9 +631,9 @@ Retrieves a single object from the collection by ID, slug, or custom filter
 
 ##### filter
 
-String ID/slug or object with filter conditions
+String ID/slug, Field instance, or object with filter conditions
 
-`string` | `Record`\<`string`, `any`\>
+`string` | `Record`\<`string`, `any`\> | [`Field`](Field.md)
 
 #### Returns
 
@@ -528,9 +645,9 @@ Promise resolving to the object or null if not found
 
 ### getDiff()
 
-> **getDiff**(`existing`, `data`): `Record`\<`string`, `any`\>
+> **getDiff**(`existing`, `data`): `Promise`\<`Record`\<`string`, `any`\>\>
 
-Defined in: [smrt/packages/core/src/collection.ts:644](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L644)
+Defined in: [packages/core/src/collection.ts:965](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L965)
 
 Gets differences between an existing object and new data
 
@@ -550,7 +667,7 @@ New data
 
 #### Returns
 
-`Record`\<`string`, `any`\>
+`Promise`\<`Record`\<`string`, `any`\>\>
 
 Object containing only the changed fields
 
@@ -558,15 +675,15 @@ Object containing only the changed fields
 
 ### getFields()
 
-> **getFields**(): `Record`\<`string`, `any`\>
+> **getFields**(): `Promise`\<`Record`\<`string`, `any`\>\>
 
-Defined in: [smrt/packages/core/src/collection.ts:692](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L692)
+Defined in: [packages/core/src/collection.ts:1037](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1037)
 
 Gets field definitions for the collection's item class
 
 #### Returns
 
-`Record`\<`string`, `any`\>
+`Promise`\<`Record`\<`string`, `any`\>\>
 
 Object containing field definitions
 
@@ -576,7 +693,7 @@ Object containing field definitions
 
 > **getOrUpsert**(`data`, `defaults`): `Promise`\<`ModelType`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:611](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L611)
+Defined in: [packages/core/src/collection.ts:932](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L932)
 
 Gets an existing item or creates a new one if it doesn't exist
 
@@ -606,7 +723,7 @@ Promise resolving to the existing or new object
 
 > **initialize**(): `Promise`\<`SmrtCollection`\<`ModelType`\>\>
 
-Defined in: [smrt/packages/core/src/collection.ts:238](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L238)
+Defined in: [packages/core/src/collection.ts:369](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L369)
 
 Initializes the collection, setting up database tables
 
@@ -624,9 +741,9 @@ Promise that resolves to this instance for chaining
 
 ### list()
 
-> **list**(`options`): `Promise`\<`Awaited`\<`ModelType`\>[]\>
+> **list**(`options`): `Promise`\<`ModelType`[]\>
 
-Defined in: [smrt/packages/core/src/collection.ts:319](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L319)
+Defined in: [packages/core/src/collection.ts:540](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L540)
 
 Lists records from the collection with flexible filtering options
 
@@ -680,7 +797,7 @@ Record of conditions to filter results. Each key can include an operator
 
 #### Returns
 
-`Promise`\<`Awaited`\<`ModelType`\>[]\>
+`Promise`\<`ModelType`[]\>
 
 Promise resolving to an array of model instances
 
@@ -718,7 +835,7 @@ await users.list({
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:844](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L844)
+Defined in: [packages/core/src/collection.ts:1219](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1219)
 
 Recall collection-level context
 
@@ -769,7 +886,7 @@ const strategy = await documentCollection.recall({
 
 > **recallAll**(`options`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: [smrt/packages/core/src/collection.ts:921](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L921)
+Defined in: [packages/core/src/collection.ts:1296](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1296)
 
 Recall all collection-level context in a scope
 
@@ -815,7 +932,7 @@ const strategies = await documentCollection.recallAll({
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:789](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L789)
+Defined in: [packages/core/src/collection.ts:1158](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L1158)
 
 Remember collection-level context
 
@@ -893,7 +1010,7 @@ await documentCollection.remember({
 
 > `protected` **requiresDatabase**(): `boolean`
 
-Defined in: [smrt/packages/core/src/class.ts:161](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/class.ts#L161)
+Defined in: [packages/core/src/class.ts:178](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/class.ts#L178)
 
 Determines whether this class requires a database to function
 
@@ -926,7 +1043,7 @@ class MyDataModel extends SmrtClass {
 
 > **setupDb**(): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:665](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L665)
+Defined in: [packages/core/src/collection.ts:986](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L986)
 
 Sets up the database schema for this collection
 
@@ -940,9 +1057,9 @@ Promise that resolves when setup is complete
 
 ### create()
 
-> `static` **create**\<`T`\>(`this`, `options`): `Promise`\<`any`\>
+> `static` **create**\<`T`\>(`this`, `options`): `Promise`\<`T`\>
 
-Defined in: [smrt/packages/core/src/collection.ts:193](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L193)
+Defined in: [packages/core/src/collection.ts:320](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L320)
 
 Static factory method for creating fully initialized collection instances
 
@@ -950,20 +1067,22 @@ This is the recommended way to create collections. It accepts broad option types
 (SmrtClassOptions) and handles option extraction internally, then returns a
 fully initialized, ready-to-use collection instance.
 
-TypeScript Note: Uses InstanceType<T> to preserve subclass types through the
-static factory method, ensuring custom collection methods are properly typed.
+TypeScript Note: Uses instance type constraint (T extends SmrtCollection<any>)
+with constructor type for 'this' parameter to properly preserve subclass types
+through the static factory method. This ensures custom collection methods are
+properly typed and subclass constructors are compatible.
 
 #### Type Parameters
 
 ##### T
 
-`T` *extends* *typeof* `SmrtCollection`
+`T` *extends* `SmrtCollection`\<`any`\>
 
 #### Parameters
 
 ##### this
 
-`T`
+(`options?`) => `T`
 
 ##### options
 
@@ -973,7 +1092,7 @@ Configuration options (accepts both SmrtClassOptions and SmrtCollectionOptions)
 
 #### Returns
 
-`Promise`\<`any`\>
+`Promise`\<`T`\>
 
 Promise resolving to a fully initialized collection instance
 
@@ -981,10 +1100,10 @@ Promise resolving to a fully initialized collection instance
 
 ```typescript
 // Create collection from object options
-const collection = await (ProductCollection as any).create(smrtObject.options);
+const collection = await ProductCollection.create(smrtObject.options);
 
 // Create collection with specific config
-const collection = await (ProductCollection as any).create({
+const collection = await ProductCollection.create({
   persistence: { type: 'sql', url: 'products.db' },
   ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
 });
@@ -996,7 +1115,7 @@ const collection = await (ProductCollection as any).create({
 
 > `static` **validate**(): `void`
 
-Defined in: [smrt/packages/core/src/collection.ts:111](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/collection.ts#L111)
+Defined in: [packages/core/src/collection.ts:236](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/collection.ts#L236)
 
 Validates that the collection is properly configured
 Call this during development to catch configuration issues early

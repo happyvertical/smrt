@@ -1,6 +1,6 @@
 # Class: MCPGenerator
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:67](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L67)
+Defined in: [packages/core/src/generators/mcp.ts:67](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L67)
 
 Generate MCP server from smrt objects
 
@@ -10,7 +10,7 @@ Generate MCP server from smrt objects
 
 > **new MCPGenerator**(`config`, `context`): `MCPGenerator`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:72](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L72)
+Defined in: [packages/core/src/generators/mcp.ts:72](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L72)
 
 #### Parameters
 
@@ -26,13 +26,45 @@ Defined in: [smrt/packages/core/src/generators/mcp.ts:72](https://github.com/hap
 
 `MCPGenerator`
 
+## Accessors
+
+### name
+
+#### Get Signature
+
+> **get** **name**(): `string` \| `undefined`
+
+Defined in: [packages/core/src/generators/mcp.ts:89](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L89)
+
+Get server name
+
+##### Returns
+
+`string` \| `undefined`
+
+***
+
+### version
+
+#### Get Signature
+
+> **get** **version**(): `string` \| `undefined`
+
+Defined in: [packages/core/src/generators/mcp.ts:96](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L96)
+
+Get server version
+
+##### Returns
+
+`string` \| `undefined`
+
 ## Methods
 
 ### generateServer()
 
 > **generateServer**(`options`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:687](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L687)
+Defined in: [packages/core/src/generators/mcp.ts:760](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L760)
 
 Generate complete MCP server with stdio transport
 
@@ -67,6 +99,12 @@ Generate Claude Desktop configuration example
 
 Generate README documentation
 
+###### modular?
+
+`boolean`
+
+Generate modular directory structure (tools/, handlers/, config.ts)
+
 ###### outputPath?
 
 `string`
@@ -100,7 +138,7 @@ const generator = new MCPGenerator({
 });
 
 await generator.generateServer({
-  outputPath: 'dist/mcp-server.js',
+  outputPath: '.smrt/mcp-server/index.js',
   serverName: 'my-app-mcp',
   debug: true
 });
@@ -110,15 +148,15 @@ await generator.generateServer({
 
 ### generateTools()
 
-> **generateTools**(): [`MCPTool`](../interfaces/MCPTool.md)[]
+> **generateTools**(): `Promise`\<[`MCPTool`](../interfaces/MCPTool.md)[]\>
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:89](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L89)
+Defined in: [packages/core/src/generators/mcp.ts:103](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L103)
 
 Generate all available tools from registered objects
 
 #### Returns
 
-[`MCPTool`](../interfaces/MCPTool.md)[]
+`Promise`\<[`MCPTool`](../interfaces/MCPTool.md)[]\>
 
 ***
 
@@ -126,7 +164,7 @@ Generate all available tools from registered objects
 
 > **getServerInfo**(): `object`
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:652](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L652)
+Defined in: [packages/core/src/generators/mcp.ts:725](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L725)
 
 Generate MCP server info
 
@@ -152,7 +190,7 @@ Generate MCP server info
 
 > **handleToolCall**(`request`): `Promise`\<[`MCPResponse`](../interfaces/MCPResponse.md)\>
 
-Defined in: [smrt/packages/core/src/generators/mcp.ts:396](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/mcp.ts#L396)
+Defined in: [packages/core/src/generators/mcp.ts:456](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/mcp.ts#L456)
 
 Handle MCP tool calls
 

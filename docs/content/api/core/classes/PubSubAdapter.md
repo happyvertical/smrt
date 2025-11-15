@@ -1,6 +1,6 @@
 # Class: PubSubAdapter
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:62](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L62)
+Defined in: [packages/core/src/adapters/pubsub.ts:62](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L62)
 
 Pub/Sub Adapter - Broadcasts signals to subscribers
 
@@ -31,7 +31,7 @@ pubsub.unsubscribe(subId);
 
 ## Implements
 
-- [`Signal`](../type-aliases/Signal.md)
+- [`SignalAdapter`](../interfaces/SignalAdapter.md)
 
 ## Constructors
 
@@ -51,7 +51,7 @@ pubsub.unsubscribe(subId);
 
 > **get** **subscriberCount**(): `number`
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:134](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L134)
+Defined in: [packages/core/src/adapters/pubsub.ts:134](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L134)
 
 Get count of active subscriptions
 
@@ -67,7 +67,7 @@ Number of active subscribers
 
 > **clearSubscriptions**(): `void`
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:143](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L143)
+Defined in: [packages/core/src/adapters/pubsub.ts:143](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L143)
 
 Clear all subscriptions
 
@@ -83,7 +83,7 @@ Removes all subscribers. Useful for cleanup or testing.
 
 > **handle**(`signal`): `Promise`\<`void`\>
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:71](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L71)
+Defined in: [packages/core/src/adapters/pubsub.ts:71](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L71)
 
 Handle a signal and broadcast to subscribers
 
@@ -91,7 +91,7 @@ Handle a signal and broadcast to subscribers
 
 ##### signal
 
-`Signal`
+[`Signal`](../interfaces/Signal.md)
 
 Signal to broadcast
 
@@ -99,13 +99,17 @@ Signal to broadcast
 
 `Promise`\<`void`\>
 
+#### Implementation of
+
+[`SignalAdapter`](../interfaces/SignalAdapter.md).[`handle`](../interfaces/SignalAdapter.md#handle)
+
 ***
 
 ### subscribe()
 
 > **subscribe**(`callback`, `filter?`): `string`
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:107](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L107)
+Defined in: [packages/core/src/adapters/pubsub.ts:107](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L107)
 
 Subscribe to signals
 
@@ -135,7 +139,7 @@ Subscription ID for later unsubscribe
 
 > **unsubscribe**(`subscriptionId`): `boolean`
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:125](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L125)
+Defined in: [packages/core/src/adapters/pubsub.ts:125](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L125)
 
 Unsubscribe from signals
 
@@ -159,7 +163,7 @@ True if subscription was found and removed
 
 > `static` **combineFilters**(...`filters`): [`SignalFilter`](../type-aliases/SignalFilter.md)
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:198](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L198)
+Defined in: [packages/core/src/adapters/pubsub.ts:198](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L198)
 
 Combine multiple filters with AND logic
 
@@ -183,7 +187,7 @@ Combined filter function
 
 > `static` **filterByClass**(`className`): [`SignalFilter`](../type-aliases/SignalFilter.md)
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:153](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L153)
+Defined in: [packages/core/src/adapters/pubsub.ts:153](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L153)
 
 Create filter for specific class
 
@@ -207,7 +211,7 @@ Filter function
 
 > `static` **filterByClassAndMethod**(`className`, `methodName`): [`SignalFilter`](../type-aliases/SignalFilter.md)
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:184](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L184)
+Defined in: [packages/core/src/adapters/pubsub.ts:184](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L184)
 
 Create filter for specific class and method
 
@@ -237,7 +241,7 @@ Filter function
 
 > `static` **filterByMethod**(`methodName`): [`SignalFilter`](../type-aliases/SignalFilter.md)
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:163](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L163)
+Defined in: [packages/core/src/adapters/pubsub.ts:163](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L163)
 
 Create filter for specific method
 
@@ -261,7 +265,7 @@ Filter function
 
 > `static` **filterByType**(`type`): [`SignalFilter`](../type-aliases/SignalFilter.md)
 
-Defined in: [smrt/packages/core/src/adapters/pubsub.ts:173](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/adapters/pubsub.ts#L173)
+Defined in: [packages/core/src/adapters/pubsub.ts:173](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/adapters/pubsub.ts#L173)
 
 Create filter for specific signal type
 

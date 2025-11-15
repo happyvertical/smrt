@@ -1,6 +1,6 @@
 # Interface: TagHierarchy
 
-Defined in: tags/src/types.ts:64
+Defined in: [tags/src/types.ts:64](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L64)
 
 Tag hierarchy result structure
 
@@ -10,7 +10,7 @@ Tag hierarchy result structure
 
 > **ancestors**: [`Tag`](../classes/Tag.md)[]
 
-Defined in: tags/src/types.ts:65
+Defined in: [tags/src/types.ts:65](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L65)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: tags/src/types.ts:65
 
 > **current**: [`Tag`](../classes/Tag.md)
 
-Defined in: tags/src/types.ts:66
+Defined in: [tags/src/types.ts:66](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L66)
 
 ***
 
@@ -26,4 +26,4 @@ Defined in: tags/src/types.ts:66
 
 > **descendants**: [`Tag`](../classes/Tag.md)[]
 
-Defined in: tags/src/types.ts:67
+Defined in: [tags/src/types.ts:67](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/tags/src/types.ts#L67)

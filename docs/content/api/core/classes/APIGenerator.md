@@ -1,6 +1,6 @@
 # Class: APIGenerator
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:37](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L37)
+Defined in: [packages/core/src/generators/rest.ts:37](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/rest.ts#L37)
 
 High-performance API generator using native Bun
 
@@ -10,7 +10,7 @@ High-performance API generator using native Bun
 
 > **new APIGenerator**(`config`, `context`): `APIGenerator`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:42](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L42)
+Defined in: [packages/core/src/generators/rest.ts:42](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/rest.ts#L42)
 
 #### Parameters
 
@@ -32,7 +32,7 @@ Defined in: [smrt/packages/core/src/generators/rest.ts:42](https://github.com/ha
 
 > **createServer**(): `object`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:66](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L66)
+Defined in: [packages/core/src/generators/rest.ts:66](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/rest.ts#L66)
 
 Create Node.js HTTP server with all routes
 
@@ -54,7 +54,7 @@ Create Node.js HTTP server with all routes
 
 > **generateHandler**(): (`req`) => `Promise`\<`Response`\>
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:155](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L155)
+Defined in: [packages/core/src/generators/rest.ts:155](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/rest.ts#L155)
 
 Generate fetch handler function (for serverless environments)
 
@@ -78,7 +78,7 @@ Generate fetch handler function (for serverless environments)
 
 > **registerCollection**(`name`, `collection`): `void`
 
-Defined in: [smrt/packages/core/src/generators/rest.ts:59](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/core/src/generators/rest.ts#L59)
+Defined in: [packages/core/src/generators/rest.ts:59](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/generators/rest.ts#L59)
 
 Register a pre-configured collection instance for API exposure
 

@@ -6,6 +6,9 @@ Profile management system with relationships, metadata, and reciprocal associati
 
 ## Classes
 
+- [Bot](classes/Bot.md)
+- [Organization](classes/Organization.md)
+- [Person](classes/Person.md)
 - [Profile](classes/Profile.md)
 - [ProfileCollection](classes/ProfileCollection.md)
 - [ProfileMetadata](classes/ProfileMetadata.md)
@@ -23,6 +26,13 @@ Profile management system with relationships, metadata, and reciprocal associati
 
 ## Interfaces
 
+- [ProfileMetadataOptions](interfaces/ProfileMetadataOptions.md)
+- [ProfileMetafieldOptions](interfaces/ProfileMetafieldOptions.md)
+- [ProfileOptions](interfaces/ProfileOptions.md)
+- [ProfileRelationshipOptions](interfaces/ProfileRelationshipOptions.md)
+- [ProfileRelationshipTermOptions](interfaces/ProfileRelationshipTermOptions.md)
+- [ProfileRelationshipTypeOptions](interfaces/ProfileRelationshipTypeOptions.md)
+- [ProfileTypeOptions](interfaces/ProfileTypeOptions.md)
 - [ValidationSchema](interfaces/ValidationSchema.md)
 
 ## Type Aliases

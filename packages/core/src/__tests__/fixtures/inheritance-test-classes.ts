@@ -4,7 +4,7 @@
  * so they can be included in the test manifest generation
  */
 
-import { decimal, integer, text } from '../../fields/index.js';
+import { field } from '../../decorators/index.js';
 import { SmrtObject } from '../../object.js';
 import { smrt } from '../../registry.js';
 
@@ -47,15 +47,21 @@ export class InheritanceTestBentleyContent extends InheritanceTestPraecoContent 
 // Test field override with config merging
 @smrt()
 export class ParentWithConstraints extends SmrtObject {
-  age = integer({ min: 0, max: 150 });
-  score = decimal({ min: 0.0, max: 100.0 });
+  @field({ min: 0, max: 150 })
+  age: number = 0;
+
+  @field({ min: 0.0, max: 100.0 })
+  score: number = 0.0;
 }
 
 @smrt()
 export class ChildWithConstraints extends ParentWithConstraints {
   // Override with stricter constraints (should merge: max of mins, min of maxes)
-  age = integer({ min: 18, max: 65 }); // Result: min=18 (stricter), max=65 (stricter)
-  score = decimal({ min: 50.0, max: 90.0 }); // Result: min=50 (stricter), max=90 (stricter)
+  @field({ min: 18, max: 65 }) // Result: min=18 (stricter), max=65 (stricter)
+  age: number = 0;
+
+  @field({ min: 50.0, max: 90.0 }) // Result: min=50 (stricter), max=90 (stricter)
+  score: number = 0.0;
 }
 
 // Test classes for type mismatch warning

@@ -126,10 +126,10 @@ export default defineConfig({
 The plugin generates virtual modules that you can import:
 
 ```typescript
-import setupRoutes from '@smrt/routes';      // Auto-generated REST routes
-import createClient from '@smrt/client';     // Auto-generated TypeScript client
-import createMCPServer from '@smrt/mcp';     // Auto-generated MCP tools
-import { manifest } from '@smrt/manifest';   // Object metadata
+import setupRoutes from '@happyvertical/smrt-virt-routes';      // Auto-generated REST routes
+import createClient from '@happyvertical/smrt-virt-client';     // Auto-generated TypeScript client
+import createMCPServer from '@happyvertical/smrt-virt-mcp';     // Auto-generated MCP tools
+import { manifest } from '@happyvertical/smrt-virt-manifest';   // Object metadata
 import type * from '@happyvertical/smrt-types';            // Auto-generated TypeScript types
 ```
 

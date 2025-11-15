@@ -4,7 +4,6 @@
 
 - [AIError](classes/AIError.md)
 - [APIGenerator](classes/APIGenerator.md)
-- [CLIGenerator](classes/CLIGenerator.md)
 - [ConfigurationError](classes/ConfigurationError.md)
 - [DatabaseError](classes/DatabaseError.md)
 - [ErrorUtils](classes/ErrorUtils.md)
@@ -22,6 +21,7 @@
 - [SmrtClass](classes/SmrtClass.md)
 - [SmrtCollection](classes/SmrtCollection.md)
 - [SmrtError](classes/SmrtError.md)
+- [SmrtMCPServer](classes/SmrtMCPServer.md)
 - [SmrtObject](classes/SmrtObject.md)
 - [ValidationError](classes/ValidationError.md)
 - [ValidationReport](classes/ValidationReport.md)
@@ -32,8 +32,6 @@
 - [AiConfig](interfaces/AiConfig.md)
 - [APIConfig](interfaces/APIConfig.md)
 - [APIContext](interfaces/APIContext.md)
-- [CLIConfig](interfaces/CLIConfig.md)
-- [CLIContext](interfaces/CLIContext.md)
 - [DiscoveryStrategy](interfaces/DiscoveryStrategy.md)
 - [FieldOptions](interfaces/FieldOptions.md)
 - [ForgetOptions](interfaces/ForgetOptions.md)
@@ -43,6 +41,7 @@
 - [MCPContext](interfaces/MCPContext.md)
 - [MCPRequest](interfaces/MCPRequest.md)
 - [MCPResponse](interfaces/MCPResponse.md)
+- [MCPServerOptions](interfaces/MCPServerOptions.md)
 - [MCPTool](interfaces/MCPTool.md)
 - [MethodMetrics](interfaces/MethodMetrics.md)
 - [MetricsConfig](interfaces/MetricsConfig.md)
@@ -51,7 +50,6 @@
 - [NoteOptions](interfaces/NoteOptions.md)
 - [NumericFieldOptions](interfaces/NumericFieldOptions.md)
 - [OpenAPIConfig](interfaces/OpenAPIConfig.md)
-- [ParsedArgs](interfaces/ParsedArgs.md)
 - [PubSubConfig](interfaces/PubSubConfig.md)
 - [RecallAllOptions](interfaces/RecallAllOptions.md)
 - [RecallOptions](interfaces/RecallOptions.md)
@@ -59,6 +57,8 @@
 - [RelationshipMetadata](interfaces/RelationshipMetadata.md)
 - [RestServerConfig](interfaces/RestServerConfig.md)
 - [SanitizationConfig](interfaces/SanitizationConfig.md)
+- [Signal](interfaces/Signal.md)
+- [SignalAdapter](interfaces/SignalAdapter.md)
 - [SmartObjectConfig](interfaces/SmartObjectConfig.md)
 - [SmartObjectDefinition](interfaces/SmartObjectDefinition.md)
 - [SmartObjectManifest](interfaces/SmartObjectManifest.md)
@@ -75,11 +75,11 @@
 
 ## Type Aliases
 
-- [CLICommand](type-aliases/CLICommand.md)
+- [Meta](type-aliases/Meta.md)
 - [RelationshipType](type-aliases/RelationshipType.md)
-- [Signal](type-aliases/Signal.md)
 - [SignalFilter](type-aliases/SignalFilter.md)
 - [SignalSubscriber](type-aliases/SignalSubscriber.md)
+- [SignalType](type-aliases/SignalType.md)
 
 ## Variables
 
@@ -112,8 +112,9 @@
 - [getManifest](functions/getManifest.md)
 - [integer](functions/integer.md)
 - [json](functions/json.md)
-- [main](functions/main.md)
+- [loadLocalTestManifestSync](functions/loadLocalTestManifestSync.md)
 - [manyToMany](functions/manyToMany.md)
+- [meta](functions/meta.md)
 - [oneToMany](functions/oneToMany.md)
 - [setupSwaggerUI](functions/setupSwaggerUI.md)
 - [shouldIncludeMethod](functions/shouldIncludeMethod.md)
@@ -124,18 +125,6 @@
 - [validateToolCall](functions/validateToolCall.md)
 
 ## References
-
-### SignalAdapter
-
-Renames and re-exports [Signal](type-aliases/Signal.md)
-
-***
-
-### SignalType
-
-Renames and re-exports [Signal](type-aliases/Signal.md)
-
-***
 
 ### smrtRegistry
 

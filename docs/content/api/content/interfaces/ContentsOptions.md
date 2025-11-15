@@ -1,6 +1,6 @@
 # Interface: ContentsOptions
 
-Defined in: [content/src/contents.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L15)
+Defined in: [content/src/contents.ts:15](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/content/src/contents.ts#L15)
 
 Configuration options for Contents collection
 
@@ -28,7 +28,7 @@ Optional custom class name override
 
 > `optional` **ai**: `AIClientOptions`
 
-Defined in: [content/src/contents.ts:19](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L19)
+Defined in: [content/src/contents.ts:19](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/content/src/contents.ts#L19)
 
 AI client configuration options
 
@@ -42,7 +42,7 @@ AI client configuration options
 
 > `optional` **contentDir**: `string`
 
-Defined in: [content/src/contents.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/content/src/contents.ts#L24)
+Defined in: [content/src/contents.ts:24](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/content/src/contents.ts#L24)
 
 Directory to store content files
 
@@ -50,7 +50,7 @@ Directory to store content files
 
 ### db?
 
-> `optional` **db**: `string` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"`; `url?`: `string`; \} \| `DatabaseInterface`
+> `optional` **db**: `string` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"` \| `"sql"`; `url?`: `string`; \} \| `DatabaseInterface`
 
 Defined in: core/dist/class.d.ts:24
 
@@ -71,7 +71,7 @@ Supports three formats:
 
 > `optional` **fs**: `FilesystemAdapterOptions`
 
-Defined in: core/dist/class.d.ts:33
+Defined in: core/dist/class.d.ts:44
 
 Filesystem adapter configuration options
 
@@ -85,7 +85,7 @@ Filesystem adapter configuration options
 
 > `optional` **logging**: `LoggerConfig`
 
-Defined in: core/dist/class.d.ts:41
+Defined in: core/dist/class.d.ts:52
 
 Logging configuration (overrides global default)
 
@@ -99,7 +99,7 @@ Logging configuration (overrides global default)
 
 > `optional` **metrics**: `MetricsConfig`
 
-Defined in: core/dist/class.d.ts:45
+Defined in: core/dist/class.d.ts:56
 
 Metrics configuration (overrides global default)
 
@@ -109,11 +109,29 @@ Metrics configuration (overrides global default)
 
 ***
 
+### ~~persistence?~~
+
+> `optional` **persistence**: `string` \| `DatabaseInterface` \| \{\[`key`: `string`\]: `any`; `authToken?`: `string`; `type?`: `"sqlite"` \| `"postgres"` \| `"sql"`; `url?`: `string`; \}
+
+Defined in: core/dist/class.d.ts:35
+
+Alias for db option - for backward compatibility with documentation
+
+#### Deprecated
+
+Use 'db' instead. This alias exists for backward compatibility.
+
+#### Inherited from
+
+`SmrtCollectionOptions.persistence`
+
+***
+
 ### pubsub?
 
 > `optional` **pubsub**: `PubSubConfig`
 
-Defined in: core/dist/class.d.ts:49
+Defined in: core/dist/class.d.ts:60
 
 Pub/Sub configuration (overrides global default)
 
@@ -127,7 +145,7 @@ Pub/Sub configuration (overrides global default)
 
 > `optional` **sanitization**: `false` \| `SanitizationConfig`
 
-Defined in: core/dist/class.d.ts:53
+Defined in: core/dist/class.d.ts:64
 
 Sanitization configuration (overrides global default)
 
@@ -141,7 +159,7 @@ Sanitization configuration (overrides global default)
 
 > `optional` **signals**: `object`
 
-Defined in: core/dist/class.d.ts:57
+Defined in: core/dist/class.d.ts:68
 
 Custom signal configuration (overrides global default)
 

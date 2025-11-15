@@ -1,6 +1,6 @@
 # Class: PlaceType
 
-Defined in: [places/src/models/PlaceType.ts:15](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L15)
+Defined in: [places/src/models/PlaceType.ts:16](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/models/PlaceType.ts#L16)
 
 ## Extends
 
@@ -12,7 +12,7 @@ Defined in: [places/src/models/PlaceType.ts:15](https://github.com/happyvertical
 
 > **new PlaceType**(`options`): `PlaceType`
 
-Defined in: [places/src/models/PlaceType.ts:24](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L24)
+Defined in: [places/src/models/PlaceType.ts:25](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/models/PlaceType.ts#L25)
 
 #### Parameters
 
@@ -34,7 +34,7 @@ Defined in: [places/src/models/PlaceType.ts:24](https://github.com/happyvertical
 
 > `protected` **\_ai**: `AIClient`
 
-Defined in: core/dist/class.d.ts:75
+Defined in: core/dist/class.d.ts:86
 
 AI client instance for interacting with AI models
 
@@ -48,7 +48,7 @@ AI client instance for interacting with AI models
 
 > `protected` **\_className**: `string`
 
-Defined in: core/dist/class.d.ts:87
+Defined in: core/dist/class.d.ts:98
 
 Class name used for identification
 
@@ -76,7 +76,7 @@ Optional context to scope the slug
 
 > `protected` **\_db**: `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:83
+Defined in: core/dist/class.d.ts:94
 
 Database interface for data persistence
 
@@ -90,7 +90,7 @@ Database interface for data persistence
 
 > `protected` **\_fs**: `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:79
+Defined in: core/dist/class.d.ts:90
 
 Filesystem adapter for file operations
 
@@ -118,7 +118,7 @@ Unique identifier for the object
 
 > `protected` `optional` **\_signalBus**: `SignalBus`
 
-Defined in: core/dist/class.d.ts:91
+Defined in: core/dist/class.d.ts:102
 
 Signal bus for method execution tracking
 
@@ -146,7 +146,7 @@ URL-friendly identifier
 
 > **\_tableName**: `string`
 
-Defined in: core/dist/object.d.ts:57
+Defined in: core/dist/object.d.ts:52
 
 Database table name for this object
 
@@ -160,7 +160,7 @@ Database table name for this object
 
 > **created\_at**: `Date` \| `null` \| `undefined`
 
-Defined in: core/dist/object.d.ts:88
+Defined in: core/dist/object.d.ts:83
 
 Creation timestamp
 
@@ -174,7 +174,7 @@ Creation timestamp
 
 > **createdAt**: `Date`
 
-Defined in: [places/src/models/PlaceType.ts:21](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L21)
+Defined in: [places/src/models/PlaceType.ts:22](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/models/PlaceType.ts#L22)
 
 ***
 
@@ -182,28 +182,21 @@ Defined in: [places/src/models/PlaceType.ts:21](https://github.com/happyvertical
 
 > **description**: `string` = `''`
 
-Defined in: [places/src/models/PlaceType.ts:18](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L18)
+Defined in: [places/src/models/PlaceType.ts:19](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/models/PlaceType.ts#L19)
 
 ***
 
-### name?
+### name
 
-> `optional` **name**: `string` \| `Field` \| `null`
+> **name**: `Field`
 
-Defined in: core/dist/object.d.ts:84
-
-Human-readable name, primarily for display purposes
-Can be a string value or a Field instance (for Field-based schema definition)
-
-#### Inherited from
-
-`SmrtObject.name`
+Defined in: [places/src/models/PlaceType.ts:18](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/models/PlaceType.ts#L18)
 
 ***
 
 ### options
 
-> `protected` **options**: `SmrtObjectOptions`
+> **options**: `SmrtObjectOptions`
 
 Defined in: core/dist/object.d.ts:67
 
@@ -220,7 +213,7 @@ Initialized by parent constructor via super() call.
 
 > **updated\_at**: `Date` \| `null` \| `undefined`
 
-Defined in: core/dist/object.d.ts:92
+Defined in: core/dist/object.d.ts:87
 
 Last update timestamp
 
@@ -234,7 +227,7 @@ Last update timestamp
 
 > **updatedAt**: `Date`
 
-Defined in: [places/src/models/PlaceType.ts:22](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L22)
+Defined in: [places/src/models/PlaceType.ts:23](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/models/PlaceType.ts#L23)
 
 ## Accessors
 
@@ -244,7 +237,7 @@ Defined in: [places/src/models/PlaceType.ts:22](https://github.com/happyvertical
 
 > **get** **ai**(): `AIClient`
 
-Defined in: core/dist/class.d.ts:203
+Defined in: core/dist/class.d.ts:211
 
 Gets the AI client instance
 
@@ -264,7 +257,7 @@ Gets the AI client instance
 
 > **get** **context**(): `string`
 
-Defined in: core/dist/object.d.ts:130
+Defined in: core/dist/object.d.ts:142
 
 Gets the context that scopes this object's slug
 
@@ -276,7 +269,7 @@ Gets the context that scopes this object's slug
 
 > **set** **context**(`value`): `void`
 
-Defined in: core/dist/object.d.ts:137
+Defined in: core/dist/object.d.ts:149
 
 Sets the context that scopes this object's slug
 
@@ -308,7 +301,7 @@ The context to set
 
 > **get** **db**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:199
+Defined in: core/dist/class.d.ts:207
 
 Gets the database interface instance
 
@@ -328,7 +321,7 @@ Gets the database interface instance
 
 > **get** **fs**(): `FilesystemAdapter`
 
-Defined in: core/dist/class.d.ts:195
+Defined in: core/dist/class.d.ts:203
 
 Gets the filesystem adapter instance
 
@@ -348,7 +341,7 @@ Gets the filesystem adapter instance
 
 > **get** **id**(): `string` \| `null` \| `undefined`
 
-Defined in: core/dist/object.d.ts:108
+Defined in: core/dist/object.d.ts:120
 
 Gets the unique identifier for this object
 
@@ -360,7 +353,7 @@ Gets the unique identifier for this object
 
 > **set** **id**(`value`): `void`
 
-Defined in: core/dist/object.d.ts:115
+Defined in: core/dist/object.d.ts:127
 
 Sets the unique identifier for this object
 
@@ -392,7 +385,7 @@ The ID to set
 
 > **get** **signalBus**(): `SignalBus` \| `undefined`
 
-Defined in: core/dist/class.d.ts:209
+Defined in: core/dist/class.d.ts:217
 
 Gets the signal bus instance
 
@@ -414,7 +407,7 @@ Signal bus if signals are enabled, undefined otherwise
 
 > **get** **slug**(): `string` \| `null` \| `undefined`
 
-Defined in: core/dist/object.d.ts:119
+Defined in: core/dist/object.d.ts:131
 
 Gets the URL-friendly slug for this object
 
@@ -426,7 +419,7 @@ Gets the URL-friendly slug for this object
 
 > **set** **slug**(`value`): `void`
 
-Defined in: core/dist/object.d.ts:126
+Defined in: core/dist/object.d.ts:138
 
 Sets the URL-friendly slug for this object
 
@@ -458,7 +451,7 @@ The slug to set
 
 > **get** `protected` **systemDb**(): `DatabaseInterface`
 
-Defined in: core/dist/class.d.ts:160
+Defined in: core/dist/class.d.ts:168
 
 Access system tables through standard database interface
 System tables use _smrt_ prefix to avoid conflicts with user tables
@@ -479,7 +472,7 @@ System tables use _smrt_ prefix to avoid conflicts with user tables
 
 > **get** **tableName**(): `string`
 
-Defined in: core/dist/object.d.ts:163
+Defined in: core/dist/object.d.ts:191
 
 Gets the database table name for this object
 
@@ -497,7 +490,7 @@ Gets the database table name for this object
 
 > **allDescriptors**(): `object` & `object`
 
-Defined in: core/dist/object.d.ts:155
+Defined in: core/dist/object.d.ts:183
 
 Gets all property descriptors from this object's prototype
 
@@ -517,7 +510,7 @@ Object containing all property descriptors
 
 > **delete**(): `Promise`\<`void`\>
 
-Defined in: core/dist/object.d.ts:271
+Defined in: core/dist/object.d.ts:331
 
 Delete this object from the database
 
@@ -533,11 +526,54 @@ Promise that resolves when deletion is complete
 
 ***
 
+### describe()
+
+> **describe**(`options?`): `Promise`\<`string`\>
+
+Defined in: core/dist/object.d.ts:318
+
+Generates a description of this object using AI (Issue #52)
+
+Creates a concise, human-readable description based on the object's content
+and properties. Useful for summaries, previews, and documentation.
+
+#### Parameters
+
+##### options?
+
+`any`
+
+AI message options (can include style, length, focus, etc.)
+
+#### Returns
+
+`Promise`\<`string`\>
+
+Promise resolving to the AI-generated description
+
+#### Example
+
+```typescript
+const product = await products.get('product-123');
+const description = await product.describe();
+// "A high-quality widget for home improvement..."
+
+// With custom options
+const shortDesc = await product.describe({ maxTokens: 50 });
+// "Premium widget, steel construction"
+```
+
+#### Inherited from
+
+`SmrtObject.describe`
+
+***
+
 ### destroy()
 
 > **destroy**(): `void`
 
-Defined in: core/dist/class.d.ts:225
+Defined in: core/dist/class.d.ts:233
 
 Cleanup method to prevent memory leaks
 
@@ -568,7 +604,7 @@ product.destroy(); // Clean up when done
 
 > **do**(`instructions`, `options?`): `Promise`\<`string`\>
 
-Defined in: core/dist/object.d.ts:258
+Defined in: core/dist/object.d.ts:297
 
 Performs actions on this object based on instructions using AI
 
@@ -598,11 +634,37 @@ Promise resolving to the AI response
 
 ***
 
+### ensureDbSetup()
+
+> `protected` **ensureDbSetup**(): `Promise`\<`void`\>
+
+Defined in: core/dist/object.d.ts:166
+
+Ensures database tables are set up before performing database operations
+
+This method implements lazy initialization - tables are created on first use
+rather than during initialize(). This prevents database connections during
+import/prerendering phases (issue #237).
+
+ - Available for custom methods that need direct database access
+
+#### Returns
+
+`Promise`\<`void`\>
+
+Promise that resolves when setup is complete
+
+#### Inherited from
+
+`SmrtObject.ensureDbSetup`
+
+***
+
 ### executeToolCall()
 
 > **executeToolCall**(`toolCall`): `Promise`\<`ToolCallResult`\>
 
-Defined in: core/dist/object.d.ts:374
+Defined in: core/dist/object.d.ts:434
 
 Execute a tool call from AI on this object instance
 
@@ -649,7 +711,7 @@ console.log(result.success ? result.result : result.error);
 
 > `protected` **extractConstraintField**(`errorMessage`): `string`
 
-Defined in: core/dist/object.d.ts:229
+Defined in: core/dist/object.d.ts:268
 
 Extracts field name from database constraint error messages
 
@@ -673,7 +735,7 @@ Extracts field name from database constraint error messages
 
 > **forget**(`options`): `Promise`\<`void`\>
 
-Defined in: core/dist/object.d.ts:482
+Defined in: core/dist/object.d.ts:542
 
 Forget specific remembered context for this object
 
@@ -720,7 +782,7 @@ await agent.forget({
 
 > **forgetScope**(`options`): `Promise`\<`number`\>
 
-Defined in: core/dist/object.d.ts:504
+Defined in: core/dist/object.d.ts:564
 
 Forget all remembered context in a scope for this object
 
@@ -768,7 +830,7 @@ console.log(`Cleared ${count} cached strategies`);
 
 > **getAvailableTools**(): `AITool`[]
 
-Defined in: core/dist/object.d.ts:350
+Defined in: core/dist/object.d.ts:410
 
 Get available AI-callable tools for this object
 
@@ -800,15 +862,15 @@ console.log(`${tools.length} AI-callable methods available`);
 
 ### getFields()
 
-> **getFields**(): `Record`\<`string`, `any`\>
+> **getFields**(): `Promise`\<`Record`\<`string`, `any`\>\>
 
-Defined in: core/dist/object.d.ts:169
+Defined in: core/dist/object.d.ts:197
 
 Gets field definitions and current values for this object
 
 #### Returns
 
-`Record`\<`string`, `any`\>
+`Promise`\<`Record`\<`string`, `any`\>\>
 
 Object containing field definitions with current values
 
@@ -822,7 +884,7 @@ Object containing field definitions with current values
 
 > `protected` **getFieldValue**(`fieldName`): `any`
 
-Defined in: core/dist/object.d.ts:214
+Defined in: core/dist/object.d.ts:253
 
 Gets the value of a field on this object
 
@@ -846,7 +908,7 @@ Gets the value of a field on this object
 
 > **getId**(): `Promise`\<`string`\>
 
-Defined in: core/dist/object.d.ts:181
+Defined in: core/dist/object.d.ts:218
 
 Gets or generates a unique ID for this object
 
@@ -866,7 +928,7 @@ Promise resolving to the object's ID
 
 > `protected` **getPropertyValue**(`key`): `any`
 
-Defined in: core/dist/object.d.ts:225
+Defined in: core/dist/object.d.ts:264
 
 Gets the actual value from a property, whether it's a plain value or a Field instance
 
@@ -898,7 +960,7 @@ The actual value (unwrapped from Field if necessary)
 
 > **getRelated**(`fieldName`): `Promise`\<`any`\>
 
-Defined in: core/dist/object.d.ts:336
+Defined in: core/dist/object.d.ts:396
 
 Get a related object, loading it if not already loaded
 
@@ -939,7 +1001,7 @@ const orders = await customer.getRelated('orders');
 
 > **getSavedId**(): `Promise`\<`any`\>
 
-Defined in: core/dist/object.d.ts:193
+Defined in: core/dist/object.d.ts:232
 
 Gets the ID of this object if it's already saved in the database
 
@@ -959,9 +1021,11 @@ Promise resolving to the saved ID or null if not saved
 
 > **getSlug**(): `Promise`\<`string` \| `null` \| `undefined`\>
 
-Defined in: core/dist/object.d.ts:187
+Defined in: core/dist/object.d.ts:226
 
-Gets or generates a slug for this object based on its name
+Gets or generates a slug for this object
+
+Fallback order: name → title → label → id
 
 #### Returns
 
@@ -979,7 +1043,7 @@ Promise resolving to the object's slug
 
 > **initialize**(): `Promise`\<`PlaceType`\>
 
-Defined in: core/dist/object.d.ts:143
+Defined in: core/dist/object.d.ts:155
 
 Initializes this object, setting up database tables and loading data if identifiers are provided
 
@@ -999,7 +1063,7 @@ Promise that resolves to this instance for chaining
 
 > **is**(`criteria`, `options?`): `Promise`\<`any`\>
 
-Defined in: core/dist/object.d.ts:250
+Defined in: core/dist/object.d.ts:289
 
 Evaluates whether this object meets given criteria using AI
 
@@ -1037,7 +1101,7 @@ Error if the AI response is invalid
 
 > **isRelatedLoaded**(`fieldName`): `boolean`
 
-Defined in: core/dist/object.d.ts:284
+Defined in: core/dist/object.d.ts:344
 
 Check if a relationship has been loaded
 
@@ -1073,7 +1137,7 @@ if (order.isRelatedLoaded('customer')) {
 
 > **isSaved**(): `Promise`\<`boolean`\>
 
-Defined in: core/dist/object.d.ts:199
+Defined in: core/dist/object.d.ts:238
 
 Checks if this object is already saved in the database
 
@@ -1091,11 +1155,15 @@ Promise resolving to true if saved, false otherwise
 
 ### loadDataFromDb()
 
-> **loadDataFromDb**(`data`): `void`
+> **loadDataFromDb**(`data`): `Promise`\<`void`\>
 
-Defined in: core/dist/object.d.ts:149
+Defined in: core/dist/object.d.ts:177
 
 Loads data from a database row into this object's properties
+
+STI Support: If using Single Table Inheritance (tableStrategy: 'sti'):
+- Merges _meta_data JSONB fields into the main data object
+- Validates _meta_type discriminator matches class name
 
 #### Parameters
 
@@ -1107,7 +1175,11 @@ Database row data
 
 #### Returns
 
-`void`
+`Promise`\<`void`\>
+
+#### Throws
+
+Error if STI validation fails
 
 #### Inherited from
 
@@ -1119,7 +1191,7 @@ Database row data
 
 > **loadFromId**(): `Promise`\<`void`\>
 
-Defined in: core/dist/object.d.ts:235
+Defined in: core/dist/object.d.ts:274
 
 Loads this object's data from the database using its ID
 
@@ -1139,7 +1211,7 @@ Promise that resolves when loading is complete
 
 > **loadFromSlug**(): `Promise`\<`void`\>
 
-Defined in: core/dist/object.d.ts:241
+Defined in: core/dist/object.d.ts:280
 
 Loads this object's data from the database using its slug and context
 
@@ -1159,7 +1231,7 @@ Promise that resolves when loading is complete
 
 > **loadRelated**(`fieldName`): `Promise`\<`any`\>
 
-Defined in: core/dist/object.d.ts:301
+Defined in: core/dist/object.d.ts:361
 
 Load a related object for a foreignKey field (lazy loading)
 
@@ -1202,7 +1274,7 @@ console.log(customer.name); // Access customer properties
 
 > **loadRelatedMany**(`fieldName`): `Promise`\<`any`[]\>
 
-Defined in: core/dist/object.d.ts:318
+Defined in: core/dist/object.d.ts:378
 
 Load related objects for oneToMany or manyToMany fields (lazy loading)
 
@@ -1245,7 +1317,7 @@ console.log(`${orders.length} orders found`);
 
 > **recall**(`options`): `Promise`\<`any`\>
 
-Defined in: core/dist/object.d.ts:433
+Defined in: core/dist/object.d.ts:493
 
 Recall remembered context for this object
 
@@ -1302,7 +1374,7 @@ const strategy = await agent.recall({
 
 > **recallAll**(`options?`): `Promise`\<`Map`\<`string`, `any`\>\>
 
-Defined in: core/dist/object.d.ts:460
+Defined in: core/dist/object.d.ts:520
 
 Recall all remembered context for this object in a scope
 
@@ -1357,7 +1429,7 @@ for (const [url, pattern] of strategies) {
 
 > **remember**(`options`): `Promise`\<`void`\>
 
-Defined in: core/dist/object.d.ts:404
+Defined in: core/dist/object.d.ts:464
 
 Remember context about this object
 
@@ -1440,7 +1512,7 @@ await agent.remember({
 
 > `protected` **requiresDatabase**(): `boolean`
 
-Defined in: core/dist/class.d.ts:127
+Defined in: core/dist/class.d.ts:140
 
 Determines whether this class requires a database to function
 
@@ -1473,7 +1545,7 @@ class MyDataModel extends SmrtClass {
 
 > `protected` **runHook**(`hookName`): `Promise`\<`void`\>
 
-Defined in: core/dist/object.d.ts:265
+Defined in: core/dist/object.d.ts:325
 
 Runs a lifecycle hook if it's defined in the object's configuration
 
@@ -1501,7 +1573,7 @@ Promise that resolves when the hook completes
 
 > **save**(): `Promise`\<`PlaceType`\>
 
-Defined in: core/dist/object.d.ts:205
+Defined in: core/dist/object.d.ts:244
 
 Saves this object to the database
 
@@ -1521,11 +1593,20 @@ Promise resolving to this object
 
 > **toJSON**(): `any`
 
-Defined in: core/dist/object.d.ts:175
+Defined in: core/dist/object.d.ts:212
 
 Custom JSON serialization
 Returns a plain object with all field values for proper JSON.stringify() behavior
 Field instances automatically call their toJSON() method during serialization
+
+Issue #205: Filters out undefined values to prevent database errors
+
+Note: This method cannot be async because JSON.stringify() expects synchronous toJSON()
+It uses direct property access instead of getFields() to avoid async issues
+
+STI Support: If using Single Table Inheritance (tableStrategy: 'sti'):
+- Sets _meta_type discriminator to class name
+- Extracts meta fields to _meta_data JSONB column
 
 #### Returns
 
@@ -1541,7 +1622,7 @@ Field instances automatically call their toJSON() method during serialization
 
 > `protected` **validateBeforeSave**(): `Promise`\<`void`\>
 
-Defined in: core/dist/object.d.ts:210
+Defined in: core/dist/object.d.ts:249
 
 Validates object state before saving
 Override in subclasses to add custom validation logic
@@ -1560,7 +1641,7 @@ Override in subclasses to add custom validation logic
 
 > `static` **getBySlug**(`_slug`): `Promise`\<`PlaceType` \| `null`\>
 
-Defined in: [places/src/models/PlaceType.ts:38](https://github.com/happyvertical/smrt/blob/bfd2feaea84273ee833a92e2d20c959aedfcfbd9/packages/places/src/models/PlaceType.ts#L38)
+Defined in: [places/src/models/PlaceType.ts:39](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/places/src/models/PlaceType.ts#L39)
 
 Convenience method for slug-based lookup
 
