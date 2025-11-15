@@ -348,8 +348,8 @@ export class Field {
  * }
  * ```
  */
-export function text(options: TextFieldOptions = {}): Field {
-  return new Field('text', options);
+export function text(options: TextFieldOptions = {}): string {
+  return new Field('text', options) as any;
 }
 
 /**
@@ -366,8 +366,8 @@ export function text(options: TextFieldOptions = {}): Field {
  * }
  * ```
  */
-export function integer(options: NumericFieldOptions = {}): Field {
-  return new Field('integer', options);
+export function integer(options: NumericFieldOptions = {}): number {
+  return new Field('integer', options) as any;
 }
 
 /**
@@ -384,8 +384,8 @@ export function integer(options: NumericFieldOptions = {}): Field {
  * }
  * ```
  */
-export function decimal(options: NumericFieldOptions = {}): Field {
-  return new Field('decimal', options);
+export function decimal(options: NumericFieldOptions = {}): number {
+  return new Field('decimal', options) as any;
 }
 
 /**
