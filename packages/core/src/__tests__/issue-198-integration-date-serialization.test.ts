@@ -12,13 +12,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
-import { text } from '../fields/index.js';
+import { field } from '../decorators';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 
 @smrt()
 class EventWithDates extends SmrtObject {
-  title = text({ required: true });
+  @field({ required: true })
+  title: string = '';
   eventDate: Date = new Date();
   registrationDeadline: Date = new Date();
   lastModified: Date = new Date();

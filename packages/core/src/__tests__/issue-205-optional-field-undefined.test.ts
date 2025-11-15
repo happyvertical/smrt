@@ -12,7 +12,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { text } from '../fields';
+import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 
@@ -30,9 +30,14 @@ class CouncilTSOptionalCollection extends SmrtCollection<CouncilWithTSOptional> 
 
 @smrt({ tableName: 'councils_nullable' })
 class CouncilWithNullable extends SmrtObject {
-  name = text({ required: true });
-  url = text({ nullable: true }); // Optional via field helper
-  location = text({ nullable: true });
+  @field({ required: true })
+  name: string = '';
+
+  @field({ nullable: true })
+  url: string = '';
+
+  @field({ nullable: true })
+  location: string = '';
 }
 
 class CouncilNullableCollection extends SmrtCollection<CouncilWithNullable> {

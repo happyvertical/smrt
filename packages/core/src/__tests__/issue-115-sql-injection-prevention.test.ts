@@ -10,17 +10,16 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { boolean, decimal, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
 // Test class with known fields (moved to top level for AST scanner)
 @smrt({ api: { include: ['list', 'get'] } })
 class Product extends SmrtObject {
-  name = text();
-  price = decimal();
-  category = text();
-  active = boolean();
+  name: string = '';
+  price: number = 0.0;
+  category: string = '';
+  active: boolean = false;
 }
 
 class ProductCollection extends SmrtCollection<Product> {

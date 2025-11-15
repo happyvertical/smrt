@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { datetime, integer, text } from './fields';
+
 import { SmrtObject } from './object';
 import { smrt } from './registry';
 import { fieldsFromClass } from './utils';

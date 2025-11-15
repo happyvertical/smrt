@@ -11,7 +11,7 @@ import path from 'node:path';
 import { faker } from '@faker-js/faker';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from './collection';
-import { boolean, datetime, decimal, integer, text } from './fields/index.js';
+
 import { SmrtObject } from './object';
 import { smrt } from './registry';
 

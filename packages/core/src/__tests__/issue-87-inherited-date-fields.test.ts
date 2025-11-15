@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
-import { boolean, datetime, integer, text } from '../fields/index.js';
+import { field } from '../decorators';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 
@@ -18,17 +18,22 @@ import { ObjectRegistry, smrt } from '../registry.js';
   api: { include: ['list', 'get'] },
 })
 class Issue87ParentEvent extends SmrtObject {
-  startDate = datetime({ nullable: true });
-  endDate = datetime({ nullable: true });
-  issuedAt = datetime({ nullable: true }); // This field was mentioned in the issue
+  @field({ nullable: true })
+  startDate: Date | null = null;
+
+  @field({ nullable: true })
+  endDate: Date | null = null;
+
+  @field({ nullable: true })
+  issuedAt: Date | null = null; // This field was mentioned in the issue
 }
 
 @smrt({
   api: { include: ['list', 'get'] },
 })
 class Issue87ChildEvent extends Issue87ParentEvent {
-  temperature = integer();
-  description = text();
+  temperature: number = 0;
+  description: string = '';
 }
 
 class Issue87ParentEventCollection extends SmrtCollection<Issue87ParentEvent> {
@@ -44,18 +49,22 @@ class Issue87ChildEventCollection extends SmrtCollection<Issue87ChildEvent> {
   api: { include: ['list', 'get'] },
 })
 class Issue87BaseModel extends SmrtObject {
-  textField = text();
-  numberField = integer();
-  booleanField = boolean();
-  issueDate = datetime({ nullable: true }); // Conventional naming: ends with 'Date'
-  optionalEventDate = datetime({ nullable: true }); // Conventional naming: ends with 'Date'
+  textField: string = '';
+  numberField: number = 0;
+  booleanField: boolean = false;
+
+  @field({ nullable: true })
+  issueDate: Date | null = null; // Conventional naming: ends with 'Date'
+
+  @field({ nullable: true })
+  optionalEventDate: Date | null = null; // Conventional naming: ends with 'Date'
 }
 
 @smrt({
   api: { include: ['list', 'get'] },
 })
 class Issue87DerivedModel extends Issue87BaseModel {
-  derivedField = text();
+  derivedField: string = '';
 }
 
 class Issue87DerivedModelCollection extends SmrtCollection<Issue87DerivedModel> {

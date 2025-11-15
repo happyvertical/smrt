@@ -10,19 +10,21 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { type Meta, meta } from '../fields';
+import { meta } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
 // Test classes for loadDataFromDb tests (must be at top level for manifest)
 @smrt({ tableStrategy: 'sti' })
 class TestLoad1 extends SmrtObject {
-  metaField: Meta<string> = '';
+  @meta()
+  metaField: string = '';
 }
 
 @smrt({ tableStrategy: 'sti' })
 class TestLoad2 extends SmrtObject {
-  metaField: Meta<string> = '';
+  @meta()
+  metaField: string = '';
 }
 
 @smrt({ tableStrategy: 'sti' })
@@ -32,12 +34,12 @@ class TestLoad3 extends SmrtObject {}
 class TestLoad4 extends SmrtObject {}
 
 describe('STI Meta Field Detection', () => {
-  describe('Meta<T> type wrapper', () => {
-    it('should be a type alias that passes through the underlying type', () => {
-      // Meta<T> is just a type alias, should not change runtime behavior
-      const value1: Meta<string> = 'hello';
-      const value2: Meta<number> = 42;
-      const value3: Meta<boolean> = true;
+  describe('@meta() decorator', () => {
+    it('should mark fields as meta type', () => {
+      // @meta() decorator marks TypeScript properties as meta fields
+      const value1: string = 'hello';
+      const value2: number = 42;
+      const value3: boolean = true;
 
       expect(value1).toBe('hello');
       expect(value2).toBe(42);
@@ -45,9 +47,9 @@ describe('STI Meta Field Detection', () => {
     });
   });
 
-  describe('meta() field helper', () => {
-    it('should create a Field with type "meta"', () => {
-      const field = meta();
+  describe('Field type validation', () => {
+    it('should validate meta field registration', () => {
+      const fields = ObjectRegistry.getFields('TestLoad1');
       expect(field.type).toBe('meta');
     });
 

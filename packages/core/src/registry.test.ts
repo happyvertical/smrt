@@ -6,14 +6,6 @@ import {
   TestCustomer,
   TestOrder,
 } from './__tests__/fixtures/registry-test-classes.js';
-import {
-  boolean as booleanField,
-  datetime,
-  decimal,
-  Field,
-  integer,
-  text,
-} from './fields/index';
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
 import { tableNameFromClass } from './utils';

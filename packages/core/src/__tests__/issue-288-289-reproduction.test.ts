@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { foreignKey } from '../fields';
+import { foreignKey } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
@@ -26,8 +26,11 @@ class TestArticle extends SmrtObject {
 // Child class with foreign keys (like MeetingAnnouncement)
 @smrt()
 class TestMeetingAnnouncement extends TestArticle {
-  meetingId = foreignKey('Meeting');
-  councilId = foreignKey('Council');
+  @foreignKey('Meeting')
+  meetingId: string = '';
+
+  @foreignKey('Council')
+  councilId: string = '';
 }
 
 // Collections

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { text } from '../fields';
+
 import { ObjectRegistry } from '../registry';
 import { SchemaGenerator } from '../schema/generator';
 

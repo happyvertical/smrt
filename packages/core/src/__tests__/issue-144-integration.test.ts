@@ -8,7 +8,6 @@
 import { unlinkSync } from 'node:fs';
 import { afterAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { datetime, text } from '../fields/index.js';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 import { generateSchema } from '../schema/utils';
@@ -16,18 +15,18 @@ import { generateSchema } from '../schema/utils';
 // Test classes that mimic Event and Profile from their respective packages
 @smrt()
 class TestEvent extends SmrtObject {
-  title = text();
-  description = text();
-  startDate = datetime();
-  endDate = datetime();
+  title: string = '';
+  description: string = '';
+  startDate: Date = new Date();
+  endDate: Date = new Date();
 }
 
 @smrt()
 class Issue144TestProfile extends SmrtObject {
-  firstName = text();
-  lastName = text();
-  email = text();
-  bio = text();
+  firstName: string = '';
+  lastName: string = '';
+  email: string = '';
+  bio: string = '';
 }
 
 class TestEventCollection extends SmrtCollection<TestEvent> {
