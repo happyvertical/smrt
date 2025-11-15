@@ -57,7 +57,7 @@ describe('Issue #140: @field() decorator options parsing', () => {
     expect(complexField).toBeDefined();
     expect(complexField?._meta?.required).toBe(true);
     expect(complexField?._meta?.maxLength).toBe(100);
-    expect(complexField?.options?.default).toBe('default value');
+    expect(complexField?._meta?.default).toBe('default value');
   });
 
   it('should store decorator options in the manifest', async () => {
@@ -72,7 +72,7 @@ describe('Issue #140: @field() decorator options parsing', () => {
     // Verify field options are accessible
     const requiredField = fields.get('requiredField');
     expect(requiredField).toBeDefined();
-    expect(requiredField?.options).toBeDefined();
+    expect(requiredField?._meta).toBeDefined();
     expect(requiredField?._meta?.required).toBe(true);
   });
 
@@ -84,7 +84,7 @@ describe('Issue #140: @field() decorator options parsing', () => {
     expect(optionalField?.type).toBe('text');
 
     // Options object exists even if just one option is set
-    expect(optionalField?.options).toBeDefined();
+    expect(optionalField?._meta).toBeDefined();
     expect(optionalField?._meta?.required).toBe(false);
   });
 });

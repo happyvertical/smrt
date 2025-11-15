@@ -172,7 +172,7 @@ export async function fieldsFromClass(
     fields[key] = {
       name: key,
       type: field.type || 'TEXT',
-      _meta: field.options || {},
+      _meta: field._meta || {},
       ...(values && key in values ? { value: values[key] } : {}),
     };
   }

@@ -27,33 +27,33 @@ it('should get fields from a class without values', async () => {
     id: {
       name: 'id',
       type: 'text',
-      options: {},
+      _meta: {},
     },
     slug: {
       name: 'slug',
       type: 'text',
-      options: {},
+      _meta: {},
     },
     context: {
       name: 'context',
       type: 'text',
-      options: {},
+      _meta: {},
     },
     created_at: {
       name: 'created_at',
       type: 'datetime',
-      options: {},
+      _meta: {},
     },
     updated_at: {
       name: 'updated_at',
       type: 'datetime',
-      options: {},
+      _meta: {},
     },
     // Direct fields declared on TestClass (with default values and required flag)
     test_string: {
       name: 'test_string',
       type: 'text',
-      options: {
+      _meta: {
         default: '',
         required: true,
       },
@@ -61,7 +61,7 @@ it('should get fields from a class without values', async () => {
     test_number: {
       name: 'test_number',
       type: 'integer',
-      options: {
+      _meta: {
         default: 0,
         required: true,
       },
@@ -69,7 +69,7 @@ it('should get fields from a class without values', async () => {
     test_date: {
       name: 'test_date',
       type: 'datetime',
-      options: {
+      _meta: {
         required: true,
       },
     },
@@ -95,33 +95,33 @@ it('should get fields from a class with values', async () => {
     id: {
       name: 'id',
       type: 'text',
-      options: {},
+      _meta: {},
     },
     slug: {
       name: 'slug',
       type: 'text',
-      options: {},
+      _meta: {},
     },
     context: {
       name: 'context',
       type: 'text',
-      options: {},
+      _meta: {},
     },
     created_at: {
       name: 'created_at',
       type: 'datetime',
-      options: {},
+      _meta: {},
     },
     updated_at: {
       name: 'updated_at',
       type: 'datetime',
-      options: {},
+      _meta: {},
     },
     // Direct fields declared on TestClass (with values)
     test_string: {
       name: 'test_string',
       type: 'text',
-      options: {
+      _meta: {
         default: '',
         required: true,
       },
@@ -130,7 +130,7 @@ it('should get fields from a class with values', async () => {
     test_number: {
       name: 'test_number',
       type: 'integer',
-      options: {
+      _meta: {
         default: 0,
         required: true,
       },
@@ -139,7 +139,7 @@ it('should get fields from a class with values', async () => {
     test_date: {
       name: 'test_date',
       type: 'datetime',
-      options: {
+      _meta: {
         required: true,
       },
       value: '2024-01-01',

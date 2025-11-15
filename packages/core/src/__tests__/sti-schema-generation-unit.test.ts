@@ -256,7 +256,7 @@ describe('STI Schema Generation (Unit)', () => {
                 'roomId',
                 {
                   type: 'foreignKey',
-                  options: { related: 'Room' },
+                  related: 'Room',
                   getSqlType: () => 'TEXT',
                 } as any,
               ],
