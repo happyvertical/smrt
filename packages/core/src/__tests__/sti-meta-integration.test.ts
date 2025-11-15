@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-
+import { meta } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
@@ -24,8 +24,12 @@ class IntegrationEvent extends SmrtObject {
 
 @smrt()
 class IntegrationHockeyGame extends IntegrationEvent {
-  arenaName: Meta<string> = '';
-  capacity: Meta<number> = 0;
+  @meta()
+  arenaName: string = '';
+
+  @meta()
+  capacity: number = 0;
+
   homeTeam: string = ''; // Regular column field
 }
 
@@ -40,8 +44,12 @@ class IntegrationEvent2 extends SmrtObject {
 
 @smrt()
 class IntegrationConcert extends IntegrationEvent2 {
-  venueName = meta<string>();
-  ticketsSold = meta<number>();
+  @meta()
+  venueName: string = '';
+
+  @meta()
+  ticketsSold: number = 0;
+
   artist: string = '';
 }
 

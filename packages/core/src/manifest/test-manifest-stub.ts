@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763222646432,
+  "timestamp": 1763223367170,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -1491,11 +1491,9 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-288-289-reproduction.test.ts",
       "fields": {
         "meetingId": {
-          "type": "foreignKey",
+          "type": "text",
           "required": true,
-          "options": {
-            "related": "Meeting"
-          },
+          "options": {},
           "default": ""
         },
         "councilId": {
@@ -2694,12 +2692,12 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
       "fields": {
         "arenaName": {
-          "type": "meta",
+          "type": "text",
           "required": true,
           "default": ""
         },
         "capacity": {
-          "type": "meta",
+          "type": "integer",
           "required": true,
           "default": 0
         },
@@ -2758,12 +2756,14 @@ export const testManifest: SmartObjectManifest = {
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
       "fields": {
         "venueName": {
-          "type": "meta",
-          "required": true
+          "type": "text",
+          "required": true,
+          "default": ""
         },
         "ticketsSold": {
-          "type": "meta",
-          "required": true
+          "type": "integer",
+          "required": true,
+          "default": 0
         },
         "artist": {
           "type": "text",

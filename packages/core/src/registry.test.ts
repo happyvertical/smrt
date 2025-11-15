@@ -8,7 +8,22 @@ import {
 } from './__tests__/fixtures/registry-test-classes.js';
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
+import type { FieldDefinition } from './scanner/types.js';
 import { tableNameFromClass } from './utils';
+
+// Helper class to create field definitions for manual registration
+class Field implements FieldDefinition {
+  type: FieldDefinition['type'];
+  options: Record<string, any>;
+
+  constructor(
+    type: FieldDefinition['type'],
+    options: Record<string, any> = {},
+  ) {
+    this.type = type;
+    this.options = options;
+  }
+}
 
 // Helper to manually register test classes with field metadata
 function registerTestClass(
@@ -784,7 +799,7 @@ describe('ObjectRegistry', () => {
     it('should work with @smrt decorator syntax', () => {
       @smrt()
       class DecoratorTest extends SmrtObject {
-        name = text();
+        name: string = '';
       }
 
       // Verify SMRT_TABLE_NAME was set by decorator
@@ -795,7 +810,7 @@ describe('ObjectRegistry', () => {
     it('should work with @smrt decorator and custom tableName', () => {
       @smrt({ tableName: 'super_custom_table' })
       class CustomDecoratorTest extends SmrtObject {
-        name = text();
+        name: string = '';
       }
 
       // Verify custom tableName was set
@@ -807,7 +822,7 @@ describe('ObjectRegistry', () => {
     it('should use captured table name from SMRT_TABLE_NAME property', () => {
       @smrt()
       class TableNameTest extends SmrtObject {
-        name = text();
+        name: string = '';
       }
 
       const metadata = ObjectRegistry.getObjectMetadata('TableNameTest');
@@ -817,8 +832,8 @@ describe('ObjectRegistry', () => {
     it('should respect custom tableName in config', () => {
       @smrt({ tableName: 'my_custom_products' })
       class CustomTableProduct extends SmrtObject {
-        name = text();
-        price = integer();
+        name: string = '';
+        price: number = 0;
       }
 
       const metadata = ObjectRegistry.getObjectMetadata('CustomTableProduct');
@@ -836,7 +851,7 @@ describe('ObjectRegistry', () => {
 
       @smrt()
       class OriginalClassName extends SmrtObject {
-        name = text();
+        name: string = '';
       }
 
       // Capture the SMRT_TABLE_NAME before "minification"
@@ -860,7 +875,7 @@ describe('ObjectRegistry', () => {
     it('should use SMRT_TABLE_NAME in tableNameFromClass()', () => {
       @smrt()
       class TestForTableName extends SmrtObject {
-        name = text();
+        name: string = '';
       }
 
       const tableName = tableNameFromClass(TestForTableName);

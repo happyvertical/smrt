@@ -35,6 +35,7 @@ export {
   field,
   foreignKey,
   manyToMany,
+  meta,
   type NumericFieldOptions,
   oneToMany,
   type RelationshipFieldOptions,

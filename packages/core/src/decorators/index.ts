@@ -188,3 +188,36 @@ export function manyToMany(
     });
   };
 }
+
+/**
+ * Meta field decorator for STI (Single Table Inheritance) patterns
+ *
+ * Marks a field as a "meta field" that should be stored in the _meta_data JSONB column
+ * rather than as a direct table column. Used for child-specific fields in STI hierarchies.
+ *
+ * @param options - Field options
+ * @returns Property decorator
+ *
+ * @example
+ * ```typescript
+ * @smrt({ tableStrategy: 'sti' })
+ * class Event extends SmrtObject {
+ *   title: string = '';
+ * }
+ *
+ * @smrt()
+ * class Meeting extends Event {
+ *   @meta()
+ *   roomNumber: string = '';
+ * }
+ * ```
+ */
+export function meta(options: FieldOptions = {}) {
+  return (target: any, propertyKey: string) => {
+    const className = target.constructor.name;
+    ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+      ...options,
+      type: 'meta', // Mark this field as a meta field for STI
+    });
+  };
+}

@@ -50,34 +50,43 @@ describe('STI Meta Field Detection', () => {
   describe('Field type validation', () => {
     it('should validate meta field registration', () => {
       const fields = ObjectRegistry.getFields('TestLoad1');
-      expect(field.type).toBe('meta');
+      const metaField = fields.get('metaField');
+      expect(metaField?.type).toBe('meta');
     });
 
-    it('should accept options like other field helpers', () => {
-      const field = meta({ required: true, description: 'Test meta field' });
-      expect(field.type).toBe('meta');
-      expect(field.options.required).toBe(true);
-      expect(field.options.description).toBe('Test meta field');
+    it('should mark meta fields with correct type in registry', () => {
+      @smrt({ tableStrategy: 'sti' })
+      class TestMetaOptions extends SmrtObject {
+        @meta()
+        testField: string = '';
+      }
+
+      const fields = ObjectRegistry.getFields('TestMetaOptions');
+      const metaField = fields.get('testField');
+      expect(metaField?.type).toBe('meta');
     });
   });
 
   describe('ObjectRegistry field detection', () => {
-    it('should mark meta() helper fields as type "meta"', () => {
+    it('should mark @meta() decorated fields as type "meta"', () => {
+      @smrt({ tableStrategy: 'sti' })
       class TestClass1 extends SmrtObject {
         regularField: string = '';
-        metaField = meta<string>();
+
+        @meta()
+        metaField: string = '';
       }
 
-      // Get registered fields (assuming they were registered by decorator)
+      // Get registered fields
       const fields = ObjectRegistry.getFields('TestClass1');
 
-      // If meta field was registered, it should have type 'meta'
-      if (fields.size > 0) {
-        const metaFieldDef = fields.get('metaField');
-        if (metaFieldDef) {
-          expect(metaFieldDef.type).toBe('meta');
-        }
-      }
+      // Regular field should be type 'text'
+      const regularFieldDef = fields.get('regularField');
+      expect(regularFieldDef?.type).toBe('text');
+
+      // Meta field should be type 'meta'
+      const metaFieldDef = fields.get('metaField');
+      expect(metaFieldDef?.type).toBe('meta');
     });
   });
 

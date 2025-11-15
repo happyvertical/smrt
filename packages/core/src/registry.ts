@@ -359,7 +359,17 @@ export class ObjectRegistry {
     if (!ObjectRegistry.fieldDecorators.has(className)) {
       ObjectRegistry.fieldDecorators.set(className, new Map());
     }
-    ObjectRegistry.fieldDecorators.get(className)?.set(propertyKey, options);
+
+    // Merge with existing decorator options to support multiple decorators on same field
+    const classDecorators = ObjectRegistry.fieldDecorators.get(className)!;
+    const existing = classDecorators.get(propertyKey);
+
+    if (existing) {
+      // Merge options, with new options taking precedence
+      classDecorators.set(propertyKey, { ...existing, ...options });
+    } else {
+      classDecorators.set(propertyKey, options);
+    }
   }
 
   /**

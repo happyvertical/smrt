@@ -8,7 +8,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { ObjectRegistry } from '../registry';
+import type { FieldDefinition } from '../scanner/types';
 import { SchemaGenerator } from '../schema/generator';
+
+// Helper to create field definitions for tests
+function createField(
+  type: FieldDefinition['type'],
+  options: Partial<FieldDefinition> = {},
+): FieldDefinition {
+  return {
+    type,
+    ...options,
+  };
+}
 
 // Mock ObjectRegistry methods for unit tests
 vi.mock('../registry', async (importOriginal) => {
@@ -31,13 +43,15 @@ describe('STI Schema Generation (Unit)', () => {
       // Mock: Event base class with no descendants
       vi.mocked(ObjectRegistry.getDescendants).mockReturnValue([]);
       vi.mocked(ObjectRegistry.getAllFields).mockResolvedValue(
-        new Map([['title', text({ description: 'Event title' })]]),
+        new Map([
+          ['title', createField('text', { description: 'Event title' })],
+        ]),
       );
 
       const schema = await generator.generateSTISchemaFromRegistry(
         'Event',
         'events',
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
       const sql = generator.generateSQL(schema);
 
@@ -54,13 +68,13 @@ describe('STI Schema Generation (Unit)', () => {
 
       vi.mocked(ObjectRegistry.getDescendants).mockReturnValue([]);
       vi.mocked(ObjectRegistry.getAllFields).mockResolvedValue(
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       const schema = await generator.generateSTISchemaFromRegistry(
         'Event',
         'events',
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
       const sql = generator.generateSQL(schema);
 
@@ -78,8 +92,11 @@ describe('STI Schema Generation (Unit)', () => {
       vi.mocked(ObjectRegistry.getDescendants).mockReturnValue([]);
       vi.mocked(ObjectRegistry.getAllFields).mockResolvedValue(
         new Map([
-          ['title', text({ description: 'Event title' })],
-          ['description', text({ description: 'Event description' })],
+          ['title', createField('text', { description: 'Event title' })],
+          [
+            'description',
+            createField('text', { description: 'Event description' }),
+          ],
         ]),
       );
 
@@ -87,8 +104,8 @@ describe('STI Schema Generation (Unit)', () => {
         'Event',
         'events',
         new Map([
-          ['title', text()],
-          ['description', text()],
+          ['title', createField('text')],
+          ['description', createField('text')],
         ]),
       );
 
@@ -101,13 +118,13 @@ describe('STI Schema Generation (Unit)', () => {
 
       vi.mocked(ObjectRegistry.getDescendants).mockReturnValue([]);
       vi.mocked(ObjectRegistry.getAllFields).mockResolvedValue(
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       const schema = await generator.generateSTISchemaFromRegistry(
         'Event',
         'events',
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       const uniqueIndex = schema.indexes.find(
@@ -124,13 +141,13 @@ describe('STI Schema Generation (Unit)', () => {
 
       vi.mocked(ObjectRegistry.getDescendants).mockReturnValue([]);
       vi.mocked(ObjectRegistry.getAllFields).mockResolvedValue(
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       const schema = await generator.generateSTISchemaFromRegistry(
         'Event',
         'events',
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       const typeIndex = schema.indexes.find(
@@ -155,18 +172,18 @@ describe('STI Schema Generation (Unit)', () => {
       vi.mocked(ObjectRegistry.getAllFields).mockImplementation(
         async (className) => {
           if (className === 'Event') {
-            return new Map([['title', text()]]);
+            return new Map([['title', createField('text')]]);
           }
           if (className === 'Meeting') {
             return new Map([
-              ['title', text()], // Inherited
-              ['roomNumber', text()],
+              ['title', createField('text')], // Inherited
+              ['roomNumber', createField('text')],
             ]);
           }
           if (className === 'HockeyGame') {
             return new Map([
-              ['title', text()], // Inherited
-              ['homeTeam', text()],
+              ['title', createField('text')], // Inherited
+              ['homeTeam', createField('text')],
             ]);
           }
           return new Map();
@@ -176,7 +193,7 @@ describe('STI Schema Generation (Unit)', () => {
       const schema = await generator.generateSTISchemaFromRegistry(
         'Event',
         'events',
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       // Should have base field
@@ -196,12 +213,14 @@ describe('STI Schema Generation (Unit)', () => {
       vi.mocked(ObjectRegistry.getAllFields).mockImplementation(
         async (className) => {
           if (className === 'Event') {
-            return new Map([['title', text({ required: true })]]);
+            return new Map([
+              ['title', createField('text', { required: true })],
+            ]);
           }
           if (className === 'Meeting') {
             return new Map([
-              ['title', text({ required: true })],
-              ['roomNumber', text({ required: true })],
+              ['title', createField('text', { required: true })],
+              ['roomNumber', createField('text', { required: true })],
             ]);
           }
           return new Map();
@@ -211,7 +230,7 @@ describe('STI Schema Generation (Unit)', () => {
       const schema = await generator.generateSTISchemaFromRegistry(
         'Event',
         'events',
-        new Map([['title', text({ required: true })]]),
+        new Map([['title', createField('text', { required: true })]]),
       );
 
       // All fields should be nullable in STI (even if required: true)
@@ -228,11 +247,11 @@ describe('STI Schema Generation (Unit)', () => {
       vi.mocked(ObjectRegistry.getAllFields).mockImplementation(
         async (className) => {
           if (className === 'Event') {
-            return new Map([['title', text()]]);
+            return new Map([['title', createField('text')]]);
           }
           if (className === 'Meeting') {
             return new Map([
-              ['title', text()],
+              ['title', createField('text')],
               [
                 'roomId',
                 {
@@ -250,7 +269,7 @@ describe('STI Schema Generation (Unit)', () => {
       const schema = await generator.generateSTISchemaFromRegistry(
         'Event',
         'events',
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       // Should have partial index for room_id filtered by Meeting type
@@ -268,13 +287,13 @@ describe('STI Schema Generation (Unit)', () => {
 
       vi.mocked(ObjectRegistry.getDescendants).mockReturnValue([]);
       vi.mocked(ObjectRegistry.getAllFields).mockResolvedValue(
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       const schema = await generator.generateSTISchemaFromRegistry(
         'Event',
         'events',
-        new Map([['title', text()]]),
+        new Map([['title', createField('text')]]),
       );
 
       // Should still generate valid schema
