@@ -438,8 +438,9 @@ export class ObjectRegistry {
     if (ObjectRegistry.classes.has(name)) {
       const existing = ObjectRegistry.classes.get(name);
       if (!existing) {
-        // Should never happen, but satisfy TypeScript
-        return;
+        throw new Error(
+          `Registry inconsistency: ${name} exists in classes Map but get() returned undefined`,
+        );
       }
 
       // Check if this is the exact same constructor (re-registration is OK)
