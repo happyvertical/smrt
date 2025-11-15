@@ -8,6 +8,7 @@ import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AssetMetafieldOptions } from './types';
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,

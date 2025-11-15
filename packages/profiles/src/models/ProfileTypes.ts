@@ -13,7 +13,9 @@ import { Profile, type ProfileOptions } from './Profile';
  *
  * Represents individual people/users.
  */
-@smrt()
+@smrt({
+  tableStrategy: 'sti',
+})
 export class Person extends Profile {
   constructor(options: ProfileOptions = {}) {
     super(options);
@@ -26,7 +28,9 @@ export class Person extends Profile {
  *
  * Represents companies, groups, institutions, and other organizational entities.
  */
-@smrt()
+@smrt({
+  tableStrategy: 'sti',
+})
 export class Organization extends Profile {
   constructor(options: ProfileOptions = {}) {
     super(options);
@@ -39,7 +43,9 @@ export class Organization extends Profile {
  *
  * Represents automated agents, bots, and AI entities.
  */
-@smrt()
+@smrt({
+  tableStrategy: 'sti',
+})
 export class Bot extends Profile {
   constructor(options: ProfileOptions = {}) {
     super(options);

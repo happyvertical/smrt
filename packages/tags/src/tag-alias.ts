@@ -10,6 +10,7 @@ import type { Tag } from './tag';
 import type { TagAliasOptions } from './types';
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,

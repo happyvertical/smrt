@@ -20,6 +20,7 @@ export interface ProfileMetadataOptions extends SmrtObjectOptions {
 }
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
