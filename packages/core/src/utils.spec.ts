@@ -12,9 +12,9 @@ import { fieldsFromClass } from './utils';
 // Phase 2: Must use @smrt() decorator for fieldsFromClass() to work
 @smrt()
 class TestClass extends SmrtObject {
-  test_string = text();
-  test_number = integer();
-  test_date = datetime();
+  test_string: string = '';
+  test_number: number = 0;
+  test_date: Date = new Date();
   methodField() {
     return true;
   }
@@ -23,39 +23,55 @@ class TestClass extends SmrtObject {
 it('should get fields from a class without values', async () => {
   const fields = await fieldsFromClass(TestClass);
   expect(fields).toEqual({
-    // Inherited fields from SmrtObject
+    // Inherited fields from SmrtObject (empty options for base fields)
     id: {
       name: 'id',
       type: 'text',
+      options: {},
     },
     slug: {
       name: 'slug',
       type: 'text',
+      options: {},
     },
     context: {
       name: 'context',
       type: 'text',
+      options: {},
     },
     created_at: {
       name: 'created_at',
       type: 'datetime',
+      options: {},
     },
     updated_at: {
       name: 'updated_at',
       type: 'datetime',
+      options: {},
     },
-    // Direct fields declared on TestClass
+    // Direct fields declared on TestClass (with default values and required flag)
     test_string: {
       name: 'test_string',
       type: 'text',
+      options: {
+        default: '',
+        required: true,
+      },
     },
     test_number: {
       name: 'test_number',
       type: 'integer',
+      options: {
+        default: 0,
+        required: true,
+      },
     },
     test_date: {
       name: 'test_date',
       type: 'datetime',
+      options: {
+        required: true,
+      },
     },
   });
 
@@ -79,37 +95,53 @@ it('should get fields from a class with values', async () => {
     id: {
       name: 'id',
       type: 'text',
+      options: {},
     },
     slug: {
       name: 'slug',
       type: 'text',
+      options: {},
     },
     context: {
       name: 'context',
       type: 'text',
+      options: {},
     },
     created_at: {
       name: 'created_at',
       type: 'datetime',
+      options: {},
     },
     updated_at: {
       name: 'updated_at',
       type: 'datetime',
+      options: {},
     },
     // Direct fields declared on TestClass (with values)
     test_string: {
       name: 'test_string',
       type: 'text',
+      options: {
+        default: '',
+        required: true,
+      },
       value: 'custom value',
     },
     test_number: {
       name: 'test_number',
       type: 'integer',
+      options: {
+        default: 0,
+        required: true,
+      },
       value: 456,
     },
     test_date: {
       name: 'test_date',
       type: 'datetime',
+      options: {
+        required: true,
+      },
       value: '2024-01-01',
     },
   });

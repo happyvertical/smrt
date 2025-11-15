@@ -516,17 +516,25 @@ export class ObjectRegistry {
       for (const [fieldName, fieldDef] of Object.entries(
         manifestEntry.fields,
       ) as [string, import('./scanner/types.js').FieldDefinition][]) {
+        // Build options object, only including defined values
+        const options: any = { ...fieldDef.options };
+        if (fieldDef.required !== undefined)
+          options.required = fieldDef.required;
+        if (fieldDef.default !== undefined) options.default = fieldDef.default;
+        if (fieldDef.description !== undefined)
+          options.description = fieldDef.description;
+        if (fieldDef.transient !== undefined)
+          options.transient = fieldDef.transient;
+
         // Store field definition as plain object maintaining Field-like structure
         const field: any = {
           type: fieldDef.type,
-          options: {
-            required: fieldDef.required,
-            default: fieldDef.default,
-            description: fieldDef.description,
-            transient: fieldDef.transient, // Mark transient fields (non-persisted)
-            ...fieldDef.options, // Includes unique, primaryKey, index, etc.
-          },
         };
+
+        // Only include options if not empty
+        if (Object.keys(options).length > 0) {
+          field.options = options;
+        }
 
         // Preserve top-level flags from manifest
         if (fieldDef.transient !== undefined) {
