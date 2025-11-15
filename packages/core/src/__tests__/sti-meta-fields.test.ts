@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { meta } from '../decorators';
+import { field, meta } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
@@ -71,6 +71,7 @@ describe('STI Meta Field Detection', () => {
     it('should mark @meta() decorated fields as type "meta"', () => {
       @smrt({ tableStrategy: 'sti' })
       class TestClass1 extends SmrtObject {
+        @field()
         regularField: string = '';
 
         @meta()

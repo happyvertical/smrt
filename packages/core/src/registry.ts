@@ -600,7 +600,12 @@ export class ObjectRegistry {
             mergedField.transient = existingField.transient;
           }
 
-          if (decoratorOptions.required !== undefined) {
+          // Handle required flag: nullable fields should not be required
+          if (decoratorOptions.nullable === true) {
+            // Nullable explicitly set to true means field is NOT required
+            mergedField.required = false;
+            mergedField.options.required = false;
+          } else if (decoratorOptions.required !== undefined) {
             mergedField.required = decoratorOptions.required;
           } else if (existingField.required !== undefined) {
             mergedField.required = existingField.required;
@@ -621,7 +626,11 @@ export class ObjectRegistry {
           if (decoratorOptions.transient !== undefined) {
             newField.transient = decoratorOptions.transient;
           }
-          if (decoratorOptions.required !== undefined) {
+          // Handle required flag: nullable fields should not be required
+          if (decoratorOptions.nullable === true) {
+            newField.required = false;
+            newField.options.required = false;
+          } else if (decoratorOptions.required !== undefined) {
             newField.required = decoratorOptions.required;
           }
 
