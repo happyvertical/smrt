@@ -26,6 +26,7 @@ export class PlaceType extends SmrtObject {
 
   constructor(options: PlaceTypeOptions = {}) {
     super(options);
+    if (options.name) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
     if (options.createdAt) this.createdAt = options.createdAt;
