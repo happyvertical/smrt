@@ -26,6 +26,7 @@ export interface CategoryOptions extends SmrtObjectOptions {
  * Product knowledge base category for organizing product information
  */
 @smrt({
+  tableStrategy: 'sti',
   api: {
     include: ['list', 'get', 'create', 'update'], // Standard CRUD except delete
   },

@@ -55,7 +55,7 @@ export async function discoverBaseClasses(
     : [];
 
   // Discover external SMRT packages
-  const smrtDependencies = discoverSmrtPackages(cwd);
+  const smrtDependencies = discoverSmrtPackages();
 
   // Load external base classes from SMRT package manifests
   for (const pkgName of smrtDependencies) {
@@ -115,7 +115,7 @@ export function discoverBaseClassesSync(
     : [];
 
   // Discover external SMRT packages
-  const smrtDependencies = discoverSmrtPackages(cwd);
+  const smrtDependencies = discoverSmrtPackages();
 
   // Load external base classes from SMRT package manifests
   for (const pkgName of smrtDependencies) {

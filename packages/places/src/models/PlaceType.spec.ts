@@ -18,12 +18,13 @@ describe('PlaceType Schema Generation', () => {
   it('should include name column in generated schema', async () => {
     const schema = await generateSchema(PlaceType);
 
-    // Verify schema includes name column (with quoted column names)
-    expect(schema).toContain('"name" TEXT NOT NULL');
+    // With STI, fields are nullable in schema (validation at app level)
+    expect(schema).toContain('"name" TEXT');
 
-    // Full schema check
+    // Full schema check - STI includes _meta_type discriminator
     expect(schema).toMatch(/CREATE TABLE IF NOT EXISTS "place_types"/);
-    expect(schema).toMatch(/"name" TEXT NOT NULL/);
+    expect(schema).toMatch(/"_meta_type" TEXT NOT NULL/);
+    expect(schema).toMatch(/"name" TEXT/);
   });
 
   it('should allow creating PlaceType with name', () => {

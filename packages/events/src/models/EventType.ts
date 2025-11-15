@@ -9,6 +9,7 @@ import { text } from '@happyvertical/smrt-core/fields';
 import type { EventTypeOptions } from '../types';
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,

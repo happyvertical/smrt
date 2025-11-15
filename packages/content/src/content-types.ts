@@ -13,7 +13,9 @@ import { Content, type ContentOptions } from './content';
  *
  * Represents editorial content like blog posts, news articles, and written pieces.
  */
-@smrt()
+@smrt({
+  tableStrategy: 'sti',
+})
 export class Article extends Content {
   constructor(options: ContentOptions = {}) {
     super(options);
@@ -26,7 +28,9 @@ export class Article extends Content {
  *
  * Represents structured documents like PDFs, reports, and technical documentation.
  */
-@smrt()
+@smrt({
+  tableStrategy: 'sti',
+})
 export class ContentDocument extends Content {
   constructor(options: ContentOptions = {}) {
     super(options);
@@ -39,7 +43,9 @@ export class ContentDocument extends Content {
  *
  * Represents mirrored/cached content from external sources.
  */
-@smrt()
+@smrt({
+  tableStrategy: 'sti',
+})
 export class Mirror extends Content {
   constructor(options: ContentOptions = {}) {
     super(options);

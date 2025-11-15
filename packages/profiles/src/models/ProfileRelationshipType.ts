@@ -57,6 +57,7 @@ for (const [slug, handler] of Object.entries(DEFAULT_HANDLERS)) {
 }
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
   cli: true,

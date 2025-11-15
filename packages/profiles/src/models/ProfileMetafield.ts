@@ -27,6 +27,7 @@ export interface ProfileMetafieldOptions extends SmrtObjectOptions {
 const customValidators = new Map<string, ValidatorFunction>();
 
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
