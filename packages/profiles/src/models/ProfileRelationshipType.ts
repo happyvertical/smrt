@@ -71,8 +71,8 @@ export class ProfileRelationshipType extends SmrtObject {
 
   constructor(options: ProfileRelationshipTypeOptions = {}) {
     super(options);
-    // Field values are automatically set by initializePropertiesFromOptions()
-    // No need to manually assign Field properties here
+    if (options.name) this.name = options.name;
+    if (options.reciprocal !== undefined) this.reciprocal = options.reciprocal;
   }
 
   /**

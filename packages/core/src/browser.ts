@@ -27,7 +27,6 @@ export type {
 // Global configuration (callable function)
 export { config } from './config';
 export * from './errors';
-export * from './fields/index';
 // Static manifest (generated at build time - browser-safe)
 export * from './manifest/index';
 export * from './object';

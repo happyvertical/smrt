@@ -1,17 +1,65 @@
 /**
  * Field decorators for SMRT objects
  *
- * Replaces field helper functions with a clean decorator-based API.
- * Properties are typed as primitives, avoiding Field object confusion.
+ * Modern decorator-based API for defining SMRT object properties.
+ * Properties are typed as primitives with decorator metadata.
  */
 
-import type {
-  FieldOptions,
-  NumericFieldOptions,
-  RelationshipFieldOptions,
-  TextFieldOptions,
-} from '../fields/index.js';
 import { ObjectRegistry } from '../registry.js';
+
+/**
+ * Base field options
+ */
+export interface FieldOptions {
+  /** Whether the field is required */
+  required?: boolean;
+  /** Default value for the field */
+  default?: any;
+  /** Whether the field is unique */
+  unique?: boolean;
+  /** Whether the field is nullable */
+  nullable?: boolean;
+  /** Whether the field should be excluded from database */
+  transient?: boolean;
+  /** Field description */
+  description?: string;
+}
+
+/**
+ * Options for text fields
+ */
+export interface TextFieldOptions extends FieldOptions {
+  /** Minimum length for text fields */
+  minLength?: number;
+  /** Maximum length for text fields */
+  maxLength?: number;
+  /** Regex pattern for validation */
+  pattern?: RegExp | string;
+}
+
+/**
+ * Options for numeric fields
+ */
+export interface NumericFieldOptions extends FieldOptions {
+  /** Minimum value */
+  min?: number;
+  /** Maximum value */
+  max?: number;
+}
+
+/**
+ * Options for relationship fields
+ */
+export interface RelationshipFieldOptions extends FieldOptions {
+  /** Related class name */
+  related?: string;
+  /** Foreign key field name */
+  foreignKey?: string;
+  /** Through table for many-to-many */
+  through?: string;
+  /** Relationship type */
+  type?: 'foreignKey' | 'oneToMany' | 'manyToMany';
+}
 
 /**
  * Generic field decorator for marking properties with constraints
@@ -102,6 +150,7 @@ export function oneToMany(
       ...options,
       type: 'oneToMany',
       related: relatedClassName,
+      transient: true, // Relationship fields are not database columns
     });
   };
 }
@@ -135,14 +184,7 @@ export function manyToMany(
       ...options,
       type: 'manyToMany',
       related: relatedClassName,
+      transient: true, // Relationship fields are not database columns
     });
   };
 }
-
-// Re-export types for convenience
-export type {
-  FieldOptions,
-  NumericFieldOptions,
-  RelationshipFieldOptions,
-  TextFieldOptions,
-};

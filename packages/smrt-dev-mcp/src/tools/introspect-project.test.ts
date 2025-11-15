@@ -34,12 +34,15 @@ describe('introspectProject', () => {
         join(tmpDir, 'product.ts'),
         `
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { text, decimal } from '@happyvertical/smrt-core/fields';
+import { field } from '@happyvertical/smrt-core/decorators';
 
 @smrt()
 export class Product extends SmrtObject {
-  name = text({ required: true });
-  price = decimal({ min: 0 });
+  @field({ required: true })
+  name: string = '';
+
+  @field({ min: 0 })
+  price: number = 0.0;
 }
         `.trim(),
       );
@@ -184,13 +187,12 @@ export class Types extends SmrtObject {
         join(tmpDir, 'model.ts'),
         `
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { text, integer, boolean } from '@happyvertical/smrt-core/fields';
 
 @smrt()
 export class Model extends SmrtObject {
-  name = text();
-  count = integer();
-  active = boolean();
+  name: string = '';
+  count: number = 0;
+  active: boolean = false;
 }
         `.trim(),
       );
@@ -212,7 +214,7 @@ export class Model extends SmrtObject {
         `
 @smrt()
 export class Model extends SmrtObject {
-  name = text();
+  name: string = '';
 }
         `.trim(),
       );

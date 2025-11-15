@@ -33,22 +33,8 @@ export async function generateSmrtClass(
 
     // Generate imports
     const imports = [
-      `import { ${baseClass}, type SmrtObjectOptions, smrt } from '@happyvertical/smrt-core';`,
+      `import { ${baseClass}, type SmrtObjectOptions, smrt, field } from '@happyvertical/smrt-core';`,
     ];
-
-    // Determine which field types are used
-    const fieldTypes = new Set(properties.map((p) => p.type));
-    const fieldImports: string[] = [];
-
-    for (const type of fieldTypes) {
-      fieldImports.push(type);
-    }
-
-    if (fieldImports.length > 0) {
-      imports.push(
-        `import { ${fieldImports.join(', ')} } from '@happyvertical/smrt-core/fields';`,
-      );
-    }
 
     // Generate interface
     const interfaceName = `${className}Options`;
@@ -85,20 +71,24 @@ ${interfaceProperties}
         ? `@smrt({\n${decoratorParts.join(',\n')}\n})`
         : '@smrt()';
 
-    // Generate class properties with field definitions
+    // Generate class properties with decorators
     const classProperties = properties
       .map((p) => {
-        const fieldCall = generateFieldCall(p);
-        return `  ${p.name} = ${fieldCall};`;
+        const decorator = p.required ? '  @field({ required: true })\n' : '';
+        const tsType = getTypeScriptType(p.type);
+        const defaultValue = getDefaultValue(p.type);
+        return `${decorator}  ${p.name}: ${tsType} = ${defaultValue};`;
       })
-      .join('\n');
+      .join('\n\n');
 
     // Generate constructor assignments
     const constructorAssignments = properties
-      .map(
-        (p) =>
-          `    this.${p.name} = options.${p.name} || ${getDefaultValue(p.type)};`,
-      )
+      .map((p) => {
+        const condition = p.required
+          ? `options.${p.name}`
+          : `options.${p.name} !== undefined`;
+        return `    if (${condition}) this.${p.name} = options.${p.name};`;
+      })
       .join('\n');
 
     // Generate complete class
@@ -159,14 +149,16 @@ function getTypeScriptType(fieldType: string): string {
 
 /**
  * Get default value for field type
+ * Uses 0 vs 0.0 heuristic for integer vs decimal
  */
 function getDefaultValue(fieldType: string): string {
   switch (fieldType) {
     case 'text':
       return "''";
     case 'integer':
+      return '0'; // No decimal point → INTEGER
     case 'decimal':
-      return '0';
+      return '0.0'; // With decimal point → DECIMAL
     case 'boolean':
       return 'false';
     case 'datetime':
@@ -176,28 +168,4 @@ function getDefaultValue(fieldType: string): string {
     default:
       return 'undefined';
   }
-}
-
-/**
- * Generate field function call with options
- */
-function generateFieldCall(property: {
-  name: string;
-  type: string;
-  required?: boolean;
-  description?: string;
-}): string {
-  const options: string[] = [];
-
-  if (property.required) {
-    options.push('required: true');
-  }
-
-  if (property.description) {
-    options.push(`description: ${JSON.stringify(property.description)}`);
-  }
-
-  const optionsStr = options.length > 0 ? `{ ${options.join(', ')} }` : '';
-
-  return `${property.type}(${optionsStr})`;
 }

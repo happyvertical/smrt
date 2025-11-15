@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763180292250,
+  "timestamp": 1763219187975,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -349,9 +349,8 @@ export const testManifest: SmartObjectManifest = {
         "name": {
           "type": "text",
           "required": true,
-          "options": {
-            "required": true
-          }
+          "options": {},
+          "default": ""
         }
       },
       "methods": {},
@@ -375,21 +374,23 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "profileId": {
           "type": "foreignKey",
-          "required": true
+          "required": true,
+          "options": {
+            "related": "CircularDepTestProfile"
+          },
+          "default": ""
         },
         "key": {
           "type": "text",
           "required": true,
-          "options": {
-            "required": true
-          }
+          "options": {},
+          "default": ""
         },
         "value": {
           "type": "text",
           "required": true,
-          "options": {
-            "required": true
-          }
+          "options": {},
+          "default": ""
         }
       },
       "methods": {},

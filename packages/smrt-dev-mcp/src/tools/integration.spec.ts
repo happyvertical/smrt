@@ -160,15 +160,16 @@ describe('SMRT Dev MCP Tools - Integration', () => {
       });
 
       // Manually add foreign key (generator doesn't support this yet)
+      // Replace the TypeScript property with a foreign key relationship
       const orderCodeWithFK = orderCode.replace(
-        'total = decimal();',
-        'total = decimal();\n  customerId = foreignKey(Customer);',
+        'total: number = 0.0;',
+        'total: number = 0.0;\n\n  customerId = foreignKey(Customer);',
       );
 
       // Add import for foreignKey
       const finalOrderCode = orderCodeWithFK.replace(
-        "import { text, decimal } from '@happyvertical/smrt-core/fields'",
-        "import { text, decimal, foreignKey } from '@happyvertical/smrt-core/fields'",
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';\nimport { foreignKey } from '@happyvertical/smrt-core/fields';",
       );
 
       await writeFile(join(tmpDir, 'order.ts'), finalOrderCode);
@@ -322,15 +323,18 @@ describe('SMRT Dev MCP Tools - Integration', () => {
       const generatedCode = await generateSmrtClass(originalSpec);
       await writeFile(join(tmpDir, 'roundtrip.ts'), generatedCode);
 
-      // Verify generated code is valid
+      // Verify generated code is valid (new decorator pattern)
       expect(generatedCode).toContain(
         'export class RoundTrip extends SmrtObject',
       );
+      expect(generatedCode).toContain('/** The title */');
       expect(generatedCode).toContain(
-        'title = text({"required":true,"description":"The title"})',
+        '@field({"required":true,"description":"The title"})',
       );
-      expect(generatedCode).toContain('count = integer()');
-      expect(generatedCode).toContain('active = boolean({"required":true})');
+      expect(generatedCode).toContain('title: string = ');
+      expect(generatedCode).toContain('count: number = 0');
+      expect(generatedCode).toContain('@field({"required":true})');
+      expect(generatedCode).toContain('active: boolean = false');
 
       // Read back via introspection
       const result = await introspectProject({

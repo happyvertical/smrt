@@ -43,8 +43,10 @@ export class ProfileMetafield extends SmrtObject {
 
   constructor(options: ProfileMetafieldOptions = {}) {
     super(options);
-    // Field values are automatically set by initializePropertiesFromOptions()
-    // No need to manually assign Field properties here
+    if (options.name) this.name = options.name;
+    if (options.description !== undefined)
+      this.description = options.description;
+    if (options.validation !== undefined) this.validation = options.validation;
   }
 
   /**

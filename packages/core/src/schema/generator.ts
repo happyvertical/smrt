@@ -4,7 +4,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { Field } from '../fields/index';
 import type { FieldDefinition, SmartObjectDefinition } from '../scanner/types';
 import type {
   ColumnDefinition,

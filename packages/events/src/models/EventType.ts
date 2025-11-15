@@ -4,8 +4,7 @@
  * Examples: 'basketball-game', 'concert', 'conference', 'goal', 'period'
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { text } from '@happyvertical/smrt-core/fields';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { EventTypeOptions } from '../types';
 
 @smrt({
@@ -15,17 +14,20 @@ import type { EventTypeOptions } from '../types';
   cli: true,
 })
 export class EventType extends SmrtObject {
-  name = text();
-  description = ''; // Optional description
-  schema = ''; // JSON schema for event metadata (stored as text)
-  participantSchema = ''; // JSON schema for participant metadata (stored as text)
+  @field({ required: true })
+  name: string = '';
+
+  description: string = ''; // Optional description
+  schema: string = ''; // JSON schema for event metadata (stored as text)
+  participantSchema: string = ''; // JSON schema for participant metadata (stored as text)
 
   // Timestamps
-  createdAt = new Date();
-  updatedAt = new Date();
+  createdAt: Date = new Date();
+  updatedAt: Date = new Date();
 
   constructor(options: EventTypeOptions = {}) {
     super(options);
+    if (options.name) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
 

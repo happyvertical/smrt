@@ -31,7 +31,6 @@ import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
 import { ConfigurationError } from './errors';
-import { Field } from './fields';
 import {
   discoverManifestEntry,
   discoverManifestSync,
@@ -398,6 +397,23 @@ export class ObjectRegistry {
   }
 
   /**
+   * Check if a class has any field decorators registered
+   *
+   * @param className - Name of the class
+   * @returns True if the class has field decorators, false otherwise
+   * @example
+   * ```typescript
+   * if (ObjectRegistry.hasFieldDecorators('Product')) {
+   *   // Class uses decorators - skip legacy field initialization
+   * }
+   * ```
+   */
+  static hasFieldDecorators(className: string): boolean {
+    const decorators = ObjectRegistry.fieldDecorators.get(className);
+    return decorators !== undefined && decorators.size > 0;
+  }
+
+  /**
    * Register a new SMRT object class with the global registry
    *
    * @param constructor - The class constructor extending SmrtObject
@@ -420,7 +436,11 @@ export class ObjectRegistry {
 
     // Prevent duplicate registrations
     if (ObjectRegistry.classes.has(name)) {
-      const existing = ObjectRegistry.classes.get(name)!;
+      const existing = ObjectRegistry.classes.get(name);
+      if (!existing) {
+        // Should never happen, but satisfy TypeScript
+        return;
+      }
 
       // Check if this is the exact same constructor (re-registration is OK)
       if (existing.constructor === ctor) {
@@ -477,21 +497,21 @@ export class ObjectRegistry {
 
     if (manifestEntry?.fields) {
       // Use manifest fields (from build-time AST scanning)
-      // Convert FieldDefinition to Field objects so getSqlType() works in schema generator
+      // Store field definitions as plain objects with nested options
       for (const [fieldName, fieldDef] of Object.entries(
         manifestEntry.fields,
       ) as [string, import('./scanner/types.js').FieldDefinition][]) {
-        // Create Field instance from FieldDefinition
-        fields.set(
-          fieldName,
-          new Field(fieldDef.type, {
+        // Store field definition as plain object maintaining Field-like structure
+        fields.set(fieldName, {
+          type: fieldDef.type,
+          options: {
             required: fieldDef.required,
             default: fieldDef.default,
             description: fieldDef.description,
             transient: fieldDef.transient, // Mark transient fields (non-persisted)
             ...fieldDef.options, // Includes unique, primaryKey, index, etc.
-          }),
-        );
+          },
+        });
       }
 
       console.log(
@@ -650,15 +670,15 @@ export class ObjectRegistry {
         objectDef.fields as any,
       )) {
         const fd = fieldDef as any;
-        fields.set(
-          fieldName,
-          new Field(fd.type, {
+        fields.set(fieldName, {
+          type: fd.type,
+          options: {
             required: fd.required,
             default: fd.default,
             description: fd.description,
             ...fd.options,
-          }),
-        );
+          },
+        });
       }
     }
 
@@ -1218,15 +1238,15 @@ export class ObjectRegistry {
       )) {
         // Only add if not already present (don't overwrite AST-scanned fields)
         if (!registered.fields.has(fieldName)) {
-          registered.fields.set(
-            fieldName,
-            new Field(fieldDef.type, {
+          registered.fields.set(fieldName, {
+            type: fieldDef.type,
+            options: {
               required: fieldDef.required,
               default: fieldDef.default,
               description: fieldDef.description,
               ...fieldDef.options, // Includes unique, primaryKey, index, etc.
-            }),
-          );
+            },
+          });
         }
       }
 

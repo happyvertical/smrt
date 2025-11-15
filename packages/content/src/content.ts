@@ -1,6 +1,5 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { text } from '@happyvertical/smrt-core/fields';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
  * Options for Content initialization
@@ -137,7 +136,8 @@ export class Content extends SmrtObject {
   /**
    * Human-readable name for SMRT framework compatibility
    */
-  public name = text();
+  @field({ required: true })
+  public name: string = '';
 
   /**
    * Content title
@@ -208,6 +208,7 @@ export class Content extends SmrtObject {
     this.variant = options.variant || null;
     this.fileKey = options.fileKey || null;
     this.author = options.author || null;
+    if (options.name) this.name = options.name;
     this.title = options.title || '';
     this.description = options.description || null;
     this.body = options.body || '';

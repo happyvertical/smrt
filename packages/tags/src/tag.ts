@@ -5,7 +5,7 @@
  * for taxonomies and category trees.
  */
 
-import { SmrtObject, smrt, text } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { TagMetadata, TagOptions } from './types';
 
 @smrt({
@@ -34,30 +34,34 @@ export class Tag extends SmrtObject {
     this._context = value;
   }
 
-  name = text(); // Display name
-  parentSlug = text(); // FK to parent tag for hierarchy (nullable)
-  level = 0; // Hierarchy depth (0 = root)
-  description = text(); // Optional description
-  metadata = text(); // JSON metadata stored as text
+  @field({ required: true })
+  name: string = ''; // Display name
+
+  parentSlug: string = ''; // FK to parent tag for hierarchy (nullable)
+  level: number = 0; // Hierarchy depth (0 = root)
+  description: string = ''; // Optional description
+  metadata: string = ''; // JSON metadata stored as text
 
   // Timestamps
-  createdAt = new Date();
-  updatedAt = new Date();
+  createdAt: Date = new Date();
+  updatedAt: Date = new Date();
 
   constructor(options: TagOptions = {}) {
     super(options);
-    // Field values are automatically set by initializePropertiesFromOptions()
-    // Only need to handle non-Field properties
+    if (options.name) this.name = options.name;
+    if (options.parentSlug !== undefined) this.parentSlug = options.parentSlug;
     if (options.slug) this._slug = options.slug;
     if (options.context !== undefined) this._context = options.context;
     if (options.level !== undefined) this.level = options.level;
+    if (options.description !== undefined)
+      this.description = options.description;
 
     // Handle metadata - can be object or JSON string
     if (options.metadata !== undefined) {
       if (typeof options.metadata === 'string') {
-        this.metadata.value = options.metadata;
+        this.metadata = options.metadata;
       } else {
-        this.metadata.value = JSON.stringify(options.metadata);
+        this.metadata = JSON.stringify(options.metadata);
       }
     }
   }

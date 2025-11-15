@@ -1,6 +1,6 @@
 /**
  * Unit Tests for generate-smrt-class Tool
- * Tests SMRT class code generation with various configurations
+ * Tests SMRT class code generation with decorators and TypeScript types
  */
 
 import { describe, expect, it } from 'vitest';
@@ -8,7 +8,7 @@ import { generateSmrtClass } from './generate-smrt-class.js';
 
 describe('generateSmrtClass', () => {
   describe('Basic Class Generation', () => {
-    it('should generate a basic SMRT class', async () => {
+    it('should generate a basic SMRT class with TypeScript types', async () => {
       const result = await generateSmrtClass({
         className: 'Product',
         properties: [
@@ -22,10 +22,11 @@ describe('generateSmrtClass', () => {
         "import { SmrtObject, smrt } from '@happyvertical/smrt-core'",
       );
       expect(result).toContain(
-        "import { text, decimal } from '@happyvertical/smrt-core/fields'",
+        "import { field } from '@happyvertical/smrt-core/decorators'",
       );
-      expect(result).toContain('name = text({"required":true})');
-      expect(result).toContain('price = decimal({"required":true})');
+      expect(result).toContain('name: string = ');
+      expect(result).toContain('price: number = 0.0');
+      expect(result).toContain('@field({"required":true})');
     });
 
     it('should generate constructor with Object.assign', async () => {
@@ -41,7 +42,7 @@ describe('generateSmrtClass', () => {
   });
 
   describe('Property Types', () => {
-    it('should handle all field types', async () => {
+    it('should handle all field types with TypeScript syntax', async () => {
       const result = await generateSmrtClass({
         className: 'CompleteModel',
         properties: [
@@ -54,18 +55,15 @@ describe('generateSmrtClass', () => {
         ],
       });
 
-      expect(result).toContain(
-        "import { text, integer, decimal, boolean, datetime, json } from '@happyvertical/smrt-core/fields'",
-      );
-      expect(result).toContain('textField = text()');
-      expect(result).toContain('numberField = integer()');
-      expect(result).toContain('decimalField = decimal()');
-      expect(result).toContain('boolField = boolean()');
-      expect(result).toContain('dateField = datetime()');
-      expect(result).toContain('jsonField = json()');
+      expect(result).toContain('textField: string = ');
+      expect(result).toContain('numberField: number = 0');
+      expect(result).toContain('decimalField: number = 0.0');
+      expect(result).toContain('boolField: boolean = false');
+      expect(result).toContain('dateField: Date = new Date()');
+      expect(result).toContain('jsonField: any = {}');
     });
 
-    it('should handle property options', async () => {
+    it('should handle property options with @field decorator', async () => {
       const result = await generateSmrtClass({
         className: 'ValidatedModel',
         properties: [
@@ -83,10 +81,12 @@ describe('generateSmrtClass', () => {
         ],
       });
 
+      expect(result).toContain('/** User email address */');
       expect(result).toContain(
-        'email = text({"required":true,"description":"User email address"})',
+        '@field({"required":true,"description":"User email address"})',
       );
-      expect(result).toContain('age = integer()');
+      expect(result).toContain('email: string = ');
+      expect(result).toContain('age: number = 0');
     });
   });
 
@@ -185,40 +185,30 @@ describe('generateSmrtClass', () => {
   });
 
   describe('Import Optimization', () => {
-    it('should only import used field types', async () => {
+    it('should only import @field decorator when needed', async () => {
       const result = await generateSmrtClass({
-        className: 'OptimizedImports',
+        className: 'NoConstraints',
         properties: [
           { name: 'name', type: 'text' },
           { name: 'price', type: 'decimal' },
         ],
       });
 
-      expect(result).toContain(
-        "import { text, decimal } from '@happyvertical/smrt-core/fields'",
-      );
-      expect(result).not.toContain('integer');
-      expect(result).not.toContain('boolean');
-      expect(result).not.toContain('datetime');
-      expect(result).not.toContain('json');
+      expect(result).not.toContain('import { field }');
     });
 
-    it('should deduplicate field type imports', async () => {
+    it('should import @field decorator when constraints exist', async () => {
       const result = await generateSmrtClass({
-        className: 'DuplicateTypes',
+        className: 'WithConstraints',
         properties: [
-          { name: 'firstName', type: 'text' },
-          { name: 'lastName', type: 'text' },
-          { name: 'email', type: 'text' },
+          { name: 'name', type: 'text', required: true },
+          { name: 'price', type: 'decimal' },
         ],
       });
 
-      // Should only import 'text' once
-      const textImportCount = (result.match(/\btext\b/g) || []).length;
-      const importLineMatches = result.match(
-        /import.*from '@happyvertical\/smrt-core\/fields'/g,
+      expect(result).toContain(
+        "import { field } from '@happyvertical/smrt-core/decorators'",
       );
-      expect(importLineMatches?.length).toBe(1);
     });
   });
 
@@ -231,7 +221,7 @@ describe('generateSmrtClass', () => {
 
       expect(result).toContain('export class EmptyClass extends SmrtObject');
       expect(result).toContain('constructor(options: any = {})');
-      expect(result).not.toContain('import { text');
+      expect(result).not.toContain('import { field }');
     });
 
     it('should handle class names with special characters (PascalCase)', async () => {
@@ -254,8 +244,8 @@ describe('generateSmrtClass', () => {
         ],
       });
 
-      expect(result).toContain('created_at = datetime()');
-      expect(result).toContain('updated_at = datetime()');
+      expect(result).toContain('created_at: Date = new Date()');
+      expect(result).toContain('updated_at: Date = new Date()');
     });
   });
 
@@ -291,14 +281,35 @@ describe('generateSmrtClass', () => {
 
       // Basic syntax checks
       expect(result).not.toContain('undefined');
-      expect(result).not.toContain('null');
 
-      // Proper semicolons
-      const lines = result.split('\n').filter((line) => line.trim());
-      const propertyLines = lines.filter((line) => /^\s+\w+\s*=/.test(line));
-      for (const line of propertyLines) {
-        expect(line.trim()).toMatch(/;$/);
-      }
+      // Should have TypeScript type annotations
+      expect(result).toContain('name: string');
+      expect(result).toContain('active: boolean');
+    });
+  });
+
+  describe('JSDoc Comments', () => {
+    it('should add JSDoc comments for descriptions', async () => {
+      const result = await generateSmrtClass({
+        className: 'DocumentedClass',
+        properties: [
+          { name: 'name', type: 'text', description: 'The name of the object' },
+          { name: 'count', type: 'integer', description: 'Item count' },
+        ],
+      });
+
+      expect(result).toContain('/** The name of the object */');
+      expect(result).toContain('/** Item count */');
+    });
+
+    it('should omit JSDoc when no description', async () => {
+      const result = await generateSmrtClass({
+        className: 'NoDescription',
+        properties: [{ name: 'name', type: 'text' }],
+      });
+
+      expect(result).not.toContain('/**');
+      expect(result).not.toContain('*/');
     });
   });
 });

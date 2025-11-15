@@ -41,18 +41,6 @@ export {
   type TextFieldOptions,
 } from './decorators/index';
 export * from './errors';
-// Field helpers (deprecated, use decorators instead)
-export {
-  boolean,
-  datetime,
-  decimal,
-  Field,
-  integer,
-  json,
-  type Meta,
-  meta,
-  text,
-} from './fields/index';
 // Code generators (tree-shakeable)
 export * from './generators/index';
 // Static manifest (generated at build time)

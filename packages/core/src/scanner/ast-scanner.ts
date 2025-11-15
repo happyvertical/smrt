@@ -625,6 +625,12 @@ export class ASTScanner {
         Object.assign(options, additionalOptions);
       }
 
+      // Relationship fields (oneToMany, manyToMany) are ALWAYS transient (virtual, not persisted)
+      // This should not be overridden by user options
+      if (decoratorName === 'oneToMany' || decoratorName === 'manyToMany') {
+        options.transient = true;
+      }
+
       return options;
     }
 

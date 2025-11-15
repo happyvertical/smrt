@@ -19,6 +19,19 @@ interface GenerateSmrtClassArgs {
   includeCliConfig?: boolean;
 }
 
+// Map field types to TypeScript types and default values
+const TYPE_MAPPING: Record<
+  PropertyDefinition['type'],
+  { tsType: string; defaultValue: string }
+> = {
+  text: { tsType: 'string', defaultValue: "''" },
+  integer: { tsType: 'number', defaultValue: '0' },
+  decimal: { tsType: 'number', defaultValue: '0.0' },
+  boolean: { tsType: 'boolean', defaultValue: 'false' },
+  datetime: { tsType: 'Date', defaultValue: 'new Date()' },
+  json: { tsType: 'any', defaultValue: '{}' },
+};
+
 export async function generateSmrtClass(
   args: GenerateSmrtClassArgs,
 ): Promise<string> {
@@ -36,16 +49,13 @@ export async function generateSmrtClass(
     `import { ${baseClass}, smrt } from '@happyvertical/smrt-core';`,
   ];
 
-  if (
-    properties.some((p) =>
-      ['text', 'integer', 'decimal', 'boolean', 'datetime', 'json'].includes(
-        p.type,
-      ),
-    )
-  ) {
-    const fieldTypes = [...new Set(properties.map((p) => p.type))];
+  // Check if we need @field decorator import (for constraints)
+  const needsFieldDecorator = properties.some(
+    (p) => p.required || p.description,
+  );
+  if (needsFieldDecorator) {
     imports.push(
-      `import { ${fieldTypes.join(', ')} } from '@happyvertical/smrt-core/fields';`,
+      `import { field } from '@happyvertical/smrt-core/decorators';`,
     );
   }
 
@@ -74,19 +84,27 @@ export async function generateSmrtClass(
       ? `@smrt(${JSON.stringify(decoratorConfig, null, 2)})`
       : '@smrt()';
 
-  // Generate property definitions
+  // Generate property definitions using TypeScript types and @field decorator
   const propertyDefinitions = properties
     .map((prop) => {
+      const { tsType, defaultValue } = TYPE_MAPPING[prop.type];
       const options: any = {};
+
       if (prop.required) options.required = true;
       if (prop.description) options.description = prop.description;
 
-      const optionsString =
-        Object.keys(options).length > 0 ? `(${JSON.stringify(options)})` : '()';
+      // Add JSDoc comment if description provided
+      const jsdoc = prop.description ? `  /** ${prop.description} */\n` : '';
 
-      return `  ${prop.name} = ${prop.type}${optionsString};`;
+      // Use @field decorator if constraints are needed
+      const decorator =
+        Object.keys(options).length > 0
+          ? `  @field(${JSON.stringify(options)})\n`
+          : '';
+
+      return `${jsdoc}${decorator}  ${prop.name}: ${tsType} = ${defaultValue};`;
     })
-    .join('\n');
+    .join('\n\n');
 
   // Generate complete class
   const classCode = `${imports.join('\n')}
