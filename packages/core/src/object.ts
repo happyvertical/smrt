@@ -601,7 +601,19 @@ export class SmrtObject extends SmrtClass {
       const fieldDef = registeredFields.get(key);
 
       // Skip transient fields (non-persisted fields like functions, computed properties)
-      if (fieldDef && (fieldDef.transient || fieldDef.options?.transient)) {
+      // NOTE: This filtering logic must match SchemaGenerator.generateColumns()
+      // Changes to field filtering should be applied in BOTH places
+      if (fieldDef && (fieldDef.transient || fieldDef._meta?.transient)) {
+        continue;
+      }
+
+      // Skip relationship fields that don't create columns
+      // oneToMany and manyToMany are relationship metadata, not actual database columns
+      // NOTE: This must match the filtering in SchemaGenerator.generateColumns()
+      if (
+        fieldDef &&
+        (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany')
+      ) {
         continue;
       }
 

@@ -106,6 +106,8 @@ export class SchemaGenerator {
       }
 
       // Skip transient fields (non-persisted)
+      // NOTE: This filtering logic must match SmrtObject.toJSON()
+      // Changes to field filtering should be applied in BOTH places
       if (fieldDef.transient || fieldDef._meta?.transient) {
         continue;
       }
@@ -113,6 +115,7 @@ export class SchemaGenerator {
       // Skip relationship fields that don't create columns
       // oneToMany and manyToMany are relationship metadata, not actual database columns
       // foreignKey DOES create a column (it stores the foreign key ID)
+      // NOTE: This must match the filtering in SmrtObject.toJSON()
       if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany') {
         continue;
       }
