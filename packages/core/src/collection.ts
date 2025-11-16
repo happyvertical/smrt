@@ -1,4 +1,4 @@
-import { buildWhere, syncSchema } from '@happyvertical/sql';
+import { buildWhere } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import type { SmrtObject } from './object';
@@ -813,6 +813,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns New item instance
    */
   public async create(options: any) {
+    // STI: Check for polymorphic instantiation BEFORE calling setupDb()
+    // This prevents double setupDb() calls and ensures correct table setup (Issue #332)
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+
+    if (tableStrategy === 'sti' && options._meta_type) {
+      // createPolymorphic() handles setupDb() internally - no need to call it here
+      // Pass raw options (not params) - createPolymorphic() will add ai, db, _skipLoad
+      return await this.createPolymorphic(options._meta_type, options);
+    }
+
+    // For non-STI or STI base class without _meta_type, proceed with direct instantiation
     // Ensure table exists before creating objects (lazy initialization)
     await this.setupDb();
 
@@ -826,13 +837,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       _skipLoad: true, // Don't try to load from DB - this is a new object
       ...options,
     };
-
-    // STI: Use polymorphic instantiation if _meta_type is provided (Issue #332)
-    // This allows creating subclass instances via the base collection
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
-    if (tableStrategy === 'sti' && options._meta_type) {
-      return await this.createPolymorphic(options._meta_type, params);
-    }
 
     // Direct instantiation - all SmrtObject classes support this pattern
     const instance = new this._itemClass(params);
@@ -884,6 +888,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Instantiate the correct subclass
     const instance = new registeredClass.constructor(params);
     await instance.initialize();
+
     return instance as ModelType;
   }
 
@@ -956,35 +961,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     this._db_setup_promise = (async () => {
       try {
         const className = this._itemClass.name;
-        const tableStrategy = ObjectRegistry.getTableStrategy(className);
 
-        // For STI child classes, ensure base class table is created first
-        if (tableStrategy === 'sti') {
-          const stiBase = ObjectRegistry.getSTIBase(className);
-          if (stiBase && stiBase !== className) {
-            // This is a child class - ensure base class table exists
-            const { setupTableFromClass } = await import('./schema/utils.js');
-            // Get the base class constructor
-            const BaseClass = ObjectRegistry.getClass(stiBase);
-            if (BaseClass) {
-              await setupTableFromClass(this.db, BaseClass);
-            }
-            // Don't generate schema for child class (base handles it)
-            return;
-          }
-        }
-
-        // For base classes or CTI, generate and sync schema
-        const schema = await this.generateSchema();
-
-        // Skip schema sync for STI child classes (empty schema returned)
-        // The base class already created the shared table
-        if (schema && schema.trim() !== '') {
-          // NOTE: DuckDB/JSON adapter-specific transformations (e.g., inline UNIQUE constraints)
-          // are now handled by the adapters themselves in syncSchema().
-          // See: happyvertical/sdk#392
-          await syncSchema({ db: this.db, schema });
-        }
+        // Use manifest-only ensureSchema (no class references needed)
+        // This handles STI recursion internally
+        const { ensureSchema } = await import('./schema/utils.js');
+        await ensureSchema(this.db, className);
       } catch (error) {
         this._db_setup_promise = null; // Allow retry on failure
         throw error;

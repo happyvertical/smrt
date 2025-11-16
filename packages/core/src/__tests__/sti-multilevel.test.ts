@@ -187,12 +187,17 @@ describe('Multi-Level STI Save Operations', () => {
     it('should filter by discriminator type', async () => {
       // Create one of each type
       await (
-        await profiles.create({ _meta_type: 'Profile', name: 'John' })
+        await profiles.create({
+          _meta_type: 'Profile',
+          name: 'John',
+          bio: 'Developer',
+        })
       ).save();
       await (
         await profiles.create({
           _meta_type: 'Organization',
           name: 'Acme',
+          bio: 'Company',
           website: 'https://acme.com',
         })
       ).save();
@@ -200,7 +205,9 @@ describe('Multi-Level STI Save Operations', () => {
         await profiles.create({
           _meta_type: 'Council',
           name: 'Springfield',
+          bio: 'Government',
           meetingsUrl: 'https://gov.com/meetings',
+          jurisdiction: 'Springfield, IL',
         })
       ).save();
 

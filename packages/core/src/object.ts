@@ -10,7 +10,6 @@ import {
   ValidationError,
 } from './errors';
 import { ObjectRegistry } from './registry';
-import { setupTableFromClass } from './schema/utils';
 import {
   executeToolCall as executeToolCallInternal,
   type ToolCall,
@@ -365,7 +364,9 @@ export class SmrtObject extends SmrtClass {
     }
 
     try {
-      await setupTableFromClass(this.db, this.constructor);
+      // Use manifest-only ensureSchema (no class constructor needed)
+      const { ensureSchema } = await import('./schema/utils.js');
+      await ensureSchema(this.db, this.constructor.name);
       this._dbSetupComplete = true;
     } catch (error) {
       throw DatabaseError.schemaError(
@@ -573,7 +574,7 @@ export class SmrtObject extends SmrtClass {
     // Get registered field definitions (synchronous access to already-loaded metadata)
     // For inheritance hierarchies, use cached inherited fields if available (populated by getAllFields())
     // This ensures multi-level STI classes serialize all parent fields correctly (Issue #332)
-    const registered = ObjectRegistry.findClass(this.constructor.name);
+    const registered = ObjectRegistry.getClass(this.constructor.name);
     const registeredFields =
       registered?.inheritedFields ||
       ObjectRegistry.getFields(this.constructor.name);

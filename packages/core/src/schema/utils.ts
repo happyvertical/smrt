@@ -267,3 +267,95 @@ export async function setupTableFromClass(db: any, ClassType: any) {
 
   return setupPromise;
 }
+
+/**
+ * Ensures database schema exists for a class (manifest-only, no class references)
+ *
+ * This is the modern replacement for setupTableFromClass() that works purely from
+ * manifest data without needing class constructor references. Supports STI by
+ * recursively ensuring base class tables exist.
+ *
+ * @param db - Database connection interface
+ * @param className - Name of the class to ensure schema for
+ * @returns Promise that resolves when schema is ensured
+ * @throws {Error} If class not registered or schema creation fails
+ *
+ * @example
+ * ```typescript
+ * // Simple usage
+ * await ensureSchema(db, 'Product');
+ *
+ * // STI child class - automatically ensures base class table exists
+ * await ensureSchema(db, 'Council'); // Also creates 'Profile' table if needed
+ * ```
+ */
+export async function ensureSchema(db: any, className: string): Promise<void> {
+  // Get table name from registry (set during @smrt() decoration)
+  const tableName = ObjectRegistry.getTableName(className);
+
+  if (!tableName) {
+    throw new Error(
+      `Cannot ensure schema for unregistered class '${className}'. ` +
+        `Ensure the class is decorated with @smrt() and registered in the ObjectRegistry.`,
+    );
+  }
+
+  // Include database URL in cache key to prevent cross-database conflicts
+  const dbUrl = db.url || db.config?.url || 'memory';
+  const cacheKey = `${dbUrl}::${tableName}`;
+
+  // Check cache first
+  if (
+    _setupTableFromClassPromises[cacheKey] !== undefined &&
+    _setupTableFromClassPromises[cacheKey] !== null
+  ) {
+    return _setupTableFromClassPromises[cacheKey];
+  }
+
+  // Create the setup promise
+  const setupPromise = (async () => {
+    try {
+      // Get fields from registry (from AST manifest)
+      const cachedFields = ObjectRegistry.getFields(className);
+
+      // For STI child classes, ensure base class table exists first
+      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      if (tableStrategy === 'sti') {
+        const stiBase = ObjectRegistry.getSTIBase(className);
+
+        if (stiBase && stiBase !== className) {
+          // This is a child - recursively setup base class table
+          await ensureSchema(db, stiBase);
+          // Child classes share base table - no schema generation needed
+          return;
+        }
+      }
+
+      // For base classes or CTI, generate and sync schema
+      // Get the class constructor for generateSchema (still needed by that function)
+      const registered = ObjectRegistry.getClass(className);
+      if (!registered) {
+        throw new Error(
+          `Cannot generate schema for unregistered class '${className}'. ` +
+            `Ensure the class is decorated with @smrt().`,
+        );
+      }
+
+      const schema = await generateSchema(registered.constructor, cachedFields);
+
+      // Skip empty schemas (shouldn't happen for base classes, but defensive)
+      if (schema && schema.trim() !== '') {
+        await syncSchema({ db, schema });
+      }
+    } catch (error) {
+      // CRITICAL: Clear cache BEFORE throwing to prevent race condition
+      _setupTableFromClassPromises[cacheKey] = null;
+      throw error;
+    }
+  })();
+
+  // Store the promise in cache
+  _setupTableFromClassPromises[cacheKey] = setupPromise;
+
+  return setupPromise;
+}
