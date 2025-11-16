@@ -48,7 +48,7 @@ jobs:
           node-version: '24'
           install-deps: 'false'
           registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          auth-token: ${{ secrets.GH_TOKEN }}
 
       - name: Update @happyvertical dependencies
         id: update
