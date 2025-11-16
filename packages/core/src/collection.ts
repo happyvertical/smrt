@@ -27,11 +27,6 @@ export interface SmrtCollectionOptions extends SmrtClassOptions {}
  */
 export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
-   * Promise tracking the database setup operation
-   */
-  protected _db_setup_promise: Promise<void> | null = null;
-
-  /**
    * Convert WHERE clause field names from camelCase to snake_case while preserving operators.
    * Validates operators and field names to prevent SQL injection and invalid queries.
    *
@@ -324,6 +319,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Perform async initialization
     await instance.initialize();
 
+    // Initialize schema once at collection creation (replaces lazy initialization)
+    // This ensures tables exist before any objects are created/saved
+    if (instance.db && (SmrtCollection as any)._itemClass) {
+      const className = (SmrtCollection as any)._itemClass.name;
+      const { ensureSchema } = await import('./schema/utils.js');
+      await ensureSchema(instance.db, className);
+    }
+
     // Return fully initialized instance
     return instance;
   }
@@ -412,7 +415,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to the object or null if not found
    */
   public async get(filter: string | Record<string, any>) {
-    await this.setupDb();
+    // Schema already initialized in Collection.create() static factory
 
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
@@ -514,7 +517,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
      */
     include?: string[];
   }): Promise<ModelType[]> {
-    await this.setupDb();
+    // Schema already initialized in Collection.create() static factory
 
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
@@ -813,20 +816,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns New item instance
    */
   public async create(options: any) {
-    // STI: Check for polymorphic instantiation BEFORE calling setupDb()
-    // This prevents double setupDb() calls and ensures correct table setup (Issue #332)
+    // STI: Check for polymorphic instantiation
     const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
 
     if (tableStrategy === 'sti' && options._meta_type) {
-      // createPolymorphic() handles setupDb() internally - no need to call it here
+      // Use polymorphic instantiation for STI child classes
       // Pass raw options (not params) - createPolymorphic() will add ai, db, _skipLoad
       return await this.createPolymorphic(options._meta_type, options);
     }
 
     // For non-STI or STI base class without _meta_type, proceed with direct instantiation
-    // Ensure table exists before creating objects (lazy initialization)
-    await this.setupDb();
-
+    // Schema already initialized in Collection.create() static factory
     const params = {
       ai: this.options.ai,
       // Pass the actual database instance, not options
@@ -856,8 +856,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     className: string | null | undefined,
     options: any,
   ): Promise<ModelType> {
-    // Ensure table exists before creating objects
-    await this.setupDb();
+    // Schema already initialized in Collection.create() static factory
 
     // Validate discriminator is present
     if (!className || className === null || className === undefined) {
@@ -949,33 +948,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Sets up the database schema for this collection
-   *
-   * @returns Promise that resolves when setup is complete
-   */
-  async setupDb() {
-    if (this._db_setup_promise) {
-      return this._db_setup_promise;
-    }
-
-    this._db_setup_promise = (async () => {
-      try {
-        const className = this._itemClass.name;
-
-        // Use manifest-only ensureSchema (no class references needed)
-        // This handles STI recursion internally
-        const { ensureSchema } = await import('./schema/utils.js');
-        await ensureSchema(this.db, className);
-      } catch (error) {
-        this._db_setup_promise = null; // Allow retry on failure
-        throw error;
-      }
-    })();
-
-    return this._db_setup_promise;
-  }
-
-  /**
    * Gets field definitions for the collection's item class
    *
    * @returns Object containing field definitions
@@ -1058,7 +1030,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to the total count of matching records
    */
   public async count(options: { where?: Record<string, any> } = {}) {
-    await this.setupDb();
+    // Schema already initialized in Collection.create() static factory
 
     const { where } = options;
     const { sql: whereSql, values: whereValues } = buildWhere(

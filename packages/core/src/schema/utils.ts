@@ -138,9 +138,16 @@ export async function generateSchema(
 
 /**
  * Cache of table setup promises to avoid duplicate setup operations
- * Key format: "${dbUrl}::${tableName}" to prevent cross-database conflicts
+ *
+ * Dual caching strategy:
+ * - File-based DBs: String keys "${dbUrl}::${tableName}"
+ * - In-memory DBs: WeakMap with db instance as key (prevents cross-instance conflicts)
  */
 const _setupTableFromClassPromises: Record<string, Promise<void> | null> = {};
+const _memoryDbSetupPromises = new WeakMap<
+  any,
+  Map<string, Promise<void> | null>
+>();
 
 /**
  * Clears the table setup cache - useful for testing
@@ -150,6 +157,7 @@ export function _clearSetupTableCache() {
   Object.keys(_setupTableFromClassPromises).forEach((key) => {
     delete _setupTableFromClassPromises[key];
   });
+  // Note: WeakMap doesn't need clearing - entries are garbage collected automatically
 }
 
 /**
@@ -177,15 +185,25 @@ export async function setupTableFromClass(db: any, ClassType: any) {
       .replace(/([^s])$/, '$1s')
       .replace(/y$/, 'ies');
 
-  // Include database URL in cache key to prevent cross-database conflicts
+  // Dual caching strategy for :memory: vs file-based databases
   const dbUrl = db.url || db.config?.url || 'memory';
-  const cacheKey = `${dbUrl}::${tableName}`;
+  const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
 
-  if (
-    _setupTableFromClassPromises[cacheKey] !== undefined &&
-    _setupTableFromClassPromises[cacheKey] !== null
-  ) {
-    return _setupTableFromClassPromises[cacheKey];
+  // Check cache first
+  let cachedPromise: Promise<void> | null | undefined;
+
+  if (isMemoryDb) {
+    // Use WeakMap for :memory: databases (instance-specific)
+    const tableMap = _memoryDbSetupPromises.get(db);
+    cachedPromise = tableMap?.get(tableName);
+  } else {
+    // Use string key for file-based databases (URL-specific)
+    const cacheKey = `${dbUrl}::${tableName}`;
+    cachedPromise = _setupTableFromClassPromises[cacheKey];
+  }
+
+  if (cachedPromise !== undefined && cachedPromise !== null) {
+    return cachedPromise;
   }
 
   // Create the setup promise
@@ -257,13 +275,33 @@ export async function setupTableFromClass(db: any, ClassType: any) {
     } catch (error) {
       // CRITICAL: Clear cache BEFORE throwing to prevent race condition
       // This ensures concurrent callers don't get a stale reference
-      _setupTableFromClassPromises[cacheKey] = null;
+      if (isMemoryDb) {
+        const tableMap = _memoryDbSetupPromises.get(db);
+        if (tableMap) {
+          tableMap.set(tableName, null);
+        }
+      } else {
+        const cacheKey = `${dbUrl}::${tableName}`;
+        _setupTableFromClassPromises[cacheKey] = null;
+      }
       throw error;
     }
   })();
 
   // Store the promise in cache AFTER creating it
-  _setupTableFromClassPromises[cacheKey] = setupPromise;
+  if (isMemoryDb) {
+    // Use WeakMap for :memory: databases
+    let tableMap = _memoryDbSetupPromises.get(db);
+    if (!tableMap) {
+      tableMap = new Map();
+      _memoryDbSetupPromises.set(db, tableMap);
+    }
+    tableMap.set(tableName, setupPromise);
+  } else {
+    // Use string key for file-based databases
+    const cacheKey = `${dbUrl}::${tableName}`;
+    _setupTableFromClassPromises[cacheKey] = setupPromise;
+  }
 
   return setupPromise;
 }
@@ -300,16 +338,25 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
     );
   }
 
-  // Include database URL in cache key to prevent cross-database conflicts
+  // Dual caching strategy for :memory: vs file-based databases
   const dbUrl = db.url || db.config?.url || 'memory';
-  const cacheKey = `${dbUrl}::${tableName}`;
+  const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
 
   // Check cache first
-  if (
-    _setupTableFromClassPromises[cacheKey] !== undefined &&
-    _setupTableFromClassPromises[cacheKey] !== null
-  ) {
-    return _setupTableFromClassPromises[cacheKey];
+  let cachedPromise: Promise<void> | null | undefined;
+
+  if (isMemoryDb) {
+    // Use WeakMap for :memory: databases (instance-specific)
+    const tableMap = _memoryDbSetupPromises.get(db);
+    cachedPromise = tableMap?.get(tableName);
+  } else {
+    // Use string key for file-based databases (URL-specific)
+    const cacheKey = `${dbUrl}::${tableName}`;
+    cachedPromise = _setupTableFromClassPromises[cacheKey];
+  }
+
+  if (cachedPromise !== undefined && cachedPromise !== null) {
+    return cachedPromise;
   }
 
   // Create the setup promise
@@ -349,13 +396,33 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
       }
     } catch (error) {
       // CRITICAL: Clear cache BEFORE throwing to prevent race condition
-      _setupTableFromClassPromises[cacheKey] = null;
+      if (isMemoryDb) {
+        const tableMap = _memoryDbSetupPromises.get(db);
+        if (tableMap) {
+          tableMap.set(tableName, null);
+        }
+      } else {
+        const cacheKey = `${dbUrl}::${tableName}`;
+        _setupTableFromClassPromises[cacheKey] = null;
+      }
       throw error;
     }
   })();
 
   // Store the promise in cache
-  _setupTableFromClassPromises[cacheKey] = setupPromise;
+  if (isMemoryDb) {
+    // Use WeakMap for :memory: databases
+    let tableMap = _memoryDbSetupPromises.get(db);
+    if (!tableMap) {
+      tableMap = new Map();
+      _memoryDbSetupPromises.set(db, tableMap);
+    }
+    tableMap.set(tableName, setupPromise);
+  } else {
+    // Use string key for file-based databases
+    const cacheKey = `${dbUrl}::${tableName}`;
+    _setupTableFromClassPromises[cacheKey] = setupPromise;
+  }
 
   return setupPromise;
 }

@@ -16,8 +16,8 @@ import { MCPGenerator } from './mcp.js';
   mcp: { include: ['list', 'get', 'testAction'] },
 })
 class ProtocolTestObject extends SmrtObject {
-  name = text();
-  count = integer();
+  name: string = '';
+  count: number = 0;
 
   async testAction(options: any = {}) {
     return { action: 'testAction', result: 'success' };
@@ -31,6 +31,7 @@ class ProtocolTestObjectCollection extends SmrtCollection<ProtocolTestObject> {
 
 describe('MCP Protocol Compliance', () => {
   let generator: MCPGenerator;
+  let collection: ProtocolTestObjectCollection;
 
   beforeEach(async () => {
     // Register the collection for the test object
@@ -41,6 +42,9 @@ describe('MCP Protocol Compliance', () => {
 
     // Create in-memory database for testing
     const db = await getDatabase({ url: ':memory:' });
+
+    // Create collection to initialize schema
+    collection = await ProtocolTestObjectCollection.create({ db });
 
     generator = new MCPGenerator(
       {
