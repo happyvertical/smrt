@@ -827,6 +827,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ...options,
     };
 
+    // STI: Use polymorphic instantiation if _meta_type is provided (Issue #332)
+    // This allows creating subclass instances via the base collection
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    if (tableStrategy === 'sti' && options._meta_type) {
+      return await this.createPolymorphic(options._meta_type, params);
+    }
+
     // Direct instantiation - all SmrtObject classes support this pattern
     const instance = new this._itemClass(params);
     await instance.initialize();

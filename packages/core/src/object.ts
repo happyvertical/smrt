@@ -571,7 +571,12 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Get registered field definitions (synchronous access to already-loaded metadata)
-    const registeredFields = ObjectRegistry.getFields(this.constructor.name);
+    // For inheritance hierarchies, use cached inherited fields if available (populated by getAllFields())
+    // This ensures multi-level STI classes serialize all parent fields correctly (Issue #332)
+    const registered = ObjectRegistry.findClass(this.constructor.name);
+    const registeredFields =
+      registered?.inheritedFields ||
+      ObjectRegistry.getFields(this.constructor.name);
 
     // Get all enumerable properties from the instance
     const allProps = Object.keys(this);
