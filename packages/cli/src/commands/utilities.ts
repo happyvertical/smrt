@@ -352,7 +352,7 @@ export default testManifest;
           console.log('📋 SQL Preview (not executed):\n');
 
           const { generateSchema } = await import(
-            '@happyvertical/smrt-core/schema'
+            '@happyvertical/smrt-core/schema/utils'
           );
 
           for (const className of initOrder) {
@@ -435,7 +435,7 @@ export default testManifest;
             if (!tableName) continue;
 
             try {
-              await db.exec(`DROP TABLE IF EXISTS ${tableName}`);
+              await db.execute`DROP TABLE IF EXISTS ${tableName}`;
               console.log(`  ✓ Dropped ${tableName}`);
             } catch (error) {
               if (options.verbose) {
@@ -451,7 +451,7 @@ export default testManifest;
         console.log('🔨 Creating tables...\n');
 
         const { ensureSchema } = await import(
-          '@happyvertical/smrt-core/schema'
+          '@happyvertical/smrt-core/schema/utils'
         );
 
         let tablesCreated = 0;
