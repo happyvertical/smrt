@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763259051842,
+  "timestamp": 1763296328252,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -407,6 +407,87 @@ export const testManifest: SmartObjectManifest = {
       "extends": "SmrtObject",
       "exportName": "TestMetadata",
       "collectionExportName": "TestMetadataCollection"
+    },
+    "parent": {
+      "name": "parent",
+      "className": "Parent",
+      "collection": "parents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/crud-with-relationships.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "children": {
+          "type": "oneToMany",
+          "required": true,
+          "_meta": {
+            "related": "Child",
+            "transient": true
+          },
+          "transient": true,
+          "default": []
+        },
+        "relatedItems": {
+          "type": "oneToMany",
+          "required": true,
+          "_meta": {
+            "related": "Related",
+            "transient": true
+          },
+          "transient": true,
+          "default": []
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "Parent",
+      "collectionExportName": "ParentCollection"
+    },
+    "child": {
+      "name": "child",
+      "className": "Child",
+      "collection": "childs",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/crud-with-relationships.test.ts",
+      "fields": {
+        "parentId": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "title": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "Child",
+      "collectionExportName": "ChildCollection"
+    },
+    "parentcollection": {
+      "name": "parentcollection",
+      "className": "ParentCollection",
+      "collection": "parentcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/crud-with-relationships.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "ParentCollection",
+      "collectionExportName": "ParentCollectionCollection"
     },
     "basecontent": {
       "name": "basecontent",
@@ -2795,6 +2876,97 @@ export const testManifest: SmartObjectManifest = {
       "exportName": "IntegrationConcertCollection",
       "collectionExportName": "IntegrationConcertCollectionCollection"
     },
+    "profile": {
+      "name": "profile",
+      "className": "Profile",
+      "collection": "profiles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-multilevel.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "bio": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "Profile",
+      "collectionExportName": "ProfileCollection"
+    },
+    "organization": {
+      "name": "organization",
+      "className": "Organization",
+      "collection": "organizations",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-multilevel.test.ts",
+      "fields": {
+        "website": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "foundedYear": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Profile",
+      "exportName": "Organization",
+      "collectionExportName": "OrganizationCollection"
+    },
+    "council": {
+      "name": "council",
+      "className": "Council",
+      "collection": "councils",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-multilevel.test.ts",
+      "fields": {
+        "meetingsUrl": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "jurisdiction": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Organization",
+      "exportName": "Council",
+      "collectionExportName": "CouncilCollection"
+    },
+    "profilecollection": {
+      "name": "profilecollection",
+      "className": "ProfileCollection",
+      "collection": "profilecollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-multilevel.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "ProfileCollection",
+      "collectionExportName": "ProfileCollectionCollection"
+    },
     "polyevent": {
       "name": "polyevent",
       "className": "PolyEvent",
@@ -3052,11 +3224,13 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": true,
+          "default": ""
         },
         "count": {
           "type": "integer",
-          "required": true
+          "required": true,
+          "default": 0
         }
       },
       "methods": {

@@ -1,4 +1,4 @@
-import { buildWhere, syncSchema } from '@happyvertical/sql';
+import { buildWhere } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import type { SmrtObject } from './object';
@@ -26,11 +26,6 @@ export interface SmrtCollectionOptions extends SmrtClassOptions {}
  * generation, and provides a fluent interface for querying objects.
  */
 export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
-  /**
-   * Promise tracking the database setup operation
-   */
-  protected _db_setup_promise: Promise<void> | null = null;
-
   /**
    * Convert WHERE clause field names from camelCase to snake_case while preserving operators.
    * Validates operators and field names to prevent SQL injection and invalid queries.
@@ -324,6 +319,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Perform async initialization
     await instance.initialize();
 
+    // Initialize schema once at collection creation (replaces lazy initialization)
+    // This ensures tables exist before any objects are created/saved
+    if (instance.db && (this as any)._itemClass) {
+      const className = (this as any)._itemClass.name;
+      const { ensureSchema } = await import('./schema/utils.js');
+      await ensureSchema(instance.db, className);
+    }
+
     // Return fully initialized instance
     return instance;
   }
@@ -412,7 +415,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to the object or null if not found
    */
   public async get(filter: string | Record<string, any>) {
-    await this.setupDb();
+    // Schema already initialized in Collection.create() static factory
 
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
@@ -514,7 +517,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
      */
     include?: string[];
   }): Promise<ModelType[]> {
-    await this.setupDb();
+    // Schema already initialized in Collection.create() static factory
 
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
@@ -813,9 +816,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns New item instance
    */
   public async create(options: any) {
-    // Ensure table exists before creating objects (lazy initialization)
-    await this.setupDb();
+    // STI: Check for polymorphic instantiation
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
 
+    if (tableStrategy === 'sti' && options._meta_type) {
+      // Use polymorphic instantiation for STI child classes
+      // Pass raw options (not params) - createPolymorphic() will add ai, db, _skipLoad
+      return await this.createPolymorphic(options._meta_type, options);
+    }
+
+    // For non-STI or STI base class without _meta_type, proceed with direct instantiation
+    // Schema already initialized in Collection.create() static factory
     const params = {
       ai: this.options.ai,
       // Pass the actual database instance, not options
@@ -845,8 +856,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     className: string | null | undefined,
     options: any,
   ): Promise<ModelType> {
-    // Ensure table exists before creating objects
-    await this.setupDb();
+    // Schema already initialized in Collection.create() static factory
 
     // Validate discriminator is present
     if (!className || className === null || className === undefined) {
@@ -877,6 +887,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Instantiate the correct subclass
     const instance = new registeredClass.constructor(params);
     await instance.initialize();
+
     return instance as ModelType;
   }
 
@@ -934,57 +945,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       },
       {} as Record<string, any>,
     );
-  }
-
-  /**
-   * Sets up the database schema for this collection
-   *
-   * @returns Promise that resolves when setup is complete
-   */
-  async setupDb() {
-    if (this._db_setup_promise) {
-      return this._db_setup_promise;
-    }
-
-    this._db_setup_promise = (async () => {
-      try {
-        const className = this._itemClass.name;
-        const tableStrategy = ObjectRegistry.getTableStrategy(className);
-
-        // For STI child classes, ensure base class table is created first
-        if (tableStrategy === 'sti') {
-          const stiBase = ObjectRegistry.getSTIBase(className);
-          if (stiBase && stiBase !== className) {
-            // This is a child class - ensure base class table exists
-            const { setupTableFromClass } = await import('./schema/utils.js');
-            // Get the base class constructor
-            const BaseClass = ObjectRegistry.getClass(stiBase);
-            if (BaseClass) {
-              await setupTableFromClass(this.db, BaseClass);
-            }
-            // Don't generate schema for child class (base handles it)
-            return;
-          }
-        }
-
-        // For base classes or CTI, generate and sync schema
-        const schema = await this.generateSchema();
-
-        // Skip schema sync for STI child classes (empty schema returned)
-        // The base class already created the shared table
-        if (schema && schema.trim() !== '') {
-          // NOTE: DuckDB/JSON adapter-specific transformations (e.g., inline UNIQUE constraints)
-          // are now handled by the adapters themselves in syncSchema().
-          // See: happyvertical/sdk#392
-          await syncSchema({ db: this.db, schema });
-        }
-      } catch (error) {
-        this._db_setup_promise = null; // Allow retry on failure
-        throw error;
-      }
-    })();
-
-    return this._db_setup_promise;
   }
 
   /**
@@ -1070,7 +1030,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to the total count of matching records
    */
   public async count(options: { where?: Record<string, any> } = {}) {
-    await this.setupDb();
+    // Schema already initialized in Collection.create() static factory
 
     const { where } = options;
     const { sql: whereSql, values: whereValues } = buildWhere(
