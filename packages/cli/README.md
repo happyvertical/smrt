@@ -60,7 +60,7 @@ The CLI automatically discovers your SMRT objects by loading your project's entr
 
 ### Database Configuration
 
-Configure database connection for CLI operations (list, get, create, update, delete):
+Configure database connection for CLI operations (list, get, create, update, delete, db:setup):
 
 ```javascript
 // smrt.config.js
@@ -79,6 +79,7 @@ export default {
 **Default behavior:**
 - Uses in-memory SQLite (`:memory:`) if no database is configured
 - Data is not persisted between CLI invocations with default settings
+- **Note**: `smrt db:setup` requires an explicit file-based database URL (cannot use `:memory:`)
 
 ### All Configuration Options
 
@@ -151,6 +152,15 @@ To resolve, ensure:
   - Optionally runs vitest after generation
   - Use `--manifest-only` to skip test execution
   - Use `--output <dir>` to customize output location
+- `smrt db:setup` - Initialize database schema for all registered SMRT objects
+  - Reads database configuration from `smrt.config.js`
+  - Auto-discovers SMRT objects and generates schema
+  - Respects initialization order (foreign key dependencies)
+  - Handles STI (Single Table Inheritance) hierarchies
+  - Use `--dry-run` to preview SQL without executing
+  - Use `--drop` to drop existing tables before creating (⚠️ destructive, prompts for confirmation)
+  - Use `--verbose` for detailed output
+  - **Note**: Requires explicit database configuration (cannot use `:memory:` for db:setup)
 
 ### Object Management
 
