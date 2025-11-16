@@ -54,7 +54,7 @@ export interface GenerateFieldDefinitionsInput {
       | 'datetime'
       | 'json'
       | 'foreignKey';
-    options?: Record<string, any>;
+    _meta?: Record<string, any>;
   }>;
 }
 

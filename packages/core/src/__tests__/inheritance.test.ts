@@ -175,12 +175,12 @@ describe('Multi-level Class Inheritance', () => {
       );
 
       const ageField = allFields.get('age');
-      expect(ageField.options.min).toBe(18); // Stricter min (child)
-      expect(ageField.options.max).toBe(65); // Stricter max (child)
+      expect(ageField._meta.min).toBe(18); // Stricter min (child)
+      expect(ageField._meta.max).toBe(65); // Stricter max (child)
 
       const scoreField = allFields.get('score');
-      expect(scoreField.options.min).toBe(50.0); // Stricter min (child)
-      expect(scoreField.options.max).toBe(90.0); // Stricter max (child)
+      expect(scoreField._meta.min).toBe(50.0); // Stricter min (child)
+      expect(scoreField._meta.max).toBe(90.0); // Stricter max (child)
     });
 
     it('should warn when field types differ (console.warn)', async () => {

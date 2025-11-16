@@ -122,7 +122,7 @@ function generateObjectSchema(objectName: string): any {
 
   for (const [fieldName, field] of fields) {
     properties[fieldName] = fieldToOpenAPISchema(field);
-    if (field.options?.required) {
+    if (field._meta?.required) {
       required.push(fieldName);
     }
   }
@@ -135,25 +135,25 @@ function generateObjectSchema(objectName: string): any {
  */
 function fieldToOpenAPISchema(field: any): any {
   const schema: any = {
-    description: field.options?.description || '',
+    description: field._meta?.description || '',
   };
 
   switch (field.type) {
     case 'text':
       schema.type = 'string';
-      if (field.options?.maxLength) schema.maxLength = field.options.maxLength;
-      if (field.options?.minLength) schema.minLength = field.options.minLength;
+      if (field._meta?.maxLength) schema.maxLength = field._meta.maxLength;
+      if (field._meta?.minLength) schema.minLength = field._meta.minLength;
       break;
     case 'integer':
       schema.type = 'integer';
-      if (field.options?.min !== undefined) schema.minimum = field.options.min;
-      if (field.options?.max !== undefined) schema.maximum = field.options.max;
+      if (field._meta?.min !== undefined) schema.minimum = field._meta.min;
+      if (field._meta?.max !== undefined) schema.maximum = field._meta.max;
       break;
     case 'decimal':
       schema.type = 'number';
       schema.format = 'float';
-      if (field.options?.min !== undefined) schema.minimum = field.options.min;
-      if (field.options?.max !== undefined) schema.maximum = field.options.max;
+      if (field._meta?.min !== undefined) schema.minimum = field._meta.min;
+      if (field._meta?.max !== undefined) schema.maximum = field._meta.max;
       break;
     case 'boolean':
       schema.type = 'boolean';
@@ -174,8 +174,8 @@ function fieldToOpenAPISchema(field: any): any {
       schema.type = 'string';
   }
 
-  if (field.options?.default !== undefined) {
-    schema.default = field.options.default;
+  if (field._meta?.default !== undefined) {
+    schema.default = field._meta.default;
   }
 
   return schema;

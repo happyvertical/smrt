@@ -177,6 +177,6 @@ describe('Issue #176: Transient fields', () => {
 
     expect(tempField).toBeDefined();
     expect(tempField?.transient).toBe(true);
-    expect(tempField?.options?.transient).toBe(true);
+    expect(tempField?._meta?.transient).toBe(true);
   });
 });

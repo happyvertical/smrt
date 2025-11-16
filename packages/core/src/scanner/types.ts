@@ -24,7 +24,7 @@ export interface FieldDefinition {
   minLength?: number;
   related?: string; // For foreignKey, oneToMany, manyToMany
   description?: string;
-  options?: Record<string, any>;
+  _meta?: Record<string, any>;
   transient?: boolean; // Field not persisted to database
 }
 

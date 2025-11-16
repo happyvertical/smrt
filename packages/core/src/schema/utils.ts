@@ -200,7 +200,7 @@ export async function setupTableFromClass(db: any, ClassType: any) {
 
       if (cachedFields.size > 0) {
         for (const [key, field] of cachedFields.entries()) {
-          if (field.options?.primaryKey) {
+          if (field._meta?.primaryKey) {
             _primaryKeyColumn = toSnakeCase(key);
             break;
           }

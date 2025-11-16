@@ -39,7 +39,7 @@ export async function previewApiEndpoints(
     const fieldsList = Array.from(fields.entries()).map(([name, field]) => ({
       name,
       type: field.type,
-      required: field.options?.required || false,
+      required: field._meta?.required || false,
     }));
 
     // Generate endpoint definitions

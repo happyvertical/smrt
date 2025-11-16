@@ -155,11 +155,11 @@ export async function fieldsFromClass(
   // Base class fields that should always be included for SmrtObject subclasses
   // These match registry.ts SCHEMA_PROPERTIES
   const BASE_FIELDS = {
-    id: { name: 'id', type: 'text', options: {} },
-    slug: { name: 'slug', type: 'text', options: {} },
-    context: { name: 'context', type: 'text', options: {} },
-    created_at: { name: 'created_at', type: 'datetime', options: {} },
-    updated_at: { name: 'updated_at', type: 'datetime', options: {} },
+    id: { name: 'id', type: 'text', _meta: {} },
+    slug: { name: 'slug', type: 'text', _meta: {} },
+    context: { name: 'context', type: 'text', _meta: {} },
+    created_at: { name: 'created_at', type: 'datetime', _meta: {} },
+    updated_at: { name: 'updated_at', type: 'datetime', _meta: {} },
   };
 
   // Add base fields first (will be overridden if class defines them explicitly)
@@ -172,7 +172,7 @@ export async function fieldsFromClass(
     fields[key] = {
       name: key,
       type: field.type || 'TEXT',
-      options: field.options || {},
+      _meta: field._meta || {},
       ...(values && key in values ? { value: values[key] } : {}),
     };
   }

@@ -712,11 +712,11 @@ export class ASTScanner {
 
     // Merge decorator options (highest priority)
     if (decoratorOptions) {
-      field.options = { ...decoratorOptions };
+      field._meta = { ...decoratorOptions };
       // Remove type and required from options (they're top-level fields)
-      if (field.options) {
-        delete field.options.type;
-        delete field.options.required;
+      if (field._meta) {
+        delete field._meta.type;
+        delete field._meta.required;
       }
 
       // Check if explicitly marked as transient via decorator
@@ -734,7 +734,7 @@ export class ASTScanner {
       if (!decoratorOptions) {
         const options = this.extractFieldOptions(node.initializer, sourceFile);
         if (options && Object.keys(options).length > 0) {
-          field.options = options;
+          field._meta = options;
           // Check if explicitly marked as transient via option
           if (options.transient !== undefined) {
             field.transient = options.transient;

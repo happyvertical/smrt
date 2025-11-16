@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763227688331,
+  "timestamp": 1763259051842,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -286,7 +286,7 @@ export const testManifest: SmartObjectManifest = {
         "name": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "maxLength": 100
           },
           "default": ""
@@ -351,7 +351,7 @@ export const testManifest: SmartObjectManifest = {
         "name": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         }
       },
@@ -377,7 +377,7 @@ export const testManifest: SmartObjectManifest = {
         "profileId": {
           "type": "foreignKey",
           "required": true,
-          "options": {
+          "_meta": {
             "related": "CircularDepTestProfile"
           },
           "default": ""
@@ -385,13 +385,13 @@ export const testManifest: SmartObjectManifest = {
         "key": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "value": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         }
       },
@@ -594,7 +594,7 @@ export const testManifest: SmartObjectManifest = {
         "age": {
           "type": "integer",
           "required": true,
-          "options": {
+          "_meta": {
             "min": 0,
             "max": 150
           },
@@ -603,7 +603,7 @@ export const testManifest: SmartObjectManifest = {
         "score": {
           "type": "decimal",
           "required": true,
-          "options": {
+          "_meta": {
             "min": 0,
             "max": 100
           },
@@ -629,7 +629,7 @@ export const testManifest: SmartObjectManifest = {
         "age": {
           "type": "integer",
           "required": true,
-          "options": {
+          "_meta": {
             "min": 18,
             "max": 65
           },
@@ -638,7 +638,7 @@ export const testManifest: SmartObjectManifest = {
         "score": {
           "type": "decimal",
           "required": true,
-          "options": {
+          "_meta": {
             "min": 50,
             "max": 90
           },
@@ -871,19 +871,19 @@ export const testManifest: SmartObjectManifest = {
         "requiredField": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "optionalField": {
           "type": "text",
           "required": false,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "lengthConstrainedField": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "minLength": 3,
             "maxLength": 20
           },
@@ -892,7 +892,7 @@ export const testManifest: SmartObjectManifest = {
         "complexField": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "maxLength": 100,
             "default": "default value"
           },
@@ -1024,7 +1024,7 @@ export const testManifest: SmartObjectManifest = {
         "name": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "filterFn": {
@@ -1040,7 +1040,7 @@ export const testManifest: SmartObjectManifest = {
         "computedValue": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "transient": true
           },
           "transient": true,
@@ -1081,13 +1081,13 @@ export const testManifest: SmartObjectManifest = {
         "name": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "temp": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "transient": true,
             "default": "temporary"
           },
@@ -1114,7 +1114,7 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "required": true
           }
         },
@@ -1146,7 +1146,7 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "eventDate": {
@@ -1225,7 +1225,7 @@ export const testManifest: SmartObjectManifest = {
         "publicName": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "required": true
           }
         },
@@ -1294,13 +1294,13 @@ export const testManifest: SmartObjectManifest = {
         "name": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "url": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": ""
@@ -1308,7 +1308,7 @@ export const testManifest: SmartObjectManifest = {
         "location": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": ""
@@ -1423,7 +1423,7 @@ export const testManifest: SmartObjectManifest = {
         "name": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "description": {
@@ -1495,13 +1495,13 @@ export const testManifest: SmartObjectManifest = {
         "meetingId": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "councilId": {
           "type": "foreignKey",
           "required": true,
-          "options": {
+          "_meta": {
             "related": "Council"
           },
           "default": ""
@@ -1694,7 +1694,7 @@ export const testManifest: SmartObjectManifest = {
         "latitude": {
           "type": "decimal",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": 0
@@ -1702,7 +1702,7 @@ export const testManifest: SmartObjectManifest = {
         "longitude": {
           "type": "decimal",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": 0
@@ -1831,7 +1831,7 @@ export const testManifest: SmartObjectManifest = {
         "startDate": {
           "type": "datetime",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": null
@@ -1839,7 +1839,7 @@ export const testManifest: SmartObjectManifest = {
         "endDate": {
           "type": "datetime",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": null
@@ -1847,7 +1847,7 @@ export const testManifest: SmartObjectManifest = {
         "issuedAt": {
           "type": "datetime",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": null
@@ -1944,7 +1944,7 @@ export const testManifest: SmartObjectManifest = {
         "issueDate": {
           "type": "datetime",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": null
@@ -1952,7 +1952,7 @@ export const testManifest: SmartObjectManifest = {
         "optionalEventDate": {
           "type": "datetime",
           "required": true,
-          "options": {
+          "_meta": {
             "nullable": true
           },
           "default": null
@@ -2349,7 +2349,7 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "required": false
           }
         }
@@ -2371,7 +2371,7 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "required": true
           }
         },
@@ -2399,7 +2399,7 @@ export const testManifest: SmartObjectManifest = {
         "email": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "pattern": "/@/"
           }
         }
@@ -2421,7 +2421,7 @@ export const testManifest: SmartObjectManifest = {
         "email": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "pattern": "/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/",
             "required": true
           }
@@ -2519,7 +2519,7 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "required": true
           }
         },
@@ -2551,7 +2551,7 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "options": {
+          "_meta": {
             "required": true
           }
         },
@@ -2973,13 +2973,13 @@ export const testManifest: SmartObjectManifest = {
         "name": {
           "type": "text",
           "required": true,
-          "options": {},
+          "_meta": {},
           "default": ""
         },
         "price": {
           "type": "decimal",
           "required": true,
-          "options": {
+          "_meta": {
             "min": 0
           },
           "default": 0
@@ -2987,7 +2987,7 @@ export const testManifest: SmartObjectManifest = {
         "stock": {
           "type": "integer",
           "required": true,
-          "options": {
+          "_meta": {
             "default": 0
           },
           "default": 0

@@ -517,7 +517,7 @@ export class ObjectRegistry {
         manifestEntry.fields,
       ) as [string, import('./scanner/types.js').FieldDefinition][]) {
         // Build options object, only including defined values
-        const options: any = { ...fieldDef.options };
+        const options: any = { ...fieldDef._meta };
         if (fieldDef.required !== undefined)
           options.required = fieldDef.required;
         if (fieldDef.default !== undefined) options.default = fieldDef.default;
@@ -533,7 +533,7 @@ export class ObjectRegistry {
 
         // Only include options if not empty
         if (Object.keys(options).length > 0) {
-          field.options = options;
+          field._meta = options;
         }
 
         // Preserve top-level flags from manifest
@@ -582,15 +582,15 @@ export class ObjectRegistry {
           // Decorator type takes priority over AST-scanned type
           const mergedField: any = {
             type: decoratorOptions.type || existingField.type,
-            options: {
-              ...existingField.options,
+            _meta: {
+              ...existingField._meta,
               ...decoratorOptions,
             },
           };
 
-          // Remove 'type' from options if it was moved to top level
-          if (mergedField.options.type) {
-            delete mergedField.options.type;
+          // Remove 'type' from _meta if it was moved to top level
+          if (mergedField._meta.type) {
+            delete mergedField._meta.type;
           }
 
           // Preserve top-level flags (transient, required, etc.)
@@ -604,7 +604,7 @@ export class ObjectRegistry {
           if (decoratorOptions.nullable === true) {
             // Nullable explicitly set to true means field is NOT required
             mergedField.required = false;
-            mergedField.options.required = false;
+            mergedField._meta.required = false;
           } else if (decoratorOptions.required !== undefined) {
             mergedField.required = decoratorOptions.required;
           } else if (existingField.required !== undefined) {
@@ -619,7 +619,7 @@ export class ObjectRegistry {
           // Decorator for field not in manifest - add it
           const newField: any = {
             type: decoratorOptions.type || 'text',
-            options: decoratorOptions,
+            _meta: decoratorOptions,
           };
 
           // Set top-level flags from decorator options
@@ -629,7 +629,7 @@ export class ObjectRegistry {
           // Handle required flag: nullable fields should not be required
           if (decoratorOptions.nullable === true) {
             newField.required = false;
-            newField.options.required = false;
+            newField._meta.required = false;
           } else if (decoratorOptions.required !== undefined) {
             newField.required = decoratorOptions.required;
           }
@@ -781,11 +781,11 @@ export class ObjectRegistry {
         const fd = fieldDef as any;
         fields.set(fieldName, {
           type: fd.type,
-          options: {
+          _meta: {
             required: fd.required,
             default: fd.default,
             description: fd.description,
-            ...fd.options,
+            ...fd._meta,
           },
         });
       }
@@ -1091,7 +1091,7 @@ export class ObjectRegistry {
     const validators: ValidatorFunction[] = [];
 
     for (const [fieldName, field] of fields) {
-      const options = field.options || {};
+      const options = field._meta || {};
 
       // Required field validator
       if (options.required) {
@@ -1349,11 +1349,11 @@ export class ObjectRegistry {
         if (!registered.fields.has(fieldName)) {
           registered.fields.set(fieldName, {
             type: fieldDef.type,
-            options: {
+            _meta: {
               required: fieldDef.required,
               default: fieldDef.default,
               description: fieldDef.description,
-              ...fieldDef.options, // Includes unique, primaryKey, index, etc.
+              ...fieldDef._meta, // Includes unique, primaryKey, index, etc.
             },
           });
         }
@@ -1494,8 +1494,8 @@ export class ObjectRegistry {
       const dependencies: string[] = [];
 
       for (const [_fieldName, field] of registered.fields) {
-        if (field.type === 'foreignKey' && field.options?.related) {
-          const relatedClass = field.options.related;
+        if (field.type === 'foreignKey' && field.related) {
+          const relatedClass = field.related;
           // Only add if the related class is registered
           if (ObjectRegistry.classes.has(relatedClass)) {
             dependencies.push(relatedClass);
@@ -1603,35 +1603,35 @@ export class ObjectRegistry {
 
       for (const [fieldName, field] of registered.fields) {
         // Check for foreignKey relationships
-        if (field.type === 'foreignKey' && field.options?.related) {
+        if (field.type === 'foreignKey' && field.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field.options.related,
+            targetClass: field.related,
             type: 'foreignKey',
-            options: field.options,
+            options: field._meta,
           });
         }
 
         // Check for oneToMany relationships
-        if (field.type === 'oneToMany' && field.options?.related) {
+        if (field.type === 'oneToMany' && field.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field.options.related,
+            targetClass: field.related,
             type: 'oneToMany',
-            options: field.options,
+            options: field._meta,
           });
         }
 
         // Check for manyToMany relationships
-        if (field.type === 'manyToMany' && field.options?.related) {
+        if (field.type === 'manyToMany' && field.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field.options.related,
+            targetClass: field.related,
             type: 'manyToMany',
-            options: field.options,
+            options: field._meta,
           });
         }
       }
@@ -1905,40 +1905,40 @@ export class ObjectRegistry {
       merged.type = childField.type;
     }
 
-    // Options: Merge with child precedence
-    if (childField.options || parentField.options) {
-      merged.options = {
-        ...(parentField.options || {}),
-        ...(childField.options || {}),
+    // _meta: Merge with child precedence
+    if (childField._meta || parentField._meta) {
+      merged._meta = {
+        ...(parentField._meta || {}),
+        ...(childField._meta || {}),
       };
 
       // Special handling for numeric constraints (take strictest)
       if (
-        parentField.options?.min !== undefined &&
-        childField.options?.min !== undefined
+        parentField._meta?.min !== undefined &&
+        childField._meta?.min !== undefined
       ) {
         // Take the larger min (strictest lower bound)
-        merged.options.min = Math.max(
-          parentField.options.min,
-          childField.options.min,
+        merged._meta.min = Math.max(
+          parentField._meta.min,
+          childField._meta.min,
         );
       }
       if (
-        parentField.options?.max !== undefined &&
-        childField.options?.max !== undefined
+        parentField._meta?.max !== undefined &&
+        childField._meta?.max !== undefined
       ) {
         // Take the smaller max (strictest upper bound)
-        merged.options.max = Math.min(
-          parentField.options.max,
-          childField.options.max,
+        merged._meta.max = Math.min(
+          parentField._meta.max,
+          childField._meta.max,
         );
       }
 
       // Validators: Combine (both must pass)
-      if (parentField.options?.validate && childField.options?.validate) {
-        const parentValidator = parentField.options.validate;
-        const childValidator = childField.options.validate;
-        merged.options.validate = async (value: any) => {
+      if (parentField._meta?.validate && childField._meta?.validate) {
+        const parentValidator = parentField._meta.validate;
+        const childValidator = childField._meta.validate;
+        merged._meta.validate = async (value: any) => {
           const parentResult = await parentValidator(value);
           const childResult = await childValidator(value);
           return parentResult && childResult;
@@ -1946,8 +1946,8 @@ export class ObjectRegistry {
       }
 
       // Unique: Take OR (unique if either says unique)
-      if (parentField.options?.unique || childField.options?.unique) {
-        merged.options.unique = true;
+      if (parentField._meta?.unique || childField._meta?.unique) {
+        merged._meta.unique = true;
       }
     }
 
@@ -2132,7 +2132,7 @@ export class ObjectRegistry {
    *   fields: Array.from(meta.fields.entries()).map(([name, field]) => ({
    *     name,
    *     type: field.type,
-   *     required: field.options?.required || false
+   *     required: field._meta?.required || false
    *   })),
    *   relationships: meta.relationships.map(rel => ({
    *     field: rel.fieldName,

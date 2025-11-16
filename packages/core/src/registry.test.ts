@@ -14,14 +14,22 @@ import { tableNameFromClass } from './utils';
 // Helper class to create field definitions for manual registration
 class Field implements FieldDefinition {
   type: FieldDefinition['type'];
-  options: Record<string, any>;
+  _meta: Record<string, any>;
+  related?: string;
 
   constructor(
     type: FieldDefinition['type'],
     options: Record<string, any> = {},
   ) {
     this.type = type;
-    this.options = options;
+    // Extract 'related' as a top-level property (not in _meta)
+    if (options.related) {
+      this.related = options.related;
+      const { related, ...metaOptions } = options;
+      this._meta = metaOptions;
+    } else {
+      this._meta = options;
+    }
   }
 }
 
@@ -156,8 +164,8 @@ describe('ObjectRegistry', () => {
 
       const nameField = metadata?.fields.get('name');
       expect(nameField.type).toBe('text');
-      expect(nameField.options.required).toBe(true);
-      expect(nameField.options.maxLength).toBe(100);
+      expect(nameField._meta.required).toBe(true);
+      expect(nameField._meta.maxLength).toBe(100);
     });
 
     it('should include schema definition', () => {
@@ -488,7 +496,7 @@ describe('ObjectRegistry', () => {
         fields: Array.from(meta.fields.entries()).map(([name, field]) => ({
           name,
           type: field.type,
-          required: field.options?.required || false,
+          required: field._meta?.required || false,
         })),
         relationships: meta.relationships.map((rel) => ({
           field: rel.fieldName,
@@ -955,8 +963,8 @@ describe('ObjectRegistry', () => {
       // Field helper configuration should be preserved
       expect(registeredFields.get('name')).toBeDefined();
       expect(registeredFields.get('name')?.type).toBe('text');
-      expect(registeredFields.get('name')?.options?.required).toBe(true);
-      expect(registeredFields.get('name')?.options?.maxLength).toBe(100);
+      expect(registeredFields.get('name')?._meta?.required).toBe(true);
+      expect(registeredFields.get('name')?._meta?.maxLength).toBe(100);
     });
 
     it.skip('should handle nullable fields with Field helpers - OBSOLETE after PR #129', () => {
