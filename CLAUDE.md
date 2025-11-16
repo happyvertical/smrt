@@ -18,6 +18,7 @@ SMRT (Smart, Multi-modal, Real-time Transformation) is a TypeScript framework fo
 - **TypeScript-First**: Use native TypeScript types; field helpers only when needed
 - **AI-Powered**: Built-in intelligent operations on every object
 - **Code Generation**: APIs, CLIs, MCP servers generated automatically
+- **Manifest-Based**: Schema generation from AST at build time (no runtime introspection)
 - **Self-Contained**: Minimal external dependencies, focused framework
 - **Developer Experience**: IntelliSense, type safety, hot reload
 
@@ -539,6 +540,46 @@ The framework uses **Turborepo** for intelligent task orchestration:
 - 80-character line width
 - ESM module format exclusively
 - camelCase for variables/functions, PascalCase for classes
+
+### Manifest-Based Schema Generation
+
+SMRT uses **AST-based manifest generation** instead of runtime introspection:
+
+**How it works:**
+1. **Build Time**: AST scanner finds all `@smrt()` decorated classes
+2. **Manifest Generation**: Creates JSON manifest with class metadata, fields, and types
+3. **Schema Generation**: Uses manifest data to generate database schemas
+4. **No Runtime Introspection**: All metadata determined at build time
+
+**Benefits:**
+- **Performance**: No runtime reflection overhead
+- **Tree-Shaking**: Unused classes can be eliminated
+- **Type Safety**: Full TypeScript type information preserved
+- **Predictable**: Schema determined at build time, not runtime
+
+**The Manifest Process:**
+```bash
+# During build
+smrt scan           # Scans TypeScript AST
+  → manifest.json   # Generated manifest with all metadata
+  → schema.sql      # Generated database schema
+
+# During runtime
+ObjectRegistry      # Reads manifest.json
+  → generateSchema  # Uses manifest data (no reflection)
+```
+
+**TypeScript Type Inference:**
+```typescript
+// AST scanner infers types from TypeScript
+class Product extends SmrtObject {
+  name: string = '';        // AST → TEXT column
+  count: number = 0;        // AST → INTEGER (no decimal)
+  price: number = 0.0;      // AST → DECIMAL (has decimal)
+  active: boolean = true;   // AST → BOOLEAN
+  tags: string[] = [];      // AST → JSON
+}
+```
 
 ---
 
