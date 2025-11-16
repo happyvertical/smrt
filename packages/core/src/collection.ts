@@ -321,10 +321,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Initialize schema once at collection creation (replaces lazy initialization)
     // This ensures tables exist before any objects are created/saved
-    // biome-ignore lint/suspicious/noExplicitAny: Need to access static _itemClass on subclass
-    if (instance.db && (SmrtCollection as any)._itemClass) {
-      // biome-ignore lint/suspicious/noExplicitAny: Need to access static _itemClass on subclass
-      const className = (SmrtCollection as any)._itemClass.name;
+    if (instance.db && (this as any)._itemClass) {
+      const className = (this as any)._itemClass.name;
       const { ensureSchema } = await import('./schema/utils.js');
       await ensureSchema(instance.db, className);
     }
