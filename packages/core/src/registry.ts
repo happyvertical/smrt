@@ -320,6 +320,13 @@ export class ObjectRegistry {
   private static fieldDecorators = new Map<string, Map<string, any>>();
 
   /**
+   * Cache for getAllFields() results (recursively merged fields from ancestors)
+   * Maps className → merged fields Map
+   * Performance optimization: Avoids redundant recursive field merging
+   */
+  private static _allFieldsCache = new Map<string, Map<string, any>>();
+
+  /**
    * Initialize the inheritance chain cache with size from config
    */
   private static getInheritanceCache(): LRUCache<string, string[]> {
@@ -1305,8 +1312,8 @@ export class ObjectRegistry {
       const isTestEnv =
         process.env.NODE_ENV === 'test' ||
         process.env.VITEST === 'true' ||
-        typeof globalThis.describe !== 'undefined' ||
-        typeof globalThis.it !== 'undefined';
+        typeof (globalThis as any).describe !== 'undefined' ||
+        typeof (globalThis as any).it !== 'undefined';
 
       const testHint = isTestEnv
         ? `\n\n⚠️  Are you using 'smrt test'? ` +
@@ -2524,7 +2531,7 @@ export function smrt(config: SmartObjectConfig = {}) {
         configurable: false,
       });
 
-      ObjectRegistry.register(ctor, { ...config, tableName });
+      ObjectRegistry.register(ctor as any, { ...config, tableName });
     }
 
     return ctor;

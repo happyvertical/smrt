@@ -66,8 +66,8 @@ export async function generateSchema(
     const isTestEnv =
       process.env.NODE_ENV === 'test' ||
       process.env.VITEST === 'true' ||
-      typeof globalThis.describe !== 'undefined' ||
-      typeof globalThis.it !== 'undefined';
+      typeof (globalThis as any).describe !== 'undefined' ||
+      typeof (globalThis as any).it !== 'undefined';
 
     const testHint = isTestEnv
       ? `\n\n⚠️  Are you using 'smrt test'? ` +

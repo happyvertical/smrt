@@ -257,4 +257,263 @@ export default testManifest;
       }
     },
   },
+
+  'db:setup': {
+    name: 'db:setup',
+    description: 'Initialize database schema for all registered SMRT objects',
+    aliases: ['db-setup', 'setup-db'],
+    args: [],
+    options: {
+      drop: {
+        type: 'boolean',
+        description: 'Drop existing tables before creating (destructive)',
+        default: false,
+      },
+      'dry-run': {
+        type: 'boolean',
+        description: 'Show SQL DDL without executing',
+        default: false,
+      },
+      verbose: {
+        type: 'boolean',
+        description: 'Show detailed output',
+        default: false,
+      },
+    },
+    handler: async (_args: string[], options: any) => {
+      console.log('\n🔍 Discovering SMRT objects...\n');
+
+      try {
+        // 1. Load CLI config
+        const { getPackageConfig } = await import('@happyvertical/smrt-config');
+        const { DEFAULT_CLI_CONFIG } = await import('../config.js');
+        const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+        // 2. Validate database configuration
+        if (!config.database?.url || config.database.url === ':memory:') {
+          console.error('❌ Database configuration required for db:setup');
+          console.error('\nPlease configure database in smrt.config.js:');
+          console.error('\n  export default {');
+          console.error('    packages: {');
+          console.error('      cli: {');
+          console.error('        database: {');
+          console.error("          type: 'sqlite',");
+          console.error("          url: './dev.db'");
+          console.error('        }');
+          console.error('      }');
+          console.error('    }');
+          console.error('  }\n');
+          process.exit(1);
+        }
+
+        const dbUrl = config.database.url;
+        const dbType = config.database.type || 'sqlite';
+
+        if (options.verbose) {
+          console.log(`Database type: ${dbType}`);
+          console.log(`Database URL:  ${dbUrl}\n`);
+        }
+
+        // 3. Auto-discover and load manifests
+        const { discovered, totalObjects } = await autoDiscoverAndLoad();
+
+        if (discovered.length === 0) {
+          console.error('❌ No SMRT manifests found');
+          console.error('\nTo generate a manifest:');
+          console.error('  1. Build your project with SMRT objects');
+          console.error('  2. Or run: smrt test (generates test manifest)\n');
+          process.exit(1);
+        }
+
+        console.log(
+          `✓ Found ${totalObjects} object(s) in ${discovered.length} manifest(s)\n`,
+        );
+
+        // 4. Get initialization order (topological sort respecting FK dependencies)
+        const initOrder = ObjectRegistry.getInitializationOrder();
+
+        if (options.verbose) {
+          console.log('📋 Initialization order (respecting dependencies):');
+          for (let i = 0; i < initOrder.length; i++) {
+            const className = initOrder[i];
+            const inheritanceChain =
+              ObjectRegistry.getInheritanceChain(className);
+            const chain =
+              inheritanceChain.length > 1
+                ? ` → ${inheritanceChain.slice(0, -1).join(' → ')}`
+                : '';
+            console.log(`  ${i + 1}. ${className}${chain}`);
+          }
+          console.log();
+        }
+
+        // 5. Dry-run mode: Show SQL without executing
+        if (options.dryRun) {
+          console.log('📋 SQL Preview (not executed):\n');
+
+          const { generateSchema } = await import(
+            '@happyvertical/smrt-core/schema/utils'
+          );
+
+          for (const className of initOrder) {
+            const registered = ObjectRegistry.getClass(className);
+            if (!registered) continue;
+
+            const tableStrategy = ObjectRegistry.getTableStrategy(className);
+            const stiBase = ObjectRegistry.getSTIBase(className);
+
+            // Skip STI children (they share the base class table)
+            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+              console.log(
+                `-- Table: ${className} (Base: ${stiBase}, Strategy: STI)`,
+              );
+              console.log(`-- Shares table with ${stiBase} (STI child)\n`);
+              continue;
+            }
+
+            const schema = await generateSchema(registered.constructor);
+            if (schema && schema.trim() !== '') {
+              const tableName = ObjectRegistry.getTableName(className);
+              const strategy = tableStrategy === 'sti' ? 'STI' : 'CTI';
+              console.log(
+                `-- Table: ${tableName} (Class: ${className}, Strategy: ${strategy})`,
+              );
+              console.log(schema);
+              console.log();
+            }
+          }
+
+          console.log('✅ Dry-run complete (no changes made)\n');
+          return;
+        }
+
+        // 6. Create database connection
+        console.log('🗄️  Connecting to database...\n');
+
+        const { getDatabase } = await import('@happyvertical/sql');
+        const db = await getDatabase({ type: dbType, url: dbUrl });
+
+        console.log(`✓ Connected to ${dbType}://${dbUrl}\n`);
+
+        // 7. Drop tables if requested
+        if (options.drop) {
+          console.log(
+            '⚠️  WARNING: --drop will DELETE ALL DATA in existing tables',
+          );
+
+          // In non-interactive mode, fail fast
+          if (!config.interactive) {
+            console.error('❌ Cannot use --drop in non-interactive mode');
+            console.error(
+              '   Set interactive: true in config or run without --drop\n',
+            );
+            process.exit(1);
+          }
+
+          // Prompt for confirmation
+          const readline = await import('node:readline/promises');
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+          });
+
+          const answer = await rl.question('Continue? (y/N): ');
+          rl.close();
+
+          if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+            console.log('\n❌ Cancelled by user\n');
+            process.exit(0);
+          }
+
+          console.log('\n🗑️  Dropping existing tables...\n');
+
+          // Drop in reverse order (children before parents)
+          const dropOrder = [...initOrder].reverse();
+
+          for (const className of dropOrder) {
+            const tableName = ObjectRegistry.getTableName(className);
+            if (!tableName) continue;
+
+            try {
+              await db.execute`DROP TABLE IF EXISTS ${tableName}`;
+              console.log(`  ✓ Dropped ${tableName}`);
+            } catch (error) {
+              if (options.verbose) {
+                console.log(`  ⚠️  Could not drop ${tableName}: ${error}`);
+              }
+            }
+          }
+
+          console.log();
+        }
+
+        // 8. Create tables
+        console.log('🔨 Creating tables...\n');
+
+        const { ensureSchema } = await import(
+          '@happyvertical/smrt-core/schema/utils'
+        );
+
+        let tablesCreated = 0;
+        let tablesSkipped = 0;
+
+        for (const className of initOrder) {
+          try {
+            const tableStrategy = ObjectRegistry.getTableStrategy(className);
+            const stiBase = ObjectRegistry.getSTIBase(className);
+
+            // Skip STI children (schema already created by base class)
+            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+              tablesSkipped++;
+              if (options.verbose) {
+                console.log(`  ⊙ ${className} (shares table with ${stiBase})`);
+              }
+              continue;
+            }
+
+            await ensureSchema(db, className);
+
+            const tableName = ObjectRegistry.getTableName(className);
+            const fields = ObjectRegistry.getFields(className);
+            const fieldCount = fields?.size || 0;
+
+            console.log(`  ✓ ${tableName} (${fieldCount} columns)`);
+            tablesCreated++;
+          } catch (error) {
+            console.error(`  ✗ ${className}: ${error}`);
+            if (options.verbose && error instanceof Error && error.stack) {
+              console.error(`\n${error.stack}\n`);
+            }
+          }
+        }
+
+        // 9. Report summary
+        console.log();
+        if (tablesSkipped > 0) {
+          console.log(
+            `  (${tablesSkipped} STI child class(es) share parent tables)`,
+          );
+          console.log();
+        }
+        console.log(`✅ Successfully initialized ${tablesCreated} table(s)\n`);
+
+        console.log('💡 Next steps:');
+        console.log('  - Your SMRT objects are ready to use!');
+        console.log('  - Run: smrt introspect (view discovered objects)');
+        console.log();
+      } catch (error) {
+        console.error('\n❌ Database setup failed:');
+        if (error instanceof Error) {
+          console.error(`   ${error.message}`);
+          if (options.verbose && error.stack) {
+            console.error('\nStack trace:');
+            console.error(error.stack);
+          }
+        } else {
+          console.error(error);
+        }
+        process.exit(1);
+      }
+    },
+  },
 };

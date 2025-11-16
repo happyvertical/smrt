@@ -328,16 +328,11 @@ export function formatDataSql(data: Record<string, any>) {
     // Convert camelCase to snake_case for SQL
     const snakeKey = toSnakeCase(key);
 
-    // Extract value from Field instances using type guard
-    let actualValue = value;
-    if (isFieldInstance(value)) {
-      actualValue = value.value;
-    }
-
-    if (actualValue instanceof Date) {
-      normalizedData[snakeKey] = actualValue.toISOString(); // Postgres accepts ISO format with timezone
+    // Field helpers removed - no need to extract values (deprecated code removed)
+    if (value instanceof Date) {
+      normalizedData[snakeKey] = value.toISOString(); // Postgres accepts ISO format with timezone
     } else {
-      normalizedData[snakeKey] = actualValue;
+      normalizedData[snakeKey] = value;
     }
   }
   return normalizedData;
