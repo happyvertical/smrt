@@ -73,6 +73,7 @@ export class ParentTypeMismatch extends SmrtObject {
 @smrt()
 export class ChildTypeMismatch extends ParentTypeMismatch {
   // Type changed from string to number (will trigger warning)
+  // @ts-expect-error - Intentional type mismatch for testing field override warnings
   myField: number = 0;
 }
 
