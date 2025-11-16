@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-docs-mcp",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "Documentation MCP server for SMRT framework - Routes queries to package experts using CLAUDE.md files",
   "type": "module",
   "main": "./dist/index.js",
