@@ -1494,8 +1494,8 @@ export class ObjectRegistry {
       const dependencies: string[] = [];
 
       for (const [_fieldName, field] of registered.fields) {
-        if (field.type === 'foreignKey' && field._meta?.related) {
-          const relatedClass = field._meta.related;
+        if (field.type === 'foreignKey' && field.related) {
+          const relatedClass = field.related;
           // Only add if the related class is registered
           if (ObjectRegistry.classes.has(relatedClass)) {
             dependencies.push(relatedClass);
@@ -1603,33 +1603,33 @@ export class ObjectRegistry {
 
       for (const [fieldName, field] of registered.fields) {
         // Check for foreignKey relationships
-        if (field.type === 'foreignKey' && field._meta?.related) {
+        if (field.type === 'foreignKey' && field.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field._meta.related,
+            targetClass: field.related,
             type: 'foreignKey',
             options: field._meta,
           });
         }
 
         // Check for oneToMany relationships
-        if (field.type === 'oneToMany' && field._meta?.related) {
+        if (field.type === 'oneToMany' && field.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field._meta.related,
+            targetClass: field.related,
             type: 'oneToMany',
             options: field._meta,
           });
         }
 
         // Check for manyToMany relationships
-        if (field.type === 'manyToMany' && field._meta?.related) {
+        if (field.type === 'manyToMany' && field.related) {
           relationships.push({
             sourceClass: className,
             fieldName,
-            targetClass: field._meta.related,
+            targetClass: field.related,
             type: 'manyToMany',
             options: field._meta,
           });

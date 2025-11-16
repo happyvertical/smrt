@@ -431,7 +431,7 @@ export class MCPGenerator {
         break;
       case 'foreignKey':
         schema.type = 'string';
-        schema.description = `ID of related ${field._meta?.related || 'object'}`;
+        schema.description = `ID of related ${field.related || 'object'}`;
         break;
       default:
         schema.type = 'string';

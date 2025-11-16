@@ -15,13 +15,21 @@ import { tableNameFromClass } from './utils';
 class Field implements FieldDefinition {
   type: FieldDefinition['type'];
   _meta: Record<string, any>;
+  related?: string;
 
   constructor(
     type: FieldDefinition['type'],
     options: Record<string, any> = {},
   ) {
     this.type = type;
-    this._meta = options;
+    // Extract 'related' as a top-level property (not in _meta)
+    if (options.related) {
+      this.related = options.related;
+      const { related, ...metaOptions } = options;
+      this._meta = metaOptions;
+    } else {
+      this._meta = options;
+    }
   }
 }
 
