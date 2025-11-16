@@ -8,6 +8,30 @@
 import { ObjectRegistry } from '../registry.js';
 
 /**
+ * Meta type wrapper for STI (Single Table Inheritance) meta fields
+ *
+ * Fields typed as Meta<T> are stored in the _meta_data JSONB column
+ * rather than as direct table columns. Used for child-specific fields
+ * in STI hierarchies.
+ *
+ * @example
+ * ```typescript
+ * @smrt({ tableStrategy: 'sti' })
+ * class Event extends SmrtObject {
+ *   title: string = '';
+ * }
+ *
+ * @smrt()
+ * class Meeting extends Event {
+ *   // Stored in _meta_data JSONB column
+ *   roomNumber: Meta<string> = '';
+ *   attendees: Meta<string[]> = [];
+ * }
+ * ```
+ */
+export type Meta<T> = T;
+
+/**
  * Base field options
  */
 export interface FieldOptions {

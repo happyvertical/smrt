@@ -105,6 +105,24 @@ export class SchemaGenerator {
         continue;
       }
 
+      // Skip transient fields (non-persisted)
+      if (fieldDef.transient || fieldDef._meta?.transient) {
+        continue;
+      }
+
+      // Skip relationship fields that don't create columns
+      // oneToMany and manyToMany are relationship metadata, not actual database columns
+      // foreignKey DOES create a column (it stores the foreign key ID)
+      if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany') {
+        continue;
+      }
+
+      // Skip meta fields - they're stored in _meta_data JSONB column (STI only)
+      // In CTI mode, meta fields shouldn't be used, but skip them anyway for safety
+      if (fieldDef.type === 'meta') {
+        continue;
+      }
+
       const column: ColumnDefinition = {
         type: this.mapFieldTypeToSQL(fieldDef.type),
         // If _meta.nullable is true, the field can be null regardless of required
