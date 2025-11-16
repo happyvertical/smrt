@@ -68,24 +68,26 @@ await agent.execute();
 
 ```typescript
 import { Agent } from '@happyvertical/smrt-agents';
-import { smrt, text, integer, datetime } from '@happyvertical/smrt-core';
+import { smrt } from '@happyvertical/smrt-core';
 
 @smrt()
 class DataProcessorAgent extends Agent {
+  // TypeScript types for automatic schema generation
+  lastRunAt: Date = new Date();
+  processedCount: number = 0;      // INTEGER (no decimal)
+  successRate: number = 0.0;       // DECIMAL (has decimal)
+  isActive: boolean = true;
+  errors: string[] = [];
+
   protected config = {
     cronSchedule: '0 2 * * *', // Daily at 2 AM
     batchSize: 100,
     maxRetries: 3
   };
 
-  // Agent state - automatically persisted to database
-  @text()
+  // Optional fields using TypeScript (no decorators needed)
   lastProcessedId?: string;
-
-  @integer()
   totalProcessed: number = 0;
-
-  @datetime()
   lastRun?: Date;
 
   async validate(): Promise<void> {

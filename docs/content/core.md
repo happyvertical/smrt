@@ -41,21 +41,30 @@ bun add @happyvertical/smrt-core
 ### Define SMRT Objects with TypeScript Types
 
 ```typescript
-import { SmrtObject } from '@happyvertical/smrt-core';
-import { text } from '@happyvertical/smrt-core/fields';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey } from '@happyvertical/smrt-core/fields'; // Only for relationships
 
-// Define a document object using TypeScript types (primary pattern)
+// Define objects using TypeScript types (primary pattern)
+@smrt({
+  api: true,  // Auto-generate REST API
+  mcp: true,  // Auto-generate MCP tools
+  cli: true   // Auto-generate CLI commands
+})
 class Document extends SmrtObject {
   // TypeScript types → Automatic schema generation
-  title: string = '';
-  content: string = '';
-  wordCount: number = 0;        // INTEGER (no decimal point)
-  rating: number = 0.0;          // DECIMAL (has decimal point)
-  isPublished: boolean = false;
-  publishedAt: Date = new Date();
-  tags: string[] = [];
+  title: string = '';           // → TEXT column
+  content: string = '';         // → TEXT column
+  wordCount: number = 0;        // → INTEGER (no decimal)
+  rating: number = 4.5;         // → DECIMAL (has decimal)
+  isPublished: boolean = false; // → BOOLEAN column
+  tags: string[] = [];          // → JSON column
+  publishedAt: Date = new Date(); // → DATETIME column
 
-  // Field helpers only when constraints needed
+  // Use field decorators only when needed for:
+  // 1. Relationships
+  categoryId = foreignKey(Category);
+
+  // 2. Constraints
   slug = text({ required: true, unique: true });
 
   constructor(options: any = {}) {
@@ -174,6 +183,133 @@ const recentDocs = await documents.list({
 const isQuality = await doc.isHighQuality();
 const summary = await doc.generateSummary();
 ```
+
+## Single Table Inheritance (STI)
+
+SMRT supports Single Table Inheritance where multiple classes share one database table:
+
+### Basic STI Configuration
+
+```typescript
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+// Base class with STI strategy
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject {
+  title: string = '';
+  date: Date = new Date();
+  location: string = '';
+}
+
+// Child classes automatically inherit STI
+@smrt()
+class Meeting extends Event {
+  roomNumber: string = '';
+  attendees: string[] = [];
+}
+
+@smrt()
+class Conference extends Event {
+  sponsorName: string = '';
+  ticketPrice: number = 0.0;
+  sessions: number = 0;
+}
+```
+
+### How STI Works
+
+- **Single Table**: All classes in the hierarchy share the `events` table
+- **Discriminator Column**: `_meta_type` identifies the actual class type
+- **Field Storage**:
+  - Base class fields → Regular columns
+  - Child-specific fields → JSONB `_meta_data` column
+
+### Polymorphic Queries
+
+```typescript
+const eventCollection = await EventCollection.create(options);
+
+// Create different event types
+const meeting = await eventCollection.create({
+  _meta_type: 'Meeting',
+  title: 'Daily Standup',
+  roomNumber: '101',
+  attendees: ['Alice', 'Bob']
+});
+
+const conference = await eventCollection.create({
+  _meta_type: 'Conference',
+  title: 'Tech Summit',
+  sponsorName: 'TechCorp',
+  ticketPrice: 299.00
+});
+
+// Query returns mixed types!
+const allEvents = await eventCollection.list();
+
+for (const event of allEvents) {
+  console.log(event.constructor.name); // 'Meeting' or 'Conference'
+
+  if (event instanceof Meeting) {
+    console.log(`Room: ${event.roomNumber}`);
+  } else if (event instanceof Conference) {
+    console.log(`Price: ${event.ticketPrice}`);
+  }
+}
+
+// Filter by type
+const meetings = await eventCollection.list({
+  where: { _meta_type: 'Meeting' }
+});
+```
+
+### Multi-Level Inheritance
+
+```typescript
+// Level 1: Base class
+@smrt({ tableStrategy: 'sti' })
+class Content extends SmrtObject {
+  title: string = '';
+  body: string = '';
+}
+
+// Level 2: Extends Content
+@smrt()
+class Article extends Content {
+  author: string = '';
+  publishedDate: Date = new Date();
+}
+
+// Level 3: Extends Article
+@smrt()
+class NewsArticle extends Article {
+  newsCategory: string = '';
+  breakingNews: boolean = false;
+}
+
+// All three classes share the 'contents' table
+const article = new NewsArticle({
+  title: 'Breaking News',        // From Content
+  body: 'Story details...',       // From Content
+  author: 'Jane Smith',           // From Article
+  publishedDate: new Date(),      // From Article
+  newsCategory: 'Technology',     // From NewsArticle
+  breakingNews: true              // From NewsArticle
+});
+```
+
+### When to Use STI
+
+✅ **Use STI when:**
+- Classes share most fields (80%+ overlap)
+- Need polymorphic queries (mixed types in one query)
+- Frequent queries across the hierarchy
+- Small number of subclass-specific fields
+
+❌ **Avoid STI when:**
+- Many unique fields per subclass (sparse columns)
+- Deep hierarchies (3+ levels)
+- Subclasses need different indexing strategies
 
 ## Code Generation
 
