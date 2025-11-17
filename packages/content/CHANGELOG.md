@@ -1,5 +1,12 @@
 # @happyvertical/smrt-content
 
+## 0.16.2
+
+### Patch Changes
+
+- Updated dependencies [c04f2ba]
+  - @happyvertical/smrt-core@0.16.2
+
 ## 0.16.1
 
 ### Patch Changes
