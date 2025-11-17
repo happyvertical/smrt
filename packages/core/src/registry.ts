@@ -921,24 +921,18 @@ export class ObjectRegistry {
    * @private
    */
   static async tryLoadFromExternalPackage(className: string): Promise<boolean> {
-    // List of known SMRT packages to try
-    const smrtPackages = [
-      '@happyvertical/smrt-profiles',
-      '@happyvertical/smrt-content',
-      '@happyvertical/smrt-events',
-      '@happyvertical/smrt-places',
-      '@happyvertical/smrt-assets',
-      '@happyvertical/smrt-products',
-      '@happyvertical/smrt-agents',
-      '@happyvertical/smrt-accounts',
-    ];
-
+    // Dynamically discover all SMRT packages in node_modules
+    const { discoverSmrtPackages } = await import(
+      './manifest/discover-smrt-packages.js'
+    );
     const { loadExternalManifest } = await import(
       './manifest/manifest-loader.js'
     );
 
+    const smrtPackages = discoverSmrtPackages();
+
     console.log(
-      `[ObjectRegistry] Attempting to auto-load ${className} from external packages...`,
+      `[ObjectRegistry] Attempting to auto-load ${className} from ${smrtPackages.length} external packages...`,
     );
 
     // Try each package
