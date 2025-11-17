@@ -833,6 +833,8 @@ export class ObjectRegistry {
       schema,
       validators,
       packageName,
+      extends: objectDef.extends, // Parent class name for inheritance chain
+      decorator: config, // Decorator config (includes tableStrategy for STI)
     });
 
     console.log(
@@ -905,6 +907,93 @@ export class ObjectRegistry {
    */
   static getClassNames(): string[] {
     return Array.from(ObjectRegistry.classes.keys());
+  }
+
+  /**
+   * Try to load and register a class from external SMRT packages
+   *
+   * This method attempts to auto-discover classes from @happyvertical/smrt-* packages
+   * when they're referenced but not yet registered. Solves issue #343 where STI classes
+   * from external packages (e.g., Person from smrt-profiles) weren't loading correctly.
+   *
+   * @param className - Name of the class to load
+   * @returns Promise<boolean> - True if successfully loaded and registered, false otherwise
+   * @private
+   */
+  static async tryLoadFromExternalPackage(className: string): Promise<boolean> {
+    // List of known SMRT packages to try
+    const smrtPackages = [
+      '@happyvertical/smrt-profiles',
+      '@happyvertical/smrt-content',
+      '@happyvertical/smrt-events',
+      '@happyvertical/smrt-places',
+      '@happyvertical/smrt-assets',
+      '@happyvertical/smrt-products',
+      '@happyvertical/smrt-agents',
+      '@happyvertical/smrt-accounts',
+    ];
+
+    const { loadExternalManifest } = await import(
+      './manifest/manifest-loader.js'
+    );
+
+    console.log(
+      `[ObjectRegistry] Attempting to auto-load ${className} from external packages...`,
+    );
+
+    // Try each package
+    for (const packageName of smrtPackages) {
+      const manifest = await loadExternalManifest(packageName);
+
+      if (!manifest || !manifest.objects) {
+        continue;
+      }
+
+      // Look for the class in this manifest (case-insensitive)
+      const lowerClassName = className.toLowerCase();
+      const objectDef =
+        manifest.objects[lowerClassName] || manifest.objects[className];
+
+      if (!objectDef) {
+        continue;
+      }
+
+      console.log(
+        `[ObjectRegistry] ✅ Found ${className} in ${packageName} manifest`,
+      );
+
+      // Register the class from manifest
+      ObjectRegistry.registerFromManifest(
+        objectDef.className || className,
+        objectDef,
+        manifest.packageName,
+      );
+
+      // If this is an STI class, also register the parent class
+      if (objectDef.extends) {
+        const parentDef =
+          manifest.objects[objectDef.extends.toLowerCase()] ||
+          manifest.objects[objectDef.extends];
+
+        if (parentDef && !ObjectRegistry.hasClass(objectDef.extends)) {
+          console.log(
+            `[ObjectRegistry] Also registering parent class ${objectDef.extends} for STI`,
+          );
+          ObjectRegistry.registerFromManifest(
+            parentDef.className || objectDef.extends,
+            parentDef,
+            manifest.packageName,
+          );
+        }
+      }
+
+      return true;
+    }
+
+    console.log(
+      `[ObjectRegistry] ❌ Could not find ${className} in any SMRT package`,
+    );
+    return false;
   }
 
   /**
@@ -1041,11 +1130,23 @@ export class ObjectRegistry {
     }
 
     // Get registered class info (case-insensitive)
-    const registered = ObjectRegistry.findClass(className);
+    let registered = ObjectRegistry.findClass(className);
     if (!registered) {
-      throw new Error(
-        `Class ${className} not found in ObjectRegistry. Make sure to register it with @smrt() decorator or ObjectRegistry.register()`,
-      );
+      // Try to auto-load from external SMRT packages before throwing error
+      // This handles cases where classes from @happyvertical/smrt-* packages
+      // are used without explicitly importing them (e.g., Person from smrt-profiles)
+      const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
+
+      if (loaded) {
+        // Successfully loaded and registered from external package
+        registered = ObjectRegistry.findClass(className);
+      }
+
+      if (!registered) {
+        throw new Error(
+          `Class ${className} not found in ObjectRegistry. Make sure to register it with @smrt() decorator or ObjectRegistry.register()`,
+        );
+      }
     }
 
     // Auto-create default collection if not registered

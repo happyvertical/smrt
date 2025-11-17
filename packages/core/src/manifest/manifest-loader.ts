@@ -328,6 +328,48 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     }
   }
 
+  // Try Method 3: Workspace/monorepo packages - works for pnpm workspaces
+  if (!pkgPath) {
+    // Extract package short name (e.g., @happyvertical/smrt-profiles -> profiles)
+    const packageShortName = packageName.split('/').pop() || '';
+    const packageWithoutScope = packageShortName.replace(/^smrt-/, '');
+
+    // Check if we're in a pnpm workspace by looking for pnpm-workspace.yaml
+    // or if we're in a monorepo structure where packages are siblings
+    const workspacePaths = [
+      // Same monorepo - sibling packages (e.g., packages/core -> packages/profiles)
+      join(process.cwd(), '..', packageWithoutScope),
+      join(process.cwd(), '..', packageShortName),
+      // From monorepo root
+      join(process.cwd(), '../..', 'packages', packageWithoutScope),
+      join(process.cwd(), '../..', 'packages', packageShortName),
+      // Sibling monorepo (e.g., smrt -> ../praeco)
+      join(process.cwd(), '../..', packageWithoutScope),
+      join(process.cwd(), '../..', packageShortName),
+      join(process.cwd(), '../../..', packageWithoutScope),
+      join(process.cwd(), '../../..', packageShortName),
+    ];
+
+    for (const workspacePath of workspacePaths) {
+      const workspacePkgPath = join(workspacePath, 'package.json');
+      try {
+        if (existsSync(workspacePkgPath)) {
+          const content = readFileSync(workspacePkgPath, 'utf-8');
+          const json = JSON.parse(content);
+          if (json.name === packageName) {
+            pkgPath = workspacePkgPath;
+            console.log(
+              `[manifest-loader] ✅ Found ${packageName} in workspace at ${workspacePath}`,
+            );
+            break;
+          }
+        }
+      } catch {
+        // Keep trying other paths
+      }
+    }
+  }
+
   if (!pkgPath) {
     console.log(
       `[manifest-loader] Could not find package.json for ${packageName}`,
