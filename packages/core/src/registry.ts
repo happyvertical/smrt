@@ -1488,6 +1488,11 @@ export class ObjectRegistry {
         registered.packageName = manifestEntry.packageName;
       }
 
+      // Store extends info for getAllFields() to use (if present)
+      if (manifestEntry.extends) {
+        registered.extends = manifestEntry.extends;
+      }
+
       console.log(
         `📦 Loaded manifest for external package class: ${className} (${registered.fields.size} fields, ${registered.methods.size} methods)`,
       );
