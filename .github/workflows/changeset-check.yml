@@ -41,8 +41,15 @@ jobs:
             exit 0
           fi
 
-          # Skip if PR title starts with 'chore: version packages'
-          if echo "$PR_TITLE" | grep -qi '^chore: version packages'; then
+          # Skip if PR is from changeset-release branch (automated version packages PR)
+          HEAD_REF=$(gh pr view $PR_NUMBER --json headRefName --jq '.headRefName')
+          if echo "$HEAD_REF" | grep -q '^changeset-release/'; then
+            echo "✅ Skipping changeset check (changesets release PR from $HEAD_REF)"
+            exit 0
+          fi
+
+          # Skip if PR title starts with 'chore: version packages' or 'chore(release): version packages'
+          if echo "$PR_TITLE" | grep -qi '^chore.*: version packages'; then
             echo "✅ Skipping changeset check (version packages PR)"
             exit 0
           fi
