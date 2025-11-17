@@ -406,19 +406,8 @@ export class SmrtObject extends SmrtClass {
         // Skip readonly properties (e.g., tableName getter without setter)
         if (!descriptor || descriptor.set || descriptor.writable === true) {
           // Use formatted data (camelCase) instead of raw data (snake_case)
-          let value = formattedData[field];
-
-          // Convert SQLite integers (0/1) to booleans for boolean fields
-          // (formatDataJs already handles this, but keep for backward compatibility)
-          const fieldObj = fields[field];
-          if (
-            fieldObj &&
-            fieldObj.type === 'boolean' &&
-            typeof value === 'number'
-          ) {
-            value = value === 1;
-          }
-
+          // formatDataJs() already handles type conversions (dates, booleans, etc.)
+          const value = formattedData[field];
           this[field as keyof this] = value;
         }
       }
