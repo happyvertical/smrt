@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763296328252,
+  "timestamp": 1763384541859,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -1621,6 +1621,66 @@ export const testManifest: SmartObjectManifest = {
       "extends": "SmrtCollection",
       "exportName": "TestMeetingAnnouncementCollection",
       "collectionExportName": "TestMeetingAnnouncementCollectionCollection"
+    },
+    "issue339event": {
+      "name": "issue339event",
+      "className": "Issue339Event",
+      "collection": "issue339events",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-339-snake-case-date-mapping.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        },
+        "startDate": {
+          "type": "datetime",
+          "required": true,
+          "_meta": {
+            "nullable": true
+          },
+          "default": null
+        },
+        "endDate": {
+          "type": "datetime",
+          "required": true,
+          "_meta": {
+            "nullable": true
+          },
+          "default": null
+        },
+        "location": {
+          "type": "text",
+          "required": true,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Issue339Event",
+      "collectionExportName": "Issue339EventCollection"
+    },
+    "issue339eventcollection": {
+      "name": "issue339eventcollection",
+      "className": "Issue339EventCollection",
+      "collection": "issue339eventcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-339-snake-case-date-mapping.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "Issue339EventCollection",
+      "collectionExportName": "Issue339EventCollectionCollection"
     },
     "issue35testobject1": {
       "name": "issue35testobject1",

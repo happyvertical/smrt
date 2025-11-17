@@ -348,10 +348,18 @@ export class SmrtObject extends SmrtClass {
    * - Merges _meta_data JSONB fields into the main data object
    * - Validates _meta_type discriminator matches class name
    *
-   * @param data - Database row data
+   * @param data - Database row data (with snake_case column names)
    * @throws Error if STI validation fails
    */
   async loadDataFromDb(data: any) {
+    // Get field definitions to pass to formatDataJs
+    const fields = await this.getFields();
+
+    // Format data: Convert snake_case column names to camelCase property names
+    // and convert date strings to Date objects (Issue #339)
+    const { formatDataJs } = await import('./utils.js');
+    const formattedData = formatDataJs(data, fields);
+
     // Check if this class uses STI (Single Table Inheritance)
     const tableStrategy = ObjectRegistry.getTableStrategy(
       this.constructor.name,
@@ -361,7 +369,7 @@ export class SmrtObject extends SmrtClass {
     // STI: Fail-fast validation for _meta_type discriminator
     if (isSTI) {
       // Validation 1: _meta_type must be present in database row
-      if (!data._meta_type) {
+      if (!formattedData._meta_type) {
         throw new Error(
           `STI validation failed: Missing _meta_type discriminator in database row for ${this.constructor.name}. ` +
             `Ensure the row was saved with STI support enabled.`,
@@ -369,37 +377,18 @@ export class SmrtObject extends SmrtClass {
       }
 
       // Validation 2: _meta_type must match the class being instantiated
-      if (data._meta_type !== this.constructor.name) {
+      if (formattedData._meta_type !== this.constructor.name) {
         throw new Error(
           `STI validation failed: Type mismatch when loading ${this.constructor.name}. ` +
-            `Database row has _meta_type='${data._meta_type}' but expected '${this.constructor.name}'. ` +
+            `Database row has _meta_type='${formattedData._meta_type}' but expected '${this.constructor.name}'. ` +
             `This usually means you're trying to load a row with the wrong class.`,
         );
       }
     }
 
-    // STI: Merge meta fields from _meta_data JSONB into main data object
-    if (isSTI && data._meta_data) {
-      try {
-        // Parse _meta_data if it's a JSON string (some adapters return strings)
-        const metaData =
-          typeof data._meta_data === 'string'
-            ? JSON.parse(data._meta_data)
-            : data._meta_data;
+    // STI: Meta fields are already merged by formatDataJs
+    // No additional processing needed
 
-        // Merge meta fields into data object so they get loaded into instance
-        Object.assign(data, metaData);
-      } catch (error) {
-        const { DatabaseError } = await import('./errors.js');
-        throw DatabaseError.corruptedData(
-          '_meta_data',
-          this.constructor.name,
-          error as Error,
-        );
-      }
-    }
-
-    const fields = await this.getFields();
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
         // Check if property is writable before setting (Issue #63)
@@ -416,9 +405,11 @@ export class SmrtObject extends SmrtClass {
         // Only set if property has a setter or is writable
         // Skip readonly properties (e.g., tableName getter without setter)
         if (!descriptor || descriptor.set || descriptor.writable === true) {
-          let value = data[field];
+          // Use formatted data (camelCase) instead of raw data (snake_case)
+          let value = formattedData[field];
 
           // Convert SQLite integers (0/1) to booleans for boolean fields
+          // (formatDataJs already handles this, but keep for backward compatibility)
           const fieldObj = fields[field];
           if (
             fieldObj &&
