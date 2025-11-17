@@ -328,6 +328,48 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     }
   }
 
+  // Try Method 3: Workspace/monorepo packages - works for pnpm workspaces
+  if (!pkgPath) {
+    // Extract package short name (e.g., @happyvertical/smrt-profiles -> profiles)
+    const packageShortName = packageName.split('/').pop() || '';
+    const packageWithoutScope = packageShortName.replace(/^smrt-/, '');
+
+    // Check if we're in a pnpm workspace by looking for pnpm-workspace.yaml
+    // or if we're in a monorepo structure where packages are siblings
+    const workspacePaths = [
+      // Same monorepo - sibling packages (e.g., packages/core -> packages/profiles)
+      join(process.cwd(), '..', packageWithoutScope),
+      join(process.cwd(), '..', packageShortName),
+      // From monorepo root
+      join(process.cwd(), '../..', 'packages', packageWithoutScope),
+      join(process.cwd(), '../..', 'packages', packageShortName),
+      // Sibling monorepo (e.g., smrt -> ../praeco)
+      join(process.cwd(), '../..', packageWithoutScope),
+      join(process.cwd(), '../..', packageShortName),
+      join(process.cwd(), '../../..', packageWithoutScope),
+      join(process.cwd(), '../../..', packageShortName),
+    ];
+
+    for (const workspacePath of workspacePaths) {
+      const workspacePkgPath = join(workspacePath, 'package.json');
+      try {
+        if (existsSync(workspacePkgPath)) {
+          const content = readFileSync(workspacePkgPath, 'utf-8');
+          const json = JSON.parse(content);
+          if (json.name === packageName) {
+            pkgPath = workspacePkgPath;
+            console.log(
+              `[manifest-loader] ✅ Found ${packageName} in workspace at ${workspacePath}`,
+            );
+            break;
+          }
+        }
+      } catch {
+        // Keep trying other paths
+      }
+    }
+  }
+
   if (!pkgPath) {
     console.log(
       `[manifest-loader] Could not find package.json for ${packageName}`,
@@ -563,28 +605,8 @@ export async function discoverManifestEntry(
     manifestSource: string;
   }> = [];
 
-  // 1. PRIORITY: Try loading from the constructor's package first
-  if (constructorPackage) {
-    const manifest = await loadExternalManifest(constructorPackage);
-    if (manifest) {
-      const entry = manifest.objects[name] || manifest.objects[className];
-      if (entry) {
-        const enrichedEntry =
-          !entry.packageName && manifest.packageName
-            ? { ...entry, packageName: manifest.packageName }
-            : entry;
-
-        foundEntries.push({
-          entry: enrichedEntry,
-          packageName: manifest.packageName || constructorPackage,
-          filePath: entry.filePath,
-          manifestSource: `${manifest.packageName || constructorPackage}/manifest.json`,
-        });
-      }
-    }
-  }
-
-  // 2. Check localTestManifest (domain package test classes)
+  // 2. Check localTestManifest first (domain package test classes)
+  // Do this BEFORE loading external manifest to avoid duplicate loading
   if (localTestManifest === undefined) {
     loadLocalTestManifestSync();
   }
@@ -597,6 +619,34 @@ export async function discoverManifestEntry(
       filePath: localEntry.filePath,
       manifestSource: 'local test manifest',
     });
+  }
+
+  // 1. PRIORITY: Try loading from the constructor's package first
+  // BUT skip if it's the same package as the local test manifest to avoid collisions
+  if (constructorPackage) {
+    const skipExternal =
+      localTestManifest?.packageName &&
+      constructorPackage === localTestManifest.packageName;
+
+    if (!skipExternal) {
+      const manifest = await loadExternalManifest(constructorPackage);
+      if (manifest) {
+        const entry = manifest.objects[name] || manifest.objects[className];
+        if (entry) {
+          const enrichedEntry =
+            !entry.packageName && manifest.packageName
+              ? { ...entry, packageName: manifest.packageName }
+              : entry;
+
+          foundEntries.push({
+            entry: enrichedEntry,
+            packageName: manifest.packageName || constructorPackage,
+            filePath: entry.filePath,
+            manifestSource: `${manifest.packageName || constructorPackage}/manifest.json`,
+          });
+        }
+      }
+    }
   }
 
   // 3. Check testManifest (core test classes)
