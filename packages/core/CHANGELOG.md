@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.16.1
+
+### Patch Changes
+
+- fadeb11: feat(ci): enable fixed versioning for workspace packages
+
+  Configure monorepo for fixed versioning where all workspace packages share the same version number.
+  Any change to the repository will bump all packages together. The root package.json version
+  will be manually kept in sync with the workspace packages.
+
+  - @happyvertical/smrt-config@0.16.1
+  - @happyvertical/smrt-types@0.16.1
+
 ## 0.16.0
 
 ### Patch Changes
