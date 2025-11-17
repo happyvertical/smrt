@@ -605,28 +605,8 @@ export async function discoverManifestEntry(
     manifestSource: string;
   }> = [];
 
-  // 1. PRIORITY: Try loading from the constructor's package first
-  if (constructorPackage) {
-    const manifest = await loadExternalManifest(constructorPackage);
-    if (manifest) {
-      const entry = manifest.objects[name] || manifest.objects[className];
-      if (entry) {
-        const enrichedEntry =
-          !entry.packageName && manifest.packageName
-            ? { ...entry, packageName: manifest.packageName }
-            : entry;
-
-        foundEntries.push({
-          entry: enrichedEntry,
-          packageName: manifest.packageName || constructorPackage,
-          filePath: entry.filePath,
-          manifestSource: `${manifest.packageName || constructorPackage}/manifest.json`,
-        });
-      }
-    }
-  }
-
-  // 2. Check localTestManifest (domain package test classes)
+  // 2. Check localTestManifest first (domain package test classes)
+  // Do this BEFORE loading external manifest to avoid duplicate loading
   if (localTestManifest === undefined) {
     loadLocalTestManifestSync();
   }
@@ -639,6 +619,34 @@ export async function discoverManifestEntry(
       filePath: localEntry.filePath,
       manifestSource: 'local test manifest',
     });
+  }
+
+  // 1. PRIORITY: Try loading from the constructor's package first
+  // BUT skip if it's the same package as the local test manifest to avoid collisions
+  if (constructorPackage) {
+    const skipExternal =
+      localTestManifest?.packageName &&
+      constructorPackage === localTestManifest.packageName;
+
+    if (!skipExternal) {
+      const manifest = await loadExternalManifest(constructorPackage);
+      if (manifest) {
+        const entry = manifest.objects[name] || manifest.objects[className];
+        if (entry) {
+          const enrichedEntry =
+            !entry.packageName && manifest.packageName
+              ? { ...entry, packageName: manifest.packageName }
+              : entry;
+
+          foundEntries.push({
+            entry: enrichedEntry,
+            packageName: manifest.packageName || constructorPackage,
+            filePath: entry.filePath,
+            manifestSource: `${manifest.packageName || constructorPackage}/manifest.json`,
+          });
+        }
+      }
+    }
   }
 
   // 3. Check testManifest (core test classes)
