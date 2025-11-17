@@ -415,17 +415,6 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Gets all property descriptors from this object's prototype
-   *
-   * @returns Object containing all property descriptors
-   */
-  allDescriptors() {
-    const proto = Object.getPrototypeOf(this);
-    const descriptors = Object.getOwnPropertyDescriptors(proto);
-    return descriptors;
-  }
-
-  /**
    * Gets the database table name for this object
    */
   get tableName() {
@@ -523,16 +512,10 @@ export class SmrtObject extends SmrtClass {
       registered?.inheritedFields ||
       ObjectRegistry.getFields(this.constructor.name);
 
-    // Get all enumerable properties from the instance
-    const allProps = Object.keys(this);
-
-    // Combine registered fields and enumerable properties
-    const allKeys = new Set([
-      ...allProps,
-      ...Array.from(registeredFields.keys()),
-    ]);
-
-    for (const key of allKeys) {
+    // Use manifest fields exclusively (manifest-first architecture)
+    // All schema fields are in the manifest from AST scanning
+    // Dynamic properties added at runtime are intentionally excluded (not part of schema)
+    for (const key of registeredFields.keys()) {
       // Skip private properties, methods, and already-handled core fields
       if (
         key.startsWith('_') ||

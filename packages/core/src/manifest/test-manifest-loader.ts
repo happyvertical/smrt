@@ -10,7 +10,6 @@ let loadedTestManifest: SmartObjectManifest | null = null;
 
 try {
   // This will be replaced by the actual manifest after pretest script runs
-  // @ts-expect-error - test-manifest.js is generated during test setup and may not exist during build
   const { testManifest } = await import('./test-manifest.js');
   loadedTestManifest = testManifest;
 } catch {
