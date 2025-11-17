@@ -1,6 +1,7 @@
 packages:
+  - '.'
   - 'packages/*'
 
 # pnpm workspace configuration for SMRT Framework monorepo
-# All SMRT framework and module packages
+# Includes root package (@happyvertical/smrt) and all child packages
 # SDK packages are now consumed as published dependencies from GitHub Package Registry
