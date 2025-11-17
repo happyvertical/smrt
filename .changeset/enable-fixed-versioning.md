@@ -1,9 +1,9 @@
 ---
-'@happyvertical/smrt': patch
+'@happyvertical/smrt-core': patch
 ---
 
-feat(ci): enable fixed versioning with root package included
+feat(ci): enable fixed versioning for workspace packages
 
-Configure monorepo for fixed versioning where all packages share the same version number.
-Any change to the repository will bump all packages together, with the root package.json
-as the single source of truth.
+Configure monorepo for fixed versioning where all workspace packages share the same version number.
+Any change to the repository will bump all packages together. The root package.json version
+will be manually kept in sync with the workspace packages.

@@ -96,12 +96,5 @@
       "outputs": ["docs/**", "manual/**"],
       "cache": true
     }
-  },
-  "globalDependencies": [
-    ".mcp.json",
-    "biome.json",
-    "lefthook.yml",
-    "tsconfig.json",
-    "turbo.json"
-  ]
+  }
 }
