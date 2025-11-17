@@ -50,11 +50,7 @@ jobs:
           # Check if changeset files exist (excluding README.md)
           changeset_count=$(find .changeset -name '*.md' ! -name 'README.md' 2>/dev/null | wc -l)
 
-          if [ "$changeset_count" -gt 0 ]; then
-            echo "✅ Found $changeset_count changeset(s)"
-            find .changeset -name '*.md' ! -name 'README.md' -exec basename {} \;
-            exit 0
-          else
+          if [ "$changeset_count" -eq 0 ]; then
             echo "❌ No changeset found"
             echo ""
             echo "Please add a changeset by running:"
@@ -64,3 +60,25 @@ jobs:
             echo "(e.g., documentation changes, test updates, workflow changes)"
             exit 1
           fi
+
+          echo "✅ Found $changeset_count changeset(s)"
+          find .changeset -name '*.md' ! -name 'README.md' -exec basename {} \;
+
+          # Validate no major version bumps
+          echo ""
+          echo "🔍 Validating changeset types..."
+
+          if find .changeset -name '*.md' ! -name 'README.md' -type f -exec grep -l '"major"' {} + 2>/dev/null | grep -q .; then
+            echo "❌ ERROR: Major version bump detected in changeset!"
+            echo ""
+            echo "Files with major bumps:"
+            find .changeset -name '*.md' ! -name 'README.md' -type f -exec grep -l '"major"' {} + 2>/dev/null || true
+            echo ""
+            echo "Major version releases (1.0.0+) must be manually approved and coordinated."
+            echo "Please change the version bump type to 'minor' or 'patch'."
+            echo ""
+            echo "If you truly need a major version bump, coordinate with maintainers first."
+            exit 1
+          fi
+
+          echo "✅ No major version bumps detected"

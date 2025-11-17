@@ -4,7 +4,8 @@
 # This workflow is called by .github/workflows/happyvertical/on-merge-main.yml
 # when code is merged to the main branch, after tests and build pass.
 #
-# SMRT uses changesets for automated versioning and publishing.
+# This workflow directly versions and publishes packages based on changeset
+# files without creating an intermediate "Version Packages" PR.
 # =============================================================================
 
 name: Publish
@@ -31,6 +32,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Use GH_TOKEN to allow pushing version commits back to main
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
@@ -48,30 +51,52 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-turbo-
 
-      - name: Create Release PR or Publish
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate No Major Version Bumps
+        run: |
+          echo "🔍 Checking for major version bumps in changesets..."
+
+          # Check if any changeset files contain major version bumps
+          if find .changeset -name '*.md' ! -name 'README.md' -type f -exec grep -l '"major"' {} + 2>/dev/null | grep -q .; then
+            echo "❌ ERROR: Major version bump detected in changeset files!"
+            echo ""
+            echo "Found major version bumps in:"
+            find .changeset -name '*.md' ! -name 'README.md' -type f -exec grep -l '"major"' {} + 2>/dev/null || true
+            echo ""
+            echo "Major version releases (1.0.0+) must be manually approved."
+            echo "Please remove the major bump from changesets or coordinate with maintainers."
+            exit 1
+          fi
+
+          # Also check for current version to prevent bumping to 1.0.0+
+          current_version=$(node -p "require('./package.json').version")
+          echo "Current version: $current_version"
+
+          # Extract major version number
+          major_version=$(echo "$current_version" | cut -d. -f1)
+
+          if [ "$major_version" -ge 1 ]; then
+            echo "❌ ERROR: Package is already at version 1.0.0 or higher ($current_version)"
+            echo "Manual review required for versions >= 1.0.0"
+            exit 1
+          fi
+
+          echo "✅ No major version bumps detected. Safe to proceed."
+
+      - name: Version and Publish
         id: changesets
         uses: changesets/action@v1
         with:
-          version: pnpm run version
           publish: pnpm run release
           commit: 'chore(release): version packages'
-          title: 'chore(release): version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Enable auto-merge for version PR
-        if: steps.changesets.outputs.pullRequestNumber != ''
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "🔀 Enabling auto-merge for version PR #${{ steps.changesets.outputs.pullRequestNumber }}"
-          echo "⏳ Waiting 30 seconds for status checks to start..."
-          sleep 30
-          gh pr merge ${{ steps.changesets.outputs.pullRequestNumber }} \
-            --auto --squash \
-            --delete-branch
 
       - name: Check if packages were published
         id: check_published
