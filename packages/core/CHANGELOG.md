@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.16.2
+
+### Patch Changes
+
+- c04f2ba: refactor(manifest): eliminate runtime introspection and optimize manifest generation
+
+  - Remove all runtime reflection/introspection from manifest code
+  - Manifest generation now relies purely on AST-based static analysis
+  - Import generator from source in scripts for better development workflow
+  - Address code quality improvements from automated review
+
+- 5643895: fix(ci): skip changeset check for automated Version Packages PRs
+
+  Align with SDK direct publish pattern to prevent changeset checks on automated
+  Version Packages PRs. This reduces CI overhead by eliminating unnecessary test runs.
+
+  - @happyvertical/smrt-config@0.16.2
+  - @happyvertical/smrt-types@0.16.2
+
 ## 0.16.1
 
 ### Patch Changes
