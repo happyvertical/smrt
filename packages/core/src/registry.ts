@@ -979,6 +979,19 @@ export class ObjectRegistry {
             manifest.packageName,
           );
         }
+
+        // Merge inherited fields from parent into child
+        // This ensures STI child classes get all parent fields
+        console.log(
+          `[ObjectRegistry] Merging inherited fields for ${className}...`,
+        );
+        await ObjectRegistry.getAllFields(className);
+        const registered = ObjectRegistry.findClass(className);
+        if (registered?.inheritedFields) {
+          console.log(
+            `[ObjectRegistry] ✅ ${className} now has ${registered.inheritedFields.size} total fields (including inherited)`,
+          );
+        }
       }
 
       return true;
@@ -1473,6 +1486,11 @@ export class ObjectRegistry {
       // Extract and store package name from manifest entry (for getPackageName() lookup)
       if (manifestEntry.packageName) {
         registered.packageName = manifestEntry.packageName;
+      }
+
+      // Store extends info for getAllFields() to use (if present)
+      if (manifestEntry.extends) {
+        registered.extends = manifestEntry.extends;
       }
 
       console.log(
