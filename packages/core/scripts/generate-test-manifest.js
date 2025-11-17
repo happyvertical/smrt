@@ -18,7 +18,7 @@ async function generateTestManifest() {
 
     // Use ManifestBuilder via npx tsx to handle TypeScript imports
     const tsCode = `
-import { ManifestBuilder } from '@happyvertical/smrt-core/manifest/generator';
+import { ManifestBuilder } from './src/manifest/generator.js';
 
 const builder = new ManifestBuilder();
 
