@@ -46,6 +46,7 @@ interface ScannerConfig {
   includePrivateMethods: boolean;
   includeStaticMethods: boolean;
   followImports: boolean;
+  smrtDependencies?: string[];
 }
 
 interface PackageInfo {
@@ -67,7 +68,7 @@ export class ManifestBuilder {
     options: ManifestBuilderOptions = {},
   ): Promise<SmartObjectManifest> {
     // 1. Discover files to scan
-    const files = await this.discoverFiles(options);
+    const files = this.discoverFiles(options);
 
     if (files.length === 0) {
       console.log('[smrt] No source files found');
@@ -83,7 +84,7 @@ export class ManifestBuilder {
     const scanResults = this.scanFiles(files, scannerConfig);
 
     // 4. Generate manifest from scan results
-    const manifest = this.createManifest(scanResults, options);
+    const manifest = this.createManifest(scanResults, options, scannerConfig);
 
     // 5. Write output files
     await this.writeOutput(manifest, options);
@@ -94,9 +95,7 @@ export class ManifestBuilder {
   /**
    * Discover source files based on include/exclude patterns
    */
-  private async discoverFiles(
-    options: ManifestBuilderOptions,
-  ): Promise<string[]> {
+  private discoverFiles(options: ManifestBuilderOptions): string[] {
     const include = options.include || ['src/**/*.ts'];
     const exclude = options.exclude || ['src/**/*.d.ts', 'node_modules/**'];
 
@@ -157,6 +156,7 @@ export class ManifestBuilder {
       includePrivateMethods: options.includePrivateMethods ?? false,
       includeStaticMethods: options.includeStaticMethods ?? true,
       followImports: options.followImports ?? false,
+      smrtDependencies,
     };
   }
 
@@ -180,6 +180,7 @@ export class ManifestBuilder {
   private createManifest(
     scanResults: ScanResult[],
     options: ManifestBuilderOptions,
+    scannerConfig: ScannerConfig,
   ): SmartObjectManifest {
     const generator = new ManifestGenerator();
     const manifest = generator.generateManifest(scanResults);
@@ -187,10 +188,12 @@ export class ManifestBuilder {
     // Add module type
     manifest.moduleType = options.moduleType || 'smrt';
 
-    // Discover and add SMRT dependencies
-    if (options.discoverExternalPackages) {
-      console.log('[smrt] Discovering SMRT packages...');
-      manifest.smrtDependencies = discoverSmrtPackages();
+    // Add SMRT dependencies (already discovered in configureScanner)
+    if (
+      scannerConfig.smrtDependencies &&
+      scannerConfig.smrtDependencies.length > 0
+    ) {
+      manifest.smrtDependencies = scannerConfig.smrtDependencies;
     }
 
     // Inject package info
@@ -372,16 +375,17 @@ export default ${exportName};
         const manifest = JSON.parse(manifestContent);
 
         // Extract all class names from this package
-        const classNames: string[] = [];
+        const foundClassNames: string[] = [];
         for (const objDef of Object.values(manifest.objects)) {
           if ((objDef as any).className) {
-            classNames.push((objDef as any).className);
-            externalBaseClasses.push((objDef as any).className);
+            const className = (objDef as any).className;
+            foundClassNames.push(className);
+            externalBaseClasses.push(className);
           }
         }
 
         console.log(
-          `[smrt]   ${pkgName}: found ${classNames.length} class(es) - ${classNames.join(', ')}`,
+          `[smrt]   ${pkgName}: found ${foundClassNames.length} class(es) - ${foundClassNames.join(', ')}`,
         );
       } catch (error: any) {
         console.log(
