@@ -20,9 +20,7 @@
     "typecheck": "turbo typecheck",
     "dev": "turbo dev --parallel",
     "validate-build": "node scripts/validate-build.js",
-    "changeset": "changeset",
-    "version": "node scripts/check-version-limit.js && changeset version",
-    "release": "pnpm run build && node scripts/publish-sequential.js",
+    "release": "pnpm run build && semantic-release",
     "smrt": "pnpm --filter @smrt/core cli",
     "docs:site": "npm run --prefix docs start",
     "docs:site:build": "npm run --prefix docs build",
@@ -31,7 +29,6 @@
   "devDependencies": {
     "@anolilab/semantic-release-pnpm": "^2.0.4",
     "@biomejs/biome": "2.2.4",
-    "@changesets/cli": "^2.27.12",
     "@commitlint/cli": "^20.1.0",
     "@commitlint/config-conventional": "^20.0.0",
     "@playwright/test": "^1.54.2",

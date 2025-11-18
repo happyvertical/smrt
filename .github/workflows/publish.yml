@@ -4,8 +4,9 @@
 # This workflow is called by .github/workflows/happyvertical/on-merge-main.yml
 # when code is merged to the main branch, after tests and build pass.
 #
-# This workflow directly versions and publishes packages based on changeset
-# files without creating an intermediate "Version Packages" PR.
+# Uses semantic-release to automatically version and publish based on
+# conventional commits. Breaking changes trigger minor bumps (0.x.0),
+# all other changes trigger patch bumps (0.0.x) until 1.0.0.
 # =============================================================================
 
 name: Publish
@@ -56,23 +57,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Validate No Major Version Bumps
+      - name: Validate Version Constraints
         run: |
-          echo "🔍 Checking for major version bumps in changesets..."
+          echo "🔍 Checking version constraints..."
 
-          # Check if any changeset files contain major version bumps
-          if find .changeset -name '*.md' ! -name 'README.md' -type f -exec grep -l '"major"' {} + 2>/dev/null | grep -q .; then
-            echo "❌ ERROR: Major version bump detected in changeset files!"
-            echo ""
-            echo "Found major version bumps in:"
-            find .changeset -name '*.md' ! -name 'README.md' -type f -exec grep -l '"major"' {} + 2>/dev/null || true
-            echo ""
-            echo "Major version releases (1.0.0+) must be manually approved."
-            echo "Please remove the major bump from changesets or coordinate with maintainers."
-            exit 1
-          fi
-
-          # Also check for current version to prevent bumping to 1.0.0+
           current_version=$(node -p "require('./package.json').version")
           echo "Current version: $current_version"
 
@@ -85,50 +73,20 @@ jobs:
             exit 1
           fi
 
-          echo "✅ No major version bumps detected. Safe to proceed."
+          echo "✅ Version is 0.x.x - safe to proceed with automated releases"
 
-      - name: Version and Publish
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          publish: pnpm run release
-          commit: 'chore(release): version packages'
+      - name: Release with semantic-release
+        id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Check if packages were published
-        id: check_published
         run: |
-          # Check if changesets action published packages
-          if [ "${{ steps.changesets.outputs.published }}" == "true" ]; then
-            echo "published=true" >> $GITHUB_OUTPUT
-            echo "✅ Packages published via changesets"
-          else
-            # Check git tags to see if packages were published (fallback case)
-            if git tag --points-at HEAD | grep -q "@happyvertical"; then
-              echo "published=true" >> $GITHUB_OUTPUT
-              echo "✅ Packages published (detected via git tags)"
-            else
-              echo "published=false" >> $GITHUB_OUTPUT
-              echo "ℹ️  No packages published"
-            fi
-          fi
-
-      - name: Create git tags
-        if: steps.check_published.outputs.published == 'true' && steps.changesets.outputs.publishedPackages != ''
-        run: |
-          # Create tags for each published package
-          echo '${{ steps.changesets.outputs.publishedPackages }}' | jq -r '.[] | "\(.name)@\(.version)"' | while read tag; do
-            echo "🏷️  Creating tag: $tag"
-            git tag "$tag" || echo "Tag $tag already exists"
-          done
-
-          git push --tags || echo "No new tags to push"
+          echo "🚀 Running semantic-release..."
+          pnpm run release
 
       - name: Trigger dependency cascade
-        if: steps.check_published.outputs.published == 'true'
+        if: success()
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
