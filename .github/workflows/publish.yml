@@ -31,7 +31,6 @@ jobs:
       registry-url: 'https://npm.pkg.github.com'
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   cascade:
     name: Trigger Dependency Cascade
