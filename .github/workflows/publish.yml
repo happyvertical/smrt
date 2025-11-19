@@ -46,7 +46,9 @@ jobs:
           echo "📢 Triggering dependency cascade for downstream repositories..."
 
           # Get list of downstream targets from cascade config
-          DOWNSTREAM_REPOS=$(curl -s https://raw.githubusercontent.com/happyvertical/sdk/main/.github/cascade-config.json | \
+          config_url="https://raw.githubusercontent.com/happyvertical"
+          config_url="${config_url}/sdk/main/.github/cascade-config.json"
+          DOWNSTREAM_REPOS=$(curl -s "$config_url" | \
             jq -r '.cascade.smrt.triggers[]' | tr '\n' ' ')
 
           echo "Downstream repos: $DOWNSTREAM_REPOS"
@@ -55,18 +57,17 @@ jobs:
           version="${{ needs.release.outputs.version }}"
           echo "Published version: $version"
 
-          # Trigger each downstream repo
+          # Trigger each downstream repo using workflow_dispatch
           for repo in $DOWNSTREAM_REPOS; do
             echo "📤 Triggering $repo..."
-            gh api \
-              --method POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              /repos/happyvertical/$repo/dispatches \
-              -f event_type='dependency-updated' \
-              -f 'client_payload[repository]=happyvertical/smrt' \
-              -f "client_payload[version]=$version" \
-              || echo "⚠️  Failed to trigger $repo (may not have workflow configured)"
+            gh workflow run on-merge-main.yml \
+              --repo "happyvertical/$repo" \
+              --ref main \
+              --field upstream_package="@happyvertical/smrt" \
+              --field upstream_version="$version" \
+              --field triggered_by="${{ github.actor }}" \
+              || echo "⚠️  Failed to trigger $repo" \
+                "(may not have workflow configured)"
           done
 
           echo "✅ Triggered dependency cascade"
@@ -101,8 +102,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          key: |
+            ${{ runner.os }}-turbo-docs-${{
+              hashFiles('**/pnpm-lock.yaml')
+            }}
           restore-keys: |
+            ${{ runner.os }}-turbo-docs-
             ${{ runner.os }}-turbo-
 
       - name: Install docs dependencies

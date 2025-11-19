@@ -44,9 +44,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/package.json', '**/pnpm-lock.yaml', 'packages/*/src/**') }}-${{ github.run_id }}
+          key: |
+            ${{ runner.os }}-turbo-${{ hashFiles(
+              '**/package.json',
+              '**/pnpm-lock.yaml',
+              'packages/*/src/**',
+              'packages/*/test/**'
+            ) }}
           restore-keys: |
-            ${{ runner.os }}-turbo-${{ hashFiles('**/package.json', '**/pnpm-lock.yaml', 'packages/*/src/**') }}-
             ${{ runner.os }}-turbo-
 
       - name: Cache build outputs
@@ -55,7 +60,15 @@ jobs:
           path: |
             packages/*/dist
             .turbo
-          key: ${{ runner.os }}-build-v5-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsconfig.json', 'packages/*/vite.config.ts', 'vite.config.base.ts', 'pnpm-lock.yaml') }}
+          key: >
+            ${{ runner.os }}-build-v5-${{ hashFiles(
+              'packages/*/src/**',
+              'packages/*/package.json',
+              'packages/*/tsconfig.json',
+              'packages/*/vite.config.ts',
+              'vite.config.base.ts',
+              'pnpm-lock.yaml'
+            ) }}
           restore-keys: |
             ${{ runner.os }}-build-v5-
 

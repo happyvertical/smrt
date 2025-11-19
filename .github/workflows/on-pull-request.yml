@@ -2,7 +2,7 @@ name: Pull Request Validation
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 # Cancel in-progress runs when new commits are pushed
 concurrency:
@@ -26,36 +26,9 @@ jobs:
           fetch-depth: 0
 
       - name: Validate commit messages
-        run: |
-          # Get all commit messages since main (excluding merge commits)
-          commits=$(git log origin/main..HEAD --no-merges --pretty=format:"%s")
-
-          if [ -z "$commits" ]; then
-            echo "No commits found"
-            exit 0
-          fi
-
-          echo "📋 Validating commits:"
-          echo "$commits"
-          echo ""
-
-          # Check if commits follow conventional commit format
-          invalid_commits=""
-          while IFS= read -r commit; do
-            if ! echo "$commit" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore)(\(.+\))?!?: .+"; then
-              invalid_commits="$invalid_commits\n- $commit"
-            fi
-          done <<< "$commits"
-
-          if [ -n "$invalid_commits" ]; then
-            echo "❌ Found commits that don't follow conventional commit format:"
-            echo -e "$invalid_commits"
-            echo ""
-            echo "Please use one of: feat, fix, docs, style, refactor, perf, test, build, ci, chore"
-            exit 1
-          fi
-
-          echo "✅ All commits follow conventional commit format"
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .commitlintrc.json
 
       - name: Determine version bump
         id: version
@@ -82,7 +55,8 @@ jobs:
 
             const comment = `## 📦 Version Bump Preview
 
-            When this PR is merged, packages will receive a **${bump}** version bump based on your conventional commits.
+            When this PR is merged, packages will receive a **${bump}**
+            version bump based on your conventional commits.
 
             ### What happens on merge?
 
@@ -121,6 +95,64 @@ jobs:
                 body: comment
               });
             }
+
+  validate-workflows:
+    name: Validate Workflow Files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Get changed workflow files
+        id: changed-files
+        uses: tj-actions/changed-files@v45
+        with:
+          files: .github/workflows/*.{yml,yaml}
+
+      - name: Validate workflow syntax
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "🔍 Validating workflow files..."
+          files="${{ steps.changed-files.outputs.all_changed_files }}"
+          echo "Changed files: $files"
+
+          # Install yamllint
+          pip install yamllint
+
+          # Validate each changed workflow file
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            echo "  Checking $file..."
+            yamllint "$file" || exit 1
+          done
+
+          echo "✅ YAML syntax validation passed"
+
+      - name: Install act
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          # Install specific version of act for security and stability
+          mkdir -p bin
+          curl --proto '=https' --tlsv1.2 -sSfL \
+            https://raw.githubusercontent.com/nektos/act/master/install.sh \
+            | sudo bash -s -- -b bin v0.2.82
+
+      - name: Validate with act
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          if ! ./bin/act --list > /tmp/act-output.txt 2>&1; then
+            echo "❌ act --list failed - workflow syntax issue"
+            echo "Error output:"
+            cat /tmp/act-output.txt
+            exit 1
+          fi
+          echo "✅ act validation passed"
+
+      - name: Workflow validation summary
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "✅ All workflow validations passed:"
+          echo "  - YAML syntax validated with yamllint"
+          echo "  - Workflow parsing verified with act"
 
   changeset-check:
     name: Check for Changeset
