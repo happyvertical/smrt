@@ -46,7 +46,9 @@ jobs:
           echo "📢 Triggering dependency cascade for downstream repositories..."
 
           # Get list of downstream targets from cascade config
-          DOWNSTREAM_REPOS=$(curl -s https://raw.githubusercontent.com/happyvertical/sdk/main/.github/cascade-config.json | \
+          config_url="https://raw.githubusercontent.com/happyvertical"
+          config_url="${config_url}/sdk/main/.github/cascade-config.json"
+          DOWNSTREAM_REPOS=$(curl -s "$config_url" | \
             jq -r '.cascade.smrt.triggers[]' | tr '\n' ' ')
 
           echo "Downstream repos: $DOWNSTREAM_REPOS"
@@ -64,7 +66,8 @@ jobs:
               --field upstream_package="@happyvertical/smrt" \
               --field upstream_version="$version" \
               --field triggered_by="${{ github.actor }}" \
-              || echo "⚠️  Failed to trigger $repo (may not have workflow configured)"
+              || echo "⚠️  Failed to trigger $repo" \
+                "(may not have workflow configured)"
           done
 
           echo "✅ Triggered dependency cascade"
