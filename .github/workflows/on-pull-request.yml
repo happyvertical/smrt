@@ -2,7 +2,7 @@ name: Pull Request Validation
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 # Cancel in-progress runs when new commits are pushed
 concurrency:
@@ -55,7 +55,8 @@ jobs:
 
             const comment = `## 📦 Version Bump Preview
 
-            When this PR is merged, packages will receive a **${bump}** version bump based on your conventional commits.
+            When this PR is merged, packages will receive a **${bump}**
+            version bump based on your conventional commits.
 
             ### What happens on merge?
 
