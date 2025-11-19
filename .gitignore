@@ -165,3 +165,6 @@ repomix-output.xml
 # Test databases
 *.db
 **/*.db
+
+# Act (GitHub Actions local runner) binaries
+bin/
