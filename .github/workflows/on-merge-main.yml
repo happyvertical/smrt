@@ -1,4 +1,5 @@
 name: On Merge to Main
+# Testing hook validation
 
 on:
   push:
@@ -67,7 +68,8 @@ jobs:
             echo "updated=true" >> $GITHUB_OUTPUT
             echo "✅ Dependencies updated"
             echo "📦 Updated packages:"
-            git diff package.json | grep '^\+.*@happyvertical' | sed 's/^+//' || echo "  (lockfile changes only)"
+            git diff package.json | grep '^\+.*@happyvertical' | \
+              sed 's/^+//' || echo "  (lockfile changes only)"
           fi
 
       - name: Create Pull Request
@@ -81,12 +83,31 @@ jobs:
           body: |
             ## Automated Dependency Update 🤖
 
-            Triggered by upstream changes from **${{ github.event.client_payload.repository }}**
+            Triggered by upstream changes from
+            **${{ github.event.client_payload.repository }}**
 
             ### Upstream Changes
-            ${{ github.event.client_payload.package && format('- **Package:** {0}', github.event.client_payload.package) || '' }}
-            ${{ github.event.client_payload.version && format('- **Version:** {0}', github.event.client_payload.version) || '' }}
-            ${{ github.event.client_payload.packages && format('- **Packages:** {0}', github.event.client_payload.packages) || '' }}
+            ${{
+              github.event.client_payload.package &&
+              format(
+                '- **Package:** {0}',
+                github.event.client_payload.package
+              ) || ''
+            }}
+            ${{
+              github.event.client_payload.version &&
+              format(
+                '- **Version:** {0}',
+                github.event.client_payload.version
+              ) || ''
+            }}
+            ${{
+              github.event.client_payload.packages &&
+              format(
+                '- **Packages:** {0}',
+                github.event.client_payload.packages
+              ) || ''
+            }}
 
             This PR will be automatically merged after tests pass.
           branch: cascade/update-dependencies
@@ -98,7 +119,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          echo "🔀 Enabling auto-merge for PR #${{ steps.create-pr.outputs.pull-request-number }}"
+          pr_num="${{ steps.create-pr.outputs.pull-request-number }}"
+          echo "🔀 Enabling auto-merge for PR #$pr_num"
           echo "⏳ Waiting 30 seconds for status checks to start..."
           sleep 30
           gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} \
@@ -126,7 +148,8 @@ jobs:
     if: |
       always() &&
       github.event_name == 'push' &&
-      (needs.test.result == 'success' || needs.test.outputs.tests-passed == 'true')
+      (needs.test.result == 'success' ||
+       needs.test.outputs.tests-passed == 'true')
     uses: ./.github/workflows/build.yml
     permissions:
       contents: read
