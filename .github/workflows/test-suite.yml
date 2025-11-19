@@ -60,7 +60,15 @@ jobs:
           path: |
             packages/*/dist
             .turbo
-          key: ${{ runner.os }}-build-v5-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsconfig.json', 'packages/*/vite.config.ts', 'vite.config.base.ts', 'pnpm-lock.yaml') }}
+          key: >
+            ${{ runner.os }}-build-v5-${{ hashFiles(
+              'packages/*/src/**',
+              'packages/*/package.json',
+              'packages/*/tsconfig.json',
+              'packages/*/vite.config.ts',
+              'vite.config.base.ts',
+              'pnpm-lock.yaml'
+            ) }}
           restore-keys: |
             ${{ runner.os }}-build-v5-
 

@@ -18,6 +18,16 @@ pre-commit:
 
         Could not fix issues in staged files. Please check the error above and fix manually.
 
+    validate-workflows:
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: |
+        echo "🔍 Validating workflow files..."
+        for file in {staged_files}; do
+          echo "  Checking $file..."
+          yamllint "$file" || exit 1
+        done
+        echo "✅ All workflow files validated"
+
 # Check formatting before push
 pre-push:
   commands:
