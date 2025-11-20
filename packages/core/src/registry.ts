@@ -1878,6 +1878,9 @@ export class ObjectRegistry {
       return new Map(registered.inheritedFields);
     }
 
+    // Get config for error handling behavior
+    const { onMissingAncestor } = getInheritanceConfig();
+
     // For local classes (not from manifests), merge fields from inheritance chain
     const allFields = new Map<string, any>();
     const chain = ObjectRegistry.getInheritanceChain(className);
@@ -1895,18 +1898,132 @@ export class ObjectRegistry {
 
       const ancestor = ObjectRegistry.findClass(ancestorName);
       if (!ancestor) {
+        // Handle missing ancestors according to config
+        const message = `Missing ancestor class "${ancestorName}" in inheritance chain for "${className}"`;
+
+        if (onMissingAncestor === 'error') {
+          throw new Error(
+            `${message}\n\n` +
+              `This usually means:\n` +
+              `  1. The parent class is not registered with @smrt()\n` +
+              `  2. The parent class file is not imported\n` +
+              `  3. The manifest does not include the parent class\n\n` +
+              `To fix:\n` +
+              `  - Ensure all parent classes use @smrt() decorator\n` +
+              `  - Import all parent class files before child classes\n` +
+              `  - Rebuild to regenerate manifest\n` +
+              `  - Or set smrt.inheritance.onMissingAncestor='warn' in config`,
+          );
+        } else if (onMissingAncestor === 'warn') {
+          console.warn(`[ObjectRegistry] ${message}`);
+        }
+
         continue;
       }
 
       // Merge fields from this ancestor
       for (const [fieldName, field] of ancestor.fields) {
-        if (!allFields.has(fieldName)) {
+        const existingField = allFields.get(fieldName);
+        if (!existingField) {
+          // New field from parent
           allFields.set(fieldName, field);
+        } else {
+          // Field exists - merge configs
+          allFields.set(
+            fieldName,
+            ObjectRegistry.mergeFieldConfigs(existingField, field, fieldName),
+          );
         }
       }
     }
 
     return allFields;
+  }
+
+  /**
+   * Merge field configurations from parent and child
+   *
+   * Rules:
+   * - Type: Child wins (warn if different)
+   * - _meta: Deep merge with child precedence
+   * - Numeric constraints: Take strictest (max of mins, min of maxes)
+   * - Validators: Combine (both must pass)
+   * - Unique: Take OR (unique if either says unique)
+   * - Value: Child wins
+   *
+   * @param parentField - Field config from parent class
+   * @param childField - Field config from child class
+   * @param fieldName - Name of the field (for warning messages)
+   * @returns Merged field configuration
+   */
+  private static mergeFieldConfigs(
+    parentField: any,
+    childField: any,
+    fieldName: string,
+  ): any {
+    // Start with parent field as base
+    const merged = { ...parentField };
+
+    // Type: Child wins (warn if different)
+    if (childField.type && childField.type !== parentField.type) {
+      console.warn(
+        `Field type mismatch: "${fieldName}" is ${parentField.type} in parent but ${childField.type} in child. Using child type.`,
+      );
+      merged.type = childField.type;
+    }
+
+    // _meta: Merge with child precedence
+    if (childField._meta || parentField._meta) {
+      merged._meta = {
+        ...(parentField._meta || {}),
+        ...(childField._meta || {}),
+      };
+
+      // Special handling for numeric constraints (take strictest)
+      if (
+        parentField._meta?.min !== undefined &&
+        childField._meta?.min !== undefined
+      ) {
+        // Take the larger min (strictest lower bound)
+        merged._meta.min = Math.max(
+          parentField._meta.min,
+          childField._meta.min,
+        );
+      }
+      if (
+        parentField._meta?.max !== undefined &&
+        childField._meta?.max !== undefined
+      ) {
+        // Take the smaller max (strictest upper bound)
+        merged._meta.max = Math.min(
+          parentField._meta.max,
+          childField._meta.max,
+        );
+      }
+
+      // Validators: Combine (both must pass)
+      if (parentField._meta?.validate && childField._meta?.validate) {
+        const parentValidator = parentField._meta.validate;
+        const childValidator = childField._meta.validate;
+        merged._meta.validate = async (value: any) => {
+          const parentResult = await parentValidator(value);
+          const childResult = await childValidator(value);
+          return parentResult && childResult;
+        };
+      }
+
+      // Unique: Take OR (unique if either says unique)
+      if (parentField._meta?.unique || childField._meta?.unique) {
+        merged._meta.unique = true;
+      }
+    }
+
+    // Value: Child wins
+    if (childField.value !== undefined) {
+      merged.value = childField.value;
+    }
+
+    return merged;
   }
 
   /**

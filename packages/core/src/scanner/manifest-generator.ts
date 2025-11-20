@@ -126,13 +126,10 @@ export class ManifestGenerator {
 
       // Only merge if using STI (shared table with parent)
       // For CTI (class table inheritance), each class has its own table and fields
-      const isSTI = obj.decoratorConfig?.tableStrategy === 'sti';
-      const parentDef = objectsByName.get(obj.extends);
+      // Check if this class or ANY ancestor uses STI (inherited strategy)
+      const usesSTI = this.isSTIClass(obj, objectsByName);
 
-      // Check if parent uses STI (child inherits strategy)
-      const parentUsesSTI = parentDef?.decoratorConfig?.tableStrategy === 'sti';
-
-      if (!isSTI && !parentUsesSTI) {
+      if (!usesSTI) {
         continue; // CTI - no field merging needed
       }
 
@@ -207,6 +204,49 @@ export class ManifestGenerator {
         `[manifest-generator] ✅ ${obj.className} now has ${Object.keys(mergedFields).length} fields (including inherited)`,
       );
     }
+  }
+
+  /**
+   * Check if a class uses STI (either explicitly or inherited from an ancestor)
+   *
+   * Walks up the inheritance chain to find if any ancestor has tableStrategy: 'sti'.
+   * If found, all descendants inherit STI and should have fields merged.
+   *
+   * @param obj - The object definition to check
+   * @param objectsByName - Map of className -> objectDef for lookups
+   * @returns true if this class uses STI (directly or inherited)
+   */
+  private isSTIClass(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): boolean {
+    // Check if explicitly marked as STI
+    if (obj.decoratorConfig?.tableStrategy === 'sti') {
+      return true;
+    }
+
+    // Walk up the inheritance chain looking for STI base
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) {
+        break; // Circular inheritance, stop
+      }
+      visited.add(currentClass);
+
+      const parentDef = objectsByName.get(currentClass);
+      if (!parentDef) break; // Parent not in manifest
+
+      // Check if this ancestor uses STI
+      if (parentDef.decoratorConfig?.tableStrategy === 'sti') {
+        return true; // Found STI ancestor
+      }
+
+      currentClass = parentDef.extends;
+    }
+
+    return false; // No STI in hierarchy
   }
 
   /**

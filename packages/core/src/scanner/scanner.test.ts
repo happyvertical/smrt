@@ -55,21 +55,22 @@ describe('AST Scanner', () => {
     });
 
     // Check fields
+    // Fields with default values should NOT be required
     expect(contentObj?.fields.title).toMatchObject({
       type: 'text',
-      required: true,
+      required: false, // Has default value
       default: '',
     });
 
     expect(contentObj?.fields.status).toMatchObject({
       type: 'text',
-      required: true,
+      required: false, // Has default value
       default: 'draft',
     });
 
     expect(contentObj?.fields.published).toMatchObject({
       type: 'boolean',
-      required: true,
+      required: false, // Has default value
       default: false,
     });
 
@@ -130,10 +131,11 @@ describe('AST Scanner', () => {
     const interfaces = generator.generateTypeDefinitions(manifest);
 
     expect(interfaces).toContain('export interface ScannerTestContentData');
-    expect(interfaces).toContain('title: string;');
+    // Fields with defaults are optional in TypeScript interfaces
+    expect(interfaces).toContain('title?: string;');
     expect(interfaces).toContain('body?: string;');
-    expect(interfaces).toContain('status: string;');
-    expect(interfaces).toContain('published: boolean;');
+    expect(interfaces).toContain('status?: string;');
+    expect(interfaces).toContain('published?: boolean;');
   });
 
   it('should generate REST endpoints', () => {
@@ -253,38 +255,38 @@ describe('AST Scanner', () => {
 
       expect(numericObj).toBeDefined();
 
-      // count: number = 0
+      // count: number = 0 (has default, NOT required)
       expect(numericObj?.fields.count).toMatchObject({
         type: 'integer',
-        required: true,
+        required: false, // Has default value
         default: 0,
       });
 
-      // quantity: number = 1
+      // quantity: number = 1 (has default, NOT required)
       expect(numericObj?.fields.quantity).toMatchObject({
         type: 'integer',
-        required: true,
+        required: false, // Has default value
         default: 1,
       });
 
-      // viewCount: number = 42
+      // viewCount: number = 42 (has default, NOT required)
       expect(numericObj?.fields.viewCount).toMatchObject({
         type: 'integer',
-        required: true,
+        required: false, // Has default value
         default: 42,
       });
 
-      // negativeInt: number = -5
+      // negativeInt: number = -5 (has default, NOT required)
       expect(numericObj?.fields.negativeInt).toMatchObject({
         type: 'integer',
-        required: true,
+        required: false, // Has default value
         default: -5,
       });
 
-      // explicitNumber: number = 100
+      // explicitNumber: number = 100 (has default, NOT required)
       expect(numericObj?.fields.explicitNumber).toMatchObject({
         type: 'integer',
-        required: true,
+        required: false, // Has default value
         default: 100,
       });
     });
@@ -298,31 +300,31 @@ describe('AST Scanner', () => {
 
       expect(numericObj).toBeDefined();
 
-      // price: number = 0.0
+      // price: number = 0.0 (has default, NOT required)
       expect(numericObj?.fields.price).toMatchObject({
         type: 'decimal',
-        required: true,
+        required: false, // Has default value
         default: 0.0,
       });
 
-      // rating: number = 4.5
+      // rating: number = 4.5 (has default, NOT required)
       expect(numericObj?.fields.rating).toMatchObject({
         type: 'decimal',
-        required: true,
+        required: false, // Has default value
         default: 4.5,
       });
 
-      // percentage: number = 0.95
+      // percentage: number = 0.95 (has default, NOT required)
       expect(numericObj?.fields.percentage).toMatchObject({
         type: 'decimal',
-        required: true,
+        required: false, // Has default value
         default: 0.95,
       });
 
-      // temperature: number = -3.7
+      // temperature: number = -3.7 (has default, NOT required)
       expect(numericObj?.fields.temperature).toMatchObject({
         type: 'decimal',
-        required: true,
+        required: false, // Has default value
         default: -3.7,
       });
     });
@@ -374,17 +376,17 @@ describe('AST Scanner', () => {
 
       expect(numericObj).toBeDefined();
 
-      // name: string = ''
+      // name: string = '' (has default, NOT required)
       expect(numericObj?.fields.name).toMatchObject({
         type: 'text',
-        required: true,
+        required: false, // Has default value
         default: '',
       });
 
-      // active: boolean = true
+      // active: boolean = true (has default, NOT required)
       expect(numericObj?.fields.active).toMatchObject({
         type: 'boolean',
-        required: true,
+        required: false, // Has default value
         default: true,
       });
     });
