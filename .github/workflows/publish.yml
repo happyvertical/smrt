@@ -25,13 +25,156 @@ permissions:
 jobs:
   release:
     name: Version and Publish
-    uses: happyvertical/sdk/.github/workflows/shared-direct-publish.yml@main
-    with:
-      node-version: '24'
-      registry-url: 'https://npm.pkg.github.com'
-    secrets:
-      HAVE_RELEASE_APP_ID: ${{ secrets.HAVE_RELEASE_APP_ID }}
-      HAVE_RELEASE_APP_PRIVATE_KEY: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      version: ${{ steps.get_version.outputs.version }}
+
+    steps:
+      - name: Generate token from GitHub App
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate version constraints
+        run: |
+          echo "🔍 Checking version constraints..."
+
+          current_version=$(node -p "require('./package.json').version")
+          echo "Current version: $current_version"
+
+          major_version=$(echo "$current_version" | cut -d. -f1)
+
+          if [ "$major_version" -ge 1 ]; then
+            echo "❌ ERROR: Package is already at version 1.0.0 or" \
+              "higher ($current_version)"
+            echo "Manual review required for versions >= 1.0.0"
+            exit 1
+          fi
+
+          echo "✅ Version is 0.x.x - safe to proceed with automated releases"
+
+      - name: Run Changesets release
+        id: changesets_release
+        env:
+          CI: true
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🚀 Running Changesets release..."
+
+          BEFORE_VERSION=$(node -p "require('./package.json').version")
+          echo "Version before release: $BEFORE_VERSION"
+
+          pnpm run changeset:auto
+          pnpm run changeset:version
+
+          # Sync root package.json version with workspace packages
+          # (SMRT uses core not utils)
+          WORKSPACE_VERSION=$(node -p \
+            "require('./packages/core/package.json').version")
+          ROOT_VERSION=$(node -p "require('./package.json').version")
+          if [ -n "$WORKSPACE_VERSION" ] && \
+             [ "$WORKSPACE_VERSION" != "$ROOT_VERSION" ]; then
+            echo "📝 Syncing root package version to match" \
+              "workspace: $WORKSPACE_VERSION"
+            node -e "const pkg = require('./package.json'); \
+              pkg.version = '$WORKSPACE_VERSION'; \
+              require('fs').writeFileSync('./package.json', \
+              JSON.stringify(pkg, null, 2) + '\n');"
+          fi
+
+          AFTER_VERSION=$(node -p "require('./package.json').version")
+          echo "Version after versioning: $AFTER_VERSION"
+
+          if [ "$BEFORE_VERSION" != "$AFTER_VERSION" ]; then
+            echo "📦 Version changed from $BEFORE_VERSION to $AFTER_VERSION"
+
+            git add .
+            git commit -m "chore(release): v$AFTER_VERSION [skip ci]"
+
+            pnpm run build
+            pnpm run changeset:publish
+
+            git tag "v$AFTER_VERSION"
+            git push origin "v$AFTER_VERSION"
+            git push origin main
+
+            RELEASE_NOTES="## Published Packages"$'\n\n'
+            RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
+            RELEASE_NOTES="${RELEASE_NOTES} GitHub Packages"
+            RELEASE_NOTES="${RELEASE_NOTES} at version $AFTER_VERSION."
+            RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
+            RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
+            RELEASE_NOTES="${RELEASE_NOTES}${GITHUB_REPOSITORY}/compare/"
+            RELEASE_NOTES="${RELEASE_NOTES}v$BEFORE_VERSION...v$AFTER_VERSION"
+
+            gh release create "v$AFTER_VERSION" \
+              --title "v$AFTER_VERSION" \
+              --notes "$RELEASE_NOTES" \
+              --latest
+
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "version=$AFTER_VERSION" >> "$GITHUB_OUTPUT"
+            echo "✅ Published version: v$AFTER_VERSION"
+          else
+            echo "ℹ️  No version changes - no release needed"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check if version was published
+        id: check_published
+        run: |
+          cs_pub="${{ steps.changesets_release.outputs.published }}"
+          published="${cs_pub:-false}"
+          cs_ver="${{ steps.changesets_release.outputs.version }}"
+          version="${cs_ver:-}"
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set outputs
+        id: publish
+        run: |
+          published="${{ steps.check_published.outputs.published }}"
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+
+      - name: Set version output
+        id: get_version
+        run: |
+          version="${{ steps.check_published.outputs.version }}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   cascade:
     name: Trigger Dependency Cascade
