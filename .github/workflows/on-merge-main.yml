@@ -80,34 +80,12 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           commit-message: 'chore: update @happyvertical dependencies'
           title: 'chore: update @happyvertical dependencies'
-          body: |
-            ## Automated Dependency Update 🤖
+          body: >
+            ## Automated Dependency Update
 
-            Triggered by upstream changes from
-            **${{ github.event.client_payload.repository }}**
 
-            ### Upstream Changes
-            ${{
-              github.event.client_payload.package &&
-              format(
-                '- **Package:** {0}',
-                github.event.client_payload.package
-              ) || ''
-            }}
-            ${{
-              github.event.client_payload.version &&
-              format(
-                '- **Version:** {0}',
-                github.event.client_payload.version
-              ) || ''
-            }}
-            ${{
-              github.event.client_payload.packages &&
-              format(
-                '- **Packages:** {0}',
-                github.event.client_payload.packages
-              ) || ''
-            }}
+            Triggered by upstream dependency changes.
+
 
             This PR will be automatically merged after tests pass.
           branch: cascade/update-dependencies
