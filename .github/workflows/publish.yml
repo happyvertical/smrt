@@ -30,7 +30,8 @@ jobs:
       node-version: '24'
       registry-url: 'https://npm.pkg.github.com'
     secrets:
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      HAVE_RELEASE_APP_ID: ${{ secrets.HAVE_RELEASE_APP_ID }}
+      HAVE_RELEASE_APP_PRIVATE_KEY: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
 
   cascade:
     name: Trigger Dependency Cascade
