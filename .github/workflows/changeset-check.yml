@@ -1,8 +1,6 @@
 name: Changeset Check
 
 on:
-  pull_request:
-    types: [opened, reopened, synchronize, labeled, unlabeled]
   workflow_call:
     inputs:
       pr_number:
@@ -36,26 +34,34 @@ jobs:
           PR_TITLE: ${{ inputs.pr_title || github.event.pull_request.title }}
         run: |
           # Skip if PR has 'skip-changeset' label
-          if gh pr view $PR_NUMBER --json labels --jq '.labels[].name' | grep -q 'skip-changeset'; then
-            echo "✅ Skipping changeset check (skip-changeset label present)"
+          if gh pr view $PR_NUMBER --json labels \
+              --jq '.labels[].name' | grep -q 'skip-changeset'; then
+            echo "✅ Skipping changeset check"
+            echo "   (skip-changeset label present)"
             exit 0
           fi
 
-          # Skip if PR is from changeset-release branch (automated version packages PR)
-          HEAD_REF=$(gh pr view $PR_NUMBER --json headRefName --jq '.headRefName')
+          # Skip if PR is from changeset-release branch
+          # (automated version packages PR)
+          HEAD_REF=$(gh pr view $PR_NUMBER --json headRefName \
+            --jq '.headRefName')
           if echo "$HEAD_REF" | grep -q '^changeset-release/'; then
-            echo "✅ Skipping changeset check (changesets release PR from $HEAD_REF)"
+            echo "✅ Skipping changeset check"
+            echo "   (changesets release PR from $HEAD_REF)"
             exit 0
           fi
 
-          # Skip if PR title starts with 'chore: version packages' or 'chore(release): version packages'
-          if echo "$PR_TITLE" | grep -qi '^chore.*: version packages'; then
+          # Skip if PR title starts with 'chore: version packages'
+          # or 'chore(release): version packages'
+          if echo "$PR_TITLE" | \
+              grep -qi '^chore.*: version packages'; then
             echo "✅ Skipping changeset check (version packages PR)"
             exit 0
           fi
 
           # Check if changeset files exist (excluding README.md)
-          changeset_count=$(find .changeset -name '*.md' ! -name 'README.md' 2>/dev/null | wc -l)
+          changeset_count=$(find .changeset -name '*.md' \
+            ! -name 'README.md' 2>/dev/null | wc -l)
 
           if [ "$changeset_count" -eq 0 ]; then
             echo "❌ No changeset found"
@@ -63,8 +69,9 @@ jobs:
             echo "Please add a changeset by running:"
             echo "  npx changeset"
             echo ""
-            echo "Or add the 'skip-changeset' label if this PR doesn't require a version bump"
-            echo "(e.g., documentation changes, test updates, workflow changes)"
+            echo "Or add the 'skip-changeset' label if this PR"
+            echo "doesn't require a version bump (e.g., docs, tests,"
+            echo "workflow changes)"
             exit 1
           fi
 
@@ -75,16 +82,22 @@ jobs:
           echo ""
           echo "🔍 Validating changeset types..."
 
-          if find .changeset -name '*.md' ! -name 'README.md' -type f -exec grep -l '"major"' {} + 2>/dev/null | grep -q .; then
-            echo "❌ ERROR: Major version bump detected in changeset!"
+          if find .changeset -name '*.md' ! -name 'README.md' \
+              -type f -exec grep -l '"major"' {} + 2>/dev/null | \
+              grep -q .; then
+            echo "❌ ERROR: Major version bump detected!"
             echo ""
             echo "Files with major bumps:"
-            find .changeset -name '*.md' ! -name 'README.md' -type f -exec grep -l '"major"' {} + 2>/dev/null || true
+            find .changeset -name '*.md' ! -name 'README.md' \
+              -type f -exec grep -l '"major"' {} + 2>/dev/null || true
             echo ""
-            echo "Major version releases (1.0.0+) must be manually approved and coordinated."
-            echo "Please change the version bump type to 'minor' or 'patch'."
+            echo "Major version releases (1.0.0+) must be manually"
+            echo "approved and coordinated."
+            echo "Please change the version bump type to"
+            echo "'minor' or 'patch'."
             echo ""
-            echo "If you truly need a major version bump, coordinate with maintainers first."
+            echo "If you truly need a major version bump,"
+            echo "coordinate with maintainers first."
             exit 1
           fi
 
