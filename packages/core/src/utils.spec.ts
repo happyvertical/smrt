@@ -49,13 +49,13 @@ it('should get fields from a class without values', async () => {
       type: 'datetime',
       _meta: {},
     },
-    // Direct fields declared on TestClass (with default values and required flag)
+    // Direct fields declared on TestClass (with default values, NOT required)
     test_string: {
       name: 'test_string',
       type: 'text',
       _meta: {
         default: '',
-        required: true,
+        required: false, // Has default value
       },
     },
     test_number: {
@@ -63,14 +63,14 @@ it('should get fields from a class without values', async () => {
       type: 'integer',
       _meta: {
         default: 0,
-        required: true,
+        required: false, // Has default value
       },
     },
     test_date: {
       name: 'test_date',
       type: 'datetime',
       _meta: {
-        required: true,
+        required: false, // Has default value
       },
     },
   });
@@ -117,13 +117,13 @@ it('should get fields from a class with values', async () => {
       type: 'datetime',
       _meta: {},
     },
-    // Direct fields declared on TestClass (with values)
+    // Direct fields declared on TestClass (with values, NOT required)
     test_string: {
       name: 'test_string',
       type: 'text',
       _meta: {
         default: '',
-        required: true,
+        required: false, // Has default value
       },
       value: 'custom value',
     },
@@ -132,7 +132,7 @@ it('should get fields from a class with values', async () => {
       type: 'integer',
       _meta: {
         default: 0,
-        required: true,
+        required: false, // Has default value
       },
       value: 456,
     },
@@ -140,7 +140,7 @@ it('should get fields from a class with values', async () => {
       name: 'test_date',
       type: 'datetime',
       _meta: {
-        required: true,
+        required: false, // Has default value
       },
       value: '2024-01-01',
     },

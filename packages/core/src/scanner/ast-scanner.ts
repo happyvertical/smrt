@@ -695,10 +695,14 @@ export class ASTScanner {
       decoratorOptions?.type || this.inferFieldType(node, sourceFile);
 
     // Required if explicitly set in decorator, or inferred from TS (no question token)
+    // Fields with initializers (default values) should NOT be required
+    const hasDefaultValue = node.initializer !== undefined;
     const isRequired =
       decoratorOptions?.required !== undefined
         ? decoratorOptions.required
-        : !node.questionToken && !this.hasOptionalType(node, sourceFile);
+        : !hasDefaultValue &&
+          !node.questionToken &&
+          !this.hasOptionalType(node, sourceFile);
 
     const field: FieldDefinition = {
       type: fieldType,
@@ -738,6 +742,11 @@ export class ASTScanner {
           // Check if explicitly marked as transient via option
           if (options.transient !== undefined) {
             field.transient = options.transient;
+          }
+          // If field helper has explicit required option, use it at top level too
+          if (options.required !== undefined) {
+            field.required = options.required;
+            delete field._meta.required; // Remove from _meta (it's top-level now)
           }
         }
       }

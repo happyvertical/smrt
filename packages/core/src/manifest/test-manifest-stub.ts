@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763415148064,
+  "timestamp": 1763662775888,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -20,7 +20,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "description": {
@@ -29,12 +29,12 @@ export const testManifest: SmartObjectManifest = {
         },
         "active": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": false
         },
         "count": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -56,7 +56,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "description": {
@@ -80,31 +80,31 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "username": {
           "type": "text",
-          "required": true
+          "required": false
         },
         "email": {
           "type": "text",
-          "required": true
+          "required": false
         },
         "age": {
           "type": "integer",
-          "required": true
+          "required": false
         },
         "active": {
           "type": "boolean",
-          "required": true
+          "required": false
         },
         "createdAt": {
           "type": "datetime",
-          "required": true
+          "required": false
         },
         "lastLogin": {
           "type": "datetime",
-          "required": true
+          "required": false
         },
         "profileData": {
           "type": "text",
-          "required": true
+          "required": false
         }
       },
       "methods": {
@@ -167,12 +167,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "description": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -194,12 +194,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "email": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -221,17 +221,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "price": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "categoryId": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -253,17 +253,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "customerId": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "productId": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "total": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -310,17 +310,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "test_string": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "test_number": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "test_date": {
           "type": "datetime",
-          "required": true
+          "required": false
         }
       },
       "methods": {
@@ -416,12 +416,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "children": {
           "type": "oneToMany",
-          "required": true,
+          "required": false,
           "_meta": {
             "related": "Child",
             "transient": true
@@ -431,7 +431,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "relatedItems": {
           "type": "oneToMany",
-          "required": true,
+          "required": false,
           "_meta": {
             "related": "Related",
             "transient": true
@@ -458,12 +458,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "parentId": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -497,12 +497,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "baseField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "baseNumber": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -524,12 +524,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "extendedField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "extendedNumber": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -551,22 +551,22 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "body": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "publishedAt": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "default": null
         },
         "wordCount": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -597,17 +597,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "praecoCustom1": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "sourceUrl": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "rating": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -638,12 +638,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "bentleyCustom1": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "localTags": {
           "type": "json",
-          "required": true,
+          "required": false,
           "default": []
         }
       },
@@ -674,7 +674,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "age": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "_meta": {
             "min": 0,
             "max": 150
@@ -683,7 +683,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "score": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "_meta": {
             "min": 0,
             "max": 100
@@ -709,7 +709,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "age": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "_meta": {
             "min": 18,
             "max": 65
@@ -718,7 +718,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "score": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "_meta": {
             "min": 50,
             "max": 90
@@ -744,7 +744,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "myField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -766,7 +766,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "myField": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -838,7 +838,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "orphanField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -860,22 +860,22 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "price": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "category": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "active": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": false
         }
       },
@@ -912,12 +912,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "value": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -963,7 +963,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "lengthConstrainedField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "_meta": {
             "minLength": 3,
             "maxLength": 20
@@ -1008,21 +1008,21 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "description": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "startDate": {
           "type": "datetime",
-          "required": true
+          "required": false
         },
         "endDate": {
           "type": "datetime",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -1043,22 +1043,22 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "firstName": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "lastName": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "email": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "bio": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1120,7 +1120,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "computedValue": {
           "type": "text",
-          "required": true,
+          "required": false,
           "_meta": {
             "transient": true
           },
@@ -1129,7 +1129,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "status": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "active"
         }
       },
@@ -1167,7 +1167,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "temp": {
           "type": "text",
-          "required": true,
+          "required": false,
           "_meta": {
             "transient": true,
             "default": "temporary"
@@ -1195,17 +1195,15 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "_meta": {
-            "required": true
-          }
+          "_meta": {}
         },
         "publishDate": {
           "type": "datetime",
-          "required": true
+          "required": false
         },
         "lastSyncedAt": {
           "type": "datetime",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -1232,15 +1230,15 @@ export const testManifest: SmartObjectManifest = {
         },
         "eventDate": {
           "type": "datetime",
-          "required": true
+          "required": false
         },
         "registrationDeadline": {
           "type": "datetime",
-          "required": true
+          "required": false
         },
         "lastModified": {
           "type": "datetime",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -1273,17 +1271,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "type": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": null
         },
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "body": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1306,13 +1304,11 @@ export const testManifest: SmartObjectManifest = {
         "publicName": {
           "type": "text",
           "required": true,
-          "_meta": {
-            "required": true
-          }
+          "_meta": {}
         },
         "publicDescription": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1334,7 +1330,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "url": {
@@ -1380,7 +1376,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "url": {
           "type": "text",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -1388,7 +1384,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "location": {
           "type": "text",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -1423,7 +1419,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "url": {
@@ -1463,7 +1459,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "url": {
@@ -1540,22 +1536,22 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "body": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "published_at": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "default": null
         },
         "word_count": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -1573,6 +1569,26 @@ export const testManifest: SmartObjectManifest = {
       "collection": "testmeetingannouncements",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-288-289-reproduction.test.ts",
       "fields": {
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "published_at": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "word_count": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
         "meetingId": {
           "type": "text",
           "required": true,
@@ -1581,7 +1597,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "councilId": {
           "type": "foreignKey",
-          "required": true,
+          "required": false,
           "_meta": {
             "related": "Council"
           },
@@ -1630,12 +1646,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "startDate": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -1643,7 +1659,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "endDate": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -1651,7 +1667,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "location": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1690,7 +1706,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "value1": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1708,7 +1724,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "value2": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1726,7 +1742,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "value": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1744,7 +1760,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "content": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1762,7 +1778,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "value": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1780,7 +1796,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "value": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1798,7 +1814,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "value": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1816,7 +1832,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "value": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1834,7 +1850,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "latitude": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -1842,7 +1858,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "longitude": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -1850,7 +1866,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -1872,22 +1888,22 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "productName": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "Test Product"
         },
         "price": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": 99.99
         },
         "inStock": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": true
         }
       },
@@ -1905,22 +1921,22 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "Test Article"
         },
         "body": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "Article content"
         },
         "published": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": false
         }
       },
@@ -1938,22 +1954,22 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "bookTitle": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "The Book"
         },
         "author": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "Author Name"
         },
         "pages": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 300
         }
       },
@@ -1971,7 +1987,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "startDate": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -1979,7 +1995,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "endDate": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -1987,7 +2003,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "issuedAt": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -2015,12 +2031,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "temperature": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "description": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2069,22 +2085,22 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "textField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "numberField": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "booleanField": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": false
         },
         "issueDate": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -2092,7 +2108,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "optionalEventDate": {
           "type": "datetime",
-          "required": true,
+          "required": false,
           "_meta": {
             "nullable": true
           },
@@ -2120,7 +2136,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "derivedField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2157,12 +2173,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "content": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2199,17 +2215,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "category": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "priority": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -2246,7 +2262,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "content": {
@@ -2287,27 +2303,27 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "metaField1": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "metaField2": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "metaField3": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": false
         },
         "metaField4": {
           "type": "json",
-          "required": true,
+          "required": false,
           "default": []
         },
         "regularField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "regular"
         }
       },
@@ -2329,12 +2345,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "url": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2352,9 +2368,19 @@ export const testManifest: SmartObjectManifest = {
       "collection": "mliorganizations",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/multi-level-field-inheritance.test.ts",
       "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "url": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "organizationName": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2374,14 +2400,29 @@ export const testManifest: SmartObjectManifest = {
       "collection": "mlicouncils",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/multi-level-field-inheritance.test.ts",
       "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "url": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "organizationName": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "meetingsUrl": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "timezone": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2403,7 +2444,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "fieldA": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2421,9 +2462,14 @@ export const testManifest: SmartObjectManifest = {
       "collection": "mlilevelbs",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/multi-level-field-inheritance.test.ts",
       "fields": {
+        "fieldA": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "fieldB": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2443,9 +2489,19 @@ export const testManifest: SmartObjectManifest = {
       "collection": "mlilevelcs",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/multi-level-field-inheritance.test.ts",
       "fields": {
+        "fieldA": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "fieldB": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "fieldC": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2465,9 +2521,24 @@ export const testManifest: SmartObjectManifest = {
       "collection": "mlilevelds",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/multi-level-field-inheritance.test.ts",
       "fields": {
+        "fieldA": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "fieldB": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "fieldC": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "fieldD": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2489,10 +2560,8 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
-          "_meta": {
-            "required": false
-          }
+          "required": false,
+          "_meta": {}
         }
       },
       "methods": {},
@@ -2512,13 +2581,11 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "_meta": {
-            "required": true
-          }
+          "_meta": {}
         },
         "description": {
           "type": "text",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -2539,7 +2606,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "email": {
           "type": "text",
-          "required": true,
+          "required": false,
           "_meta": {
             "pattern": "/@/"
           }
@@ -2563,8 +2630,7 @@ export const testManifest: SmartObjectManifest = {
           "type": "text",
           "required": true,
           "_meta": {
-            "pattern": "/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/",
-            "required": true
+            "pattern": "/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/"
           }
         }
       },
@@ -2586,15 +2652,15 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": false
         },
         "slug": {
           "type": "text",
-          "required": true
+          "required": false
         },
         "url": {
           "type": "text",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -2611,9 +2677,21 @@ export const testManifest: SmartObjectManifest = {
       "collection": "mliorganizationissue302s",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/multi-level-field-inheritance.test.ts",
       "fields": {
+        "name": {
+          "type": "text",
+          "required": false
+        },
+        "slug": {
+          "type": "text",
+          "required": false
+        },
+        "url": {
+          "type": "text",
+          "required": false
+        },
         "organizationName": {
           "type": "text",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -2632,13 +2710,29 @@ export const testManifest: SmartObjectManifest = {
       "collection": "mlicouncilissue302s",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/multi-level-field-inheritance.test.ts",
       "fields": {
+        "name": {
+          "type": "text",
+          "required": false
+        },
+        "slug": {
+          "type": "text",
+          "required": false
+        },
+        "url": {
+          "type": "text",
+          "required": false
+        },
+        "organizationName": {
+          "type": "text",
+          "required": false
+        },
         "meetingsUrl": {
           "type": "text",
-          "required": true
+          "required": false
         },
         "timezone": {
           "type": "text",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -2660,17 +2754,15 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "_meta": {
-            "required": true
-          }
+          "_meta": {}
         },
         "description": {
           "type": "text",
-          "required": true
+          "required": false
         },
         "startDate": {
           "type": "text",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -2692,13 +2784,11 @@ export const testManifest: SmartObjectManifest = {
         "title": {
           "type": "text",
           "required": true,
-          "_meta": {
-            "required": true
-          }
+          "_meta": {}
         },
         "body": {
           "type": "text",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -2719,15 +2809,15 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true
+          "required": false
         },
         "created_at": {
           "type": "datetime",
-          "required": true
+          "required": false
         },
         "updated_at": {
           "type": "datetime",
-          "required": true
+          "required": false
         }
       },
       "methods": {},
@@ -2748,7 +2838,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "metaField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2768,7 +2858,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "metaField": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2816,7 +2906,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2834,19 +2924,24 @@ export const testManifest: SmartObjectManifest = {
       "collection": "integrationhockeygames",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
       "fields": {
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "arenaName": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "capacity": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "homeTeam": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2880,7 +2975,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2898,19 +2993,24 @@ export const testManifest: SmartObjectManifest = {
       "collection": "integrationconcerts",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-meta-integration.test.ts",
       "fields": {
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "venueName": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "ticketsSold": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "artist": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2944,12 +3044,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "bio": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -2967,14 +3067,24 @@ export const testManifest: SmartObjectManifest = {
       "collection": "organizations",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-multilevel.test.ts",
       "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "bio": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "website": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "foundedYear": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -2994,14 +3104,34 @@ export const testManifest: SmartObjectManifest = {
       "collection": "councils",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-multilevel.test.ts",
       "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "bio": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "website": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "foundedYear": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
         "meetingsUrl": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "jurisdiction": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3035,12 +3165,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "description": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3058,19 +3188,29 @@ export const testManifest: SmartObjectManifest = {
       "collection": "polymeetings",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
       "fields": {
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "location": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "attendees": {
           "type": "meta",
-          "required": true,
+          "required": false,
           "default": []
         },
         "duration": {
           "type": "meta",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -3090,19 +3230,29 @@ export const testManifest: SmartObjectManifest = {
       "collection": "polyconcerts",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
       "fields": {
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "venue": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "artist": {
           "type": "meta",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "ticketPrice": {
           "type": "meta",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -3122,19 +3272,29 @@ export const testManifest: SmartObjectManifest = {
       "collection": "polyconferences",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/sti-polymorphic-queries.test.ts",
       "fields": {
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
         "organizer": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "tracks": {
           "type": "meta",
-          "required": true,
+          "required": false,
           "default": []
         },
         "fee": {
           "type": "meta",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -3210,7 +3370,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "price": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "_meta": {
             "min": 0
           },
@@ -3218,7 +3378,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "stock": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "_meta": {
             "default": 0
           },
@@ -3284,12 +3444,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "count": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -3343,12 +3503,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "source": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3422,7 +3582,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3448,7 +3608,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3495,12 +3655,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "url": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3520,17 +3680,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "type": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "documents"
         },
         "url": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3567,17 +3727,17 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "content": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "wordCount": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         }
       },
@@ -3613,72 +3773,72 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "count": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "quantity": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 1
         },
         "viewCount": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 42
         },
         "negativeInt": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": -5
         },
         "price": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "rating": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": 4.5
         },
         "percentage": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": 0.95
         },
         "temperature": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": -3.7
         },
         "sciNotation": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 10000000000
         },
         "wholeAsDecimal": {
           "type": "decimal",
-          "required": true,
+          "required": false,
           "default": 1
         },
         "zeroWithoutDot": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 0
         },
         "explicitNumber": {
           "type": "integer",
-          "required": true,
+          "required": false,
           "default": 100
         },
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "active": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": true
         }
       },
@@ -3700,7 +3860,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "body": {
@@ -3709,22 +3869,22 @@ export const testManifest: SmartObjectManifest = {
         },
         "status": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "draft"
         },
         "published": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": false
         },
         "category": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": "general"
         },
         "tags": {
           "type": "json",
-          "required": true,
+          "required": false,
           "default": []
         }
       },
@@ -3785,7 +3945,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "description": {
@@ -3794,7 +3954,7 @@ export const testManifest: SmartObjectManifest = {
         },
         "active": {
           "type": "boolean",
-          "required": true,
+          "required": false,
           "default": true
         }
       },
@@ -3816,12 +3976,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "name": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "source": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "lastSynced": {
@@ -3907,12 +4067,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "content": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3948,7 +4108,7 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "value": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -3968,12 +4128,12 @@ export const testManifest: SmartObjectManifest = {
       "fields": {
         "title": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         },
         "author": {
           "type": "text",
-          "required": true,
+          "required": false,
           "default": ""
         }
       },
@@ -4005,7 +4165,6 @@ export const testManifest: SmartObjectManifest = {
     }
   },
   "moduleType": "smrt",
-  "smrtDependencies": [],
   "packageName": "@happyvertical/smrt-core"
 } as const;
 

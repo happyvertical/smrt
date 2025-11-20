@@ -320,13 +320,6 @@ export class ObjectRegistry {
   private static fieldDecorators = new Map<string, Map<string, any>>();
 
   /**
-   * Cache for getAllFields() results (recursively merged fields from ancestors)
-   * Maps className → merged fields Map
-   * Performance optimization: Avoids redundant recursive field merging
-   */
-  private static _allFieldsCache = new Map<string, Map<string, any>>();
-
-  /**
    * Initialize the inheritance chain cache with size from config
    */
   private static getInheritanceCache(): LRUCache<string, string[]> {
@@ -1864,21 +1857,12 @@ export class ObjectRegistry {
   /**
    * Get all fields including inherited ones from parent classes
    *
-   * Walks the full inheritance chain and merges fields:
-   * - Parent fields are added first
-   * - Child fields override parent fields with same name
-   * - Field configs are merged (see mergeFieldConfigs for details)
-   *
-   * Results are cached per-class for performance.
+   * **Hybrid approach (v0.17+):**
+   * - External packages: Use build-time merged fields from manifests
+   * - Local classes: Use runtime merging by walking inheritance chain
    *
    * @param className - Name of the registered class
-   * @returns Map of all fields (own + inherited) with merged configurations
-   * @example
-   * ```typescript
-   * // Given: Content → PraecoContent → BentleyContent
-   * const allFields = ObjectRegistry.getAllFields('BentleyContent');
-   * // Includes: title, body (from Content) + praecoCustom1 (from PraecoContent) + bentleyCustom1 (from BentleyContent)
-   * ```
+   * @returns Map of all fields (including inherited)
    */
   static async getAllFields(className: string): Promise<Map<string, any>> {
     const registered = ObjectRegistry.findClass(className);
@@ -1886,7 +1870,10 @@ export class ObjectRegistry {
       return new Map();
     }
 
-    // Check cache first
+    // Ensure manifest is loaded (handles external packages)
+    await ObjectRegistry.ensureManifestLoaded(className);
+
+    // Check if class has inheritedFields cache (set during manifest loading)
     if (registered.inheritedFields) {
       return new Map(registered.inheritedFields);
     }
@@ -1894,14 +1881,13 @@ export class ObjectRegistry {
     // Get config for error handling behavior
     const { onMissingAncestor } = getInheritanceConfig();
 
-    // Build merged fields from inheritance chain
+    // For local classes (not from manifests), merge fields from inheritance chain
     const allFields = new Map<string, any>();
     const chain = ObjectRegistry.getInheritanceChain(className);
 
     // Walk chain from base to child (parent fields first)
     for (const ancestorName of chain) {
-      // Skip framework base classes (SmrtObject, SmrtClass, SmrtCollection)
-      // Check this BEFORE looking up in registry to avoid false warnings
+      // Skip framework base classes
       if (
         ancestorName === 'SmrtObject' ||
         ancestorName === 'SmrtClass' ||
@@ -1910,19 +1896,9 @@ export class ObjectRegistry {
         continue;
       }
 
-      // Load manifest for ancestor class (handles external packages)
-      // This ensures inherited fields from external packages are available
-      try {
-        await ObjectRegistry.ensureManifestLoaded(ancestorName);
-      } catch (error) {
-        // Manifest loading failed - this is expected for classes not in manifest
-        // The findClass check below will handle the missing ancestor
-      }
-
       const ancestor = ObjectRegistry.findClass(ancestorName);
-
-      // Handle missing ancestors according to config
       if (!ancestor) {
+        // Handle missing ancestors according to config
         const message = `Missing ancestor class "${ancestorName}" in inheritance chain for "${className}"`;
 
         if (onMissingAncestor === 'error') {
@@ -1938,76 +1914,47 @@ export class ObjectRegistry {
               `  - Rebuild to regenerate manifest\n` +
               `  - Or set smrt.inheritance.onMissingAncestor='warn' in config`,
           );
-        } else {
-          // 'warn' mode (default)
+        } else if (onMissingAncestor === 'warn') {
           console.warn(`[ObjectRegistry] ${message}`);
         }
 
         continue;
       }
 
-      // Merge parent fields into result
-      // For parent classes, if they have no direct fields but have ancestors themselves,
-      // they might be from an external package - recursively get their inherited fields
-      // For the current class or classes with fields, use direct fields
-      let fieldsToMerge = ancestor.fields;
-
-      if (ancestorName !== className && ancestor.fields.size === 0) {
-        // Parent class with no fields - might need to load from manifest
-        const ancestorChain = ObjectRegistry.getInheritanceChain(ancestorName);
-        if (ancestorChain.length > 1) {
-          // Has ancestors - recursively get all fields
-          // Check cache before recursive call to avoid redundant recursion
-          const cachedFields =
-            ObjectRegistry._allFieldsCache?.get(ancestorName);
-          if (cachedFields) {
-            fieldsToMerge = cachedFields;
-          } else {
-            fieldsToMerge = await ObjectRegistry.getAllFields(ancestorName);
-            // Cache the result immediately after recursive call
-            ObjectRegistry._allFieldsCache?.set(ancestorName, fieldsToMerge);
-          }
-        }
-      }
-
-      for (const [fieldName, field] of fieldsToMerge) {
-        if (allFields.has(fieldName)) {
-          // Field exists in parent - merge configs
-          const existingField = allFields.get(fieldName);
+      // Merge fields from this ancestor
+      for (const [fieldName, field] of ancestor.fields) {
+        const existingField = allFields.get(fieldName);
+        if (!existingField) {
+          // New field from parent
+          allFields.set(fieldName, field);
+        } else {
+          // Field exists - merge configs
           allFields.set(
             fieldName,
             ObjectRegistry.mergeFieldConfigs(existingField, field, fieldName),
           );
-        } else {
-          // New field from parent
-          allFields.set(fieldName, field);
         }
       }
     }
 
-    // Cache the merged result
-    registered.inheritedFields = allFields;
-
-    return new Map(allFields);
+    return allFields;
   }
 
   /**
-   * Merge two field configurations when child redefines parent field
+   * Merge field configurations from parent and child
    *
-   * Merging strategy (as per user requirements):
-   * - Child type wins (emit warning if types differ)
-   * - Required: Child value wins
-   * - Default: Child value wins
-   * - Validators: Combine (parent AND child must pass)
-   * - Constraints: Take strictest (min of maxes, max of mins)
+   * Rules:
+   * - Type: Child wins (warn if different)
+   * - _meta: Deep merge with child precedence
+   * - Numeric constraints: Take strictest (max of mins, min of maxes)
+   * - Validators: Combine (both must pass)
    * - Unique: Take OR (unique if either says unique)
-   * - Description: Child wins
+   * - Value: Child wins
    *
-   * @param parentField - Field definition from parent class
-   * @param childField - Field definition from child class
-   * @param fieldName - Name of the field being merged (for warning messages)
-   * @returns Merged field definition
-   * @private
+   * @param parentField - Field config from parent class
+   * @param childField - Field config from child class
+   * @param fieldName - Name of the field (for warning messages)
+   * @returns Merged field configuration
    */
   private static mergeFieldConfigs(
     parentField: any,
