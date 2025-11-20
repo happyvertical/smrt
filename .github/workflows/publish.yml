@@ -128,8 +128,8 @@ jobs:
             pnpm run build
             pnpm run changeset:publish
 
-            git tag "v$AFTER_VERSION"
-            git push origin "v$AFTER_VERSION"
+            git tag -f "v$AFTER_VERSION"
+            git push -f origin "v$AFTER_VERSION"
             git push origin main
 
             RELEASE_NOTES="## Published Packages"$'\n\n'
