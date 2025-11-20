@@ -127,32 +127,31 @@ jobs:
 
           echo "✅ YAML syntax validation passed"
 
-      - name: Install act
+      - name: Install actionlint
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
-          # Install specific version of act for security and stability
-          mkdir -p bin
-          curl --proto '=https' --tlsv1.2 -sSfL \
-            https://raw.githubusercontent.com/nektos/act/master/install.sh \
-            | sudo bash -s -- -b bin v0.2.82
+          # Install actionlint for comprehensive workflow validation
+          bash <(curl \
+            https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          sudo mv actionlint /usr/local/bin/
 
-      - name: Validate with act
+      - name: Validate with actionlint
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
-          if ! ./bin/act --list > /tmp/act-output.txt 2>&1; then
-            echo "❌ act --list failed - workflow syntax issue"
-            echo "Error output:"
-            cat /tmp/act-output.txt
-            exit 1
-          fi
-          echo "✅ act validation passed"
+          echo "🔍 Running actionlint on changed workflows..."
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            echo "  Checking $file with actionlint..."
+            actionlint "$file" || exit 1
+          done
+          echo "✅ actionlint validation passed"
 
       - name: Workflow validation summary
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           echo "✅ All workflow validations passed:"
           echo "  - YAML syntax validated with yamllint"
-          echo "  - Workflow parsing verified with act"
+          echo "  - Workflow errors checked with actionlint"
+          echo "  - Shellcheck warnings validated"
 
   changeset-check:
     name: Check for Changeset
