@@ -34,7 +34,7 @@ jobs:
           PR_TITLE: ${{ inputs.pr_title || github.event.pull_request.title }}
         run: |
           # Skip if PR has 'skip-changeset' label
-          if gh pr view $PR_NUMBER --json labels \
+          if gh pr view "$PR_NUMBER" --json labels \
               --jq '.labels[].name' | grep -q 'skip-changeset'; then
             echo "✅ Skipping changeset check"
             echo "   (skip-changeset label present)"
@@ -43,7 +43,7 @@ jobs:
 
           # Skip if PR is from changeset-release branch
           # (automated version packages PR)
-          HEAD_REF=$(gh pr view $PR_NUMBER --json headRefName \
+          HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName \
             --jq '.headRefName')
           if echo "$HEAD_REF" | grep -q '^changeset-release/'; then
             echo "✅ Skipping changeset check"

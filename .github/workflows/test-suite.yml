@@ -2,10 +2,6 @@ name: Test Suite
 
 on:
   workflow_call:
-    outputs:
-      tests-passed:
-        description: 'Whether all tests passed'
-        value: ${{ jobs.test.result == 'success' }}
 
 jobs:
   test:
