@@ -54,9 +54,7 @@ function isTestEnvironment(): boolean {
   const isTest =
     process.env.NODE_ENV === 'test' ||
     process.env.VITEST === 'true' ||
-    process.env.JEST_WORKER_ID !== undefined ||
-    // @ts-expect-error - vitest global may not be defined
-    typeof vitest !== 'undefined';
+    process.env.JEST_WORKER_ID !== undefined;
 
   if (process.env.DEBUG_TEST_ENV) {
     console.log('[manifest-loader] isTestEnvironment check:', {
@@ -100,9 +98,11 @@ function getTestManifest(): SmartObjectManifest | null {
 
     // CRITICAL: Only load test manifest in test environment
     if (!isTestEnvironment()) {
-      console.log(
-        '[manifest-loader] ⚠️  Skipping test manifest load (not in test environment)',
-      );
+      if (process.env.DEBUG_TEST_ENV) {
+        console.log(
+          '[manifest-loader] ⚠️  Skipping test manifest load (not in test environment)',
+        );
+      }
       testManifest = null;
       return null;
     }
@@ -111,13 +111,17 @@ function getTestManifest(): SmartObjectManifest | null {
       // Dynamically import test manifest to avoid loading in production
       const imported = require('./test-manifest-stub.js');
       testManifest = imported.testManifest || imported.default;
-      console.log(
-        `[manifest-loader] ✅ Loaded test manifest (${Object.keys(testManifest?.objects || {}).length} objects)`,
-      );
+      if (process.env.DEBUG_TEST_ENV) {
+        console.log(
+          `[manifest-loader] ✅ Loaded test manifest (${Object.keys(testManifest?.objects || {}).length} objects)`,
+        );
+      }
     } catch (error) {
-      console.log(
-        '[manifest-loader] ⚠️  Test manifest not found (this is normal in production)',
-      );
+      if (process.env.DEBUG_TEST_ENV) {
+        console.log(
+          '[manifest-loader] ⚠️  Test manifest not found (this is normal in production)',
+        );
+      }
       testManifest = null;
     }
   }
