@@ -1,5 +1,41 @@
 # @happyvertical/smrt-core
 
+## 0.16.2
+
+### Patch Changes
+
+- c2b3b49: fix(ci): remove GITHUB_TOKEN from workflow secrets
+
+  Remove GITHUB_TOKEN from publish.yml secrets since it's automatically
+  provided by GitHub Actions. Fixes 'secret name collision' errors.
+
+- c04f2ba: refactor(manifest): eliminate runtime introspection and optimize manifest generation
+
+  - Remove all runtime reflection/introspection from manifest code
+  - Manifest generation now relies purely on AST-based static analysis
+  - Import generator from source in scripts for better development workflow
+  - Address code quality improvements from automated review
+
+- 5fd254f: feat(ci): use shared direct publish workflow from SDK
+
+  Migrate to the shared-direct-publish.yml reusable workflow from SDK for consistent
+  publishing across all HappyVertical repositories. This eliminates intermediate
+  "Version Packages" PRs and reduces CI runs from 3 to 2 per feature PR cycle.
+
+  Changes:
+
+  - Replace changesets/action@v1 with SDK's shared workflow
+  - Separate cascade job for dependency triggers
+  - Consistent with SDK's direct publish pattern
+
+- 5643895: fix(ci): skip changeset check for automated Version Packages PRs
+
+  Align with SDK direct publish pattern to prevent changeset checks on automated
+  Version Packages PRs. This reduces CI overhead by eliminating unnecessary test runs.
+
+  - @happyvertical/smrt-config@0.16.2
+  - @happyvertical/smrt-types@0.16.2
+
 ## 0.16.1
 
 ### Patch Changes
