@@ -23,10 +23,22 @@ pre-commit:
       run: |
         echo "🔍 Validating workflow files..."
         for file in {staged_files}; do
-          echo "  Checking $file..."
+          echo "  Checking $file with yamllint..."
           yamllint "$file" || exit 1
+          if command -v actionlint >/dev/null 2>&1; then
+            echo "  Checking $file with actionlint..."
+            actionlint "$file" || exit 1
+          else
+            echo "  ⚠️  actionlint not found, skipping"
+          fi
         done
         echo "✅ All workflow files validated"
+      fail_text: |
+        ❌ Workflow validation failed!
+
+        Install actionlint for better validation:
+          brew install actionlint  # macOS
+          go install github.com/rhysd/actionlint/cmd/actionlint@latest
 
 # Check formatting before push
 pre-push:
@@ -37,6 +49,57 @@ pre-push:
         ❌ Format check failed!
 
         Your code has formatting issues. Run `npm run format` to fix them.
+
+    validate-all-workflows:
+      files: git diff --name-only @{push}..HEAD
+      run: |
+        echo "🔍 Validating ALL workflow files before push..."
+        exit_code=0
+
+        # Check if any workflow files exist
+        workflow_count=$(find .github/workflows -name "*.yml" \
+          -o -name "*.yaml" 2>/dev/null | wc -l)
+        if [ "$workflow_count" -eq 0 ]; then
+          echo "No workflow files found, skipping validation"
+          exit 0
+        fi
+
+        for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+          [ -f "$file" ] || continue
+          echo ""
+          echo "📄 Checking $file..."
+
+          # Run yamllint
+          if ! yamllint "$file" 2>&1; then
+            echo "  ❌ yamllint failed for $file"
+            exit_code=1
+          fi
+
+          # Run actionlint if available
+          if command -v actionlint >/dev/null 2>&1; then
+            if ! actionlint "$file" 2>&1; then
+              echo "  ❌ actionlint failed for $file"
+              exit_code=1
+            fi
+          else
+            echo "  ⚠️  actionlint not found, skipping"
+          fi
+        done
+
+        if [ $exit_code -eq 0 ]; then
+          echo ""
+          echo "✅ All workflow files validated successfully"
+        fi
+
+        exit $exit_code
+      fail_text: |
+        ❌ Workflow validation failed!
+
+        Fix the errors above before pushing.
+
+        Install actionlint for better validation:
+          brew install actionlint  # macOS
+          go install github.com/rhysd/actionlint/cmd/actionlint@latest
 
 # Validate commit messages using commitlint
 commit-msg:

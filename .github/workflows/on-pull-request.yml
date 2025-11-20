@@ -44,7 +44,7 @@ jobs:
             bump="minor"  # Treat as minor until 1.0.0
           fi
 
-          echo "bump=$bump" >> $GITHUB_OUTPUT
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
           echo "📦 Will perform $bump version bump on merge"
 
       - name: Comment on PR

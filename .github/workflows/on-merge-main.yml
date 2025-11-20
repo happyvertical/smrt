@@ -62,10 +62,10 @@ jobs:
         id: check-updates
         run: |
           if git diff --quiet package.json pnpm-lock.yaml 2>/dev/null; then
-            echo "updated=false" >> $GITHUB_OUTPUT
+            echo "updated=false" >> "$GITHUB_OUTPUT"
             echo "⏭️  No updates needed"
           else
-            echo "updated=true" >> $GITHUB_OUTPUT
+            echo "updated=true" >> "$GITHUB_OUTPUT"
             echo "✅ Dependencies updated"
             echo "📦 Updated packages:"
             git diff package.json | grep '^\+.*@happyvertical' | \
@@ -101,7 +101,7 @@ jobs:
           echo "🔀 Enabling auto-merge for PR #$pr_num"
           echo "⏳ Waiting 30 seconds for status checks to start..."
           sleep 30
-          gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} \
+          gh pr merge "$pr_num" \
             --auto --squash \
             --delete-branch
 
@@ -126,8 +126,7 @@ jobs:
     if: |
       always() &&
       github.event_name == 'push' &&
-      (needs.test.result == 'success' ||
-       needs.test.outputs.tests-passed == 'true')
+      needs.test.result == 'success'
     uses: ./.github/workflows/build.yml
     permissions:
       contents: read
