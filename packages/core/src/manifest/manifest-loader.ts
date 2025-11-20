@@ -33,15 +33,40 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
-import { testManifest } from './test-manifest-stub.js';
 
 // Lazy-load staticManifest with fallback for build-time loading
 // During vite config loading, static-manifest.js may not exist yet
 let staticManifest: SmartObjectManifest | null = null;
 let staticManifestLoadAttempted = false;
 
+// Lazy-load testManifest ONLY in test environments to avoid collisions
+let testManifest: SmartObjectManifest | null = null;
+let testManifestLoadAttempted = false;
+
 // Create require function once for reuse
 const require = createRequire(import.meta.url);
+
+/**
+ * Detect if we're running in a test environment
+ * Test manifests should ONLY be loaded during tests to avoid collisions with production classes
+ */
+function isTestEnvironment(): boolean {
+  const isTest =
+    process.env.NODE_ENV === 'test' ||
+    process.env.VITEST === 'true' ||
+    process.env.JEST_WORKER_ID !== undefined;
+
+  if (process.env.DEBUG_TEST_ENV) {
+    console.log('[manifest-loader] isTestEnvironment check:', {
+      NODE_ENV: process.env.NODE_ENV,
+      VITEST: process.env.VITEST,
+      JEST_WORKER_ID: process.env.JEST_WORKER_ID,
+      result: isTest,
+    });
+  }
+
+  return isTest;
+}
 
 function getStaticManifest(): SmartObjectManifest {
   if (!staticManifestLoadAttempted) {
@@ -61,6 +86,46 @@ function getStaticManifest(): SmartObjectManifest {
     }
   }
   return staticManifest!;
+}
+
+/**
+ * Lazy-load test manifest ONLY when in test environment
+ * This prevents test classes from being loaded in production and causing collisions
+ */
+function getTestManifest(): SmartObjectManifest | null {
+  if (!testManifestLoadAttempted) {
+    testManifestLoadAttempted = true;
+
+    // CRITICAL: Only load test manifest in test environment
+    if (!isTestEnvironment()) {
+      if (process.env.DEBUG_TEST_ENV) {
+        console.log(
+          '[manifest-loader] ⚠️  Skipping test manifest load (not in test environment)',
+        );
+      }
+      testManifest = null;
+      return null;
+    }
+
+    try {
+      // Dynamically import test manifest to avoid loading in production
+      const imported = require('./test-manifest-stub.js');
+      testManifest = imported.testManifest || imported.default;
+      if (process.env.DEBUG_TEST_ENV) {
+        console.log(
+          `[manifest-loader] ✅ Loaded test manifest (${Object.keys(testManifest?.objects || {}).length} objects)`,
+        );
+      }
+    } catch (error) {
+      if (process.env.DEBUG_TEST_ENV) {
+        console.log(
+          '[manifest-loader] ⚠️  Test manifest not found (this is normal in production)',
+        );
+      }
+      testManifest = null;
+    }
+  }
+  return testManifest;
 }
 
 // Re-export types for convenience
@@ -459,40 +524,45 @@ export function discoverManifestSync(
     `[manifest-loader] discoverManifestSync called for: ${className}`,
   );
 
-  // 1. Check localTestManifest (domain package test classes) - try to load if not loaded
+  // 1. Check localTestManifest (domain package test classes) - ONLY in test environment
   // IMPORTANT: Always try to load if not cached (null or undefined), in case manifest was generated after first attempt
-  if (!localTestManifest) {
-    console.log(
-      `[manifest-loader] LocalTestManifest not cached, attempting to load...`,
-    );
-    loadLocalTestManifestSync();
+  if (isTestEnvironment()) {
+    if (!localTestManifest) {
+      console.log(
+        `[manifest-loader] LocalTestManifest not cached, attempting to load...`,
+      );
+      loadLocalTestManifestSync();
+    }
+
+    if (localTestManifest?.objects[name]) {
+      console.log(
+        `[manifest-loader] ✅ Found ${className} in localTestManifest (lowercase key)`,
+      );
+      return localTestManifest.objects[name];
+    }
+    if (localTestManifest?.objects[className]) {
+      console.log(
+        `[manifest-loader] ✅ Found ${className} in localTestManifest (exact key)`,
+      );
+      return localTestManifest.objects[className];
+    }
   }
 
-  if (localTestManifest?.objects[name]) {
-    console.log(
-      `[manifest-loader] ✅ Found ${className} in localTestManifest (lowercase key)`,
-    );
-    return localTestManifest.objects[name];
-  }
-  if (localTestManifest?.objects[className]) {
-    console.log(
-      `[manifest-loader] ✅ Found ${className} in localTestManifest (exact key)`,
-    );
-    return localTestManifest.objects[className];
-  }
-
-  // 2. Check testManifest (core test classes)
-  if (testManifest?.objects[name]) {
-    console.log(
-      `[manifest-loader] ✅ Found ${className} in testManifest (lowercase key)`,
-    );
-    return testManifest.objects[name];
-  }
-  if (testManifest?.objects[className]) {
-    console.log(
-      `[manifest-loader] ✅ Found ${className} in testManifest (exact key)`,
-    );
-    return testManifest.objects[className];
+  // 2. Check testManifest (core test classes) - ONLY in test environment
+  if (isTestEnvironment()) {
+    const manifest = getTestManifest();
+    if (manifest?.objects[name]) {
+      console.log(
+        `[manifest-loader] ✅ Found ${className} in testManifest (lowercase key)`,
+      );
+      return manifest.objects[name];
+    }
+    if (manifest?.objects[className]) {
+      console.log(
+        `[manifest-loader] ✅ Found ${className} in testManifest (exact key)`,
+      );
+      return manifest.objects[className];
+    }
   }
 
   // 3. Check staticManifest (core framework classes)
@@ -605,20 +675,23 @@ export async function discoverManifestEntry(
     manifestSource: string;
   }> = [];
 
-  // 2. Check localTestManifest first (domain package test classes)
+  // 2. Check localTestManifest first (domain package test classes) - ONLY in test environment
   // Do this BEFORE loading external manifest to avoid duplicate loading
-  if (localTestManifest === undefined) {
-    loadLocalTestManifestSync();
-  }
-  const localEntry =
-    localTestManifest?.objects[name] || localTestManifest?.objects[className];
-  if (localEntry) {
-    foundEntries.push({
-      entry: localEntry,
-      packageName: localTestManifest?.packageName || 'local-test',
-      filePath: localEntry.filePath,
-      manifestSource: 'local test manifest',
-    });
+  let localEntry: SmartObjectDefinition | undefined;
+  if (isTestEnvironment()) {
+    if (localTestManifest === undefined) {
+      loadLocalTestManifestSync();
+    }
+    localEntry =
+      localTestManifest?.objects[name] || localTestManifest?.objects[className];
+    if (localEntry) {
+      foundEntries.push({
+        entry: localEntry,
+        packageName: localTestManifest?.packageName || 'local-test',
+        filePath: localEntry.filePath,
+        manifestSource: 'local test manifest',
+      });
+    }
   }
 
   // 1. PRIORITY: Try loading from the constructor's package first
@@ -649,15 +722,15 @@ export async function discoverManifestEntry(
     }
   }
 
-  // 3. Check testManifest (core test classes)
+  // 3. Check testManifest (core test classes) - ONLY in test environment
   // Skip if we already loaded a local test manifest (avoids duplicate entries from same package)
-  if (!localTestManifest || !localEntry) {
-    const testEntry =
-      testManifest?.objects[name] || testManifest?.objects[className];
+  if (isTestEnvironment() && (!localTestManifest || !localEntry)) {
+    const manifest = getTestManifest();
+    const testEntry = manifest?.objects[name] || manifest?.objects[className];
     if (testEntry) {
       foundEntries.push({
         entry: testEntry,
-        packageName: testManifest.packageName || '@happyvertical/smrt-core',
+        packageName: manifest?.packageName || '@happyvertical/smrt-core',
         filePath: testEntry.filePath,
         manifestSource: '@happyvertical/smrt-core test manifest',
       });
