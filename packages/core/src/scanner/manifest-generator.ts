@@ -93,7 +93,120 @@ export class ManifestGenerator {
       }
     }
 
+    // Second pass: Merge inherited fields for STI classes
+    // This ensures STI subclasses have all parent fields inline in the manifest
+    this.mergeInheritedFields(manifest);
+
     return manifest;
+  }
+
+  /**
+   * Merge inherited fields into child classes (build-time inheritance resolution)
+   *
+   * For STI hierarchies, child classes don't define their own fields in source code
+   * (they inherit from parent). This method merges parent fields into child manifests
+   * so that runtime code doesn't need to do field resolution.
+   *
+   * Handles multi-level inheritance (grandparents, great-grandparents, etc.)
+   *
+   * @param manifest - The manifest to process in-place
+   */
+  private mergeInheritedFields(manifest: SmartObjectManifest): void {
+    // Build a map of className -> objectDef for fast lookup
+    const objectsByName = new Map<string, SmartObjectDefinition>();
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      objectsByName.set(obj.className, obj);
+      // Also store by lowercase name for case-insensitive lookup
+      objectsByName.set(obj.className.toLowerCase(), obj);
+    }
+
+    // Process each object that has a parent (extends another class)
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.extends) continue; // No parent, skip
+
+      // Only merge if using STI (shared table with parent)
+      // For CTI (class table inheritance), each class has its own table and fields
+      const isSTI = obj.decoratorConfig?.tableStrategy === 'sti';
+      const parentDef = objectsByName.get(obj.extends);
+
+      // Check if parent uses STI (child inherits strategy)
+      const parentUsesSTI = parentDef?.decoratorConfig?.tableStrategy === 'sti';
+
+      if (!isSTI && !parentUsesSTI) {
+        continue; // CTI - no field merging needed
+      }
+
+      console.log(
+        `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
+      );
+
+      // Build full inheritance chain (base -> child)
+      const inheritanceChain: string[] = [];
+      let currentClass: string | undefined = obj.extends;
+      const visited = new Set<string>();
+
+      while (currentClass) {
+        if (visited.has(currentClass)) {
+          console.warn(
+            `[manifest-generator] Circular inheritance detected for ${obj.className}`,
+          );
+          break;
+        }
+        visited.add(currentClass);
+        inheritanceChain.unshift(currentClass); // Add to front (building base -> child)
+
+        const parentObj = objectsByName.get(currentClass);
+        if (!parentObj) break; // Parent not in manifest (e.g., SmrtObject)
+        currentClass = parentObj.extends;
+      }
+
+      console.log(
+        `[manifest-generator] Inheritance chain for ${obj.className}: ${inheritanceChain.join(' -> ')}`,
+      );
+
+      // Merge fields from all ancestors (base to child)
+      const mergedFields: Record<string, any> = {};
+      const mergedMethods: Record<string, any> = {};
+
+      for (const ancestorName of inheritanceChain) {
+        const ancestor = objectsByName.get(ancestorName);
+        if (!ancestor) continue;
+
+        // Merge fields (child fields override parent fields with same name)
+        for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
+          if (!mergedFields[fieldName]) {
+            mergedFields[fieldName] = fieldDef;
+          }
+        }
+
+        // Merge methods (child methods override parent methods)
+        for (const [methodName, methodDef] of Object.entries(
+          ancestor.methods || {},
+        )) {
+          if (!mergedMethods[methodName]) {
+            mergedMethods[methodName] = methodDef;
+          }
+        }
+      }
+
+      // Add child's own fields (override any parent fields with same name)
+      for (const [fieldName, fieldDef] of Object.entries(obj.fields)) {
+        mergedFields[fieldName] = fieldDef;
+      }
+
+      // Add child's own methods
+      for (const [methodName, methodDef] of Object.entries(obj.methods || {})) {
+        mergedMethods[methodName] = methodDef;
+      }
+
+      // Update object definition with merged fields
+      obj.fields = mergedFields;
+      obj.methods = mergedMethods;
+
+      console.log(
+        `[manifest-generator] ✅ ${obj.className} now has ${Object.keys(mergedFields).length} fields (including inherited)`,
+      );
+    }
   }
 
   /**
