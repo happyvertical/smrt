@@ -1857,32 +1857,56 @@ export class ObjectRegistry {
   /**
    * Get all fields including inherited ones from parent classes
    *
-   * **Build-time inheritance (v0.17+):**
-   * As of v0.17, manifest generation includes inherited fields inline at build time.
-   * This method now simply delegates to getFields() since manifests already contain
-   * all inherited fields merged.
-   *
-   * **Previous behavior (v0.16 and earlier):**
-   * - Runtime merging of parent fields by walking inheritance chain
-   * - Complex caching and recursive field resolution
-   * - Now replaced with simple manifest lookup (much faster!)
+   * **Hybrid approach (v0.17+):**
+   * - External packages: Use build-time merged fields from manifests
+   * - Local classes: Use runtime merging by walking inheritance chain
    *
    * @param className - Name of the registered class
-   * @returns Map of all fields (including inherited) from the manifest
-   * @example
-   * ```typescript
-   * // Given: Content → PraecoContent → BentleyContent
-   * const allFields = await ObjectRegistry.getAllFields('BentleyContent');
-   * // Returns all fields from manifest (now includes inherited fields at build time)
-   * ```
+   * @returns Map of all fields (including inherited)
    */
   static async getAllFields(className: string): Promise<Map<string, any>> {
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      return new Map();
+    }
+
     // Ensure manifest is loaded (handles external packages)
     await ObjectRegistry.ensureManifestLoaded(className);
 
-    // Since manifests now include inherited fields inline (build-time merging),
-    // we can just return the fields directly - no runtime merging needed
-    return ObjectRegistry.getFields(className);
+    // Check if class has inheritedFields cache (set during manifest loading)
+    if (registered.inheritedFields) {
+      return new Map(registered.inheritedFields);
+    }
+
+    // For local classes (not from manifests), merge fields from inheritance chain
+    const allFields = new Map<string, any>();
+    const chain = ObjectRegistry.getInheritanceChain(className);
+
+    // Walk chain from base to child (parent fields first)
+    for (const ancestorName of chain) {
+      // Skip framework base classes
+      if (
+        ancestorName === 'SmrtObject' ||
+        ancestorName === 'SmrtClass' ||
+        ancestorName === 'SmrtCollection'
+      ) {
+        continue;
+      }
+
+      const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (!ancestor) {
+        continue;
+      }
+
+      // Merge fields from this ancestor
+      for (const [fieldName, field] of ancestor.fields) {
+        if (!allFields.has(fieldName)) {
+          allFields.set(fieldName, field);
+        }
+      }
+    }
+
+    return allFields;
   }
 
   /**
