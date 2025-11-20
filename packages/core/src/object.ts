@@ -352,8 +352,23 @@ export class SmrtObject extends SmrtClass {
    * @throws Error if STI validation fails
    */
   async loadDataFromDb(data: any) {
+    if (process.env.DEBUG_STI) {
+      console.log('[loadDataFromDb] Loading:', {
+        class: this.constructor.name,
+        dataKeys: Object.keys(data),
+        metaType: data._meta_type,
+      });
+    }
+
     // Get field definitions to pass to formatDataJs
     const fields = await this.getFields();
+
+    if (process.env.DEBUG_STI) {
+      console.log('[loadDataFromDb] Field definitions:', {
+        class: this.constructor.name,
+        fieldKeys: Object.keys(fields),
+      });
+    }
 
     // Format data: Convert snake_case column names to camelCase property names
     // and convert date strings to Date objects (Issue #339)
@@ -365,6 +380,14 @@ export class SmrtObject extends SmrtClass {
       this.constructor.name,
     );
     const isSTI = tableStrategy === 'sti';
+
+    if (process.env.DEBUG_STI) {
+      console.log('[loadDataFromDb] After formatDataJs:', {
+        class: this.constructor.name,
+        isSTI,
+        formattedDataKeys: Object.keys(formattedData),
+      });
+    }
 
     // STI: Fail-fast validation for _meta_type discriminator
     if (isSTI) {
@@ -389,6 +412,16 @@ export class SmrtObject extends SmrtClass {
     // STI: Meta fields are already merged by formatDataJs
     // No additional processing needed
 
+    if (process.env.DEBUG_STI) {
+      console.log('[loadDataFromDb] Starting field hydration:', {
+        class: this.constructor.name,
+        fieldCount: Object.keys(fields).length,
+      });
+    }
+
+    let hydratedCount = 0;
+    let skippedCount = 0;
+
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
         // Check if property is writable before setting (Issue #63)
@@ -408,9 +441,32 @@ export class SmrtObject extends SmrtClass {
           // Use formatted data (camelCase) instead of raw data (snake_case)
           // formatDataJs() already handles type conversions (dates, booleans, etc.)
           const value = formattedData[field];
+
+          if (process.env.DEBUG_STI && value !== undefined) {
+            console.log(`[loadDataFromDb] Setting field '${field}':`, {
+              value,
+              valueType: typeof value,
+            });
+          }
+
           this[field as keyof this] = value;
+          hydratedCount++;
+        } else {
+          skippedCount++;
+          if (process.env.DEBUG_STI) {
+            console.log(`[loadDataFromDb] Skipping readonly field '${field}'`);
+          }
         }
       }
+    }
+
+    if (process.env.DEBUG_STI) {
+      console.log('[loadDataFromDb] Hydration complete:', {
+        class: this.constructor.name,
+        hydratedCount,
+        skippedCount,
+        totalFields: Object.keys(fields).length,
+      });
     }
   }
 
