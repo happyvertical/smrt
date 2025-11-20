@@ -33,12 +33,15 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
-import { testManifest } from './test-manifest-stub.js';
 
 // Lazy-load staticManifest with fallback for build-time loading
 // During vite config loading, static-manifest.js may not exist yet
 let staticManifest: SmartObjectManifest | null = null;
 let staticManifestLoadAttempted = false;
+
+// Lazy-load testManifest ONLY in test environments to avoid collisions
+let testManifest: SmartObjectManifest | null = null;
+let testManifestLoadAttempted = false;
 
 // Create require function once for reuse
 const require = createRequire(import.meta.url);
@@ -48,13 +51,23 @@ const require = createRequire(import.meta.url);
  * Test manifests should ONLY be loaded during tests to avoid collisions with production classes
  */
 function isTestEnvironment(): boolean {
-  return (
+  const isTest =
     process.env.NODE_ENV === 'test' ||
     process.env.VITEST === 'true' ||
     process.env.JEST_WORKER_ID !== undefined ||
     // @ts-expect-error - vitest global may not be defined
-    typeof vitest !== 'undefined'
-  );
+    typeof vitest !== 'undefined';
+
+  if (process.env.DEBUG_TEST_ENV) {
+    console.log('[manifest-loader] isTestEnvironment check:', {
+      NODE_ENV: process.env.NODE_ENV,
+      VITEST: process.env.VITEST,
+      JEST_WORKER_ID: process.env.JEST_WORKER_ID,
+      result: isTest,
+    });
+  }
+
+  return isTest;
 }
 
 function getStaticManifest(): SmartObjectManifest {
@@ -75,6 +88,40 @@ function getStaticManifest(): SmartObjectManifest {
     }
   }
   return staticManifest!;
+}
+
+/**
+ * Lazy-load test manifest ONLY when in test environment
+ * This prevents test classes from being loaded in production and causing collisions
+ */
+function getTestManifest(): SmartObjectManifest | null {
+  if (!testManifestLoadAttempted) {
+    testManifestLoadAttempted = true;
+
+    // CRITICAL: Only load test manifest in test environment
+    if (!isTestEnvironment()) {
+      console.log(
+        '[manifest-loader] ⚠️  Skipping test manifest load (not in test environment)',
+      );
+      testManifest = null;
+      return null;
+    }
+
+    try {
+      // Dynamically import test manifest to avoid loading in production
+      const imported = require('./test-manifest-stub.js');
+      testManifest = imported.testManifest || imported.default;
+      console.log(
+        `[manifest-loader] ✅ Loaded test manifest (${Object.keys(testManifest?.objects || {}).length} objects)`,
+      );
+    } catch (error) {
+      console.log(
+        '[manifest-loader] ⚠️  Test manifest not found (this is normal in production)',
+      );
+      testManifest = null;
+    }
+  }
+  return testManifest;
 }
 
 // Re-export types for convenience
@@ -499,17 +546,18 @@ export function discoverManifestSync(
 
   // 2. Check testManifest (core test classes) - ONLY in test environment
   if (isTestEnvironment()) {
-    if (testManifest?.objects[name]) {
+    const manifest = getTestManifest();
+    if (manifest?.objects[name]) {
       console.log(
         `[manifest-loader] ✅ Found ${className} in testManifest (lowercase key)`,
       );
-      return testManifest.objects[name];
+      return manifest.objects[name];
     }
-    if (testManifest?.objects[className]) {
+    if (manifest?.objects[className]) {
       console.log(
         `[manifest-loader] ✅ Found ${className} in testManifest (exact key)`,
       );
-      return testManifest.objects[className];
+      return manifest.objects[className];
     }
   }
 
@@ -673,12 +721,12 @@ export async function discoverManifestEntry(
   // 3. Check testManifest (core test classes) - ONLY in test environment
   // Skip if we already loaded a local test manifest (avoids duplicate entries from same package)
   if (isTestEnvironment() && (!localTestManifest || !localEntry)) {
-    const testEntry =
-      testManifest?.objects[name] || testManifest?.objects[className];
+    const manifest = getTestManifest();
+    const testEntry = manifest?.objects[name] || manifest?.objects[className];
     if (testEntry) {
       foundEntries.push({
         entry: testEntry,
-        packageName: testManifest.packageName || '@happyvertical/smrt-core',
+        packageName: manifest?.packageName || '@happyvertical/smrt-core',
         filePath: testEntry.filePath,
         manifestSource: '@happyvertical/smrt-core test manifest',
       });
