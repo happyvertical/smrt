@@ -828,7 +828,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
       // Generate ID if not provided, then save
       if (!instance.id) {
-        instance.setId(crypto.randomUUID());
+        (instance as any)._id = crypto.randomUUID();
       }
       await instance.save();
       return instance;
@@ -852,7 +852,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     await instance.initialize();
     // Generate ID if not provided, then save
     if (!instance.id) {
-      instance.setId(crypto.randomUUID());
+      (instance as any)._id = crypto.randomUUID();
     }
     await instance.save();
     return instance;
