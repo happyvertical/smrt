@@ -509,6 +509,68 @@ class Agent extends SmrtObject {
 - MCP: `agent_research` tool
 - CLI: `agents research <id> --query="topic"`
 
+### ⚠️ WARNING: Customizing JSON Serialization
+
+The `toJSON()` method in `SmrtObject` handles critical framework infrastructure. **DO NOT override** this method unless you call `super.toJSON()` first.
+
+**What toJSON() handles:**
+- **STI discriminator** (`_meta_type`) for polymorphic queries
+- **Meta field extraction** (`_meta_data`) for child-specific fields
+- **Automatic serialization** of all fields from manifest
+- **Framework metadata** required for database operations
+
+**The Safe Way: Use transformJSON() Hook**
+
+Override `transformJSON()` instead of `toJSON()` to customize serialization:
+
+```typescript
+@smrt()
+class Article extends SmrtObject {
+  title: string = '';
+  body: string = '';
+
+  // ✅ CORRECT - Use transformJSON() hook
+  protected transformJSON(data: any): any {
+    return {
+      ...data,
+      wordCount: this.body.split(/\s+/).length,
+      preview: this.body.substring(0, 100)
+    };
+  }
+}
+```
+
+**The Dangerous Way: Overriding toJSON()**
+
+If you MUST override `toJSON()`, always call `super.toJSON()` first:
+
+```typescript
+// ✅ CORRECT - Calls super
+class Article extends SmrtObject {
+  toJSON() {
+    const data = super.toJSON();  // Framework handles STI, meta fields, etc.
+    return {
+      ...data,
+      customField: 'value'
+    };
+  }
+}
+
+// ❌ WRONG - Breaks STI and meta fields
+class Article extends SmrtObject {
+  toJSON() {
+    return {
+      id: this.id,
+      title: this.title
+      // Missing: _meta_type, _meta_data, other fields
+      // This WILL break STI and cause "Missing _meta_type discriminator" errors
+    };
+  }
+}
+```
+
+**Related Issues**: See [#377](https://github.com/happyvertical/smrt/issues/377) for details on why this is critical.
+
 ## Single Table Inheritance (STI)
 
 ### What is STI?
