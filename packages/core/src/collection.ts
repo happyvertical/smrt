@@ -313,7 +313,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     };
 
     // Create instance using protected constructor
-    // biome-ignore lint: Must use 'new this()' to create subclass instances
     const instance = new this(collectionOptions);
 
     // Perform async initialization
@@ -429,14 +428,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           : { slug: filter, context: '' }
         : filter;
 
-    const { sql: whereSql, values: whereValues } = buildWhere(
-      await this.convertWhereKeys(where),
-    );
+    // Fix for issue #384: Split await to ensure proper async resolution
+    const convertedWhere = await this.convertWhereKeys(where);
+    const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
-    const { rows } = await this.db.query(
-      `SELECT * FROM ${this.tableName} ${whereSql}`,
-      whereValues,
-    );
+    const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql}`;
+    const { rows } = await this.db.query(fullSQL, whereValues);
+
     if (!rows?.[0]) {
       return null;
     }
@@ -539,9 +537,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
     }
 
-    const { sql: whereSql, values: whereValues } = buildWhere(
-      await this.convertWhereKeys(where || {}),
-    );
+    // Fix for issue #384: Split await to ensure proper async resolution
+    const convertedWhere = await this.convertWhereKeys(where || {});
+    const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
     let orderBySql = '';
     if (orderBy) {
