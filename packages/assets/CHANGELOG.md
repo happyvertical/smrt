@@ -1,5 +1,18 @@
 # @happyvertical/smrt-assets
 
+## 0.16.5
+
+### Patch Changes
+
+- caf593b: feat(build): auto-generate test-manifest-stub.ts from dist/manifest.json
+
+  Ensures test manifest stubs stay in sync with generated manifests.
+  Fixes #373 - Event.seriesId now correctly marked as optional.
+
+- Updated dependencies [caf593b]
+  - @happyvertical/smrt-tags@0.16.5
+  - @happyvertical/smrt-core@0.16.5
+
 ## 0.16.4
 
 ### Patch Changes
