@@ -2,6 +2,7 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
+import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import { generateToolManifest } from '../tools/tool-generator';
 import type {
   ScanResult,
@@ -108,10 +109,11 @@ export class ManifestGenerator {
    * so that runtime code doesn't need to do field resolution.
    *
    * Handles multi-level inheritance (grandparents, great-grandparents, etc.)
+   * Automatically loads parent class definitions from external SMRT packages when needed
    *
    * @param manifest - The manifest to process in-place
    */
-  private mergeInheritedFields(manifest: SmartObjectManifest): void {
+  public mergeInheritedFields(manifest: SmartObjectManifest): void {
     // Build a map of className -> objectDef for fast lookup
     const objectsByName = new Map<string, SmartObjectDefinition>();
     for (const [name, obj] of Object.entries(manifest.objects)) {
@@ -127,7 +129,7 @@ export class ManifestGenerator {
       // Only merge if using STI (shared table with parent)
       // For CTI (class table inheritance), each class has its own table and fields
       // Check if this class or ANY ancestor uses STI (inherited strategy)
-      const usesSTI = this.isSTIClass(obj, objectsByName);
+      const usesSTI = this.isSTIClass(obj, objectsByName, manifest);
 
       if (!usesSTI) {
         continue; // CTI - no field merging needed
@@ -152,8 +154,22 @@ export class ManifestGenerator {
         visited.add(currentClass);
         inheritanceChain.unshift(currentClass); // Add to front (building base -> child)
 
-        const parentObj = objectsByName.get(currentClass);
-        if (!parentObj) break; // Parent not in manifest (e.g., SmrtObject)
+        let parentObj = objectsByName.get(currentClass);
+
+        // If parent not in current manifest, try loading from external SMRT packages
+        if (
+          !parentObj &&
+          manifest.smrtDependencies &&
+          manifest.smrtDependencies.length > 0
+        ) {
+          parentObj = this.loadParentFromExternalPackage(
+            currentClass,
+            manifest.smrtDependencies,
+            objectsByName,
+          );
+        }
+
+        if (!parentObj) break; // Parent not found anywhere (e.g., SmrtObject)
         currentClass = parentObj.extends;
       }
 
@@ -211,14 +227,17 @@ export class ManifestGenerator {
    *
    * Walks up the inheritance chain to find if any ancestor has tableStrategy: 'sti'.
    * If found, all descendants inherit STI and should have fields merged.
+   * Also checks external SMRT packages for parent class definitions.
    *
    * @param obj - The object definition to check
    * @param objectsByName - Map of className -> objectDef for lookups
+   * @param manifest - The manifest (for accessing smrtDependencies)
    * @returns true if this class uses STI (directly or inherited)
    */
   private isSTIClass(
     obj: SmartObjectDefinition,
     objectsByName: Map<string, SmartObjectDefinition>,
+    manifest: SmartObjectManifest,
   ): boolean {
     // Check if explicitly marked as STI
     if (obj.decoratorConfig?.tableStrategy === 'sti') {
@@ -235,8 +254,22 @@ export class ManifestGenerator {
       }
       visited.add(currentClass);
 
-      const parentDef = objectsByName.get(currentClass);
-      if (!parentDef) break; // Parent not in manifest
+      let parentDef = objectsByName.get(currentClass);
+
+      // If parent not in current manifest, try loading from external SMRT packages
+      if (
+        !parentDef &&
+        manifest.smrtDependencies &&
+        manifest.smrtDependencies.length > 0
+      ) {
+        parentDef = this.loadParentFromExternalPackage(
+          currentClass,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+      }
+
+      if (!parentDef) break; // Parent not found anywhere
 
       // Check if this ancestor uses STI
       if (parentDef.decoratorConfig?.tableStrategy === 'sti') {
@@ -247,6 +280,50 @@ export class ManifestGenerator {
     }
 
     return false; // No STI in hierarchy
+  }
+
+  /**
+   * Load parent class definition from external SMRT packages
+   *
+   * When a child class extends a parent from an external package (e.g., praeco's Council extends
+   * smrt-profiles' Organization), this method loads the parent's manifest and extracts the
+   * parent's field definitions.
+   *
+   * @param parentClassName - Name of the parent class to find
+   * @param smrtDependencies - List of external SMRT packages to search
+   * @param objectsByName - Map to cache loaded external objects
+   * @returns Parent object definition if found, undefined otherwise
+   */
+  private loadParentFromExternalPackage(
+    parentClassName: string,
+    smrtDependencies: string[],
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): SmartObjectDefinition | undefined {
+    // Try each external SMRT dependency
+    for (const packageName of smrtDependencies) {
+      const externalManifest = loadExternalManifestSync(packageName);
+
+      if (!externalManifest) {
+        continue;
+      }
+
+      // Search for parent class in external manifest (case-insensitive)
+      const parentKey = Object.keys(externalManifest.objects).find(
+        (key) => key.toLowerCase() === parentClassName.toLowerCase(),
+      );
+
+      if (parentKey) {
+        const parentObj = externalManifest.objects[parentKey];
+
+        // Cache the loaded parent object for future lookups
+        objectsByName.set(parentObj.className, parentObj);
+        objectsByName.set(parentObj.className.toLowerCase(), parentObj);
+
+        return parentObj;
+      }
+    }
+
+    return undefined;
   }
 
   /**

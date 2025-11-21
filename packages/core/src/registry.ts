@@ -1201,6 +1201,11 @@ export class ObjectRegistry {
     for (const [fieldName, field] of fields) {
       const options = field._meta || {};
 
+      // Skip transient fields (they're not persisted, so no validation needed)
+      if (options.transient || field.transient) {
+        continue;
+      }
+
       // Required field validator
       if (options.required) {
         validators.push(async (instance: any) => {

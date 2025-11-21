@@ -263,6 +263,14 @@ export function formatDataJs(
 ) {
   const normalizedData: Record<string, any> = {};
 
+  if (process.env.DEBUG_STI) {
+    console.log('[formatDataJs] Input data:', {
+      hasMetaData: !!data._meta_data,
+      metaType: data._meta_type,
+      keys: Object.keys(data),
+    });
+  }
+
   // STI: If _meta_data exists, merge it into data first
   // This ensures meta fields are available during formatting
   if (data._meta_data) {
@@ -270,8 +278,20 @@ export function formatDataJs(
       typeof data._meta_data === 'string'
         ? JSON.parse(data._meta_data)
         : data._meta_data;
+
+    if (process.env.DEBUG_STI) {
+      console.log('[formatDataJs] Merging _meta_data:', {
+        metaDataKeys: Object.keys(metaData),
+        metaData,
+      });
+    }
+
     // Merge meta fields into data (will be formatted below)
     Object.assign(data, metaData);
+
+    if (process.env.DEBUG_STI) {
+      console.log('[formatDataJs] After merge, data keys:', Object.keys(data));
+    }
   }
 
   for (const [key, value] of Object.entries(data)) {
@@ -301,6 +321,14 @@ export function formatDataJs(
       normalizedData[camelKey] = value;
     }
   }
+
+  if (process.env.DEBUG_STI) {
+    console.log('[formatDataJs] Output normalizedData:', {
+      keys: Object.keys(normalizedData),
+      metaType: normalizedData._meta_type,
+    });
+  }
+
   return normalizedData;
 }
 
