@@ -18,7 +18,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",
     "build:watch": "vite build --watch",
     "test": "vitest run",
     "test:watch": "vitest"

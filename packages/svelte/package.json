@@ -34,7 +34,7 @@
   "scripts": {
     "dev": "vite --mode test",
     "dev:test": "vite --mode test",
-    "build": "vite build && svelte-package",
+    "build": "vite build && svelte-package && node ../../scripts/generate-stub-from-manifest.js",
     "build:watch": "vite build --watch",
     "preview": "vite preview",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",

@@ -17,7 +17,7 @@
     "./manifest": "./dist/manifest.json"
   },
   "scripts": {
-    "build": "VITE_BUILD_PACKAGE=events vite build --mode library",
+    "build": "VITE_BUILD_PACKAGE=events vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
     "dev": "vite",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "npx vitest run --passWithNoTests",
