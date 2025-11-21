@@ -37,7 +37,7 @@
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "npx vitest run --passWithNoTests",
     "test:watch": "npx vitest",
-    "build": "vite build",
+    "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",
     "build:watch": "vite build --watch",
     "clean": "rm -rf dist",
     "dev": "npm run build:watch & npm run test:watch"
