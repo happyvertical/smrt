@@ -1,5 +1,12 @@
 # @happyvertical/smrt-docs-mcp
 
+## 0.16.3
+
+### Patch Changes
+
+- 721e5b9: - fix(ci): auto-generate changesets in PR workflow
+  - fix(core): implement build-time field inheritance for STI classes
+
 ## 0.16.2
 
 ## 0.16.1

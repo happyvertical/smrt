@@ -1,5 +1,16 @@
 # @happyvertical/smrt-cli
 
+## 0.16.3
+
+### Patch Changes
+
+- 721e5b9: - fix(ci): auto-generate changesets in PR workflow
+  - fix(core): implement build-time field inheritance for STI classes
+- Updated dependencies [721e5b9]
+  - @happyvertical/smrt-config@0.16.3
+  - @happyvertical/smrt-core@0.16.3
+  - @happyvertical/smrt-types@0.16.3
+
 ## 0.16.2
 
 ### Patch Changes
