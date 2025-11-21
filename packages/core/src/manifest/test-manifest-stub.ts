@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763668683104,
+  "timestamp": 1763683775877,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -1841,6 +1841,190 @@ export const testManifest: SmartObjectManifest = {
       "extends": "SmrtObject",
       "exportName": "Issue35TestObjectWeakSet",
       "collectionExportName": "Issue35TestObjectWeakSetCollection"
+    },
+    "issue370profile": {
+      "name": "issue370profile",
+      "className": "Issue370Profile",
+      "collection": "issue370profiles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "bio": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "Issue370Profile",
+      "collectionExportName": "Issue370ProfileCollection"
+    },
+    "issue370profilecollection": {
+      "name": "issue370profilecollection",
+      "className": "Issue370ProfileCollection",
+      "collection": "issue370profilecollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "Issue370ProfileCollection",
+      "collectionExportName": "Issue370ProfileCollectionCollection"
+    },
+    "issue370person": {
+      "name": "issue370person",
+      "className": "Issue370Person",
+      "collection": "issue370persons",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "bio": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Issue370Profile",
+      "exportName": "Issue370Person",
+      "collectionExportName": "Issue370PersonCollection"
+    },
+    "issue370personcollection": {
+      "name": "issue370personcollection",
+      "className": "Issue370PersonCollection",
+      "collection": "issue370personcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "Issue370PersonCollection",
+      "collectionExportName": "Issue370PersonCollectionCollection"
+    },
+    "issue370organization": {
+      "name": "issue370organization",
+      "className": "Issue370Organization",
+      "collection": "issue370organizations",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "bio": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "website": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "foundedYear": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Issue370Profile",
+      "exportName": "Issue370Organization",
+      "collectionExportName": "Issue370OrganizationCollection"
+    },
+    "issue370organizationcollection": {
+      "name": "issue370organizationcollection",
+      "className": "Issue370OrganizationCollection",
+      "collection": "issue370organizationcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "Issue370OrganizationCollection",
+      "collectionExportName": "Issue370OrganizationCollectionCollection"
+    },
+    "issue370council": {
+      "name": "issue370council",
+      "className": "Issue370Council",
+      "collection": "issue370councils",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "bio": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "website": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "foundedYear": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "meetingsUrl": {
+          "type": "meta",
+          "required": false,
+          "default": ""
+        },
+        "timezone": {
+          "type": "meta",
+          "required": false,
+          "default": "America/Edmonton"
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "Issue370Organization",
+      "exportName": "Issue370Council",
+      "collectionExportName": "Issue370CouncilCollection"
+    },
+    "issue370councilcollection": {
+      "name": "issue370councilcollection",
+      "className": "Issue370CouncilCollection",
+      "collection": "issue370councilcollections",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "exportName": "Issue370CouncilCollection",
+      "collectionExportName": "Issue370CouncilCollectionCollection"
     },
     "place": {
       "name": "place",

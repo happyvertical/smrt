@@ -57,13 +57,14 @@ describe('CRUD Operations with @oneToMany Relationships', () => {
   });
 
   describe('CREATE operations', () => {
-    it('should create instance without ID initially', async () => {
+    it('should create instance with auto-generated ID', async () => {
       const parent = await parents.create({
         name: 'Test Parent',
       });
 
-      // ID is null until save() is called
-      expect(parent.id).toBeNull();
+      // ID is auto-generated and saved by create()
+      expect(parent.id).toBeDefined();
+      expect(parent.id).not.toBeNull();
       expect(parent.name).toBe('Test Parent');
     });
 

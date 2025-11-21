@@ -191,6 +191,11 @@ export class SmrtObject extends SmrtClass {
     if (options.created_at !== undefined) this.created_at = options.created_at;
     if (options.updated_at !== undefined) this.updated_at = options.updated_at;
 
+    // Set STI discriminator if present
+    if (options._meta_type !== undefined) {
+      (this as any)._meta_type = options._meta_type;
+    }
+
     // Get all fields (both Field instances and plain properties)
     const fields = await fieldsFromClass(
       this.constructor as new (
@@ -407,6 +412,9 @@ export class SmrtObject extends SmrtClass {
             `This usually means you're trying to load a row with the wrong class.`,
         );
       }
+
+      // Set _meta_type on the object
+      (this as any)._meta_type = formattedData._meta_type;
     }
 
     // STI: Meta fields are already merged by formatDataJs

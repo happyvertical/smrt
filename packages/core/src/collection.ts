@@ -822,7 +822,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (tableStrategy === 'sti' && options._meta_type) {
       // Use polymorphic instantiation for STI child classes
       // Pass raw options (not params) - createPolymorphic() will add ai, db, _skipLoad
-      return await this.createPolymorphic(options._meta_type, options);
+      const instance = await this.createPolymorphic(
+        options._meta_type,
+        options,
+      );
+      // Generate ID if not provided, then save
+      if (!instance.id) {
+        (instance as any)._id = crypto.randomUUID();
+      }
+      await instance.save();
+      return instance;
     }
 
     // For non-STI or STI base class without _meta_type, proceed with direct instantiation
@@ -841,6 +850,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Direct instantiation - all SmrtObject classes support this pattern
     const instance = new this._itemClass(params);
     await instance.initialize();
+    // Generate ID if not provided, then save
+    if (!instance.id) {
+      (instance as any)._id = crypto.randomUUID();
+    }
+    await instance.save();
     return instance;
   }
 

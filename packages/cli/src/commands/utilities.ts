@@ -156,11 +156,37 @@ export const utilityCommands: Record<string, CLICommand> = {
           console.warn('⚠️  Could not read package.json');
         }
 
-        // Generate manifest with package name
+        // Discover external SMRT packages for field inheritance
+        console.log('[smrt test] Discovering external SMRT packages...');
+        const { discoverSmrtPackages } = await import(
+          '@happyvertical/smrt-core/manifest/discover-smrt-packages'
+        );
+        const smrtDependencies = discoverSmrtPackages();
+
+        if (smrtDependencies.length > 0) {
+          console.log(
+            `[smrt test] Found ${smrtDependencies.length} external SMRT package(s): ${smrtDependencies.join(', ')}`,
+          );
+        } else {
+          console.log('[smrt test] No external SMRT packages found');
+        }
+
+        // Generate manifest - first pass without external dependencies
         const generator = new ManifestGenerator();
         const manifest = generator.generateManifest(scanResults, {
           packageName,
         });
+
+        // Add smrtDependencies to manifest
+        if (smrtDependencies.length > 0) {
+          manifest.smrtDependencies = smrtDependencies;
+
+          // Re-run field inheritance merging now that we have external dependencies
+          console.log(
+            '[smrt test] Re-merging fields with external package support...',
+          );
+          (generator as any).mergeInheritedFields(manifest);
+        }
 
         console.log(
           `[MANIFEST] Generated manifest with ${Object.keys(manifest.objects).length} objects`,
