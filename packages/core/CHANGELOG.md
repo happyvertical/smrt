@@ -1,5 +1,34 @@
 # @happyvertical/smrt-core
 
+## 0.17.0
+
+### Minor Changes
+
+- 620e56b: Add transformJSON() hook and preventative measures for safe JSON serialization
+
+  **New Features:**
+
+  - Add `transformJSON()` hook to `SmrtObject` for safe JSON serialization customization
+  - Add runtime development check for unsafe `toJSON()` overrides in STI classes
+  - Add comprehensive test suite for `transformJSON()` hook (12 tests)
+
+  **Bug Fixes:**
+
+  - Fix Content class `toJSON()` override that broke STI for descendants (issue #377)
+  - Add STI compatibility tests for Content, ContentDocument, and Article (17 tests)
+
+  **Documentation:**
+
+  - Add warnings about `toJSON()` override dangers in core and content docs
+  - Document `transformJSON()` hook pattern as recommended approach
+
+  Closes #377, #378, #379
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.17.0
+- @happyvertical/smrt-types@0.17.0
+
 ## 0.16.5
 
 ### Patch Changes
