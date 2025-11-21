@@ -661,6 +661,21 @@ class Product extends SmrtObject {
 
 For complete workflow details, see [WORKFLOW.md](./WORKFLOW.md).
 
+### Changesets and Versioning
+
+⚠️ **IMPORTANT: Never create changesets manually or use `[skip ci]` in PR commits**
+
+This project uses [Changesets](https://github.com/changesets/changesets) for versioning and package releases:
+
+- **Automated Generation**: Changesets are auto-generated from conventional commits via GitHub Actions
+- **Workflow**: When you open a PR, the workflow runs `pnpm run changeset:auto` to generate changesets
+- **No Manual Creation**: Don't run `npx changeset` or create changeset files manually
+- **Critical: Avoid `[skip ci]`**: Using `[skip ci]` in any commit message will prevent the on-merge-main workflow from running, which breaks package publishing
+
+**Why this matters**: When a PR with `[skip ci]` in any commit is merged to main, GitHub Actions skips the entire merge workflow, including building and publishing packages. This requires manual intervention to trigger the publish workflow.
+
+For complete changeset workflow and troubleshooting, see [CHANGESETS.md](./CHANGESETS.md).
+
 ### Testing Requirements
 
 All code changes must include tests following [TESTING_STANDARD.md](../TESTING_STANDARD.md):
@@ -761,13 +776,23 @@ See [.github/TRIAGE_SOP.md](.github/TRIAGE_SOP.md) for complete details.
 
 ## Release Management
 
-The framework uses semantic-release for automated versioning:
+The framework uses [Changesets](https://github.com/changesets/changesets) for automated versioning and publishing:
 
 ```bash
-npm run release:preview  # Preview next release
-npm run release:dry-run  # Dry run
-npm run release          # Full release (CI handles this)
+# Preview what will be released
+pnpm run changeset:version  # Update package versions based on changesets
+
+# Publish (handled automatically by CI on merge to main)
+pnpm run changeset:publish  # Publish packages to registry
 ```
+
+**Important**: Package releases are fully automated:
+1. PRs generate changesets from conventional commits
+2. Merging to main triggers the on-merge-main workflow
+3. Workflow builds, versions, and publishes packages automatically
+4. No manual `npm publish` needed
+
+See [CHANGESETS.md](./CHANGESETS.md) for complete release workflow documentation.
 
 ---
 
