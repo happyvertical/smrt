@@ -16,7 +16,7 @@ import { SmrtObject, smrt } from '../index';
 
 // Shared test classes defined at module level
 @smrt()
-class Article extends SmrtObject {
+class TransformJSONTestArticle extends SmrtObject {
   public name: string = '';
   public title: string = '';
   public body: string = '';
@@ -54,7 +54,7 @@ describe('transformJSON() Hook', () => {
 
   describe('Basic Transformation', () => {
     it('should call transformJSON() during toJSON()', async () => {
-      const article = new Article({
+      const article = new TransformJSONTestArticle({
         name: 'test-article',
         title: 'Test Article',
         body: 'This is a test article with some content for testing.',
@@ -71,7 +71,7 @@ describe('transformJSON() Hook', () => {
     });
 
     it('should allow adding custom fields', async () => {
-      const article = new Article({
+      const article = new TransformJSONTestArticle({
         name: 'test-article',
         title: 'Test Article',
         body: 'Short content.',
@@ -87,8 +87,7 @@ describe('transformJSON() Hook', () => {
     });
 
     it('should allow modifying existing fields', async () => {
-      // Use Article class but override transformJSON in instance
-      const article = new Article({
+      const article = new TransformJSONTestArticle({
         name: 'test',
         title: 'lowercase title',
         body: 'test',
@@ -109,8 +108,7 @@ describe('transformJSON() Hook', () => {
     });
 
     it('should allow filtering fields', async () => {
-      // Use Article and demonstrate filtering via transformJSON
-      const article = new Article({
+      const article = new TransformJSONTestArticle({
         name: 'test',
         title: 'Public Title',
         body: 'body content',
