@@ -143,6 +143,24 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Protected setter for ID to maintain type safety
+   * Used internally by collection.create() and other framework code
+   * @internal
+   */
+  protected setId(id: string): void {
+    this._id = id;
+  }
+
+  /**
+   * Protected setter for STI discriminator to maintain type safety
+   * Used internally for Single Table Inheritance support
+   * @internal
+   */
+  protected setMetaType(metaType: string): void {
+    (this as any)._meta_type = metaType;
+  }
+
+  /**
    * Smart clone helper to avoid array/object aliasing (Issue #22)
    *
    * Clones values to prevent shared references between options and instance properties:
@@ -193,7 +211,7 @@ export class SmrtObject extends SmrtClass {
 
     // Set STI discriminator if present
     if (options._meta_type !== undefined) {
-      (this as any)._meta_type = options._meta_type;
+      this.setMetaType(options._meta_type);
     }
 
     // Get all fields (both Field instances and plain properties)
@@ -414,7 +432,7 @@ export class SmrtObject extends SmrtClass {
       }
 
       // Set _meta_type on the object
-      (this as any)._meta_type = formattedData._meta_type;
+      this.setMetaType(formattedData._meta_type);
     }
 
     // STI: Meta fields are already merged by formatDataJs

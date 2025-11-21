@@ -185,7 +185,7 @@ export const utilityCommands: Record<string, CLICommand> = {
           console.log(
             '[smrt test] Re-merging fields with external package support...',
           );
-          (generator as any).mergeInheritedFields(manifest);
+          generator.mergeInheritedFields(manifest);
         }
 
         console.log(

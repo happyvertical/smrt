@@ -10,7 +10,8 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763668683104,  "objects": {
+  "timestamp": 1763685662302,
+  "objects": {
     "testobject": {
       "name": "testobject",
       "className": "TestObject",
@@ -1953,18 +1954,6 @@ export const testManifest: SmartObjectManifest = {
       "extends": "Issue370Profile",
       "exportName": "Issue370Organization",
       "collectionExportName": "Issue370OrganizationCollection"
-    },
-    "issue370organizationcollection": {
-      "name": "issue370organizationcollection",
-      "className": "Issue370OrganizationCollection",
-      "collection": "issue370organizationcollections",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/issue-370-sti-field-loading.test.ts",
-      "fields": {},
-      "methods": {},
-      "decoratorConfig": {},
-      "extends": "SmrtCollection",
-      "exportName": "Issue370OrganizationCollection",
-      "collectionExportName": "Issue370OrganizationCollectionCollection"
     },
     "issue370council": {
       "name": "issue370council",

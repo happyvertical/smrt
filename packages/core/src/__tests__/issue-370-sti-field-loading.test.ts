@@ -25,7 +25,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
-import { ObjectRegistry, smrt } from '../registry';
+import { smrt } from '../registry';
 import type { Meta } from '../types';
 
 /**
@@ -65,10 +65,6 @@ class Issue370PersonCollection extends SmrtCollection<Issue370Person> {
 class Issue370Organization extends Issue370Profile {
   website: string = '';
   foundedYear: number = 0;
-}
-
-class Issue370OrganizationCollection extends SmrtCollection<Issue370Organization> {
-  static readonly _itemClass = Issue370Organization;
 }
 
 /**
@@ -151,24 +147,8 @@ describe('Issue #370: STI Field Loading', () => {
         timezone: 'America/Edmonton',
       });
 
-      await council.save();
-
-      console.log('[Issue #370] Issue370Council after save:', {
-        id: council.id,
-        name: council.name,
-        meetingsUrl: council.meetingsUrl,
-        timezone: council.timezone,
-      });
-
       // Load from database
       const loaded = await councils.findById(council.id!);
-
-      console.log('[Issue #370] Issue370Council after load:', {
-        id: loaded?.id,
-        name: loaded?.name,
-        meetingsUrl: loaded?.meetingsUrl,
-        timezone: loaded?.timezone,
-      });
 
       // ISSUE: Fields should have values but may return null
       expect(loaded).toBeDefined();
@@ -189,8 +169,6 @@ describe('Issue #370: STI Field Loading', () => {
         foundedYear: 1950,
         meetingsUrl: 'https://metro.gov/meetings',
       });
-
-      await council.save();
 
       const loaded = await councils.findById(council.id!);
 
@@ -248,17 +226,8 @@ describe('Issue #370: STI Field Loading', () => {
         timezone: 'America/Vancouver',
       });
 
-      await council.save();
-
       // Query database directly to inspect _meta_data column
       const row = await db.get('issue370profiles', { id: council.id });
-
-      console.log('[Issue #370] Database row:', {
-        id: row?.id,
-        name: row?.name,
-        _meta_type: row?._meta_type,
-        _meta_data: row?._meta_data,
-      });
 
       expect(row).toBeDefined();
       expect(row?._meta_type).toBe('Issue370Council');
@@ -296,14 +265,6 @@ describe('Issue #370: STI Field Loading', () => {
 
       // Polymorphic query should return all types
       const all = await profiles.list({});
-
-      console.log(
-        '[Issue #370] Polymorphic query results:',
-        all.map((p) => ({
-          type: (p as any)._meta_type,
-          name: p.name,
-        })),
-      );
 
       expect(all.length).toBeGreaterThanOrEqual(3);
 

@@ -113,7 +113,7 @@ export class ManifestGenerator {
    *
    * @param manifest - The manifest to process in-place
    */
-  private mergeInheritedFields(manifest: SmartObjectManifest): void {
+  public mergeInheritedFields(manifest: SmartObjectManifest): void {
     // Build a map of className -> objectDef for fast lookup
     const objectsByName = new Map<string, SmartObjectDefinition>();
     for (const [name, obj] of Object.entries(manifest.objects)) {
@@ -299,18 +299,11 @@ export class ManifestGenerator {
     smrtDependencies: string[],
     objectsByName: Map<string, SmartObjectDefinition>,
   ): SmartObjectDefinition | undefined {
-    console.log(
-      `[manifest-generator] Parent '${parentClassName}' not found in local manifest, checking external packages...`,
-    );
-
     // Try each external SMRT dependency
     for (const packageName of smrtDependencies) {
       const externalManifest = loadExternalManifestSync(packageName);
 
       if (!externalManifest) {
-        console.log(
-          `[manifest-generator] Could not load manifest from ${packageName}`,
-        );
         continue;
       }
 
@@ -321,9 +314,6 @@ export class ManifestGenerator {
 
       if (parentKey) {
         const parentObj = externalManifest.objects[parentKey];
-        console.log(
-          `[manifest-generator] ✅ Found parent '${parentClassName}' in ${packageName}`,
-        );
 
         // Cache the loaded parent object for future lookups
         objectsByName.set(parentObj.className, parentObj);
@@ -333,9 +323,6 @@ export class ManifestGenerator {
       }
     }
 
-    console.log(
-      `[manifest-generator] ⚠️  Parent '${parentClassName}' not found in any external package`,
-    );
     return undefined;
   }
 
