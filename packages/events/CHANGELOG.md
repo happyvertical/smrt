@@ -1,5 +1,17 @@
 # @happyvertical/smrt-events
 
+## 0.16.4
+
+### Patch Changes
+
+- 83f8ce4: fix(events): regenerate test-manifest-stub with correct required: false for optional FK fields
+
+  Fixes #373 - Event.seriesId validation no longer prevents standalone events
+
+  - @happyvertical/smrt-core@0.16.4
+  - @happyvertical/smrt-places@0.16.4
+  - @happyvertical/smrt-profiles@0.16.4
+
 ## 0.16.3
 
 ### Patch Changes
