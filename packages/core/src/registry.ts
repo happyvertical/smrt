@@ -305,6 +305,12 @@ export class ObjectRegistry {
     100,
   );
   /**
+   * WeakMap to assign unique IDs to database instances for cache keys
+   * Prevents cache key collisions when different db instances are used
+   */
+  private static dbInstanceIds = new WeakMap<object, number>();
+  private static nextDbId = 1;
+  /**
    * Global cache for inheritance chains (shared across all instances)
    * Maps className → full inheritance chain (base to child)
    * Performance optimization: ~100x faster than re-walking prototype chain
@@ -1012,6 +1018,9 @@ export class ObjectRegistry {
     ObjectRegistry.collectionCache.clear();
     ObjectRegistry.getInheritanceCache().clear();
     ObjectRegistry.fieldDecorators.clear();
+    // Note: dbInstanceIds WeakMap will be garbage collected automatically
+    // Reset the counter for clean test state
+    ObjectRegistry.nextDbId = 1;
   }
 
   /**
@@ -1118,9 +1127,22 @@ export class ObjectRegistry {
     // Create a cache key from className and relevant options
     // We use a simplified key that includes only persistence config
     // to avoid cache misses from transient options
+
+    // CRITICAL FIX for issue #384: Use unique db instance ID for cache key
+    // Without this, different tests with different db instances would share
+    // the same cached collection, causing queries to hit the wrong database
+    let dbId: number | undefined;
+    if (options.db && typeof options.db === 'object') {
+      // Get or assign unique ID for this db instance
+      if (!ObjectRegistry.dbInstanceIds.has(options.db)) {
+        ObjectRegistry.dbInstanceIds.set(options.db, ObjectRegistry.nextDbId++);
+      }
+      dbId = ObjectRegistry.dbInstanceIds.get(options.db);
+    }
+
     const cacheKey = `${className}:${JSON.stringify({
       persistence: options.persistence,
-      db: options.db ? 'present' : undefined,
+      db: dbId !== undefined ? `db:${dbId}` : undefined,
       ai: options.ai ? 'present' : undefined,
     })}`;
 
