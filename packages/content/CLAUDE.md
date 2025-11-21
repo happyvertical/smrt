@@ -69,6 +69,51 @@ The primary data model representing structured content objects with comprehensiv
 - Full REST API automatically generated via @smrt decorator
 - MCP tools enable AI-powered content management
 
+**⚠️ WARNING: Do Not Override toJSON()**
+
+The `toJSON()` method is inherited from `SmrtObject` and handles critical infrastructure:
+- **STI discriminator** (`_meta_type`) assignment for polymorphic queries
+- **Meta field extraction** (`_meta_data`) for child-specific fields
+- **Field serialization** from manifest
+
+**DO NOT override** toJSON() unless you call `super.toJSON()` first. Use the `transformJSON()` hook for safe customization instead.
+
+**Example of broken override:**
+```typescript
+// ❌ WRONG - breaks STI for all Content descendants
+class MyContent extends Content {
+  toJSON() {
+    return { custom: 'fields' };  // Missing super call!
+  }
+}
+```
+
+**Correct approach if override needed:**
+```typescript
+// ✅ CORRECT - calls super
+class MyContent extends Content {
+  toJSON() {
+    const data = super.toJSON();  // Get framework data
+    return data;  // Or add custom logic
+  }
+}
+```
+
+**Better approach - use transformJSON() hook:**
+```typescript
+// ✅ BEST - use transformJSON() hook
+class MyContent extends Content {
+  protected transformJSON(data: any): any {
+    return {
+      ...data,
+      wordCount: this.body.split(/\s+/).length
+    };
+  }
+}
+```
+
+See [issue #377](https://github.com/happyvertical/smrt/issues/377) for details on why this is critical.
+
 ### Contents Class (`contents.ts`)
 Collection manager for Content objects with advanced batch operations.
 

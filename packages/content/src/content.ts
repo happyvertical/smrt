@@ -265,27 +265,14 @@ export class Content extends SmrtObject {
   }
 
   /**
-   * Converts this content object to a plain JSON object
+   * Note: toJSON() is inherited from SmrtObject
    *
-   * @returns JSON representation of this content
+   * The parent implementation handles:
+   * - STI discriminator (_meta_type) for polymorphic queries
+   * - Meta field extraction (_meta_data) for child-specific fields
+   * - Automatic serialization of all fields from manifest
+   *
+   * DO NOT override toJSON() unless you call super.toJSON() first.
+   * See issue #377 for details on why this override was removed.
    */
-  public toJSON() {
-    return {
-      id: this.id || '',
-      slug: this.slug || '',
-      context: this.context || '',
-      type: this.type,
-      variant: this.variant || '',
-      fileKey: this.fileKey || '',
-      author: this.author || '',
-      title: this.title || '',
-      description: this.description || '',
-      body: this.body || '',
-      publish_date: this.publish_date || '',
-      url: this.url || '',
-      source: this.source || '',
-      status: this.status || 'draft',
-      state: this.state || 'active',
-    };
-  }
 }

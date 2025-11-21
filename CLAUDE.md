@@ -99,6 +99,53 @@ class Document extends SmrtObject {
 }
 ```
 
+**⚠️ WARNING: Do Not Override toJSON()**
+
+The `toJSON()` method in `SmrtObject` handles critical framework infrastructure. **DO NOT override** this method unless you call `super.toJSON()` first.
+
+**What toJSON() handles:**
+- **STI discriminator** (`_meta_type`) for polymorphic queries
+- **Meta field extraction** (`_meta_data`) for child-specific fields
+- **Automatic serialization** of all fields from manifest
+
+**The Safe Way - Use transformJSON() Hook:**
+```typescript
+class Document extends SmrtObject {
+  title: string = '';
+  content: string = '';
+
+  // ✅ CORRECT - Use transformJSON() hook
+  protected transformJSON(data: any): any {
+    return {
+      ...data,
+      wordCount: this.content.split(/\s+/).length,
+      preview: this.content.substring(0, 100)
+    };
+  }
+}
+```
+
+**The Dangerous Way - Overriding toJSON():**
+```typescript
+// ❌ WRONG - breaks STI and meta fields
+class Document extends SmrtObject {
+  toJSON() {
+    return { id: this.id, title: this.title };
+    // Missing: _meta_type, _meta_data, other fields!
+  }
+}
+
+// ✅ CORRECT - calls super if you must override
+class Document extends SmrtObject {
+  toJSON() {
+    const data = super.toJSON();
+    return { ...data, customField: 'value' };
+  }
+}
+```
+
+See [issue #377](https://github.com/happyvertical/smrt/issues/377) for details.
+
 ### Create and Use Collections
 
 ```typescript

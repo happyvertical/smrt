@@ -10,7 +10,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 export const testManifest: SmartObjectManifest = {
   "version": "1.0.0",
-  "timestamp": 1763701246703,
+  "timestamp": 1763759431455,
   "objects": {
     "testobject": {
       "name": "testobject",
@@ -3527,6 +3527,53 @@ export const testManifest: SmartObjectManifest = {
       "extends": "SmrtCollection",
       "exportName": "PolyConferenceCollection",
       "collectionExportName": "PolyConferenceCollectionCollection"
+    },
+    "transformjsontestarticle": {
+      "name": "transformjsontestarticle",
+      "className": "TransformJSONTestArticle",
+      "collection": "transformjsontestarticles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/core/src/__tests__/transform-json-hook.test.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "transformJSON": {
+          "name": "transformJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {},
+        "mcp": {},
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "TransformJSONTestArticle",
+      "collectionExportName": "TransformJSONTestArticleCollection"
     },
     "mcpintegrationtestproduct": {
       "name": "mcpintegrationtestproduct",

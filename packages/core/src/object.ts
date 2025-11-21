@@ -552,6 +552,39 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Hook for customizing JSON serialization
+   *
+   * Override this method to add custom fields or transform serialized data.
+   * This is the **recommended way** to customize serialization.
+   *
+   * **DO NOT override toJSON() directly** as it handles critical framework infrastructure:
+   * - STI discriminator (`_meta_type`) assignment
+   * - Meta field extraction (`_meta_data`)
+   * - Field serialization from manifest
+   *
+   * @param data - Serialized object data from framework
+   * @returns Transformed data (can add/modify/remove fields)
+   *
+   * @example
+   * ```typescript
+   * class Article extends SmrtObject {
+   *   protected transformJSON(data: any): any {
+   *     return {
+   *       ...data,
+   *       wordCount: this.body.split(/\s+/).length,
+   *       preview: this.body.substring(0, 100)
+   *     };
+   *   }
+   * }
+   * ```
+   *
+   * @see https://github.com/happyvertical/smrt/issues/377
+   */
+  protected transformJSON(data: any): any {
+    return data; // Default: no transformation
+  }
+
+  /**
    * Custom JSON serialization
    * Returns a plain object with all field values for proper JSON.stringify() behavior
    * Field instances automatically call their toJSON() method during serialization
@@ -564,6 +597,9 @@ export class SmrtObject extends SmrtClass {
    * STI Support: If using Single Table Inheritance (tableStrategy: 'sti'):
    * - Sets _meta_type discriminator to class name
    * - Extracts meta fields to _meta_data JSONB column
+   *
+   * **Customization:** Override `transformJSON()` instead of this method.
+   * See transformJSON() documentation for safe customization patterns.
    */
   toJSON() {
     const data: any = {
@@ -667,7 +703,9 @@ export class SmrtObject extends SmrtClass {
       }
     }
 
-    return data;
+    // Call transformation hook to allow safe customization
+    // This enables subclasses to add/modify fields without overriding toJSON()
+    return this.transformJSON(data);
   }
 
   /**
@@ -790,6 +828,26 @@ export class SmrtObject extends SmrtClass {
 
       // Execute save operation with retry logic for transient failures
       // Use per-adapter upsert method instead of generating SQL
+
+      // Development-mode warning: Detect unsafe toJSON() overrides in STI classes
+      if (process.env.NODE_ENV === 'development') {
+        const hasOverride = this.toJSON !== SmrtObject.prototype.toJSON;
+        const tableStrategy = ObjectRegistry.getTableStrategy(
+          this.constructor.name,
+        );
+        const usesSTI = tableStrategy === 'sti';
+
+        if (hasOverride && usesSTI) {
+          console.warn(
+            `[SMRT STI Warning] ${this.constructor.name} overrides toJSON() but uses STI.\n` +
+              `Ensure super.toJSON() is called or _meta_type is set manually.\n` +
+              `This can cause "Missing _meta_type discriminator" errors.\n` +
+              `Prefer using the transformJSON() hook instead of overriding toJSON().\n` +
+              `See issue #377: https://github.com/happyvertical/smrt/issues/377`,
+          );
+        }
+      }
+
       const jsonData = this.toJSON();
 
       // STI: Fail-fast validation for _meta_type discriminator
