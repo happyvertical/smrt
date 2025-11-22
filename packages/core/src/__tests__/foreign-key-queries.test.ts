@@ -481,4 +481,146 @@ describe('Foreign Key Queries in STI Models', () => {
       ).toBe(true);
     });
   });
+
+  describe('Collection.count() STI Filtering', () => {
+    it('should count only records matching STI child type', async () => {
+      const parent = new FKQueryParent({ name: 'Test Parent', db });
+      await parent.initialize();
+      await parent.save();
+
+      // Create 3 Agendas
+      for (let i = 0; i < 3; i++) {
+        const agenda = new FKQueryAgenda({
+          parentId: parent.id,
+          title: `Agenda ${i + 1}`,
+          db,
+        });
+        await agenda.initialize();
+        await agenda.save();
+      }
+
+      // Create 2 Minutes
+      for (let i = 0; i < 2; i++) {
+        const minutes = new FKQueryMinutes({
+          parentId: parent.id,
+          title: `Minutes ${i + 1}`,
+          db,
+        });
+        await minutes.initialize();
+        await minutes.save();
+      }
+
+      // Query each collection - should only count matching types
+      const agendaCollection = await ObjectRegistry.getCollection<
+        typeof FKQueryAgenda.prototype
+      >('FKQueryAgenda', { db });
+
+      const minutesCollection = await ObjectRegistry.getCollection<
+        typeof FKQueryMinutes.prototype
+      >('FKQueryMinutes', { db });
+
+      const agendaCount = await agendaCollection.count({
+        where: { parentId: parent.id },
+      });
+
+      const minutesCount = await minutesCollection.count({
+        where: { parentId: parent.id },
+      });
+
+      // Must count only the correct STI type (not all types in shared table)
+      expect(agendaCount).toBe(3); // Only Agendas, not 5 total
+      expect(minutesCount).toBe(2); // Only Minutes, not 5 total
+    });
+
+    it('should count all STI types when querying base collection', async () => {
+      const parent = new FKQueryParent({ name: 'Test Parent', db });
+      await parent.initialize();
+      await parent.save();
+
+      // Create 3 Agendas + 2 Minutes (all with title prefix "Test")
+      for (let i = 0; i < 3; i++) {
+        const agenda = new FKQueryAgenda({
+          parentId: parent.id,
+          title: `Test Agenda ${i + 1}`,
+          db,
+        });
+        await agenda.initialize();
+        await agenda.save();
+      }
+
+      for (let i = 0; i < 2; i++) {
+        const minutes = new FKQueryMinutes({
+          parentId: parent.id,
+          title: `Test Minutes ${i + 1}`,
+          db,
+        });
+        await minutes.initialize();
+        await minutes.save();
+      }
+
+      // Query base collection - should count ALL types
+      const baseCollection = await ObjectRegistry.getCollection<
+        typeof FKQueryBaseDoc.prototype
+      >('FKQueryBaseDoc', { db });
+
+      // Count all records (no WHERE clause to avoid querying child-only fields)
+      const totalCount = await baseCollection.count();
+
+      // Base collection should count all child types
+      expect(totalCount).toBe(5); // 3 Agendas + 2 Minutes
+    });
+
+    it('should combine _meta_type filter with custom WHERE clause', async () => {
+      const parent1 = new FKQueryParent({ name: 'Parent 1', db });
+      await parent1.initialize();
+      await parent1.save();
+
+      const parent2 = new FKQueryParent({ name: 'Parent 2', db });
+      await parent2.initialize();
+      await parent2.save();
+
+      // Create 2 Agendas for parent1
+      for (let i = 0; i < 2; i++) {
+        const agenda = new FKQueryAgenda({
+          parentId: parent1.id,
+          title: `P1 Agenda ${i + 1}`,
+          db,
+        });
+        await agenda.initialize();
+        await agenda.save();
+      }
+
+      // Create 1 Agenda for parent2
+      const agenda = new FKQueryAgenda({
+        parentId: parent2.id,
+        title: 'P2 Agenda',
+        db,
+      });
+      await agenda.initialize();
+      await agenda.save();
+
+      // Create 2 Minutes for parent1
+      for (let i = 0; i < 2; i++) {
+        const minutes = new FKQueryMinutes({
+          parentId: parent1.id,
+          title: `P1 Minutes ${i + 1}`,
+          db,
+        });
+        await minutes.initialize();
+        await minutes.save();
+      }
+
+      const agendaCollection = await ObjectRegistry.getCollection<
+        typeof FKQueryAgenda.prototype
+      >('FKQueryAgenda', { db });
+
+      // Count Agendas for parent1 only
+      const parent1AgendaCount = await agendaCollection.count({
+        where: { parentId: parent1.id },
+      });
+
+      // Should count ONLY parent1's Agendas (not parent1's Minutes)
+      expect(parent1AgendaCount).toBe(2); // 2 Agendas, not 4 total docs
+    });
+  });
 });

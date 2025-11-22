@@ -1055,7 +1055,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   public async count(options: { where?: Record<string, any> } = {}) {
     // Schema already initialized in Collection.create() static factory
 
-    const { where } = options;
+    let { where } = options;
+
+    // Fix for issue #386: Add _meta_type filter for STI child collections
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const isSTI = tableStrategy === 'sti';
+
+    if (isSTI) {
+      const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
+      // If this is a child collection (not the base), auto-filter by type
+      if (stiBase && stiBase !== this._itemClass.name) {
+        where = {
+          _meta_type: this._itemClass.name,
+          ...(where || {}),
+        };
+      }
+    }
+
     const { sql: whereSql, values: whereValues } = buildWhere(
       await this.convertWhereKeys(where || {}),
     );
