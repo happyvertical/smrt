@@ -51,7 +51,6 @@ pre-push:
         Your code has formatting issues. Run `npm run format` to fix them.
 
     validate-all-workflows:
-      files: git diff --name-only @{push}..HEAD
       run: |
         echo "🔍 Validating ALL workflow files before push..."
         exit_code=0
