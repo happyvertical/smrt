@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.17.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - replace broken changeset generation script (#390) (ci)
+  - allow workflow_dispatch to trigger build and publish jobs (#388) (workflows)
+  - add \_meta_type filter to Collection.findOne() for STI type discrimination (#387) (core)
+  - @happyvertical/smrt-config@0.17.1
+  - @happyvertical/smrt-types@0.17.1
+
 ## 0.17.0
 
 ### Minor Changes
