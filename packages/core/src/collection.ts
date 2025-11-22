@@ -419,7 +419,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
-    const where =
+    let where =
       typeof filter === 'string'
         ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
             filter,
@@ -427,6 +427,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           ? { id: filter }
           : { slug: filter, context: '' }
         : filter;
+
+    // Fix for issue #386: Add _meta_type filter for STI child collections
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const isSTI = tableStrategy === 'sti';
+
+    if (isSTI) {
+      const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
+      // If this is a child collection (not the base), auto-filter by type
+      if (stiBase && stiBase !== this._itemClass.name) {
+        where = {
+          _meta_type: this._itemClass.name,
+          ...where,
+        };
+      }
+    }
 
     // Fix for issue #384: Split await to ensure proper async resolution
     const convertedWhere = await this.convertWhereKeys(where);
@@ -441,10 +456,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const fields = await this.getFields();
     const formattedData = formatDataJs(rows[0], fields);
-
-    // STI: Use _meta_type to determine correct class to instantiate
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
-    const isSTI = tableStrategy === 'sti';
 
     if (isSTI && formattedData._meta_type) {
       return await this.createPolymorphic(
