@@ -153,53 +153,6 @@ jobs:
           echo "  - Workflow errors checked with actionlint"
           echo "  - Shellcheck warnings validated"
 
-  generate-changesets:
-    name: Generate Changesets from Commits
-    runs-on: ubuntu-latest
-    needs: [validate-commits]
-
-    steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          node-version: '24'
-          install-deps: 'true'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate changesets from conventional commits
-        run: |
-          echo "🔍 Checking for existing changesets..."
-          pnpm run changeset:auto
-
-      - name: Commit generated changesets
-        if: success()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          if [ -n "$(git status --porcelain .changeset)" ]; then
-            git add .changeset
-            git commit -m "chore: auto-generate changesets [skip ci]"
-            git push
-            echo "✅ Generated and committed changesets"
-          else
-            echo "✅ No changesets needed (already exist)"
-          fi
-
-  changeset-check:
-    name: Check for Changeset
-    needs: [generate-changesets]
-    uses: ./.github/workflows/changeset-check.yml
-    with:
-      pr_number: ${{ github.event.pull_request.number }}
-      pr_title: ${{ github.event.pull_request.title }}
-
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

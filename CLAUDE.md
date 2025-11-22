@@ -663,12 +663,13 @@ For complete workflow details, see [WORKFLOW.md](./WORKFLOW.md).
 
 ### Changesets and Versioning
 
-⚠️ **IMPORTANT: Never create changesets manually or use `[skip ci]` in PR commits**
+⚠️ **IMPORTANT: Changesets are auto-generated on merge to main**
 
 This project uses [Changesets](https://github.com/changesets/changesets) for versioning and package releases:
 
-- **Automated Generation**: Changesets are auto-generated from conventional commits via GitHub Actions
-- **Workflow**: When you open a PR, the workflow runs `pnpm run changeset:auto` to generate changesets
+- **Automated Generation**: Changesets are auto-generated from conventional commits when PRs merge to main
+- **No Changesets in PRs**: PRs do NOT contain changeset files - they're generated during publish workflow
+- **PR Validation**: Only validates conventional commit format, not changeset presence
 - **No Manual Creation**: Don't run `npx changeset` or create changeset files manually
 - **Critical: Avoid `[skip ci]`**: Using `[skip ci]` in any commit message will prevent the on-merge-main workflow from running, which breaks package publishing
 
