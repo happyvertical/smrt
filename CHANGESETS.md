@@ -247,10 +247,13 @@ new retry configuration, agents updated to use retries.
 
 1. **Write conventional commits** on your feature branch
 2. **Open PR** to main branch
-3. **GitHub Action runs** (`.github/workflows/auto-changeset.yml`)
-4. **Script analyzes commits** (`scripts/generate-changesets-from-commits.js`)
-5. **Changeset generated** and committed to your PR branch
-6. **Bot comments** on PR with changeset details
+3. **PR validation** checks conventional commit format (`.github/workflows/on-pull-request.yml`)
+4. **Merge PR** to main branch
+5. **On-merge workflow triggers** publish workflow (`.github/workflows/on-merge-main.yml`)
+6. **Publish workflow auto-generates changesets** from conventional commits (`scripts/generate-changesets-from-commits.js`)
+7. **Versions bumped** and packages published to npm
+
+**Note:** Changesets are NOT created in PRs - they are auto-generated after merge to main as part of the publish workflow.
 
 ### Editing Auto-Generated Changesets
 
