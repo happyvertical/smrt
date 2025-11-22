@@ -122,10 +122,11 @@ jobs:
   build:
     name: Build
     needs: test
-    # Only run on direct pushes to main (not cascade events)
+    # Only run on direct pushes to main or manual triggers (not cascade events)
     if: |
       always() &&
-      github.event_name == 'push' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch') &&
       needs.test.result == 'success'
     uses: ./.github/workflows/build.yml
     permissions:
