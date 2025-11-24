@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.4
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - improve cascade job logging and error handling (#401) (workflows)
+  - @happyvertical/smrt-config@0.17.4
+  - @happyvertical/smrt-types@0.17.4
+
 ## 0.17.3
 
 ### Patch Changes
