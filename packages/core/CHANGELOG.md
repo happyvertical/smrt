@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve type aliases to infer string union types as text (#407) (scanner)
+  - @happyvertical/smrt-config@0.17.8
+  - @happyvertical/smrt-types@0.17.8
+
 ## 0.17.7
 
 ### Patch Changes
