@@ -1,5 +1,7 @@
 # @happyvertical/smrt-svelte
 
+## 0.17.5
+
 ## 0.17.4
 
 ## 0.17.3

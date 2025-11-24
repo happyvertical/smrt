@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use -f flag for cascade workflow dispatch fields (#403) (workflows)
+  - @happyvertical/smrt-config@0.17.5
+  - @happyvertical/smrt-types@0.17.5
+
 ## 0.17.4
 
 ### Patch Changes
