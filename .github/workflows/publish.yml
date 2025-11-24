@@ -188,33 +188,73 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "📢 Triggering dependency cascade for downstream repositories..."
-
-          # Get list of downstream targets from cascade config
-          config_url="https://raw.githubusercontent.com/happyvertical"
-          config_url="${config_url}/sdk/main/.github/cascade-config.json"
-          DOWNSTREAM_REPOS=$(curl -s "$config_url" | \
-            jq -r '.cascade.smrt.triggers[]' | tr '\n' ' ')
-
-          echo "Downstream repos: $DOWNSTREAM_REPOS"
+          echo ""
 
           # Get published version
           version="${{ needs.release.outputs.version }}"
-          echo "Published version: $version"
+          echo "📦 Published version: $version"
+          echo ""
+
+          # Get list of downstream targets from cascade config
+          echo "🔍 Fetching cascade configuration..."
+          config_url="https://raw.githubusercontent.com/happyvertical"
+          config_url="${config_url}/sdk/main/.github/cascade-config.json"
+          echo "   Config URL: $config_url"
+
+          if ! config_json=$(curl -s -f "$config_url"); then
+            echo "❌ Failed to fetch cascade configuration"
+            echo "   Check if $config_url exists and is accessible"
+            exit 1
+          fi
+
+          if [ -z "$config_json" ]; then
+            echo "❌ Cascade configuration is empty"
+            echo "   Check if $config_url contains valid JSON"
+            exit 1
+          fi
+
+          echo "✅ Configuration fetched successfully"
+          echo ""
+
+          DOWNSTREAM_REPOS=$(echo "$config_json" | \
+            jq -r '.cascade.smrt.triggers[]' 2>/dev/null | tr '\n' ' ')
+
+          if [ -z "$DOWNSTREAM_REPOS" ]; then
+            echo "⚠️  No downstream repositories configured"
+            echo "   Check cascade config: $config_url"
+            exit 0
+          fi
+
+          echo "🎯 Downstream repositories: $DOWNSTREAM_REPOS"
+          echo ""
 
           # Trigger each downstream repo using workflow_dispatch
+          success_count=0
+          fail_count=0
+
           for repo in $DOWNSTREAM_REPOS; do
-            echo "📤 Triggering $repo..."
-            gh workflow run on-merge-main.yml \
+            echo "📤 Triggering: happyvertical/$repo"
+            if gh workflow run on-merge-main.yml \
               --repo "happyvertical/$repo" \
               --ref main \
               --field upstream_package="@happyvertical/smrt" \
               --field upstream_version="$version" \
-              --field triggered_by="${{ github.actor }}" \
-              || echo "⚠️  Failed to trigger $repo" \
-                "(may not have workflow configured)"
+              --field triggered_by="${{ github.actor }}"; then
+              echo "   ✅ Successfully triggered"
+              ((success_count++))
+            else
+              echo "   ⚠️  Failed to trigger (may not have workflow configured)"
+              ((fail_count++))
+            fi
+            echo ""
           done
 
-          echo "✅ Triggered dependency cascade"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 Cascade Summary:"
+          echo "   ✅ Successful: $success_count"
+          echo "   ⚠️  Failed: $fail_count"
+          echo "   📦 Version: $version"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   deploy-docs:
     name: Deploy Documentation
