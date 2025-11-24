@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.6
+
+### Patch Changes
+
+- ### Features
+
+  - auto-cancel PR validation checks on merge (#402) (workflows)
+  - @happyvertical/smrt-config@0.17.6
+  - @happyvertical/smrt-types@0.17.6
+
 ## 0.17.5
 
 ### Patch Changes
