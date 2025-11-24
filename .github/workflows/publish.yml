@@ -237,9 +237,9 @@ jobs:
             if gh workflow run on-merge-main.yml \
               --repo "happyvertical/$repo" \
               --ref main \
-              --field upstream_package="@happyvertical/smrt" \
-              --field upstream_version="$version" \
-              --field triggered_by="${{ github.actor }}"; then
+              -f upstream_package="@happyvertical/smrt" \
+              -f upstream_version="$version" \
+              -f triggered_by="${{ github.actor }}"; then
               echo "   ✅ Successfully triggered"
               ((success_count++))
             else
