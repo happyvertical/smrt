@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.7
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use repository_dispatch for cascade triggers (#405) (workflows)
+  - @happyvertical/smrt-config@0.17.7
+  - @happyvertical/smrt-types@0.17.7
+
 ## 0.17.6
 
 ### Patch Changes
