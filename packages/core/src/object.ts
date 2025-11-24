@@ -626,9 +626,32 @@ export class SmrtObject extends SmrtClass {
     // For inheritance hierarchies, use cached inherited fields if available (populated by getAllFields())
     // This ensures multi-level STI classes serialize all parent fields correctly (Issue #332)
     const registered = ObjectRegistry.getClass(this.constructor.name);
-    const registeredFields =
+    let registeredFields =
       registered?.inheritedFields ||
       ObjectRegistry.getFields(this.constructor.name);
+
+    // In STI mode, we need to know about ALL sibling class fields to provide default values
+    // for fields that exist in siblings but not in this class (Issue #391)
+    if (isSTI) {
+      const stiBase = ObjectRegistry.getSTIBase(this.constructor.name);
+      if (stiBase) {
+        // Get all descendants (siblings + this class)
+        const descendants = ObjectRegistry.getDescendants(stiBase);
+        const allSTIFields = new Map(registeredFields);
+
+        // Merge fields from all sibling classes
+        for (const descendant of descendants) {
+          const descendantFields = ObjectRegistry.getFields(descendant);
+          for (const [key, value] of descendantFields) {
+            if (!allSTIFields.has(key)) {
+              allSTIFields.set(key, value);
+            }
+          }
+        }
+
+        registeredFields = allSTIFields;
+      }
+    }
 
     // Use manifest fields exclusively (manifest-first architecture)
     // All schema fields are in the manifest from AST scanning
@@ -671,26 +694,39 @@ export class SmrtObject extends SmrtClass {
       const prop = (this as any)[key];
       const value = this.getPropertyValue(key);
 
-      // Handle undefined values (Issue #205)
-      // For TEXT fields, convert undefined to empty string
+      // Handle undefined values (Issue #205, #391)
+      // In STI, a child class may not have a property defined on a sibling class.
+      // This logic ensures undefined properties are serialized correctly based on their type.
       if (value === undefined) {
-        // Check if this field is TEXT type (either from Field instance or registry)
-        const isTextField =
-          (prop &&
-            typeof prop === 'object' &&
-            'type' in prop &&
-            prop.type === 'text') ||
-          (fieldDef && fieldDef.type === 'text');
+        // Get field type from either the property instance (field helper) or the manifest
+        const fieldType =
+          (prop && typeof prop === 'object' && 'type' in prop && prop.type) ||
+          fieldDef?.type;
 
-        if (isTextField) {
-          // STI: meta fields go to _meta_data, regular fields go to columns
-          if (isSTI && fieldDef && fieldDef.type === 'meta') {
+        if (fieldType === 'text') {
+          // For TEXT fields, convert undefined to an empty string.
+          if (isSTI && fieldDef?.type === 'meta') {
             data._meta_data[key] = '';
           } else {
             data[key] = '';
           }
+        } else if (fieldType === 'json') {
+          // For JSON fields, use the default value from manifest to prevent:
+          // 1. Invalid JSON casting errors in DuckDB (empty string "")
+          // 2. Runtime errors when code expects arrays/objects (null)
+          const defaultValue = fieldDef?.default ?? null;
+
+          if (isSTI && fieldDef?.type === 'meta') {
+            data._meta_data[key] = defaultValue;
+          } else {
+            data[key] = defaultValue;
+          }
         }
-        continue; // Skip undefined for non-text fields
+
+        // For all cases of 'undefined' (handled or not), we continue to the next field.
+        // This prevents the undefined value from being assigned to the data object below,
+        // allowing the database to use its default value for unhandled types.
+        continue;
       }
 
       // STI: Separate meta fields from regular fields
