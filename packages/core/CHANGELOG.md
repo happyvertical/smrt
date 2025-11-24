@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.3
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add NODE_AUTH_TOKEN for update dependencies step (#393) (ci)
+  - @happyvertical/smrt-config@0.17.3
+  - @happyvertical/smrt-types@0.17.3
+
 ## 0.17.2
 
 ### Patch Changes
