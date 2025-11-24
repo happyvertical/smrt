@@ -22,7 +22,7 @@
  * @see Issue396Event, Issue396Meeting - Test classes with default status field
  */
 
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -143,10 +143,11 @@ const adapterConfigs = [
       url: join(tmpdir(), `test-issue-396-json-${Date.now()}`),
     }),
     cleanup: async (config: any) => {
-      if (config?.url) {
-        const jsonFile = join(config.url, 'events.json');
-        if (existsSync(jsonFile)) {
-          unlinkSync(jsonFile);
+      if (config?.url && existsSync(config.url)) {
+        try {
+          rmSync(config.url, { recursive: true, force: true });
+        } catch (error) {
+          // Ignore cleanup errors
         }
       }
     },
@@ -159,10 +160,11 @@ const adapterConfigs = [
       writeStrategy: 'immediate' as const,
     }),
     cleanup: async (config: any) => {
-      if (config?.url) {
-        const jsonFile = join(config.url, 'events.json');
-        if (existsSync(jsonFile)) {
-          unlinkSync(jsonFile);
+      if (config?.url && existsSync(config.url)) {
+        try {
+          rmSync(config.url, { recursive: true, force: true });
+        } catch (error) {
+          // Ignore cleanup errors
         }
       }
     },
@@ -182,28 +184,28 @@ function runBasicOperationsTests(
   describe('Basic Operations', () => {
     it('should create Event with default status', async () => {
       const { events } = getContext();
+      // create() saves internally, no need for explicit save()
       const event = await events.create(fixtures.event.scheduled);
 
-      await expect(event.save()).resolves.not.toThrow();
       expect(event.id).toBeDefined();
       expect(event.status).toBe('scheduled');
     });
 
     it('should create Event with explicit status', async () => {
       const { events } = getContext();
+      // create() saves internally, no need for explicit save()
       const event = await events.create(fixtures.event.completed);
 
-      await expect(event.save()).resolves.not.toThrow();
       expect(event.status).toBe('completed');
     });
 
     it('should update Event via UPSERT', async () => {
       const { events } = getContext();
+      // create() saves internally
       const event = await events.create(fixtures.event.scheduled);
-      await event.save();
       const eventId = event.id;
 
-      // Update
+      // Update and save again (testing UPSERT behavior)
       event.status = 'completed';
       event.title = 'Updated Event';
       await expect(event.save()).resolves.not.toThrow();
@@ -216,10 +218,10 @@ function runBasicOperationsTests(
 
     it('should handle multiple saves', async () => {
       const { events } = getContext();
+      // create() saves internally
       const event = await events.create(fixtures.event.scheduled);
 
-      // Multiple saves should not error
-      await event.save();
+      // Intentionally testing multiple saves don't error
       event.title = 'Update 1';
       await event.save();
       event.title = 'Update 2';
@@ -237,9 +239,9 @@ function runSTITests(getContext: () => { events: Issue396EventCollection }) {
   describe('STI Operations', () => {
     it('should create Meeting with inherited status field', async () => {
       const { events } = getContext();
+      // create() saves internally
       const meeting = await events.create(fixtures.meeting.regular);
 
-      await expect(meeting.save()).resolves.not.toThrow();
       expect(meeting.id).toBeDefined();
       expect(meeting.status).toBe('scheduled'); // Default from Event
       expect((meeting as any).type).toBe('Regular');
@@ -248,26 +250,26 @@ function runSTITests(getContext: () => { events: Issue396EventCollection }) {
     it('should create Meeting without explicit status (issue #396 reproduction)', async () => {
       const { events } = getContext();
       // This is the EXACT scenario that fails in production
+      // create() saves internally - tests that save with default status works
       const meeting = await events.create(fixtures.meeting.withoutStatus);
 
-      await expect(meeting.save()).resolves.not.toThrow();
       expect(meeting.status).toBe('scheduled'); // Should use default
       expect((meeting as any).agendaUrl).toContain('townofbentley.ca');
     });
 
     it('should create Meeting with explicit status', async () => {
       const { events } = getContext();
+      // create() saves internally
       const meeting = await events.create(fixtures.meeting.special);
 
-      await expect(meeting.save()).resolves.not.toThrow();
       expect(meeting.status).toBe('completed');
       expect((meeting as any).type).toBe('Special');
     });
 
     it('should load Meeting with all inherited fields', async () => {
       const { events } = getContext();
+      // create() saves internally
       const meeting = await events.create(fixtures.meeting.regular);
-      await meeting.save();
 
       const loaded = await events.get({ id: meeting.id });
       expect(loaded).toBeDefined();
@@ -280,12 +282,10 @@ function runSTITests(getContext: () => { events: Issue396EventCollection }) {
     it('should handle polymorphic queries', async () => {
       const { events } = getContext();
 
-      // Create mixed types
+      // create() saves internally - all three are already saved
       const event = await events.create(fixtures.event.scheduled);
       const meeting1 = await events.create(fixtures.meeting.regular);
       const meeting2 = await events.create(fixtures.meeting.special);
-
-      await Promise.all([event.save(), meeting1.save(), meeting2.save()]);
 
       // Query all
       const all = await events.list({});
@@ -309,12 +309,12 @@ function runTypePreservationTests(
   describe('Type Preservation', () => {
     it('should preserve string type for status field', async () => {
       const { events } = getContext();
+      // create() saves internally
       const meeting = await events.create({
         ...fixtures.meeting.regular,
         status: 'scheduled',
       });
 
-      await meeting.save();
       const loaded = await events.get({ id: meeting.id });
 
       expect(loaded).toBeDefined();
@@ -325,12 +325,12 @@ function runTypePreservationTests(
     it('should preserve Date type for date field', async () => {
       const { events } = getContext();
       const testDate = new Date('2025-11-25T19:00:00Z');
+      // create() saves internally
       const meeting = await events.create({
         ...fixtures.meeting.regular,
         date: testDate,
       });
 
-      await meeting.save();
       const loaded = await events.get({ id: meeting.id });
 
       expect(loaded).toBeDefined();
@@ -340,12 +340,13 @@ function runTypePreservationTests(
 
     it('should preserve status through update cycle', async () => {
       const { events } = getContext();
+      // create() saves internally
       const meeting = await events.create({
         ...fixtures.meeting.regular,
         status: 'scheduled',
       });
 
-      await meeting.save();
+      // Update and save (testing UPSERT preserves types)
       meeting.status = 'completed';
       await meeting.save();
 
@@ -364,14 +365,10 @@ function runQueryTests(getContext: () => { events: Issue396EventCollection }) {
     it('should query by status field', async () => {
       const { events } = getContext();
 
-      // Create events with different statuses
+      // create() saves internally - both records already saved
       await Promise.all([
-        events
-          .create({ ...fixtures.meeting.regular, status: 'scheduled' })
-          .then((m) => m.save()),
-        events
-          .create({ ...fixtures.meeting.special, status: 'completed' })
-          .then((m) => m.save()),
+        events.create({ ...fixtures.meeting.regular, status: 'scheduled' }),
+        events.create({ ...fixtures.meeting.special, status: 'completed' }),
       ]);
 
       const scheduled = await events.list({ where: { status: 'scheduled' } });
@@ -386,12 +383,12 @@ function runQueryTests(getContext: () => { events: Issue396EventCollection }) {
     it('should query with multiple conditions', async () => {
       const { events } = getContext();
 
+      // create() saves internally
       const meeting = await events.create({
         ...fixtures.meeting.regular,
         status: 'scheduled',
         location: 'Council Chambers',
       });
-      await meeting.save();
 
       const results = await events.list({
         where: {
@@ -409,11 +406,11 @@ function runQueryTests(getContext: () => { events: Issue396EventCollection }) {
     it('should handle list queries without errors', async () => {
       const { events } = getContext();
 
-      // Create multiple records
+      // create() saves internally - all records already saved
       await Promise.all([
-        events.create(fixtures.event.scheduled).then((e) => e.save()),
-        events.create(fixtures.event.completed).then((e) => e.save()),
-        events.create(fixtures.meeting.regular).then((m) => m.save()),
+        events.create(fixtures.event.scheduled),
+        events.create(fixtures.event.completed),
+        events.create(fixtures.meeting.regular),
       ]);
 
       // Various query patterns should work
@@ -433,15 +430,15 @@ function runUpsertTests(getContext: () => { events: Issue396EventCollection }) {
   describe('UPSERT Operations', () => {
     it('should UPSERT on same object instance', async () => {
       const { events } = getContext();
+      // create() saves internally
       const meeting = await events.create({
         ...fixtures.meeting.regular,
         slug: 'council-meeting-nov-2025',
       });
 
-      await meeting.save();
       const originalId = meeting.id;
 
-      // Update same object
+      // Update same object and test UPSERT behavior
       (meeting as any).agendaUrl = 'https://example.com/updated-agenda';
       meeting.title = 'Updated Meeting Title';
       await meeting.save();
@@ -460,15 +457,14 @@ function runUpsertTests(getContext: () => { events: Issue396EventCollection }) {
 
     it('should handle conflict on unique constraint', async () => {
       const { events } = getContext();
+      // create() saves internally
       const meeting1 = await events.create({
         ...fixtures.meeting.regular,
         slug: 'unique-meeting',
         context: '',
       });
 
-      await meeting1.save();
-
-      // Update the same meeting
+      // Update the same meeting and test UPSERT behavior
       meeting1.title = 'Updated Title';
       await expect(meeting1.save()).resolves.not.toThrow();
 
