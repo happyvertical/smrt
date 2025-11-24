@@ -567,6 +567,16 @@ smrt test --manifest-only
 npx vitest run src/specific-test.test.ts
 ```
 
+**Database Adapter Testing:**
+
+The framework includes comprehensive adapter parity tests to ensure consistent behavior across all database backends (SQLite, JSON/DuckDB). These tests verify:
+- STI (Single Table Inheritance) operations
+- UPSERT conflict resolution
+- Type preservation across save/load cycles
+- Query operations with filtering
+
+See `packages/core/src/__tests__/sti-adapter-parity.test.ts` for the complete test suite that runs identical tests across all supported adapters.
+
 ### Build System
 
 The framework uses **Turborepo** for intelligent task orchestration:
