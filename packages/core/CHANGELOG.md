@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.2
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - handle undefined JSON fields in STI sibling classes (#392) (core)
+  - @happyvertical/smrt-config@0.17.2
+  - @happyvertical/smrt-types@0.17.2
+
 ## 0.17.1
 
 ### Patch Changes
