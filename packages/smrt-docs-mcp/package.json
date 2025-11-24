@@ -44,9 +44,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "@happyvertical/ai": "^0.55.0",
-    "@happyvertical/files": "^0.55.0",
-    "@happyvertical/utils": "^0.55.0"
+    "@happyvertical/ai": "0.56.16",
+    "@happyvertical/files": "0.56.16",
+    "@happyvertical/utils": "0.56.16"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

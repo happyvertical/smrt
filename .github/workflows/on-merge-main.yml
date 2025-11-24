@@ -56,21 +56,24 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          echo "🔄 Updating @happyvertical packages..."
-          pnpm update '@happyvertical/*' --latest
+          echo "🔄 Updating @happyvertical packages in all workspace packages..."
+          pnpm update -r '@happyvertical/*' --latest
           pnpm install
 
       - name: Check for updates
         id: check-updates
         run: |
-          if git diff --quiet package.json pnpm-lock.yaml 2>/dev/null; then
+          if git diff --quiet \
+              package.json pnpm-lock.yaml packages/*/package.json \
+              2>/dev/null; then
             echo "updated=false" >> "$GITHUB_OUTPUT"
             echo "⏭️  No updates needed"
           else
             echo "updated=true" >> "$GITHUB_OUTPUT"
             echo "✅ Dependencies updated"
             echo "📦 Updated packages:"
-            git diff package.json | grep '^\+.*@happyvertical' | \
+            git diff package.json packages/*/package.json | \
+              grep '^\+.*@happyvertical' | \
               sed 's/^+//' || echo "  (lockfile changes only)"
           fi
 

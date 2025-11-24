@@ -42,12 +42,12 @@
     "dev": "npm run build:watch & npm run test:watch"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.55.0",
-    "@happyvertical/files": "^0.55.0",
-    "@happyvertical/logger": "^0.55.0",
+    "@happyvertical/ai": "0.56.16",
+    "@happyvertical/files": "0.56.16",
+    "@happyvertical/logger": "0.56.16",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "^0.55.0",
-    "@happyvertical/utils": "^0.55.0",
+    "@happyvertical/sql": "0.56.16",
+    "@happyvertical/utils": "0.56.16",
     "@modelcontextprotocol/sdk": "^1.0.4"
   },
   "devDependencies": {
