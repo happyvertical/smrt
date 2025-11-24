@@ -18,6 +18,8 @@ jobs:
   validate-commits:
     name: Validate Conventional Commits
     runs-on: ubuntu-latest
+    # Skip if PR is already merged
+    if: github.event.pull_request.merged != true
 
     steps:
       - name: Checkout PR branch
@@ -99,6 +101,8 @@ jobs:
   validate-workflows:
     name: Validate Workflow Files
     runs-on: ubuntu-latest
+    # Skip if PR is already merged
+    if: github.event.pull_request.merged != true
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
@@ -155,6 +159,8 @@ jobs:
 
   test:
     name: Validate Changes
+    # Skip if PR is already merged
+    if: github.event.pull_request.merged != true
     uses: ./.github/workflows/test-suite.yml
     permissions:
       contents: read
