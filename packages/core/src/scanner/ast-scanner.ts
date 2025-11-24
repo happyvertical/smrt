@@ -943,6 +943,41 @@ export class ASTScanner {
       if (typeName.includes('string')) return 'text';
       if (typeName.includes('number')) return 'decimal';
       if (typeName.includes('boolean')) return 'boolean';
+
+      // Resolve type aliases using type checker
+      const typeChecker = this.program.getTypeChecker();
+      const type = typeChecker.getTypeFromTypeNode(typeNode);
+
+      // Check for union types (e.g., string literal unions)
+      if (type.isUnion()) {
+        const types = type.types;
+
+        // Check if all types are string literals
+        const allStringLiterals = types.every((t) =>
+          Boolean(t.flags & ts.TypeFlags.StringLiteral),
+        );
+        if (allStringLiterals) return 'text';
+
+        // Check if all types are number literals
+        const allNumberLiterals = types.every((t) =>
+          Boolean(t.flags & ts.TypeFlags.NumberLiteral),
+        );
+        if (allNumberLiterals) return 'decimal';
+
+        // Check if all types are boolean literals
+        const allBooleanLiterals = types.every(
+          (t) =>
+            Boolean(t.flags & ts.TypeFlags.BooleanLiteral) ||
+            t.flags === ts.TypeFlags.True ||
+            t.flags === ts.TypeFlags.False,
+        );
+        if (allBooleanLiterals) return 'boolean';
+      }
+
+      // Check for primitive types resolved through aliases
+      if (type.flags & ts.TypeFlags.String) return 'text';
+      if (type.flags & ts.TypeFlags.Number) return 'decimal';
+      if (type.flags & ts.TypeFlags.Boolean) return 'boolean';
     }
 
     // Handle string literal types and template literals

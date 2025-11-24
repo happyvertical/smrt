@@ -80,6 +80,35 @@ describe('AST Scanner', () => {
     });
   });
 
+  it('should infer union types correctly', () => {
+    const scanner = new ASTScanner([testFilePath]);
+    const results = scanner.scanFiles();
+    const contentObj = results[0].objects.find(
+      (obj) => obj.className === 'ScannerTestContent',
+    );
+
+    // String union type should be inferred as 'text'
+    expect(contentObj?.fields.status).toMatchObject({
+      type: 'text',
+      required: false,
+      default: 'draft',
+    });
+
+    // Number union type should be inferred as 'decimal'
+    expect(contentObj?.fields.priority).toMatchObject({
+      type: 'decimal',
+      required: false,
+      default: 3,
+    });
+
+    // Boolean union type should be inferred as 'boolean'
+    expect(contentObj?.fields.enabled).toMatchObject({
+      type: 'boolean',
+      required: false,
+      default: true,
+    });
+  });
+
   it('should parse methods correctly', () => {
     const scanner = new ASTScanner([testFilePath], {
       includePrivateMethods: true,

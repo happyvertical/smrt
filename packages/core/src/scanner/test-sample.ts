@@ -9,6 +9,11 @@ function smrt(_config?: any) {
   return (target: any) => target;
 }
 
+// Type aliases for testing union type inference
+export type ContentStatus = 'draft' | 'published' | 'archived' | 'deleted';
+export type Priority = 1 | 2 | 3 | 4 | 5;
+export type FeatureFlag = true | false;
+
 // Simple ScannerTestContent class
 @smrt({
   api: {
@@ -22,10 +27,12 @@ function smrt(_config?: any) {
 class ScannerTestContent extends SmrtObject {
   title = '';
   body?: string;
-  status = 'draft';
+  status: ContentStatus = 'draft'; // String union type
   published = false;
   category = 'general';
   tags: string[] = [];
+  priority: Priority = 3; // Number union type
+  enabled: FeatureFlag = true; // Boolean union type
 
   async generateSummary(maxLength: number): Promise<string> {
     return this.body?.substring(0, maxLength) || '';
