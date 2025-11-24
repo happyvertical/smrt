@@ -1,0 +1,512 @@
+/**
+ * Multi-Adapter Parity Tests for STI (Single Table Inheritance)
+ *
+ * This comprehensive test suite ensures consistent behavior across all database adapters
+ * (SQLite, JSON/DuckDB) when working with STI hierarchies, UPSERT operations, and default values.
+ *
+ * Test Coverage:
+ * 1. Basic CRUD operations with default field values
+ * 2. STI inheritance and polymorphic queries
+ * 3. Type preservation across save/load cycles
+ * 4. Query operations with filtering
+ * 5. UPSERT conflict resolution
+ *
+ * Test Organization:
+ * - Reusable test suites that run against all configured adapters
+ * - Centralized test fixtures for consistency
+ * - Easy to extend with new adapters or test scenarios
+ *
+ * Related Issues:
+ * - #396: JSON adapter UPSERT with status field (reproduced in STI tests)
+ *
+ * @see Issue396Event, Issue396Meeting - Test classes with default status field
+ */
+
+import { existsSync, rmSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { getDatabase } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SmrtCollection } from '../collection';
+import { SmrtObject } from '../object';
+import { smrt } from '../registry';
+
+// ============================================================================
+// Test Classes (STI Hierarchy)
+// ============================================================================
+
+@smrt({ tableStrategy: 'sti' })
+class Issue396Event extends SmrtObject {
+  title: string = '';
+  date: Date = new Date();
+  location: string = '';
+  status: string = 'scheduled'; // Default value - this is the field from #396
+}
+
+@smrt()
+class Issue396Meeting extends Issue396Event {
+  type: string = 'Regular';
+  agendaUrl: string = '';
+  minutesUrl: string = '';
+  councilId: string = '';
+}
+
+class Issue396EventCollection extends SmrtCollection<Issue396Event> {
+  static readonly _itemClass = Issue396Event;
+}
+
+// ============================================================================
+// Test Fixtures
+// ============================================================================
+
+const fixtures = {
+  event: {
+    scheduled: {
+      _meta_type: 'Issue396Event',
+      title: 'Community Event',
+      date: new Date('2025-01-15'),
+      location: 'Community Center',
+      status: 'scheduled',
+    },
+    completed: {
+      _meta_type: 'Issue396Event',
+      title: 'Past Event',
+      date: new Date('2024-12-01'),
+      location: 'Town Hall',
+      status: 'completed',
+    },
+  },
+  meeting: {
+    regular: {
+      _meta_type: 'Issue396Meeting',
+      title: 'Regular Council Meeting',
+      date: new Date('2025-11-25'),
+      location: 'Council Chambers',
+      type: 'Regular',
+      agendaUrl: 'https://example.com/agenda',
+      councilId: 'test-council-id',
+    },
+    special: {
+      _meta_type: 'Issue396Meeting',
+      title: 'Special Council Meeting',
+      date: new Date('2025-12-01'),
+      location: 'Council Chambers',
+      type: 'Special',
+      status: 'completed',
+      agendaUrl: 'https://example.com/special-agenda',
+      councilId: 'test-council-id',
+    },
+    // Exact scenario from #396 - Meeting without explicit status
+    withoutStatus: {
+      _meta_type: 'Issue396Meeting',
+      title: 'Regular Council Meeting – November 25, 2025',
+      date: new Date('2025-11-25'),
+      location: 'Council Chambers',
+      type: 'Regular',
+      agendaUrl:
+        'https://townofbentley.ca/download/regular-council-meeting-november-25-2025-agenda/',
+      councilId: '147c31cf-86af-4435-b112-90ba5ac9f23d',
+      // status is NOT provided - should use default 'scheduled'
+    },
+  },
+};
+
+// ============================================================================
+// Database Adapter Configurations
+// ============================================================================
+
+const adapterConfigs = [
+  {
+    name: 'SQLite (in-memory)',
+    getConfig: () => ({ type: 'sqlite' as const, url: ':memory:' }),
+    cleanup: async () => {
+      /* no cleanup needed */
+    },
+  },
+  {
+    name: 'SQLite (file)',
+    getConfig: () => ({
+      type: 'sqlite' as const,
+      url: join(tmpdir(), `test-issue-396-sqlite-${Date.now()}.db`),
+    }),
+    cleanup: async (config: any) => {
+      if (config?.url && config.url !== ':memory:' && existsSync(config.url)) {
+        unlinkSync(config.url);
+      }
+    },
+  },
+  {
+    name: 'JSON (DuckDB)',
+    getConfig: () => ({
+      type: 'json' as const,
+      url: join(tmpdir(), `test-issue-396-json-${Date.now()}`),
+    }),
+    cleanup: async (config: any) => {
+      if (config?.url && existsSync(config.url)) {
+        try {
+          rmSync(config.url, { recursive: true, force: true });
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    },
+  },
+  {
+    name: 'JSON (immediate writes)',
+    getConfig: () => ({
+      type: 'json' as const,
+      url: join(tmpdir(), `test-issue-396-json-immediate-${Date.now()}`),
+      writeStrategy: 'immediate' as const,
+    }),
+    cleanup: async (config: any) => {
+      if (config?.url && existsSync(config.url)) {
+        try {
+          rmSync(config.url, { recursive: true, force: true });
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    },
+  },
+];
+
+// ============================================================================
+// Shared Test Suites
+// ============================================================================
+
+/**
+ * Test suite for basic CRUD operations with default values
+ */
+function runBasicOperationsTests(
+  getContext: () => { events: Issue396EventCollection },
+) {
+  describe('Basic Operations', () => {
+    it('should create Event with default status', async () => {
+      const { events } = getContext();
+      // create() saves internally, no need for explicit save()
+      const event = await events.create(fixtures.event.scheduled);
+
+      expect(event.id).toBeDefined();
+      expect(event.status).toBe('scheduled');
+    });
+
+    it('should create Event with explicit status', async () => {
+      const { events } = getContext();
+      // create() saves internally, no need for explicit save()
+      const event = await events.create(fixtures.event.completed);
+
+      expect(event.status).toBe('completed');
+    });
+
+    it('should update Event via UPSERT', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const event = await events.create(fixtures.event.scheduled);
+      const eventId = event.id;
+
+      // Update and save again (testing UPSERT behavior)
+      event.status = 'completed';
+      event.title = 'Updated Event';
+      await expect(event.save()).resolves.not.toThrow();
+
+      // Verify
+      const loaded = await events.get({ id: eventId });
+      expect(loaded?.status).toBe('completed');
+      expect(loaded?.title).toBe('Updated Event');
+    });
+
+    it('should handle multiple saves', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const event = await events.create(fixtures.event.scheduled);
+
+      // Intentionally testing multiple saves don't error
+      event.title = 'Update 1';
+      await event.save();
+      event.title = 'Update 2';
+      await event.save();
+
+      expect(event.title).toBe('Update 2');
+    });
+  });
+}
+
+/**
+ * Test suite for STI (Single Table Inheritance) operations
+ */
+function runSTITests(getContext: () => { events: Issue396EventCollection }) {
+  describe('STI Operations', () => {
+    it('should create Meeting with inherited status field', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const meeting = await events.create(fixtures.meeting.regular);
+
+      expect(meeting.id).toBeDefined();
+      expect(meeting.status).toBe('scheduled'); // Default from Event
+      expect((meeting as any).type).toBe('Regular');
+    });
+
+    it('should create Meeting without explicit status (issue #396 reproduction)', async () => {
+      const { events } = getContext();
+      // This is the EXACT scenario that fails in production
+      // create() saves internally - tests that save with default status works
+      const meeting = await events.create(fixtures.meeting.withoutStatus);
+
+      expect(meeting.status).toBe('scheduled'); // Should use default
+      expect((meeting as any).agendaUrl).toContain('townofbentley.ca');
+    });
+
+    it('should create Meeting with explicit status', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const meeting = await events.create(fixtures.meeting.special);
+
+      expect(meeting.status).toBe('completed');
+      expect((meeting as any).type).toBe('Special');
+    });
+
+    it('should load Meeting with all inherited fields', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const meeting = await events.create(fixtures.meeting.regular);
+
+      const loaded = await events.get({ id: meeting.id });
+      expect(loaded).toBeDefined();
+      expect(loaded?.title).toBe('Regular Council Meeting');
+      expect(loaded?.status).toBe('scheduled');
+      expect((loaded as any).type).toBe('Regular');
+      expect((loaded as any).agendaUrl).toBe('https://example.com/agenda');
+    });
+
+    it('should handle polymorphic queries', async () => {
+      const { events } = getContext();
+
+      // create() saves internally - all three are already saved
+      const event = await events.create(fixtures.event.scheduled);
+      const meeting1 = await events.create(fixtures.meeting.regular);
+      const meeting2 = await events.create(fixtures.meeting.special);
+
+      // Query all
+      const all = await events.list({});
+      expect(all.length).toBeGreaterThanOrEqual(3);
+
+      // Query by type
+      const meetings = await events.list({
+        where: { _meta_type: 'Issue396Meeting' },
+      });
+      expect(meetings.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+}
+
+/**
+ * Test suite for type preservation
+ */
+function runTypePreservationTests(
+  getContext: () => { events: Issue396EventCollection },
+) {
+  describe('Type Preservation', () => {
+    it('should preserve string type for status field', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const meeting = await events.create({
+        ...fixtures.meeting.regular,
+        status: 'scheduled',
+      });
+
+      const loaded = await events.get({ id: meeting.id });
+
+      expect(loaded).toBeDefined();
+      expect(typeof loaded?.status).toBe('string');
+      expect(loaded?.status).toBe('scheduled');
+    });
+
+    it('should preserve Date type for date field', async () => {
+      const { events } = getContext();
+      const testDate = new Date('2025-11-25T19:00:00Z');
+      // create() saves internally
+      const meeting = await events.create({
+        ...fixtures.meeting.regular,
+        date: testDate,
+      });
+
+      const loaded = await events.get({ id: meeting.id });
+
+      expect(loaded).toBeDefined();
+      expect(loaded?.date).toBeInstanceOf(Date);
+      expect(loaded?.date.toISOString()).toBe(testDate.toISOString());
+    });
+
+    it('should preserve status through update cycle', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const meeting = await events.create({
+        ...fixtures.meeting.regular,
+        status: 'scheduled',
+      });
+
+      // Update and save (testing UPSERT preserves types)
+      meeting.status = 'completed';
+      await meeting.save();
+
+      const loaded = await events.get({ id: meeting.id });
+      expect(typeof loaded?.status).toBe('string');
+      expect(loaded?.status).toBe('completed');
+    });
+  });
+}
+
+/**
+ * Test suite for query operations
+ */
+function runQueryTests(getContext: () => { events: Issue396EventCollection }) {
+  describe('Query Operations', () => {
+    it('should query by status field', async () => {
+      const { events } = getContext();
+
+      // create() saves internally - both records already saved
+      await Promise.all([
+        events.create({ ...fixtures.meeting.regular, status: 'scheduled' }),
+        events.create({ ...fixtures.meeting.special, status: 'completed' }),
+      ]);
+
+      const scheduled = await events.list({ where: { status: 'scheduled' } });
+      const completed = await events.list({ where: { status: 'completed' } });
+
+      expect(scheduled.length).toBeGreaterThanOrEqual(1);
+      expect(completed.length).toBeGreaterThanOrEqual(1);
+      expect(scheduled.every((e) => e.status === 'scheduled')).toBe(true);
+      expect(completed.every((e) => e.status === 'completed')).toBe(true);
+    });
+
+    it('should query with multiple conditions', async () => {
+      const { events } = getContext();
+
+      // create() saves internally
+      const meeting = await events.create({
+        ...fixtures.meeting.regular,
+        status: 'scheduled',
+        location: 'Council Chambers',
+      });
+
+      const results = await events.list({
+        where: {
+          status: 'scheduled',
+          location: 'Council Chambers',
+          _meta_type: 'Issue396Meeting',
+        },
+      });
+
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results[0].status).toBe('scheduled');
+      expect(results[0].location).toBe('Council Chambers');
+    });
+
+    it('should handle list queries without errors', async () => {
+      const { events } = getContext();
+
+      // create() saves internally - all records already saved
+      await Promise.all([
+        events.create(fixtures.event.scheduled),
+        events.create(fixtures.event.completed),
+        events.create(fixtures.meeting.regular),
+      ]);
+
+      // Various query patterns should work
+      await expect(events.list({})).resolves.toBeDefined();
+      await expect(events.list({ limit: 10 })).resolves.toBeDefined();
+      await expect(
+        events.list({ orderBy: 'created_at DESC' }),
+      ).resolves.toBeDefined();
+    });
+  });
+}
+
+/**
+ * Test suite for UPSERT conflict resolution
+ */
+function runUpsertTests(getContext: () => { events: Issue396EventCollection }) {
+  describe('UPSERT Operations', () => {
+    it('should UPSERT on same object instance', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const meeting = await events.create({
+        ...fixtures.meeting.regular,
+        slug: 'council-meeting-nov-2025',
+      });
+
+      const originalId = meeting.id;
+
+      // Update same object and test UPSERT behavior
+      (meeting as any).agendaUrl = 'https://example.com/updated-agenda';
+      meeting.title = 'Updated Meeting Title';
+      await meeting.save();
+
+      // Should keep same ID
+      expect(meeting.id).toBe(originalId);
+
+      // Verify only one record exists
+      const all = await events.list({
+        where: { slug: 'council-meeting-nov-2025' },
+      });
+      expect(all.length).toBe(1);
+      expect(all[0].id).toBe(originalId);
+      expect(all[0].title).toBe('Updated Meeting Title');
+    });
+
+    it('should handle conflict on unique constraint', async () => {
+      const { events } = getContext();
+      // create() saves internally
+      const meeting1 = await events.create({
+        ...fixtures.meeting.regular,
+        slug: 'unique-meeting',
+        context: '',
+      });
+
+      // Update the same meeting and test UPSERT behavior
+      meeting1.title = 'Updated Title';
+      await expect(meeting1.save()).resolves.not.toThrow();
+
+      // Should still be one record
+      const all = await events.list({ where: { slug: 'unique-meeting' } });
+      expect(all.length).toBe(1);
+    });
+  });
+}
+
+// ============================================================================
+// Run Test Suites Against All Adapters
+// ============================================================================
+
+describe('STI Adapter Parity', () => {
+  adapterConfigs.forEach((adapterConfig) => {
+    describe(adapterConfig.name, () => {
+      let db: DatabaseInterface;
+      let dbConfig: any;
+      let events: Issue396EventCollection;
+
+      beforeEach(async () => {
+        dbConfig = adapterConfig.getConfig();
+        db = await getDatabase(dbConfig);
+        events = await Issue396EventCollection.create({ db });
+      });
+
+      afterEach(async () => {
+        if (db && typeof db.close === 'function') {
+          await db.close();
+        }
+        await adapterConfig.cleanup(dbConfig);
+      });
+
+      const getContext = () => ({ events });
+
+      // Run all test suites
+      runBasicOperationsTests(getContext);
+      runSTITests(getContext);
+      runTypePreservationTests(getContext);
+      runQueryTests(getContext);
+      runUpsertTests(getContext);
+    });
+  });
+});
