@@ -25,6 +25,7 @@ permissions:
   pull-requests: write
   id-token: write
   pages: write
+  actions: write  # Required to cancel workflow runs
 
 jobs:
   # Cancel any in-progress PR validation checks when PR is merged
