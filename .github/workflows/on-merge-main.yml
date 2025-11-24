@@ -27,6 +27,70 @@ permissions:
   pages: write
 
 jobs:
+  # Cancel any in-progress PR validation checks when PR is merged
+  cancel-pr-checks:
+    name: Cancel PR Validation Checks
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Extract PR number from merge commit
+        id: get-pr
+        run: |
+          # Get PR number from merge commit message
+          pr_number=$(git log -1 --pretty=%B | \
+            grep -oP '(?<=#)\d+(?=\))' | head -1)
+
+          if [ -n "$pr_number" ]; then
+            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+            echo "📝 Detected merged PR: #$pr_number"
+          else
+            echo "ℹ️  No PR number found in commit message"
+          fi
+
+      - name: Cancel in-progress PR workflows
+        if: steps.get-pr.outputs.pr_number
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_number="${{ steps.get-pr.outputs.pr_number }}"
+          echo "🔍 Looking for running workflows for PR #$pr_number..."
+
+          # Find in-progress workflow runs for on-pull-request.yml
+          jq_filter='.[] | select(.status == "in_progress"'
+          jq_filter="$jq_filter"' or .status == "queued") | .databaseId'
+
+          runs=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow="on-pull-request.yml" \
+            --json databaseId,status \
+            --jq "$jq_filter" \
+            --limit 50)
+
+          if [ -z "$runs" ]; then
+            echo "✅ No running PR workflows to cancel"
+            exit 0
+          fi
+
+          # Cancel each in-progress run
+          cancelled=0
+          for run_id in $runs; do
+            echo "🛑 Cancelling workflow run: $run_id"
+            if gh run cancel "$run_id" \
+              --repo "${{ github.repository }}"; then
+              ((cancelled++))
+            fi
+          done
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Cancelled $cancelled workflow run(s) for PR #$pr_number"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
   # Update dependencies when triggered by upstream cascade
   update-dependencies:
     name: Update Dependencies
