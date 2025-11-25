@@ -238,18 +238,18 @@ export const generateCommands: Record<string, CLICommand> = {
         const projectRoot = process.cwd();
 
         console.log('🔨 Generating SvelteKit routes...');
-        console.log(`   Routes directory: ${options.routesDir}`);
-        console.log(`   Objects directory: ${options.objectsDir}`);
-        console.log(`   Config path: ${options.configPath}`);
+        console.log(`   Routes directory: ${options['routes-dir']}`);
+        console.log(`   Objects directory: ${options['objects-dir']}`);
+        console.log(`   Config path: ${options['config-path']}`);
         console.log();
 
         // Generate routes
         await generateSvelteKitRoutes(projectRoot, manifest, {
           enabled: true,
-          routesDir: options.routesDir,
-          objectsDir: options.objectsDir,
-          configPath: options.configPath,
-          configFileName: options.configFile,
+          routesDir: options['routes-dir'],
+          objectsDir: options['objects-dir'],
+          configPath: options['config-path'],
+          configFileName: options['config-file'],
         });
 
         // Report results
@@ -260,7 +260,7 @@ export const generateCommands: Record<string, CLICommand> = {
         console.log(`   ${objectNames}\n`);
 
         console.log('📁 Generated structure:');
-        console.log(`   ${options.routesDir}/`);
+        console.log(`   ${options['routes-dir']}/`);
         for (const objectDef of Object.values(manifest.objects)) {
           const collection = (objectDef as any).collection;
           console.log(`     ${collection}/+server.ts     (list, create)`);
