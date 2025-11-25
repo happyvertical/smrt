@@ -240,10 +240,10 @@ jobs:
               -f 'client_payload[upstream_version]'="$version" \
               -f 'client_payload[triggered_by]'="${{ github.actor }}"; then
               echo "   ✅ Successfully triggered"
-              ((success_count++))
+              success_count=$((success_count + 1))
             else
               echo "   ⚠️  Failed to trigger (check repo access/permissions)"
-              ((fail_count++))
+              fail_count=$((fail_count + 1))
             fi
             echo ""
           done
