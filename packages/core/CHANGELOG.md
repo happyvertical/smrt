@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.11
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve option key mismatch in generate commands (#413) (cli)
+  - use kebab-case option keys in generate-routes command (#412) (cli)
+  - @happyvertical/smrt-config@0.17.11
+  - @happyvertical/smrt-types@0.17.11
+
 ## 0.17.10
 
 ### Patch Changes
