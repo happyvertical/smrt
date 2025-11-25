@@ -33,7 +33,7 @@ export const generateCommands: Record<string, CLICommand> = {
         );
       }
 
-      const outputDir = options.outputDir || args[1];
+      const outputDir = options['output-dir'] || args[1];
 
       try {
         const cliArgs = outputDir ? [manifestPath, outputDir] : [manifestPath];
@@ -126,18 +126,18 @@ export const generateCommands: Record<string, CLICommand> = {
 
         console.log(`\n🔨 Generating MCP server...`);
         console.log(`   Server name: ${serverName}`);
-        console.log(`   Output path: ${options.outputPath}`);
+        console.log(`   Output path: ${options['output-path']}`);
         console.log(`   Modular structure: ${options.modular ? 'yes' : 'no'}`);
         console.log(`   Registered objects: ${registeredClasses.size}`);
 
         // Generate server
         await generator.generateServer({
-          outputPath: options.outputPath,
+          outputPath: options['output-path'],
           serverName,
           serverVersion: options.version,
           debug: options.debug,
-          generateClaudeConfigFile: !options.noConfig,
-          generateReadme: !options.noReadme,
+          generateClaudeConfigFile: !options['no-config'],
+          generateReadme: !options['no-readme'],
           modular: options.modular,
         });
 
@@ -237,19 +237,25 @@ export const generateCommands: Record<string, CLICommand> = {
 
         const projectRoot = process.cwd();
 
+        // Extract options with kebab-case keys (matching option definitions)
+        const routesDir = options['routes-dir'] || 'src/routes/api';
+        const objectsDir = options['objects-dir'] || 'src/lib/objects';
+        const configPath = options['config-path'] || 'src/lib/server';
+        const configFile = options['config-file'] || 'smrt.ts';
+
         console.log('🔨 Generating SvelteKit routes...');
-        console.log(`   Routes directory: ${options['routes-dir']}`);
-        console.log(`   Objects directory: ${options['objects-dir']}`);
-        console.log(`   Config path: ${options['config-path']}`);
+        console.log(`   Routes directory: ${routesDir}`);
+        console.log(`   Objects directory: ${objectsDir}`);
+        console.log(`   Config path: ${configPath}`);
         console.log();
 
         // Generate routes
         await generateSvelteKitRoutes(projectRoot, manifest, {
           enabled: true,
-          routesDir: options['routes-dir'],
-          objectsDir: options['objects-dir'],
-          configPath: options['config-path'],
-          configFileName: options['config-file'],
+          routesDir,
+          objectsDir,
+          configPath,
+          configFileName: configFile,
         });
 
         // Report results
@@ -260,7 +266,7 @@ export const generateCommands: Record<string, CLICommand> = {
         console.log(`   ${objectNames}\n`);
 
         console.log('📁 Generated structure:');
-        console.log(`   ${options['routes-dir']}/`);
+        console.log(`   ${routesDir}/`);
         for (const objectDef of Object.values(manifest.objects)) {
           const collection = (objectDef as any).collection;
           console.log(`     ${collection}/+server.ts     (list, create)`);

@@ -286,9 +286,11 @@ export class CLIGenerator {
     const registerPath = path.join(process.cwd(), '.smrt', 'register.js');
 
     if (!fs.existsSync(registerPath)) {
-      if (config.verbose) {
-        console.log('[CLI] No .smrt/register.js found - run build to generate');
-      }
+      // Always show this warning (not just verbose) since it affects custom commands
+      console.log(
+        '[CLI] No .smrt/register.js found - custom commands may not work',
+      );
+      console.log('      Run "npm run build" to generate class registrations');
       return;
     }
 
@@ -1417,7 +1419,22 @@ export class CLIGenerator {
     try {
       const classInfo = ObjectRegistry.getClass(objectName);
       if (!classInfo || !classInfo.constructor) {
-        this.exitWithError(`Object class '${objectName}' not found`);
+        const availableObjects = Array.from(
+          ObjectRegistry.getAllClasses().keys(),
+        );
+        const availableList =
+          availableObjects.length > 0
+            ? `Available objects:\n  ${availableObjects.join('\n  ')}`
+            : 'No objects registered. Run "npm run build" to generate registrations.';
+
+        this.exitWithError(
+          `Object class '${objectName}' not found.\n\n` +
+            `${availableList}\n\n` +
+            `Troubleshooting:\n` +
+            `1. Run "npm run build" to generate .smrt/register.js\n` +
+            `2. Ensure package exports classes correctly\n` +
+            `3. Run "smrt doctor" for diagnostics`,
+        );
         return;
       }
 
