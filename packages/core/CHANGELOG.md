@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use package imports for external packages in generate-routes (#416) (core)
+  - @happyvertical/smrt-config@0.17.13
+  - @happyvertical/smrt-types@0.17.13
+
 ## 0.17.12
 
 ### Patch Changes
