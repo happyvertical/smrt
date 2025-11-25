@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.10
+
+### Patch Changes
+
+- ### Features
+
+  - add consumer project support and SvelteKit template (#410) (cli)
+  - @happyvertical/smrt-config@0.17.10
+  - @happyvertical/smrt-types@0.17.10
+
 ## 0.17.9
 
 ### Patch Changes

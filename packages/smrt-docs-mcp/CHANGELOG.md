@@ -1,5 +1,7 @@
 # @happyvertical/smrt-docs-mcp
 
+## 0.17.10
+
 ## 0.17.9
 
 ## 0.17.8
