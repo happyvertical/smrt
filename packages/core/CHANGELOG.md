@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use safe arithmetic syntax in cascade loop (#408) (workflows)
+  - @happyvertical/smrt-config@0.17.9
+  - @happyvertical/smrt-types@0.17.9
+
 ## 0.17.8
 
 ### Patch Changes
