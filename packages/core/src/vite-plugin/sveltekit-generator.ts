@@ -58,7 +58,24 @@ async function generateRegistrationFile(
   const configDir = join(projectRoot, configPath);
   const registrationFilePath = join(configDir, 'smrt-register.ts');
 
-  const imports = Object.entries(manifest.objects)
+  // Group objects by package for efficient imports
+  const localObjects: Array<[string, (typeof manifest.objects)[string]]> = [];
+  const packageObjects = new Map<string, string[]>(); // packageName -> classNames
+
+  for (const [className, objectDef] of Object.entries(manifest.objects)) {
+    if (objectDef.packageName) {
+      // External package - group by package name
+      const classes = packageObjects.get(objectDef.packageName) || [];
+      classes.push(className);
+      packageObjects.set(objectDef.packageName, classes);
+    } else {
+      // Local object - use file path
+      localObjects.push([className, objectDef]);
+    }
+  }
+
+  // Generate imports for local objects
+  const localImports = localObjects
     .map(([className, objectDef]) => {
       const importPath = getSvelteKitImportPath(
         projectRoot,
@@ -70,6 +87,16 @@ async function generateRegistrationFile(
       return `import { ${actualClassName} } from '${importPath}';`;
     })
     .join('\n');
+
+  // Generate imports for external packages
+  const packageImports = Array.from(packageObjects.entries())
+    .map(([packageName, classNames]) => {
+      // Import all classes from the package
+      return `import { ${classNames.join(', ')} } from '${packageName}';`;
+    })
+    .join('\n');
+
+  const imports = [packageImports, localImports].filter(Boolean).join('\n');
 
   const registrationContent = `/**
  * Auto-generated SMRT object registration
