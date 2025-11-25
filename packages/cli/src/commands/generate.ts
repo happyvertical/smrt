@@ -8,6 +8,7 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators';
 import { generateDeclarationsFromCLI } from '@happyvertical/smrt-core/prebuild';
 import type { CLICommand } from '../cli-generator.js';
+import { autoDiscoverAndLoad, loadManifestFile } from '../discovery/index.js';
 
 /**
  * Code generation commands for CLI
@@ -150,6 +151,133 @@ export const generateCommands: Record<string, CLICommand> = {
       } catch (error) {
         throw new Error(
           `Failed to generate MCP server: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
+    },
+  },
+
+  'generate-routes': {
+    name: 'generate-routes',
+    description: 'Generate SvelteKit API routes from SMRT objects',
+    aliases: ['routes', 'generate:routes'],
+    args: [],
+    options: {
+      'routes-dir': {
+        type: 'string',
+        description: 'Output directory for generated routes',
+        default: 'src/routes/api',
+        short: 'r',
+      },
+      'objects-dir': {
+        type: 'string',
+        description: 'Directory containing SMRT objects',
+        default: 'src/lib/objects',
+        short: 'o',
+      },
+      'config-path': {
+        type: 'string',
+        description: 'Directory for SMRT configuration',
+        default: 'src/lib/server',
+        short: 'c',
+      },
+      'config-file': {
+        type: 'string',
+        description: 'Configuration file name',
+        default: 'smrt.ts',
+      },
+      force: {
+        type: 'boolean',
+        description: 'Overwrite existing configuration files',
+        default: false,
+        short: 'f',
+      },
+    },
+    handler: async (_args: string[], options: any) => {
+      console.log('\n🔍 Discovering SMRT objects...\n');
+
+      try {
+        // Auto-discover manifests
+        const { discovered, totalObjects } = await autoDiscoverAndLoad();
+
+        if (discovered.length === 0) {
+          console.error('❌ No SMRT manifests found');
+          console.error('\nTo generate a manifest:');
+          console.error('  1. Build your project with SMRT objects');
+          console.error('  2. Or run: smrt test (generates test manifest)');
+          console.error('  3. Install a package with SMRT objects\n');
+          process.exit(1);
+        }
+
+        console.log(
+          `✓ Found ${totalObjects} object(s) in ${discovered.length} manifest(s)\n`,
+        );
+
+        // Load the first manifest (prefer project manifest over package)
+        const projectManifest = discovered.find((m) => m.source === 'project');
+        const manifestToUse = projectManifest || discovered[0];
+
+        console.log(`📦 Using manifest: ${manifestToUse.path}`);
+        if (manifestToUse.packageName) {
+          console.log(`   Package: ${manifestToUse.packageName}`);
+        }
+        console.log();
+
+        // Load the actual manifest data
+        const manifest = await loadManifestFile(manifestToUse.path);
+
+        if (!manifest?.objects || Object.keys(manifest.objects).length === 0) {
+          console.error('❌ Manifest contains no SMRT objects');
+          process.exit(1);
+        }
+
+        // Import the SvelteKit route generator
+        const { generateSvelteKitRoutes } = await import(
+          '@happyvertical/smrt-core/vite-plugin'
+        );
+
+        const projectRoot = process.cwd();
+
+        console.log('🔨 Generating SvelteKit routes...');
+        console.log(`   Routes directory: ${options.routesDir}`);
+        console.log(`   Objects directory: ${options.objectsDir}`);
+        console.log(`   Config path: ${options.configPath}`);
+        console.log();
+
+        // Generate routes
+        await generateSvelteKitRoutes(projectRoot, manifest, {
+          enabled: true,
+          routesDir: options.routesDir,
+          objectsDir: options.objectsDir,
+          configPath: options.configPath,
+          configFileName: options.configFile,
+        });
+
+        // Report results
+        const objectCount = Object.keys(manifest.objects).length;
+        const objectNames = Object.keys(manifest.objects).join(', ');
+
+        console.log(`\n✅ Generated routes for ${objectCount} object(s):`);
+        console.log(`   ${objectNames}\n`);
+
+        console.log('📁 Generated structure:');
+        console.log(`   ${options.routesDir}/`);
+        for (const objectDef of Object.values(manifest.objects)) {
+          const collection = (objectDef as any).collection;
+          console.log(`     ${collection}/+server.ts     (list, create)`);
+          console.log(
+            `     ${collection}/[id]/+server.ts (get, update, delete)`,
+          );
+        }
+        console.log();
+
+        console.log('💡 Next steps:');
+        console.log('  1. Review generated routes in src/routes/api/');
+        console.log('  2. Configure src/lib/server/smrt.ts with your database');
+        console.log('  3. Run: npm run dev');
+        console.log();
+      } catch (error) {
+        throw new Error(
+          `Failed to generate routes: ${error instanceof Error ? error.message : 'Unknown error'}`,
         );
       }
     },

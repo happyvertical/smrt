@@ -7,6 +7,8 @@
  * - Local filesystem paths (../path/to/template, /absolute/path)
  */
 
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadGitTemplate } from './git-loader.js';
 import { loadLocalTemplate, resolveLocalPath } from './local-loader.js';
 import {
@@ -14,6 +16,8 @@ import {
   loadNpmTemplate,
   resolveNpmPackage,
 } from './npm-loader.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface TemplateConfig {
   name: string;
@@ -91,9 +95,20 @@ export async function resolveTemplate(name: string): Promise<TemplateSource> {
     };
   }
 
+  // Check for bundled templates in the CLI package
+  const bundledPath = await findBundledTemplate(name);
+  if (bundledPath) {
+    return {
+      type: 'local',
+      location: bundledPath,
+      resolved: bundledPath,
+    };
+  }
+
   throw new Error(
     `Template '${name}' not found. Tried:\n` +
       `  - npm package: @*/${name}, @*/templates/${name}\n` +
+      `  - bundled template: ${name}\n` +
       `  - local path: ./${name}, ../${name}\n` +
       `\n` +
       `Use one of:\n` +
@@ -101,6 +116,59 @@ export async function resolveTemplate(name: string): Promise<TemplateSource> {
       `  - git repo: github:user/repo\n` +
       `  - local path: ../path/to/template`,
   );
+}
+
+/**
+ * Find bundled template by name
+ *
+ * Looks for templates in sibling packages under @happyvertical/smrt-template-*
+ */
+async function findBundledTemplate(name: string): Promise<string | null> {
+  const { existsSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+
+  // Map short names to package directories
+  const bundledTemplates: Record<string, string> = {
+    sveltekit: 'template-sveltekit',
+    'smrt-sveltekit': 'template-sveltekit',
+  };
+
+  const packageDir = bundledTemplates[name.toLowerCase()];
+  if (!packageDir) {
+    return null;
+  }
+
+  // Look for the template package relative to CLI package
+  // __dirname is packages/cli/src/loaders or packages/cli/dist/
+  // Template is at packages/template-sveltekit
+  const possiblePaths = [
+    // When running from dist (built): dist/ -> cli -> packages -> template-sveltekit
+    resolve(__dirname, '..', '..', packageDir),
+    // When running from src (development): src/loaders -> src -> cli -> packages -> template-sveltekit
+    resolve(__dirname, '..', '..', '..', packageDir),
+    // Monorepo root: packages/cli/dist or src/loaders -> smrt repo -> packages/template-sveltekit
+    resolve(__dirname, '..', '..', '..', 'packages', packageDir),
+  ];
+
+  for (const templatePath of possiblePaths) {
+    const configPath = join(templatePath, 'template.config.js');
+    if (existsSync(configPath)) {
+      return templatePath;
+    }
+  }
+
+  // Try resolving as npm package (@happyvertical/smrt-template-sveltekit)
+  try {
+    const npmPackage = `@happyvertical/smrt-${packageDir}`;
+    const resolved = require.resolve(`${npmPackage}/template.config.js`, {
+      paths: [process.cwd(), ...module.paths],
+    });
+    return dirname(resolved);
+  } catch {
+    // Package not installed
+  }
+
+  return null;
 }
 
 /**

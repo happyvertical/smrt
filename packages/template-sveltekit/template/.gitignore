@@ -1,0 +1,31 @@
+# Dependencies
+node_modules
+
+# Build outputs
+.svelte-kit
+build
+dist
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# SMRT auto-generated
+src/routes/api/**/+server.ts
+src/lib/server/smrt-register.ts
+src/lib/types/smrt-generated/
+
+# Database
+*.db
+*.db-journal
+data/
+
+# Misc
+.DS_Store
+*.log

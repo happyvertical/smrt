@@ -29,6 +29,7 @@ const CLI_VERSION = packageJson.version;
 // Lazy-load commands to avoid loading tar dependencies unless needed
 let _gnodeCommands: Record<string, Command> | null = null;
 let _generateCommands: Record<string, Command> | null = null;
+let _initCommands: Record<string, Command> | null = null;
 let _utilityCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
@@ -45,6 +46,14 @@ async function getGenerateCommands(): Promise<Record<string, Command>> {
     _generateCommands = generateCommands;
   }
   return _generateCommands;
+}
+
+async function getInitCommands(): Promise<Record<string, Command>> {
+  if (!_initCommands) {
+    const { initCommands } = await import('./commands/index.js');
+    _initCommands = initCommands;
+  }
+  return _initCommands;
 }
 
 async function getUtilityCommands(): Promise<Record<string, Command>> {
@@ -324,10 +333,76 @@ export class CLIGenerator {
       // Generate commands (async to load user classes)
       const commands = await this.generateCommands();
 
+      // Preprocess argv to support space-separated object commands
+      // Converts: smrt council list → smrt council:list
+      // Converts: smrt council get abc-123 → smrt council:get abc-123
+      const processedArgv = this.preprocessObjectCommands(argv, commands);
+
       // Parse args first without built-in commands to avoid loading them unnecessarily
-      const parsed = parseCliArgs(argv, commands, {});
+      const parsed = parseCliArgs(processedArgv, commands, {});
       await this.executeCommand(parsed, commands);
     };
+  }
+
+  /**
+   * Preprocess argv to support space-separated object commands
+   *
+   * Converts: ['council', 'list'] → ['council:list']
+   * Converts: ['council', 'get', 'abc-123'] → ['council:get', 'abc-123']
+   *
+   * This enables users to type:
+   *   smrt council list
+   *   smrt council get abc-123
+   *   smrt council analyze abc-123 --depth 3
+   *
+   * Instead of:
+   *   smrt council:list
+   *   smrt council:get abc-123
+   */
+  private preprocessObjectCommands(
+    argv: string[],
+    commands: CLICommand[],
+  ): string[] {
+    if (argv.length < 2) return argv;
+
+    const firstArg = argv[0];
+    const secondArg = argv[1];
+
+    // Skip if first arg is already a colon-separated command
+    if (firstArg.includes(':')) return argv;
+
+    // Skip if first arg looks like an option
+    if (firstArg.startsWith('-')) return argv;
+
+    // Skip if second arg looks like an option
+    if (secondArg.startsWith('-')) return argv;
+
+    // Check if combining first two args would match a command
+    const combinedCommand = `${firstArg}:${secondArg}`;
+    const matchesCommand = commands.some(
+      (cmd) =>
+        cmd.name === combinedCommand || cmd.aliases?.includes(combinedCommand),
+    );
+
+    if (matchesCommand) {
+      // Convert space-separated to colon-separated
+      return [combinedCommand, ...argv.slice(2)];
+    }
+
+    // Also check if first arg is a known object name (for dynamic discovery)
+    // This handles cases where manifest-discovered objects might not have
+    // all their commands in the static command list yet
+    const registeredClasses = ObjectRegistry.getAllClasses();
+    const isKnownObject = Array.from(registeredClasses.keys()).some(
+      (name) => name.toLowerCase() === firstArg.toLowerCase(),
+    );
+
+    if (isKnownObject) {
+      // First arg is a known object, assume second is a method
+      return [combinedCommand, ...argv.slice(2)];
+    }
+
+    return argv;
   }
 
   /**
@@ -667,15 +742,17 @@ export class CLIGenerator {
 
     // Only load built-in commands if not found in object commands
     // This avoids loading tar dependencies unless actually needed
-    const [gnodeCommands, generateCommands, utilityCommands] =
+    const [gnodeCommands, generateCommands, initCommands, utilityCommands] =
       await Promise.all([
         getGnodeCommands(),
         getGenerateCommands(),
+        getInitCommands(),
         getUtilityCommands(),
       ]);
     const builtInCommands = {
       ...gnodeCommands,
       ...generateCommands,
+      ...initCommands,
       ...utilityCommands,
     };
 
@@ -721,17 +798,111 @@ export class CLIGenerator {
   generateUtilityCommands(): CLICommand[] {
     const commands: CLICommand[] = [];
 
-    // List all registered objects
+    // List all discovered objects (from manifests)
     commands.push({
       name: 'objects',
-      description: 'List all registered smrt objects',
+      description: 'List all discovered smrt objects',
       aliases: ['ls'],
-      handler: async (_args, _options) => {
-        const registeredClasses = ObjectRegistry.getAllClasses();
-        console.log('Registered smrt objects:');
-        for (const [name] of registeredClasses) {
-          console.log(`  • ${name}`);
+      options: {
+        verbose: {
+          type: 'boolean',
+          description: 'Show detailed output including methods',
+          short: 'v',
+        },
+        json: {
+          type: 'boolean',
+          description: 'Output as JSON',
+        },
+      },
+      handler: async (_args, options) => {
+        const { autoDiscoverAndLoad, loadManifestFile } = await import(
+          './discovery/index.js'
+        );
+        const { discovered, totalObjects } = await autoDiscoverAndLoad();
+
+        if (totalObjects === 0) {
+          console.log('No SMRT objects found.');
+          console.log('\nTo discover objects:');
+          console.log('  • Build your project: npm run build');
+          console.log('  • Run: smrt introspect for details');
+          return;
         }
+
+        if (options.json) {
+          // JSON output mode
+          const output: Record<string, any> = {};
+          for (const manifest of discovered) {
+            const data = await loadManifestFile(manifest.path);
+            const source = manifest.packageName || 'project';
+            output[source] = {
+              path: manifest.path,
+              objects: data?.objects || {},
+            };
+          }
+          console.log(JSON.stringify(output, null, 2));
+          return;
+        }
+
+        console.log('Discovered SMRT objects:\n');
+
+        for (const manifest of discovered) {
+          try {
+            const data = await loadManifestFile(manifest.path);
+            const source = manifest.packageName || 'project';
+            console.log(`  ${source}:`);
+
+            for (const objName of Object.keys(data?.objects || {})) {
+              const obj = data.objects[objName];
+              const cliConfig = obj.decoratorConfig?.cli;
+
+              // Get CLI-enabled methods
+              let cliMethods: string[] = [];
+              if (cliConfig && obj.methods) {
+                const methodNames = Object.keys(obj.methods);
+                if (typeof cliConfig === 'object' && cliConfig.include) {
+                  // Filter to included methods
+                  cliMethods = methodNames.filter(
+                    (m) =>
+                      cliConfig.include?.includes(m) &&
+                      obj.methods[m]?.isPublic,
+                  );
+                } else if (cliConfig === true) {
+                  // All public methods
+                  cliMethods = methodNames.filter(
+                    (m) => obj.methods[m]?.isPublic,
+                  );
+                }
+              }
+
+              if (options.verbose) {
+                console.log(`    • ${objName}`);
+                if (cliMethods.length > 0) {
+                  console.log(`      CLI: ${cliMethods.join(', ')}`);
+                }
+                // Show fields
+                const fieldNames = Object.keys(obj.fields || {}).slice(0, 5);
+                if (fieldNames.length > 0) {
+                  console.log(
+                    `      Fields: ${fieldNames.join(', ')}${Object.keys(obj.fields || {}).length > 5 ? '...' : ''}`,
+                  );
+                }
+              } else {
+                const methodStr =
+                  cliMethods.length > 0 ? ` → ${cliMethods.join(', ')}` : '';
+                console.log(`    • ${objName}${methodStr}`);
+              }
+            }
+            console.log();
+          } catch (error) {
+            console.log(
+              `    (failed to load: ${error instanceof Error ? error.message : 'unknown'})`,
+            );
+          }
+        }
+
+        console.log(
+          `Total: ${totalObjects} objects from ${discovered.length} source(s)`,
+        );
       },
     });
 
@@ -814,12 +985,19 @@ export class CLIGenerator {
     console.log();
 
     // Show built-in subcommands first
-    const [gnodeCommands, generateCommands, utilityCommands] =
+    const [gnodeCommands, generateCommands, initCommands, utilityCommands] =
       await Promise.all([
         getGnodeCommands(),
         getGenerateCommands(),
+        getInitCommands(),
         getUtilityCommands(),
       ]);
+
+    console.log('Project Setup:');
+    for (const command of Object.values(initCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
 
     console.log('Utility Commands:');
     for (const command of Object.values(utilityCommands)) {
