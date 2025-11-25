@@ -1,7 +1,8 @@
 /**
  * Code Generation CLI Commands
  *
- * Commands for generating code, types, and other artifacts
+ * Commands for generating code, types, and other artifacts.
+ * Includes generate-types, generate-mcp, and generate-routes commands.
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
