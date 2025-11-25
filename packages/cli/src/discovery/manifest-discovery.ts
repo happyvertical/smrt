@@ -147,7 +147,7 @@ async function findPackageManifests(
 /**
  * Load a manifest file (handles both .js and .json)
  */
-async function loadManifestFile(manifestPath: string): Promise<any> {
+export async function loadManifestFile(manifestPath: string): Promise<any> {
   if (manifestPath.endsWith('.js')) {
     // Dynamic import for .js files
     const manifestUrl = pathToFileURL(manifestPath).href;

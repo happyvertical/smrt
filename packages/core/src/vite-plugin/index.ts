@@ -10,6 +10,10 @@ import type { Plugin, ViteDevServer } from 'vite';
 import type { SmartObjectManifest } from '../scanner/types';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
+export type { SvelteKitOptions } from './sveltekit-generator.js';
+// Re-export SvelteKit route generator for CLI usage
+export { generateSvelteKitRoutes } from './sveltekit-generator.js';
+
 export interface SmrtPluginOptions {
   /** Glob patterns for SMRT source files */
   include?: string[];

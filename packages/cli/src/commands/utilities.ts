@@ -542,4 +542,318 @@ export default testManifest;
       }
     },
   },
+
+  doctor: {
+    name: 'doctor',
+    description: 'Diagnose and report on SMRT project health',
+    aliases: ['check', 'diagnose'],
+    args: [],
+    options: {
+      fix: {
+        type: 'boolean',
+        description: 'Attempt to fix issues automatically',
+        default: false,
+        short: 'f',
+      },
+    },
+    handler: async (_args: string[], options: any) => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      const { resolve, join } = await import('node:path');
+
+      console.log('\n🩺 SMRT Doctor - Project Health Check\n');
+
+      const cwd = process.cwd();
+      const issues: string[] = [];
+      const warnings: string[] = [];
+      const passed: string[] = [];
+
+      // Helper to check a condition
+      const check = (
+        name: string,
+        condition: boolean,
+        issue?: string,
+        warning?: string,
+      ) => {
+        if (condition) {
+          passed.push(name);
+          console.log(`  ✅ ${name}`);
+        } else if (warning) {
+          warnings.push(`${name}: ${warning}`);
+          console.log(`  ⚠️  ${name}: ${warning}`);
+        } else {
+          issues.push(`${name}: ${issue || 'Check failed'}`);
+          console.log(`  ❌ ${name}: ${issue || 'Check failed'}`);
+        }
+      };
+
+      // ========== Project Structure ==========
+      console.log('📁 Project Structure\n');
+
+      // 1. Check package.json
+      const packageJsonPath = resolve(cwd, 'package.json');
+      const hasPackageJson = existsSync(packageJsonPath);
+      check('package.json exists', hasPackageJson, 'Missing package.json');
+
+      let packageJson: any = {};
+      if (hasPackageJson) {
+        try {
+          packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+          check('package.json is valid JSON', true);
+        } catch {
+          check('package.json is valid JSON', false, 'Invalid JSON format');
+        }
+      }
+
+      // 2. Check for SMRT core dependency
+      const hasSmrtCore =
+        packageJson.dependencies?.['@happyvertical/smrt-core'] ||
+        packageJson.devDependencies?.['@happyvertical/smrt-core'];
+      check(
+        '@happyvertical/smrt-core installed',
+        hasSmrtCore,
+        'Missing dependency - run: npm install @happyvertical/smrt-core',
+      );
+
+      // 3. Check for SvelteKit
+      const hasSvelteKit =
+        packageJson.dependencies?.['@sveltejs/kit'] ||
+        packageJson.devDependencies?.['@sveltejs/kit'];
+      if (hasSvelteKit) {
+        check('SvelteKit detected', true);
+      } else {
+        check(
+          'SvelteKit detected',
+          false,
+          undefined,
+          'Not a SvelteKit project (optional)',
+        );
+      }
+
+      console.log();
+
+      // ========== Configuration Files ==========
+      console.log('⚙️  Configuration\n');
+
+      // 4. Check smrt.config
+      const smrtConfigTs = resolve(cwd, 'smrt.config.ts');
+      const smrtConfigJs = resolve(cwd, 'smrt.config.js');
+      const hasSmrtConfig =
+        existsSync(smrtConfigTs) || existsSync(smrtConfigJs);
+      check(
+        'smrt.config.ts/js exists',
+        hasSmrtConfig,
+        'Missing config file - run: smrt init',
+      );
+
+      // 5. Check vite.config
+      const viteConfigTs = resolve(cwd, 'vite.config.ts');
+      const viteConfigJs = resolve(cwd, 'vite.config.js');
+      const hasViteConfig =
+        existsSync(viteConfigTs) || existsSync(viteConfigJs);
+      check(
+        'vite.config.ts/js exists',
+        hasViteConfig,
+        undefined,
+        'Missing vite.config (optional for non-Vite projects)',
+      );
+
+      // 6. Check vite.config contains smrtPlugin
+      if (hasViteConfig) {
+        const viteConfigPath = existsSync(viteConfigTs)
+          ? viteConfigTs
+          : viteConfigJs;
+        const viteConfigContent = readFileSync(viteConfigPath, 'utf-8');
+        const hasSmrtPlugin = viteConfigContent.includes('smrtPlugin');
+        check(
+          'smrtPlugin in vite.config',
+          hasSmrtPlugin,
+          'Missing smrtPlugin - add: import { smrtPlugin } from "@happyvertical/smrt-core/vite-plugin"',
+        );
+      }
+
+      // 7. Check tsconfig.json for decorators
+      const tsconfigPath = resolve(cwd, 'tsconfig.json');
+      if (existsSync(tsconfigPath)) {
+        try {
+          const tsconfigContent = readFileSync(tsconfigPath, 'utf-8');
+          const hasDecorators = tsconfigContent.includes(
+            'experimentalDecorators',
+          );
+          check(
+            'experimentalDecorators enabled',
+            hasDecorators,
+            'Add "experimentalDecorators": true to tsconfig.json',
+          );
+        } catch {
+          check(
+            'tsconfig.json readable',
+            false,
+            'Could not read tsconfig.json',
+          );
+        }
+      } else {
+        check(
+          'tsconfig.json exists',
+          false,
+          undefined,
+          'No tsconfig.json found (optional for JavaScript projects)',
+        );
+      }
+
+      console.log();
+
+      // ========== SMRT Objects ==========
+      console.log('📦 SMRT Objects\n');
+
+      // 8. Check for objects directory
+      const objectsDir = resolve(cwd, 'src/lib/objects');
+      const hasObjectsDir = existsSync(objectsDir);
+      check(
+        'src/lib/objects/ exists',
+        hasObjectsDir,
+        undefined,
+        'No objects directory found - create src/lib/objects/',
+      );
+
+      // 9. Check for objects index
+      if (hasObjectsDir) {
+        const objectsIndex = resolve(objectsDir, 'index.ts');
+        const hasObjectsIndex = existsSync(objectsIndex);
+        check(
+          'src/lib/objects/index.ts exists',
+          hasObjectsIndex,
+          'Missing objects index file',
+        );
+      }
+
+      // 10. Discover manifests
+      try {
+        const { discovered, totalObjects } = await autoDiscoverAndLoad();
+        if (discovered.length > 0) {
+          check(`${totalObjects} SMRT object(s) discovered`, true);
+        } else {
+          check(
+            'SMRT objects discovered',
+            false,
+            undefined,
+            'No manifests found - run: npm run build',
+          );
+        }
+      } catch {
+        check(
+          'SMRT objects discovered',
+          false,
+          undefined,
+          'Could not discover manifests',
+        );
+      }
+
+      console.log();
+
+      // ========== Server Configuration ==========
+      console.log('🖥️  Server\n');
+
+      // 11. Check server smrt.ts
+      const serverSmrtPath = resolve(cwd, 'src/lib/server/smrt.ts');
+      const hasServerSmrt = existsSync(serverSmrtPath);
+      check(
+        'src/lib/server/smrt.ts exists',
+        hasServerSmrt,
+        'Missing server config - run: smrt init',
+      );
+
+      // 12. Check database config
+      try {
+        const { getPackageConfig } = await import('@happyvertical/smrt-config');
+        const { DEFAULT_CLI_CONFIG } = await import('../config.js');
+        const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+        if (config.database?.url && config.database.url !== ':memory:') {
+          check(
+            `Database configured (${config.database.type || 'sqlite'})`,
+            true,
+          );
+        } else {
+          check(
+            'Database configured',
+            false,
+            undefined,
+            'Using in-memory database - set DATABASE_URL for persistence',
+          );
+        }
+      } catch {
+        check(
+          'Database configuration',
+          false,
+          undefined,
+          'Could not read database config',
+        );
+      }
+
+      // 13. Check .env file
+      const envPath = resolve(cwd, '.env');
+      const envExamplePath = resolve(cwd, '.env.example');
+      if (existsSync(envPath)) {
+        check('.env file exists', true);
+      } else if (existsSync(envExamplePath)) {
+        check(
+          '.env file exists',
+          false,
+          undefined,
+          '.env.example exists - copy it to .env',
+        );
+      } else {
+        check(
+          '.env file exists',
+          false,
+          undefined,
+          'No .env file - environment variables may be needed',
+        );
+      }
+
+      console.log();
+
+      // ========== Summary ==========
+      console.log('━'.repeat(50));
+      console.log(`\n📊 Summary\n`);
+      console.log(`   ✅ Passed:   ${passed.length}`);
+      console.log(`   ⚠️  Warnings: ${warnings.length}`);
+      console.log(`   ❌ Issues:   ${issues.length}`);
+      console.log();
+
+      if (issues.length > 0) {
+        console.log('🔧 Issues to fix:\n');
+        for (const issue of issues) {
+          console.log(`   • ${issue}`);
+        }
+        console.log();
+
+        if (options.fix) {
+          console.log(
+            '💡 Auto-fix is not yet implemented. Run suggested commands manually.\n',
+          );
+        }
+      }
+
+      if (warnings.length > 0 && issues.length === 0) {
+        console.log('👍 Project is functional with some warnings.\n');
+      }
+
+      if (issues.length === 0 && warnings.length === 0) {
+        console.log('🎉 Your SMRT project is healthy!\n');
+      }
+
+      console.log('💡 Commands to try:');
+      console.log('   smrt objects      - List discovered SMRT objects');
+      console.log('   smrt introspect   - Detailed project analysis');
+      console.log('   smrt init         - Initialize SMRT in project');
+      console.log('   smrt generate-routes - Generate API routes');
+      console.log();
+
+      // Exit with error code if there are issues
+      if (issues.length > 0) {
+        process.exit(1);
+      }
+    },
+  },
 };

@@ -1,0 +1,32 @@
+{
+  "name": "@happyvertical/smrt-template-sveltekit",
+  "version": "0.0.1",
+  "description": "SvelteKit project template with SMRT framework integration",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./template/*": "./template/*"
+  },
+  "files": [
+    "template",
+    "index.js",
+    "README.md"
+  ],
+  "keywords": [
+    "smrt",
+    "sveltekit",
+    "template",
+    "scaffold"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/template-sveltekit"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-core": "^0.10.0"
+  }
+}

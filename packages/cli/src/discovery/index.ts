@@ -7,4 +7,5 @@ export {
   type DiscoveredManifest,
   discoverManifests,
   loadManifest,
+  loadManifestFile,
 } from './manifest-discovery.js';

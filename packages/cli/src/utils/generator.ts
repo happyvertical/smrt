@@ -137,12 +137,14 @@ async function overlayTemplate(
   config: TemplateConfig,
   outputDir: string,
 ): Promise<void> {
-  // Determine overlay directory based on source type
-  let overlayDir: string;
+  const { existsSync } = await import('node:fs');
+
+  // Determine base directory for template files
+  let baseDir: string;
 
   switch (source.type) {
     case 'npm':
-      overlayDir = join(dirname(source.resolved), 'overlay');
+      baseDir = dirname(source.resolved);
       break;
     case 'git': {
       // For git templates, the temp directory is stored in config
@@ -150,26 +152,55 @@ async function overlayTemplate(
       if (!tempDir) {
         throw new Error('Git template temp directory not found');
       }
-      overlayDir = join(tempDir, 'overlay');
+      baseDir = tempDir;
       break;
     }
     case 'local':
-      overlayDir = join(source.resolved, 'overlay');
+      baseDir = source.resolved;
       break;
     default:
       throw new Error(`Unknown source type: ${source.type}`);
   }
 
-  // Find all files in overlay directory
+  // Check for template directory first (full project templates)
+  // Then fall back to overlay directory (overlay on base generator output)
+  // Also check templateDir from config
+  const templateDir = (config as any).templateDir
+    ? join(baseDir, (config as any).templateDir)
+    : null;
+
+  let sourceDir: string | null = null;
+
+  // Priority: config.templateDir > template/ > overlay/
+  if (templateDir && existsSync(templateDir)) {
+    sourceDir = templateDir;
+  } else if (existsSync(join(baseDir, 'template'))) {
+    sourceDir = join(baseDir, 'template');
+  } else if (existsSync(join(baseDir, 'overlay'))) {
+    sourceDir = join(baseDir, 'overlay');
+  }
+
+  if (!sourceDir) {
+    // No template files to copy - this is okay if there's a base generator
+    if (config.baseGenerator) {
+      return;
+    }
+    throw new Error(
+      `No template files found in ${baseDir}. Expected 'template/' or 'overlay/' directory.`,
+    );
+  }
+
+  // Find all files in source directory
   const files = await glob('**/*', {
-    cwd: overlayDir,
+    cwd: sourceDir,
     dot: true,
     onlyFiles: true,
+    ignore: ['**/.gitkeep'],
   });
 
   // Copy each file
   for (const file of files) {
-    const src = join(overlayDir, file);
+    const src = join(sourceDir, file);
     const dest = join(outputDir, file);
 
     // Ensure directory exists
@@ -178,6 +209,8 @@ async function overlayTemplate(
     // Copy file
     await cp(src, dest);
   }
+
+  console.log(`   Copied ${files.length} template files`);
 }
 
 /**
