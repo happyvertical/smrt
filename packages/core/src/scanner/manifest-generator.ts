@@ -216,6 +216,28 @@ export class ManifestGenerator {
       obj.fields = mergedFields;
       obj.methods = mergedMethods;
 
+      // Inherit tableName and collection from STI base class
+      // STI subclasses share the parent's table, so they should use the same collection name
+      const stiBase = this.findSTIBase(obj, objectsByName, manifest);
+      if (stiBase && stiBase !== obj) {
+        // Inherit tableName from base's decoratorConfig if set
+        if (stiBase.decoratorConfig?.tableName) {
+          obj.decoratorConfig = obj.decoratorConfig || {};
+          obj.decoratorConfig.tableName = stiBase.decoratorConfig.tableName;
+          console.log(
+            `[manifest-generator] ${obj.className} inherits tableName: '${stiBase.decoratorConfig.tableName}' from ${stiBase.className}`,
+          );
+        }
+
+        // Inherit collection name from STI base (all STI classes share one table)
+        if (stiBase.collection !== obj.collection) {
+          console.log(
+            `[manifest-generator] ${obj.className} inherits collection: '${stiBase.collection}' from ${stiBase.className}`,
+          );
+          obj.collection = stiBase.collection;
+        }
+      }
+
       console.log(
         `[manifest-generator] ✅ ${obj.className} now has ${Object.keys(mergedFields).length} fields (including inherited)`,
       );
@@ -280,6 +302,65 @@ export class ManifestGenerator {
     }
 
     return false; // No STI in hierarchy
+  }
+
+  /**
+   * Find the STI base class for a given object
+   *
+   * Walks up the inheritance chain to find the first ancestor that defines
+   * tableStrategy: 'sti'. This is the class that owns the shared table.
+   *
+   * @param obj - The object definition to find the STI base for
+   * @param objectsByName - Map of className -> objectDef for lookups
+   * @param manifest - The manifest (for accessing smrtDependencies)
+   * @returns The STI base class definition, or the object itself if it's the base
+   */
+  private findSTIBase(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    manifest: SmartObjectManifest,
+  ): SmartObjectDefinition | undefined {
+    // If this object explicitly defines STI, it's the base
+    if (obj.decoratorConfig?.tableStrategy === 'sti') {
+      return obj;
+    }
+
+    // Walk up the inheritance chain looking for STI base
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) {
+        break; // Circular inheritance, stop
+      }
+      visited.add(currentClass);
+
+      let parentDef = objectsByName.get(currentClass);
+
+      // If parent not in current manifest, try loading from external SMRT packages
+      if (
+        !parentDef &&
+        manifest.smrtDependencies &&
+        manifest.smrtDependencies.length > 0
+      ) {
+        parentDef = this.loadParentFromExternalPackage(
+          currentClass,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+      }
+
+      if (!parentDef) break; // Parent not found anywhere
+
+      // Check if this ancestor defines STI
+      if (parentDef.decoratorConfig?.tableStrategy === 'sti') {
+        return parentDef; // Found STI base
+      }
+
+      currentClass = parentDef.extends;
+    }
+
+    return undefined; // No STI base found
   }
 
   /**
