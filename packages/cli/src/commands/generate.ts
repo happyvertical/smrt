@@ -213,23 +213,41 @@ export const generateCommands: Record<string, CLICommand> = {
           `✓ Found ${totalObjects} object(s) in ${discovered.length} manifest(s)\n`,
         );
 
-        // Load the first manifest (prefer project manifest over package)
-        const projectManifest = discovered.find((m) => m.source === 'project');
-        const manifestToUse = projectManifest || discovered[0];
+        // Load ALL discovered manifests and merge their objects
+        console.log('📦 Loading manifests:');
+        const mergedObjects: Record<string, any> = {};
 
-        console.log(`📦 Using manifest: ${manifestToUse.path}`);
-        if (manifestToUse.packageName) {
-          console.log(`   Package: ${manifestToUse.packageName}`);
+        for (const manifestInfo of discovered) {
+          const manifestData = await loadManifestFile(manifestInfo.path);
+          if (manifestData?.objects) {
+            const objectCount = Object.keys(manifestData.objects).length;
+            const source = manifestInfo.packageName || 'project';
+            console.log(`   ${source}: ${objectCount} object(s)`);
+
+            // Merge objects, adding packageName if from external package
+            for (const [name, def] of Object.entries(manifestData.objects)) {
+              mergedObjects[name] = {
+                ...def,
+                // Ensure packageName is set for external packages
+                packageName:
+                  (def as any).packageName || manifestInfo.packageName,
+              };
+            }
+          }
         }
         console.log();
 
-        // Load the actual manifest data
-        const manifest = await loadManifestFile(manifestToUse.path);
-
-        if (!manifest?.objects || Object.keys(manifest.objects).length === 0) {
-          console.error('❌ Manifest contains no SMRT objects');
+        if (Object.keys(mergedObjects).length === 0) {
+          console.error('❌ No SMRT objects found in any manifest');
           process.exit(1);
         }
+
+        // Create merged manifest
+        const manifest = {
+          version: '1.0.0',
+          timestamp: Date.now(),
+          objects: mergedObjects,
+        };
 
         // Import the SvelteKit route generator
         const { generateSvelteKitRoutes } = await import(
