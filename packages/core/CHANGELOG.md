@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.15
+
+### Patch Changes
+
+- ### Features
+
+  - add generate-register command (#420) (cli)
+  - @happyvertical/smrt-config@0.17.15
+  - @happyvertical/smrt-types@0.17.15
+
 ## 0.17.14
 
 ### Patch Changes
