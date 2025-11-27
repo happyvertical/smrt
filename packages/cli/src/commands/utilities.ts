@@ -543,6 +543,45 @@ export default testManifest;
     },
   },
 
+  'db:clear-cache': {
+    name: 'db:clear-cache',
+    description:
+      'Clear cached database connections (useful when JSON files change)',
+    aliases: ['clear-cache'],
+    args: [],
+    options: {
+      verbose: {
+        type: 'boolean',
+        description: 'Show detailed output',
+        default: false,
+      },
+    },
+    handler: async (_args: string[], options: any) => {
+      try {
+        const { clearConnectionCache } = await import('@happyvertical/sql');
+        clearConnectionCache();
+
+        console.log('\n✅ Database connection cache cleared');
+        console.log(
+          '   Next database operation will create fresh connections\n',
+        );
+
+        if (options.verbose) {
+          console.log('💡 This is useful when:');
+          console.log('   - JSON data files have been modified');
+          console.log('   - Schema has changed and you need fresh connections');
+          console.log('   - Debugging connection/schema issues\n');
+        }
+      } catch (error) {
+        console.error('❌ Failed to clear cache:');
+        if (error instanceof Error) {
+          console.error(`   ${error.message}`);
+        }
+        process.exit(1);
+      }
+    },
+  },
+
   doctor: {
     name: 'doctor',
     description: 'Diagnose and report on SMRT project health',
