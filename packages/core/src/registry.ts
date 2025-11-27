@@ -38,6 +38,7 @@ import {
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
 import type { SmartObjectManifest } from './scanner/types.js';
+import type { ColumnDefinition } from './schema/types.js';
 import { classnameToTablename, tableNameFromClass } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
@@ -223,6 +224,11 @@ interface SchemaDefinition {
   }>;
   /** Table name derived from class name */
   tableName: string;
+  /**
+   * Column definitions with full metadata (for STI: includes all descendant fields)
+   * Used by database adapters to validate fields without re-generating schema
+   */
+  columns?: Record<string, ColumnDefinition>;
 }
 
 /**

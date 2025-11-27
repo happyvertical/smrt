@@ -133,6 +133,15 @@ export async function generateSchema(
     );
   }
 
+  // Store the columns in the registry so database adapters can access them
+  // This is critical for STI tables where descendants have additional columns
+  // that need to be validated by the JSON adapter (fixes issue #427)
+  const registered = ObjectRegistry.getClass(className);
+  if (registered?.schema) {
+    registered.schema.columns = schemaDefinition.columns;
+    registered.schema.ddl = generator.generateSQL(schemaDefinition);
+  }
+
   return generator.generateSQL(schemaDefinition);
 }
 

@@ -194,11 +194,14 @@ let canScrollLeft = $state(false);
 let canScrollRight = $state(false);
 
 // Day cards scroll state
-// biome-ignore lint/style/useConst: Svelte bind:this requires let, not const
+// biome-ignore lint/style/useConst: Svelte bind:this requires let
 let dayCardsContainer: HTMLElement | null = $state(null);
+// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
 let dayCardsCanScrollLeft = $state(false);
+// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
 let dayCardsCanScrollRight = $state(false);
-const dayCardsHovered = $state(false);
+// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
+let dayCardsHovered = $state(false);
 
 // Update scroll button visibility
 function updateScrollButtons() {
