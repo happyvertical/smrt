@@ -29,14 +29,14 @@
     "cli": "tsx src/index.ts"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.56.16",
-    "@happyvertical/files": "0.56.16",
-    "@happyvertical/logger": "0.56.16",
+    "@happyvertical/ai": "0.56.17",
+    "@happyvertical/files": "0.56.17",
+    "@happyvertical/logger": "0.56.17",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "0.56.16",
-    "@happyvertical/utils": "0.56.16",
+    "@happyvertical/sql": "0.56.17",
+    "@happyvertical/utils": "0.56.17",
     "fast-glob": "3.3.3",
     "tar": "^7.5.1"
   },
