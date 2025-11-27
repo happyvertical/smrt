@@ -21,7 +21,7 @@ const _gridColumns = $derived(
 
 <div
   class="grid gap-{gap}"
-  style="grid-template-columns: {gridColumns}"
+  style="grid-template-columns: {_gridColumns}"
   {...rest}
 >
   {@render children?.()}

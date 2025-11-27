@@ -468,29 +468,34 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         // package.json not found or invalid - continue without packageName
       }
 
-      const newManifest = manifestGenerator.generateManifest(scanResults, {
-        packageName,
-        packageVersion,
-        packageJson,
-      });
-
-      // Add moduleType identifier for SMRT package discovery
-      newManifest.moduleType = 'smrt';
-
-      // Discover SMRT dependencies
+      // Discover SMRT dependencies BEFORE generateManifest so field inheritance works
+      let smrtDependencies: string[] = [];
       try {
         const { discoverSmrtPackages } = await import(
           '../manifest/discover-smrt-packages.js'
         );
-        const smrtDependencies = discoverSmrtPackages();
-        newManifest.smrtDependencies = smrtDependencies;
+        smrtDependencies = discoverSmrtPackages();
+        if (smrtDependencies.length > 0) {
+          console.log(
+            `[smrt] Found ${smrtDependencies.length} SMRT dependencies: ${smrtDependencies.join(', ')}`,
+          );
+        }
       } catch (error) {
         console.warn(
           '[smrt] Failed to discover SMRT dependencies:',
           error instanceof Error ? error.message : error,
         );
-        newManifest.smrtDependencies = [];
       }
+
+      const newManifest = manifestGenerator.generateManifest(scanResults, {
+        packageName,
+        packageVersion,
+        packageJson,
+        smrtDependencies,
+      });
+
+      // Add moduleType identifier for SMRT package discovery
+      newManifest.moduleType = 'smrt';
 
       // Log scan results
       const objectCount = Object.keys(newManifest.objects).length;

@@ -1,4 +1,7 @@
 <script lang="ts">
+import Grid from '../layout/Grid.svelte';
+import ArticleCard from './ArticleCard.svelte';
+
 // biome-ignore lint/style/useNamingConvention: Database column names use snake_case
 interface Article {
   id: string;

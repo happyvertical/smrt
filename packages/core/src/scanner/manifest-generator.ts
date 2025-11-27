@@ -26,6 +26,7 @@ export class ManifestGenerator {
       packageName?: string;
       packageVersion?: string;
       packageJson?: any;
+      smrtDependencies?: string[];
     },
   ): SmartObjectManifest {
     const manifest: SmartObjectManifest = {
@@ -40,6 +41,10 @@ export class ManifestGenerator {
     }
     if (options?.packageVersion) {
       manifest.packageVersion = options.packageVersion;
+    }
+    // Set smrtDependencies BEFORE mergeInheritedFields() so external packages can be loaded
+    if (options?.smrtDependencies) {
+      manifest.smrtDependencies = options.smrtDependencies;
     }
 
     for (const result of scanResults) {

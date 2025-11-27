@@ -4,6 +4,10 @@ export { default as ArticleCard } from './components/content/ArticleCard.svelte'
 export { default as ArticleList } from './components/content/ArticleList.svelte';
 // Content Components
 export { default as Markdown } from './components/content/Markdown.svelte';
+export type { Reference } from './components/council/ArticleReferences.svelte';
+export { default as ArticleReferences } from './components/council/ArticleReferences.svelte';
+// Council Components
+export { default as CouncilSidebar } from './components/council/CouncilSidebar.svelte';
 // Layout Components
 export { default as Container } from './components/layout/Container.svelte';
 export { default as Footer } from './components/layout/Footer.svelte';
@@ -25,14 +29,12 @@ export type {
   CardVariant,
 } from './components/ui/Card.svelte';
 export { default as Card } from './components/ui/Card.svelte';
-
 // Weather Components
 export type {
   ForecastDay,
   ForecastPeriod,
 } from './components/weather/WeatherForecast.svelte';
 export { default as WeatherForecast } from './components/weather/WeatherForecast.svelte';
-
 export type {
   DayForecast,
   HourlyForecast,
