@@ -447,11 +447,18 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
 
     // Read package.json to get manifest export path
     const pkgJson = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-    const manifestExport = pkgJson.exports?.['./manifest'];
+
+    // Try ./manifest.json first (explicit JSON export), then fall back to ./manifest
+    // Some packages (like smrt-core) have ./manifest as a JS module and ./manifest.json for the data
+    let manifestExport = pkgJson.exports?.['./manifest.json'];
+
+    if (!manifestExport) {
+      manifestExport = pkgJson.exports?.['./manifest'];
+    }
 
     if (!manifestExport) {
       console.log(
-        `[manifest-loader] Package ${packageName} does not export manifest`,
+        `[manifest-loader] Package ${packageName} does not export manifest (checked ./manifest.json and ./manifest)`,
       );
       return null;
     }
@@ -465,6 +472,14 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     if (!manifestRelPath) {
       console.warn(
         `Package ${packageName} has invalid manifest export configuration`,
+      );
+      return null;
+    }
+
+    // Check if the path points to a JSON file
+    if (!manifestRelPath.endsWith('.json')) {
+      console.log(
+        `[manifest-loader] Package ${packageName} manifest export points to non-JSON file: ${manifestRelPath}`,
       );
       return null;
     }

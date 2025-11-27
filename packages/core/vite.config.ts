@@ -12,6 +12,11 @@ function getCoreEntries() {
   for (const [key, value] of Object.entries(
     pkg.exports as Record<string, string | Record<string, string>>,
   )) {
+    // Skip JSON exports - they are data files, not modules to build
+    if (key.endsWith('.json')) {
+      continue;
+    }
+
     // Handle conditional exports (objects with browser/default keys)
     let exportPath: string;
     if (typeof value === 'object' && value !== null) {
@@ -19,6 +24,11 @@ function getCoreEntries() {
       exportPath = value.default || value.browser || '';
     } else {
       exportPath = value as string;
+    }
+
+    // Skip non-JS exports (e.g., JSON files)
+    if (!exportPath.endsWith('.js')) {
+      continue;
     }
 
     // Convert export key to entry name: '.' → 'index', './fields' → 'fields'
