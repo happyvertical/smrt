@@ -15,12 +15,12 @@
     "./manifest": "./dist/manifest.json"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.56.16",
-    "@happyvertical/files": "0.56.16",
-    "@happyvertical/logger": "0.56.16",
+    "@happyvertical/ai": "0.56.17",
+    "@happyvertical/files": "0.56.17",
+    "@happyvertical/logger": "0.56.17",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "0.56.16",
-    "@happyvertical/utils": "0.56.16"
+    "@happyvertical/sql": "0.56.17",
+    "@happyvertical/utils": "0.56.17"
   },
   "scripts": {
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
