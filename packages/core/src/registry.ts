@@ -753,7 +753,7 @@ export class ObjectRegistry {
     });
 
     console.log(
-      `🎯 Registered smrt object: ${name} with schema for ${tableName} and ${validators.length} validators`,
+      `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${validators.length} validators`,
     );
   }
 
