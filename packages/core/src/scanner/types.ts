@@ -43,6 +43,38 @@ export interface MethodDefinition {
   isPublic: boolean;
 }
 
+/**
+ * Pre-generated schema column definition for manifest
+ */
+export interface ManifestColumnDefinition {
+  type: string; // SQL type: TEXT, INTEGER, DECIMAL, BOOLEAN, DATETIME, JSON
+  primaryKey?: boolean;
+  notNull?: boolean;
+  unique?: boolean;
+  default?: any;
+}
+
+/**
+ * Pre-generated schema index definition for manifest
+ */
+export interface ManifestIndexDefinition {
+  name: string;
+  columns: string[];
+  unique?: boolean;
+}
+
+/**
+ * Pre-generated schema for efficient external package consumption
+ * Generated at build time by ManifestGenerator, stored in manifest.json
+ */
+export interface ManifestSchema {
+  tableName: string;
+  ddl: string;
+  columns: Record<string, ManifestColumnDefinition>;
+  indexes: ManifestIndexDefinition[];
+  version: string; // Hash of schema definition for migration tracking
+}
+
 export interface SmartObjectDefinition {
   name: string;
   className: string;
@@ -66,6 +98,14 @@ export interface SmartObjectDefinition {
       parameters?: Record<string, any>;
     };
   }>;
+  /**
+   * Pre-generated schema for efficient external package consumption
+   * Generated at build time by ManifestGenerator (smrt scan)
+   *
+   * When present, consumers can use this pre-computed schema directly
+   * without calling generateSchema() at runtime, eliminating latency.
+   */
+  schema?: ManifestSchema;
 }
 
 export interface SmartObjectManifest {

@@ -815,13 +815,35 @@ export class ObjectRegistry {
     const config = objectDef.decoratorConfig || {};
     const tableName = config.tableName || tableNameFromClass(stubConstructor);
 
-    // Placeholder schema
-    const schema: SchemaDefinition = {
-      ddl: '',
-      indexes: [],
-      triggers: [],
-      tableName,
-    };
+    // Load pre-generated schema from manifest if available
+    // This enables efficient external package consumption without runtime schema generation
+    let schema: SchemaDefinition;
+    if (objectDef.schema) {
+      // Pre-generated schema from manifest (build-time)
+      schema = {
+        ddl: objectDef.schema.ddl,
+        indexes:
+          objectDef.schema.indexes?.map((idx: any) =>
+            typeof idx === 'string'
+              ? idx
+              : `CREATE ${idx.unique ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS ${idx.name} ON "${tableName}" (${idx.columns.map((c: string) => `"${c}"`).join(', ')})`,
+          ) || [],
+        triggers: [],
+        tableName: objectDef.schema.tableName,
+        columns: objectDef.schema.columns,
+      };
+      console.log(
+        `[registry] Loaded pre-generated schema for ${name} (${Object.keys(objectDef.schema.columns || {}).length} columns)`,
+      );
+    } else {
+      // Placeholder schema - will be generated at runtime if needed
+      schema = {
+        ddl: '',
+        indexes: [],
+        triggers: [],
+        tableName,
+      };
+    }
 
     // Compile validators
     const validators = ObjectRegistry.compileValidators(name, fields);

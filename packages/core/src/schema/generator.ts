@@ -4,7 +4,14 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { FieldDefinition, SmartObjectDefinition } from '../scanner/types';
+import type {
+  FieldDefinition,
+  ManifestColumnDefinition,
+  ManifestIndexDefinition,
+  ManifestSchema,
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types';
 import type {
   ColumnDefinition,
   ForeignKeyDefinition,
@@ -759,6 +766,376 @@ export class SchemaGenerator {
       packageName: 'runtime',
       baseClass: 'SmrtObject',
     };
+  }
+
+  /**
+   * Generate STI schema from manifest data (build-time, no runtime registry)
+   *
+   * This method generates STI schema purely from manifest data, without depending
+   * on ObjectRegistry. This enables pre-generating schemas at build time for
+   * efficient external package consumption.
+   *
+   * @param baseClassName - Base class name for the STI hierarchy
+   * @param tableName - Shared table name (from base class)
+   * @param baseFields - Fields from the base class
+   * @param manifest - Full manifest containing all objects
+   * @returns ManifestSchema for storage in manifest.json
+   */
+  generateSTISchemaFromManifest(
+    baseClassName: string,
+    tableName: string,
+    _baseFields: Record<string, FieldDefinition>,
+    manifest: SmartObjectManifest,
+  ): ManifestSchema {
+    const columns: Record<string, ManifestColumnDefinition> = {};
+
+    // Add default SMRT fields
+    columns.id = {
+      type: 'TEXT',
+      primaryKey: true,
+      notNull: true,
+    };
+
+    columns.slug = {
+      type: 'TEXT',
+      notNull: true,
+    };
+
+    columns.context = {
+      type: 'TEXT',
+      notNull: true,
+      default: '',
+    };
+
+    // Add STI discriminator column
+    columns._meta_type = {
+      type: 'TEXT',
+      notNull: true,
+    };
+
+    // Add meta column for flexible storage
+    columns._meta_data = {
+      type: 'JSON',
+      notNull: false,
+    };
+
+    // Timestamp fields
+    columns.created_at = {
+      type: 'TIMESTAMP',
+      notNull: true,
+      default: 'current_timestamp',
+    };
+
+    columns.updated_at = {
+      type: 'TIMESTAMP',
+      notNull: true,
+      default: 'current_timestamp',
+    };
+
+    // Find all descendants in manifest
+    const descendants = this.findDescendantsInManifest(baseClassName, manifest);
+    const allClassNames = [baseClassName, ...descendants];
+
+    // Track FK columns by class for partial indexes
+    const fkColumnsByClass = new Map<string, Set<string>>();
+
+    // Aggregate fields from base and all descendants
+    for (const className of allClassNames) {
+      const objDef = manifest.objects[className];
+      if (!objDef) continue;
+
+      fkColumnsByClass.set(className, new Set());
+
+      for (const [fieldName, field] of Object.entries(objDef.fields)) {
+        // Skip transient fields
+        if (field.transient || field._meta?.transient) {
+          continue;
+        }
+
+        // Skip default fields already added
+        if (
+          fieldName === 'id' ||
+          fieldName === 'slug' ||
+          fieldName === 'context' ||
+          fieldName === 'created_at' ||
+          fieldName === 'createdAt' ||
+          fieldName === 'updated_at' ||
+          fieldName === 'updatedAt'
+        ) {
+          continue;
+        }
+
+        // Skip relationship fields that don't create columns
+        if (field.type === 'oneToMany' || field.type === 'manyToMany') {
+          continue;
+        }
+
+        // Skip meta fields - they're stored in _meta_data JSONB column
+        if (field.type === 'meta') {
+          continue;
+        }
+
+        const columnName = this.toSnakeCase(fieldName);
+
+        // Check if column already exists (inherited from parent)
+        if (columns[columnName]) {
+          continue;
+        }
+
+        const sqlType = this.mapFieldTypeToSQL(field.type);
+
+        const columnDef: ManifestColumnDefinition = {
+          type: sqlType,
+          // STI: All columns nullable (union of child fields)
+          notNull: false,
+        };
+
+        // Get default value
+        if (field.default !== undefined) {
+          columnDef.default = field.default;
+        }
+
+        // Track FK columns for this class (for partial indexes)
+        if (field.type === 'foreignKey') {
+          fkColumnsByClass.get(className)?.add(columnName);
+        }
+
+        columns[columnName] = columnDef;
+      }
+    }
+
+    // Generate indexes
+    const indexes: ManifestIndexDefinition[] = [];
+
+    // Primary key index
+    indexes.push({
+      name: `${tableName}_id_idx`,
+      columns: ['id'],
+    });
+
+    // Unique index for slug, context, and type (STI variation)
+    indexes.push({
+      name: `${tableName}_slug_context_meta_type_idx`,
+      columns: ['slug', 'context', '_meta_type'],
+      unique: true,
+    });
+
+    // Index on type column (for polymorphic queries)
+    indexes.push({
+      name: `${tableName}_meta_type_idx`,
+      columns: ['_meta_type'],
+    });
+
+    // Generate DDL
+    const schemaDefinition: SchemaDefinition = {
+      tableName,
+      columns: this.convertManifestColumnsToSchemaColumns(columns),
+      indexes: indexes.map((idx) => ({
+        name: idx.name,
+        columns: idx.columns,
+        unique: idx.unique,
+      })),
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '',
+      packageName: '',
+    };
+
+    const ddl = this.generateSQL(schemaDefinition);
+
+    // Generate version hash
+    const version = createHash('sha256')
+      .update(JSON.stringify({ columns, baseClassName, descendants }))
+      .digest('hex')
+      .substring(0, 8);
+
+    return {
+      tableName,
+      ddl,
+      columns,
+      indexes,
+      version,
+    };
+  }
+
+  /**
+   * Generate CTI (Class Table Inheritance) schema from manifest data
+   *
+   * @param className - Class name
+   * @param tableName - Table name
+   * @param fields - Fields from the class
+   * @returns ManifestSchema for storage in manifest.json
+   */
+  generateCTISchemaFromManifest(
+    className: string,
+    tableName: string,
+    fields: Record<string, FieldDefinition>,
+  ): ManifestSchema {
+    const columns: Record<string, ManifestColumnDefinition> = {};
+
+    // Add default SMRT fields
+    columns.id = {
+      type: 'TEXT',
+      primaryKey: true,
+      notNull: true,
+    };
+
+    columns.slug = {
+      type: 'TEXT',
+      notNull: true,
+    };
+
+    columns.context = {
+      type: 'TEXT',
+      notNull: true,
+      default: '',
+    };
+
+    // Timestamp fields
+    columns.created_at = {
+      type: 'TIMESTAMP',
+      notNull: true,
+      default: 'current_timestamp',
+    };
+
+    columns.updated_at = {
+      type: 'TIMESTAMP',
+      notNull: true,
+      default: 'current_timestamp',
+    };
+
+    // Add class fields
+    for (const [fieldName, field] of Object.entries(fields)) {
+      // Skip transient fields
+      if (field.transient || field._meta?.transient) {
+        continue;
+      }
+
+      // Skip default fields already added
+      if (
+        fieldName === 'id' ||
+        fieldName === 'slug' ||
+        fieldName === 'context' ||
+        fieldName === 'created_at' ||
+        fieldName === 'createdAt' ||
+        fieldName === 'updated_at' ||
+        fieldName === 'updatedAt'
+      ) {
+        continue;
+      }
+
+      // Skip relationship fields that don't create columns
+      if (field.type === 'oneToMany' || field.type === 'manyToMany') {
+        continue;
+      }
+
+      // Skip meta fields
+      if (field.type === 'meta') {
+        continue;
+      }
+
+      const columnName = this.toSnakeCase(fieldName);
+      const sqlType = this.mapFieldTypeToSQL(field.type);
+
+      const columnDef: ManifestColumnDefinition = {
+        type: sqlType,
+        notNull: field._meta?.nullable ? false : field.required || false,
+      };
+
+      if (field.default !== undefined) {
+        columnDef.default = field.default;
+      }
+
+      columns[columnName] = columnDef;
+    }
+
+    // Generate indexes
+    const indexes: ManifestIndexDefinition[] = [];
+
+    indexes.push({
+      name: `${tableName}_id_idx`,
+      columns: ['id'],
+    });
+
+    indexes.push({
+      name: `${tableName}_slug_context_idx`,
+      columns: ['slug', 'context'],
+      unique: true,
+    });
+
+    // Generate DDL
+    const schemaDefinition: SchemaDefinition = {
+      tableName,
+      columns: this.convertManifestColumnsToSchemaColumns(columns),
+      indexes: indexes.map((idx) => ({
+        name: idx.name,
+        columns: idx.columns,
+        unique: idx.unique,
+      })),
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '',
+      packageName: '',
+    };
+
+    const ddl = this.generateSQL(schemaDefinition);
+
+    // Generate version hash
+    const version = createHash('sha256')
+      .update(JSON.stringify({ columns, className }))
+      .digest('hex')
+      .substring(0, 8);
+
+    return {
+      tableName,
+      ddl,
+      columns,
+      indexes,
+      version,
+    };
+  }
+
+  /**
+   * Find all descendants of a class in the manifest
+   */
+  private findDescendantsInManifest(
+    baseClassName: string,
+    manifest: SmartObjectManifest,
+  ): string[] {
+    const descendants: string[] = [];
+
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      if (obj.extends === baseClassName) {
+        descendants.push(name);
+        // Recursively find descendants of this class
+        descendants.push(...this.findDescendantsInManifest(name, manifest));
+      }
+    }
+
+    return descendants;
+  }
+
+  /**
+   * Convert ManifestColumnDefinition to ColumnDefinition
+   */
+  private convertManifestColumnsToSchemaColumns(
+    manifestColumns: Record<string, ManifestColumnDefinition>,
+  ): Record<string, ColumnDefinition> {
+    const columns: Record<string, ColumnDefinition> = {};
+
+    for (const [name, col] of Object.entries(manifestColumns)) {
+      columns[name] = {
+        type: col.type as SQLDataType,
+        primaryKey: col.primaryKey,
+        notNull: col.notNull,
+        unique: col.unique,
+        defaultValue: col.default,
+      };
+    }
+
+    return columns;
   }
 
   /**

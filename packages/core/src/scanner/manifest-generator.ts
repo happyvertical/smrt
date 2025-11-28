@@ -2,6 +2,7 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
+import { createRequire } from 'node:module';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import { generateToolManifest } from '../tools/tool-generator';
 import type {
@@ -9,6 +10,9 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from './types';
+
+// Create require function for synchronous module loading in ESM context
+const require = createRequire(import.meta.url);
 
 export class ManifestGenerator {
   /**
@@ -103,7 +107,117 @@ export class ManifestGenerator {
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
 
+    // Third pass: Generate schemas for each object (build-time schema generation)
+    // This pre-computes DDL, indexes, and columns for efficient external package consumption
+    this.generateSchemas(manifest);
+
     return manifest;
+  }
+
+  /**
+   * Generate pre-computed schemas for all objects in the manifest
+   *
+   * This enables external package consumers to use pre-generated schemas
+   * without calling generateSchema() at runtime, eliminating latency.
+   *
+   * @param manifest - The manifest to process in-place
+   */
+  private generateSchemas(manifest: SmartObjectManifest): void {
+    // Import SchemaGenerator synchronously (using createRequire for ESM compatibility)
+    // Try .js first (built output), fall back to .ts (source for tests)
+    let SchemaGenerator: any;
+    try {
+      SchemaGenerator = require('../schema/generator.js').SchemaGenerator;
+    } catch {
+      // Fallback for when running tests directly on source files
+      SchemaGenerator = require('../schema/generator.ts').SchemaGenerator;
+    }
+    const generator = new SchemaGenerator();
+
+    // Track which STI bases have been processed (to avoid duplicate schema generation)
+    const processedSTIBases = new Set<string>();
+
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      // Determine table name
+      const tableName =
+        obj.decoratorConfig?.tableName || this.classNameToTableName(name);
+
+      // Check if this is an STI class
+      if (obj.decoratorConfig?.tableStrategy === 'sti') {
+        // This is an STI base class - generate STI schema
+        if (processedSTIBases.has(name)) continue;
+        processedSTIBases.add(name);
+
+        console.log(
+          `[manifest-generator] Generating STI schema for ${name} (table: ${tableName})`,
+        );
+
+        obj.schema = generator.generateSTISchemaFromManifest(
+          name,
+          tableName,
+          obj.fields,
+          manifest,
+        );
+      } else if (this.isSTIChildClass(obj, manifest)) {
+        // This is an STI child class - skip (schema is on base class)
+        console.log(
+          `[manifest-generator] Skipping schema for STI child ${name}`,
+        );
+      } else {
+        // CTI class - generate individual table schema
+        console.log(
+          `[manifest-generator] Generating CTI schema for ${name} (table: ${tableName})`,
+        );
+
+        obj.schema = generator.generateCTISchemaFromManifest(
+          name,
+          tableName,
+          obj.fields,
+        );
+      }
+    }
+  }
+
+  /**
+   * Check if an object is an STI child class (inherits from STI base)
+   */
+  private isSTIChildClass(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+  ): boolean {
+    if (!obj.extends) return false;
+
+    // Walk up the inheritance chain looking for STI base
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) break;
+      visited.add(currentClass);
+
+      const parentObj: SmartObjectDefinition | undefined =
+        manifest.objects[currentClass];
+      if (!parentObj) break;
+
+      if (parentObj.decoratorConfig?.tableStrategy === 'sti') {
+        return true; // Found STI ancestor
+      }
+
+      currentClass = parentObj.extends;
+    }
+
+    return false;
+  }
+
+  /**
+   * Convert class name to table name (snake_case pluralized)
+   */
+  private classNameToTableName(className: string): string {
+    return `${className
+      .replace(/([A-Z])/g, '_$1')
+      .toLowerCase()
+      .replace(/^_/, '')
+      .replace(/s$/, '')}s`;
   }
 
   /**
