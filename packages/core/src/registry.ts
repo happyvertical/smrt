@@ -2534,27 +2534,34 @@ export class ObjectRegistry {
       return null; // Not using STI
     }
 
-    // Find the first class in the chain with tableStrategy: 'sti'
+    // Find the OLDEST/ROOT class in the chain with tableStrategy: 'sti'
+    // In multi-level STI hierarchies (e.g., Council → Organization → Profile),
+    // we need to return the oldest ancestor (Profile), not the first one found (Organization)
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return null;
     }
 
-    // Check if this class itself defines STI
+    // Track the oldest STI base found as we walk up the chain
+    let stiBase: string | null = null;
+
+    // Check if this class itself defines STI - it's a candidate
     if (registered.decorator?.tableStrategy === 'sti') {
-      return className;
+      stiBase = className;
     }
 
-    // Walk up the chain to find the base
+    // Walk up the chain to find the OLDEST STI base
     const chain = ObjectRegistry.getInheritanceChain(className);
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
       if (ancestor?.decorator?.tableStrategy === 'sti') {
-        return ancestorName;
+        // Found an STI ancestor - it becomes the new candidate
+        // Keep walking to find the oldest/root STI class
+        stiBase = ancestorName;
       }
     }
 
-    return null;
+    return stiBase;
   }
 
   /**
