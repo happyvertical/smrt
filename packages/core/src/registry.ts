@@ -703,14 +703,17 @@ export class ObjectRegistry {
     let schema: SchemaDefinition;
     if (manifestEntry?.schema) {
       // Pre-generated schema from manifest (build-time)
+      // Keep indexes as IndexDefinition objects for DDL strategies
       schema = {
         ddl: manifestEntry.schema.ddl,
         indexes:
-          manifestEntry.schema.indexes?.map((idx: any) =>
-            typeof idx === 'string'
-              ? idx
-              : `CREATE ${idx.unique ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS ${idx.name} ON "${tableName}" (${idx.columns.map((c: string) => `"${c}"`).join(', ')})`,
-          ) || [],
+          manifestEntry.schema.indexes?.map((idx: any) => ({
+            name: idx.name,
+            columns: idx.columns || [],
+            unique: idx.unique || false,
+            where: idx.where,
+            description: idx.description,
+          })) || [],
         triggers: [],
         tableName: manifestEntry.schema.tableName || tableName,
         // Cast manifest columns to ColumnDefinition (same shape, TypeScript just needs help)
@@ -718,6 +721,10 @@ export class ObjectRegistry {
           string,
           ColumnDefinition
         >,
+        foreignKeys: [],
+        dependencies: [],
+        version: manifestEntry.schema.version || '',
+        packageName: manifestEntry.packageName,
       };
       console.log(
         `[registry] Loaded pre-generated schema for ${name} (${Object.keys(manifestEntry.schema.columns || {}).length} columns)`,
@@ -729,11 +736,30 @@ export class ObjectRegistry {
         indexes: [], // Parsed from DDL lazily
         triggers: [], // No longer using database triggers - timestamps managed by application
         tableName,
+        columns: {},
+        foreignKeys: [],
+        dependencies: [],
+        version: '',
+        packageName: undefined,
       };
     }
 
     // Compile validation functions from field definitions
     const validators = ObjectRegistry.compileValidators(name, fields);
+
+    // Derive extends from prototype chain if not available from manifest
+    // This is critical for inline test classes that use decorators
+    let extendsClass: string | undefined = manifestEntry?.extends;
+    if (!extendsClass) {
+      const proto = Object.getPrototypeOf(ctor);
+      if (
+        proto?.name &&
+        proto.name !== 'SmrtObject' &&
+        proto.name !== 'Object'
+      ) {
+        extendsClass = proto.name;
+      }
+    }
 
     ObjectRegistry.classes.set(name, {
       name,
@@ -744,8 +770,10 @@ export class ObjectRegistry {
       schema,
       validators,
       packageName, // Store package name from manifest for getPackageName() lookup
-      extends: manifestEntry?.extends, // NEW: Capture parent class name from manifest
-      inheritanceChain, // NEW: Pre-compute and cache inheritance chain
+      extends: extendsClass, // Capture parent class name from manifest OR prototype chain
+      // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
+      // it lazily using the `extends` field. This ensures correct chain for both
+      // decorator-registered and manifest-loaded classes.
       decorator: config, // Store decorator config (includes tableStrategy)
     });
 
@@ -845,17 +873,24 @@ export class ObjectRegistry {
     let schema: SchemaDefinition;
     if (objectDef.schema) {
       // Pre-generated schema from manifest (build-time)
+      // Keep indexes as IndexDefinition objects for DDL strategies
       schema = {
         ddl: objectDef.schema.ddl,
         indexes:
-          objectDef.schema.indexes?.map((idx: any) =>
-            typeof idx === 'string'
-              ? idx
-              : `CREATE ${idx.unique ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS ${idx.name} ON "${tableName}" (${idx.columns.map((c: string) => `"${c}"`).join(', ')})`,
-          ) || [],
+          objectDef.schema.indexes?.map((idx: any) => ({
+            name: idx.name,
+            columns: idx.columns || [],
+            unique: idx.unique || false,
+            where: idx.where,
+            description: idx.description,
+          })) || [],
         triggers: [],
         tableName: objectDef.schema.tableName,
         columns: objectDef.schema.columns,
+        foreignKeys: [],
+        dependencies: [],
+        version: objectDef.schema.version || '',
+        packageName: packageName,
       };
       console.log(
         `[registry] Loaded pre-generated schema for ${name} (${Object.keys(objectDef.schema.columns || {}).length} columns)`,
@@ -867,6 +902,11 @@ export class ObjectRegistry {
         indexes: [],
         triggers: [],
         tableName,
+        columns: {},
+        foreignKeys: [],
+        dependencies: [],
+        version: '',
+        packageName: packageName,
       };
     }
 
@@ -1636,6 +1676,11 @@ export class ObjectRegistry {
    * ```
    */
   static getTableName(name: string): string | undefined {
+    // For STI classes, return the STI base class's table name
+    const stiBase = ObjectRegistry.getSTIBase(name);
+    if (stiBase && stiBase !== name) {
+      return ObjectRegistry.getSchema(stiBase)?.tableName;
+    }
     return ObjectRegistry.getSchema(name)?.tableName;
   }
 
@@ -1665,10 +1710,27 @@ export class ObjectRegistry {
     for (const [_className, registered] of ObjectRegistry.classes) {
       if (registered.schema?.ddl && registered.schema?.tableName) {
         const tableName = registered.schema.tableName;
+
+        // Convert index definitions to SQL strings for SDK compatibility
+        // SDK expects: indexes: ["CREATE INDEX...", "CREATE UNIQUE INDEX..."]
+        // Manifest has: indexes: [{ name: "...", columns: [...], unique?: boolean }]
+        let indexSQL: string[] | undefined;
+        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
+          indexSQL = registered.schema.indexes.map((idx) => {
+            // Handle both object format and legacy string format
+            if (typeof idx === 'string') {
+              return idx;
+            }
+            const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
+            const columnList = idx.columns.map((col) => `"${col}"`).join(', ');
+            return `CREATE ${indexType} IF NOT EXISTS ${idx.name} ON "${tableName}" (${columnList});`;
+          });
+        }
+
         schemas[tableName] = {
           tableName,
           ddl: registered.schema.ddl,
-          indexes: registered.schema.indexes,
+          indexes: indexSQL,
         };
       }
     }
@@ -1961,8 +2023,17 @@ export class ObjectRegistry {
       return registered.inheritanceChain;
     }
 
-    // Build chain from constructor
-    const chain = ObjectRegistry.buildInheritanceChain(registered.constructor);
+    // Build chain from `extends` field (works for manifest-loaded classes)
+    // This is critical because manifest-loaded classes have stub constructors
+    // that only extend SmrtObject, not their actual parent class.
+    // The `extends` field IS stored correctly during registerFromManifest().
+    const chain: string[] = [];
+    let current: any = registered;
+    while (current) {
+      chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
+      if (!current.extends) break;
+      current = ObjectRegistry.findClass(current.extends);
+    }
 
     // Cache in both places
     registered.inheritanceChain = chain;
@@ -2648,8 +2719,25 @@ export function smrt(config: SmartObjectConfig = {}) {
       const itemClass = (ctor as any)._itemClass;
       if (itemClass) {
         // Register the item class (SmrtObject) with metadata
-        const tableName =
-          config.tableName || classnameToTablename(itemClass.name);
+        // For STI: Check if this class uses STI and get the base class's table name
+        let tableName = config.tableName;
+
+        if (!tableName) {
+          // Check if this class or any parent uses STI
+          const itemClassName = itemClass.name;
+          const stiBase = ObjectRegistry.getSTIBase(itemClassName);
+
+          if (stiBase && stiBase !== itemClassName) {
+            // Use STI base's table name
+            tableName = classnameToTablename(stiBase);
+          } else if (ObjectRegistry.getTableStrategy(itemClassName) === 'sti') {
+            // This is the STI base - use its own table name
+            tableName = classnameToTablename(itemClassName);
+          } else {
+            // CTI: Use own table name
+            tableName = classnameToTablename(itemClassName);
+          }
+        }
 
         // Only define SMRT_TABLE_NAME if it doesn't exist (avoid redefinition errors)
         if (!Object.hasOwn(itemClass, 'SMRT_TABLE_NAME')) {

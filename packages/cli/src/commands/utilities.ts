@@ -171,21 +171,19 @@ export const utilityCommands: Record<string, CLICommand> = {
           console.log('[smrt test] No external SMRT packages found');
         }
 
-        // Generate manifest - first pass without external dependencies
+        // Generate manifest WITH external dependencies upfront
+        // This ensures STI classes inherit correct tableName from external bases
         const generator = new ManifestGenerator();
         const manifest = generator.generateManifest(scanResults, {
           packageName,
+          smrtDependencies:
+            smrtDependencies.length > 0 ? smrtDependencies : undefined,
         });
 
-        // Add smrtDependencies to manifest
         if (smrtDependencies.length > 0) {
-          manifest.smrtDependencies = smrtDependencies;
-
-          // Re-run field inheritance merging now that we have external dependencies
           console.log(
-            '[smrt test] Re-merging fields with external package support...',
+            '[smrt test] Manifest generated with external package support',
           );
-          generator.mergeInheritedFields(manifest);
         }
 
         console.log(

@@ -123,27 +123,30 @@ describe('STI Table Name Inheritance', () => {
   });
 
   it('should use grandparent table name when parent has no explicit strategy', () => {
+    // Using unique class names to avoid collision with Parent/Child in crud-with-relationships.test.ts
     @smrt({ tableStrategy: 'sti' })
-    class Grandparent extends SmrtObject {
+    class STIGrandparent extends SmrtObject {
       gField: string = '';
     }
 
-    // Parent with no explicit strategy (inherits STI from Grandparent)
+    // Parent with no explicit strategy (inherits STI from STIGrandparent)
     @smrt()
-    class Parent extends Grandparent {
+    class STIParent extends STIGrandparent {
       pField: string = '';
     }
 
-    // Child with no explicit strategy (inherits STI through Parent)
+    // Child with no explicit strategy (inherits STI through STIParent)
     @smrt()
-    class Child extends Parent {
+    class STIChild extends STIParent {
       cField: string = '';
     }
 
     // All should use grandparent's table
-    expect(ObjectRegistry.getTableName('Grandparent')).toBe('grandparents');
-    expect(ObjectRegistry.getTableName('Parent')).toBe('grandparents');
-    expect(ObjectRegistry.getTableName('Child')).toBe('grandparents');
+    expect(ObjectRegistry.getTableName('STIGrandparent')).toBe(
+      'stigrandparents',
+    );
+    expect(ObjectRegistry.getTableName('STIParent')).toBe('stigrandparents');
+    expect(ObjectRegistry.getTableName('STIChild')).toBe('stigrandparents');
   });
 
   it('should throw error when child explicitly sets CTI while parent uses STI', () => {

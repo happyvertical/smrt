@@ -111,8 +111,10 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(schema).toContain('"start_date" TEXT');
     expect(schema).toContain('"created_at" TIMESTAMP');
     expect(schema).toContain('"updated_at" TIMESTAMP');
-    // The new SchemaGenerator creates a UNIQUE INDEX instead of table constraint
-    expect(schema).toContain('UNIQUE INDEX');
+    // NOTE: Since the SchemaManager refactor, generateSQL() returns only CREATE TABLE.
+    // Indexes are stored separately in schema.indexes and handled by SchemaManager.
+    // The DDL no longer includes UNIQUE INDEX statements.
+    expect(schema).not.toContain('UNIQUE INDEX');
   });
 
   it('should handle classes with explicit timestamp field definitions', async () => {

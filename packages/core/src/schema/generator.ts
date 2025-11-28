@@ -1099,15 +1099,21 @@ export class SchemaGenerator {
 
   /**
    * Find all descendants of a class in the manifest
+   *
+   * Note: Manifest keys are lowercase but `extends` field is PascalCase,
+   * so we need case-insensitive comparison.
    */
   private findDescendantsInManifest(
     baseClassName: string,
     manifest: SmartObjectManifest,
   ): string[] {
     const descendants: string[] = [];
+    const baseClassLower = baseClassName.toLowerCase();
 
     for (const [name, obj] of Object.entries(manifest.objects)) {
-      if (obj.extends === baseClassName) {
+      // Case-insensitive comparison: manifest keys are lowercase,
+      // but `extends` field stores PascalCase class names
+      if (obj.extends?.toLowerCase() === baseClassLower) {
         descendants.push(name);
         // Recursively find descendants of this class
         descendants.push(...this.findDescendantsInManifest(name, manifest));
@@ -1204,22 +1210,19 @@ export class SchemaGenerator {
     // Remove trailing comma and close table
     sql = `${sql.slice(0, -2)}\n);`;
 
-    // Add indexes
-    for (const index of schema.indexes) {
-      const indexType = index.unique ? 'UNIQUE INDEX' : 'INDEX';
-      // Quote column names in index to handle SQL reserved keywords
-      const columnList = index.columns.map((col) => `"${col}"`).join(', ');
-      const whereClause = index.where ? ` WHERE ${index.where}` : '';
-      sql += `\nCREATE ${indexType} IF NOT EXISTS ${index.name} ON "${tableName}" (${columnList})${whereClause};`;
-    }
+    // NOTE: We no longer append indexes to DDL string here.
+    // The SDK expects ddl to contain ONLY the CREATE TABLE statement.
+    // Indexes are stored separately in schema.indexes as SQL strings
+    // and the SDK handles them via syncSchema() or dedicated index creation.
 
     return sql;
   }
 
   /**
-   * Format default value for SQL with proper CAST for DuckDB compatibility
+   * Format default value for SQL
    *
-   * DuckDB requires explicit CAST for default values to prevent type inference issues.
+   * SQLite doesn't support CAST expressions in DEFAULT values (only literal values are allowed).
+   * This method generates DEFAULT values that work with both SQLite and DuckDB.
    *
    * @param value - Default value
    * @param type - Column SQL type
@@ -1245,14 +1248,18 @@ export class SchemaGenerator {
       }
     }
 
-    // Handle different types
+    // Handle different types - use plain literals (SQLite doesn't support CAST in DEFAULT)
     if (type === 'TEXT') {
       const stringValue = String(value);
-      return `CAST('${stringValue.replace(/'/g, "''")}' AS TEXT)`;
+      return `'${stringValue.replace(/'/g, "''")}'`;
     }
 
     if (type === 'INTEGER' || type === 'REAL') {
-      return `CAST(${value} AS ${type})`;
+      // For null values, return NULL
+      if (value === null || value === undefined) {
+        return 'NULL';
+      }
+      return String(value);
     }
 
     if (type === 'BOOLEAN') {
@@ -1261,7 +1268,7 @@ export class SchemaGenerator {
 
     if (type === 'TIMESTAMP') {
       if (typeof value === 'string') {
-        return `CAST('${value}' AS TIMESTAMP)`;
+        return `'${value}'`;
       }
       return 'current_timestamp';
     }

@@ -304,8 +304,12 @@ describe('STI Schema Generation (Unit)', () => {
     });
   });
 
-  describe('generateSQL with WHERE clauses', () => {
-    it('should include WHERE clause in partial index SQL', () => {
+  describe('generateSQL and indexes', () => {
+    // NOTE: As of the SchemaManager refactor, generateSQL() returns only CREATE TABLE.
+    // Indexes are stored separately in schema.indexes and handled by SchemaManager.
+    // These tests verify the DDL contains only table creation, with indexes in a separate property.
+
+    it('should not include indexes in DDL (indexes are stored separately)', () => {
       const generator = new SchemaGenerator();
 
       const schema = {
@@ -330,13 +334,17 @@ describe('STI Schema Generation (Unit)', () => {
 
       const sql = generator.generateSQL(schema);
 
-      expect(sql).toContain(
-        'CREATE INDEX IF NOT EXISTS idx_events_room_id_meeting',
-      );
-      expect(sql).toContain("WHERE _meta_type = 'Meeting'");
+      // DDL should contain only CREATE TABLE, not indexes
+      expect(sql).toContain('CREATE TABLE IF NOT EXISTS "events"');
+      expect(sql).not.toContain('CREATE INDEX');
+
+      // Indexes should be available in schema.indexes for separate handling
+      expect(schema.indexes).toHaveLength(1);
+      expect(schema.indexes[0].name).toBe('idx_events_room_id_meeting');
+      expect(schema.indexes[0].where).toBe("_meta_type = 'Meeting'");
     });
 
-    it('should not add WHERE clause when not specified', () => {
+    it('should generate DDL without index statements', () => {
       const generator = new SchemaGenerator();
 
       const schema = {
@@ -360,7 +368,9 @@ describe('STI Schema Generation (Unit)', () => {
 
       const sql = generator.generateSQL(schema);
 
-      expect(sql).toContain('CREATE INDEX IF NOT EXISTS idx_events_updated_at');
+      // DDL should be CREATE TABLE only
+      expect(sql).toContain('CREATE TABLE IF NOT EXISTS "events"');
+      expect(sql).not.toContain('CREATE INDEX');
       expect(sql).not.toContain('WHERE');
     });
   });
