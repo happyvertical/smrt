@@ -9,6 +9,7 @@
  */
 
 import { getModuleConfig } from '@happyvertical/smrt-config';
+import { syncSchema } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry';
 import { tableNameFromClass, toSnakeCase } from '../utils';
 import { SchemaManager } from './schema-manager';
@@ -417,14 +418,15 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
     // Use pre-generated DDL from manifest (zero runtime overhead)
     // STI schemas now include ALL descendant columns (generated at build time)
     const preGenerated = ObjectRegistry.getSchema(className);
-    let schema: string;
 
     if (preGenerated?.ddl) {
       // Use pre-generated schema from manifest
       // STI base classes now have complete schemas with all descendant fields
-      schema = preGenerated.ddl;
+      const schemaManager = new SchemaManager(db);
+      await schemaManager.ensureTable(preGenerated);
     } else {
-      // Fallback: regenerate schema at runtime (should be rare)
+      // Fallback: regenerate schema at runtime using SchemaGenerator
+      // This happens for external packages that don't have DDL in their manifest
       const registered = ObjectRegistry.getClass(className);
       if (!registered) {
         throw new Error(
@@ -432,21 +434,46 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
             `Ensure the class is decorated with @smrt().`,
         );
       }
-      schema = await generateSchema(registered.constructor, cachedFields);
-    }
 
-    // Skip empty schemas (shouldn't happen for base classes, but defensive)
-    if (schema && schema.trim() !== '') {
-      // Use SchemaManager for direct DDL execution with per-engine support
-      const schemaDefinition = ObjectRegistry.getSchema(className);
-      if (schemaDefinition) {
-        const schemaManager = new SchemaManager(db);
-        await schemaManager.ensureTable(schemaDefinition);
-      } else {
-        // Fallback: This shouldn't happen but handle gracefully
-        console.warn(
-          `[ensureSchema] No SchemaDefinition found for ${className}, skipping`,
+      // Dynamic import SchemaGenerator (Node.js-only, uses node:crypto)
+      const { SchemaGenerator } = await import('./generator.js');
+      const generator = new SchemaGenerator();
+
+      // Check if class uses STI strategy
+      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+
+      let schemaDefinition: Awaited<
+        ReturnType<
+          InstanceType<typeof SchemaGenerator>['generateSchemaFromRegistry']
+        >
+      >;
+
+      if (tableStrategy === 'sti') {
+        // STI: Generate shared table for base class with all descendant columns
+        schemaDefinition = await generator.generateSTISchemaFromRegistry(
+          className,
+          tableName,
+          cachedFields,
         );
+      } else {
+        // CTI: Generate separate table for this class
+        schemaDefinition = generator.generateSchemaFromRegistry(
+          className,
+          tableName,
+          cachedFields,
+        );
+      }
+
+      // Generate DDL and store columns in the registry
+      const schema = generator.generateSQL(schemaDefinition);
+      if (registered.schema) {
+        registered.schema.columns = schemaDefinition.columns;
+        registered.schema.ddl = schema;
+      }
+
+      // Use syncSchema to execute DDL (like main branch does for external packages)
+      if (schema && schema.trim() !== '') {
+        await syncSchema({ db, schema });
       }
     }
   })();

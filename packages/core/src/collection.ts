@@ -5,7 +5,6 @@ import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
 import { generateSchema } from './schema/utils';
 import {
-  classnameToTablename,
   fieldsFromClass,
   formatDataJs,
   formatDataSql,
@@ -996,28 +995,34 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      // For STI, use the base class's table name
+      // For STI, use the base class's table name from schema (manifest-derived)
       const className = this._itemClass.name;
       const tableStrategy = ObjectRegistry.getTableStrategy(className);
 
       if (tableStrategy === 'sti') {
         const stiBase = ObjectRegistry.getSTIBase(className);
         if (stiBase) {
-          // Use base class's table name
-          const baseClass = ObjectRegistry.getClass(stiBase);
-          if (baseClass) {
-            this._tableName = tableNameFromClass(baseClass.constructor);
+          // Use base class's schema tableName (from manifest)
+          const baseSchema = ObjectRegistry.getSchema(stiBase);
+          if (baseSchema?.tableName) {
+            this._tableName = baseSchema.tableName;
           } else {
-            // Fallback: derive from base class name
-            this._tableName = classnameToTablename(stiBase);
+            // Fallback to own schema tableName
+            const ownSchema = ObjectRegistry.getSchema(className);
+            this._tableName =
+              ownSchema?.tableName || tableNameFromClass(this._itemClass);
           }
         } else {
-          // Fallback to own table name
-          this._tableName = tableNameFromClass(this._itemClass);
+          // Fallback to own schema tableName
+          const ownSchema = ObjectRegistry.getSchema(className);
+          this._tableName =
+            ownSchema?.tableName || tableNameFromClass(this._itemClass);
         }
       } else {
-        // CTI: Use own table name
-        this._tableName = tableNameFromClass(this._itemClass);
+        // CTI: Use own schema tableName
+        const ownSchema = ObjectRegistry.getSchema(className);
+        this._tableName =
+          ownSchema?.tableName || tableNameFromClass(this._itemClass);
       }
     }
     return this._tableName;
