@@ -1640,6 +1640,43 @@ export class ObjectRegistry {
   }
 
   /**
+   * Get all pre-generated schemas for passing to database adapters
+   *
+   * Returns schemas in SDK SchemaProvider format for all registered classes.
+   * This allows passing all known schemas upfront to getDatabase(), enabling
+   * adapters like JSON to create tables with correct types before loading data.
+   *
+   * @returns Record of table names to schema definitions
+   * @example
+   * ```typescript
+   * const schemas = ObjectRegistry.getAllSchemas();
+   * const db = await getDatabase({ type: 'json', url: './data', schemas });
+   * ```
+   */
+  static getAllSchemas(): Record<
+    string,
+    { tableName: string; ddl: string; indexes?: string[] }
+  > {
+    const schemas: Record<
+      string,
+      { tableName: string; ddl: string; indexes?: string[] }
+    > = {};
+
+    for (const [_className, registered] of ObjectRegistry.classes) {
+      if (registered.schema?.ddl && registered.schema?.tableName) {
+        const tableName = registered.schema.tableName;
+        schemas[tableName] = {
+          tableName,
+          ddl: registered.schema.ddl,
+          indexes: registered.schema.indexes,
+        };
+      }
+    }
+
+    return schemas;
+  }
+
+  /**
    * Get compiled validation functions for a registered class
    *
    * Returns pre-compiled validation functions that can be executed

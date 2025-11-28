@@ -203,19 +203,25 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
+      // Get all pre-generated schemas to pass to database adapter
+      // This enables JSON adapter to create tables with correct types before loading data
+      // Dynamic import to avoid circular dependency: class → registry → collection → class
+      const { ObjectRegistry } = await import('./registry.js');
+      const schemas = ObjectRegistry.getAllSchemas();
+
       // Handle three db config formats:
       // 1. String: 'products.db' (shortcut)
       // 2. Config object: { type: 'sqlite', url: 'products.db' }
       // 3. DatabaseInterface instance: await getDatabase(...)
       if (typeof this.options.db === 'string') {
         // String shortcut - let getDatabase auto-detect type from URL
-        this._db = await getDatabase({ url: this.options.db });
+        this._db = await getDatabase({ url: this.options.db, schemas });
       } else if ('query' in this.options.db) {
         // Already a DatabaseInterface instance
         this._db = this.options.db as DatabaseInterface;
       } else {
         // Config object - pass to getDatabase (handles all types uniformly)
-        this._db = await getDatabase(this.options.db as any);
+        this._db = await getDatabase({ ...this.options.db, schemas } as any);
       }
       await this.ensureSystemTables();
     }
