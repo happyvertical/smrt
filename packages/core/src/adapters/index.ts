@@ -6,9 +6,6 @@
  * - PubSubAdapter: Broadcast signals to subscribers (WebSocket/SSE)
  */
 
-// JSON adapter with SMRT schema injection
-export type { SchemaProvider } from './json.js';
-export { getGenericJSONDatabase, getSmrtJSONDatabase } from './json.js';
 export type {
   MethodMetrics,
   MetricsSnapshot,

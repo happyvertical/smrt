@@ -699,13 +699,38 @@ export class ObjectRegistry {
     // Note: For STI classes, tableName is already set correctly by the decorator
     const tableName = config.tableName || tableNameFromClass(ctor);
 
-    // Placeholder schema - will be generated lazily when first needed
-    const schema: SchemaDefinition = {
-      ddl: '', // Generated lazily
-      indexes: [], // Parsed from DDL lazily
-      triggers: [], // No longer using database triggers - timestamps managed by application
-      tableName,
-    };
+    // Load pre-generated schema from manifest if available, otherwise placeholder
+    let schema: SchemaDefinition;
+    if (manifestEntry?.schema) {
+      // Pre-generated schema from manifest (build-time)
+      schema = {
+        ddl: manifestEntry.schema.ddl,
+        indexes:
+          manifestEntry.schema.indexes?.map((idx: any) =>
+            typeof idx === 'string'
+              ? idx
+              : `CREATE ${idx.unique ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS ${idx.name} ON "${tableName}" (${idx.columns.map((c: string) => `"${c}"`).join(', ')})`,
+          ) || [],
+        triggers: [],
+        tableName: manifestEntry.schema.tableName || tableName,
+        // Cast manifest columns to ColumnDefinition (same shape, TypeScript just needs help)
+        columns: manifestEntry.schema.columns as Record<
+          string,
+          ColumnDefinition
+        >,
+      };
+      console.log(
+        `[registry] Loaded pre-generated schema for ${name} (${Object.keys(manifestEntry.schema.columns || {}).length} columns)`,
+      );
+    } else {
+      // Placeholder schema - will be generated lazily when first needed
+      schema = {
+        ddl: '', // Generated lazily
+        indexes: [], // Parsed from DDL lazily
+        triggers: [], // No longer using database triggers - timestamps managed by application
+        tableName,
+      };
+    }
 
     // Compile validation functions from field definitions
     const validators = ObjectRegistry.compileValidators(name, fields);

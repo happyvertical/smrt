@@ -387,17 +387,25 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
         }
       }
 
-      // For base classes or CTI, generate and sync schema
-      // Get the class constructor for generateSchema (still needed by that function)
-      const registered = ObjectRegistry.getClass(className);
-      if (!registered) {
-        throw new Error(
-          `Cannot generate schema for unregistered class '${className}'. ` +
-            `Ensure the class is decorated with @smrt().`,
-        );
-      }
+      // For base classes or CTI, get schema and sync
+      // First try pre-generated DDL from manifest (zero runtime overhead)
+      const preGenerated = ObjectRegistry.getSchema(className);
+      let schema: string;
 
-      const schema = await generateSchema(registered.constructor, cachedFields);
+      if (preGenerated?.ddl) {
+        // Use pre-generated schema from manifest
+        schema = preGenerated.ddl;
+      } else {
+        // Fallback for old packages or dev mode without manifest
+        const registered = ObjectRegistry.getClass(className);
+        if (!registered) {
+          throw new Error(
+            `Cannot generate schema for unregistered class '${className}'. ` +
+              `Ensure the class is decorated with @smrt().`,
+          );
+        }
+        schema = await generateSchema(registered.constructor, cachedFields);
+      }
 
       // Skip empty schemas (shouldn't happen for base classes, but defensive)
       if (schema && schema.trim() !== '') {

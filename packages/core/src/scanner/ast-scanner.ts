@@ -965,11 +965,9 @@ export class ASTScanner {
         if (allNumberLiterals) return 'decimal';
 
         // Check if all types are boolean literals
-        const allBooleanLiterals = types.every(
-          (t) =>
-            Boolean(t.flags & ts.TypeFlags.BooleanLiteral) ||
-            t.flags === ts.TypeFlags.True ||
-            t.flags === ts.TypeFlags.False,
+        // BooleanLiteral covers both 'true' and 'false' literal types
+        const allBooleanLiterals = types.every((t) =>
+          Boolean(t.flags & ts.TypeFlags.BooleanLiteral),
         );
         if (allBooleanLiterals) return 'boolean';
       }
