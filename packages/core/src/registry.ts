@@ -38,7 +38,7 @@ import {
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
 import type { SmartObjectManifest } from './scanner/types.js';
-import type { ColumnDefinition } from './schema/types.js';
+import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
 import { classnameToTablename, tableNameFromClass } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
@@ -204,32 +204,7 @@ export interface SmartObjectConfig {
   _manifest?: SmartObjectManifest;
 }
 
-/**
- * Schema definition for a registered class
- */
-interface SchemaDefinition {
-  /** SQL DDL statement for table creation */
-  ddl: string;
-  /** Index creation statements */
-  indexes: string[];
-  /** Trigger definitions for automatic timestamp management */
-  triggers: Array<{
-    name: string;
-    when: 'BEFORE' | 'AFTER';
-    event: 'INSERT' | 'UPDATE' | 'DELETE';
-    tableName: string;
-    condition?: string;
-    body: string;
-    description?: string;
-  }>;
-  /** Table name derived from class name */
-  tableName: string;
-  /**
-   * Column definitions with full metadata (for STI: includes all descendant fields)
-   * Used by database adapters to validate fields without re-generating schema
-   */
-  columns?: Record<string, ColumnDefinition>;
-}
+// SchemaDefinition is imported from ./schema/types.js
 
 /**
  * Validation function that takes an object instance and returns

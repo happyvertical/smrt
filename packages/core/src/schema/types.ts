@@ -55,6 +55,8 @@ export interface ForeignKeyDefinition {
 
 export interface SchemaDefinition {
   tableName: string;
+  /** SQL DDL statement for table creation (optional - may be generated lazily) */
+  ddl?: string;
   columns: Record<string, ColumnDefinition>;
   indexes: IndexDefinition[];
   triggers: TriggerDefinition[];
