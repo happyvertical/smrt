@@ -330,7 +330,11 @@ export class ManifestGenerator {
       objectsByName.set(objDef.className.toLowerCase(), objDef);
     }
 
-    // Walk up the inheritance chain looking for STI base
+    // Track the oldest STI base found as we walk up
+    // (we need to keep walking to find the ROOT STI class, not the first one)
+    let stiBaseInfo: { className: string; tableName: string } | undefined;
+
+    // Walk up the inheritance chain looking for the OLDEST STI base
     let currentClass: string | undefined = obj.extends;
     const visited = new Set<string>();
 
@@ -356,12 +360,13 @@ export class ManifestGenerator {
       if (!parentObj) break;
 
       if (parentObj.decoratorConfig?.tableStrategy === 'sti') {
-        // Return both className and tableName
+        // Found an STI ancestor - it becomes the new candidate base
+        // Keep walking to find the OLDEST/ROOT STI class in the hierarchy
         const tableName =
           parentObj.decoratorConfig?.tableName ||
           parentObj.schema?.tableName ||
           this.classNameToTableName(parentObj.className);
-        return {
+        stiBaseInfo = {
           className: parentObj.className,
           tableName,
         };
@@ -370,7 +375,7 @@ export class ManifestGenerator {
       currentClass = parentObj.extends;
     }
 
-    return undefined;
+    return stiBaseInfo; // Return the oldest STI ancestor found (or undefined if none)
   }
 
   /**
@@ -610,12 +615,15 @@ export class ManifestGenerator {
     objectsByName: Map<string, SmartObjectDefinition>,
     manifest: SmartObjectManifest,
   ): SmartObjectDefinition | undefined {
-    // If this object explicitly defines STI, it's the base
+    // Track the oldest STI class found as we walk up
+    let stiBase: SmartObjectDefinition | undefined;
+
+    // If this object explicitly defines STI, it's a candidate (but ancestors may also be STI)
     if (obj.decoratorConfig?.tableStrategy === 'sti') {
-      return obj;
+      stiBase = obj;
     }
 
-    // Walk up the inheritance chain looking for STI base
+    // Walk up the inheritance chain looking for the oldest STI base
     let currentClass: string | undefined = obj.extends;
     const visited = new Set<string>();
 
@@ -642,15 +650,16 @@ export class ManifestGenerator {
 
       if (!parentDef) break; // Parent not found anywhere
 
-      // Check if this ancestor defines STI
+      // Check if this ancestor defines STI - if so, it becomes the new candidate base
+      // (we keep walking to find the oldest/root STI class)
       if (parentDef.decoratorConfig?.tableStrategy === 'sti') {
-        return parentDef; // Found STI base
+        stiBase = parentDef;
       }
 
       currentClass = parentDef.extends;
     }
 
-    return undefined; // No STI base found
+    return stiBase; // Return the oldest STI ancestor found (or undefined if none)
   }
 
   /**
