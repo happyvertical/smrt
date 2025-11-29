@@ -465,15 +465,33 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
       }
 
       // Generate DDL and store columns in the registry
-      const schema = generator.generateSQL(schemaDefinition);
+      const createTableDDL = generator.generateSQL(schemaDefinition);
       if (registered.schema) {
         registered.schema.columns = schemaDefinition.columns;
-        registered.schema.ddl = schema;
+        registered.schema.ddl = createTableDDL;
       }
 
+      // Generate index SQL strings from schemaDefinition.indexes
+      // These must be included in the schema string for syncSchema to process them
+      // (especially for JSON/DuckDB adapter which converts UNIQUE indexes to inline constraints)
+      const indexStatements: string[] = [];
+      if (schemaDefinition.indexes && schemaDefinition.indexes.length > 0) {
+        for (const idx of schemaDefinition.indexes) {
+          const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
+          const columns = idx.columns.map((c) => `"${c}"`).join(', ');
+          indexStatements.push(
+            `CREATE ${indexType} IF NOT EXISTS "${idx.name}" ON "${schemaDefinition.tableName}" (${columns})`,
+          );
+        }
+      }
+
+      // Combine CREATE TABLE and CREATE INDEX statements for syncSchema
+      // The JSON/DuckDB adapter will convert UNIQUE indexes to inline constraints
+      const fullSchema = [createTableDDL, ...indexStatements].join(';\n');
+
       // Use syncSchema to execute DDL (like main branch does for external packages)
-      if (schema && schema.trim() !== '') {
-        await syncSchema({ db, schema });
+      if (fullSchema && fullSchema.trim() !== '') {
+        await syncSchema({ db, schema: fullSchema });
       }
     }
   })();
