@@ -45,7 +45,16 @@ export class SchemaManager {
     this.options = options;
 
     // Detect or use provided engine
-    this.engine = options.engine || detectEngine(db.url);
+    if (options.engine) {
+      this.engine = options.engine;
+    } else if ((db as any).exportTable) {
+      // JSON adapter detected (has unique exportTable method)
+      // JSON adapter uses DuckDB internally, so use DuckDB DDL strategy
+      // This is critical for UPSERT to work (DuckDB requires inline UNIQUE constraints)
+      this.engine = 'duckdb';
+    } else {
+      this.engine = detectEngine(db.url);
+    }
   }
 
   /**
