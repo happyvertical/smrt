@@ -524,6 +524,15 @@ export class ManifestGenerator {
           `[manifest-generator] ${obj.className} inherits tableName: '${baseTableName}' from ${stiBase.className}`,
         );
 
+        // Inherit tableStrategy from STI base (so runtime doesn't need to walk inheritance chain)
+        if (stiBase.decoratorConfig?.tableStrategy) {
+          obj.decoratorConfig.tableStrategy =
+            stiBase.decoratorConfig.tableStrategy;
+          console.log(
+            `[manifest-generator] ${obj.className} inherits tableStrategy: '${stiBase.decoratorConfig.tableStrategy}' from ${stiBase.className}`,
+          );
+        }
+
         // Inherit collection name from STI base (all STI classes share one table)
         if (stiBase.collection !== obj.collection) {
           console.log(
