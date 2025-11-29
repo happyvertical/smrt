@@ -34,6 +34,7 @@ import { ConfigurationError } from './errors';
 import {
   discoverManifestEntry,
   discoverManifestSync,
+  discoverSTISiblingsSync,
   getPackageName,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
@@ -305,6 +306,12 @@ export class ObjectRegistry {
    * Used by @field(), @foreignKey(), @oneToMany(), @manyToMany() decorators
    */
   private static fieldDecorators = new Map<string, Map<string, any>>();
+
+  /**
+   * Track collections that have been processed for STI siblings
+   * Prevents infinite recursion when loading siblings
+   */
+  private static stiSiblingsLoaded = new Set<string>();
 
   /**
    * Initialize the inheritance chain cache with size from config
@@ -755,6 +762,54 @@ export class ObjectRegistry {
     console.log(
       `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${validators.length} validators`,
     );
+
+    // STI sibling auto-loading (Issue #430)
+    // When a class is registered that shares a table with other classes (STI),
+    // we need to discover and register ALL siblings so that getAllSchemas()
+    // can merge columns from all subtypes for the database adapter.
+    //
+    // IMPORTANT: Only auto-load siblings from EXTERNAL packages.
+    // For test classes or classes in the same package, they will be registered
+    // by their own @smrt() decorators. Auto-loading them as stubs would cause collisions.
+    const collection = manifestEntry?.collection;
+    if (collection && !ObjectRegistry.stiSiblingsLoaded.has(collection)) {
+      // Mark this collection as processed to prevent infinite recursion
+      ObjectRegistry.stiSiblingsLoaded.add(collection);
+
+      console.log(
+        `[registry] Checking for STI siblings for collection: ${collection}`,
+      );
+
+      // Discover all classes that share this collection (table)
+      const siblings = discoverSTISiblingsSync(collection);
+
+      // Register any siblings that aren't already registered
+      // Only load siblings from DIFFERENT packages to avoid collisions with local classes
+      for (const sibling of siblings) {
+        if (!ObjectRegistry.classes.has(sibling.className)) {
+          // Skip siblings from the same package - they will be registered by their own decorators
+          if (
+            sibling.packageName &&
+            packageName &&
+            sibling.packageName === packageName
+          ) {
+            console.log(
+              `[registry] Skipping STI sibling ${sibling.className} from same package: ${packageName}`,
+            );
+            continue;
+          }
+
+          console.log(
+            `[registry] Auto-loading STI sibling: ${sibling.className} for collection: ${collection}`,
+          );
+          ObjectRegistry.registerFromManifest(
+            sibling.className,
+            sibling.entry,
+            sibling.packageName,
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -907,6 +962,54 @@ export class ObjectRegistry {
     console.log(
       `📦 Registered ${name} from manifest (${fields.size} fields, ${methods.size} methods)`,
     );
+
+    // STI sibling auto-loading (Issue #430)
+    // When a class is registered that shares a table with other classes (STI),
+    // we need to discover and register ALL siblings so that getAllSchemas()
+    // can merge columns from all subtypes for the database adapter.
+    //
+    // IMPORTANT: Only auto-load siblings from EXTERNAL packages.
+    // For test classes or classes in the same package, they will be registered
+    // by their own @smrt() decorators. Auto-loading them as stubs would cause collisions.
+    const collection = objectDef.collection;
+    if (collection && !ObjectRegistry.stiSiblingsLoaded.has(collection)) {
+      // Mark this collection as processed to prevent infinite recursion
+      ObjectRegistry.stiSiblingsLoaded.add(collection);
+
+      console.log(
+        `[registry] Checking for STI siblings for collection: ${collection}`,
+      );
+
+      // Discover all classes that share this collection (table)
+      const siblings = discoverSTISiblingsSync(collection);
+
+      // Register any siblings that aren't already registered
+      // Only load siblings from DIFFERENT packages to avoid collisions with local classes
+      for (const sibling of siblings) {
+        if (!ObjectRegistry.classes.has(sibling.className)) {
+          // Skip siblings from the same package - they will be registered by their own decorators
+          if (
+            sibling.packageName &&
+            packageName &&
+            sibling.packageName === packageName
+          ) {
+            console.log(
+              `[registry] Skipping STI sibling ${sibling.className} from same package: ${packageName}`,
+            );
+            continue;
+          }
+
+          console.log(
+            `[registry] Auto-loading STI sibling: ${sibling.className} for collection: ${collection}`,
+          );
+          ObjectRegistry.registerFromManifest(
+            sibling.className,
+            sibling.entry,
+            sibling.packageName,
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -1086,6 +1189,7 @@ export class ObjectRegistry {
     ObjectRegistry.collectionCache.clear();
     ObjectRegistry.getInheritanceCache().clear();
     ObjectRegistry.fieldDecorators.clear();
+    ObjectRegistry.stiSiblingsLoaded.clear();
     // Note: dbInstanceIds WeakMap will be garbage collected automatically
     // Reset the counter for clean test state
     ObjectRegistry.nextDbId = 1;

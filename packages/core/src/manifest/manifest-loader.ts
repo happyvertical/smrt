@@ -23,7 +23,7 @@
  * (published packages) workflows without changing code or configuration.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { ObjectRegistry } from '../registry.js';
@@ -858,4 +858,183 @@ export function clearManifestCache(): void {
  */
 export function getLoadedManifests(): Array<[string, Manifest]> {
   return Array.from(manifestCache.entries());
+}
+
+/**
+ * Discover all STI sibling classes that share the same collection (table)
+ *
+ * This is critical for STI schema merging: when one subtype is accessed,
+ * we need to discover ALL subtypes sharing the same table so that the
+ * database adapter receives a complete schema with all columns.
+ *
+ * Scans all available manifests:
+ * 1. Local test manifest (for test classes)
+ * 2. Test manifest (for core test classes)
+ * 3. Static manifest (for core framework classes)
+ * 4. Cached external manifests
+ * 5. SMRT dependencies from local test manifest
+ *
+ * @param collection - The collection/table name to find siblings for
+ * @returns Array of manifest entries that share the same collection
+ */
+export function discoverSTISiblingsSync(
+  collection: string,
+): Array<{ className: string; entry: ManifestEntry; packageName?: string }> {
+  const siblings: Array<{
+    className: string;
+    entry: ManifestEntry;
+    packageName?: string;
+  }> = [];
+
+  // Track already-found class names to avoid duplicates
+  const foundClasses = new Set<string>();
+
+  console.log(
+    `[manifest-loader] discoverSTISiblingsSync called for collection: ${collection}`,
+  );
+
+  // Helper to add entries from a manifest
+  const addFromManifest = (
+    manifest: Manifest | null | undefined,
+    source: string,
+  ) => {
+    if (!manifest?.objects) return;
+
+    for (const [key, entry] of Object.entries(manifest.objects) as [
+      string,
+      ManifestEntry,
+    ][]) {
+      // Check if this entry uses the same collection (table)
+      if (entry.collection === collection) {
+        const className = entry.className || key;
+        if (!foundClasses.has(className)) {
+          foundClasses.add(className);
+          siblings.push({
+            className,
+            entry,
+            packageName: entry.packageName || manifest.packageName,
+          });
+          console.log(
+            `[manifest-loader] Found STI sibling: ${className} (collection: ${collection}) from ${source}`,
+          );
+        }
+      }
+    }
+  };
+
+  // 1. Check local test manifest (domain package test classes)
+  if (isTestEnvironment()) {
+    if (!localTestManifest) {
+      loadLocalTestManifestSync();
+    }
+    addFromManifest(localTestManifest, 'localTestManifest');
+  }
+
+  // 2. Check test manifest (core test classes)
+  if (isTestEnvironment()) {
+    const testManifestData = getTestManifest();
+    addFromManifest(testManifestData, 'testManifest');
+  }
+
+  // 3. Check static manifest (core framework classes)
+  const staticManifestData = getStaticManifest();
+  addFromManifest(staticManifestData, 'staticManifest');
+
+  // 4. Check cached external manifests
+  for (const [pkgName, manifest] of manifestCache.entries()) {
+    addFromManifest(manifest, `manifestCache:${pkgName}`);
+  }
+
+  // 5. Try loading from SMRT dependencies from ALL manifests (not just localTestManifest)
+  // This ensures production environments also discover STI siblings
+  const allSmrtDeps = new Set<string>();
+
+  // Collect from localTestManifest (test environment)
+  if (localTestManifest?.smrtDependencies) {
+    for (const pkg of localTestManifest.smrtDependencies) {
+      allSmrtDeps.add(pkg);
+    }
+  }
+
+  // Collect from ALL cached manifests (production)
+  for (const [, manifest] of manifestCache.entries()) {
+    if (manifest.smrtDependencies) {
+      for (const pkg of manifest.smrtDependencies) {
+        allSmrtDeps.add(pkg);
+      }
+    }
+  }
+
+  // Also check static manifest for smrtDependencies
+  if (staticManifestData?.smrtDependencies) {
+    for (const pkg of staticManifestData.smrtDependencies) {
+      allSmrtDeps.add(pkg);
+    }
+  }
+
+  console.log(
+    `[manifest-loader] Scanning ${allSmrtDeps.size} SMRT dependencies for STI siblings: ${[...allSmrtDeps].join(', ')}`,
+  );
+
+  // Load and scan each dependency
+  for (const pkg of allSmrtDeps) {
+    if (!manifestCache.has(pkg)) {
+      const manifest = loadExternalManifestSync(pkg);
+      if (manifest) {
+        addFromManifest(manifest, `smrtDependency:${pkg}`);
+      }
+    }
+  }
+
+  // 6. Scan ALL @happyvertical packages in node_modules for manifests
+  // This catches peer packages like praeco/caelus that aren't in smrtDependencies
+  try {
+    const nodeModulesPath = join(
+      process.cwd(),
+      'node_modules',
+      '@happyvertical',
+    );
+    if (existsSync(nodeModulesPath)) {
+      const packages = readdirSync(nodeModulesPath);
+      console.log(
+        `[manifest-loader] Scanning ${packages.length} @happyvertical packages in node_modules`,
+      );
+      for (const pkg of packages) {
+        const fullPackageName = `@happyvertical/${pkg}`;
+        // Skip if already in cache
+        if (manifestCache.has(fullPackageName)) {
+          continue;
+        }
+        // Check for manifest in dist/ or root
+        const manifestPaths = [
+          join(nodeModulesPath, pkg, 'dist', 'manifest.json'),
+          join(nodeModulesPath, pkg, 'manifest.json'),
+        ];
+        for (const manifestPath of manifestPaths) {
+          if (existsSync(manifestPath)) {
+            try {
+              const manifestContent = readFileSync(manifestPath, 'utf-8');
+              const manifest = JSON.parse(manifestContent);
+              // Cache it
+              manifestCache.set(fullPackageName, manifest);
+              addFromManifest(manifest, `nodeModules:${fullPackageName}`);
+              break; // Found manifest, skip other paths
+            } catch (parseError) {
+              console.log(
+                `[manifest-loader] Failed to parse manifest at ${manifestPath}: ${parseError}`,
+              );
+            }
+          }
+        }
+      }
+    }
+  } catch (scanError) {
+    console.log(`[manifest-loader] Failed to scan node_modules: ${scanError}`);
+  }
+
+  console.log(
+    `[manifest-loader] discoverSTISiblingsSync found ${siblings.length} siblings for collection: ${collection}`,
+  );
+
+  return siblings;
 }
