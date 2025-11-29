@@ -1677,40 +1677,206 @@ export class ObjectRegistry {
     string,
     { tableName: string; ddl: string; indexes?: string[] }
   > {
+    // Step 1: Collect all schemas grouped by tableName
+    // For STI, multiple classes may share the same table
+    const tableSchemas: Record<
+      string,
+      {
+        tableName: string;
+        columns: Record<string, ColumnDefinition>;
+        indexes: Array<{ name: string; columns: string[]; unique?: boolean }>;
+        ddl: string;
+      }
+    > = {};
+
+    for (const [_className, registered] of ObjectRegistry.classes) {
+      if (registered.schema?.tableName) {
+        const tableName = registered.schema.tableName;
+
+        if (!tableSchemas[tableName]) {
+          // First class for this table - initialize
+          tableSchemas[tableName] = {
+            tableName,
+            columns: { ...(registered.schema.columns || {}) },
+            indexes: [],
+            ddl: registered.schema.ddl || '',
+          };
+        } else {
+          // Additional class sharing this table (STI scenario)
+          // Merge columns from this class into the existing schema
+          if (registered.schema.columns) {
+            for (const [colName, colDef] of Object.entries(
+              registered.schema.columns,
+            )) {
+              if (!tableSchemas[tableName].columns[colName]) {
+                // New column from this subtype - add it
+                tableSchemas[tableName].columns[colName] = colDef;
+              }
+            }
+          }
+        }
+
+        // Merge indexes (avoid duplicates by name)
+        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
+          const existingNames = new Set(
+            tableSchemas[tableName].indexes.map((idx) =>
+              typeof idx === 'string' ? idx : idx.name,
+            ),
+          );
+          for (const idx of registered.schema.indexes) {
+            const indexName = typeof idx === 'string' ? idx : idx.name;
+            if (!existingNames.has(indexName)) {
+              if (typeof idx === 'string') {
+                // Legacy string format - skip, can't merge properly
+              } else {
+                tableSchemas[tableName].indexes.push(idx);
+                existingNames.add(idx.name);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Step 2: Convert to output format, regenerating DDL for merged schemas
     const schemas: Record<
       string,
       { tableName: string; ddl: string; indexes?: string[] }
     > = {};
 
-    for (const [_className, registered] of ObjectRegistry.classes) {
-      if (registered.schema?.ddl && registered.schema?.tableName) {
-        const tableName = registered.schema.tableName;
-
-        // Convert index definitions to SQL strings for SDK compatibility
-        // SDK expects: indexes: ["CREATE INDEX...", "CREATE UNIQUE INDEX..."]
-        // Manifest has: indexes: [{ name: "...", columns: [...], unique?: boolean }]
-        let indexSQL: string[] | undefined;
-        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
-          indexSQL = registered.schema.indexes.map((idx) => {
-            // Handle both object format and legacy string format
-            if (typeof idx === 'string') {
-              return idx;
-            }
-            const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
-            const columnList = idx.columns.map((col) => `"${col}"`).join(', ');
-            return `CREATE ${indexType} IF NOT EXISTS ${idx.name} ON "${tableName}" (${columnList});`;
-          });
-        }
-
-        schemas[tableName] = {
+    for (const [tableName, tableSchema] of Object.entries(tableSchemas)) {
+      // Generate DDL from merged columns (or use original DDL if columns are empty)
+      let ddl: string;
+      if (Object.keys(tableSchema.columns).length === 0 && tableSchema.ddl) {
+        // No columns merged - use original DDL to avoid generating invalid SQL
+        ddl = tableSchema.ddl;
+      } else if (Object.keys(tableSchema.columns).length === 0) {
+        // Skip schemas with no columns and no original DDL
+        continue;
+      } else {
+        ddl = ObjectRegistry.generateDDLFromColumns(
           tableName,
-          ddl: registered.schema.ddl,
-          indexes: indexSQL,
-        };
+          tableSchema.columns,
+        );
       }
+
+      // Convert index definitions to SQL strings for SDK compatibility
+      let indexSQL: string[] | undefined;
+      if (tableSchema.indexes.length > 0) {
+        indexSQL = tableSchema.indexes.map((idx) => {
+          const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
+          const columnList = idx.columns.map((col) => `"${col}"`).join(', ');
+          return `CREATE ${indexType} IF NOT EXISTS ${idx.name} ON "${tableName}" (${columnList});`;
+        });
+      }
+
+      schemas[tableName] = {
+        tableName,
+        ddl,
+        indexes: indexSQL,
+      };
     }
 
     return schemas;
+  }
+
+  /**
+   * Generate DDL CREATE TABLE statement from columns
+   *
+   * Used internally by getAllSchemas() to regenerate DDL after merging
+   * columns from multiple STI subtypes that share the same table.
+   *
+   * @param tableName - Name of the table
+   * @param columns - Column definitions
+   * @returns DDL CREATE TABLE statement
+   */
+  private static generateDDLFromColumns(
+    tableName: string,
+    columns: Record<string, ColumnDefinition>,
+  ): string {
+    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+
+    const columnLines: string[] = [];
+    for (const [columnName, columnDef] of Object.entries(columns)) {
+      const parts: string[] = [];
+
+      // Column name and type
+      parts.push(`  "${columnName}" ${columnDef.type}`);
+
+      // Primary key
+      if (columnDef.primaryKey) {
+        parts.push('PRIMARY KEY');
+      }
+
+      // Not null constraint
+      if (columnDef.notNull) {
+        parts.push('NOT NULL');
+      }
+
+      // Unique constraint (skip if primary key already implies uniqueness)
+      if (columnDef.unique && !columnDef.primaryKey) {
+        parts.push('UNIQUE');
+      }
+
+      // Default value
+      if (columnDef.defaultValue !== undefined) {
+        const defaultSQL = ObjectRegistry.formatDefaultValue(
+          columnDef.defaultValue,
+          columnDef.type,
+        );
+        parts.push(`DEFAULT ${defaultSQL}`);
+      }
+
+      columnLines.push(parts.join(' '));
+    }
+
+    sql += columnLines.join(',\n');
+    sql += '\n);';
+
+    return sql;
+  }
+
+  /**
+   * Format default value for SQL DDL
+   *
+   * @param value - Default value
+   * @param type - Column SQL type
+   * @returns Formatted SQL default value
+   */
+  private static formatDefaultValue(value: any, type: string): string {
+    // Handle SQL functions and keywords
+    if (typeof value === 'string') {
+      if (value.includes('(')) {
+        return value;
+      }
+      const sqlKeywords = [
+        'current_timestamp',
+        'current_date',
+        'current_time',
+        'now()',
+        'uuid_generate_v4()',
+      ];
+      if (sqlKeywords.some((kw) => value.toLowerCase() === kw)) {
+        return value;
+      }
+    }
+
+    // Handle by type
+    if (type === 'TEXT' || type === 'VARCHAR') {
+      return `'${String(value).replace(/'/g, "''")}'`;
+    }
+    if (type === 'INTEGER' || type === 'REAL') {
+      return String(value);
+    }
+    if (type === 'BOOLEAN') {
+      return value ? '1' : '0';
+    }
+    if (type === 'JSON') {
+      return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+    }
+
+    // Fallback: quote as string
+    return `'${String(value).replace(/'/g, "''")}'`;
   }
 
   /**
