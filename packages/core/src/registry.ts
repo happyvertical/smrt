@@ -456,6 +456,22 @@ export class ObjectRegistry {
         return; // Same class, skip silently
       }
 
+      // Check if existing is a manifest stub that should be replaced by the real class
+      // This happens when:
+      // 1. `smrt test` generates a manifest which registers classes via registerFromManifest()
+      // 2. Test file imports the real class, triggering the @smrt() decorator
+      // 3. The real class should replace the stub (same name, different constructor)
+      if ((existing.constructor as any)._isManifestStub === true) {
+        // Replace stub with real class - update constructor and merge any decorator config
+        existing.constructor = ctor;
+        // Merge config from decorator (new) with manifest config (existing)
+        existing.config = { ...existing.config, ...config };
+        console.log(
+          `[registry] Replaced manifest stub with real class: ${name}`,
+        );
+        return;
+      }
+
       // Different constructors with same name - this is a collision!
       // This will cause silent bugs where the wrong fields are used
       throw new Error(
@@ -864,7 +880,10 @@ export class ObjectRegistry {
 
     // Create stub constructor - not needed for CLI command generation
     // The CLI only needs metadata (fields, methods, config)
-    const stubConstructor = class extends SmrtObject {} as typeof SmrtObject;
+    // Mark as manifest stub so real class can replace it during decorator registration
+    const stubConstructor = class extends SmrtObject {
+      static readonly _isManifestStub = true;
+    } as typeof SmrtObject;
     Object.defineProperty(stubConstructor, 'name', { value: name });
 
     // Convert manifest field definitions to Field objects
