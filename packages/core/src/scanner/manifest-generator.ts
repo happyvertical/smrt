@@ -2,6 +2,7 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
+import { createRequire } from 'node:module';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import { generateToolManifest } from '../tools/tool-generator';
 import type {
@@ -9,6 +10,9 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from './types';
+
+// Create require function for synchronous module loading in ESM context
+const require = createRequire(import.meta.url);
 
 export class ManifestGenerator {
   /**
@@ -26,6 +30,7 @@ export class ManifestGenerator {
       packageName?: string;
       packageVersion?: string;
       packageJson?: any;
+      smrtDependencies?: string[];
     },
   ): SmartObjectManifest {
     const manifest: SmartObjectManifest = {
@@ -40,6 +45,10 @@ export class ManifestGenerator {
     }
     if (options?.packageVersion) {
       manifest.packageVersion = options.packageVersion;
+    }
+    // Set smrtDependencies BEFORE mergeInheritedFields() so external packages can be loaded
+    if (options?.smrtDependencies) {
+      manifest.smrtDependencies = options.smrtDependencies;
     }
 
     for (const result of scanResults) {
@@ -98,7 +107,289 @@ export class ManifestGenerator {
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
 
+    // Third pass: Generate schemas for each object (build-time schema generation)
+    // This pre-computes DDL, indexes, and columns for efficient external package consumption
+    this.generateSchemas(manifest);
+
     return manifest;
+  }
+
+  /**
+   * Generate pre-computed schemas for all objects in the manifest
+   *
+   * This enables external package consumers to use pre-generated schemas
+   * without calling generateSchema() at runtime, eliminating latency.
+   *
+   * IMPORTANT: For STI classes, we aggregate ALL descendants from both local
+   * and external packages to ensure complete schemas are generated.
+   *
+   * @param manifest - The manifest to process in-place
+   */
+  private generateSchemas(manifest: SmartObjectManifest): void {
+    // Import SchemaGenerator synchronously (using createRequire for ESM compatibility)
+    // Try .js first (built output), fall back to .ts (source for tests)
+    let SchemaGenerator: any;
+    try {
+      SchemaGenerator = require('../schema/generator.js').SchemaGenerator;
+    } catch {
+      // Fallback for when running tests directly on source files
+      SchemaGenerator = require('../schema/generator.ts').SchemaGenerator;
+    }
+    const generator = new SchemaGenerator();
+
+    // Create aggregated manifest that includes external package objects
+    // This ensures STI schema generation finds ALL descendants
+    const aggregatedManifest = this.createAggregatedManifest(manifest);
+
+    // Track which STI bases have been processed (to avoid duplicate schema generation)
+    const processedSTIBases = new Set<string>();
+
+    // Build lookup map for checking if base is local
+    const localObjects = new Set(
+      Object.values(manifest.objects).map((o) => o.className),
+    );
+
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      // Determine table name (may have been inherited from external STI base)
+      // Use obj.className (PascalCase) for consistent table name derivation with runtime
+      const tableName =
+        obj.decoratorConfig?.tableName ||
+        this.classNameToTableName(obj.className);
+
+      // Check if this is an STI class
+      if (obj.decoratorConfig?.tableStrategy === 'sti') {
+        // This is an STI base class - generate STI schema with ALL descendants
+        if (processedSTIBases.has(name)) continue;
+        processedSTIBases.add(name);
+
+        console.log(
+          `[manifest-generator] Generating STI schema for ${name} (table: ${tableName})`,
+        );
+
+        // Use aggregated manifest to find descendants from ALL packages
+        obj.schema = generator.generateSTISchemaFromManifest(
+          name,
+          tableName,
+          obj.fields,
+          aggregatedManifest,
+        );
+      } else if (this.isSTIChildClass(obj, manifest)) {
+        // This is an STI child class - check if base is LOCAL or EXTERNAL
+        const stiBase = this.findSTIBaseInfo(obj, manifest);
+        const baseIsLocal = stiBase && localObjects.has(stiBase.className);
+
+        if (baseIsLocal) {
+          // STI base is in this manifest - skip (schema is on base class)
+          console.log(
+            `[manifest-generator] Skipping schema for STI child ${name} (base ${stiBase?.className} is local)`,
+          );
+        } else {
+          // STI base is EXTERNAL - generate STI schema for this child
+          // CRITICAL: Use the external base's table name, not the child's!
+          const baseTableName = stiBase?.tableName || tableName;
+          console.log(
+            `[manifest-generator] Generating STI schema for ${name} (external base: ${stiBase?.className}, table: ${baseTableName})`,
+          );
+
+          // Use aggregated manifest to include all descendants
+          obj.schema = generator.generateSTISchemaFromManifest(
+            name,
+            baseTableName,
+            obj.fields,
+            aggregatedManifest,
+          );
+        }
+      } else {
+        // CTI class - generate individual table schema
+        console.log(
+          `[manifest-generator] Generating CTI schema for ${name} (table: ${tableName})`,
+        );
+
+        obj.schema = generator.generateCTISchemaFromManifest(
+          name,
+          tableName,
+          obj.fields,
+        );
+      }
+    }
+  }
+
+  /**
+   * Create an aggregated manifest that includes objects from all external packages
+   *
+   * This is used for STI schema generation to ensure ALL descendants are found,
+   * regardless of which package they're defined in.
+   *
+   * @param manifest - The local manifest
+   * @returns Aggregated manifest with local + external objects
+   */
+  private createAggregatedManifest(
+    manifest: SmartObjectManifest,
+  ): SmartObjectManifest {
+    // Start with a copy of local objects
+    const aggregatedObjects: Record<string, SmartObjectDefinition> = {
+      ...manifest.objects,
+    };
+
+    // Load and merge external package objects
+    if (manifest.smrtDependencies && manifest.smrtDependencies.length > 0) {
+      for (const packageName of manifest.smrtDependencies) {
+        const externalManifest = loadExternalManifestSync(packageName);
+        if (externalManifest) {
+          // Merge external objects (local objects take precedence on collision)
+          for (const [name, obj] of Object.entries(externalManifest.objects)) {
+            if (!aggregatedObjects[name]) {
+              aggregatedObjects[name] = obj;
+            }
+          }
+
+          console.log(
+            `[manifest-generator] Aggregated ${Object.keys(externalManifest.objects).length} objects from ${packageName}`,
+          );
+        }
+      }
+    }
+
+    return {
+      ...manifest,
+      objects: aggregatedObjects,
+    };
+  }
+
+  /**
+   * Check if an object is an STI child class (inherits from STI base)
+   *
+   * Walks up the inheritance chain to find if any ancestor has tableStrategy: 'sti'.
+   * Also checks external SMRT packages for parent class definitions.
+   */
+  private isSTIChildClass(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+  ): boolean {
+    if (!obj.extends) return false;
+
+    // Build a lookup map for efficient access
+    const objectsByName = new Map<string, SmartObjectDefinition>();
+    for (const [_name, objDef] of Object.entries(manifest.objects)) {
+      objectsByName.set(objDef.className, objDef);
+      objectsByName.set(objDef.className.toLowerCase(), objDef);
+    }
+
+    // Walk up the inheritance chain looking for STI base
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) break;
+      visited.add(currentClass);
+
+      let parentObj = objectsByName.get(currentClass);
+
+      // If parent not in current manifest, try loading from external SMRT packages
+      if (
+        !parentObj &&
+        manifest.smrtDependencies &&
+        manifest.smrtDependencies.length > 0
+      ) {
+        parentObj = this.loadParentFromExternalPackage(
+          currentClass,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+      }
+
+      if (!parentObj) break; // Parent not found anywhere (e.g., SmrtObject)
+
+      if (parentObj.decoratorConfig?.tableStrategy === 'sti') {
+        return true; // Found STI ancestor
+      }
+
+      currentClass = parentObj.extends;
+    }
+
+    return false;
+  }
+
+  /**
+   * Find full STI base class info (className + tableName)
+   *
+   * Walks up the inheritance chain to find the STI base class and returns
+   * both its className and tableName. This is critical for external STI bases
+   * where the child needs to use the base's table name for schema generation.
+   */
+  private findSTIBaseInfo(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+  ): { className: string; tableName: string } | undefined {
+    if (!obj.extends) return undefined;
+
+    // Build a lookup map for efficient access
+    const objectsByName = new Map<string, SmartObjectDefinition>();
+    for (const [_name, objDef] of Object.entries(manifest.objects)) {
+      objectsByName.set(objDef.className, objDef);
+      objectsByName.set(objDef.className.toLowerCase(), objDef);
+    }
+
+    // Track the oldest STI base found as we walk up
+    // (we need to keep walking to find the ROOT STI class, not the first one)
+    let stiBaseInfo: { className: string; tableName: string } | undefined;
+
+    // Walk up the inheritance chain looking for the OLDEST STI base
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) break;
+      visited.add(currentClass);
+
+      let parentObj = objectsByName.get(currentClass);
+
+      // If parent not in current manifest, try loading from external SMRT packages
+      if (
+        !parentObj &&
+        manifest.smrtDependencies &&
+        manifest.smrtDependencies.length > 0
+      ) {
+        parentObj = this.loadParentFromExternalPackage(
+          currentClass,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+      }
+
+      if (!parentObj) break;
+
+      if (parentObj.decoratorConfig?.tableStrategy === 'sti') {
+        // Found an STI ancestor - it becomes the new candidate base
+        // Keep walking to find the OLDEST/ROOT STI class in the hierarchy
+        const tableName =
+          parentObj.decoratorConfig?.tableName ||
+          parentObj.schema?.tableName ||
+          this.classNameToTableName(parentObj.className);
+        stiBaseInfo = {
+          className: parentObj.className,
+          tableName,
+        };
+      }
+
+      currentClass = parentObj.extends;
+    }
+
+    return stiBaseInfo; // Return the oldest STI ancestor found (or undefined if none)
+  }
+
+  /**
+   * Convert class name to table name (snake_case pluralized)
+   *
+   * IMPORTANT: Must use the same algorithm as runtime's tableNameFromClass()
+   * to ensure manifest-generated table names match runtime-derived names.
+   */
+  private classNameToTableName(className: string): string {
+    return className
+      .replace(/([a-z])([A-Z])/g, '$1_$2') // Only add underscore between lowercase→uppercase
+      .toLowerCase()
+      .replace(/([^s])$/, '$1s') // Add 's' if doesn't end with 's'
+      .replace(/y$/, 'ies'); // Handle words ending in 'y'
   }
 
   /**
@@ -216,6 +507,41 @@ export class ManifestGenerator {
       obj.fields = mergedFields;
       obj.methods = mergedMethods;
 
+      // Inherit tableName and collection from STI base class
+      // STI subclasses share the parent's table, so they should use the same collection name
+      const stiBase = this.findSTIBase(obj, objectsByName, manifest);
+      if (stiBase && stiBase !== obj) {
+        // Determine the STI base's table name (explicit or derived from collection/className)
+        const baseTableName =
+          stiBase.decoratorConfig?.tableName ||
+          stiBase.collection ||
+          this.classNameToTableName(stiBase.className);
+
+        // Inherit tableName from STI base
+        obj.decoratorConfig = obj.decoratorConfig || {};
+        obj.decoratorConfig.tableName = baseTableName;
+        console.log(
+          `[manifest-generator] ${obj.className} inherits tableName: '${baseTableName}' from ${stiBase.className}`,
+        );
+
+        // Inherit tableStrategy from STI base (so runtime doesn't need to walk inheritance chain)
+        if (stiBase.decoratorConfig?.tableStrategy) {
+          obj.decoratorConfig.tableStrategy =
+            stiBase.decoratorConfig.tableStrategy;
+          console.log(
+            `[manifest-generator] ${obj.className} inherits tableStrategy: '${stiBase.decoratorConfig.tableStrategy}' from ${stiBase.className}`,
+          );
+        }
+
+        // Inherit collection name from STI base (all STI classes share one table)
+        if (stiBase.collection !== obj.collection) {
+          console.log(
+            `[manifest-generator] ${obj.className} inherits collection: '${stiBase.collection}' from ${stiBase.className}`,
+          );
+          obj.collection = stiBase.collection;
+        }
+      }
+
       console.log(
         `[manifest-generator] ✅ ${obj.className} now has ${Object.keys(mergedFields).length} fields (including inherited)`,
       );
@@ -280,6 +606,69 @@ export class ManifestGenerator {
     }
 
     return false; // No STI in hierarchy
+  }
+
+  /**
+   * Find the STI base class for a given object
+   *
+   * Walks up the inheritance chain to find the first ancestor that defines
+   * tableStrategy: 'sti'. This is the class that owns the shared table.
+   *
+   * @param obj - The object definition to find the STI base for
+   * @param objectsByName - Map of className -> objectDef for lookups
+   * @param manifest - The manifest (for accessing smrtDependencies)
+   * @returns The STI base class definition, or the object itself if it's the base
+   */
+  private findSTIBase(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    manifest: SmartObjectManifest,
+  ): SmartObjectDefinition | undefined {
+    // Track the oldest STI class found as we walk up
+    let stiBase: SmartObjectDefinition | undefined;
+
+    // If this object explicitly defines STI, it's a candidate (but ancestors may also be STI)
+    if (obj.decoratorConfig?.tableStrategy === 'sti') {
+      stiBase = obj;
+    }
+
+    // Walk up the inheritance chain looking for the oldest STI base
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) {
+        break; // Circular inheritance, stop
+      }
+      visited.add(currentClass);
+
+      let parentDef = objectsByName.get(currentClass);
+
+      // If parent not in current manifest, try loading from external SMRT packages
+      if (
+        !parentDef &&
+        manifest.smrtDependencies &&
+        manifest.smrtDependencies.length > 0
+      ) {
+        parentDef = this.loadParentFromExternalPackage(
+          currentClass,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+      }
+
+      if (!parentDef) break; // Parent not found anywhere
+
+      // Check if this ancestor defines STI - if so, it becomes the new candidate base
+      // (we keep walking to find the oldest/root STI class)
+      if (parentDef.decoratorConfig?.tableStrategy === 'sti') {
+        stiBase = parentDef;
+      }
+
+      currentClass = parentDef.extends;
+    }
+
+    return stiBase; // Return the oldest STI ancestor found (or undefined if none)
   }
 
   /**

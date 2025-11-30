@@ -24,6 +24,7 @@
     "./generators/mcp": "./dist/generators/mcp.js",
     "./generators/swagger": "./dist/generators/swagger.js",
     "./manifest": "./dist/manifest.js",
+    "./manifest.json": "./dist/manifest.json",
     "./vite-plugin": "./dist/vite-plugin.js",
     "./runtime": "./dist/runtime.js",
     "./prebuild": "./dist/prebuild.js",

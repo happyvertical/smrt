@@ -203,20 +203,41 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
+      // Get all pre-generated schemas to pass to database adapter
+      // This enables JSON adapter to create tables with correct types before loading data
+      // Dynamic import to avoid circular dependency: class → registry → collection → class
+      const { ObjectRegistry } = await import('./registry.js');
+      const schemas = ObjectRegistry.getAllSchemas();
+
       // Handle three db config formats:
       // 1. String: 'products.db' (shortcut)
       // 2. Config object: { type: 'sqlite', url: 'products.db' }
       // 3. DatabaseInterface instance: await getDatabase(...)
       if (typeof this.options.db === 'string') {
         // String shortcut - let getDatabase auto-detect type from URL
-        this._db = await getDatabase({ url: this.options.db });
+        // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
+        // EXCEPT for :memory: databases which should NOT be cached across instances
+        const isMemoryDb = this.options.db === ':memory:';
+        this._db = await getDatabase({
+          url: this.options.db,
+          schemas,
+          ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
+        });
       } else if ('query' in this.options.db) {
         // Already a DatabaseInterface instance
         this._db = this.options.db as DatabaseInterface;
       } else {
-        // Config object - pass directly to getDatabase
-        // Cast to any to bypass index signature incompatibility
-        this._db = await getDatabase(this.options.db as any);
+        // Config object - pass to getDatabase (handles all types uniformly)
+        // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
+        // EXCEPT for :memory: databases which should NOT be cached across instances
+        const dbConfig = this.options.db as { url?: string; type?: string };
+        const dbUrl = dbConfig.url || 'memory';
+        const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
+        this._db = await getDatabase({
+          ...this.options.db,
+          schemas,
+          ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
+        } as any);
       }
       await this.ensureSystemTables();
     }

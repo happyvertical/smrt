@@ -171,21 +171,19 @@ export const utilityCommands: Record<string, CLICommand> = {
           console.log('[smrt test] No external SMRT packages found');
         }
 
-        // Generate manifest - first pass without external dependencies
+        // Generate manifest WITH external dependencies upfront
+        // This ensures STI classes inherit correct tableName from external bases
         const generator = new ManifestGenerator();
         const manifest = generator.generateManifest(scanResults, {
           packageName,
+          smrtDependencies:
+            smrtDependencies.length > 0 ? smrtDependencies : undefined,
         });
 
-        // Add smrtDependencies to manifest
         if (smrtDependencies.length > 0) {
-          manifest.smrtDependencies = smrtDependencies;
-
-          // Re-run field inheritance merging now that we have external dependencies
           console.log(
-            '[smrt test] Re-merging fields with external package support...',
+            '[smrt test] Manifest generated with external package support',
           );
-          generator.mergeInheritedFields(manifest);
         }
 
         console.log(
@@ -537,6 +535,45 @@ export default testManifest;
           }
         } else {
           console.error(error);
+        }
+        process.exit(1);
+      }
+    },
+  },
+
+  'db:clear-cache': {
+    name: 'db:clear-cache',
+    description:
+      'Clear cached database connections (useful when JSON files change)',
+    aliases: ['clear-cache'],
+    args: [],
+    options: {
+      verbose: {
+        type: 'boolean',
+        description: 'Show detailed output',
+        default: false,
+      },
+    },
+    handler: async (_args: string[], options: any) => {
+      try {
+        const { clearConnectionCache } = await import('@happyvertical/sql');
+        clearConnectionCache();
+
+        console.log('\n✅ Database connection cache cleared');
+        console.log(
+          '   Next database operation will create fresh connections\n',
+        );
+
+        if (options.verbose) {
+          console.log('💡 This is useful when:');
+          console.log('   - JSON data files have been modified');
+          console.log('   - Schema has changed and you need fresh connections');
+          console.log('   - Debugging connection/schema issues\n');
+        }
+      } catch (error) {
+        console.error('❌ Failed to clear cache:');
+        if (error instanceof Error) {
+          console.error(`   ${error.message}`);
         }
         process.exit(1);
       }

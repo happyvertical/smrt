@@ -501,28 +501,34 @@ export class SmrtObject extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      // For STI, use the base class's table name
+      // For STI, use the base class's table name from schema (manifest-derived)
       const className = this.constructor.name;
       const tableStrategy = ObjectRegistry.getTableStrategy(className);
 
       if (tableStrategy === 'sti') {
         const stiBase = ObjectRegistry.getSTIBase(className);
         if (stiBase) {
-          // Use base class's table name
-          const baseClass = ObjectRegistry.getClass(stiBase);
-          if (baseClass) {
-            this._tableName = tableNameFromClass(baseClass.constructor);
+          // Use base class's schema tableName (from manifest)
+          const baseSchema = ObjectRegistry.getSchema(stiBase);
+          if (baseSchema?.tableName) {
+            this._tableName = baseSchema.tableName;
           } else {
-            // Fallback to own table name if base not found
-            this._tableName = tableNameFromClass(this.constructor);
+            // Fallback to own schema tableName
+            const ownSchema = ObjectRegistry.getSchema(className);
+            this._tableName =
+              ownSchema?.tableName || tableNameFromClass(this.constructor);
           }
         } else {
-          // Fallback to own table name
-          this._tableName = tableNameFromClass(this.constructor);
+          // Fallback to own schema tableName
+          const ownSchema = ObjectRegistry.getSchema(className);
+          this._tableName =
+            ownSchema?.tableName || tableNameFromClass(this.constructor);
         }
       } else {
-        // CTI: Use own table name
-        this._tableName = tableNameFromClass(this.constructor);
+        // CTI: Use own schema tableName
+        const ownSchema = ObjectRegistry.getSchema(className);
+        this._tableName =
+          ownSchema?.tableName || tableNameFromClass(this.constructor);
       }
     }
     return this._tableName;

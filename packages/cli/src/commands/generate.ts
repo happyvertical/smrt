@@ -364,7 +364,7 @@ export const generateCommands: Record<string, CLICommand> = {
           )) {
             const def = objectDef as any;
             const importPath = def.importPath || packageName;
-            const exportName = def.exportName || def.className || objectName;
+            const exportName = def.exportName || def.name || objectName;
             const collectionExportName = def.collectionExportName;
             const hasCollection = def.hasCollection;
             const tableName = def.collection || objectName.toLowerCase();

@@ -34,10 +34,12 @@ import { ConfigurationError } from './errors';
 import {
   discoverManifestEntry,
   discoverManifestSync,
+  discoverSTISiblingsSync,
   getPackageName,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
 import type { SmartObjectManifest } from './scanner/types.js';
+import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
 import { classnameToTablename, tableNameFromClass } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
@@ -203,27 +205,7 @@ export interface SmartObjectConfig {
   _manifest?: SmartObjectManifest;
 }
 
-/**
- * Schema definition for a registered class
- */
-interface SchemaDefinition {
-  /** SQL DDL statement for table creation */
-  ddl: string;
-  /** Index creation statements */
-  indexes: string[];
-  /** Trigger definitions for automatic timestamp management */
-  triggers: Array<{
-    name: string;
-    when: 'BEFORE' | 'AFTER';
-    event: 'INSERT' | 'UPDATE' | 'DELETE';
-    tableName: string;
-    condition?: string;
-    body: string;
-    description?: string;
-  }>;
-  /** Table name derived from class name */
-  tableName: string;
-}
+// SchemaDefinition is imported from ./schema/types.js
 
 /**
  * Validation function that takes an object instance and returns
@@ -324,6 +306,12 @@ export class ObjectRegistry {
    * Used by @field(), @foreignKey(), @oneToMany(), @manyToMany() decorators
    */
   private static fieldDecorators = new Map<string, Map<string, any>>();
+
+  /**
+   * Track collections that have been processed for STI siblings
+   * Prevents infinite recursion when loading siblings
+   */
+  private static stiSiblingsLoaded = new Set<string>();
 
   /**
    * Initialize the inheritance chain cache with size from config
@@ -466,6 +454,22 @@ export class ObjectRegistry {
       // Check if this is the exact same constructor (re-registration is OK)
       if (existing.constructor === ctor) {
         return; // Same class, skip silently
+      }
+
+      // Check if existing is a manifest stub that should be replaced by the real class
+      // This happens when:
+      // 1. `smrt test` generates a manifest which registers classes via registerFromManifest()
+      // 2. Test file imports the real class, triggering the @smrt() decorator
+      // 3. The real class should replace the stub (same name, different constructor)
+      if ((existing.constructor as any)._isManifestStub === true) {
+        // Replace stub with real class - update constructor and merge any decorator config
+        existing.constructor = ctor;
+        // Merge config from decorator (new) with manifest config (existing)
+        existing.config = { ...existing.config, ...config };
+        console.log(
+          `[registry] Replaced manifest stub with real class: ${name}`,
+        );
+        return;
       }
 
       // Different constructors with same name - this is a collision!
@@ -693,16 +697,67 @@ export class ObjectRegistry {
     // Note: For STI classes, tableName is already set correctly by the decorator
     const tableName = config.tableName || tableNameFromClass(ctor);
 
-    // Placeholder schema - will be generated lazily when first needed
-    const schema: SchemaDefinition = {
-      ddl: '', // Generated lazily
-      indexes: [], // Parsed from DDL lazily
-      triggers: [], // No longer using database triggers - timestamps managed by application
-      tableName,
-    };
+    // Load pre-generated schema from manifest if available, otherwise placeholder
+    let schema: SchemaDefinition;
+    if (manifestEntry?.schema) {
+      // Pre-generated schema from manifest (build-time)
+      // Keep indexes as IndexDefinition objects for DDL strategies
+      schema = {
+        ddl: manifestEntry.schema.ddl,
+        indexes:
+          manifestEntry.schema.indexes?.map((idx: any) => ({
+            name: idx.name,
+            columns: idx.columns || [],
+            unique: idx.unique || false,
+            where: idx.where,
+            description: idx.description,
+          })) || [],
+        triggers: [],
+        tableName: manifestEntry.schema.tableName || tableName,
+        // Cast manifest columns to ColumnDefinition (same shape, TypeScript just needs help)
+        columns: manifestEntry.schema.columns as Record<
+          string,
+          ColumnDefinition
+        >,
+        foreignKeys: [],
+        dependencies: [],
+        version: manifestEntry.schema.version || '',
+        packageName: manifestEntry.packageName,
+      };
+      console.log(
+        `[registry] Loaded pre-generated schema for ${name} (${Object.keys(manifestEntry.schema.columns || {}).length} columns)`,
+      );
+    } else {
+      // Placeholder schema - will be generated lazily when first needed
+      schema = {
+        ddl: '', // Generated lazily
+        indexes: [], // Parsed from DDL lazily
+        triggers: [], // No longer using database triggers - timestamps managed by application
+        tableName,
+        columns: {},
+        foreignKeys: [],
+        dependencies: [],
+        version: '',
+        packageName: undefined,
+      };
+    }
 
     // Compile validation functions from field definitions
     const validators = ObjectRegistry.compileValidators(name, fields);
+
+    // Derive extends from prototype chain if not available from manifest
+    // This is critical for inline test classes that use decorators
+    let extendsClass: string | undefined = manifestEntry?.extends;
+    if (!extendsClass) {
+      const proto = Object.getPrototypeOf(ctor);
+      if (
+        proto?.name &&
+        proto.name !== 'SmrtObject' &&
+        proto.name !== 'Object'
+      ) {
+        extendsClass = proto.name;
+      }
+    }
 
     ObjectRegistry.classes.set(name, {
       name,
@@ -713,14 +768,64 @@ export class ObjectRegistry {
       schema,
       validators,
       packageName, // Store package name from manifest for getPackageName() lookup
-      extends: manifestEntry?.extends, // NEW: Capture parent class name from manifest
-      inheritanceChain, // NEW: Pre-compute and cache inheritance chain
+      extends: extendsClass, // Capture parent class name from manifest OR prototype chain
+      // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
+      // it lazily using the `extends` field. This ensures correct chain for both
+      // decorator-registered and manifest-loaded classes.
       decorator: config, // Store decorator config (includes tableStrategy)
     });
 
     console.log(
-      `🎯 Registered smrt object: ${name} with schema for ${tableName} and ${validators.length} validators`,
+      `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${validators.length} validators`,
     );
+
+    // STI sibling auto-loading (Issue #430)
+    // When a class is registered that shares a table with other classes (STI),
+    // we need to discover and register ALL siblings so that getAllSchemas()
+    // can merge columns from all subtypes for the database adapter.
+    //
+    // IMPORTANT: Only auto-load siblings from EXTERNAL packages.
+    // For test classes or classes in the same package, they will be registered
+    // by their own @smrt() decorators. Auto-loading them as stubs would cause collisions.
+    const collection = manifestEntry?.collection;
+    if (collection && !ObjectRegistry.stiSiblingsLoaded.has(collection)) {
+      // Mark this collection as processed to prevent infinite recursion
+      ObjectRegistry.stiSiblingsLoaded.add(collection);
+
+      console.log(
+        `[registry] Checking for STI siblings for collection: ${collection}`,
+      );
+
+      // Discover all classes that share this collection (table)
+      const siblings = discoverSTISiblingsSync(collection);
+
+      // Register any siblings that aren't already registered
+      // Only load siblings from DIFFERENT packages to avoid collisions with local classes
+      for (const sibling of siblings) {
+        if (!ObjectRegistry.classes.has(sibling.className)) {
+          // Skip siblings from the same package - they will be registered by their own decorators
+          if (
+            sibling.packageName &&
+            packageName &&
+            sibling.packageName === packageName
+          ) {
+            console.log(
+              `[registry] Skipping STI sibling ${sibling.className} from same package: ${packageName}`,
+            );
+            continue;
+          }
+
+          console.log(
+            `[registry] Auto-loading STI sibling: ${sibling.className} for collection: ${collection}`,
+          );
+          ObjectRegistry.registerFromManifest(
+            sibling.className,
+            sibling.entry,
+            sibling.packageName,
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -775,7 +880,10 @@ export class ObjectRegistry {
 
     // Create stub constructor - not needed for CLI command generation
     // The CLI only needs metadata (fields, methods, config)
-    const stubConstructor = class extends SmrtObject {} as typeof SmrtObject;
+    // Mark as manifest stub so real class can replace it during decorator registration
+    const stubConstructor = class extends SmrtObject {
+      static readonly _isManifestStub = true;
+    } as typeof SmrtObject;
     Object.defineProperty(stubConstructor, 'name', { value: name });
 
     // Convert manifest field definitions to Field objects
@@ -809,13 +917,47 @@ export class ObjectRegistry {
     const config = objectDef.decoratorConfig || {};
     const tableName = config.tableName || tableNameFromClass(stubConstructor);
 
-    // Placeholder schema
-    const schema: SchemaDefinition = {
-      ddl: '',
-      indexes: [],
-      triggers: [],
-      tableName,
-    };
+    // Load pre-generated schema from manifest if available
+    // This enables efficient external package consumption without runtime schema generation
+    let schema: SchemaDefinition;
+    if (objectDef.schema) {
+      // Pre-generated schema from manifest (build-time)
+      // Keep indexes as IndexDefinition objects for DDL strategies
+      schema = {
+        ddl: objectDef.schema.ddl,
+        indexes:
+          objectDef.schema.indexes?.map((idx: any) => ({
+            name: idx.name,
+            columns: idx.columns || [],
+            unique: idx.unique || false,
+            where: idx.where,
+            description: idx.description,
+          })) || [],
+        triggers: [],
+        tableName: objectDef.schema.tableName,
+        columns: objectDef.schema.columns,
+        foreignKeys: [],
+        dependencies: [],
+        version: objectDef.schema.version || '',
+        packageName: packageName,
+      };
+      console.log(
+        `[registry] Loaded pre-generated schema for ${name} (${Object.keys(objectDef.schema.columns || {}).length} columns)`,
+      );
+    } else {
+      // Placeholder schema - will be generated at runtime if needed
+      schema = {
+        ddl: '',
+        indexes: [],
+        triggers: [],
+        tableName,
+        columns: {},
+        foreignKeys: [],
+        dependencies: [],
+        version: '',
+        packageName: packageName,
+      };
+    }
 
     // Compile validators
     const validators = ObjectRegistry.compileValidators(name, fields);
@@ -839,6 +981,54 @@ export class ObjectRegistry {
     console.log(
       `📦 Registered ${name} from manifest (${fields.size} fields, ${methods.size} methods)`,
     );
+
+    // STI sibling auto-loading (Issue #430)
+    // When a class is registered that shares a table with other classes (STI),
+    // we need to discover and register ALL siblings so that getAllSchemas()
+    // can merge columns from all subtypes for the database adapter.
+    //
+    // IMPORTANT: Only auto-load siblings from EXTERNAL packages.
+    // For test classes or classes in the same package, they will be registered
+    // by their own @smrt() decorators. Auto-loading them as stubs would cause collisions.
+    const collection = objectDef.collection;
+    if (collection && !ObjectRegistry.stiSiblingsLoaded.has(collection)) {
+      // Mark this collection as processed to prevent infinite recursion
+      ObjectRegistry.stiSiblingsLoaded.add(collection);
+
+      console.log(
+        `[registry] Checking for STI siblings for collection: ${collection}`,
+      );
+
+      // Discover all classes that share this collection (table)
+      const siblings = discoverSTISiblingsSync(collection);
+
+      // Register any siblings that aren't already registered
+      // Only load siblings from DIFFERENT packages to avoid collisions with local classes
+      for (const sibling of siblings) {
+        if (!ObjectRegistry.classes.has(sibling.className)) {
+          // Skip siblings from the same package - they will be registered by their own decorators
+          if (
+            sibling.packageName &&
+            packageName &&
+            sibling.packageName === packageName
+          ) {
+            console.log(
+              `[registry] Skipping STI sibling ${sibling.className} from same package: ${packageName}`,
+            );
+            continue;
+          }
+
+          console.log(
+            `[registry] Auto-loading STI sibling: ${sibling.className} for collection: ${collection}`,
+          );
+          ObjectRegistry.registerFromManifest(
+            sibling.className,
+            sibling.entry,
+            sibling.packageName,
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -1018,6 +1208,7 @@ export class ObjectRegistry {
     ObjectRegistry.collectionCache.clear();
     ObjectRegistry.getInheritanceCache().clear();
     ObjectRegistry.fieldDecorators.clear();
+    ObjectRegistry.stiSiblingsLoaded.clear();
     // Note: dbInstanceIds WeakMap will be garbage collected automatically
     // Reset the counter for clean test state
     ObjectRegistry.nextDbId = 1;
@@ -1583,7 +1774,232 @@ export class ObjectRegistry {
    * ```
    */
   static getTableName(name: string): string | undefined {
+    // For STI classes, return the STI base class's table name
+    const stiBase = ObjectRegistry.getSTIBase(name);
+    if (stiBase && stiBase !== name) {
+      return ObjectRegistry.getSchema(stiBase)?.tableName;
+    }
     return ObjectRegistry.getSchema(name)?.tableName;
+  }
+
+  /**
+   * Get all pre-generated schemas for passing to database adapters
+   *
+   * Returns schemas in SDK SchemaProvider format for all registered classes.
+   * This allows passing all known schemas upfront to getDatabase(), enabling
+   * adapters like JSON to create tables with correct types before loading data.
+   *
+   * @returns Record of table names to schema definitions
+   * @example
+   * ```typescript
+   * const schemas = ObjectRegistry.getAllSchemas();
+   * const db = await getDatabase({ type: 'json', url: './data', schemas });
+   * ```
+   */
+  static getAllSchemas(): Record<
+    string,
+    { tableName: string; ddl: string; indexes?: string[] }
+  > {
+    // Step 1: Collect all schemas grouped by tableName
+    // For STI, multiple classes may share the same table
+    const tableSchemas: Record<
+      string,
+      {
+        tableName: string;
+        columns: Record<string, ColumnDefinition>;
+        indexes: Array<{ name: string; columns: string[]; unique?: boolean }>;
+        ddl: string;
+      }
+    > = {};
+
+    for (const [_className, registered] of ObjectRegistry.classes) {
+      if (registered.schema?.tableName) {
+        const tableName = registered.schema.tableName;
+
+        if (!tableSchemas[tableName]) {
+          // First class for this table - initialize
+          tableSchemas[tableName] = {
+            tableName,
+            columns: { ...(registered.schema.columns || {}) },
+            indexes: [],
+            ddl: registered.schema.ddl || '',
+          };
+        } else {
+          // Additional class sharing this table (STI scenario)
+          // Merge columns from this class into the existing schema
+          if (registered.schema.columns) {
+            for (const [colName, colDef] of Object.entries(
+              registered.schema.columns,
+            )) {
+              if (!tableSchemas[tableName].columns[colName]) {
+                // New column from this subtype - add it
+                tableSchemas[tableName].columns[colName] = colDef;
+              }
+            }
+          }
+        }
+
+        // Merge indexes (avoid duplicates by name)
+        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
+          const existingNames = new Set(
+            tableSchemas[tableName].indexes.map((idx) =>
+              typeof idx === 'string' ? idx : idx.name,
+            ),
+          );
+          for (const idx of registered.schema.indexes) {
+            const indexName = typeof idx === 'string' ? idx : idx.name;
+            if (!existingNames.has(indexName)) {
+              if (typeof idx === 'string') {
+                // Legacy string format - skip, can't merge properly
+              } else {
+                tableSchemas[tableName].indexes.push(idx);
+                existingNames.add(idx.name);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Step 2: Convert to output format, regenerating DDL for merged schemas
+    const schemas: Record<
+      string,
+      { tableName: string; ddl: string; indexes?: string[] }
+    > = {};
+
+    for (const [tableName, tableSchema] of Object.entries(tableSchemas)) {
+      // Generate DDL from merged columns (or use original DDL if columns are empty)
+      let ddl: string;
+      if (Object.keys(tableSchema.columns).length === 0 && tableSchema.ddl) {
+        // No columns merged - use original DDL to avoid generating invalid SQL
+        ddl = tableSchema.ddl;
+      } else if (Object.keys(tableSchema.columns).length === 0) {
+        // Skip schemas with no columns and no original DDL
+        continue;
+      } else {
+        ddl = ObjectRegistry.generateDDLFromColumns(
+          tableName,
+          tableSchema.columns,
+        );
+      }
+
+      // Convert index definitions to SQL strings for SDK compatibility
+      let indexSQL: string[] | undefined;
+      if (tableSchema.indexes.length > 0) {
+        indexSQL = tableSchema.indexes.map((idx) => {
+          const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
+          const columnList = idx.columns.map((col) => `"${col}"`).join(', ');
+          return `CREATE ${indexType} IF NOT EXISTS ${idx.name} ON "${tableName}" (${columnList});`;
+        });
+      }
+
+      schemas[tableName] = {
+        tableName,
+        ddl,
+        indexes: indexSQL,
+      };
+    }
+
+    return schemas;
+  }
+
+  /**
+   * Generate DDL CREATE TABLE statement from columns
+   *
+   * Used internally by getAllSchemas() to regenerate DDL after merging
+   * columns from multiple STI subtypes that share the same table.
+   *
+   * @param tableName - Name of the table
+   * @param columns - Column definitions
+   * @returns DDL CREATE TABLE statement
+   */
+  private static generateDDLFromColumns(
+    tableName: string,
+    columns: Record<string, ColumnDefinition>,
+  ): string {
+    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+
+    const columnLines: string[] = [];
+    for (const [columnName, columnDef] of Object.entries(columns)) {
+      const parts: string[] = [];
+
+      // Column name and type
+      parts.push(`  "${columnName}" ${columnDef.type}`);
+
+      // Primary key
+      if (columnDef.primaryKey) {
+        parts.push('PRIMARY KEY');
+      }
+
+      // Not null constraint
+      if (columnDef.notNull) {
+        parts.push('NOT NULL');
+      }
+
+      // Unique constraint (skip if primary key already implies uniqueness)
+      if (columnDef.unique && !columnDef.primaryKey) {
+        parts.push('UNIQUE');
+      }
+
+      // Default value
+      if (columnDef.defaultValue !== undefined) {
+        const defaultSQL = ObjectRegistry.formatDefaultValue(
+          columnDef.defaultValue,
+          columnDef.type,
+        );
+        parts.push(`DEFAULT ${defaultSQL}`);
+      }
+
+      columnLines.push(parts.join(' '));
+    }
+
+    sql += columnLines.join(',\n');
+    sql += '\n);';
+
+    return sql;
+  }
+
+  /**
+   * Format default value for SQL DDL
+   *
+   * @param value - Default value
+   * @param type - Column SQL type
+   * @returns Formatted SQL default value
+   */
+  private static formatDefaultValue(value: any, type: string): string {
+    // Handle SQL functions and keywords
+    if (typeof value === 'string') {
+      if (value.includes('(')) {
+        return value;
+      }
+      const sqlKeywords = [
+        'current_timestamp',
+        'current_date',
+        'current_time',
+        'now()',
+        'uuid_generate_v4()',
+      ];
+      if (sqlKeywords.some((kw) => value.toLowerCase() === kw)) {
+        return value;
+      }
+    }
+
+    // Handle by type
+    if (type === 'TEXT' || type === 'VARCHAR') {
+      return `'${String(value).replace(/'/g, "''")}'`;
+    }
+    if (type === 'INTEGER' || type === 'REAL') {
+      return String(value);
+    }
+    if (type === 'BOOLEAN') {
+      return value ? '1' : '0';
+    }
+    if (type === 'JSON') {
+      return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+    }
+
+    // Fallback: quote as string
+    return `'${String(value).replace(/'/g, "''")}'`;
   }
 
   /**
@@ -1871,8 +2287,17 @@ export class ObjectRegistry {
       return registered.inheritanceChain;
     }
 
-    // Build chain from constructor
-    const chain = ObjectRegistry.buildInheritanceChain(registered.constructor);
+    // Build chain from `extends` field (works for manifest-loaded classes)
+    // This is critical because manifest-loaded classes have stub constructors
+    // that only extend SmrtObject, not their actual parent class.
+    // The `extends` field IS stored correctly during registerFromManifest().
+    const chain: string[] = [];
+    let current: any = registered;
+    while (current) {
+      chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
+      if (!current.extends) break;
+      current = ObjectRegistry.findClass(current.extends);
+    }
 
     // Cache in both places
     registered.inheritanceChain = chain;
@@ -2373,27 +2798,34 @@ export class ObjectRegistry {
       return null; // Not using STI
     }
 
-    // Find the first class in the chain with tableStrategy: 'sti'
+    // Find the OLDEST/ROOT class in the chain with tableStrategy: 'sti'
+    // In multi-level STI hierarchies (e.g., Council → Organization → Profile),
+    // we need to return the oldest ancestor (Profile), not the first one found (Organization)
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return null;
     }
 
-    // Check if this class itself defines STI
+    // Track the oldest STI base found as we walk up the chain
+    let stiBase: string | null = null;
+
+    // Check if this class itself defines STI - it's a candidate
     if (registered.decorator?.tableStrategy === 'sti') {
-      return className;
+      stiBase = className;
     }
 
-    // Walk up the chain to find the base
+    // Walk up the chain to find the OLDEST STI base
     const chain = ObjectRegistry.getInheritanceChain(className);
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
       if (ancestor?.decorator?.tableStrategy === 'sti') {
-        return ancestorName;
+        // Found an STI ancestor - it becomes the new candidate
+        // Keep walking to find the oldest/root STI class
+        stiBase = ancestorName;
       }
     }
 
-    return null;
+    return stiBase;
   }
 
   /**
@@ -2558,8 +2990,25 @@ export function smrt(config: SmartObjectConfig = {}) {
       const itemClass = (ctor as any)._itemClass;
       if (itemClass) {
         // Register the item class (SmrtObject) with metadata
-        const tableName =
-          config.tableName || classnameToTablename(itemClass.name);
+        // For STI: Check if this class uses STI and get the base class's table name
+        let tableName = config.tableName;
+
+        if (!tableName) {
+          // Check if this class or any parent uses STI
+          const itemClassName = itemClass.name;
+          const stiBase = ObjectRegistry.getSTIBase(itemClassName);
+
+          if (stiBase && stiBase !== itemClassName) {
+            // Use STI base's table name
+            tableName = classnameToTablename(stiBase);
+          } else if (ObjectRegistry.getTableStrategy(itemClassName) === 'sti') {
+            // This is the STI base - use its own table name
+            tableName = classnameToTablename(itemClassName);
+          } else {
+            // CTI: Use own table name
+            tableName = classnameToTablename(itemClassName);
+          }
+        }
 
         // Only define SMRT_TABLE_NAME if it doesn't exist (avoid redefinition errors)
         if (!Object.hasOwn(itemClass, 'SMRT_TABLE_NAME')) {

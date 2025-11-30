@@ -193,6 +193,16 @@ let hourlyScrollContainer: HTMLElement | null = $state(null);
 let canScrollLeft = $state(false);
 let canScrollRight = $state(false);
 
+// Day cards scroll state
+// biome-ignore lint/style/useConst: Svelte bind:this requires let
+let dayCardsContainer: HTMLElement | null = $state(null);
+// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
+let dayCardsCanScrollLeft = $state(false);
+// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
+let dayCardsCanScrollRight = $state(false);
+// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
+let dayCardsHovered = $state(false);
+
 // Update scroll button visibility
 function updateScrollButtons() {
   if (!hourlyScrollContainer) return;
@@ -216,6 +226,40 @@ function scrollRight() {
   hourlyScrollContainer.scrollBy({ left: 300, behavior: 'smooth' });
   setTimeout(updateScrollButtons, 350);
 }
+
+// Day cards scroll functions
+function updateDayCardsScrollButtons() {
+  if (!dayCardsContainer) return;
+  const { scrollLeft, scrollWidth, clientWidth } = dayCardsContainer;
+  dayCardsCanScrollLeft = scrollLeft > 5;
+  dayCardsCanScrollRight = scrollLeft < scrollWidth - clientWidth - 5;
+}
+
+function scrollDayCardsLeft() {
+  if (!dayCardsContainer) return;
+  dayCardsContainer.scrollBy({ left: -200, behavior: 'smooth' });
+  setTimeout(updateDayCardsScrollButtons, 350);
+}
+
+function scrollDayCardsRight() {
+  if (!dayCardsContainer) return;
+  dayCardsContainer.scrollBy({ left: 200, behavior: 'smooth' });
+  setTimeout(updateDayCardsScrollButtons, 350);
+}
+
+// Set up scroll listener for day cards
+$effect(() => {
+  if (dayCardsContainer) {
+    setTimeout(updateDayCardsScrollButtons, 50);
+    dayCardsContainer.addEventListener('scroll', updateDayCardsScrollButtons);
+    return () => {
+      dayCardsContainer?.removeEventListener(
+        'scroll',
+        updateDayCardsScrollButtons,
+      );
+    };
+  }
+});
 
 // Set up scroll listener when container is available or content changes
 $effect(() => {
@@ -260,24 +304,52 @@ $effect(() => {
 </script>
 
 <div class="weather-forecast-alt">
-  <!-- Day Cards -->
-  <div class="day-cards">
-    {#each dayForecasts as day, index}
+  <!-- Day Cards Wrapper -->
+  <div
+    class="day-cards-wrapper"
+    onmouseenter={() => dayCardsHovered = true}
+    onmouseleave={() => dayCardsHovered = false}
+    role="region"
+    aria-label="Weather forecast days"
+  >
+    {#if dayCardsCanScrollLeft && dayCardsHovered}
       <button
-        class="day-card"
-        class:active={selectedDayIndex === index}
-        onclick={() => handleDayClick(index)}
-        aria-expanded={selectedDayIndex === index}
-        aria-controls="hourly-panel"
+        class="day-cards-arrow day-cards-arrow-left"
+        onclick={scrollDayCardsLeft}
+        aria-label="Scroll left"
       >
-        <div class="date">{day.date}</div>
-        <div class="icon">{day.icon}</div>
-        <div class="temps">
-          <span class="high">{day.high}°</span>
-          <span class="low">{day.low}°</span>
-        </div>
+        ‹
       </button>
-    {/each}
+    {/if}
+
+    <div class="day-cards" bind:this={dayCardsContainer}>
+      {#each dayForecasts as day, index}
+        <button
+          class="day-card"
+          class:active={selectedDayIndex === index}
+          onclick={() => handleDayClick(index)}
+          aria-expanded={selectedDayIndex === index}
+          aria-controls="hourly-panel"
+        >
+          <div class="date">{day.date}</div>
+          <div class="icon">{day.icon}</div>
+          <div class="temps">
+            <span class="high">{day.high}°</span>
+            <span class="low">{day.low}°</span>
+          </div>
+        </button>
+      {/each}
+    </div>
+
+    {#if dayCardsCanScrollRight && dayCardsHovered}
+      <button
+        class="day-cards-arrow day-cards-arrow-right"
+        onclick={scrollDayCardsRight}
+        aria-label="Scroll right"
+      >
+        ›
+      </button>
+    {/if}
   </div>
 
   <!-- Hourly Details Panel -->
@@ -343,33 +415,70 @@ $effect(() => {
     width: 100%;
   }
 
+  /* Day Cards Wrapper */
+  .day-cards-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
   /* Day Cards */
   .day-cards {
     display: flex;
     gap: var(--spacing-xl);
     padding: var(--spacing-lg) 0;
-    border-bottom: 1px solid var(--color-neutral-gray300);
     justify-content: flex-start;
     overflow-x: auto;
     scroll-behavior: smooth;
+    /* Hide scrollbar but keep scroll functionality */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
   }
 
+  /* Hide scrollbar for Chrome, Safari, and Opera */
   .day-cards::-webkit-scrollbar {
-    height: 6px;
+    display: none;
   }
 
-  .day-cards::-webkit-scrollbar-track {
-    background: var(--color-neutral-gray200);
-    border-radius: var(--border-radius-sm);
+  /* Day Cards Arrow Buttons */
+  .day-cards-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    background: var(--color-neutral-white);
+    border: 1px solid var(--color-neutral-gray300);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 20px;
+    color: var(--color-text-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 200ms ease;
+    opacity: 0;
+    animation: fadeIn 200ms ease forwards;
   }
 
-  .day-cards::-webkit-scrollbar-thumb {
-    background: var(--color-neutral-gray400);
-    border-radius: var(--border-radius-sm);
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
-  .day-cards::-webkit-scrollbar-thumb:hover {
-    background: var(--color-neutral-gray500);
+  .day-cards-arrow:hover {
+    background: var(--color-neutral-gray100);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .day-cards-arrow-left {
+    left: 0;
+  }
+
+  .day-cards-arrow-right {
+    right: 0;
   }
 
   .day-card {

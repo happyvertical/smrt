@@ -1,4 +1,7 @@
 <script lang="ts">
+import Badge from '../ui/Badge.svelte';
+import Card from '../ui/Card.svelte';
+
 // biome-ignore lint/style/useNamingConvention: Database column names use snake_case
 interface Article {
   id: string;
@@ -36,14 +39,28 @@ const _formattedDate = $derived(
     : null,
 );
 
-const _tags = $derived(
-  article.tags
-    ? article.tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean)
-    : [],
-);
+const _tags = $derived.by(() => {
+  if (!article.tags) return [];
+  // Handle JSON array (as string or actual array)
+  if (Array.isArray(article.tags)) return article.tags.filter(Boolean);
+  if (typeof article.tags === 'string') {
+    // Try parsing as JSON first
+    if (article.tags.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(article.tags);
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch {
+        // Fall through to comma-separated
+      }
+    }
+    // Comma-separated string
+    return article.tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+  return [];
+});
 </script>
 
 <a href="/articles/{article.slug}" class="article-link">
