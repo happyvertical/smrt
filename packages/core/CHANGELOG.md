@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.16
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - downstream blockers for bentleyalberta.com and caelus (#425)
+  - @happyvertical/smrt-config@0.17.16
+  - @happyvertical/smrt-types@0.17.16
+
 ## 0.17.15
 
 ### Patch Changes
