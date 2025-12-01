@@ -26,12 +26,12 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.56.18",
-    "@happyvertical/files": "0.56.18",
-    "@happyvertical/logger": "0.56.18",
+    "@happyvertical/ai": "0.57.0",
+    "@happyvertical/files": "0.57.0",
+    "@happyvertical/logger": "0.57.0",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "0.56.18",
-    "@happyvertical/utils": "0.56.18"
+    "@happyvertical/sql": "0.57.0",
+    "@happyvertical/utils": "0.57.0"
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",

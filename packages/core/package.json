@@ -36,13 +36,13 @@
     "./manifest/discover-base-classes": "./dist/manifest/discover-base-classes.js"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.56.18",
-    "@happyvertical/files": "0.56.18",
-    "@happyvertical/logger": "0.56.18",
+    "@happyvertical/ai": "0.57.0",
+    "@happyvertical/files": "0.57.0",
+    "@happyvertical/logger": "0.57.0",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "0.56.18",
-    "@happyvertical/utils": "0.56.18",
+    "@happyvertical/sql": "0.57.0",
+    "@happyvertical/utils": "0.57.0",
     "@langchain/community": "^0.3.24",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "cheerio": "^1.0.0",
