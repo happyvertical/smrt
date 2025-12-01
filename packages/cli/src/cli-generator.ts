@@ -1543,10 +1543,11 @@ export class CLIGenerator {
         });
       }
 
-      // Create instance with full config (application config + database)
+      // Create instance with full config (application config + database + AI)
       const obj = new classInfo.constructor({
         ...smrtConfig,
         db,
+        ai: this.context.ai,
       });
 
       // Initialize (required for objects that set up sub-collections, AI clients, etc.)
@@ -1571,9 +1572,22 @@ export class CLIGenerator {
         console.log(JSON.stringify(result, null, 2));
       }
     } catch (error) {
-      this.exitWithError(
-        error instanceof Error ? error.message : 'Unknown error',
+      // Provide detailed error context for debugging
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      console.error(`\nError executing ${objectName}.${methodName}():`);
+      console.error(`  ${errorMessage}`);
+      if (errorStack && process.env.DEBUG) {
+        console.error('\nStack trace:');
+        console.error(errorStack);
+      }
+      console.error(
+        '\nTip: Set DEBUG=1 for full stack trace, or check the method implementation.',
       );
+
+      this.exitWithError(errorMessage);
     }
   }
 
