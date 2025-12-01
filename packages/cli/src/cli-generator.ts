@@ -120,6 +120,19 @@ export class CLIGenerator {
   }
 
   /**
+   * Check if a type string represents an inline object type parameter
+   * e.g., "{ meetingId?: string; limit?: number }"
+   *
+   * Note: Only supports single-level nested braces. Deeply nested types
+   * like "{ config: { nested: { deep: string } } }" are not fully supported.
+   */
+  private isObjectTypeParameter(typeStr: string): boolean {
+    return (
+      typeStr.includes('{') && typeStr.includes('}') && typeStr.includes(':')
+    );
+  }
+
+  /**
    * Try to load user's compiled classes for runtime execution
    *
    * Loads both local classes (from project entry point) and external classes
@@ -657,13 +670,11 @@ export class CLIGenerator {
 
       // Map method parameters to CLI options
       // Handles both flat params and object params like { meetingId?: string; limit?: number }
+      // Note: Only supports single-level nested braces in type definitions
       for (const param of methodDef.parameters || []) {
         // Check if param type is an inline object type (contains property definitions)
         const typeStr = param.type || '';
-        const isObjectType =
-          typeStr.includes('{') &&
-          typeStr.includes('}') &&
-          typeStr.includes(':');
+        const isObjectType = this.isObjectTypeParameter(typeStr);
 
         if (isObjectType) {
           // Parse object type properties into individual CLI options
@@ -1677,10 +1688,7 @@ export class CLIGenerator {
 
       for (const param of methodParams) {
         const typeStr = param.type || '';
-        const isObjectType =
-          typeStr.includes('{') &&
-          typeStr.includes('}') &&
-          typeStr.includes(':');
+        const isObjectType = this.isObjectTypeParameter(typeStr);
 
         if (isObjectType) {
           // Object type parameter - reconstruct from individual CLI options
@@ -1691,13 +1699,14 @@ export class CLIGenerator {
             const propsStr = match[1];
             const propMatches = propsStr.matchAll(/(\w+)(\?)?:\s*([^;]+)/g);
             for (const propMatch of propMatches) {
-              const [, propName, , propType] = propMatch;
+              const [, propName] = propMatch;
               // Convert camelCase to kebab-case for CLI option lookup
               const optionName = propName
                 .replace(/([A-Z])/g, '-$1')
                 .toLowerCase();
               if (options[optionName] !== undefined) {
-                // Try to parse as JSON for complex values, otherwise use as-is
+                // Auto-parse JSON objects and arrays from CLI strings
+                // Note: Only values starting with { or [ are parsed as JSON
                 let value = options[optionName];
                 if (
                   typeof value === 'string' &&
@@ -1706,18 +1715,20 @@ export class CLIGenerator {
                   try {
                     value = JSON.parse(value);
                   } catch {
-                    // Keep as string
+                    // Keep as string if JSON parsing fails
                   }
                 }
                 objArg[propName] = value;
               }
             }
           }
-          // Only add if we have any properties set
+          // Always push something to maintain parameter positions
           if (Object.keys(objArg).length > 0) {
             methodCallArgs.push(objArg);
           } else if (!param.optional) {
             methodCallArgs.push({});
+          } else {
+            methodCallArgs.push(undefined);
           }
         } else {
           // Flat parameter - get from CLI option
@@ -1728,7 +1739,8 @@ export class CLIGenerator {
             methodCallArgs.push(options[optionName]);
           } else if (param.default !== undefined) {
             methodCallArgs.push(param.default);
-          } else if (!param.optional) {
+          } else {
+            // Always push undefined to maintain parameter positions
             methodCallArgs.push(undefined);
           }
         }
