@@ -780,10 +780,12 @@ export class SmrtObject extends SmrtClass {
    */
   async getSlug() {
     if (!this.slug) {
-      // Try multiple fallback fields in order: title, label, id
+      // Try multiple fallback fields in order: name, title, label, id
       let sourceField = null;
 
-      if ((this as any).title) {
+      if ((this as any).name) {
+        sourceField = String((this as any).name);
+      } else if ((this as any).title) {
         sourceField = String((this as any).title);
       } else if ((this as any).label) {
         sourceField = String((this as any).label);
