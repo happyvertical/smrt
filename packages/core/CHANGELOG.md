@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.17
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use ObjectRegistry for objects command and add object-level help (#436) (cli)
+  - generate slug from name field before title/label (#435) (core)
+  - @happyvertical/smrt-config@0.17.17
+  - @happyvertical/smrt-types@0.17.17
+
 ## 0.17.16
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.17.16",
+  "version": "0.17.17",
   "description": "Svelte 5 component library with Histoire documentation for the SMRT framework",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
