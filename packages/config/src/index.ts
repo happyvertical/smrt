@@ -30,6 +30,16 @@ export async function loadConfig(
 }
 
 /**
+ * Get the currently loaded configuration synchronously
+ * Returns null if config hasn't been loaded yet via loadConfig()
+ *
+ * @returns The cached config or null if not loaded
+ */
+export function getConfig(): SmrtConfig | null {
+  return loadedConfig;
+}
+
+/**
  * Get configuration for a specific module
  * Merges global smrt config with module-specific config
  *
