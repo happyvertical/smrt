@@ -2812,6 +2812,8 @@ export class ObjectRegistry {
     }
 
     // Find the OLDEST/ROOT class in the chain with tableStrategy: 'sti'
+    // that shares the same table name as the target class.
+    //
     // In multi-level STI hierarchies (e.g., Council → Organization → Profile),
     // we need to return the oldest ancestor (Profile), not the first one found (Organization)
     const registered = ObjectRegistry.findClass(className);
@@ -2819,26 +2821,28 @@ export class ObjectRegistry {
       return null;
     }
 
-    // Track the oldest STI base found as we walk up the chain
-    let stiBase: string | null = null;
+    // Get this class's table name for matching
+    const targetTableName =
+      registered.decorator?.tableName || registered.schema?.tableName;
 
-    // Check if this class itself defines STI - it's a candidate
-    if (registered.decorator?.tableStrategy === 'sti') {
-      stiBase = className;
-    }
-
-    // Walk up the chain to find the OLDEST STI base
+    // Walk up the chain to find the OLDEST STI base with matching table
+    // The chain is ordered [root, ..., className], so the first match is the oldest
     const chain = ObjectRegistry.getInheritanceChain(className);
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
       if (ancestor?.decorator?.tableStrategy === 'sti') {
-        // Found an STI ancestor - it becomes the new candidate
-        // Keep walking to find the oldest/root STI class
-        stiBase = ancestorName;
+        // Check if this ancestor shares the same table
+        const ancestorTableName =
+          ancestor.decorator?.tableName || ancestor.schema?.tableName;
+        if (ancestorTableName === targetTableName) {
+          // Found the OLDEST STI ancestor with same table - this is the base
+          return ancestorName;
+        }
       }
     }
 
-    return stiBase;
+    // If no matching ancestor found, this class is its own STI base
+    return className;
   }
 
   /**
