@@ -1491,7 +1491,7 @@ export class CLIGenerator {
 
   /**
    * Handle singleton method (no parameters, no database lookup)
-   * Creates a new instance and calls the method
+   * Creates a new instance with proper config and calls the method
    */
   private async handleSingletonMethod(
     objectName: string,
@@ -1524,10 +1524,32 @@ export class CLIGenerator {
         `Executing ${methodName} on ${objectName}...`,
       );
 
-      // Create new instance (no database initialization needed)
-      const obj = new classInfo.constructor();
+      // Load full application config from smrt.config.js
+      const { getConfig } = await import('@happyvertical/smrt-config');
+      const smrtConfig = getConfig();
 
-      // Initialize if needed
+      // Get database config and create connection
+      const { getPackageConfig } = await import('@happyvertical/smrt-config');
+      const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+      const cliConfig = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+      // Initialize database connection from config
+      let db = this.context.db;
+      if (!db) {
+        const { getDatabase } = await import('@happyvertical/sql');
+        db = await getDatabase({
+          type: cliConfig.database.type,
+          url: cliConfig.database.url,
+        });
+      }
+
+      // Create instance with full config (application config + database)
+      const obj = new classInfo.constructor({
+        ...smrtConfig,
+        db,
+      });
+
+      // Initialize (required for objects that set up sub-collections, AI clients, etc.)
       if (typeof obj.initialize === 'function') {
         await obj.initialize();
       }
