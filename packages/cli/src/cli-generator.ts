@@ -667,15 +667,18 @@ export class CLIGenerator {
         };
       }
 
-      // Determine if method needs an object instance (has parameters or requires loading an object)
-      // Parameterless methods can be called on a new instance without database lookup
-      const needsInstance = (methodDef.parameters || []).length > 0;
+      // Determine if method needs an object instance (has required parameters)
+      // Only require ID if method has required (non-optional) parameters
+      const hasRequiredParams = (methodDef.parameters || []).some(
+        (p) => !p.optional && p.default === undefined,
+      );
+      const needsInstance = hasRequiredParams;
 
       commands.push({
         name: `${lowerName}:${methodName}`,
         description:
           methodDef.description || `Execute ${methodName} on ${objectName}`,
-        args: needsInstance ? ['id'] : [], // Only require ID if method has parameters
+        args: needsInstance ? ['id'] : [], // Only require ID if method has required parameters
         options: methodOptions,
         handler: async (args, options) => {
           if (needsInstance) {
@@ -686,7 +689,12 @@ export class CLIGenerator {
               options,
             );
           } else {
-            await this.handleSingletonMethod(objectName, methodName, options);
+            await this.handleSingletonMethod(
+              objectName,
+              methodName,
+              options,
+              methodDef,
+            );
           }
         },
       });
@@ -1496,7 +1504,8 @@ export class CLIGenerator {
   private async handleSingletonMethod(
     objectName: string,
     methodName: string,
-    _options: any,
+    options: any,
+    methodDef?: { parameters?: Array<{ name: string; default?: any }> },
   ): Promise<void> {
     try {
       const classInfo = ObjectRegistry.getClass(objectName);
@@ -1604,7 +1613,18 @@ export class CLIGenerator {
         return;
       }
 
-      const result = await method.call(obj);
+      // Map CLI options to method parameters (kebab-case to camelCase)
+      const methodArgs: any = {};
+      for (const param of methodDef?.parameters || []) {
+        const optionName = param.name.replace(/([A-Z])/g, '-$1').toLowerCase();
+        if (options[optionName] !== undefined) {
+          methodArgs[param.name] = options[optionName];
+        } else if (param.default !== undefined) {
+          methodArgs[param.name] = param.default;
+        }
+      }
+
+      const result = await method.call(obj, methodArgs);
 
       spinner.succeed(`Executed ${methodName}`);
 
