@@ -1525,30 +1525,71 @@ export class CLIGenerator {
       );
 
       // Load full application config from smrt.config.js
-      const { getConfig } = await import('@happyvertical/smrt-config');
-      const smrtConfig = getConfig();
+      const { getConfig, getPackageConfig } = await import(
+        '@happyvertical/smrt-config'
+      );
+      const smrtConfig = getConfig() || {};
 
       // Get database config and create connection
-      const { getPackageConfig } = await import('@happyvertical/smrt-config');
       const { DEFAULT_CLI_CONFIG } = await import('./config.js');
       const cliConfig = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
 
       // Initialize database connection from config
       let db = this.context.db;
-      if (!db) {
+      if (!db && cliConfig?.database?.url) {
         const { getDatabase } = await import('@happyvertical/sql');
         db = await getDatabase({
-          type: cliConfig.database.type,
+          type: cliConfig.database.type || 'sqlite',
           url: cliConfig.database.url,
         });
       }
 
-      // Create instance with full config (application config + database + AI)
-      const obj = new classInfo.constructor({
+      // Check if we have a real constructor (not just a manifest stub)
+      const isManifestStub =
+        (classInfo.constructor as any)?._isManifestStub === true;
+
+      if (process.env.DEBUG) {
+        console.log(`[DEBUG] ${objectName} constructor info:`);
+        console.log(`  - isManifestStub: ${isManifestStub}`);
+        console.log(
+          `  - constructor name: ${classInfo.constructor?.name || 'undefined'}`,
+        );
+        console.log(`  - packageName: ${classInfo.packageName || 'local'}`);
+      }
+
+      if (isManifestStub) {
+        this.exitWithError(
+          `${objectName} is registered from manifest but the real class wasn't loaded.\n\n` +
+            `This usually means:\n` +
+            `1. The .smrt/register.js file doesn't import the class\n` +
+            `2. The package doesn't export the class properly\n` +
+            `3. The class name in the package doesn't match the manifest\n\n` +
+            `Try:\n` +
+            `- Run 'npm run build' to regenerate .smrt/register.js\n` +
+            `- Check that the package exports the ${objectName} class\n` +
+            `- Check .smrt/register.js imports match the package exports`,
+        );
+        return;
+      }
+
+      // Verify constructor is callable
+      if (typeof classInfo.constructor !== 'function') {
+        this.exitWithError(
+          `${objectName} constructor is not available.\n` +
+            `This usually means the class wasn't properly exported or registered.\n` +
+            `Check that the package exports the class and .smrt/register.js imports it.`,
+        );
+        return;
+      }
+
+      // Create instance with config
+      const instanceConfig = {
         ...smrtConfig,
-        db,
-        ai: this.context.ai,
-      });
+        ...(db && { db }),
+        ...(this.context.ai && { ai: this.context.ai }),
+      };
+
+      const obj = new classInfo.constructor(instanceConfig);
 
       // Initialize (required for objects that set up sub-collections, AI clients, etc.)
       if (typeof obj.initialize === 'function') {
