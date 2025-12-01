@@ -646,6 +646,68 @@ export function discoverManifestSync(
     }
   }
 
+  // 6. Scan ALL @happyvertical packages in node_modules for manifests
+  // This is critical for production environments where localTestManifest is not available
+  // and smrtDependencies is empty. Without this, external package classes (like EventType
+  // from smrt-events) won't be found, causing schema generation to miss indexes.
+  try {
+    const nodeModulesPath = join(
+      process.cwd(),
+      'node_modules',
+      '@happyvertical',
+    );
+    if (existsSync(nodeModulesPath)) {
+      const packages = readdirSync(nodeModulesPath);
+      console.log(
+        `[manifest-loader] Scanning ${packages.length} @happyvertical packages in node_modules for ${className}`,
+      );
+      for (const pkg of packages) {
+        const fullPackageName = `@happyvertical/${pkg}`;
+        // Skip if already in cache (already checked above)
+        if (manifestCache.has(fullPackageName)) {
+          continue;
+        }
+        // Check for manifest in dist/ or root
+        const manifestPaths = [
+          join(nodeModulesPath, pkg, 'dist', 'manifest.json'),
+          join(nodeModulesPath, pkg, 'manifest.json'),
+        ];
+        for (const manifestPath of manifestPaths) {
+          if (existsSync(manifestPath)) {
+            try {
+              const manifestContent = readFileSync(manifestPath, 'utf-8');
+              const manifest: Manifest = JSON.parse(manifestContent);
+              // Cache it for future lookups
+              manifestCache.set(fullPackageName, manifest);
+              // Check if this manifest has the class we're looking for
+              const entry =
+                manifest.objects[name] || manifest.objects[className];
+              if (entry) {
+                console.log(
+                  `[manifest-loader] ✅ Found ${className} in node_modules package ${fullPackageName}`,
+                );
+                // Enrich entry with packageName from manifest if not already present
+                if (!entry.packageName && manifest.packageName) {
+                  return { ...entry, packageName: manifest.packageName };
+                }
+                return entry;
+              }
+              break; // Found manifest for this package, move to next package
+            } catch (parseError) {
+              console.log(
+                `[manifest-loader] Failed to parse manifest at ${manifestPath}: ${parseError}`,
+              );
+            }
+          }
+        }
+      }
+    }
+  } catch (scanError) {
+    console.log(
+      `[manifest-loader] Failed to scan node_modules for ${className}: ${scanError}`,
+    );
+  }
+
   console.log(`[manifest-loader] ❌ ${className} not found in any manifest`);
   return undefined;
 }
