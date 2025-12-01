@@ -858,6 +858,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Direct instantiation - all SmrtObject classes support this pattern
     const instance = new this._itemClass(params);
     await instance.initialize();
+
+    // For STI collections, set _meta_type to the class name (fix for issue #442)
+    // This ensures _meta_type is available immediately after creation, not just after DB load
+    if (tableStrategy === 'sti') {
+      (instance as any)._meta_type = this._itemClass.name;
+    }
     // Generate ID if not provided, then save
     if (!instance.id) {
       (instance as any)._id = crypto.randomUUID();
@@ -909,6 +915,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Instantiate the correct subclass
     const instance = new registeredClass.constructor(params);
     await instance.initialize();
+
+    // Ensure _meta_type is set on the instance (fix for issue #442)
+    (instance as any)._meta_type = className;
 
     return instance as ModelType;
   }
