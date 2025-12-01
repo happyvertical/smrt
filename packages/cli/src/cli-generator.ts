@@ -667,15 +667,18 @@ export class CLIGenerator {
         };
       }
 
-      // Determine if method needs an object instance (has parameters or requires loading an object)
-      // Parameterless methods can be called on a new instance without database lookup
-      const needsInstance = (methodDef.parameters || []).length > 0;
+      // Determine if method needs an object instance (has required parameters)
+      // Only require ID if method has required (non-optional) parameters
+      const hasRequiredParams = (methodDef.parameters || []).some(
+        (p) => !p.optional && p.default === undefined,
+      );
+      const needsInstance = hasRequiredParams;
 
       commands.push({
         name: `${lowerName}:${methodName}`,
         description:
           methodDef.description || `Execute ${methodName} on ${objectName}`,
-        args: needsInstance ? ['id'] : [], // Only require ID if method has parameters
+        args: needsInstance ? ['id'] : [], // Only require ID if method has required parameters
         options: methodOptions,
         handler: async (args, options) => {
           if (needsInstance) {
@@ -686,7 +689,12 @@ export class CLIGenerator {
               options,
             );
           } else {
-            await this.handleSingletonMethod(objectName, methodName, options);
+            await this.handleSingletonMethod(
+              objectName,
+              methodName,
+              options,
+              methodDef,
+            );
           }
         },
       });
@@ -790,8 +798,81 @@ export class CLIGenerator {
       }
     }
 
+    // Check if the command matches a registered object name (show help for that object)
+    const registeredClasses = ObjectRegistry.getAllClasses();
+    const matchingObject = Array.from(registeredClasses.keys()).find(
+      (name) => name.toLowerCase() === parsed.command?.toLowerCase(),
+    );
+
+    if (matchingObject) {
+      await this.showObjectHelp(matchingObject, commands);
+      return;
+    }
+
     // Command not found in either object or built-in commands
     this.exitWithError(`Unknown command '${parsed.command}'`);
+  }
+
+  /**
+   * Show help for a specific object and its available commands
+   */
+  private async showObjectHelp(
+    objectName: string,
+    allCommands: CLICommand[],
+  ): Promise<void> {
+    const classInfo = ObjectRegistry.getClass(objectName);
+    const lowerName = objectName.toLowerCase();
+
+    console.log(`\n${objectName}`);
+    console.log('='.repeat(objectName.length));
+
+    if (classInfo?.packageName) {
+      console.log(`Package: ${classInfo.packageName}`);
+    }
+
+    // Find all commands for this object
+    const objectCommands = allCommands.filter(
+      (cmd) =>
+        cmd.name.startsWith(`${lowerName}:`) ||
+        cmd.aliases?.some((a) => a.startsWith(`${lowerName}:`)),
+    );
+
+    if (objectCommands.length === 0) {
+      console.log('\nNo CLI commands available for this object.');
+      console.log(
+        'Check that cli: true or cli: { include: [...] } is set in @smrt() decorator.',
+      );
+      return;
+    }
+
+    console.log('\nAvailable commands:');
+    for (const cmd of objectCommands) {
+      const cmdName = cmd.name.replace(`${lowerName}:`, '');
+      const args = cmd.args
+        ? ` ${cmd.args.map((arg) => `<${arg}>`).join(' ')}`
+        : '';
+      console.log(`  smrt ${lowerName} ${cmdName}${args}`);
+      console.log(`    ${cmd.description}`);
+
+      if (cmd.options && Object.keys(cmd.options).length > 0) {
+        for (const [optName, opt] of Object.entries(cmd.options)) {
+          const short = opt.short ? `-${opt.short}, ` : '';
+          const def = opt.default ? ` (default: ${opt.default})` : '';
+          console.log(`      ${short}--${optName}${def}`);
+        }
+      }
+      console.log();
+    }
+
+    // Show fields if verbose help requested
+    const fields = ObjectRegistry.getFields(objectName);
+    if (fields.size > 0) {
+      console.log('Fields:');
+      for (const [fieldName, field] of fields) {
+        const required = field.options?.required ? ' (required)' : '';
+        console.log(`  ${fieldName}: ${field.type}${required}`);
+      }
+    }
   }
 
   /**
@@ -800,10 +881,10 @@ export class CLIGenerator {
   generateUtilityCommands(): CLICommand[] {
     const commands: CLICommand[] = [];
 
-    // List all discovered objects (from manifests)
+    // List all registered objects (from ObjectRegistry)
     commands.push({
       name: 'objects',
-      description: 'List all discovered smrt objects',
+      description: 'List all registered smrt objects',
       aliases: ['ls'],
       options: {
         verbose: {
@@ -817,15 +898,14 @@ export class CLIGenerator {
         },
       },
       handler: async (_args, options) => {
-        const { autoDiscoverAndLoad, loadManifestFile } = await import(
-          './discovery/index.js'
-        );
-        const { discovered, totalObjects } = await autoDiscoverAndLoad();
+        // Use ObjectRegistry which has all loaded objects
+        const registeredClasses = ObjectRegistry.getAllClasses();
 
-        if (totalObjects === 0) {
+        if (registeredClasses.size === 0) {
           console.log('No SMRT objects found.');
           console.log('\nTo discover objects:');
           console.log('  • Build your project: npm run build');
+          console.log('  • Ensure .smrt/register.js exists');
           console.log('  • Run: smrt introspect for details');
           return;
         }
@@ -833,77 +913,87 @@ export class CLIGenerator {
         if (options.json) {
           // JSON output mode
           const output: Record<string, any> = {};
-          for (const manifest of discovered) {
-            const data = await loadManifestFile(manifest.path);
-            const source = manifest.packageName || 'project';
-            output[source] = {
-              path: manifest.path,
-              objects: data?.objects || {},
+          for (const [name, classInfo] of registeredClasses) {
+            const config = ObjectRegistry.getConfig(name);
+            const fields = ObjectRegistry.getFields(name);
+            const methods = await ObjectRegistry.getAllMethods(name);
+
+            output[name] = {
+              package: classInfo.packageName || 'project',
+              hasConstructor: !!classInfo.constructor,
+              hasCollection: !!classInfo.collectionConstructor,
+              config,
+              fields: Object.fromEntries(fields),
+              methods: Object.fromEntries(methods),
             };
           }
           console.log(JSON.stringify(output, null, 2));
           return;
         }
 
-        console.log('Discovered SMRT objects:\n');
+        console.log('Registered SMRT objects:\n');
 
-        for (const manifest of discovered) {
-          try {
-            const data = await loadManifestFile(manifest.path);
-            const source = manifest.packageName || 'project';
-            console.log(`  ${source}:`);
+        // Group by package name
+        const byPackage = new Map<string, string[]>();
+        for (const [name, classInfo] of registeredClasses) {
+          const pkg = classInfo.packageName || 'project';
+          if (!byPackage.has(pkg)) {
+            byPackage.set(pkg, []);
+          }
+          byPackage.get(pkg)?.push(name);
+        }
 
-            for (const objName of Object.keys(data?.objects || {})) {
-              const obj = data.objects[objName];
-              const cliConfig = obj.decoratorConfig?.cli;
+        for (const [pkg, names] of byPackage) {
+          console.log(`  ${pkg}:`);
 
-              // Get CLI-enabled methods
-              let cliMethods: string[] = [];
-              if (cliConfig && obj.methods) {
-                const methodNames = Object.keys(obj.methods);
-                if (typeof cliConfig === 'object' && cliConfig.include) {
-                  // Filter to included methods
-                  cliMethods = methodNames.filter(
-                    (m) =>
-                      cliConfig.include?.includes(m) &&
-                      obj.methods[m]?.isPublic,
-                  );
-                } else if (cliConfig === true) {
-                  // All public methods
-                  cliMethods = methodNames.filter(
-                    (m) => obj.methods[m]?.isPublic,
-                  );
-                }
-              }
+          for (const objName of names) {
+            const config = ObjectRegistry.getConfig(objName);
+            const cliConfig = config.cli;
 
-              if (options.verbose) {
-                console.log(`    • ${objName}`);
-                if (cliMethods.length > 0) {
-                  console.log(`      CLI: ${cliMethods.join(', ')}`);
-                }
-                // Show fields
-                const fieldNames = Object.keys(obj.fields || {}).slice(0, 5);
-                if (fieldNames.length > 0) {
-                  console.log(
-                    `      Fields: ${fieldNames.join(', ')}${Object.keys(obj.fields || {}).length > 5 ? '...' : ''}`,
-                  );
-                }
-              } else {
-                const methodStr =
-                  cliMethods.length > 0 ? ` → ${cliMethods.join(', ')}` : '';
-                console.log(`    • ${objName}${methodStr}`);
+            // Get CLI-enabled methods
+            let cliMethods: string[] = [];
+            if (cliConfig) {
+              const methods = await ObjectRegistry.getAllMethods(objName);
+              const methodNames = Array.from(methods.keys());
+
+              if (typeof cliConfig === 'object' && cliConfig.include) {
+                // Filter to included methods
+                cliMethods = methodNames.filter(
+                  (m) =>
+                    cliConfig.include?.includes(m) && methods.get(m)?.isPublic,
+                );
+              } else if (cliConfig === true) {
+                // All public methods
+                cliMethods = methodNames.filter(
+                  (m) => methods.get(m)?.isPublic,
+                );
               }
             }
-            console.log();
-          } catch (error) {
-            console.log(
-              `    (failed to load: ${error instanceof Error ? error.message : 'unknown'})`,
-            );
+
+            if (options.verbose) {
+              console.log(`    • ${objName}`);
+              if (cliMethods.length > 0) {
+                console.log(`      CLI: ${cliMethods.join(', ')}`);
+              }
+              // Show fields
+              const fields = ObjectRegistry.getFields(objName);
+              const fieldNames = Array.from(fields.keys()).slice(0, 5);
+              if (fieldNames.length > 0) {
+                console.log(
+                  `      Fields: ${fieldNames.join(', ')}${fields.size > 5 ? '...' : ''}`,
+                );
+              }
+            } else {
+              const methodStr =
+                cliMethods.length > 0 ? ` → ${cliMethods.join(', ')}` : '';
+              console.log(`    • ${objName}${methodStr}`);
+            }
           }
+          console.log();
         }
 
         console.log(
-          `Total: ${totalObjects} objects from ${discovered.length} source(s)`,
+          `Total: ${registeredClasses.size} objects from ${byPackage.size} source(s)`,
         );
       },
     });
@@ -1409,12 +1499,13 @@ export class CLIGenerator {
 
   /**
    * Handle singleton method (no parameters, no database lookup)
-   * Creates a new instance and calls the method
+   * Creates a new instance with proper config and calls the method
    */
   private async handleSingletonMethod(
     objectName: string,
     methodName: string,
-    _options: any,
+    options: any,
+    methodDef?: { parameters?: Array<{ name: string; default?: any }> },
   ): Promise<void> {
     try {
       const classInfo = ObjectRegistry.getClass(objectName);
@@ -1442,10 +1533,74 @@ export class CLIGenerator {
         `Executing ${methodName} on ${objectName}...`,
       );
 
-      // Create new instance (no database initialization needed)
-      const obj = new classInfo.constructor();
+      // Load full application config from smrt.config.js
+      const { getConfig, getPackageConfig } = await import(
+        '@happyvertical/smrt-config'
+      );
+      const smrtConfig = getConfig() || {};
 
-      // Initialize if needed
+      // Get database config and create connection
+      const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+      const cliConfig = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+      // Initialize database connection from config
+      let db = this.context.db;
+      if (!db && cliConfig?.database?.url) {
+        const { getDatabase } = await import('@happyvertical/sql');
+        db = await getDatabase({
+          type: cliConfig.database.type || 'sqlite',
+          url: cliConfig.database.url,
+        });
+      }
+
+      // Check if we have a real constructor (not just a manifest stub)
+      const isManifestStub =
+        (classInfo.constructor as any)?._isManifestStub === true;
+
+      if (process.env.DEBUG) {
+        console.log(`[DEBUG] ${objectName} constructor info:`);
+        console.log(`  - isManifestStub: ${isManifestStub}`);
+        console.log(
+          `  - constructor name: ${classInfo.constructor?.name || 'undefined'}`,
+        );
+        console.log(`  - packageName: ${classInfo.packageName || 'local'}`);
+      }
+
+      if (isManifestStub) {
+        this.exitWithError(
+          `${objectName} is registered from manifest but the real class wasn't loaded.\n\n` +
+            `This usually means:\n` +
+            `1. The .smrt/register.js file doesn't import the class\n` +
+            `2. The package doesn't export the class properly\n` +
+            `3. The class name in the package doesn't match the manifest\n\n` +
+            `Try:\n` +
+            `- Run 'npm run build' to regenerate .smrt/register.js\n` +
+            `- Check that the package exports the ${objectName} class\n` +
+            `- Check .smrt/register.js imports match the package exports`,
+        );
+        return;
+      }
+
+      // Verify constructor is callable
+      if (typeof classInfo.constructor !== 'function') {
+        this.exitWithError(
+          `${objectName} constructor is not available.\n` +
+            `This usually means the class wasn't properly exported or registered.\n` +
+            `Check that the package exports the class and .smrt/register.js imports it.`,
+        );
+        return;
+      }
+
+      // Create instance with config
+      const instanceConfig = {
+        ...smrtConfig,
+        ...(db && { db }),
+        ...(this.context.ai && { ai: this.context.ai }),
+      };
+
+      const obj = new classInfo.constructor(instanceConfig);
+
+      // Initialize (required for objects that set up sub-collections, AI clients, etc.)
       if (typeof obj.initialize === 'function') {
         await obj.initialize();
       }
@@ -1458,7 +1613,18 @@ export class CLIGenerator {
         return;
       }
 
-      const result = await method.call(obj);
+      // Map CLI options to method parameters (kebab-case to camelCase)
+      const methodArgs: any = {};
+      for (const param of methodDef?.parameters || []) {
+        const optionName = param.name.replace(/([A-Z])/g, '-$1').toLowerCase();
+        if (options[optionName] !== undefined) {
+          methodArgs[param.name] = options[optionName];
+        } else if (param.default !== undefined) {
+          methodArgs[param.name] = param.default;
+        }
+      }
+
+      const result = await method.call(obj, methodArgs);
 
       spinner.succeed(`Executed ${methodName}`);
 
@@ -1467,9 +1633,22 @@ export class CLIGenerator {
         console.log(JSON.stringify(result, null, 2));
       }
     } catch (error) {
-      this.exitWithError(
-        error instanceof Error ? error.message : 'Unknown error',
+      // Provide detailed error context for debugging
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      console.error(`\nError executing ${objectName}.${methodName}():`);
+      console.error(`  ${errorMessage}`);
+      if (errorStack && process.env.DEBUG) {
+        console.error('\nStack trace:');
+        console.error(errorStack);
+      }
+      console.error(
+        '\nTip: Set DEBUG=1 for full stack trace, or check the method implementation.',
       );
+
+      this.exitWithError(errorMessage);
     }
   }
 

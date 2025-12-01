@@ -661,6 +661,19 @@ export class ObjectRegistry {
       }
     }
 
+    // Also load methods from _manifestMethods in config (from consumer plugin register.js)
+    // This is how external package methods are passed to the registry
+    if ((config as any)._manifestMethods) {
+      for (const [methodName, methodDef] of Object.entries(
+        (config as any)._manifestMethods,
+      )) {
+        methods.set(methodName, methodDef);
+      }
+      console.log(
+        `[registry] Loaded ${methods.size} methods for ${name} from _manifestMethods`,
+      );
+    }
+
     // Note: If manifest not found here, it will be loaded asynchronously when needed
     // via ensureManifestLoaded(). This allows decorators to remain synchronous while
     // supporting dynamic external package manifest loading.
