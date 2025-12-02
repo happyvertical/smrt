@@ -83,6 +83,13 @@ export interface ContentOptions extends SmrtObjectOptions {
   tags?: string[];
 
   /**
+   * Hierarchical category path for URL routing
+   * Format: 'parent/child' (e.g., 'politics/local')
+   * Each content belongs to exactly ONE category
+   */
+  category?: string | null;
+
+  /**
    * Additional metadata
    */
   metadata?: Record<string, any>;
@@ -185,6 +192,13 @@ export class Content extends SmrtObject {
   public tags: string[] = [];
 
   /**
+   * Hierarchical category path for URL routing
+   * Format: 'parent/child' (e.g., 'politics/local')
+   * Each content belongs to exactly ONE category
+   */
+  public category: string | null = null;
+
+  /**
    * Publication status
    */
   public status: 'published' | 'draft' | 'archived' | 'deleted' = 'draft';
@@ -218,6 +232,7 @@ export class Content extends SmrtObject {
     this.language = options.language || null;
     this.status = options.status || 'draft';
     this.tags = options.tags || [];
+    this.category = options.category || null;
     this.state = options.state || 'active';
     this.metadata = options.metadata || {};
   }
@@ -275,4 +290,62 @@ export class Content extends SmrtObject {
    * DO NOT override toJSON() unless you call super.toJSON() first.
    * See issue #377 for details on why this override was removed.
    */
+
+  // ============================================
+  // Category Helper Methods
+  // ============================================
+
+  /**
+   * Get category segments as array
+   * @example 'politics/local' -> ['politics', 'local']
+   */
+  getCategorySegments(): string[] {
+    if (!this.category) return [];
+    return this.category.split('/').filter(Boolean);
+  }
+
+  /**
+   * Get parent category path
+   * @example 'politics/local/town' -> 'politics/local'
+   * @example 'politics' -> null
+   */
+  getParentCategory(): string | null {
+    const segments = this.getCategorySegments();
+    if (segments.length <= 1) return null;
+    return segments.slice(0, -1).join('/');
+  }
+
+  /**
+   * Get root (top-level) category
+   * @example 'politics/local/town' -> 'politics'
+   */
+  getRootCategory(): string | null {
+    const segments = this.getCategorySegments();
+    return segments[0] || null;
+  }
+
+  /**
+   * Get all ancestor category paths (for breadcrumbs)
+   * @example 'politics/local' -> ['politics', 'politics/local']
+   */
+  getAncestorPaths(): string[] {
+    const segments = this.getCategorySegments();
+    return segments.map((_, i) => segments.slice(0, i + 1).join('/'));
+  }
+
+  /**
+   * Check if content belongs to a category (optionally including subcategories)
+   * @param categoryPath - Category to check
+   * @param includeChildren - If true, matches 'politics' for content in 'politics/local'
+   */
+  isInCategory(categoryPath: string, includeChildren = true): boolean {
+    if (!this.category) return false;
+    if (includeChildren) {
+      return (
+        this.category === categoryPath ||
+        this.category.startsWith(`${categoryPath}/`)
+      );
+    }
+    return this.category === categoryPath;
+  }
 }
