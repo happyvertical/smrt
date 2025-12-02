@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.19
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - force clean rebuild during publish to avoid stale cache (#446) (ci)
+  - @happyvertical/smrt-config@0.17.19
+  - @happyvertical/smrt-types@0.17.19
+
 ## 0.17.18
 
 ### Patch Changes
