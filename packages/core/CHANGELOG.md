@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.17.18
+
+### Patch Changes
+
+- ### Features
+
+  - add Content category field and Pagination component (#445)
+
+  ### Bug Fixes
+
+  - handle object type parameters and module-specific config (#441) (cli)
+  - @happyvertical/smrt-config@0.17.18
+  - @happyvertical/smrt-types@0.17.18
+
 ## 0.17.17
 
 ### Patch Changes
