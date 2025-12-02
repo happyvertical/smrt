@@ -476,6 +476,98 @@ function runUpsertTests(getContext: () => { events: Issue396EventCollection }) {
 }
 
 // ============================================================================
+// Issue #442: _meta_type should be set on object creation
+// ============================================================================
+
+function runMetaTypeOnCreationTests(
+  getContext: () => { events: Issue396EventCollection },
+) {
+  describe('Issue #442: _meta_type on creation', () => {
+    it('should have _meta_type set immediately after create() for base class', async () => {
+      const { events } = getContext();
+
+      // Create a base class instance
+      const event = await events.create({
+        title: 'Test Event',
+        location: 'Test Location',
+      });
+
+      // _meta_type should be set immediately, not undefined
+      expect((event as any)._meta_type).toBe('Issue396Event');
+      expect(event.constructor.name).toBe('Issue396Event');
+    });
+
+    it('should have _meta_type set immediately after create() for child class', async () => {
+      const { events } = getContext();
+
+      // Create a child class instance with explicit _meta_type
+      const meeting = await events.create({
+        _meta_type: 'Issue396Meeting',
+        title: 'Test Meeting',
+        location: 'Conference Room',
+        type: 'Special',
+      });
+
+      // _meta_type should be set immediately
+      expect((meeting as any)._meta_type).toBe('Issue396Meeting');
+      expect(meeting.constructor.name).toBe('Issue396Meeting');
+    });
+
+    it('should preserve _meta_type through save/load cycle', async () => {
+      const { events } = getContext();
+
+      // Create and verify _meta_type is set
+      const meeting = await events.create({
+        _meta_type: 'Issue396Meeting',
+        title: 'Persistence Test Meeting',
+        location: 'Main Hall',
+        slug: 'persistence-test-meeting',
+      });
+
+      expect((meeting as any)._meta_type).toBe('Issue396Meeting');
+
+      // Reload from database
+      const reloaded = await events.get({ slug: 'persistence-test-meeting' });
+      expect(reloaded).not.toBeNull();
+      expect((reloaded as any)._meta_type).toBe('Issue396Meeting');
+    });
+
+    it('should allow filtering by _meta_type in arrays', async () => {
+      const { events } = getContext();
+
+      // Create mixed types
+      const event1 = await events.create({
+        title: 'Event 1',
+        location: 'Location 1',
+      });
+
+      const meeting1 = await events.create({
+        _meta_type: 'Issue396Meeting',
+        title: 'Meeting 1',
+        location: 'Location 2',
+      });
+
+      const event2 = await events.create({
+        title: 'Event 2',
+        location: 'Location 3',
+      });
+
+      // All should have _meta_type set
+      const items = [event1, meeting1, event2];
+      const meetings = items.filter(
+        (i) => (i as any)._meta_type === 'Issue396Meeting',
+      );
+      const baseEvents = items.filter(
+        (i) => (i as any)._meta_type === 'Issue396Event',
+      );
+
+      expect(meetings.length).toBe(1);
+      expect(baseEvents.length).toBe(2);
+    });
+  });
+}
+
+// ============================================================================
 // Run Test Suites Against All Adapters
 // ============================================================================
 
@@ -507,6 +599,7 @@ describe('STI Adapter Parity', () => {
       runTypePreservationTests(getContext);
       runQueryTests(getContext);
       runUpsertTests(getContext);
+      runMetaTypeOnCreationTests(getContext);
     });
   });
 });

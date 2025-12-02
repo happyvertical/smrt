@@ -120,6 +120,19 @@ export class CLIGenerator {
   }
 
   /**
+   * Check if a type string represents an inline object type parameter
+   * e.g., "{ meetingId?: string; limit?: number }"
+   *
+   * Note: Only supports single-level nested braces. Deeply nested types
+   * like "{ config: { nested: { deep: string } } }" are not fully supported.
+   */
+  private isObjectTypeParameter(typeStr: string): boolean {
+    return (
+      typeStr.includes('{') && typeStr.includes('}') && typeStr.includes(':')
+    );
+  }
+
+  /**
    * Try to load user's compiled classes for runtime execution
    *
    * Loads both local classes (from project entry point) and external classes
@@ -656,21 +669,61 @@ export class CLIGenerator {
       const methodOptions: Record<string, any> = {};
 
       // Map method parameters to CLI options
+      // Handles both flat params and object params like { meetingId?: string; limit?: number }
+      // Note: Only supports single-level nested braces in type definitions
       for (const param of methodDef.parameters || []) {
-        const optionName = param.name.replace(/([A-Z])/g, '-$1').toLowerCase();
-        methodOptions[optionName] = {
-          type: 'string',
-          description: `${param.type}${param.optional ? ' (optional)' : ''}`,
-          ...(param.default !== undefined && {
-            default: String(param.default),
-          }),
-        };
+        // Check if param type is an inline object type (contains property definitions)
+        const typeStr = param.type || '';
+        const isObjectType = this.isObjectTypeParameter(typeStr);
+
+        if (isObjectType) {
+          // Parse object type properties into individual CLI options
+          // Extract content between outermost { }
+          const match = typeStr.match(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/);
+          if (match) {
+            const propsStr = match[1];
+            // Match property patterns like "meetingId?: string" or "limit?: number"
+            const propMatches = propsStr.matchAll(/(\w+)(\?)?:\s*([^;]+)/g);
+            for (const propMatch of propMatches) {
+              const [, propName, isOptional, propType] = propMatch;
+              const optionName = propName
+                .replace(/([A-Z])/g, '-$1')
+                .toLowerCase();
+
+              // For import() types, accept JSON string
+              if (propType.includes('import(')) {
+                methodOptions[optionName] = {
+                  type: 'string',
+                  description: `JSON object${isOptional ? ' (optional)' : ''}`,
+                };
+              } else {
+                methodOptions[optionName] = {
+                  type: 'string',
+                  description: `${propType.trim()}${isOptional ? ' (optional)' : ''}`,
+                };
+              }
+            }
+          }
+        } else {
+          // Flat parameter - create single option
+          const optionName = param.name
+            .replace(/([A-Z])/g, '-$1')
+            .toLowerCase();
+          methodOptions[optionName] = {
+            type: 'string',
+            description: `${param.type}${param.optional ? ' (optional)' : ''}`,
+            ...(param.default !== undefined && {
+              default: String(param.default),
+            }),
+          };
+        }
       }
 
       // Determine if method needs an object instance (has required parameters)
       // Only require ID if method has required (non-optional) parameters
       const hasRequiredParams = (methodDef.parameters || []).some(
-        (p) => !p.optional && p.default === undefined,
+        (p: { optional?: boolean; default?: any }) =>
+          !p.optional && p.default === undefined,
       );
       const needsInstance = hasRequiredParams;
 
@@ -1505,7 +1558,14 @@ export class CLIGenerator {
     objectName: string,
     methodName: string,
     options: any,
-    methodDef?: { parameters?: Array<{ name: string; default?: any }> },
+    methodDef?: {
+      parameters?: Array<{
+        name: string;
+        type?: string;
+        optional?: boolean;
+        default?: any;
+      }>;
+    },
   ): Promise<void> {
     try {
       const classInfo = ObjectRegistry.getClass(objectName);
@@ -1534,10 +1594,14 @@ export class CLIGenerator {
       );
 
       // Load full application config from smrt.config.js
-      const { getConfig, getPackageConfig } = await import(
+      const { getConfig, getPackageConfig, getModuleConfig } = await import(
         '@happyvertical/smrt-config'
       );
       const smrtConfig = getConfig() || {};
+      // Get module-specific config (e.g., modules.praeco for Praeco class)
+      const moduleConfig = getModuleConfig(objectName.toLowerCase(), {}) as {
+        db?: any;
+      };
 
       // Get database config and create connection
       const { DEFAULT_CLI_CONFIG } = await import('./config.js');
@@ -1592,9 +1656,13 @@ export class CLIGenerator {
       }
 
       // Create instance with config
+      // Order: global config, then module-specific config, then CLI overrides
+      // Note: CLI db connection only used if module doesn't have its own db config
+      const useCliDb = db && !moduleConfig?.db;
       const instanceConfig = {
         ...smrtConfig,
-        ...(db && { db }),
+        ...moduleConfig,
+        ...(useCliDb && { db }),
         ...(this.context.ai && { ai: this.context.ai }),
       };
 
@@ -1614,17 +1682,71 @@ export class CLIGenerator {
       }
 
       // Map CLI options to method parameters (kebab-case to camelCase)
-      const methodArgs: any = {};
-      for (const param of methodDef?.parameters || []) {
-        const optionName = param.name.replace(/([A-Z])/g, '-$1').toLowerCase();
-        if (options[optionName] !== undefined) {
-          methodArgs[param.name] = options[optionName];
-        } else if (param.default !== undefined) {
-          methodArgs[param.name] = param.default;
+      // Handle both flat parameters and object type parameters
+      const methodParams = methodDef?.parameters || [];
+      const methodCallArgs: any[] = [];
+
+      for (const param of methodParams) {
+        const typeStr = param.type || '';
+        const isObjectType = this.isObjectTypeParameter(typeStr);
+
+        if (isObjectType) {
+          // Object type parameter - reconstruct from individual CLI options
+          const objArg: any = {};
+          // Extract property definitions from type string
+          const match = typeStr.match(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/);
+          if (match) {
+            const propsStr = match[1];
+            const propMatches = propsStr.matchAll(/(\w+)(\?)?:\s*([^;]+)/g);
+            for (const propMatch of propMatches) {
+              const [, propName] = propMatch;
+              // Convert camelCase to kebab-case for CLI option lookup
+              const optionName = propName
+                .replace(/([A-Z])/g, '-$1')
+                .toLowerCase();
+              if (options[optionName] !== undefined) {
+                // Auto-parse JSON objects and arrays from CLI strings
+                // Note: Only values starting with { or [ are parsed as JSON
+                let value = options[optionName];
+                if (
+                  typeof value === 'string' &&
+                  (value.startsWith('{') || value.startsWith('['))
+                ) {
+                  try {
+                    value = JSON.parse(value);
+                  } catch {
+                    // Keep as string if JSON parsing fails
+                  }
+                }
+                objArg[propName] = value;
+              }
+            }
+          }
+          // Always push something to maintain parameter positions
+          if (Object.keys(objArg).length > 0) {
+            methodCallArgs.push(objArg);
+          } else if (!param.optional) {
+            methodCallArgs.push({});
+          } else {
+            methodCallArgs.push(undefined);
+          }
+        } else {
+          // Flat parameter - get from CLI option
+          const optionName = param.name
+            .replace(/([A-Z])/g, '-$1')
+            .toLowerCase();
+          if (options[optionName] !== undefined) {
+            methodCallArgs.push(options[optionName]);
+          } else if (param.default !== undefined) {
+            methodCallArgs.push(param.default);
+          } else {
+            // Always push undefined to maintain parameter positions
+            methodCallArgs.push(undefined);
+          }
         }
       }
 
-      const result = await method.call(obj, methodArgs);
+      const result = await method.call(obj, ...methodCallArgs);
 
       spinner.succeed(`Executed ${methodName}`);
 
