@@ -29,6 +29,7 @@ export type {
   CardVariant,
 } from './components/ui/Card.svelte';
 export { default as Card } from './components/ui/Card.svelte';
+export { default as Pagination } from './components/ui/Pagination.svelte';
 // Weather Components
 export type {
   ForecastDay,
