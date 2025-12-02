@@ -53,6 +53,9 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Note: This cache is restored but the publish step forces a clean rebuild
+      # to ensure the published dist matches the latest source code.
+      # See the "Force clean rebuild" step in changesets_release.
       - name: Setup Turborepo cache
         uses: actions/cache@v4
         with:
@@ -125,7 +128,12 @@ jobs:
             git add .
             git commit -m "chore(release): v$AFTER_VERSION [skip ci]"
 
-            pnpm run build
+            # Force clean rebuild to avoid stale turbo cache
+            # This ensures all packages are rebuilt with latest source code
+            echo "🔨 Running clean build (bypassing turbo cache)..."
+            rm -rf .turbo
+            TURBO_FORCE=true pnpm run build
+
             pnpm run changeset:publish
 
             git tag -f "v$AFTER_VERSION"
