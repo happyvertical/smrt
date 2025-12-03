@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.20
+
+### Patch Changes
+
+- ### Features
+
+  - add SiteConfig and static JSON site template (#447) (config,cli)
+  - @happyvertical/smrt-config@0.17.20
+  - @happyvertical/smrt-types@0.17.20
+
 ## 0.17.19
 
 ### Patch Changes
