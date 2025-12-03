@@ -31,6 +31,24 @@ export const gnodeCommands: Record<string, CLICommand> = {
         type: 'string',
         description: 'Output directory (defaults to ./<name>)',
       },
+      // Site-specific options for placeholder substitution
+      location: {
+        type: 'string',
+        description: 'Site location name (e.g., "Bentley, AB")',
+      },
+      lat: {
+        type: 'number',
+        description: 'Latitude coordinate for weather/geo features',
+      },
+      lon: {
+        type: 'number',
+        description: 'Longitude coordinate for weather/geo features',
+      },
+      timezone: {
+        type: 'string',
+        description: 'IANA timezone (e.g., "America/Edmonton")',
+        default: 'America/Edmonton',
+      },
     },
     handler: async (args: string[], options: any) => {
       const name = args[0];
@@ -40,6 +58,17 @@ export const gnodeCommands: Record<string, CLICommand> = {
 
       const outputDir = options.outputDir || `./${name}`;
       const templateName = options.template || 'sveltekit';
+
+      // Build site options if any site-related flags were provided
+      const siteOptions =
+        options.location || options.lat || options.lon
+          ? {
+              location: options.location,
+              latitude: options.lat ? Number(options.lat) : undefined,
+              longitude: options.lon ? Number(options.lon) : undefined,
+              timezone: options.timezone,
+            }
+          : undefined;
 
       try {
         // Resolve template source
@@ -55,6 +84,7 @@ export const gnodeCommands: Record<string, CLICommand> = {
           name,
           template: templateName,
           outputDir,
+          site: siteOptions,
         });
 
         // Cleanup git template if needed

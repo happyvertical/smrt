@@ -13,10 +13,23 @@ import { dirname, join } from 'node:path';
 import glob from 'fast-glob';
 import type { TemplateConfig, TemplateSource } from '../loaders/index.js';
 
+export interface SiteGeneratorOptions {
+  /** Site location name (e.g., "Bentley, AB") */
+  location?: string;
+  /** Latitude coordinate */
+  latitude?: number;
+  /** Longitude coordinate */
+  longitude?: number;
+  /** IANA timezone (e.g., "America/Edmonton") */
+  timezone?: string;
+}
+
 export interface GeneratorOptions {
   template: string;
   name: string;
   outputDir: string;
+  /** Site-specific options for placeholder substitution */
+  site?: SiteGeneratorOptions;
 }
 
 /**
@@ -46,6 +59,12 @@ export async function generate(
   // Step 3: Merge package.json
   console.log('🔧 Configuring package.json...');
   await mergePackageJson(options.outputDir, config, options.name);
+
+  // Step 4: Process placeholders if template defines them
+  if (config.placeholders) {
+    console.log('🔄 Processing template placeholders...');
+    await processPlaceholders(options.outputDir, config, options);
+  }
 
   console.log('\n✅ Gnode created successfully!');
   console.log(`\n📍 Next steps:`);
@@ -264,4 +283,97 @@ async function mergePackageJson(
 
   // Write back
   await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+}
+
+/**
+ * Context object passed to placeholder functions
+ */
+export interface PlaceholderContext {
+  /** Project name (e.g., "my-town-site") */
+  name: string;
+  /** Pretty site name derived from project name (e.g., "My Town Site") */
+  siteName: string;
+  /** Location name (e.g., "Bentley, AB") */
+  location: string;
+  /** Latitude coordinate */
+  latitude: number;
+  /** Longitude coordinate */
+  longitude: number;
+  /** IANA timezone */
+  timezone: string;
+}
+
+/**
+ * Process template placeholders in all files
+ *
+ * Placeholders are defined in template.config.js as:
+ * placeholders: {
+ *   '{{SITE_NAME}}': (ctx) => ctx.siteName,
+ *   '{{LATITUDE}}': (ctx) => String(ctx.latitude),
+ * }
+ */
+async function processPlaceholders(
+  outputDir: string,
+  config: TemplateConfig,
+  options: GeneratorOptions,
+): Promise<void> {
+  const placeholders = config.placeholders;
+  if (!placeholders || Object.keys(placeholders).length === 0) {
+    return;
+  }
+
+  // Build context from options
+  const ctx: PlaceholderContext = {
+    name: options.name,
+    siteName: options.name
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()),
+    location: options.site?.location || options.name,
+    latitude: options.site?.latitude || 0,
+    longitude: options.site?.longitude || 0,
+    timezone: options.site?.timezone || 'America/Edmonton',
+  };
+
+  // Build replacement map
+  const replacements: Record<string, string> = {};
+  for (const [placeholder, replacer] of Object.entries(placeholders)) {
+    if (typeof replacer === 'function') {
+      replacements[placeholder] = String(replacer(ctx));
+    } else {
+      replacements[placeholder] = String(replacer);
+    }
+  }
+
+  // Find all text files to process
+  const files = await glob(
+    '**/*.{ts,js,mjs,cjs,json,svelte,html,css,md,txt,yml,yaml}',
+    {
+      cwd: outputDir,
+      onlyFiles: true,
+      ignore: ['**/node_modules/**', '**/dist/**', '**/.svelte-kit/**'],
+    },
+  );
+
+  let replacedCount = 0;
+
+  for (const file of files) {
+    const filePath = join(outputDir, file);
+    let content = await readFile(filePath, 'utf-8');
+    let modified = false;
+
+    // Replace all placeholders
+    for (const [placeholder, value] of Object.entries(replacements)) {
+      if (content.includes(placeholder)) {
+        content = content.replaceAll(placeholder, value);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      await writeFile(filePath, content);
+      replacedCount++;
+    }
+  }
+
+  console.log(`   Processed placeholders in ${replacedCount} files`);
 }
