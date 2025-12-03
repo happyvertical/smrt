@@ -452,12 +452,13 @@ export class CLIGenerator {
           manifest.packageName,
         );
       }
-
-      // IMPORTANT: Try to load actual compiled classes for runtime execution
-      // The manifest registration above provides metadata for command generation,
-      // but we need real class constructors for executing commands (CRUD, custom methods)
-      await this.tryLoadUserClasses();
     }
+
+    // IMPORTANT: Try to load actual compiled classes for runtime execution
+    // This must run even when no local manifest exists - the project may use
+    // external packages (like praeco) that have their own manifests and classes.
+    // The .smrt/register.js file imports these external packages and registers them.
+    await this.tryLoadUserClasses();
 
     const registeredClasses = ObjectRegistry.getAllClasses();
 
