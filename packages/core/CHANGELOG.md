@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.21
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - load user classes even without local manifest (#448) (cli)
+  - @happyvertical/smrt-config@0.17.21
+  - @happyvertical/smrt-types@0.17.21
+
 ## 0.17.20
 
 ### Patch Changes
