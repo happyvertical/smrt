@@ -10,6 +10,12 @@ import type { LoadConfigOptions, SmrtConfig } from './types.js';
 // Re-export types
 export type {
   LoadConfigOptions,
+  // Site configuration types
+  SiteConfig,
+  SiteLocation,
+  SiteNavigation,
+  SiteNavigationLink,
+  SiteTheme,
   SmrtConfig,
   SmrtGlobalConfig,
 } from './types.js';
@@ -37,6 +43,17 @@ export async function loadConfig(
  */
 export function getConfig(): SmrtConfig | null {
   return loadedConfig;
+}
+
+/**
+ * Get site configuration from the loaded config
+ * Returns the site identity, location, navigation, and theme settings
+ *
+ * @returns The site config or null if not defined
+ */
+export function getSiteConfig(): import('./types.js').SiteConfig | null {
+  const config = loadedConfig || {};
+  return config.site || null;
 }
 
 /**

@@ -19,6 +19,18 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Context passed to placeholder functions
+ */
+export interface PlaceholderContext {
+  name: string;
+  siteName: string;
+  location: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+}
+
 export interface TemplateConfig {
   name: string;
   description: string;
@@ -30,6 +42,14 @@ export interface TemplateConfig {
   };
   dependencies: Record<string, string>;
   devDependencies: Record<string, string>;
+  /** Template directory relative to config file (defaults to 'template') */
+  templateDir?: string;
+  /** Placeholder substitution map */
+  placeholders?: Record<string, string | ((ctx: PlaceholderContext) => string)>;
+  /** Post-generation hooks */
+  hooks?: {
+    afterGenerate?: (ctx: PlaceholderContext) => Promise<void>;
+  };
 }
 
 export interface TemplateSource {
@@ -131,6 +151,9 @@ async function findBundledTemplate(name: string): Promise<string | null> {
   const bundledTemplates: Record<string, string> = {
     sveltekit: 'template-sveltekit',
     'smrt-sveltekit': 'template-sveltekit',
+    // Static site with JSON data storage
+    'site-static-json': 'template-site-static-json',
+    'community-site': 'template-site-static-json',
   };
 
   const packageDir = bundledTemplates[name.toLowerCase()];

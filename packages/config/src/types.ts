@@ -51,12 +51,98 @@ export interface SmrtGlobalConfig {
   [key: string]: unknown;
 }
 
+// ============================================================================
+// Site Configuration Types
+// ============================================================================
+
+/**
+ * A navigation link item
+ */
+export interface SiteNavigationLink {
+  label: string;
+  href: string;
+  icon?: string;
+}
+
+/**
+ * Site navigation structure
+ */
+export interface SiteNavigation {
+  /** Primary navigation links (header) */
+  primary: SiteNavigationLink[];
+  /** Footer navigation links */
+  footer?: SiteNavigationLink[];
+}
+
+/**
+ * Geographic location for the site
+ */
+export interface SiteLocation {
+  /** Display name (e.g., "Bentley" or "Bentley, AB") */
+  name: string;
+  /** Latitude coordinate */
+  latitude: number;
+  /** Longitude coordinate */
+  longitude: number;
+  /** IANA timezone (e.g., "America/Edmonton") */
+  timezone: string;
+}
+
+/**
+ * Site theme/branding colors
+ */
+export interface SiteTheme {
+  /** Primary brand color (hex) */
+  primaryColor: string;
+  /** Light variant of primary color */
+  primaryLight?: string;
+  /** Dark variant of primary color */
+  primaryDark?: string;
+}
+
+/**
+ * Site identity and configuration
+ * Used by site templates to define site-specific settings
+ */
+export interface SiteConfig {
+  /** Full site name (e.g., "Bentley Alberta") */
+  name: string;
+  /** Short name for mobile/compact displays */
+  shortName?: string;
+  /** Site description for SEO */
+  description: string;
+  /** Production URL */
+  url?: string;
+  /** Geographic location */
+  location: SiteLocation;
+  /** Navigation structure */
+  navigation: SiteNavigation;
+  /** Theme/branding */
+  theme?: SiteTheme;
+  /** Additional metadata */
+  meta?: {
+    /** Theme color for mobile browsers */
+    themeColor?: string;
+    /** Open Graph locale */
+    ogLocale?: string;
+    /** Google Tag Manager ID */
+    gtmId?: string;
+  };
+}
+
+// ============================================================================
+// Main Configuration
+// ============================================================================
+
 /**
  * Main SMRT configuration structure
  */
 export interface SmrtConfig {
   // Global SMRT framework options
   smrt?: SmrtGlobalConfig;
+
+  // Site identity and configuration (for site templates)
+  site?: SiteConfig;
 
   // Module-scoped configurations
   modules?: {
