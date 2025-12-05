@@ -609,6 +609,52 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.0.0)(happy-dom@20.0.11)(jsdom@27.1.0)
 
+  packages/projects:
+    dependencies:
+      '@happyvertical/ai':
+        specifier: 0.59.0
+        version: 0.59.0(@modelcontextprotocol/sdk@1.22.0(@cfworker/json-schema@4.1.1))(ws@8.18.3)(zod@3.25.76)
+      '@happyvertical/logger':
+        specifier: 0.59.0
+        version: 0.59.0
+      '@happyvertical/projects':
+        specifier: 0.59.0
+        version: 0.59.0
+      '@happyvertical/repos':
+        specifier: 0.59.0
+        version: 0.59.0
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/sql':
+        specifier: 0.59.0
+        version: 0.59.0
+      '@happyvertical/utils':
+        specifier: 0.59.0
+        version: 0.59.0
+    devDependencies:
+      '@happyvertical/smrt-cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@types/node':
+        specifier: 24.0.0
+        version: 24.0.0
+      fast-glob:
+        specifier: 3.3.3
+        version: 3.3.3
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vite:
+        specifier: ^7.1.3
+        version: 7.2.2(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.20.6)(yaml@2.8.1)
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@24.0.0)(happy-dom@20.0.11)(jsdom@27.1.0)
+
   packages/smrt-dev-mcp:
     dependencies:
       '@happyvertical/ai':
@@ -1800,6 +1846,9 @@ packages:
   '@happyvertical/geo@0.59.0':
     resolution: {integrity: sha512-K554UOszCIlFI0HJuSB2+vczvYAR4Agd7PK14qyUIec5E2XinrcNz0S2CyTrNoORpVrN9h4XPNtZAIbUOmn6mQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/geo/0.59.0/6b0d46a500b9b8173100d05ecc2f50c51bf5aec6}
 
+  '@happyvertical/graphql@0.59.0':
+    resolution: {integrity: sha512-rxoT3pSAqQTzOQgiuoqTI0jcD5GewZBsbiT2VyGU7nrhfBR4aSUgJssmHig0jIFknK2Y8D4G3315ye1l791Jyg==, tarball: https://npm.pkg.github.com/download/@happyvertical/graphql/0.59.0/8332d08d78a5b5d674961bedb92f316716c66f3c}
+
   '@happyvertical/logger@0.59.0':
     resolution: {integrity: sha512-GR9oh+vfe2fe8TDkkqMJySmHRA3W5Vk0U/P2pxmvV6eQBaQ5h34/3bh7xYjzp4JDng2nmdK23JJIVSWvxD7CRQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.59.0/1c794cf030c539a09a1e971a35fd7b2756d157ee}
 
@@ -1808,6 +1857,12 @@ packages:
 
   '@happyvertical/pdf@0.59.0':
     resolution: {integrity: sha512-ewIOXgb/fOg0BiGtpVao4/OaOrK0sFp3X47RtE2kgMU+slS1HA+Tc18CbOtWm5OTXTBLulPOSJUaAPCcxC71nQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/pdf/0.59.0/6564bd5780975f56ef7d2f5345f397138d0c9ca8}
+
+  '@happyvertical/projects@0.59.0':
+    resolution: {integrity: sha512-RNCBpB4q5M+5SMFZuSHFC6UPMk0PMb2xAe9WHWQyyjOcOr6le/vhPY9zo7RhYTZi7yAyo88UftXJXjhM4WGk0g==, tarball: https://npm.pkg.github.com/download/@happyvertical/projects/0.59.0/5fbd401999fa4c8db3c28a829f67130a038f83c7}
+
+  '@happyvertical/repos@0.59.0':
+    resolution: {integrity: sha512-cwGRQWxYQVbe4wc74y03fxe1DT5AWMCYfCTxmabxpCvb+YQ6mEHd43Z8xPDdausFkOIQUjVBtdmmQE7f5EOddw==, tarball: https://npm.pkg.github.com/download/@happyvertical/repos/0.59.0/69191670d18f1b766503fece69f5b037be138e02}
 
   '@happyvertical/spider@0.59.0':
     resolution: {integrity: sha512-uRTI+M9ucSyrBPsP9+rAf2ianVN1jWZJfe0gqVs4KMvDU2nKlwYPxMPxP5DLJNWmcMUkyrQ5B8426RuZHSjiwQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.59.0/4ab3c5577fa67907669c4283badeb497c9ad723d}
@@ -10181,7 +10236,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
     transitivePeerDependencies:
       - debug
 
@@ -10303,6 +10358,8 @@ snapshots:
       - aws-crt
       - debug
 
+  '@happyvertical/graphql@0.59.0': {}
+
   '@happyvertical/logger@0.59.0':
     dependencies:
       '@happyvertical/utils': 0.59.0
@@ -10326,6 +10383,16 @@ snapshots:
     transitivePeerDependencies:
       - '@napi-rs/canvas'
       - encoding
+
+  '@happyvertical/projects@0.59.0':
+    dependencies:
+      '@happyvertical/graphql': 0.59.0
+      '@happyvertical/repos': 0.59.0
+
+  '@happyvertical/repos@0.59.0':
+    dependencies:
+      '@happyvertical/graphql': 0.59.0
+      js-yaml: 4.1.1
 
   '@happyvertical/spider@0.59.0(@types/node@24.0.0)':
     dependencies:
@@ -14210,7 +14277,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -15873,7 +15940,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.13.2):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
