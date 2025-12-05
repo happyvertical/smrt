@@ -28,33 +28,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Checkout SDK for workspace packages
-        uses: actions/checkout@v4
-        with:
-          repository: happyvertical/sdk
-          path: sdk
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          registry-url: 'https://npm.pkg.github.com'
-
-      - name: Build SDK packages
-        run: |
-          cd sdk
-          pnpm install --frozen-lockfile
-          pnpm run build
-        env:
-          ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
