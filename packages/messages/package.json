@@ -1,0 +1,64 @@
+{
+  "name": "@happyvertical/smrt-messages",
+  "version": "0.18.0",
+  "description": "SMRT-based email message persistence with AI integration",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./manifest": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "VITE_BUILD_PACKAGE=messages vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "dev": "vite",
+    "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
+    "test": "npx vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@happyvertical/ai": "0.59.0",
+    "@happyvertical/email": "0.59.0",
+    "@happyvertical/files": "0.59.0",
+    "@happyvertical/logger": "0.59.0",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/sql": "0.59.0",
+    "@happyvertical/utils": "0.59.0"
+  },
+  "peerDependencies": {
+    "@happyvertical/encryption": "*"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/encryption": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.6.3",
+    "vite": "^7.1.7",
+    "vitest": "^3.0.5"
+  },
+  "keywords": [
+    "email",
+    "messages",
+    "smrt",
+    "ai",
+    "typescript"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/messages"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
