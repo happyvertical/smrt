@@ -21,16 +21,16 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.57.1",
-    "@happyvertical/documents": "0.57.1",
-    "@happyvertical/files": "0.57.1",
-    "@happyvertical/logger": "0.57.1",
-    "@happyvertical/ocr": "0.57.1",
-    "@happyvertical/pdf": "0.57.1",
+    "@happyvertical/ai": "0.59.0",
+    "@happyvertical/documents": "0.59.0",
+    "@happyvertical/files": "0.59.0",
+    "@happyvertical/logger": "0.59.0",
+    "@happyvertical/ocr": "0.59.0",
+    "@happyvertical/pdf": "0.59.0",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/spider": "0.57.1",
-    "@happyvertical/sql": "0.57.1",
-    "@happyvertical/utils": "0.57.1",
+    "@happyvertical/spider": "0.59.0",
+    "@happyvertical/sql": "0.59.0",
+    "@happyvertical/utils": "0.59.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
