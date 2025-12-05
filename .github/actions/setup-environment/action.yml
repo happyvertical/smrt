@@ -93,7 +93,21 @@ runs:
       run: |
         # In CI, add pnpm overrides to package.json for SDK workspace resolution
         if [ -d sdk/packages ]; then
-          echo "Adding pnpm overrides for SDK workspace packages to package.json"
+          echo "Adding SDK packages to workspace and overrides"
+
+          # Add sdk/packages/* to pnpm-workspace.yaml
+          node -e "
+            const fs = require('fs');
+            let workspace = fs.readFileSync('pnpm-workspace.yaml', 'utf8');
+            if (!workspace.includes('sdk/packages')) {
+              workspace = workspace.replace(
+                \"packages:\\n  - 'packages/*'\",
+                \"packages:\\n  - 'packages/*'\\n  - 'sdk/packages/*'\"
+              );
+              fs.writeFileSync('pnpm-workspace.yaml', workspace);
+              console.log('✓ Added sdk/packages/* to pnpm-workspace.yaml');
+            }
+          "
 
           # Use node to add overrides to package.json
           node -e "
@@ -111,10 +125,13 @@ runs:
               '@happyvertical/files': 'workspace:*',
               '@happyvertical/geo': 'workspace:*',
               '@happyvertical/github-actions': 'workspace:*',
+              '@happyvertical/graphql': 'workspace:*',
               '@happyvertical/languages': 'workspace:*',
               '@happyvertical/logger': 'workspace:*',
               '@happyvertical/ocr': 'workspace:*',
               '@happyvertical/pdf': 'workspace:*',
+              '@happyvertical/projects': 'workspace:*',
+              '@happyvertical/repos': 'workspace:*',
               '@happyvertical/sdk-mcp': 'workspace:*',
               '@happyvertical/spider': 'workspace:*',
               '@happyvertical/sql': 'workspace:*',

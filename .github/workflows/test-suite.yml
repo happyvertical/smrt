@@ -28,6 +28,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Checkout SDK for workspace packages
+        uses: actions/checkout@v4
+        with:
+          repository: happyvertical/sdk
+          path: sdk
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
