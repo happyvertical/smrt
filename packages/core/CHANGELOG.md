@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.25
+
+### Patch Changes
+
+- ### Features
+
+  - add Nostr login with magic link authentication (#460) (profiles)
+  - @happyvertical/smrt-config@0.17.25
+  - @happyvertical/smrt-types@0.17.25
+
 ## 0.17.24
 
 ### Patch Changes
