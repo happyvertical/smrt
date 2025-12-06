@@ -2,21 +2,61 @@
  * @happyvertical/smrt-profiles
  *
  * Profile management system with relationships, metadata, reciprocal associations,
- * and authentication primitives (OIDC, API keys, audit logging).
+ * and authentication primitives (OIDC, Nostr, API keys, audit logging).
  *
  * @packageDocumentation
  */
 
-// Auth module
+// Auth module - Identity resolution
+// Auth module - Nostr crypto
+// Auth module - Magic link service
+// Auth module - NIP-05 handler
 export {
   type AuthContext,
+  computeEventId,
+  createAuthEvent,
+  createMagicLinkService,
+  createNip05Handler,
+  createProfileFromNostr,
   createProfileFromOidc,
+  decryptPrivkey,
+  deriveEncryptionKey,
+  type EncryptedKey,
+  encryptPrivkey,
+  generateNostrKeypair,
+  getPublicKey,
+  type InitiateResult,
+  isValidNip05Identifier,
+  isValidPrivkey,
+  isValidPubkey,
+  type MagicLinkConfig,
+  type MagicLinkService,
+  type Nip05HandlerConfig,
+  type Nip05HandlerResult,
+  type Nip05Request,
+  type NostrEvent,
+  type NostrKeypair,
+  npubToPubkey,
+  nsecToPrivkey,
+  parseNip05Identifier,
+  privkeyToNsec,
+  pubkeyToNpub,
   type ResolveIdentityResult,
   resolveIdentity,
+  signEvent,
+  type VerifyResult,
+  verifyAuthEvent,
+  verifyNostrSignature,
 } from './auth';
+
 // Auth-related collections
 export { ApiKeyCollection } from './collections/ApiKeyCollection';
 export { AuditLogCollection } from './collections/AuditLogCollection';
+export { MagicLinkTokenCollection } from './collections/MagicLinkTokenCollection';
+export {
+  type Nip05Response,
+  NostrIdentityCollection,
+} from './collections/NostrIdentityCollection';
 export { OidcIdentityCollection } from './collections/OidcIdentityCollection';
 // Export collections
 export { ProfileCollection } from './collections/ProfileCollection';
@@ -31,6 +71,13 @@ export type { ApiKeyOptions, GenerateKeyResult } from './models/ApiKey';
 export { ApiKey } from './models/ApiKey';
 export type { AuditLogOptions, AuditSource } from './models/AuditLog';
 export { AuditLog } from './models/AuditLog';
+export type {
+  GenerateTokenResult,
+  MagicLinkTokenOptions,
+} from './models/MagicLinkToken';
+export { MagicLinkToken } from './models/MagicLinkToken';
+export type { NostrIdentityOptions } from './models/NostrIdentity';
+export { NostrIdentity } from './models/NostrIdentity';
 export type { OidcIdentityOptions } from './models/OidcIdentity';
 export { OidcIdentity } from './models/OidcIdentity';
 // Export model option types

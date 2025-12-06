@@ -573,6 +573,44 @@ export class Profile extends SmrtObject {
   }
 
   /**
+   * Get all Nostr identities linked to this profile
+   *
+   * @returns Array of Nostr identity records
+   */
+  async getNostrIdentities(): Promise<any[]> {
+    const { NostrIdentityCollection } = await import(
+      '../collections/NostrIdentityCollection'
+    );
+    const collection = await (NostrIdentityCollection as any).create(
+      this.options,
+    );
+    return await collection.findByProfile(this.id as string);
+  }
+
+  /**
+   * Link a new Nostr identity to this profile
+   *
+   * @param nostrData - Nostr identity data (encrypted keypair)
+   * @returns The linked Nostr identity record
+   */
+  async linkNostrIdentity(nostrData: {
+    pubkey: string;
+    encryptedPrivkey: string;
+    encryptionIv: string;
+    encryptionTag: string;
+    email: string;
+    nip05Username?: string;
+  }): Promise<any> {
+    const { NostrIdentityCollection } = await import(
+      '../collections/NostrIdentityCollection'
+    );
+    const collection = await (NostrIdentityCollection as any).create(
+      this.options,
+    );
+    return await collection.linkToProfile(this, nostrData);
+  }
+
+  /**
    * Get audit logs for actions performed by this profile
    *
    * @param limit - Maximum number of logs to return

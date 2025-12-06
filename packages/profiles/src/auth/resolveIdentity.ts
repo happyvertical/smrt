@@ -7,13 +7,16 @@
  * Resolution order:
  * 1. API key header → ApiKey → Profile
  * 2. OIDC session → OidcIdentity → Profile
- * 3. Actor header (CI pass-through) → Profile lookup
+ * 3. Nostr auth → NostrIdentity → Profile
+ * 4. Actor header (CI pass-through) → Profile lookup
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { ApiKey } from '../models/ApiKey';
+import { NostrIdentity } from '../models/NostrIdentity';
 import { OidcIdentity } from '../models/OidcIdentity';
 import type { Profile } from '../models/Profile';
+import { type NostrEvent, verifyAuthEvent } from './nostrCrypto';
 
 /**
  * Context provided to resolveIdentity
@@ -41,6 +44,16 @@ export interface AuthContext {
   actor?: string | null;
 
   /**
+   * Nostr authentication data (NIP-42 style)
+   */
+  nostrAuth?: {
+    /** Signed Nostr event for authentication */
+    event: NostrEvent;
+    /** Expected challenge (to prevent replay attacks) */
+    challenge: string;
+  } | null;
+
+  /**
    * Database/persistence options
    */
   db?: SmrtObjectOptions['db'];
@@ -58,7 +71,7 @@ export interface ResolveIdentityResult {
   /**
    * How the identity was resolved
    */
-  source: 'api_key' | 'oidc' | 'actor' | 'none';
+  source: 'api_key' | 'oidc' | 'nostr' | 'actor' | 'none';
 
   /**
    * The API key record if authenticated via API key
@@ -69,6 +82,11 @@ export interface ResolveIdentityResult {
    * The OIDC identity record if authenticated via OIDC
    */
   oidcIdentity?: OidcIdentity;
+
+  /**
+   * The Nostr identity record if authenticated via Nostr
+   */
+  nostrIdentity?: NostrIdentity;
 }
 
 /**
@@ -142,7 +160,36 @@ export async function resolveIdentity(
     }
   }
 
-  // 3. Check actor for CI pass-through (look up by metadata)
+  // 3. Check Nostr auth (NIP-42 style signed event)
+  if (context.nostrAuth?.event && context.nostrAuth?.challenge) {
+    const { event, challenge } = context.nostrAuth;
+
+    // Verify the auth event
+    const verifyResult = verifyAuthEvent(event, challenge);
+    if (verifyResult.valid) {
+      // Look up identity by public key
+      const nostrIdentity = await NostrIdentity.findByPubkey(
+        event.pubkey,
+        options,
+      );
+
+      if (nostrIdentity) {
+        // Record usage
+        await nostrIdentity.recordUsage();
+
+        const profile = await nostrIdentity.getProfile();
+        if (profile) {
+          return {
+            profile,
+            source: 'nostr',
+            nostrIdentity,
+          };
+        }
+      }
+    }
+  }
+
+  // 4. Check actor for CI pass-through (look up by metadata)
   if (context.actor) {
     const profile = await findProfileByExternalId(
       'github',
@@ -309,6 +356,104 @@ export async function createProfileFromOidc(
   return {
     profile,
     oidcIdentity,
+    created: true,
+  };
+}
+
+/**
+ * Create a profile from Nostr identity (used by magic link service)
+ *
+ * This is typically called internally by the magic link service,
+ * but can be used directly if needed.
+ *
+ * @param email - Email address for the profile
+ * @param nostrData - Encrypted Nostr keypair data
+ * @param options - Database options
+ * @returns The created profile with linked Nostr identity
+ */
+export async function createProfileFromNostr(
+  email: string,
+  nostrData: {
+    pubkey: string;
+    encryptedPrivkey: string;
+    encryptionIv: string;
+    encryptionTag: string;
+    nip05Username?: string;
+  },
+  options: SmrtObjectOptions,
+): Promise<{
+  profile: Profile;
+  nostrIdentity: NostrIdentity;
+  created: boolean;
+}> {
+  const normalizedEmail = email.toLowerCase();
+
+  // Check if Nostr identity already exists
+  const existingIdentity = await NostrIdentity.findByEmail(
+    normalizedEmail,
+    options,
+  );
+
+  if (existingIdentity) {
+    const profile = await existingIdentity.getProfile();
+    if (profile) {
+      return {
+        profile,
+        nostrIdentity: existingIdentity,
+        created: false,
+      };
+    }
+  }
+
+  // Create new profile
+  const { Person } = await import('../models/ProfileTypes');
+  const { ProfileTypeCollection } = await import(
+    '../collections/ProfileTypeCollection'
+  );
+
+  // Get or create the 'person' type
+  const typeCollection = await (ProfileTypeCollection as any).create(options);
+  let personType = await typeCollection.getBySlug('person');
+
+  if (!personType) {
+    const { ProfileType } = await import('../models/ProfileType');
+    personType = new ProfileType({
+      ...options,
+      slug: 'person',
+      name: 'Person',
+      description: 'Individual person profile',
+    });
+    await personType.initialize();
+    await personType.save();
+  }
+
+  const profile = new Person({
+    ...options,
+    typeId: personType.id as string,
+    email: normalizedEmail,
+    name: normalizedEmail.split('@')[0], // Default name from email
+  });
+  await profile.initialize();
+  await profile.save();
+
+  // Create Nostr identity
+  const nostrIdentity = new NostrIdentity({
+    ...options,
+    profileId: profile.id as string,
+    pubkey: nostrData.pubkey,
+    encryptedPrivkey: nostrData.encryptedPrivkey,
+    encryptionIv: nostrData.encryptionIv,
+    encryptionTag: nostrData.encryptionTag,
+    email: normalizedEmail,
+    nip05Username:
+      nostrData.nip05Username?.toLowerCase() || normalizedEmail.split('@')[0],
+  });
+  await nostrIdentity.initialize();
+  await nostrIdentity.save();
+
+  return {
+    profile,
+    nostrIdentity,
     created: true,
   };
 }
