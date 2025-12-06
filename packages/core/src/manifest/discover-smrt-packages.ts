@@ -166,10 +166,7 @@ function* scanNodeModules(baseDir: string): Generator<string> {
             yield entry;
           }
         }
-      } catch {
-        // Skip entries we can't read
-        continue;
-      }
+      } catch {}
     }
   } catch (error) {
     // node_modules doesn't exist or can't be read

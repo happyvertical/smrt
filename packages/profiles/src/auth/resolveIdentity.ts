@@ -11,9 +11,9 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import type { Profile } from '../models/Profile';
 import { ApiKey } from '../models/ApiKey';
 import { OidcIdentity } from '../models/OidcIdentity';
+import type { Profile } from '../models/Profile';
 
 /**
  * Context provided to resolveIdentity
@@ -144,7 +144,11 @@ export async function resolveIdentity(
 
   // 3. Check actor for CI pass-through (look up by metadata)
   if (context.actor) {
-    const profile = await findProfileByExternalId('github', context.actor, options);
+    const profile = await findProfileByExternalId(
+      'github',
+      context.actor,
+      options,
+    );
     if (profile) {
       return {
         profile,
@@ -185,7 +189,10 @@ async function findProfileByExternalId(
 
   for (const identity of identities) {
     // Check if the subject matches the external ID
-    if (identity.subject === externalId || identity.email?.includes(externalId)) {
+    if (
+      identity.subject === externalId ||
+      identity.email?.includes(externalId)
+    ) {
       const profile = await identity.getProfile();
       if (profile) return profile;
     }
@@ -193,7 +200,9 @@ async function findProfileByExternalId(
 
   // Could also check profile metadata for external IDs
   // This would require a standardized metadata field like 'github_username'
-  const { ProfileCollection } = await import('../collections/ProfileCollection');
+  const { ProfileCollection } = await import(
+    '../collections/ProfileCollection'
+  );
   const profileCollection = await (ProfileCollection as any).create(options);
 
   // Try to find by email that looks like a GitHub noreply

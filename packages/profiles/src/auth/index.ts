@@ -6,8 +6,8 @@
  */
 
 export {
-  resolveIdentity,
-  createProfileFromOidc,
   type AuthContext,
+  createProfileFromOidc,
   type ResolveIdentityResult,
+  resolveIdentity,
 } from './resolveIdentity';

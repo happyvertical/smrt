@@ -52,7 +52,10 @@ export class OidcIdentityCollection extends SmrtCollection<OidcIdentity> {
     },
   ): Promise<OidcIdentity> {
     // Check if already exists
-    const existing = await this.findBySubject(oidcData.issuer, oidcData.subject);
+    const existing = await this.findBySubject(
+      oidcData.issuer,
+      oidcData.subject,
+    );
     if (existing) {
       // Update and return existing
       existing.lastUsedAt = new Date();

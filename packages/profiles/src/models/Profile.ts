@@ -498,7 +498,9 @@ export class Profile extends SmrtObject {
    * @returns Array of API keys
    */
   async getApiKeys(): Promise<any[]> {
-    const { ApiKeyCollection } = await import('../collections/ApiKeyCollection');
+    const { ApiKeyCollection } = await import(
+      '../collections/ApiKeyCollection'
+    );
     const collection = await (ApiKeyCollection as any).create(this.options);
     return await collection.findByProfile(this.id as string);
   }
@@ -509,7 +511,9 @@ export class Profile extends SmrtObject {
    * @returns Array of active API keys
    */
   async getActiveApiKeys(): Promise<any[]> {
-    const { ApiKeyCollection } = await import('../collections/ApiKeyCollection');
+    const { ApiKeyCollection } = await import(
+      '../collections/ApiKeyCollection'
+    );
     const collection = await (ApiKeyCollection as any).create(this.options);
     return await collection.findActiveByProfile(this.id as string);
   }
@@ -541,7 +545,9 @@ export class Profile extends SmrtObject {
     const { OidcIdentityCollection } = await import(
       '../collections/OidcIdentityCollection'
     );
-    const collection = await (OidcIdentityCollection as any).create(this.options);
+    const collection = await (OidcIdentityCollection as any).create(
+      this.options,
+    );
     return await collection.findByProfile(this.id as string);
   }
 
@@ -560,7 +566,9 @@ export class Profile extends SmrtObject {
     const { OidcIdentityCollection } = await import(
       '../collections/OidcIdentityCollection'
     );
-    const collection = await (OidcIdentityCollection as any).create(this.options);
+    const collection = await (OidcIdentityCollection as any).create(
+      this.options,
+    );
     return await collection.linkToProfile(this, oidcData);
   }
 

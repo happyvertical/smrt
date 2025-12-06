@@ -5,13 +5,13 @@
  * Keys are stored as hashes - the plaintext is only returned on creation.
  */
 
-import {
-  smrt,
-  SmrtObject,
-  foreignKey,
-  type SmrtObjectOptions,
-} from '@happyvertical/smrt-core';
 import { createHash, randomBytes } from 'node:crypto';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import type { Profile } from './Profile';
 
 export interface ApiKeyOptions extends SmrtObjectOptions {
@@ -171,7 +171,9 @@ export class ApiKey extends SmrtObject {
   ): Promise<ApiKey | null> {
     const keyHash = ApiKey.hashKey(key);
 
-    const { ApiKeyCollection } = await import('../collections/ApiKeyCollection');
+    const { ApiKeyCollection } = await import(
+      '../collections/ApiKeyCollection'
+    );
     const collection = await (ApiKeyCollection as any).create(options);
 
     const apiKey = await collection.findOne({

@@ -6,10 +6,10 @@
  */
 
 import {
-  smrt,
-  SmrtObject,
   foreignKey,
+  SmrtObject,
   type SmrtObjectOptions,
+  smrt,
 } from '@happyvertical/smrt-core';
 import type { Profile } from './Profile';
 
@@ -97,7 +97,12 @@ export class OidcIdentity extends SmrtObject {
    */
   static async findOrCreate(
     profile: Profile,
-    oidcData: { provider: string; issuer: string; subject: string; email?: string },
+    oidcData: {
+      provider: string;
+      issuer: string;
+      subject: string;
+      email?: string;
+    },
     options: SmrtObjectOptions = {},
   ): Promise<OidcIdentity> {
     const existing = await OidcIdentity.findBySubject(

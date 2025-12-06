@@ -6,10 +6,10 @@
  */
 
 import {
-  smrt,
-  SmrtObject,
   foreignKey,
+  SmrtObject,
   type SmrtObjectOptions,
+  smrt,
 } from '@happyvertical/smrt-core';
 import type { Profile } from './Profile';
 
@@ -77,7 +77,8 @@ export class AuditLog extends SmrtObject {
     if (options.resourceId) this.resourceId = options.resourceId;
     if (options.source) this.source = options.source;
     if (options.metadata) this.metadata = options.metadata;
-    if (options.onBehalfOfId !== undefined) this.onBehalfOfId = options.onBehalfOfId;
+    if (options.onBehalfOfId !== undefined)
+      this.onBehalfOfId = options.onBehalfOfId;
   }
 
   /**
