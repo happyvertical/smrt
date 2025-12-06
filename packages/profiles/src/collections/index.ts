@@ -9,3 +9,8 @@ export { ProfileRelationshipCollection } from './ProfileRelationshipCollection';
 export { ProfileRelationshipTermCollection } from './ProfileRelationshipTermCollection';
 export { ProfileRelationshipTypeCollection } from './ProfileRelationshipTypeCollection';
 export { ProfileTypeCollection } from './ProfileTypeCollection';
+
+// Auth-related collections
+export { ApiKeyCollection } from './ApiKeyCollection';
+export { AuditLogCollection } from './AuditLogCollection';
+export { OidcIdentityCollection } from './OidcIdentityCollection';

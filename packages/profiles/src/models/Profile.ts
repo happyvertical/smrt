@@ -487,4 +487,118 @@ export class Profile extends SmrtObject {
     // Will be auto-implemented by SMRT
     return null;
   }
+
+  // ========================
+  // Auth-related methods
+  // ========================
+
+  /**
+   * Get all API keys for this profile
+   *
+   * @returns Array of API keys
+   */
+  async getApiKeys(): Promise<any[]> {
+    const { ApiKeyCollection } = await import('../collections/ApiKeyCollection');
+    const collection = await (ApiKeyCollection as any).create(this.options);
+    return await collection.findByProfile(this.id as string);
+  }
+
+  /**
+   * Get active (non-revoked, non-expired) API keys for this profile
+   *
+   * @returns Array of active API keys
+   */
+  async getActiveApiKeys(): Promise<any[]> {
+    const { ApiKeyCollection } = await import('../collections/ApiKeyCollection');
+    const collection = await (ApiKeyCollection as any).create(this.options);
+    return await collection.findActiveByProfile(this.id as string);
+  }
+
+  /**
+   * Generate a new API key for this profile
+   *
+   * @param options - Key options (name, scopes, expiration)
+   * @returns The generated key (plaintext) and ApiKey record
+   */
+  async generateApiKey(options: {
+    name: string;
+    scopes?: string[];
+    expiresAt?: Date | null;
+  }): Promise<{ key: string; apiKey: any }> {
+    const { ApiKey } = await import('./ApiKey');
+    return await ApiKey.generate(this, {
+      ...options,
+      db: this.options?.db,
+    });
+  }
+
+  /**
+   * Get all OIDC identities linked to this profile
+   *
+   * @returns Array of OIDC identity records
+   */
+  async getOidcIdentities(): Promise<any[]> {
+    const { OidcIdentityCollection } = await import(
+      '../collections/OidcIdentityCollection'
+    );
+    const collection = await (OidcIdentityCollection as any).create(this.options);
+    return await collection.findByProfile(this.id as string);
+  }
+
+  /**
+   * Link a new OIDC identity to this profile
+   *
+   * @param oidcData - OIDC provider data
+   * @returns The linked OIDC identity record
+   */
+  async linkOidcIdentity(oidcData: {
+    provider: string;
+    issuer: string;
+    subject: string;
+    email?: string;
+  }): Promise<any> {
+    const { OidcIdentityCollection } = await import(
+      '../collections/OidcIdentityCollection'
+    );
+    const collection = await (OidcIdentityCollection as any).create(this.options);
+    return await collection.linkToProfile(this, oidcData);
+  }
+
+  /**
+   * Get audit logs for actions performed by this profile
+   *
+   * @param limit - Maximum number of logs to return
+   * @returns Array of audit log entries
+   */
+  async getAuditLogs(limit: number = 50): Promise<any[]> {
+    const { AuditLogCollection } = await import(
+      '../collections/AuditLogCollection'
+    );
+    const collection = await (AuditLogCollection as any).create(this.options);
+    return await collection.getRecentActivity(this.id as string, limit);
+  }
+
+  /**
+   * Record an audit log entry for an action by this profile
+   *
+   * @param options - Audit log options
+   * @returns The created audit log entry
+   */
+  async recordAction(options: {
+    action: string;
+    resourceType: string;
+    resourceId: string;
+    source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';
+    metadata?: Record<string, any>;
+    onBehalfOf?: Profile | null;
+  }): Promise<any> {
+    const { AuditLogCollection } = await import(
+      '../collections/AuditLogCollection'
+    );
+    const collection = await (AuditLogCollection as any).create(this.options);
+    return await collection.record({
+      profile: this,
+      ...options,
+    });
+  }
 }
