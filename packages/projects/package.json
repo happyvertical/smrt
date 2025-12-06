@@ -1,0 +1,57 @@
+{
+  "name": "@happyvertical/smrt-projects",
+  "version": "0.17.21",
+  "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./manifest": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
+    "test": "npx vitest run --passWithNoTests",
+    "test:watch": "npx vitest"
+  },
+  "dependencies": {
+    "@happyvertical/ai": "0.59.0",
+    "@happyvertical/logger": "0.59.0",
+    "@happyvertical/projects": "0.59.0",
+    "@happyvertical/repos": "0.59.0",
+    "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/sql": "0.59.0",
+    "@happyvertical/utils": "0.59.0"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-cli": "workspace:*",
+    "@types/node": "^24.0.0",
+    "fast-glob": "3.3.3",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.3",
+    "vitest": "^2.1.8"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "projects",
+    "issues",
+    "github",
+    "gitlab",
+    "smrt"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
