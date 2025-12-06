@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.17.24
+
+### Patch Changes
+
+- ### Features
+
+  - add auth primitives for identity resolution (profiles)
+
+  ### Bug Fixes
+
+  - handle STI polymorphism in loadRelated() (core)
+  - @happyvertical/smrt-config@0.17.24
+  - @happyvertical/smrt-types@0.17.24
+
 ## 0.17.23
 
 ### Patch Changes
