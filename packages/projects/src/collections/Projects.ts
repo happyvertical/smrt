@@ -124,8 +124,12 @@ export class ProjectCollection extends SmrtCollection<Project> {
         if (items.length > 0) {
           matching.push(project);
         }
-      } catch {
-        // Skip projects we can't access
+      } catch (error) {
+        // Log error and skip projects we can't access
+        console.warn(
+          `Error accessing items for project ${project.projectId}:`,
+          error instanceof Error ? error.message : error,
+        );
       }
     }
 

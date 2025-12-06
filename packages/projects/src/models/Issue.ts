@@ -11,6 +11,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { SYNC_THROTTLE_MS } from '../constants';
 import type {
   IncorporateFeedbackOptions,
   IncorporateFeedbackResult,
@@ -201,7 +202,7 @@ export class Issue extends SmrtObject {
     if (
       !options.force &&
       this.lastSyncedAt &&
-      Date.now() - this.lastSyncedAt.getTime() < 5 * 60 * 1000
+      Date.now() - this.lastSyncedAt.getTime() < SYNC_THROTTLE_MS
     ) {
       return this;
     }
@@ -505,7 +506,10 @@ Instructions:
    * Get issue URL
    */
   getUrl(): string {
-    // This will be provider-specific, but GitHub format is default
-    return `https://github.com/${this._repository?.owner}/${this._repository?.name}/issues/${this.number}`;
+    const repo = this._repository;
+    if (repo) {
+      return `https://github.com/${repo.owner}/${repo.name}/issues/${this.number}`;
+    }
+    return '';
   }
 }

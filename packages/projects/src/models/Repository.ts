@@ -12,6 +12,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { SYNC_THROTTLE_MS } from '../constants';
 import type {
   CreateIssueInput,
   CreatePRInput,
@@ -173,7 +174,7 @@ export class Repository extends SmrtObject {
     if (
       !options.force &&
       this.lastSyncedAt &&
-      Date.now() - this.lastSyncedAt.getTime() < 5 * 60 * 1000
+      Date.now() - this.lastSyncedAt.getTime() < SYNC_THROTTLE_MS
     ) {
       return this;
     }

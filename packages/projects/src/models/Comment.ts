@@ -118,7 +118,11 @@ export class Comment extends SmrtObject {
 
     try {
       return JSON.parse(result);
-    } catch {
+    } catch (error) {
+      console.warn('Failed to parse action items JSON:', {
+        error: error instanceof Error ? error.message : error,
+        response: result,
+      });
       return [];
     }
   }

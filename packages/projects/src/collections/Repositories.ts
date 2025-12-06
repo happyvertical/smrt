@@ -122,8 +122,12 @@ export class RepositoryCollection extends SmrtCollection<Repository> {
         if (issues.length > 0) {
           withIssues.push(repo);
         }
-      } catch {
-        // Skip repos we can't access
+      } catch (error) {
+        // Log error and skip repos we can't access
+        console.warn(
+          `Error accessing issues for repository ${repo.owner}/${repo.name}:`,
+          error instanceof Error ? error.message : error,
+        );
       }
     }
 

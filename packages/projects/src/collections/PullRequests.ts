@@ -36,8 +36,12 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
       let prData: SDKPullRequest;
       try {
         prData = await repoClient.getPullRequest(remote.number);
-      } catch {
-        // Skip if can't get PR data
+      } catch (error) {
+        // Log error and skip PR - could be rate limiting, auth, or access issues
+        console.warn(
+          `Failed to fetch PR #${remote.number} from ${repository.owner}/${repository.name}:`,
+          error instanceof Error ? error.message : error,
+        );
         continue;
       }
 
