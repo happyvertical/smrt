@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.23
+
+### Patch Changes
+
+- ### Features
+
+  - add @happyvertical/smrt-projects package (#454) (projects)
+  - @happyvertical/smrt-config@0.17.23
+  - @happyvertical/smrt-types@0.17.23
+
 ## 0.17.22
 
 ### Patch Changes
