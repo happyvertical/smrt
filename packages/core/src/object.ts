@@ -1330,8 +1330,33 @@ export class SmrtObject extends SmrtClass {
       );
     }
 
-    // Create an instance and load by ID
-    const relatedInstance = new targetClassInfo.constructor(this.options);
+    // Check if target class uses STI (Single Table Inheritance)
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      relationship.targetClass,
+    );
+    const isSTI = tableStrategy === 'sti';
+
+    // For STI classes, we need to determine the actual subclass from the database row
+    let actualClassInfo = targetClassInfo;
+    if (isSTI) {
+      // First, fetch just the row to get the _meta_type discriminator
+      const tempInstance = new targetClassInfo.constructor(this.options);
+      await tempInstance.initialize();
+      const row = await tempInstance.db.get(tempInstance.tableName, {
+        id: foreignKeyValue as string,
+      });
+
+      if (row && row._meta_type) {
+        // Get the actual class from the registry based on _meta_type
+        const actualClass = ObjectRegistry.getClass(row._meta_type);
+        if (actualClass) {
+          actualClassInfo = actualClass;
+        }
+      }
+    }
+
+    // Create an instance of the correct class and load by ID
+    const relatedInstance = new actualClassInfo.constructor(this.options);
     await relatedInstance.initialize();
     relatedInstance.id = foreignKeyValue as string;
     await relatedInstance.loadFromId();

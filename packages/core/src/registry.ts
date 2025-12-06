@@ -554,6 +554,15 @@ export class ObjectRegistry {
           field.required = fieldDef.required;
         }
 
+        // Hoist related to top level for relationship fields
+        // Check both fieldDef.related (new manifests) and _meta.related (old manifests)
+        if (fieldDef.related !== undefined) {
+          field.related = fieldDef.related;
+        } else if (options.related !== undefined) {
+          field.related = options.related;
+          delete field._meta?.related;
+        }
+
         fields.set(fieldName, field);
       }
 
@@ -619,6 +628,14 @@ export class ObjectRegistry {
             mergedField.required = decoratorOptions.required;
           } else if (existingField.required !== undefined) {
             mergedField.required = existingField.required;
+          }
+
+          // Hoist related to top level for relationship fields
+          if (decoratorOptions.related !== undefined) {
+            mergedField.related = decoratorOptions.related;
+            delete mergedField._meta?.related;
+          } else if (existingField.related !== undefined) {
+            mergedField.related = existingField.related;
           }
 
           fields.set(fieldName, mergedField);

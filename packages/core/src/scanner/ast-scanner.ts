@@ -727,6 +727,14 @@ export class ASTScanner {
       if (decoratorOptions.transient !== undefined) {
         field.transient = decoratorOptions.transient;
       }
+
+      // Hoist related to top level for relationship fields
+      if (decoratorOptions.related !== undefined) {
+        field.related = decoratorOptions.related;
+        if (field._meta) {
+          delete field._meta.related;
+        }
+      }
     }
 
     // Extract default value from initializer
