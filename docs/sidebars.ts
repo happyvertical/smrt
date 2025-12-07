@@ -9,6 +9,18 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Guides',
+      collapsed: false,
+      items: [
+        {
+          type: 'doc',
+          id: 'data-compartmentalization',
+          label: 'Data Compartmentalization',
+        },
+      ],
+    },
+    {
+      type: 'category',
       label: '@smrt/types',
       link: { type: 'doc', id: 'types' },
       collapsed: true,
