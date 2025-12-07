@@ -36,7 +36,7 @@ export interface SmrtClassOptions {
     | string
     | {
         url?: string;
-        type?: 'sqlite' | 'postgres' | 'sql';
+        type?: 'sqlite' | 'postgres' | 'duckdb' | 'json';
         authToken?: string;
         [key: string]: any;
       }
@@ -51,7 +51,7 @@ export interface SmrtClassOptions {
     | string
     | {
         url?: string;
-        type?: 'sqlite' | 'postgres' | 'sql';
+        type?: 'sqlite' | 'postgres' | 'duckdb' | 'json';
         authToken?: string;
         [key: string]: any;
       }
