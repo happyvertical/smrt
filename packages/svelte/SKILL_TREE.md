@@ -1,3 +1,4 @@
+```mermaid
 flowchart LR
 
 subgraph 0["src"]
@@ -16,3 +17,4 @@ subgraph 8["manifest"]
 end
 end
 
+```

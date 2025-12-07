@@ -1,3 +1,4 @@
+```mermaid
 flowchart LR
 
 subgraph 0["src"]
@@ -5,3 +6,4 @@ subgraph 0["src"]
 2["signals.ts"]
 end
 1-->2
+```
