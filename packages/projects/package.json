@@ -22,14 +22,14 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.59.1",
-    "@happyvertical/logger": "0.59.1",
-    "@happyvertical/projects": "0.59.1",
-    "@happyvertical/repos": "0.59.1",
+    "@happyvertical/ai": "0.59.2",
+    "@happyvertical/logger": "0.59.2",
+    "@happyvertical/projects": "0.59.2",
+    "@happyvertical/repos": "0.59.2",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "0.59.1",
-    "@happyvertical/utils": "0.59.1"
+    "@happyvertical/sql": "0.59.2",
+    "@happyvertical/utils": "0.59.2"
   },
   "devDependencies": {
     "@happyvertical/smrt-cli": "workspace:*",
