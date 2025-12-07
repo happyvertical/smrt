@@ -24,14 +24,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.59.3",
-    "@happyvertical/files": "0.59.3",
+    "@happyvertical/ai": "0.59.4",
+    "@happyvertical/files": "0.59.4",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/utils": "0.59.3"
+    "@happyvertical/utils": "0.59.4"
   },
   "devDependencies": {
-    "@happyvertical/logger": "0.59.3",
-    "@happyvertical/sql": "0.59.3",
+    "@happyvertical/logger": "0.59.4",
+    "@happyvertical/sql": "0.59.4",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.3",
     "vite": "^7.1.3",
