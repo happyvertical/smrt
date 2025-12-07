@@ -7,13 +7,14 @@
  * - Structured logging
  * - Lifecycle hooks
  * - Automatic signal handling for graceful shutdown
+ * - Interest-based object discovery via interesting() method
  *
  * Agents can define their own properties for state management - since they extend
  * SmrtObject, any properties defined will be automatically persisted to the database.
  *
  * @example
  * ```typescript
- * import { Agent } from '@have/agents';
+ * import { Agent, type AgentOptions } from '@have/agents';
  * import { getModuleConfig } from '@have/config';
  * import { smrt } from '@happyvertical/smrt-core';
  *
@@ -27,6 +28,19 @@
  *   // Define your own state properties (automatically persisted)
  *   itemsProcessed: number = 0;
  *
+ *   constructor(options: AgentOptions = {}) {
+ *     super({
+ *       ...options,
+ *       interests: {
+ *         filter: { status: 'active' },
+ *         objects: {
+ *           Meeting: { sort: 'scheduled_at DESC', limit: 10 },
+ *           Document: { filter: { 'type in': ['agenda', 'minutes'] } }
+ *         }
+ *       }
+ *     });
+ *   }
+ *
  *   async validate(): Promise<void> {
  *     if (!this.config.cronSchedule) {
  *       throw new Error('cronSchedule is required');
@@ -34,8 +48,12 @@
  *   }
  *
  *   async run(): Promise<void> {
- *     // Agent logic
- *     this.itemsProcessed = 42;
+ *     // Query objects the agent is interested in
+ *     const items = await this.interesting();
+ *     for (const { type, data } of items) {
+ *       console.log(`Processing ${type}: ${data.id}`);
+ *     }
+ *     this.itemsProcessed = items.length;
  *     await this.save(); // Persist state
  *   }
  * }
@@ -47,5 +65,14 @@
  * @module @have/agents
  */
 
-export { Agent } from './agent.js';
+export { Agent, type AgentOptions } from './agent.js';
+export type {
+  AgentWithInterestsOptions,
+  AsyncQualifierFn,
+  InterestOptions,
+  InterestResult,
+  ObjectFilter,
+  ObjectInterestConfig,
+} from './interests.js';
+export { mergeFilters, normalizeSort } from './interests.js';
 export type { AgentStatusType } from './types.js';
