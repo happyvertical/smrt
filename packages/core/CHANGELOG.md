@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.26
+
+### Patch Changes
+
+- ### Features
+
+  - add interests system for declarative object discovery (#466) (agents)
+  - @happyvertical/smrt-config@0.17.26
+  - @happyvertical/smrt-types@0.17.26
+
 ## 0.17.25
 
 ### Patch Changes
