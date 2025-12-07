@@ -29,7 +29,10 @@
     "smrt": "pnpm --filter @smrt/core cli",
     "docs:site": "npm run --prefix docs start",
     "docs:site:build": "npm run --prefix docs build",
-    "docs:site:dev": "npm run --prefix docs dev"
+    "docs:site:dev": "npm run --prefix docs dev",
+    "deps:graph": "npx depcruise packages/*/src --config .dependency-cruiser.cjs --output-type mermaid --include-only '^packages' --collapse '^packages/[^/]+' > SKILL_TREE.md",
+    "deps:modules": "for pkg in packages/*; do [ -d \"$pkg/src\" ] && (cd \"$pkg\" && npx depcruise src --config ../../.dependency-cruiser.cjs --output-type mermaid --include-only '^src' > SKILL_TREE.md); done",
+    "deps:all": "npm run deps:graph && npm run deps:modules"
   },
   "devDependencies": {
     "@anolilab/semantic-release-pnpm": "^2.0.4",
@@ -45,6 +48,7 @@
     "chokidar": "^4.0.1",
     "concurrently": "9.2.1",
     "conventional-changelog-conventionalcommits": "^9.1.0",
+    "dependency-cruiser": "^17.3.2",
     "express": "^4.21.2",
     "lefthook": "^1.11.13",
     "livereload": "^0.9.3",
