@@ -1,6 +1,24 @@
 import { createLogger, type Logger } from '@happyvertical/logger';
-import { SmrtObject, type SmrtObjectOptions } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  SmrtObject,
+  type SmrtObjectOptions,
+} from '@happyvertical/smrt-core';
+import type {
+  AgentWithInterestsOptions,
+  InterestOptions,
+  InterestResult,
+  ObjectInterestConfig,
+} from './interests.js';
+import { mergeFilters, normalizeSort } from './interests.js';
 import type { AgentStatusType } from './types.js';
+
+/**
+ * Agent constructor options
+ */
+export interface AgentOptions
+  extends SmrtObjectOptions,
+    AgentWithInterestsOptions {}
 
 /**
  * Base Agent class for building autonomous actors in the SMRT ecosystem
@@ -88,9 +106,17 @@ export abstract class Agent extends SmrtObject {
    *
    * @param options - Configuration options including identifiers and metadata
    */
-  constructor(options: SmrtObjectOptions = {}) {
+  constructor(options: AgentOptions = {}) {
     super(options);
     this.logger = createLogger({ level: 'info' });
+  }
+
+  /**
+   * Interest configuration for this agent
+   * Lazily accessed from options on first interesting() call
+   */
+  protected get interests(): InterestOptions | undefined {
+    return (this.options as AgentOptions).interests;
   }
 
   /**
@@ -258,5 +284,162 @@ export abstract class Agent extends SmrtObject {
       this.logger.error('Agent execution failed', { error });
       throw error;
     }
+  }
+
+  /**
+   * Query objects this agent is interested in
+   *
+   * Returns items from all configured object types, filtered and sorted
+   * according to interest configuration.
+   *
+   * @returns Array of { type: string, data: SmrtObject } results
+   * @throws Error if no interests are configured
+   *
+   * @example
+   * ```typescript
+   * const items = await this.interesting();
+   * for (const { type, data } of items) {
+   *   console.log(`Processing ${type}: ${data.id}`);
+   * }
+   * ```
+   */
+  async interesting(): Promise<InterestResult[]> {
+    if (!this.interests) {
+      throw new Error(
+        `Agent ${this.constructor.name} has no interests configured. ` +
+          `Set interests in constructor options to use interesting().`,
+      );
+    }
+
+    if (
+      !this.interests.objects ||
+      Object.keys(this.interests.objects).length === 0
+    ) {
+      this.logger.warn('Agent has empty interests.objects configuration');
+      return [];
+    }
+
+    const results: InterestResult[] = [];
+
+    // Process each object type in interests.objects
+    for (const [className, config] of Object.entries(this.interests.objects)) {
+      try {
+        const items = await this.queryInterestingObjects(className, config);
+
+        // Add typed results
+        for (const item of items) {
+          results.push({ type: className, data: item });
+        }
+      } catch (error) {
+        // Log warning and continue with other types
+        this.logger.warn(`Failed to query ${className} for interests`, {
+          error,
+        });
+      }
+    }
+
+    // Apply global qualifier if configured
+    if (this.interests.qualify) {
+      const allItems = results.map((r) => r.data);
+      const qualified = await this.interests.qualify(allItems);
+
+      // Rebuild results array with only qualified items
+      const qualifiedSet = new Set(qualified);
+      const filteredResults = results.filter((r) => qualifiedSet.has(r.data));
+
+      // Apply global sort if configured
+      if (this.interests.sort) {
+        return this.sortResults(filteredResults, this.interests.sort);
+      }
+      return filteredResults;
+    }
+
+    // Apply global sort if configured (no global qualifier)
+    if (this.interests.sort) {
+      return this.sortResults(results, this.interests.sort);
+    }
+
+    return results;
+  }
+
+  /**
+   * Query a single object type based on interest config
+   */
+  private async queryInterestingObjects(
+    className: string,
+    config: ObjectInterestConfig,
+  ): Promise<SmrtObject[]> {
+    // Check if class is registered (case-insensitive)
+    if (!ObjectRegistry.hasClass(className)) {
+      this.logger.warn(
+        `Object type "${className}" not found in ObjectRegistry. ` +
+          `Skipping in interests query.`,
+      );
+      return [];
+    }
+
+    // Get collection for this class type
+    const collection = await ObjectRegistry.getCollection(
+      className,
+      this.options,
+    );
+
+    // Merge global and object-specific filters
+    const mergedFilter = mergeFilters(this.interests?.filter, config.filter);
+
+    // Build query options
+    const queryOptions: {
+      where?: Record<string, any>;
+      orderBy?: string | string[];
+      limit?: number;
+    } = {};
+
+    if (Object.keys(mergedFilter).length > 0) {
+      queryOptions.where = mergedFilter;
+    }
+    if (config.sort) {
+      queryOptions.orderBy = config.sort;
+    }
+    if (config.limit) {
+      queryOptions.limit = config.limit;
+    }
+
+    // Execute query
+    let items = await collection.list(queryOptions);
+
+    // Apply object-specific qualifier if configured
+    if (config.qualify) {
+      items = await config.qualify(items);
+    }
+
+    return items;
+  }
+
+  /**
+   * Sort results by field(s) across all types
+   */
+  private sortResults(
+    results: InterestResult[],
+    sort: string | string[],
+  ): InterestResult[] {
+    const sortFields = normalizeSort(sort);
+    if (sortFields.length === 0) return results;
+
+    return [...results].sort((a, b) => {
+      for (const sortField of sortFields) {
+        const [field, direction = 'ASC'] = sortField.trim().split(/\s+/);
+        const aValue = (a.data as Record<string, any>)[field];
+        const bValue = (b.data as Record<string, any>)[field];
+
+        let comparison = 0;
+        if (aValue < bValue) comparison = -1;
+        else if (aValue > bValue) comparison = 1;
+
+        if (comparison !== 0) {
+          return direction.toUpperCase() === 'DESC' ? -comparison : comparison;
+        }
+      }
+      return 0;
+    });
   }
 }

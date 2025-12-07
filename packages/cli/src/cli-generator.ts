@@ -26,6 +26,20 @@ const packageJson = JSON.parse(
 );
 const CLI_VERSION = packageJson.version;
 
+/**
+ * Count required arguments in an args array.
+ * Arguments wrapped in [...] are optional, others are required.
+ * Examples:
+ *   ['id'] -> 1 required
+ *   ['[pattern...]'] -> 0 required (optional)
+ *   ['id', '[options...]'] -> 1 required
+ */
+function countRequiredArgs(args: string[] | undefined): number {
+  if (!args) return 0;
+  return args.filter((arg) => !arg.startsWith('[') || !arg.endsWith(']'))
+    .length;
+}
+
 // Lazy-load commands to avoid loading tar dependencies unless needed
 let _gnodeCommands: Record<string, Command> | null = null;
 let _generateCommands: Record<string, Command> | null = null;
@@ -777,10 +791,14 @@ export class CLIGenerator {
     );
 
     if (command) {
-      // Validate required arguments
-      if (command.args && parsed.args.length < command.args.length) {
+      // Validate required arguments (args wrapped in [...] are optional)
+      const requiredArgCount = countRequiredArgs(command.args);
+      if (parsed.args.length < requiredArgCount) {
+        const missingArgs = command.args
+          ?.slice(parsed.args.length)
+          .filter((arg) => !arg.startsWith('[') || !arg.endsWith(']'));
         this.exitWithError(
-          `Missing required arguments: ${command.args.slice(parsed.args.length).join(', ')}`,
+          `Missing required arguments: ${missingArgs?.join(', ') || ''}`,
         );
         return;
       }
@@ -822,13 +840,14 @@ export class CLIGenerator {
 
     const builtInCommand = builtInCommands[parsed.command];
     if (builtInCommand) {
-      // Validate required arguments
-      if (
-        builtInCommand.args &&
-        parsed.args.length < builtInCommand.args.length
-      ) {
+      // Validate required arguments (args wrapped in [...] are optional)
+      const requiredArgCount = countRequiredArgs(builtInCommand.args);
+      if (parsed.args.length < requiredArgCount) {
+        const missingArgs = builtInCommand.args
+          ?.slice(parsed.args.length)
+          .filter((arg) => !arg.startsWith('[') || !arg.endsWith(']'));
         this.exitWithError(
-          `Missing required arguments: ${builtInCommand.args.slice(parsed.args.length).join(', ')}`,
+          `Missing required arguments: ${missingArgs?.join(', ') || ''}`,
         );
         return;
       }
