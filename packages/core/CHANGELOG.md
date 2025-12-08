@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.29
+
+### Patch Changes
+
+- ### Features
+
+  - add handler function to interests system (#470) (agents)
+  - @happyvertical/smrt-config@0.17.29
+  - @happyvertical/smrt-types@0.17.29
+
 ## 0.17.28
 
 ### Patch Changes
