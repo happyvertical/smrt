@@ -273,8 +273,6 @@ interface RegisteredClass {
   inheritedFields?: Map<string, any>;
   /** Merged methods from entire inheritance chain (cached, includes parent methods) */
   inheritedMethods?: Map<string, any>;
-  /** Decorator config passed to @smrt() (includes tableStrategy) */
-  decorator?: SmartObjectConfig;
 }
 
 /**
@@ -467,9 +465,6 @@ export class ObjectRegistry {
         // Merge config from decorator (new) with manifest config (existing)
         // Priority: decorator config wins over manifest config for explicit settings
         existing.config = { ...existing.config, ...config };
-        // Also update decorator to match merged config
-        // getTableStrategy() checks decorator.tableStrategy, so this must be in sync
-        existing.decorator = existing.config;
         console.log(
           `[registry] Replaced manifest stub with real class: ${name}`,
         );
@@ -709,8 +704,7 @@ export class ObjectRegistry {
       const parentEntry = ObjectRegistry.classes.get(parentName);
 
       if (parentEntry) {
-        const parentStrategy =
-          parentEntry.decorator?.tableStrategy || 'default';
+        const parentStrategy = parentEntry.config?.tableStrategy || 'default';
         const childStrategy = config.tableStrategy; // Don't default - undefined means inherit
 
         // Only validate if child has an EXPLICIT strategy that differs from parent
@@ -806,7 +800,6 @@ export class ObjectRegistry {
       // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
       // it lazily using the `extends` field. This ensures correct chain for both
       // decorator-registered and manifest-loaded classes.
-      decorator: config, // Store decorator config (includes tableStrategy)
     });
 
     console.log(
@@ -1009,7 +1002,6 @@ export class ObjectRegistry {
       validators,
       packageName,
       extends: objectDef.extends, // Parent class name for inheritance chain
-      decorator: config, // Decorator config (includes tableStrategy for STI)
     });
 
     console.log(
@@ -2785,17 +2777,17 @@ export class ObjectRegistry {
       return 'cti'; // Default for unregistered classes
     }
 
-    // Explicit config wins (check decorator first)
-    if (registered.decorator?.tableStrategy) {
-      return registered.decorator.tableStrategy;
+    // Explicit config wins
+    if (registered.config?.tableStrategy) {
+      return registered.config.tableStrategy;
     }
 
     // Inherit from ancestors
     const chain = ObjectRegistry.getInheritanceChain(className);
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
-      if (ancestor?.decorator?.tableStrategy) {
-        return ancestor.decorator.tableStrategy;
+      if (ancestor?.config?.tableStrategy) {
+        return ancestor.config.tableStrategy;
       }
     }
 
@@ -2844,17 +2836,17 @@ export class ObjectRegistry {
 
     // Get this class's table name for matching
     const targetTableName =
-      registered.decorator?.tableName || registered.schema?.tableName;
+      registered.config?.tableName || registered.schema?.tableName;
 
     // Walk up the chain to find the OLDEST STI base with matching table
     // The chain is ordered [root, ..., className], so the first match is the oldest
     const chain = ObjectRegistry.getInheritanceChain(className);
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
-      if (ancestor?.decorator?.tableStrategy === 'sti') {
+      if (ancestor?.config?.tableStrategy === 'sti') {
         // Check if this ancestor shares the same table
         const ancestorTableName =
-          ancestor.decorator?.tableName || ancestor.schema?.tableName;
+          ancestor.config?.tableName || ancestor.schema?.tableName;
         if (ancestorTableName === targetTableName) {
           // Found the OLDEST STI ancestor with same table - this is the base
           return ancestorName;
