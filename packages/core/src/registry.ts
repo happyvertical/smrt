@@ -465,7 +465,11 @@ export class ObjectRegistry {
         // Replace stub with real class - update constructor and merge any decorator config
         existing.constructor = ctor;
         // Merge config from decorator (new) with manifest config (existing)
+        // Priority: decorator config wins over manifest config for explicit settings
         existing.config = { ...existing.config, ...config };
+        // Also update decorator to match merged config
+        // getTableStrategy() checks decorator.tableStrategy, so this must be in sync
+        existing.decorator = existing.config;
         console.log(
           `[registry] Replaced manifest stub with real class: ${name}`,
         );
