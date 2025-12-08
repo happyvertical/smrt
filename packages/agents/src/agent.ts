@@ -442,7 +442,18 @@ export abstract class Agent extends SmrtObject {
   ): Promise<SmrtObject[]> {
     // Custom query path - uses collection.query() for raw SQL power
     if (filter.query) {
-      const [whereClause, params] = filter.query(collection.tableName);
+      let [whereClause, params] = filter.query(collection.tableName);
+
+      // Add STI discriminator filter if this is an STI child class
+      const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+      if (tableStrategy === 'sti') {
+        const stiBase = ObjectRegistry.getSTIBase(_className);
+        if (stiBase && stiBase !== _className) {
+          // Wrap original where clause and add _meta_type filter
+          whereClause = `_meta_type = ? AND (${whereClause})`;
+          params = [_className, ...params];
+        }
+      }
 
       // Build full SQL query
       let sql = `SELECT * FROM ${collection.tableName} WHERE ${whereClause}`;

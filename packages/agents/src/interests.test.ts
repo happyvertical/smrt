@@ -963,6 +963,12 @@ describe('Agent Interests', () => {
       expect(ourResult?.name).toBe('no-handler-filter');
       expect(ourResult?.handled).toBeUndefined();
     });
+
+    // NOTE: STI _meta_type filter tests for smrt#473 are verified in praeco
+    // because test manifest generation doesn't properly include STI test classes
+    // defined within test files. The fix in agent.ts queryInterestFilter() adds
+    // _meta_type = 'ClassName' filter when ObjectRegistry.getTableStrategy()
+    // returns 'sti' and getSTIBase() returns a different base class.
   });
 
   describe('Helper functions', () => {
