@@ -1099,6 +1099,86 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Execute a raw SQL query and hydrate results as collection item instances
+   *
+   * Provides full SQL power for complex queries (JOINs, CTEs, NOT EXISTS, etc.)
+   * while still returning properly hydrated SMRT objects.
+   *
+   * @param sql - Raw SQL query string (should select from this.tableName)
+   * @param params - Query parameters for prepared statement
+   * @returns Promise resolving to array of hydrated model instances
+   *
+   * @example
+   * ```typescript
+   * // Find meetings without corresponding recaps (NOT EXISTS pattern)
+   * const meetings = await meetingCollection.query(`
+   *   SELECT m.* FROM meetings m
+   *   WHERE m.start_date < datetime('now')
+   *   AND NOT EXISTS (
+   *     SELECT 1 FROM contents c
+   *     WHERE c.meeting_id = m.id
+   *     AND c._meta_type = 'MeetingRecap'
+   *   )
+   *   ORDER BY m.start_date DESC
+   *   LIMIT ?
+   * `, [10]);
+   *
+   * // Complex JOIN query
+   * const products = await productCollection.query(`
+   *   SELECT p.* FROM products p
+   *   INNER JOIN categories c ON p.category_id = c.id
+   *   WHERE c.name = ? AND p.price > ?
+   *   ORDER BY p.price ASC
+   * `, ['Electronics', 100]);
+   * ```
+   */
+  public async query(sql: string, params: any[] = []): Promise<ModelType[]> {
+    // Schema already initialized in Collection.create() static factory
+
+    // Ensure manifest is loaded for external packages
+    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+
+    const result = await this.db.query(sql, params);
+    const fields = await this.getFields();
+
+    // STI: Check if we need polymorphic hydration
+    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const isSTI = tableStrategy === 'sti';
+
+    return Promise.all(
+      result.rows.map(async (row: any) => {
+        const formattedData = formatDataJs(row, fields);
+
+        // STI: Use _meta_type to determine correct class to instantiate
+        if (isSTI && formattedData._meta_type) {
+          return await this.createPolymorphic(
+            formattedData._meta_type,
+            formattedData,
+          );
+        }
+
+        // CTI or STI base: Use collection's item class
+        const params = {
+          ai: this.options.ai,
+          db: this.db,
+          _skipLoad: true,
+          ...formattedData,
+        };
+
+        const instance = new this._itemClass(params);
+        await instance.initialize();
+
+        // For STI collections, set _meta_type to the class name
+        if (isSTI) {
+          (instance as any)._meta_type = this._itemClass.name;
+        }
+
+        return instance;
+      }),
+    );
+  }
+
+  /**
    * Remember collection-level context
    *
    * Stores context applicable to all instances of this collection type.

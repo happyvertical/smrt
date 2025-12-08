@@ -389,6 +389,7 @@ class MyCollection extends SmrtCollection<MyObject> {
 - `create(options)` - Create new object (calls initialize() automatically)
 - `getOrUpsert(data, defaults)` - Get existing or create new
 - `count(options)` - Count records matching filters
+- `query(sql, params)` - Execute raw SQL query with hydrated results
 
 **Advanced querying**:
 ```typescript
@@ -405,6 +406,36 @@ await collection.list({
   include: ['customerId', 'productId'] // Eager load relationships
 });
 ```
+
+**Raw SQL queries** (for complex patterns like NOT EXISTS, JOINs, CTEs):
+```typescript
+// Find meetings without corresponding recaps (NOT EXISTS pattern)
+const meetings = await meetingCollection.query(`
+  SELECT m.* FROM meetings m
+  WHERE m.start_date < datetime('now')
+  AND NOT EXISTS (
+    SELECT 1 FROM contents c
+    WHERE c.meeting_id = m.id
+    AND c._meta_type = 'MeetingRecap'
+  )
+  ORDER BY m.start_date DESC
+  LIMIT ?
+`, [10]);
+
+// Complex JOIN query
+const products = await productCollection.query(`
+  SELECT p.* FROM products p
+  INNER JOIN categories c ON p.category_id = c.id
+  WHERE c.name = ? AND p.price > ?
+  ORDER BY p.price ASC
+`, ['Electronics', 100]);
+```
+
+The `query()` method:
+- Executes raw SQL with parameterized queries
+- Returns properly hydrated SMRT object instances
+- Supports STI polymorphic hydration (correct subclass based on `_meta_type`)
+- Use when standard filters can't express your query (NOT EXISTS, OR conditions, JOINs)
 
 ### Eager Loading (N+1 Query Prevention)
 
