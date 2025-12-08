@@ -862,6 +862,57 @@ describe('Agent Interests', () => {
       });
     });
 
+    it('should use first filter handler when object matches multiple filters (dedup behavior)', async () => {
+      const testPrefix = uniqueName('dedup-handler');
+
+      // Create a meeting that matches BOTH filters
+      const bothMatch = await meetingCollection.create({
+        title: `${testPrefix}-both`,
+        isPublic: true,
+        priority: 10, // Matches both isPublic AND priority >= 10
+      });
+      await bothMatch.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('dedup-handler-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: [
+              {
+                name: 'first-filter',
+                filter: { isPublic: true },
+                handler: async (m) => ({ action: 'first', id: m.id }),
+              },
+              {
+                name: 'second-filter',
+                filter: { 'priority >=': 10 },
+                handler: async (m) => ({ action: 'second', id: m.id }),
+              },
+            ],
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Filter to our test meeting
+      const ourResults = results.filter((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      // Should only appear ONCE despite matching both filters (dedup)
+      expect(ourResults.length).toBe(1);
+
+      // First filter's handler result is preserved (first wins)
+      expect(ourResults[0].name).toBe('first-filter');
+      expect(ourResults[0].handled).toEqual({
+        action: 'first',
+        id: bothMatch.id,
+      });
+    });
+
     it('should not include handled when no handler is defined', async () => {
       const testPrefix = uniqueName('no-handler');
 

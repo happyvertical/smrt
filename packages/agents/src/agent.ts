@@ -402,19 +402,18 @@ export abstract class Agent extends SmrtObject {
 
       // Process each item: call handler if defined, build result
       for (const item of items) {
-        let handled: any;
-
-        // Call handler if defined
-        if (filter.handler) {
-          handled = await filter.handler(item, this);
-        }
-
-        allResults.push({
+        const result: InterestResult = {
           type: className,
           data: item,
           name: filter.name,
-          handled,
-        });
+        };
+
+        // Call handler if defined and add to result
+        if (filter.handler) {
+          result.handled = await filter.handler(item, this);
+        }
+
+        allResults.push(result);
       }
     }
 
