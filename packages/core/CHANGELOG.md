@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.27
+
+### Patch Changes
+
+- ### Features
+
+  - add dependency graph generation with SKILL_TREE.md (#468) (deps)
+  - @happyvertical/smrt-config@0.17.27
+  - @happyvertical/smrt-types@0.17.27
+
 ## 0.17.26
 
 ### Patch Changes

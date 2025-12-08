@@ -1,5 +1,14 @@
 # @happyvertical/smrt-events
 
+## 0.17.27
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.17.27
+  - @happyvertical/smrt-places@0.17.27
+  - @happyvertical/smrt-profiles@0.17.27
+
 ## 0.17.26
 
 ### Patch Changes
