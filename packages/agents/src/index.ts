@@ -70,6 +70,7 @@ export type {
   AgentWithInterestsOptions,
   AsyncQualifierFn,
   InterestFilter,
+  InterestHandlerFn,
   InterestOptions,
   InterestResult,
   ObjectFilter,

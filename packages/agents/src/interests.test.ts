@@ -421,8 +421,8 @@ describe('Agent Interests', () => {
       expect(ids).not.toContain(otherMeeting.id);
     });
 
-    it('should deduplicate results when same object matches multiple filters', async () => {
-      const testPrefix = uniqueName('dedupe-test');
+    it('should return object multiple times when it matches multiple filters', async () => {
+      const testPrefix = uniqueName('multi-filter-test');
 
       // Create a meeting that matches both filters
       const bothMatch = await meetingCollection.create({
@@ -433,7 +433,7 @@ describe('Agent Interests', () => {
       await bothMatch.save();
 
       const agent = new TestInterestAgent({
-        name: uniqueName('dedupe-agent'),
+        name: uniqueName('multi-filter-agent'),
         db: sharedDb,
         interests: {
           objects: {
@@ -459,9 +459,14 @@ describe('Agent Interests', () => {
         (r.data as Meeting).title.startsWith(testPrefix),
       );
 
-      // Should only appear once despite matching both filters
-      expect(ourResults.length).toBe(1);
-      expect(ourResults[0].data.id).toBe(bothMatch.id);
+      // Should appear once for EACH matching filter (not deduplicated)
+      expect(ourResults.length).toBeGreaterThanOrEqual(2);
+      expect(ourResults.every((r) => r.data.id === bothMatch.id)).toBe(true);
+
+      // Each filter should have produced a result
+      const names = ourResults.map((r) => r.name);
+      expect(names).toContain('public-meetings');
+      expect(names).toContain('high-priority-meetings');
     });
 
     it('should support custom query function for complex SQL patterns', async () => {
@@ -597,6 +602,366 @@ describe('Agent Interests', () => {
       // Should only get public meeting after qualifier
       expect(results.length).toBe(1);
       expect(results[0].data.id).toBe(meeting1.id);
+    });
+
+    it('should include filter name in results', async () => {
+      const testPrefix = uniqueName('filter-name');
+
+      const meeting = await meetingCollection.create({
+        title: `${testPrefix}-meeting`,
+        isPublic: true,
+      });
+      await meeting.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('filter-name-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              name: 'public-meetings-filter',
+              filter: { isPublic: true },
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Find our test meeting
+      const ourResult = results.find((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      expect(ourResult).toBeDefined();
+      expect(ourResult?.name).toBe('public-meetings-filter');
+    });
+
+    it('should call handler for each matched item and include result', async () => {
+      const testPrefix = uniqueName('handler-test');
+
+      const meeting = await meetingCollection.create({
+        title: `${testPrefix}-meeting`,
+        priority: 5,
+      });
+      await meeting.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('handler-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              name: 'needs-recap',
+              filter: { 'priority >': 0 },
+              handler: async (item) => ({
+                action: 'recap',
+                meetingId: item.id,
+              }),
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Find our test meeting
+      const ourResult = results.find((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      expect(ourResult).toBeDefined();
+      expect(ourResult?.handled).toEqual({
+        action: 'recap',
+        meetingId: meeting.id,
+      });
+    });
+
+    it('should pass agent instance to handler as second argument', async () => {
+      const testPrefix = uniqueName('handler-agent-arg');
+
+      const meeting = await meetingCollection.create({
+        title: `${testPrefix}-meeting`,
+        priority: 5,
+      });
+      await meeting.save();
+
+      let receivedAgent: any = null;
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('handler-this-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              filter: { 'priority >': 0 },
+              handler: async (item, agentInstance) => {
+                receivedAgent = agentInstance;
+                return {
+                  agentName: (agentInstance.options as any).name,
+                  itemId: item.id,
+                };
+              },
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Find our test meeting
+      const ourResult = results.find((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      expect(ourResult).toBeDefined();
+      expect(receivedAgent).toBe(agent);
+      expect(ourResult?.handled.agentName).toBe((agent.options as any).name);
+    });
+
+    it('should support async handlers', async () => {
+      const testPrefix = uniqueName('async-handler');
+
+      const meeting = await meetingCollection.create({
+        title: `${testPrefix}-meeting`,
+        priority: 5,
+      });
+      await meeting.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('async-handler-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              filter: { 'priority >': 0 },
+              handler: async (item) => {
+                // Simulate async work
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                return { action: 'processed', id: item.id };
+              },
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      const ourResult = results.find((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      expect(ourResult).toBeDefined();
+      expect(ourResult?.handled).toEqual({
+        action: 'processed',
+        id: meeting.id,
+      });
+    });
+
+    it('should support sync handlers', async () => {
+      const testPrefix = uniqueName('sync-handler');
+
+      const meeting = await meetingCollection.create({
+        title: `${testPrefix}-meeting`,
+        priority: 5,
+      });
+      await meeting.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('sync-handler-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              filter: { 'priority >': 0 },
+              // Sync handler (no async)
+              handler: (item) => ({ action: 'sync-result', id: item.id }),
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      const ourResult = results.find((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      expect(ourResult).toBeDefined();
+      expect(ourResult?.handled).toEqual({
+        action: 'sync-result',
+        id: meeting.id,
+      });
+    });
+
+    it('should use different handlers for different filters in array', async () => {
+      const testPrefix = uniqueName('multi-handler');
+
+      const publicMeeting = await meetingCollection.create({
+        title: `${testPrefix}-public`,
+        isPublic: true,
+        priority: 1,
+      });
+      await publicMeeting.save();
+
+      const privateMeeting = await meetingCollection.create({
+        title: `${testPrefix}-private`,
+        isPublic: false,
+        priority: 10,
+      });
+      await privateMeeting.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('multi-handler-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: [
+              {
+                name: 'public-needs-announce',
+                filter: { isPublic: true },
+                handler: async (m) => ({ action: 'announce', id: m.id }),
+              },
+              {
+                name: 'priority-needs-recap',
+                filter: { 'priority >=': 10 },
+                handler: async (m) => ({ action: 'recap', id: m.id }),
+              },
+            ],
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Filter to our test meetings
+      const ourResults = results.filter((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      expect(ourResults.length).toBe(2);
+
+      const publicResult = ourResults.find(
+        (r) => r.data.id === publicMeeting.id,
+      );
+      const privateResult = ourResults.find(
+        (r) => r.data.id === privateMeeting.id,
+      );
+
+      expect(publicResult?.name).toBe('public-needs-announce');
+      expect(publicResult?.handled).toEqual({
+        action: 'announce',
+        id: publicMeeting.id,
+      });
+
+      expect(privateResult?.name).toBe('priority-needs-recap');
+      expect(privateResult?.handled).toEqual({
+        action: 'recap',
+        id: privateMeeting.id,
+      });
+    });
+
+    it('should run both handlers when object matches multiple filters', async () => {
+      const testPrefix = uniqueName('multi-match-handler');
+
+      // Create a meeting that matches BOTH filters
+      const bothMatch = await meetingCollection.create({
+        title: `${testPrefix}-both`,
+        isPublic: true,
+        priority: 10, // Matches both isPublic AND priority >= 10
+      });
+      await bothMatch.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('multi-match-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: [
+              {
+                name: 'public-filter',
+                filter: { isPublic: true },
+                handler: async (m) => ({ action: 'announce', id: m.id }),
+              },
+              {
+                name: 'priority-filter',
+                filter: { 'priority >=': 10 },
+                handler: async (m) => ({ action: 'recap', id: m.id }),
+              },
+            ],
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Filter to our test meeting
+      const ourResults = results.filter((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      // Should appear once for EACH matching filter
+      expect(ourResults.length).toBeGreaterThanOrEqual(2);
+
+      // Both handlers should have run with their respective results
+      const publicResult = ourResults.find((r) => r.name === 'public-filter');
+      const priorityResult = ourResults.find(
+        (r) => r.name === 'priority-filter',
+      );
+
+      expect(publicResult).toBeDefined();
+      expect(publicResult?.handled).toEqual({
+        action: 'announce',
+        id: bothMatch.id,
+      });
+
+      expect(priorityResult).toBeDefined();
+      expect(priorityResult?.handled).toEqual({
+        action: 'recap',
+        id: bothMatch.id,
+      });
+    });
+
+    it('should not include handled when no handler is defined', async () => {
+      const testPrefix = uniqueName('no-handler');
+
+      const meeting = await meetingCollection.create({
+        title: `${testPrefix}-meeting`,
+        priority: 5,
+      });
+      await meeting.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('no-handler-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              name: 'no-handler-filter',
+              filter: { 'priority >': 0 },
+              // No handler defined
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      const ourResult = results.find((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      expect(ourResult).toBeDefined();
+      expect(ourResult?.name).toBe('no-handler-filter');
+      expect(ourResult?.handled).toBeUndefined();
     });
   });
 
