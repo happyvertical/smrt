@@ -417,14 +417,7 @@ export abstract class Agent extends SmrtObject {
       }
     }
 
-    // Deduplicate by id (same object might match multiple filters)
-    // Keep the first occurrence (preserves filter order priority)
-    const seen = new Set<string>();
-    return allResults.filter((result) => {
-      if (!result.data.id || seen.has(result.data.id)) return false;
-      seen.add(result.data.id);
-      return true;
-    });
+    return allResults;
   }
 
   /**

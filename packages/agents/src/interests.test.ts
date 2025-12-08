@@ -421,8 +421,8 @@ describe('Agent Interests', () => {
       expect(ids).not.toContain(otherMeeting.id);
     });
 
-    it('should deduplicate results when same object matches multiple filters', async () => {
-      const testPrefix = uniqueName('dedupe-test');
+    it('should return object multiple times when it matches multiple filters', async () => {
+      const testPrefix = uniqueName('multi-filter-test');
 
       // Create a meeting that matches both filters
       const bothMatch = await meetingCollection.create({
@@ -433,7 +433,7 @@ describe('Agent Interests', () => {
       await bothMatch.save();
 
       const agent = new TestInterestAgent({
-        name: uniqueName('dedupe-agent'),
+        name: uniqueName('multi-filter-agent'),
         db: sharedDb,
         interests: {
           objects: {
@@ -459,9 +459,14 @@ describe('Agent Interests', () => {
         (r.data as Meeting).title.startsWith(testPrefix),
       );
 
-      // Should only appear once despite matching both filters
-      expect(ourResults.length).toBe(1);
-      expect(ourResults[0].data.id).toBe(bothMatch.id);
+      // Should appear once for EACH matching filter (not deduplicated)
+      expect(ourResults.length).toBeGreaterThanOrEqual(2);
+      expect(ourResults.every((r) => r.data.id === bothMatch.id)).toBe(true);
+
+      // Each filter should have produced a result
+      const names = ourResults.map((r) => r.name);
+      expect(names).toContain('public-meetings');
+      expect(names).toContain('high-priority-meetings');
     });
 
     it('should support custom query function for complex SQL patterns', async () => {
@@ -862,8 +867,8 @@ describe('Agent Interests', () => {
       });
     });
 
-    it('should use first filter handler when object matches multiple filters (dedup behavior)', async () => {
-      const testPrefix = uniqueName('dedup-handler');
+    it('should run both handlers when object matches multiple filters', async () => {
+      const testPrefix = uniqueName('multi-match-handler');
 
       // Create a meeting that matches BOTH filters
       const bothMatch = await meetingCollection.create({
@@ -874,20 +879,20 @@ describe('Agent Interests', () => {
       await bothMatch.save();
 
       const agent = new TestInterestAgent({
-        name: uniqueName('dedup-handler-agent'),
+        name: uniqueName('multi-match-agent'),
         db: sharedDb,
         interests: {
           objects: {
             Meeting: [
               {
-                name: 'first-filter',
+                name: 'public-filter',
                 filter: { isPublic: true },
-                handler: async (m) => ({ action: 'first', id: m.id }),
+                handler: async (m) => ({ action: 'announce', id: m.id }),
               },
               {
-                name: 'second-filter',
+                name: 'priority-filter',
                 filter: { 'priority >=': 10 },
-                handler: async (m) => ({ action: 'second', id: m.id }),
+                handler: async (m) => ({ action: 'recap', id: m.id }),
               },
             ],
           },
@@ -902,13 +907,24 @@ describe('Agent Interests', () => {
         (r.data as Meeting).title.startsWith(testPrefix),
       );
 
-      // Should only appear ONCE despite matching both filters (dedup)
-      expect(ourResults.length).toBe(1);
+      // Should appear once for EACH matching filter
+      expect(ourResults.length).toBeGreaterThanOrEqual(2);
 
-      // First filter's handler result is preserved (first wins)
-      expect(ourResults[0].name).toBe('first-filter');
-      expect(ourResults[0].handled).toEqual({
-        action: 'first',
+      // Both handlers should have run with their respective results
+      const publicResult = ourResults.find((r) => r.name === 'public-filter');
+      const priorityResult = ourResults.find(
+        (r) => r.name === 'priority-filter',
+      );
+
+      expect(publicResult).toBeDefined();
+      expect(publicResult?.handled).toEqual({
+        action: 'announce',
+        id: bothMatch.id,
+      });
+
+      expect(priorityResult).toBeDefined();
+      expect(priorityResult?.handled).toEqual({
+        action: 'recap',
         id: bothMatch.id,
       });
     });
