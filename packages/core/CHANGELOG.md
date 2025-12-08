@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.30
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - derive day name from date in WeatherHeader (#471) (svelte)
+  - @happyvertical/smrt-config@0.17.30
+  - @happyvertical/smrt-types@0.17.30
+
 ## 0.17.29
 
 ### Patch Changes
