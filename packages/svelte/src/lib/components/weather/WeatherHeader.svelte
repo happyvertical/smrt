@@ -75,8 +75,9 @@ function getDateFromDayName(_dayName: string, offset: number): Date {
   return today;
 }
 
-// Format date as "Sat 27 Oct"
-function formatDate(date: Date, dayName: string): string {
+// Format date as "Sat 27 Oct" - derive day name from date to stay in sync
+function formatDate(date: Date, _dayName: string): string {
+  const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
   const day = date.getDate();
   const month = date.toLocaleDateString('en-US', { month: 'short' });
   return `${dayName} ${day} ${month}`;
