@@ -30,31 +30,116 @@ export type AsyncQualifierFn<T extends SmrtObject = SmrtObject> = (
 ) => Promise<T[]>;
 
 /**
- * Configuration for a specific object type's interest
+ * Custom query function for complex SQL patterns
+ *
+ * Returns a WHERE clause and parameters for use with collection.query().
+ * Use for patterns that can't be expressed with standard filters:
+ * - NOT EXISTS subqueries
+ * - JOINs with other tables
+ * - Complex OR conditions
+ * - Window functions
+ *
+ * @param tableName - The main table name (aliased as 't' in the query)
+ * @returns Tuple of [whereClause, params] to append to query
+ *
+ * @example
+ * ```typescript
+ * // Find meetings without corresponding recaps
+ * const query: QueryFn = (t) => [
+ *   `${t}.start_date < datetime('now') AND NOT EXISTS (
+ *     SELECT 1 FROM contents c
+ *     WHERE c.meeting_id = ${t}.id
+ *     AND c._meta_type = 'MeetingRecap'
+ *   )`,
+ *   []
+ * ];
+ * ```
  */
-export interface ObjectInterestConfig<T extends SmrtObject = SmrtObject> {
+export type QueryFn = (tableName: string) => [sql: string, params: any[]];
+
+/**
+ * Single interest filter configuration
+ *
+ * Supports either standard SDK filters OR custom query function, plus
+ * optional sort, limit, and post-query qualification.
+ */
+export interface InterestFilter<T extends SmrtObject = SmrtObject> {
+  /**
+   * Optional label for this interest (useful for debugging/logging)
+   */
+  name?: string;
+
+  /**
+   * SQL filter object for queries (standard SDK filter)
+   * Merged with global filter using AND logic (object spread)
+   *
+   * Use this for simple AND conditions with standard operators.
+   * For complex queries (NOT EXISTS, JOINs), use `query` instead.
+   */
+  filter?: ObjectFilter;
+
+  /**
+   * Custom query function for complex SQL patterns
+   *
+   * When provided, bypasses standard filter and uses collection.query()
+   * with the generated SQL. Supports NOT EXISTS, JOINs, CTEs, etc.
+   *
+   * Cannot be used together with `filter`.
+   */
+  query?: QueryFn;
+
   /**
    * SQL orderBy format: 'priority DESC' or ['priority DESC', 'name ASC']
    */
   sort?: string | string[];
 
   /**
-   * SQL filter object for queries
-   * Merged with global filter using AND logic (object spread)
+   * Maximum number of items to return for this interest
    */
-  filter?: ObjectFilter;
+  limit?: number;
 
   /**
    * Async post-filter function on results
    * Runs after SQL query returns, enables AI-based or complex filtering
    */
   qualify?: AsyncQualifierFn<T>;
-
-  /**
-   * Maximum number of items to return for this type
-   */
-  limit?: number;
 }
+
+/**
+ * Configuration for a specific object type's interest
+ *
+ * Can be a single InterestFilter or an array of InterestFilters.
+ * Arrays allow multiple independent queries for the same object type.
+ *
+ * @example
+ * ```typescript
+ * // Single filter (backward compatible)
+ * const config: ObjectInterestConfig = {
+ *   filter: { status: 'active' },
+ *   sort: 'created_at DESC'
+ * };
+ *
+ * // Multiple filters (new feature)
+ * const config: ObjectInterestConfig = [
+ *   {
+ *     name: 'needs-analysis',
+ *     filter: { 'agendaUrl !=': null, status: 'scheduled' }
+ *   },
+ *   {
+ *     name: 'needs-recap',
+ *     query: (t) => [
+ *       `${t}.start_date < datetime('now') AND NOT EXISTS (
+ *         SELECT 1 FROM contents WHERE meeting_id = ${t}.id
+ *       )`,
+ *       []
+ *     ]
+ *   }
+ * ];
+ * ```
+ */
+export type ObjectInterestConfig<T extends SmrtObject = SmrtObject> =
+  | InterestFilter<T>
+  | InterestFilter<T>[];
 
 /**
  * Global interest configuration for an agent

@@ -69,10 +69,12 @@ export { Agent, type AgentOptions } from './agent.js';
 export type {
   AgentWithInterestsOptions,
   AsyncQualifierFn,
+  InterestFilter,
   InterestOptions,
   InterestResult,
   ObjectFilter,
   ObjectInterestConfig,
+  QueryFn,
 } from './interests.js';
 export { mergeFilters, normalizeSort } from './interests.js';
 export type { AgentStatusType } from './types.js';

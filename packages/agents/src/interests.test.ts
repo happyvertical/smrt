@@ -358,6 +358,246 @@ describe('Agent Interests', () => {
       // (may have more if other tests added meetings, but limit applies per-query)
       expect(results.length).toBeLessThanOrEqual(2);
     });
+
+    it('should support array of InterestFilters per object type', async () => {
+      const testPrefix = uniqueName('array-filters');
+
+      // Create meetings with different properties
+      const publicMeeting = await meetingCollection.create({
+        title: `${testPrefix}-public`,
+        isPublic: true,
+        priority: 1,
+      });
+      await publicMeeting.save();
+
+      const highPriorityMeeting = await meetingCollection.create({
+        title: `${testPrefix}-priority`,
+        isPublic: false,
+        priority: 10,
+      });
+      await highPriorityMeeting.save();
+
+      const otherMeeting = await meetingCollection.create({
+        title: `${testPrefix}-other`,
+        isPublic: false,
+        priority: 1,
+      });
+      await otherMeeting.save();
+
+      // Use array of filters - should match both public AND high priority (OR logic via multiple filters)
+      const agent = new TestInterestAgent({
+        name: uniqueName('array-filter-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: [
+              {
+                name: 'public-meetings',
+                filter: { isPublic: true },
+              },
+              {
+                name: 'high-priority-meetings',
+                filter: { 'priority >=': 10 },
+              },
+            ],
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Filter to our test meetings
+      const ourResults = results.filter((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      // Should get both the public meeting AND the high-priority meeting
+      expect(ourResults.length).toBe(2);
+      const ids = ourResults.map((r) => r.data.id);
+      expect(ids).toContain(publicMeeting.id);
+      expect(ids).toContain(highPriorityMeeting.id);
+      // Should NOT include the "other" meeting
+      expect(ids).not.toContain(otherMeeting.id);
+    });
+
+    it('should deduplicate results when same object matches multiple filters', async () => {
+      const testPrefix = uniqueName('dedupe-test');
+
+      // Create a meeting that matches both filters
+      const bothMatch = await meetingCollection.create({
+        title: `${testPrefix}-both`,
+        isPublic: true,
+        priority: 10,
+      });
+      await bothMatch.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('dedupe-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: [
+              {
+                name: 'public-meetings',
+                filter: { isPublic: true },
+              },
+              {
+                name: 'high-priority-meetings',
+                filter: { 'priority >=': 10 },
+              },
+            ],
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Filter to our test meeting
+      const ourResults = results.filter((r) =>
+        (r.data as Meeting).title.startsWith(testPrefix),
+      );
+
+      // Should only appear once despite matching both filters
+      expect(ourResults.length).toBe(1);
+      expect(ourResults[0].data.id).toBe(bothMatch.id);
+    });
+
+    it('should support custom query function for complex SQL patterns', async () => {
+      const testPrefix = uniqueName('custom-query');
+
+      // Create meetings
+      const meeting1 = await meetingCollection.create({
+        title: `${testPrefix}-meeting-1`,
+        priority: 5,
+      });
+      await meeting1.save();
+
+      const meeting2 = await meetingCollection.create({
+        title: `${testPrefix}-meeting-2`,
+        priority: 15,
+      });
+      await meeting2.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('custom-query-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              // Custom query - uses raw SQL
+              query: (tableName) => [
+                `priority > ? AND title LIKE ?`,
+                [10, `${testPrefix}%`],
+              ],
+              sort: 'priority DESC',
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Should only get the high-priority meeting
+      expect(results.length).toBe(1);
+      expect(results[0].data.id).toBe(meeting2.id);
+    });
+
+    it('should support custom query with NOT EXISTS pattern', async () => {
+      const testPrefix = uniqueName('not-exists');
+
+      // Create meetings
+      const meetingWithDoc = await meetingCollection.create({
+        title: `${testPrefix}-with-doc`,
+        priority: 1,
+      });
+      await meetingWithDoc.save();
+
+      const meetingWithoutDoc = await meetingCollection.create({
+        title: `${testPrefix}-without-doc`,
+        priority: 2,
+      });
+      await meetingWithoutDoc.save();
+
+      // Create document linked to first meeting (via title for simplicity)
+      const doc = await documentCollection.create({
+        title: meetingWithDoc.id!, // Use meeting ID as document title for linking
+        type: 'recap',
+      });
+      await doc.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('not-exists-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              // Find meetings without a corresponding document
+              query: (tableName) => [
+                `NOT EXISTS (
+                  SELECT 1 FROM documents d
+                  WHERE d.title = ${tableName}.id
+                )
+                AND ${tableName}.title LIKE ?`,
+                [`${testPrefix}%`],
+              ],
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Should only get the meeting without a document
+      expect(results.length).toBe(1);
+      expect(results[0].data.id).toBe(meetingWithoutDoc.id);
+    });
+
+    it('should apply qualifier after custom query', async () => {
+      const testPrefix = uniqueName('query-qualify');
+
+      const meeting1 = await meetingCollection.create({
+        title: `${testPrefix}-meeting-1`,
+        isPublic: true,
+        priority: 15,
+      });
+      await meeting1.save();
+
+      const meeting2 = await meetingCollection.create({
+        title: `${testPrefix}-meeting-2`,
+        isPublic: false,
+        priority: 20,
+      });
+      await meeting2.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('query-qualify-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              query: (tableName) => [
+                `priority > ? AND title LIKE ?`,
+                [10, `${testPrefix}%`],
+              ],
+              // Additional JS filtering after SQL query
+              qualify: async (meetings) =>
+                meetings.filter((m) => (m as Meeting).isPublic),
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+
+      // Should only get public meeting after qualifier
+      expect(results.length).toBe(1);
+      expect(results[0].data.id).toBe(meeting1.id);
+    });
   });
 
   describe('Helper functions', () => {

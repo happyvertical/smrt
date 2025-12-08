@@ -1,11 +1,13 @@
 import { createLogger, type Logger } from '@happyvertical/logger';
 import {
   ObjectRegistry,
+  type SmrtCollection,
   SmrtObject,
   type SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
 import type {
   AgentWithInterestsOptions,
+  InterestFilter,
   InterestOptions,
   InterestResult,
   ObjectInterestConfig,
@@ -364,6 +366,9 @@ export abstract class Agent extends SmrtObject {
 
   /**
    * Query a single object type based on interest config
+   *
+   * Supports both single filter and array of filters.
+   * Each filter can use standard SDK filters OR custom query function.
    */
   private async queryInterestingObjects(
     className: string,
@@ -384,10 +389,83 @@ export abstract class Agent extends SmrtObject {
       this.options,
     );
 
-    // Merge global and object-specific filters
-    const mergedFilter = mergeFilters(this.interests?.filter, config.filter);
+    // Normalize config to array format
+    const filters = this.normalizeInterestConfig(config);
 
-    // Build query options
+    // Query each filter and collect results
+    const allItems: SmrtObject[] = [];
+
+    for (const filter of filters) {
+      const items = await this.queryInterestFilter(
+        className,
+        filter,
+        collection,
+      );
+      allItems.push(...items);
+    }
+
+    // Deduplicate by id (same object might match multiple filters)
+    const seen = new Set<string>();
+    return allItems.filter((item) => {
+      if (!item.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }
+
+  /**
+   * Normalize ObjectInterestConfig to array format
+   */
+  private normalizeInterestConfig(
+    config: ObjectInterestConfig,
+  ): InterestFilter[] {
+    return Array.isArray(config) ? config : [config];
+  }
+
+  /**
+   * Query a single interest filter
+   *
+   * Uses collection.query() for custom query functions,
+   * or collection.list() for standard SDK filters.
+   */
+  private async queryInterestFilter(
+    _className: string,
+    filter: InterestFilter,
+    collection: SmrtCollection<SmrtObject>,
+  ): Promise<SmrtObject[]> {
+    // Custom query path - uses collection.query() for raw SQL power
+    if (filter.query) {
+      const [whereClause, params] = filter.query(collection.tableName);
+
+      // Build full SQL query
+      let sql = `SELECT * FROM ${collection.tableName} WHERE ${whereClause}`;
+
+      // Add ORDER BY if specified
+      if (filter.sort) {
+        const sorts = Array.isArray(filter.sort) ? filter.sort : [filter.sort];
+        sql += ` ORDER BY ${sorts.join(', ')}`;
+      }
+
+      // Add LIMIT if specified
+      if (filter.limit) {
+        sql += ` LIMIT ?`;
+        params.push(filter.limit);
+      }
+
+      // Execute raw query with hydration
+      let items = await collection.query(sql, params);
+
+      // Apply qualifier if configured
+      if (filter.qualify) {
+        items = await filter.qualify(items);
+      }
+
+      return items;
+    }
+
+    // Standard filter path - uses collection.list() with SDK filters
+    const mergedFilter = mergeFilters(this.interests?.filter, filter.filter);
+
     const queryOptions: {
       where?: Record<string, any>;
       orderBy?: string | string[];
@@ -397,19 +475,19 @@ export abstract class Agent extends SmrtObject {
     if (Object.keys(mergedFilter).length > 0) {
       queryOptions.where = mergedFilter;
     }
-    if (config.sort) {
-      queryOptions.orderBy = config.sort;
+    if (filter.sort) {
+      queryOptions.orderBy = filter.sort;
     }
-    if (config.limit) {
-      queryOptions.limit = config.limit;
+    if (filter.limit) {
+      queryOptions.limit = filter.limit;
     }
 
     // Execute query
     let items = await collection.list(queryOptions);
 
     // Apply object-specific qualifier if configured
-    if (config.qualify) {
-      items = await config.qualify(items);
+    if (filter.qualify) {
+      items = await filter.qualify(items);
     }
 
     return items;

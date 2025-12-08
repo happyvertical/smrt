@@ -180,6 +180,17 @@ const recentDocs = await documents.list({
   limit: 10
 });
 
+// Raw SQL query for complex patterns (NOT EXISTS, JOINs, etc.)
+const unpublished = await documents.query(`
+  SELECT * FROM documents
+  WHERE is_published = false
+  AND NOT EXISTS (
+    SELECT 1 FROM reviews r WHERE r.document_id = documents.id
+  )
+  ORDER BY created_at DESC
+  LIMIT ?
+`, [10]);
+
 // Use AI-powered operations
 const isQuality = await doc.isHighQuality();
 const summary = await doc.generateSummary();
