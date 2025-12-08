@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.28
+
+### Patch Changes
+
+- ### Features
+
+  - add custom query support for interests system (#469) (agents)
+  - @happyvertical/smrt-config@0.17.28
+  - @happyvertical/smrt-types@0.17.28
+
 ## 0.17.27
 
 ### Patch Changes
