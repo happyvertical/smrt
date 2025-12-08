@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.31
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - STI \_meta_type filter and decorator sync on stub replacement (#474) (agents,core)
+  - @happyvertical/smrt-config@0.17.31
+  - @happyvertical/smrt-types@0.17.31
+
 ## 0.17.30
 
 ### Patch Changes
