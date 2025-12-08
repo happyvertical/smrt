@@ -1,5 +1,44 @@
 import type { SmrtObject } from '@happyvertical/smrt-core';
 
+// Forward reference for Agent type (avoids circular dependency)
+// The actual Agent class is in agent.ts which imports from this file
+type AgentLike = {
+  options: Record<string, any>;
+  [key: string]: any;
+};
+
+/**
+ * Handler function that processes a single matched interest item
+ *
+ * Called for each item after filtering/qualification. Use to determine
+ * what action to take for each matched item.
+ *
+ * @param item - The matched SmrtObject
+ * @param agent - The agent instance (for accessing agent context/methods)
+ * @returns An action descriptor object (or any value)
+ *
+ * @example
+ * ```typescript
+ * // Simple action descriptor
+ * handler: async (meeting) => ({
+ *   action: 'recap',
+ *   meeting
+ * })
+ *
+ * // Using agent context
+ * handler: async (meeting, agent) => ({
+ *   action: 'analyze',
+ *   config: agent.config,
+ *   priority: meeting.isUrgent ? 'high' : 'normal'
+ * })
+ * ```
+ */
+export type InterestHandlerFn<
+  T extends SmrtObject = SmrtObject,
+  A extends AgentLike = AgentLike,
+  R = any,
+> = (item: T, agent: A) => Promise<R> | R;
+
 /**
  * Filter object using SDK SQL operator-in-key pattern (AND-only for now)
  *
@@ -103,6 +142,23 @@ export interface InterestFilter<T extends SmrtObject = SmrtObject> {
    * Runs after SQL query returns, enables AI-based or complex filtering
    */
   qualify?: AsyncQualifierFn<T>;
+
+  /**
+   * Handler function called for each matched item
+   *
+   * Use to determine what action to take for each item. The handler
+   * receives the item and agent instance, and returns an action descriptor.
+   *
+   * @example
+   * ```typescript
+   * handler: async (meeting, agent) => ({
+   *   action: 'recap',
+   *   meeting,
+   *   config: agent.config
+   * })
+   * ```
+   */
+  handler?: InterestHandlerFn<T>;
 }
 
 /**
@@ -191,8 +247,16 @@ export interface InterestOptions {
 
 /**
  * Result item from interesting() method
+ *
+ * @example
+ * ```typescript
+ * const items = await agent.interesting();
+ * for (const { type, data, name, handled } of items) {
+ *   console.log(`${type} from filter "${name}": action=${handled?.action}`);
+ * }
+ * ```
  */
-export interface InterestResult<T extends SmrtObject = SmrtObject> {
+export interface InterestResult<T extends SmrtObject = SmrtObject, R = any> {
   /**
    * Object class name from ObjectRegistry
    */
@@ -202,6 +266,18 @@ export interface InterestResult<T extends SmrtObject = SmrtObject> {
    * The actual SmrtObject instance
    */
   data: T;
+
+  /**
+   * Name of the filter that matched this item (if specified)
+   * Useful for debugging and logging
+   */
+  name?: string;
+
+  /**
+   * Result from handler function (if handler was defined)
+   * Contains the action descriptor returned by the handler
+   */
+  handled?: R;
 }
 
 /**

@@ -292,16 +292,17 @@ export abstract class Agent extends SmrtObject {
    * Query objects this agent is interested in
    *
    * Returns items from all configured object types, filtered and sorted
-   * according to interest configuration.
+   * according to interest configuration. If handlers are defined on filters,
+   * they are called for each matched item and the result is included.
    *
-   * @returns Array of { type: string, data: SmrtObject } results
+   * @returns Array of { type, data, name?, handled? } results
    * @throws Error if no interests are configured
    *
    * @example
    * ```typescript
    * const items = await this.interesting();
-   * for (const { type, data } of items) {
-   *   console.log(`Processing ${type}: ${data.id}`);
+   * for (const { type, data, name, handled } of items) {
+   *   console.log(`Processing ${type} from "${name}": action=${handled?.action}`);
    * }
    * ```
    */
@@ -327,11 +328,7 @@ export abstract class Agent extends SmrtObject {
     for (const [className, config] of Object.entries(this.interests.objects)) {
       try {
         const items = await this.queryInterestingObjects(className, config);
-
-        // Add typed results
-        for (const item of items) {
-          results.push({ type: className, data: item });
-        }
+        results.push(...items);
       } catch (error) {
         // Log warning and continue with other types
         this.logger.warn(`Failed to query ${className} for interests`, {
@@ -369,11 +366,12 @@ export abstract class Agent extends SmrtObject {
    *
    * Supports both single filter and array of filters.
    * Each filter can use standard SDK filters OR custom query function.
+   * Returns InterestResult[] with handler results included.
    */
   private async queryInterestingObjects(
     className: string,
     config: ObjectInterestConfig,
-  ): Promise<SmrtObject[]> {
+  ): Promise<InterestResult[]> {
     // Check if class is registered (case-insensitive)
     if (!ObjectRegistry.hasClass(className)) {
       this.logger.warn(
@@ -393,7 +391,7 @@ export abstract class Agent extends SmrtObject {
     const filters = this.normalizeInterestConfig(config);
 
     // Query each filter and collect results
-    const allItems: SmrtObject[] = [];
+    const allResults: InterestResult[] = [];
 
     for (const filter of filters) {
       const items = await this.queryInterestFilter(
@@ -401,14 +399,31 @@ export abstract class Agent extends SmrtObject {
         filter,
         collection,
       );
-      allItems.push(...items);
+
+      // Process each item: call handler if defined, build result
+      for (const item of items) {
+        let handled: any;
+
+        // Call handler if defined
+        if (filter.handler) {
+          handled = await filter.handler(item, this);
+        }
+
+        allResults.push({
+          type: className,
+          data: item,
+          name: filter.name,
+          handled,
+        });
+      }
     }
 
     // Deduplicate by id (same object might match multiple filters)
+    // Keep the first occurrence (preserves filter order priority)
     const seen = new Set<string>();
-    return allItems.filter((item) => {
-      if (!item.id || seen.has(item.id)) return false;
-      seen.add(item.id);
+    return allResults.filter((result) => {
+      if (!result.data.id || seen.has(result.data.id)) return false;
+      seen.add(result.data.id);
       return true;
     });
   }
