@@ -37,7 +37,7 @@
   "devDependencies": {
     "@anolilab/semantic-release-pnpm": "^2.0.4",
     "@biomejs/biome": "2.2.4",
-    "@changesets/cli": "^2.27.12",
+    "@changesets/cli": "^2.29.8",
     "@commitlint/cli": "^20.1.0",
     "@commitlint/config-conventional": "^20.0.0",
     "@playwright/test": "^1.54.2",
