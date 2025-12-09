@@ -43,7 +43,7 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "0.60.0",
     "@happyvertical/utils": "0.60.0",
-    "@langchain/community": "^0.3.24",
+    "@langchain/community": "^0.3.58",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "cheerio": "^1.0.0",
     "fast-glob": "3.3.3",
