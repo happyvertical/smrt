@@ -1,5 +1,11 @@
 # @happyvertical/smrt-messages
 
+## 0.18.11
+
+### Patch Changes
+
+- @happyvertical/smrt-core@0.17.32
+
 ## 0.18.10
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @happyvertical/smrt-svelte
 
+## 0.17.32
+
+### Patch Changes
+
+- e7bb763: Redesign WeatherHeader with tab navigation for improved UX and better display of multi-day forecasts.
+
 ## 0.17.31
 
 ## 0.17.30

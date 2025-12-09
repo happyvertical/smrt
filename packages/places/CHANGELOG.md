@@ -1,5 +1,11 @@
 # @happyvertical/smrt-places
 
+## 0.17.32
+
+### Patch Changes
+
+- @happyvertical/smrt-core@0.17.32
+
 ## 0.17.31
 
 ### Patch Changes
