@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.33
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: simplify release workflow - every merge = release (#483) (ci)
+  - @happyvertical/smrt-config@0.17.33
+  - @happyvertical/smrt-types@0.17.33
+
 ## 0.17.32
 
 ### Patch Changes
