@@ -1,22 +1,22 @@
 <script lang="ts">
 /**
- * Alternative Weather Forecast Component
- * Displays multi-day forecast with slide-down hourly details panel
+ * WeatherHeader Component
+ * Editorial-style weather forecast with tab navigation
  */
 
 export interface HourlyForecast {
-  time: string; // "9a", "12p", "3p"
-  hour: number; // 24-hour format (0-23) for filtering
-  icon: string; // Weather emoji
+  time: string;
+  hour: number;
+  icon: string;
   temperature: number;
   feelsLike: number;
 }
 
 export interface DayForecast {
-  id: string; // Unique identifier
-  dayName: string; // "Mon", "Tue"
-  date: string; // "27 Oct"
-  icon: string; // Weather emoji
+  id: string;
+  dayName: string;
+  date: string;
+  icon: string;
   high: number;
   low: number;
   hourlyData: HourlyForecast[];
@@ -30,7 +30,7 @@ interface ForecastPeriod {
   windDirection: number;
   humidity: number;
   precipProbability: number;
-  localHour: number; // 0-23 hour in America/Edmonton timezone
+  localHour: number;
 }
 
 interface ForecastDay {
@@ -47,18 +47,16 @@ interface Props {
 
 const { forecast }: Props = $props();
 
-// State management
 let selectedDayIndex = $state<number | null>(null);
 
-// Transform data or use mock data
 const dayForecasts: DayForecast[] = $derived(
   forecast && forecast.length > 0
     ? forecast.map((day, index) => {
-        const date = getDateFromDayName(day.day, index);
+        const date = getDateFromOffset(index);
         return {
           id: `day-${index}`,
           dayName: day.day,
-          date: formatDate(date, day.day),
+          date: formatShortDate(date),
           icon: day.icon,
           high: day.high,
           low: day.low,
@@ -68,22 +66,26 @@ const dayForecasts: DayForecast[] = $derived(
     : getMockData(),
 );
 
-// Get date from day name (approximation for current week)
-function getDateFromDayName(_dayName: string, offset: number): Date {
+function getDateFromOffset(offset: number): Date {
   const today = new Date();
   today.setDate(today.getDate() + offset);
   return today;
 }
 
-// Format date as "Sat 27 Oct" - derive day name from date to stay in sync
-function formatDate(date: Date, _dayName: string): string {
-  const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+function formatShortDate(date: Date): string {
   const day = date.getDate();
   const month = date.toLocaleDateString('en-US', { month: 'short' });
-  return `${dayName} ${day} ${month}`;
+  return `${month} ${day}`;
 }
 
-// Transform periods to hourly data
+function formatFullDate(date: Date): string {
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
 function transformHourlyData(
   periods: ForecastPeriod[],
   dayIndex: number,
@@ -93,61 +95,42 @@ function transformHourlyData(
 
   return periods
     .map((period) => {
-      // Use the localHour from the period (calculated on server from actual timestamp)
       const hour = period.localHour;
-      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-      const ampm = hour < 12 ? 'a' : 'p';
-      const time = `${displayHour}${ampm}`;
-
       return {
-        time,
+        time: `${hour.toString().padStart(2, '0')}:00`,
         hour,
         icon: getHourlyIcon(period.conditions),
         temperature: period.temperature,
         feelsLike: period.temperature - 2,
       };
     })
-    .filter((item) => {
-      // For current day (index 0), start from current hour
-      if (dayIndex === 0) {
-        return item.hour >= currentHour;
-      }
-      // For other days, show full day (12a-11p) - no hours from next day
-      return true;
-    });
+    .filter((item) => (dayIndex === 0 ? item.hour >= currentHour : true));
 }
 
-// Get icon for hourly forecast
 function getHourlyIcon(conditions: string): string {
-  const conditionsLower = conditions.toLowerCase();
-  if (conditionsLower.includes('sunny') || conditionsLower.includes('clear'))
-    return '☀️';
-  if (conditionsLower.includes('partly cloudy')) return '⛅';
-  if (conditionsLower.includes('cloud')) return '☁️';
-  if (conditionsLower.includes('rain')) return '🌧️';
-  if (conditionsLower.includes('snow')) return '❄️';
-  if (conditionsLower.includes('thunder')) return '⛈️';
+  const c = conditions.toLowerCase();
+  if (c.includes('sunny') || c.includes('clear')) return '☀️';
+  if (c.includes('partly cloudy')) return '⛅';
+  if (c.includes('cloud')) return '☁️';
+  if (c.includes('rain')) return '🌧️';
+  if (c.includes('snow')) return '❄️';
+  if (c.includes('thunder')) return '⛈️';
   return '🌤️';
 }
 
-// Mock data for demonstration
 function getMockData(): DayForecast[] {
   const today = new Date();
   const icons = ['☀️', '⛅', '☁️', '🌧️', '⛅', '☀️', '⛈️', '❄️', '🌤️', '☁️'];
-  const numDays = 10; // Show 10 days of forecast
 
-  return Array.from({ length: numDays }, (_, index) => {
+  return Array.from({ length: 10 }, (_, index) => {
     const date = new Date(today);
     date.setDate(today.getDate() + index);
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
 
-    // Generate hourly data for each day
     const hourlyData: HourlyForecast[] = [];
     for (let hour = 0; hour < 24; hour += 3) {
-      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-      const ampm = hour < 12 ? 'a' : 'p';
       hourlyData.push({
-        time: `${displayHour}${ampm}`,
+        time: `${hour.toString().padStart(2, '0')}:00`,
         hour,
         icon: icons[Math.floor(Math.random() * icons.length)],
         temperature: Math.round(15 + Math.random() * 10),
@@ -158,7 +141,7 @@ function getMockData(): DayForecast[] {
     return {
       id: `day-${index}`,
       dayName,
-      date: formatDate(date, dayName),
+      date: formatShortDate(date),
       icon: icons[index % icons.length],
       high: Math.round(20 + Math.random() * 5),
       low: Math.round(10 + Math.random() * 5),
@@ -167,552 +150,423 @@ function getMockData(): DayForecast[] {
   });
 }
 
-// Handle day card click
-function handleDayClick(index: number) {
-  if (selectedDayIndex === index) {
-    // Toggle off if clicking the same day
-    selectedDayIndex = null;
-  } else {
-    // Select new day
-    selectedDayIndex = index;
-  }
+function handleTabClick(index: number) {
+  selectedDayIndex = selectedDayIndex === index ? null : index;
 }
 
-// Handle close button click
-function handleClose() {
+function handleCollapse() {
   selectedDayIndex = null;
 }
 
-// Get selected day's hourly data
-const selectedDayHourly = $derived(
-  selectedDayIndex !== null ? dayForecasts[selectedDayIndex].hourlyData : [],
+const selectedDay = $derived(
+  selectedDayIndex !== null ? dayForecasts[selectedDayIndex] : null,
 );
 
-// Scroll container reference and state
-// biome-ignore lint/style/useConst: Svelte bind:this requires let, not const
-let hourlyScrollContainer: HTMLElement | null = $state(null);
-let canScrollLeft = $state(false);
-let canScrollRight = $state(false);
+const selectedFullDate = $derived(
+  selectedDayIndex !== null
+    ? formatFullDate(getDateFromOffset(selectedDayIndex))
+    : '',
+);
 
-// Day cards scroll state
-// biome-ignore lint/style/useConst: Svelte bind:this requires let
-let dayCardsContainer: HTMLElement | null = $state(null);
-// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
-let dayCardsCanScrollLeft = $state(false);
-// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
-let dayCardsCanScrollRight = $state(false);
-// biome-ignore lint/style/useConst: Svelte $state() is reassigned reactively
-let dayCardsHovered = $state(false);
+const isFirst = $derived(selectedDayIndex === 0);
+const isLast = $derived(selectedDayIndex === dayForecasts.length - 1);
 
-// Update scroll button visibility
-function updateScrollButtons() {
-  if (!hourlyScrollContainer) return;
+// Drag-to-scroll for hourly grid
+let hourlyGridEl: HTMLElement | null = null;
+let isDragging = false;
+let startX = 0;
+let scrollLeft = 0;
 
-  const { scrollLeft, scrollWidth, clientWidth } = hourlyScrollContainer;
-
-  canScrollLeft = scrollLeft > 5; // 5px threshold
-  canScrollRight = scrollLeft < scrollWidth - clientWidth - 5; // 5px threshold
+function handleMouseDown(e: MouseEvent) {
+  if (!hourlyGridEl) return;
+  isDragging = true;
+  hourlyGridEl.style.cursor = 'grabbing';
+  startX = e.pageX - hourlyGridEl.offsetLeft;
+  scrollLeft = hourlyGridEl.scrollLeft;
 }
 
-// Scroll left
-function scrollLeft() {
-  if (!hourlyScrollContainer) return;
-  hourlyScrollContainer.scrollBy({ left: -300, behavior: 'smooth' });
-  setTimeout(updateScrollButtons, 350);
+function handleMouseMove(e: MouseEvent) {
+  if (!isDragging || !hourlyGridEl) return;
+  e.preventDefault();
+  const x = e.pageX - hourlyGridEl.offsetLeft;
+  const walk = (x - startX) * 1.5;
+  hourlyGridEl.scrollLeft = scrollLeft - walk;
 }
 
-// Scroll right
-function scrollRight() {
-  if (!hourlyScrollContainer) return;
-  hourlyScrollContainer.scrollBy({ left: 300, behavior: 'smooth' });
-  setTimeout(updateScrollButtons, 350);
+function handleMouseUp() {
+  isDragging = false;
+  if (hourlyGridEl) hourlyGridEl.style.cursor = 'grab';
 }
 
-// Day cards scroll functions
-function updateDayCardsScrollButtons() {
-  if (!dayCardsContainer) return;
-  const { scrollLeft, scrollWidth, clientWidth } = dayCardsContainer;
-  dayCardsCanScrollLeft = scrollLeft > 5;
-  dayCardsCanScrollRight = scrollLeft < scrollWidth - clientWidth - 5;
+function handleMouseLeave() {
+  isDragging = false;
+  if (hourlyGridEl) hourlyGridEl.style.cursor = 'grab';
 }
-
-function scrollDayCardsLeft() {
-  if (!dayCardsContainer) return;
-  dayCardsContainer.scrollBy({ left: -200, behavior: 'smooth' });
-  setTimeout(updateDayCardsScrollButtons, 350);
-}
-
-function scrollDayCardsRight() {
-  if (!dayCardsContainer) return;
-  dayCardsContainer.scrollBy({ left: 200, behavior: 'smooth' });
-  setTimeout(updateDayCardsScrollButtons, 350);
-}
-
-// Set up scroll listener for day cards
-$effect(() => {
-  if (dayCardsContainer) {
-    setTimeout(updateDayCardsScrollButtons, 50);
-    dayCardsContainer.addEventListener('scroll', updateDayCardsScrollButtons);
-    return () => {
-      dayCardsContainer?.removeEventListener(
-        'scroll',
-        updateDayCardsScrollButtons,
-      );
-    };
-  }
-});
-
-// Set up scroll listener when container is available or content changes
-$effect(() => {
-  if (hourlyScrollContainer && selectedDayIndex !== null) {
-    // For future days (not today), scroll to 4am by default
-    if (selectedDayIndex > 0) {
-      setTimeout(() => {
-        // Find the hourly item with "4a" time
-        const hourlyItems =
-          hourlyScrollContainer?.querySelectorAll('.hourly-item');
-        if (hourlyItems) {
-          for (const item of hourlyItems) {
-            const timeElement = item.querySelector('.hourly-time');
-            if (timeElement?.textContent === '4a') {
-              item.scrollIntoView({
-                behavior: 'smooth',
-                inline: 'start',
-                block: 'nearest',
-              });
-              break;
-            }
-          }
-        }
-        updateScrollButtons();
-      }, 100);
-    } else {
-      // For today, just update buttons
-      setTimeout(updateScrollButtons, 50);
-    }
-
-    hourlyScrollContainer.addEventListener('scroll', updateScrollButtons);
-
-    return () => {
-      hourlyScrollContainer?.removeEventListener('scroll', updateScrollButtons);
-    };
-  } else {
-    // Reset scroll state when panel closes
-    canScrollLeft = false;
-    canScrollRight = false;
-  }
-});
 </script>
 
-<div class="weather-forecast-alt">
-  <!-- Day Cards Wrapper -->
-  <div
-    class="day-cards-wrapper"
-    onmouseenter={() => dayCardsHovered = true}
-    onmouseleave={() => dayCardsHovered = false}
-    role="region"
-    aria-label="Weather forecast days"
-  >
-    {#if dayCardsCanScrollLeft && dayCardsHovered}
+<div class="weather-widget">
+  <div class="tabs">
+    {#each dayForecasts as day, index}
       <button
-        class="day-cards-arrow day-cards-arrow-left"
-        onclick={scrollDayCardsLeft}
-        aria-label="Scroll left"
+        class="tab"
+        class:active={selectedDayIndex === index}
+        onclick={() => handleTabClick(index)}
+        aria-expanded={selectedDayIndex === index}
       >
-        ‹
+        <span class="tab-date">{day.date}</span>
+        <span class="tab-icon">{day.icon}</span>
+        <span class="tab-temps">
+          <span class="high">{day.high}°</span>
+          <span class="low">{day.low}°</span>
+        </span>
       </button>
-    {/if}
-
-    <div class="day-cards" bind:this={dayCardsContainer}>
-      {#each dayForecasts as day, index}
-        <button
-          class="day-card"
-          class:active={selectedDayIndex === index}
-          onclick={() => handleDayClick(index)}
-          aria-expanded={selectedDayIndex === index}
-          aria-controls="hourly-panel"
-        >
-          <div class="date">{day.date}</div>
-          <div class="icon">{day.icon}</div>
-          <div class="temps">
-            <span class="high">{day.high}°</span>
-            <span class="low">{day.low}°</span>
-          </div>
-        </button>
-      {/each}
-    </div>
-
-    {#if dayCardsCanScrollRight && dayCardsHovered}
-      <button
-        class="day-cards-arrow day-cards-arrow-right"
-        onclick={scrollDayCardsRight}
-        aria-label="Scroll right"
-      >
-        ›
-      </button>
-    {/if}
+    {/each}
   </div>
 
-  <!-- Hourly Details Panel -->
-  <div
-    class="hourly-panel"
-    class:open={selectedDayIndex !== null}
-    id="hourly-panel"
-    role="region"
-    aria-label="Hourly forecast details"
-  >
-    <div class="hourly-panel-header">
-      <h3 class="hourly-title">
-        {selectedDayIndex !== null ? `${dayForecasts[selectedDayIndex].dayName} Hourly Forecast` : ''}
-      </h3>
-      <button class="close-button" onclick={handleClose} aria-label="Close hourly forecast">
-        ✕
-      </button>
-    </div>
+  {#if selectedDay}
+    <div class="panel" class:first={isFirst} class:last={isLast}>
+      <header class="panel-header">
+        <h3 class="panel-title">Hourly Forecast</h3>
+        <span class="panel-date">{selectedFullDate}</span>
+      </header>
 
-    <div class="hourly-scroll-wrapper">
-      {#if selectedDayHourly.length > 0 && canScrollLeft}
-        <button
-          class="scroll-arrow scroll-arrow-left"
-          onclick={scrollLeft}
-          aria-label="Scroll left"
-        >
-          ‹
-        </button>
-      {/if}
-
-      <div class="hourly-scroll" bind:this={hourlyScrollContainer}>
-        {#if selectedDayHourly.length > 0}
-          {#each selectedDayHourly as hourly}
-            <div class="hourly-item">
-              <div class="hourly-time">{hourly.time}</div>
-              <div class="hourly-icon">{hourly.icon}</div>
-              <div class="hourly-temp">{hourly.temperature}°</div>
-              <div class="hourly-feels-like">Feels {hourly.feelsLike}°</div>
-            </div>
-          {/each}
-        {:else}
-          <div class="no-data-message">
-            No hourly data available for this day
+      <div
+        class="hourly-grid"
+        bind:this={hourlyGridEl}
+        onmousedown={handleMouseDown}
+        onmousemove={handleMouseMove}
+        onmouseup={handleMouseUp}
+        onmouseleave={handleMouseLeave}
+        role="list"
+      >
+        {#each selectedDay.hourlyData as hour}
+          <div class="hour-card">
+            <span class="hour-time">{hour.time}</span>
+            <span class="hour-icon">{hour.icon}</span>
+            <span class="hour-temp">{hour.temperature}°</span>
+            <span class="hour-feels">Feels {hour.feelsLike}°</span>
           </div>
-        {/if}
+        {/each}
       </div>
 
-      {#if selectedDayHourly.length > 0 && canScrollRight}
-        <button
-          class="scroll-arrow scroll-arrow-right"
-          onclick={scrollRight}
-          aria-label="Scroll right"
-        >
-          ›
-        </button>
-      {/if}
+      <button class="collapse-btn" onclick={handleCollapse} aria-label="Collapse">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M5 12L10 7L15 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
     </div>
-  </div>
+  {/if}
 </div>
 
 <style>
-  .weather-forecast-alt {
-    width: 100%;
-  }
+  .weather-widget {
+    --widget-radius: 12px;
+    --widget-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+    --tab-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+    --widget-border: rgba(0, 0, 0, 0.08);
+    --color-warm-white: #faf9f7;
+    --color-warm-gray: #f0efed;
+    --color-ink: #2c2c2c;
+    --color-ink-light: #6b6b6b;
+    --color-ink-muted: #9a9a9a;
+    --color-accent: #c9a962;
 
-  /* Day Cards Wrapper */
-  .day-cards-wrapper {
-    position: relative;
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    padding: 16px 16px 0 16px;
   }
 
-  /* Day Cards */
-  .day-cards {
+  /* Reset link styles within widget */
+  .weather-widget a,
+  .weather-widget button,
+  .weather-widget button * {
+    text-decoration: none !important;
+    border-bottom: none !important;
+  }
+
+  .weather-widget .tab,
+  .weather-widget .tab * {
+    text-decoration: none !important;
+    border-bottom: none !important;
+  }
+
+  /* Tabs Container */
+  .tabs {
     display: flex;
-    gap: var(--spacing-xl);
-    padding: var(--spacing-lg) 0;
-    justify-content: flex-start;
-    overflow-x: auto;
-    scroll-behavior: smooth;
-    /* Hide scrollbar but keep scroll functionality */
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE and Edge */
+    gap: 0;
+    overflow: visible;
   }
 
-  /* Hide scrollbar for Chrome, Safari, and Opera */
-  .day-cards::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Day Cards Arrow Buttons */
-  .day-cards-arrow {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 10;
-    background: var(--color-neutral-white);
-    border: 1px solid var(--color-neutral-gray300);
-    border-radius: 50%;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 20px;
-    color: var(--color-text-primary);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    transition: all 200ms ease;
-    opacity: 0;
-    animation: fadeIn 200ms ease forwards;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .day-cards-arrow:hover {
-    background: var(--color-neutral-gray100);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  }
-
-  .day-cards-arrow-left {
-    left: 0;
-  }
-
-  .day-cards-arrow-right {
-    right: 0;
-  }
-
-  .day-card {
+  /* Individual Tab */
+  .tab {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--spacing-xs);
-    padding: 0;
-    background: none;
+    gap: 6px;
+    padding: 16px 20px;
+    background: transparent;
     border: none;
+    outline: none;
+    border-radius: var(--widget-radius) var(--widget-radius) 0 0;
     cursor: pointer;
-    transition: transform 200ms ease;
-    min-width: 60px;
-    flex-shrink: 0;
+    transition: all 0.2s ease;
   }
 
-  .day-card:hover {
-    transform: scale(1.05);
+  .tab:focus,
+  .tab:focus-visible {
+    outline: none;
   }
 
-  .day-card.active {
-    opacity: 0.7;
+  .tab:hover:not(.active) {
+    background: var(--color-warm-gray);
   }
 
-  .date {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
+  .tab.active {
+    position: relative;
+    background: var(--color-warm-white);
+    z-index: 10;
+    border-radius: var(--widget-radius) var(--widget-radius) 0 0;
+    box-shadow:
+      0 -4px 16px rgba(0, 0, 0, 0.12),
+      0 -1px 4px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Connector element to hide seam between tab and panel */
+  .tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -7px;
+    left: 0;
+    right: 0;
+    height: 9px;
+    background: var(--color-warm-white);
+    z-index: 11;
+  }
+
+  .tab-date {
+    font-size: 12px;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    color: var(--color-ink-muted);
   }
 
-  .icon {
-    font-size: 2rem;
+  .tab.active .tab-date {
+    color: var(--color-ink-light);
+  }
+
+  .tab-icon {
+    font-size: 36px;
     line-height: 1;
   }
 
-  .temps {
+  .tab-temps {
     display: flex;
-    gap: var(--spacing-sm);
-    font-size: var(--font-size-sm);
+    gap: 10px;
+    font-size: 15px;
   }
 
   .high {
-    color: var(--color-text-primary);
-    font-weight: var(--font-weight-semibold);
+    font-weight: 600;
+    color: var(--color-ink);
   }
 
   .low {
-    color: var(--color-text-secondary);
+    color: var(--color-ink-muted);
   }
 
-  /* Hourly Panel */
-  .hourly-panel {
-    max-height: 0;
-    overflow: hidden;
-    opacity: 0;
-    transition: max-height 300ms ease, opacity 300ms ease;
-    background: var(--color-neutral-gray100);
-    border-top: 1px solid var(--color-neutral-gray300);
+  /* Panel */
+  .panel {
+    background: var(--color-warm-white);
+    border-radius: var(--widget-radius);
+    box-shadow:
+      0 4px 20px rgba(0, 0, 0, 0.1),
+      0 1px 4px rgba(0, 0, 0, 0.06);
+    position: relative;
+    z-index: 1;
+    margin-top: 2px;
+    margin-bottom: 20px;
+    animation: panelIn 0.25s ease;
   }
 
-  .hourly-panel.open {
-    max-height: 280px;
-    height: 280px;
-    opacity: 1;
+  /* Cover bar at top of panel to hide shadow bleed */
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--widget-radius);
+    right: var(--widget-radius);
+    height: 4px;
+    background: var(--color-warm-white);
+    z-index: 2;
   }
 
-  .hourly-panel-header {
+  @keyframes panelIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .panel.first {
+    border-top-left-radius: 0;
+  }
+
+  .panel.last {
+    border-top-right-radius: 0;
+  }
+
+  /* Panel Header */
+  .panel-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    padding: var(--spacing-md) var(--spacing-lg);
-    border-bottom: 1px solid var(--color-neutral-gray300);
+    align-items: baseline;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--widget-border);
   }
 
-  .hourly-title {
+  .panel-title {
     margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-ink);
+    letter-spacing: -0.01em;
   }
 
-  .close-button {
-    background: none;
-    border: none;
-    font-size: var(--font-size-xl);
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    padding: var(--spacing-xs);
-    line-height: 1;
-    transition: color 200ms ease;
+  .panel-date {
+    font-size: 15px;
+    color: var(--color-ink-light);
+    font-style: italic;
   }
 
-  .close-button:hover {
-    color: var(--color-text-primary);
-  }
-
-  /* Hourly Scroll Wrapper & Arrows */
-  .hourly-scroll-wrapper {
-    position: relative;
+  /* Hourly Grid */
+  .hourly-grid {
     display: flex;
-    align-items: center;
+    gap: 10px;
+    padding: 20px 0 56px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    cursor: grab;
+    user-select: none;
   }
 
-  .scroll-arrow {
+  .hourly-grid:active {
+    cursor: grabbing;
+  }
+
+  .hourly-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Spacers for consistent left/right padding in scroll container */
+  .hourly-grid::before,
+  .hourly-grid::after {
+    content: '';
+    flex-shrink: 0;
+    width: 24px;
+  }
+
+  .hour-card {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 16px 18px;
+    background: var(--color-warm-gray);
+    border-radius: 10px;
+    min-width: 85px;
+    scroll-snap-align: start;
+  }
+
+  .hour-time {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
+  .hour-icon {
+    font-size: 32px;
+    line-height: 1;
+  }
+
+  .hour-temp {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
+  .hour-feels {
+    font-size: 11px;
+    color: var(--color-ink-muted);
+  }
+
+  /* Collapse Button */
+  .collapse-btn {
     position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 10;
-    background: var(--color-neutral-white);
-    border: 1px solid var(--color-neutral-gray300);
-    border-radius: 50%;
+    bottom: 16px;
+    right: 20px;
     width: 36px;
     height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: var(--color-warm-gray);
+    border: none;
+    border-radius: 50%;
+    color: var(--color-ink-light);
     cursor: pointer;
-    font-size: 24px;
-    color: var(--color-text-primary);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    transition: all 200ms ease;
+    transition: all 0.2s ease;
   }
 
-  .scroll-arrow:hover {
-    background: var(--color-neutral-gray100);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  .collapse-btn:hover {
+    background: var(--color-ink);
+    color: var(--color-warm-white);
   }
 
-  .scroll-arrow-left {
-    left: var(--spacing-md);
-  }
-
-  .scroll-arrow-right {
-    right: var(--spacing-md);
-  }
-
-  /* Hourly Scroll Container */
-  .hourly-scroll {
-    display: flex;
-    gap: var(--spacing-lg);
-    padding: var(--spacing-lg);
-    overflow-x: auto;
-    scroll-behavior: smooth;
-    flex: 1;
-    /* Hide scrollbar but keep scroll functionality */
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE and Edge */
-  }
-
-  /* Hide scrollbar for Chrome, Safari, and Opera */
-  .hourly-scroll::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Hourly Items */
-  .hourly-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-md);
-    background: var(--color-neutral-white);
-    border-radius: var(--border-radius-md);
-    min-width: 80px;
-    flex-shrink: 0;
-  }
-
-  .hourly-time {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
-  }
-
-  .hourly-icon {
-    font-size: 2rem;
-    line-height: 1;
-  }
-
-  .hourly-temp {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
-  }
-
-  .hourly-feels-like {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-  }
-
-  .no-data-message {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-xl);
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-md);
-    text-align: center;
-    min-height: 180px;
-  }
-
-  /* Responsive Design */
-  @media (max-width: 768px) {
-    .day-cards {
-      gap: var(--spacing-md);
-      padding: var(--spacing-md) 0;
+  /* Responsive */
+  @media (max-width: 640px) {
+    .tab {
+      padding: 10px 12px;
     }
 
-    .day-card {
-      min-width: 50px;
+    .tab-icon {
+      font-size: 24px;
     }
 
-    .icon {
-      font-size: 1.5rem;
+    .tab-temps {
+      font-size: 12px;
     }
 
-    .hourly-panel.open {
-      max-height: 250px;
-      height: 250px;
+    .panel-header {
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px 16px;
     }
 
-    .hourly-scroll {
-      gap: var(--spacing-md);
-      padding: var(--spacing-md);
+    .hourly-grid {
+      padding: 12px 0;
     }
 
-    .hourly-item {
-      min-width: 70px;
-      padding: var(--spacing-sm);
+    .hourly-grid::before,
+    .hourly-grid::after {
+      width: 16px;
     }
 
-    .hourly-icon {
-      font-size: 1.5rem;
+    .hour-card {
+      min-width: 64px;
+      padding: 10px 12px;
     }
   }
 </style>
