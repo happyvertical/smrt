@@ -1,5 +1,12 @@
 # @happyvertical/smrt-messages
 
+## 0.18.13
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.17.34
+
 ## 0.18.12
 
 ### Patch Changes
