@@ -35,7 +35,7 @@
     "deps:all": "npm run deps:graph && npm run deps:modules"
   },
   "devDependencies": {
-    "@anolilab/semantic-release-pnpm": "^2.0.4",
+    "@anolilab/semantic-release-pnpm": "^2.0.5",
     "@biomejs/biome": "2.2.4",
     "@changesets/cli": "^2.27.12",
     "@commitlint/cli": "^20.1.0",
