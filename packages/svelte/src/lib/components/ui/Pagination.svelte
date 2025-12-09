@@ -8,7 +8,7 @@ interface Props {
 const { currentPage, totalPages, baseUrl = '/articles' }: Props = $props();
 
 function getPageUrl(page: number): string {
-  if (page === 1) return baseUrl;
+  if (page === 1) return baseUrl || '/';
   return `${baseUrl}/page/${page}`;
 }
 
