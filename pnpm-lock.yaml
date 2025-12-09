@@ -102,24 +102,24 @@ importers:
   packages/agents:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
@@ -136,14 +136,14 @@ importers:
   packages/assets:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -151,11 +151,11 @@ importers:
         specifier: workspace:*
         version: link:../tags
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@types/node':
         specifier: 24.0.0
@@ -173,14 +173,14 @@ importers:
   packages/cli:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -191,11 +191,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       fast-glob:
         specifier: 3.3.3
         version: 3.3.3
@@ -244,35 +244,35 @@ importers:
   packages/content:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/documents':
-        specifier: 0.59.5
-        version: 0.59.5(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)
+        specifier: 0.59.6
+        version: 0.59.6(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/ocr':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/pdf':
-        specifier: 0.59.5
-        version: 0.59.5(@napi-rs/canvas@0.1.84)
+        specifier: 0.59.6
+        version: 0.59.6(@napi-rs/canvas@0.1.84)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/spider':
-        specifier: 0.59.5
-        version: 0.59.5(@types/node@24.0.0)(postcss@8.5.6)
+        specifier: 0.59.6
+        version: 0.59.6(@types/node@24.0.0)(postcss@8.5.6)
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       yaml:
         specifier: ^2.8.1
         version: 2.8.2
@@ -302,14 +302,14 @@ importers:
   packages/core:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -317,14 +317,14 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@langchain/community':
         specifier: ^0.3.24
-        version: 0.3.58(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.946.0)(@aws-sdk/client-s3@3.946.0)(@aws-sdk/credential-provider-node@3.946.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(zod@3.25.76))(@ibm-cloud/watsonx-ai@1.7.4)(@langchain/core@0.3.79(openai@6.10.0(ws@8.18.3)(zod@3.25.76)))(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@10.5.0)(googleapis@131.0.0)(handlebars@4.7.8)(html-to-text@9.0.5)(ibm-cloud-sdk-core@5.4.5)(ignore@5.3.2)(jsdom@27.1.0(postcss@8.5.6))(jsonwebtoken@9.0.3)(lodash@4.17.21)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(pg@8.16.3)(playwright@1.57.0)(redis@5.10.0)(weaviate-client@3.10.0)(ws@8.18.3)
+        version: 0.3.58(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.947.0)(@aws-sdk/client-s3@3.947.0)(@aws-sdk/credential-provider-node@3.947.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(zod@3.25.76))(@ibm-cloud/watsonx-ai@1.7.4)(@langchain/core@0.3.79(openai@6.10.0(ws@8.18.3)(zod@3.25.76)))(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@10.5.0)(googleapis@131.0.0)(handlebars@4.7.8)(html-to-text@9.0.5)(ibm-cloud-sdk-core@5.4.5)(ignore@5.3.2)(jsdom@27.1.0(postcss@8.5.6))(jsonwebtoken@9.0.3)(lodash@4.17.21)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(pg@8.16.3)(playwright@1.57.0)(redis@5.10.0)(weaviate-client@3.10.0)(ws@8.18.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.4
         version: 1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76)
@@ -366,14 +366,14 @@ importers:
   packages/events:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -384,11 +384,11 @@ importers:
         specifier: workspace:*
         version: link:../profiles
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@types/node':
         specifier: 24.0.0
@@ -406,23 +406,23 @@ importers:
   packages/gnode:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@types/node':
         specifier: 24.0.0
@@ -443,29 +443,29 @@ importers:
   packages/messages:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/email':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/encryption':
         specifier: '*'
         version: 0.59.0(@types/node@24.0.0)(typescript@5.9.3)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@types/node':
         specifier: 24.0.0
@@ -483,29 +483,29 @@ importers:
   packages/places:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/cache':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/geo':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@types/node':
         specifier: 24.0.0
@@ -526,23 +526,23 @@ importers:
   packages/products:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@originjs/vite-plugin-federation':
         specifier: ^1.3.8
@@ -572,23 +572,23 @@ importers:
   packages/profiles:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@noble/curves':
         specifier: ^1.8.1
         version: 1.9.7
@@ -621,17 +621,17 @@ importers:
   packages/projects:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/projects':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/repos':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -639,11 +639,11 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -667,23 +667,23 @@ importers:
   packages/smrt-dev-mcp:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.4
         version: 1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76)
@@ -707,14 +707,14 @@ importers:
   packages/smrt-docs-mcp:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.4
         version: 1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76)
@@ -793,23 +793,23 @@ importers:
   packages/tags:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.59.5
-        version: 0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.59.6
+        version: 0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/logger':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
       '@happyvertical/utils':
-        specifier: 0.59.5
-        version: 0.59.5
+        specifier: 0.59.6
+        version: 0.59.6
     devDependencies:
       '@types/node':
         specifier: 24.0.0
@@ -946,64 +946,64 @@ packages:
   '@aws-crypto/util@5.2.0':
     resolution: {integrity: sha512-4RkU9EsI6ZpBve5fseQlGNUWKMa1RLPQ1dnjnQoe07ldfIzcsGb5hC5W0Dm7u423KWzawlrpbjXBrXCEv9zazQ==}
 
-  '@aws-sdk/client-bedrock-runtime@3.946.0':
-    resolution: {integrity: sha512-ZuUBQh5VswxHp8xBUmSyn/6u/IZ/kjxC2B3kBQMoaJlEriokBvDkc6tKWEeWEM/gEwFhJxYfXgJSpAZUmsjGFQ==}
+  '@aws-sdk/client-bedrock-runtime@3.947.0':
+    resolution: {integrity: sha512-gYHkLDyHZN8eWDOvbMZOoBYUznq0N1yMzhZGLKqiekyWqDWA+PI08JjbPHX/ajpddkYM807SvRfD6unS59eVFg==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/client-cognito-identity@3.946.0':
-    resolution: {integrity: sha512-wPdlfEpVqyTmtLfJB+V0Caf6/wEtDi2/GtEuFPkC41ZwHr1xjds8gLvi0MT7tKXcLMcExHOm5biljPbt5cuJ2w==}
+  '@aws-sdk/client-cognito-identity@3.947.0':
+    resolution: {integrity: sha512-0NXpHGGRpRNBVm4GkiUSJMmua2IVaO0aJudPpVf/WVSweOxUW95SYZZahd9fr8YDXJHX+fxlZzBZcjPbr920mA==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/client-s3@3.946.0':
-    resolution: {integrity: sha512-Y3ww3yd1wzmS2r3qgH3jg4MxCTdeNrae2J1BmdV+IW/2R2gFWJva5U5GbS6KUSUxanJBRG7gd8uOIi1b0EMOng==}
+  '@aws-sdk/client-s3@3.947.0':
+    resolution: {integrity: sha512-ICgnI8D3ccIX9alsLksPFY2bX5CAIbyB+q19sXJgPhzCJ5kWeQ6LQ5xBmRVT5kccmsVGbbJdhnLXHyiN5LZsWg==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/client-sso@3.946.0':
-    resolution: {integrity: sha512-kGAs5iIVyUz4p6TX3pzG5q3cNxXnVpC4pwRC6DCSaSv9ozyPjc2d74FsK4fZ+J+ejtvCdJk72uiuQtWJc86Wuw==}
+  '@aws-sdk/client-sso@3.947.0':
+    resolution: {integrity: sha512-sDwcO8SP290WSErY1S8pz8hTafeghKmmWjNVks86jDK30wx62CfazOTeU70IpWgrUBEygyXk/zPogHsUMbW2Rg==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/core@3.946.0':
-    resolution: {integrity: sha512-u2BkbLLVbMFrEiXrko2+S6ih5sUZPlbVyRPtXOqMHlCyzr70sE8kIiD6ba223rQeIFPcYfW/wHc6k4ihW2xxVg==}
+  '@aws-sdk/core@3.947.0':
+    resolution: {integrity: sha512-Khq4zHhuAkvCFuFbgcy3GrZTzfSX7ZIjIcW1zRDxXRLZKRtuhnZdonqTUfaWi5K42/4OmxkYNpsO7X7trQOeHw==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-cognito-identity@3.946.0':
-    resolution: {integrity: sha512-YNF2zFW6qeKgg5ckEW17bbv825EWEYBizxjk61dCPuu32p+ONlqJSs3uzYfnoKQ92eblIxSPA8pdBlDUkDshyg==}
+  '@aws-sdk/credential-provider-cognito-identity@3.947.0':
+    resolution: {integrity: sha512-iQYic14WktUod4shj1D4+hyqxylpErO/PSpiMFA3Zxuh4nAwIJUhUZmSInPG9P5rrlTX3S91r78K554RGZ8x1A==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-env@3.946.0':
-    resolution: {integrity: sha512-P4l+K6wX1tf8LmWUvZofdQ+BgCNyk6Tb9u1H10npvqpuCD+dCM4pXIBq3PQcv/juUBOvLGGREo+Govuh3lfD0Q==}
+  '@aws-sdk/credential-provider-env@3.947.0':
+    resolution: {integrity: sha512-VR2V6dRELmzwAsCpK4GqxUi6UW5WNhAXS9F9AzWi5jvijwJo3nH92YNJUP4quMpgFZxJHEWyXLWgPjh9u0zYOA==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-http@3.946.0':
-    resolution: {integrity: sha512-/zeOJ6E7dGZQ/l2k7KytEoPJX0APIhwt0A79hPf/bUpMF4dDs2P6JmchDrotk0a0Y/MIdNF8sBQ/MEOPnBiYoQ==}
+  '@aws-sdk/credential-provider-http@3.947.0':
+    resolution: {integrity: sha512-inF09lh9SlHj63Vmr5d+LmwPXZc2IbK8lAruhOr3KLsZAIHEgHgGPXWDC2ukTEMzg0pkexQ6FOhXXad6klK4RA==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-ini@3.946.0':
-    resolution: {integrity: sha512-Pdgcra3RivWj/TuZmfFaHbqsvvgnSKO0CxlRUMMr0PgBiCnUhyl+zBktdNOeGsOPH2fUzQpYhcUjYUgVSdcSDQ==}
+  '@aws-sdk/credential-provider-ini@3.947.0':
+    resolution: {integrity: sha512-A2ZUgJUJZERjSzvCi2NR/hBVbVkTXPD0SdKcR/aITb30XwF+n3T963b+pJl90qhOspoy7h0IVYNR7u5Nr9tJdQ==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-login@3.946.0':
-    resolution: {integrity: sha512-5iqLNc15u2Zx+7jOdQkIbP62N7n2031tw5hkmIG0DLnozhnk64osOh2CliiOE9x3c4P9Pf4frAwgyy9GzNTk2g==}
+  '@aws-sdk/credential-provider-login@3.947.0':
+    resolution: {integrity: sha512-u7M3hazcB7aJiVwosNdJRbIJDzbwQ861NTtl6S0HmvWpixaVb7iyhJZWg8/plyUznboZGBm7JVEdxtxv3u0bTA==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-node@3.946.0':
-    resolution: {integrity: sha512-I7URUqnBPng1a5y81OImxrwERysZqMBREG6svhhGeZgxmqcpAZ8z5ywILeQXdEOCuuES8phUp/ojzxFjPXp/eA==}
+  '@aws-sdk/credential-provider-node@3.947.0':
+    resolution: {integrity: sha512-S0Zqebr71KyrT6J4uYPhwV65g4V5uDPHnd7dt2W34FcyPu+hVC7Hx4MFmsPyVLeT5cMCkkZvmY3kAoEzgUPJJg==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-process@3.946.0':
-    resolution: {integrity: sha512-GtGHX7OGqIeVQ3DlVm5RRF43Qmf3S1+PLJv9svrdvAhAdy2bUb044FdXXqrtSsIfpzTKlHgQUiRo5MWLd35Ntw==}
+  '@aws-sdk/credential-provider-process@3.947.0':
+    resolution: {integrity: sha512-WpanFbHe08SP1hAJNeDdBDVz9SGgMu/gc0XJ9u3uNpW99nKZjDpvPRAdW7WLA4K6essMjxWkguIGNOpij6Do2Q==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-sso@3.946.0':
-    resolution: {integrity: sha512-LeGSSt2V5iwYey1ENGY75RmoDP3bA2iE/py8QBKW8EDA8hn74XBLkprhrK5iccOvU3UGWY8WrEKFAFGNjJOL9g==}
+  '@aws-sdk/credential-provider-sso@3.947.0':
+    resolution: {integrity: sha512-NktnVHTGaUMaozxycYrepvb3yfFquHTQ53lt6hBEVjYBzK3C4tVz0siUpr+5RMGLSiZ5bLBp2UjJPgwx4i4waQ==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-provider-web-identity@3.946.0':
-    resolution: {integrity: sha512-ocBCvjWfkbjxElBI1QUxOnHldsNhoU0uOICFvuRDAZAoxvypJHN3m5BJkqb7gqorBbcv3LRgmBdEnWXOAvq+7Q==}
+  '@aws-sdk/credential-provider-web-identity@3.947.0':
+    resolution: {integrity: sha512-gokm/e/YHiHLrZgLq4j8tNAn8RJDPbIcglFRKgy08q8DmAqHQ8MXAKW3eS0QjAuRXU9mcMmUo1NrX6FRNBCCPw==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/credential-providers@3.946.0':
-    resolution: {integrity: sha512-oxx7zHhprVPsMD7HM84Y99En/UOTky6J/gNcOOBlbrSTE5xx3ZkYDersafIzKiOVBnuKu1ZPYrBwDIvlN0lvHQ==}
+  '@aws-sdk/credential-providers@3.947.0':
+    resolution: {integrity: sha512-KJsKdodZSf86Lws4aMvg6qC4Cruk7FpUwPNqM4vTruQeTAbcvmUpaWFRGeMSOeFueGwTh3YmbWo2pLvFi7hLXg==}
     engines: {node: '>=18.0.0'}
 
   '@aws-sdk/eventstream-handler-node@3.936.0':
@@ -1022,8 +1022,8 @@ packages:
     resolution: {integrity: sha512-Eb4ELAC23bEQLJmUMYnPWcjD3FZIsmz2svDiXEcxRkQU9r7NRID7pM7C5NPH94wOfiCk0b2Y8rVyFXW0lGQwbA==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/middleware-flexible-checksums@3.946.0':
-    resolution: {integrity: sha512-HJA7RIWsnxcChyZ1hNF/3JICkYCqDonxoeG8FkrmLRBknZ8WVdJiPD420/UwrWaa5F2MuTDA92jxk77rI09h1w==}
+  '@aws-sdk/middleware-flexible-checksums@3.947.0':
+    resolution: {integrity: sha512-kXXxS2raNESNO+zR0L4YInVjhcGGNI2Mx0AE1ThRhDkAt2se3a+rGf9equ9YvOqA1m8Jl/GSI8cXYvSxXmS9Ag==}
     engines: {node: '>=18.0.0'}
 
   '@aws-sdk/middleware-host-header@3.936.0':
@@ -1042,36 +1042,36 @@ packages:
     resolution: {integrity: sha512-l4aGbHpXM45YNgXggIux1HgsCVAvvBoqHPkqLnqMl9QVapfuSTjJHfDYDsx1Xxct6/m7qSMUzanBALhiaGO2fA==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/middleware-sdk-s3@3.946.0':
-    resolution: {integrity: sha512-0UTFmFd8PX2k/jLu/DBmR+mmLQWAtUGHYps9Rjx3dcXNwaMLaa/39NoV3qn7Dwzfpqc6JZlZzBk+NDOCJIHW9g==}
+  '@aws-sdk/middleware-sdk-s3@3.947.0':
+    resolution: {integrity: sha512-DS2tm5YBKhPW2PthrRBDr6eufChbwXe0NjtTZcYDfUCXf0OR+W6cIqyKguwHMJ+IyYdey30AfVw9/Lb5KB8U8A==}
     engines: {node: '>=18.0.0'}
 
   '@aws-sdk/middleware-ssec@3.936.0':
     resolution: {integrity: sha512-/GLC9lZdVp05ozRik5KsuODR/N7j+W+2TbfdFL3iS+7un+gnP6hC8RDOZd6WhpZp7drXQ9guKiTAxkZQwzS8DA==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/middleware-user-agent@3.946.0':
-    resolution: {integrity: sha512-7QcljCraeaWQNuqmOoAyZs8KpZcuhPiqdeeKoRd397jVGNRehLFsZbIMOvwaluUDFY11oMyXOkQEERe1Zo2fCw==}
+  '@aws-sdk/middleware-user-agent@3.947.0':
+    resolution: {integrity: sha512-7rpKV8YNgCP2R4F9RjWZFcD2R+SO/0R4VHIbY9iZJdH2MzzJ8ZG7h8dZ2m8QkQd1fjx4wrFJGGPJUTYXPV3baA==}
     engines: {node: '>=18.0.0'}
 
   '@aws-sdk/middleware-websocket@3.936.0':
     resolution: {integrity: sha512-bPe3rqeugyj/MmjP0yBSZox2v1Wa8Dv39KN+RxVbQroLO8VUitBo6xyZ0oZebhZ5sASwSg58aDcMlX0uFLQnTA==}
     engines: {node: '>= 14.0.0'}
 
-  '@aws-sdk/nested-clients@3.946.0':
-    resolution: {integrity: sha512-rjAtEguukeW8mlyEQMQI56vxFoyWlaNwowmz1p1rav948SUjtrzjHAp4TOQWhibb7AR7BUTHBCgIcyCRjBEf4g==}
+  '@aws-sdk/nested-clients@3.947.0':
+    resolution: {integrity: sha512-DjRJEYNnHUTu9kGPPQDTSXquwSEd6myKR4ssI4FaYLFhdT3ldWpj73yYt807H3tdmhS7vPmdVqchSJnjurUQAw==}
     engines: {node: '>=18.0.0'}
 
   '@aws-sdk/region-config-resolver@3.936.0':
     resolution: {integrity: sha512-wOKhzzWsshXGduxO4pqSiNyL9oUtk4BEvjWm9aaq6Hmfdoydq6v6t0rAGHWPjFwy9z2haovGRi3C8IxdMB4muw==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/signature-v4-multi-region@3.946.0':
-    resolution: {integrity: sha512-61FZ685lKiJuQ06g6U7K3PL9EwKCxNm51wNlxyKV57nnl1GrLD0NC8O3/hDNkCQLNBArT9y3IXl2H7TtIxP8Jg==}
+  '@aws-sdk/signature-v4-multi-region@3.947.0':
+    resolution: {integrity: sha512-UaYmzoxf9q3mabIA2hc4T6x5YSFUG2BpNjAZ207EA1bnQMiK+d6vZvb83t7dIWL/U1de1sGV19c1C81Jf14rrA==}
     engines: {node: '>=18.0.0'}
 
-  '@aws-sdk/token-providers@3.946.0':
-    resolution: {integrity: sha512-a5c+rM6CUPX2ExmUZ3DlbLlS5rQr4tbdoGcgBsjnAHiYx8MuMNAI+8M7wfjF13i2yvUQj5WEIddvLpayfEZj9g==}
+  '@aws-sdk/token-providers@3.947.0':
+    resolution: {integrity: sha512-X/DyB8GuK44rsE89Tn5+s542B3PhGbXQSgV8lvqHDzvicwCt0tWny6790st6CPETrVVV2K3oJMfG5U3/jAmaZA==}
     engines: {node: '>=18.0.0'}
 
   '@aws-sdk/types@3.936.0':
@@ -1097,8 +1097,8 @@ packages:
   '@aws-sdk/util-user-agent-browser@3.936.0':
     resolution: {integrity: sha512-eZ/XF6NxMtu+iCma58GRNRxSq4lHo6zHQLOZRIeL/ghqYJirqHdenMOwrzPettj60KWlv827RVebP9oNVrwZbw==}
 
-  '@aws-sdk/util-user-agent-node@3.946.0':
-    resolution: {integrity: sha512-a2UwwvzbK5AxHKUBupfg4s7VnkqRAHjYsuezHnKCniczmT4HZfP1NnfwwvLKEH8qaTrwenxjKSfq4UWmWkvG+Q==}
+  '@aws-sdk/util-user-agent-node@3.947.0':
+    resolution: {integrity: sha512-+vhHoDrdbb+zerV4noQk1DHaUMNzWFWPpPYjVTwW2186k5BEJIecAMChYkghRrBVJ3KPWP1+JnZwOd72F3d4rQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       aws-crt: '>=1.0.0'
@@ -1954,11 +1954,11 @@ packages:
   '@gerrit0/mini-shiki@3.19.0':
     resolution: {integrity: sha512-ZSlWfLvr8Nl0T4iA3FF/8VH8HivYF82xQts2DY0tJxZd4wtXJ8AA0nmdW9lmO4hlrh3f9xNwEPtOgqETPqKwDA==}
 
-  '@google/genai@1.31.0':
-    resolution: {integrity: sha512-rK0RKXxNkbK35eDl+G651SxtxwHNEOogjyeZJUJe+Ed4yxu3xy5ufCiU0+QLT7xo4M9Spey8OAYfD8LPRlYBKw==}
+  '@google/genai@1.32.0':
+    resolution: {integrity: sha512-46vaEaHAThIBlqWFTti1fo3xYU6DwCOwnIIotLhYUbNha90wk5cZL79zdf+NoAfKVsx4DPmjCtXvbQNNVPl5ZQ==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
-      '@modelcontextprotocol/sdk': ^1.20.1
+      '@modelcontextprotocol/sdk': ^1.24.0
     peerDependenciesMeta:
       '@modelcontextprotocol/sdk':
         optional: true
@@ -1992,59 +1992,59 @@ packages:
   '@gutenye/ocr-node@1.4.8':
     resolution: {integrity: sha512-Ej6hHQSrBLCY74Qb2rRYZ0v97kp3h1Q8obLdQDM208ft9BOyqj+aUN2yTYQ/1c/BO695OWDgufRSiWiLB92KLw==}
 
-  '@happyvertical/ai@0.59.5':
-    resolution: {integrity: sha512-wt+WsG9r08JTFG8EkTjEVPc74FEcU5vyRav50gpzBJL4Uxz3RJct/At/u0e8YXA4y3ZY/r0QCloxeYOWFZ5tCg==, tarball: https://npm.pkg.github.com/download/@happyvertical/ai/0.59.5/a71db6f70b03f396fca71eab57b3257fb8636829}
+  '@happyvertical/ai@0.59.6':
+    resolution: {integrity: sha512-n1843fbfuvR09KZ6fHbgZ2jvbsArSczR5mSrJ9WOrEurfkyHXA+1MQtfKze0meFZugF20PcQj2Sg/kQL2Y5hTA==, tarball: https://npm.pkg.github.com/download/@happyvertical/ai/0.59.6/2aa415150705dfcf50945c9cfa0b17c837a4d673}
 
-  '@happyvertical/cache@0.59.5':
-    resolution: {integrity: sha512-iC+gdxjv82CCS6Z3wjjz60j0KsEklClWZA64MnwlWppyDzi/KsItFgngw1pPZ/k5ZT/fE9bwqIwF5Nka4OgwOQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.59.5/6039a42ee2118d23de19baf48e1f25ea9b930618}
+  '@happyvertical/cache@0.59.6':
+    resolution: {integrity: sha512-6s8g15s0/UV3gQhqu7XFTYA2IB2AT34rSdYhj5h58j2ENvgMjfgkB5+fXCvJY8VE6vpDi4MF2Q4+ZuMVBgH+pg==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.59.6/d5dbd2cff8cb42f2b47a8b52cda0015ca512cd64}
 
-  '@happyvertical/documents@0.59.5':
-    resolution: {integrity: sha512-cwiSbDHlutjRwzw8lc4QB34I8NdJOpwh9VK4+6S2Dtgj6XkalJp2XOUdYaAIZ+jHb+MFpnusi9yTUCswYoPIWw==, tarball: https://npm.pkg.github.com/download/@happyvertical/documents/0.59.5/ab21fc796248f66b5ded53023be977a62aea4777}
+  '@happyvertical/documents@0.59.6':
+    resolution: {integrity: sha512-1c3CY1iQ8vrE39qo12ZFmMr4CLpyJSN1LwIevadHEMemA5s3irat6ozdART4iKGPSbzUEW032CvFhJmuOs2YIQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/documents/0.59.6/38bf63938a2f8e6d26e3ec1a8cbaa75d4bc90f86}
 
-  '@happyvertical/email@0.59.5':
-    resolution: {integrity: sha512-NOmT2kVxqqhpJlEv+bx0y8lH+hf4JPwTxb/kLs1so6fvZ4ewzarYwx9kl2WzaADJiRgXSOhoehovqhIZPtf3/Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/email/0.59.5/b6354ec6a46dbdda135f475931ca87d94be4e454}
+  '@happyvertical/email@0.59.6':
+    resolution: {integrity: sha512-kOeBiVhCy3nwFgDS+D2tZ35y/QIv02jypyNeSAMqWVA1KKWeEVf8ZmvRReIyO0gOtN537M5KLaj6R03DOVHSjA==, tarball: https://npm.pkg.github.com/download/@happyvertical/email/0.59.6/4dcaedd6421ef813913e2962aa94f6158e022e97}
 
   '@happyvertical/encryption@0.59.0':
     resolution: {integrity: sha512-C2ywFsqJ2kB4tl9L/NDSSPb2u2zQEMZybThiobdUneQzk4v/iaNo3uUuxvfYpbNddcImZ2fNJoU8Oj6XX5m02A==, tarball: https://npm.pkg.github.com/download/@happyvertical/encryption/0.59.0/699344ba5977b6564f383f7c1aecb08777b02890}
 
-  '@happyvertical/files@0.59.5':
-    resolution: {integrity: sha512-sxU87d7WUgcR/Yuj+H6EA/7frTBf4CiGf58PSz8HZjJDqmgejzlVIWwgzzEiAjAT9OjYXTsZb7V9kUOCHAwkjA==, tarball: https://npm.pkg.github.com/download/@happyvertical/files/0.59.5/ff60e3e06a48645fdc7fc399c23c6508e38fae36}
+  '@happyvertical/files@0.59.6':
+    resolution: {integrity: sha512-y1gHgMVSyFiYgDqr11BCM/qUbHkzME0fKbwC8bHDsSZIVRffEzeet3XPaGRcel+M2HPZeUpjq5UVXVIYj6c7pg==, tarball: https://npm.pkg.github.com/download/@happyvertical/files/0.59.6/a990f6e87459aa269217f04ad0b20079ae1aa54c}
 
-  '@happyvertical/geo@0.59.5':
-    resolution: {integrity: sha512-+9L+j9t2cPWc3ZoyiVww35yMQehlXVD54IWmGx9B0MzqrZoM6/83/fLuENLAXL0u9b3JwbA+1exqdflgimUrTw==, tarball: https://npm.pkg.github.com/download/@happyvertical/geo/0.59.5/514002d5ec0bca672e00cd3bdc922223ba98df9d}
+  '@happyvertical/geo@0.59.6':
+    resolution: {integrity: sha512-Z+MoFdMO/xlYUIkywmpSBKWKI0SMphP/t7E4fYTr7OxZT1wWdxBnYbJ76AzyN/sxqDAAj4Rqdw4ztQ+WKUgCQA==, tarball: https://npm.pkg.github.com/download/@happyvertical/geo/0.59.6/25fffd44f3e117c2e5521eb611b397767076328f}
 
-  '@happyvertical/graphql@0.59.5':
-    resolution: {integrity: sha512-mSIFlBI4V9aFyH8iXhYfZ70jDte0eq6l+8XMZ9SRc8bb+L7Ph90nmEzCryUMrvki23sW+UI5QP23AQa1ErmIHA==, tarball: https://npm.pkg.github.com/download/@happyvertical/graphql/0.59.5/5fd29291c50aa4f1996eb2758a7c9f60020ce4f0}
+  '@happyvertical/graphql@0.59.6':
+    resolution: {integrity: sha512-A6nH92ETvFisCJ1zotZ7phgHBIQEjDMlaM2gKdljV+zj8AENkmY2z+BZqqFGPQVuySHZ/hDxaYdVR3Wypws4mQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/graphql/0.59.6/1535186bb0405629478841785175fde4530e6b3b}
 
   '@happyvertical/logger@0.59.0':
     resolution: {integrity: sha512-GR9oh+vfe2fe8TDkkqMJySmHRA3W5Vk0U/P2pxmvV6eQBaQ5h34/3bh7xYjzp4JDng2nmdK23JJIVSWvxD7CRQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.59.0/1c794cf030c539a09a1e971a35fd7b2756d157ee}
 
-  '@happyvertical/logger@0.59.5':
-    resolution: {integrity: sha512-ZZNmTsfbhg/KI7jV45eO/27p3kVzKucfbWiUOKkV0yrFnnH5zyTaGY2AtsJlN9JG+CPbj28iSpHlEa0TBeT9iw==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.59.5/c646691af4d390e35d8d9b1b202c1e87b6355cd3}
+  '@happyvertical/logger@0.59.6':
+    resolution: {integrity: sha512-CoP4N0h/0SuqpbPyTryXQle7cdFRp3bkXgzSZregSRWQlrmt+ToGR+cjgmNEGDyBW+XKGin0ZpwBvGvoBj43eA==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.59.6/18fdde4fa7aa7051d0632ae01467ade06213a274}
 
-  '@happyvertical/ocr@0.59.5':
-    resolution: {integrity: sha512-cSbZHGSibCDKTunqL2c7G1ov3YT+Ygc2lH9Xyw74AztLJsK5nIg4IdhovKMtDZAfOOCSEXVMaXfe/DLavNLCaQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/ocr/0.59.5/e9d7fad67e9681493c4440914ab3cec9060226a0}
+  '@happyvertical/ocr@0.59.6':
+    resolution: {integrity: sha512-Mw0xJ0owQbmmOLBgU9r/0ozPG9kHmAhRWaUaE/AjttW+iaHsxXzWmz2IRCXNcpbw1rEAx9g0/saiQoeJxSE8IQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/ocr/0.59.6/0322829d3a205e3787974ce7da3311d53dd70d0a}
 
-  '@happyvertical/pdf@0.59.5':
-    resolution: {integrity: sha512-toQEgmhe/B4l57REZl3tP1BTwJDHrA/XDt8MNVMqPLHlE+9E/062yIzrZMN3OOr/gj3jDpaKua1bO9Qh/A9Mgw==, tarball: https://npm.pkg.github.com/download/@happyvertical/pdf/0.59.5/afc1f805cdbb7d903ede57e73a64304c8c63d3fa}
+  '@happyvertical/pdf@0.59.6':
+    resolution: {integrity: sha512-sg7jLEOVlOhEfuj4gqO2oR0XTIGkKXIY6InN5sydCDugkaIuwlS9jP1rKXhH1GDI5B1FuHn5izzlAJR6E18YiA==, tarball: https://npm.pkg.github.com/download/@happyvertical/pdf/0.59.6/1a81883d5697e3b6ad6fe25625b2827f38d52d84}
 
-  '@happyvertical/projects@0.59.5':
-    resolution: {integrity: sha512-gWoqKnkJpJF5mZGVnhsQLf1LpgU1IzDTlyinhxQvG5A+O68+Wgvg6YgdEuuvR6ierBxXbeg++npl5Lu2erIuEw==, tarball: https://npm.pkg.github.com/download/@happyvertical/projects/0.59.5/b86925c837b4dd3cf88953f7a04d0a3a07e0b329}
+  '@happyvertical/projects@0.59.6':
+    resolution: {integrity: sha512-SXgWLHMTOgJuTY5QYLTZq7pqmw6Jj5Dqokh4WUNRHt5PQvOHe70GSkhRY1OIrJYNTsfmSSwc2DWRSkuCod7qHg==, tarball: https://npm.pkg.github.com/download/@happyvertical/projects/0.59.6/bf40d12d9bac894203ec4cf86da49c87a165cb57}
 
-  '@happyvertical/repos@0.59.5':
-    resolution: {integrity: sha512-25g3d4ocF3K2eh22FAFvbI1uKQXLUmgQ59Ml1FHwEoEJQD5Y4RU0ZwKAbjgMMBNW4NrCXAF2FFadaPxq1hTEgA==, tarball: https://npm.pkg.github.com/download/@happyvertical/repos/0.59.5/d1bff06e8eb042ee867edf811832746e0d15e9a9}
+  '@happyvertical/repos@0.59.6':
+    resolution: {integrity: sha512-+NwXxAdME9SBFsoux4vQM/oNLzQ7ZdD6aaNt6iDQ8bBr+79BKYJ+XE52YpCA6BymYenL2XSskWwWT34EzXPXLw==, tarball: https://npm.pkg.github.com/download/@happyvertical/repos/0.59.6/d9734e774542a2d88db0ddde7a98f9ff6addc6ca}
 
-  '@happyvertical/spider@0.59.5':
-    resolution: {integrity: sha512-KBqkhMC8EDVqdLs08rlLCuYzVMyhUv3W4ZPkuT5YfRjH3EUHUO+TT6qEXEJkCEqgE82VjGB6TY4ME9IKzTgYFA==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.59.5/8d27abaee85a03adb40a448cf34dd88dd3989fda}
+  '@happyvertical/spider@0.59.6':
+    resolution: {integrity: sha512-7gx2h2+2Qi5+VdOeo0HlpTafOr3VErJjqBVQI1MvYGxAfwfIxoTqYaG46Jp02P6/u6RmsTAJfZfTu7ku1sVTRA==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.59.6/db55861e7c9db78a5217fae024b40fa5a4cc24cc}
 
-  '@happyvertical/sql@0.59.5':
-    resolution: {integrity: sha512-LbJsUo0/udICW88ctQnAOs56MetGubkKkBAQf5k2fOQbVNXOkDESCdKGeFDqznhie4yr6d/oitQcNJ6JrhNmDw==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.59.5/ee6771e891183e5d7290f13e752761457db07612}
+  '@happyvertical/sql@0.59.6':
+    resolution: {integrity: sha512-xyncBbsCGkfvUHUR0BqxnDMV9LysgZx/ws/eH4GD+UNPZqQVvmKgImFl8+BpHvsucBzfrkakaQhrwZNCHVfwnA==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.59.6/444e072696b1abe7181f95e980eef45062f88e21}
 
   '@happyvertical/utils@0.59.0':
     resolution: {integrity: sha512-57qm82lVdRuw1bfwCbU+GJ9gLTP01ZYP/cFTSOpybWlOYdqAJeM4FCGGxzhmfSqc1OX/i+A5erjI/bGVhPETrw==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.59.0/4f6be20e49954cb2f1b60908499870ff26b8bc9f}
 
-  '@happyvertical/utils@0.59.5':
-    resolution: {integrity: sha512-iBS6FbmH0W10XExou3RS/HEK+tPNlcwYdXebMNbvCZxyc2yeeP6+SyfpViEUbOyEtyV/DjHWIcuqCa+eIDp8ew==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.59.5/684de3b62a15e542ae5f3ea55d67dab13e31c395}
+  '@happyvertical/utils@0.59.6':
+    resolution: {integrity: sha512-t1BNRqCPUppa0UNi4SXVA2jG/Le+fxRgpItGbQLqdbflyu4i4/VPmKT2pKIhNug15qykdg1tl1pbwWWQNzKGIw==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.59.6/a1a23138cbe4fed36b4662efc9de3df9f4e502f1}
 
   '@humanwhocodes/config-array@0.9.5':
     resolution: {integrity: sha512-ObyMyWxZiCu/yTisA7uzx81s40xR2fD5Cg/2Kq7G02ajkNubJf6BopgDTmDyc3U7sXpNKM8cYOw7s7Tyr+DnCw==}
@@ -4117,8 +4117,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  baseline-browser-mapping@2.9.4:
-    resolution: {integrity: sha512-ZCQ9GEWl73BVm8bu5Fts8nt7MHdbt5vY9bP6WGnUh+r3l8M7CgfyTlwsgCbMC66BNxPr6Xoce3j66Ms5YUQTNA==}
+  baseline-browser-mapping@2.9.5:
+    resolution: {integrity: sha512-D5vIoztZOq1XM54LUdttJVc96ggEsIfju2JBvht06pSzpckp3C7HReun67Bghzrtdsq9XdMGbSSB3v3GhMNmAA==}
     hasBin: true
 
   bech32@2.0.0:
@@ -4247,8 +4247,8 @@ packages:
     resolution: {integrity: sha512-Gmy6FhYlCY7uOElZUSbxo2UCDH8owEk996gkbrpsgGtrJLM3J7jGxl9Ic7Qwwj4ivOE5AWZWRMecDdF7hqGjFA==}
     engines: {node: '>=10'}
 
-  caniuse-lite@1.0.30001759:
-    resolution: {integrity: sha512-Pzfx9fOKoKvevQf8oCXoyNRQ5QyxJj+3O0Rqx2V5oxT61KGx8+n6hV/IUyJeifUci2clnmmKVpvtiqRzgiWjSw==}
+  caniuse-lite@1.0.30001760:
+    resolution: {integrity: sha512-7AAMPcueWELt1p3mi13HR/LHH0TJLT11cnwDJEs3xA4+CK/PLKeO9Kl1oru24htkyUKtkGCvAx4ohB0Ttry8Dw==}
 
   chai@5.3.3:
     resolution: {integrity: sha512-4zNhdJD/iOjSH0A05ea+Ke6MU5mmpQcbQsSOkgdaUMJ9zTlDTD/GYlwohmIE2u0gaxHYiVHEn1Fw9mZ/ktJWgw==}
@@ -4707,8 +4707,8 @@ packages:
   devalue@5.5.0:
     resolution: {integrity: sha512-69sM5yrHfFLJt0AZ9QqZXGCPfJ7fQjvpln3Rq5+PS03LD32Ost1Q9N+eEnaQwGRIriKkMImXD56ocjQmfjbV3w==}
 
-  devtools-protocol@0.0.1551306:
-    resolution: {integrity: sha512-CFx8QdSim8iIv+2ZcEOclBKTQY6BI1IEDa7Tm9YkwAXzEWFndTEzpTo5jAUhSnq24IC7xaDw0wvGcm96+Y3PEg==}
+  devtools-protocol@0.0.1555890:
+    resolution: {integrity: sha512-O4OFGGFYGoPF3wVE88CQXhDKUiuYjLdFC0Ih0gUTANBf3Jb061JDqy+GdInhIciJLZjTwjBw+1iPzhEIA/Jmiw==}
 
   diff@8.0.2:
     resolution: {integrity: sha512-sSuxWU5j5SR9QQji/o2qMvqRNYRDOcBTgsJ/DeCf4iSN4gW+gNMXM7wFIP+fdXZxoNiAnHUTGjCr+TSWXdRDKg==}
@@ -4790,8 +4790,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  electron-to-chromium@1.5.266:
-    resolution: {integrity: sha512-kgWEglXvkEfMH7rxP5OSZZwnaDWT7J9EoZCujhnpLbfi0bbNtRkgdX2E3gt0Uer11c61qCYktB3hwkAS325sJg==}
+  electron-to-chromium@1.5.267:
+    resolution: {integrity: sha512-0Drusm6MVRXSOJpGbaSVgcQsuB4hEkMpHXaVstcPmhu5LIedxs1xNK/nIxmQIU/RPC0+1/o0AVZfBTkTNJOdUw==}
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
@@ -7202,8 +7202,8 @@ packages:
     resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
 
-  proxy-chain@2.6.0:
-    resolution: {integrity: sha512-+NpVKSk68j8sQJG2tBbFuJxMzKTlqeCXXFbqvlyiFhnmxdcYJSv4XZzUSIfwIUwR3D0T8fEJqrA4C7yykU40Pw==}
+  proxy-chain@2.6.1:
+    resolution: {integrity: sha512-zupG8X/2jVUn2Ys7ZEoXMCS6W2EcKSMB2UL63Mk0V7R/KDeyjiXlbC0iUkU0wbNOe8cG3ndpgNcAvOwVGafkyg==}
     engines: {node: '>=14'}
 
   proxy-from-env@1.1.0:
@@ -8969,25 +8969,25 @@ snapshots:
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
 
-  '@aws-sdk/client-bedrock-runtime@3.946.0':
+  '@aws-sdk/client-bedrock-runtime@3.947.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/credential-provider-node': 3.946.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/credential-provider-node': 3.947.0
       '@aws-sdk/eventstream-handler-node': 3.936.0
       '@aws-sdk/middleware-eventstream': 3.936.0
       '@aws-sdk/middleware-host-header': 3.936.0
       '@aws-sdk/middleware-logger': 3.936.0
       '@aws-sdk/middleware-recursion-detection': 3.936.0
-      '@aws-sdk/middleware-user-agent': 3.946.0
+      '@aws-sdk/middleware-user-agent': 3.947.0
       '@aws-sdk/middleware-websocket': 3.936.0
       '@aws-sdk/region-config-resolver': 3.936.0
-      '@aws-sdk/token-providers': 3.946.0
+      '@aws-sdk/token-providers': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@aws-sdk/util-endpoints': 3.936.0
       '@aws-sdk/util-user-agent-browser': 3.936.0
-      '@aws-sdk/util-user-agent-node': 3.946.0
+      '@aws-sdk/util-user-agent-node': 3.947.0
       '@smithy/config-resolver': 4.4.3
       '@smithy/core': 3.18.7
       '@smithy/eventstream-serde-browser': 4.2.5
@@ -9021,21 +9021,21 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/client-cognito-identity@3.946.0':
+  '@aws-sdk/client-cognito-identity@3.947.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/credential-provider-node': 3.946.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/credential-provider-node': 3.947.0
       '@aws-sdk/middleware-host-header': 3.936.0
       '@aws-sdk/middleware-logger': 3.936.0
       '@aws-sdk/middleware-recursion-detection': 3.936.0
-      '@aws-sdk/middleware-user-agent': 3.946.0
+      '@aws-sdk/middleware-user-agent': 3.947.0
       '@aws-sdk/region-config-resolver': 3.936.0
       '@aws-sdk/types': 3.936.0
       '@aws-sdk/util-endpoints': 3.936.0
       '@aws-sdk/util-user-agent-browser': 3.936.0
-      '@aws-sdk/util-user-agent-node': 3.946.0
+      '@aws-sdk/util-user-agent-node': 3.947.0
       '@smithy/config-resolver': 4.4.3
       '@smithy/core': 3.18.7
       '@smithy/fetch-http-handler': 5.3.6
@@ -9065,29 +9065,29 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/client-s3@3.946.0':
+  '@aws-sdk/client-s3@3.947.0':
     dependencies:
       '@aws-crypto/sha1-browser': 5.2.0
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/credential-provider-node': 3.946.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/credential-provider-node': 3.947.0
       '@aws-sdk/middleware-bucket-endpoint': 3.936.0
       '@aws-sdk/middleware-expect-continue': 3.936.0
-      '@aws-sdk/middleware-flexible-checksums': 3.946.0
+      '@aws-sdk/middleware-flexible-checksums': 3.947.0
       '@aws-sdk/middleware-host-header': 3.936.0
       '@aws-sdk/middleware-location-constraint': 3.936.0
       '@aws-sdk/middleware-logger': 3.936.0
       '@aws-sdk/middleware-recursion-detection': 3.936.0
-      '@aws-sdk/middleware-sdk-s3': 3.946.0
+      '@aws-sdk/middleware-sdk-s3': 3.947.0
       '@aws-sdk/middleware-ssec': 3.936.0
-      '@aws-sdk/middleware-user-agent': 3.946.0
+      '@aws-sdk/middleware-user-agent': 3.947.0
       '@aws-sdk/region-config-resolver': 3.936.0
-      '@aws-sdk/signature-v4-multi-region': 3.946.0
+      '@aws-sdk/signature-v4-multi-region': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@aws-sdk/util-endpoints': 3.936.0
       '@aws-sdk/util-user-agent-browser': 3.936.0
-      '@aws-sdk/util-user-agent-node': 3.946.0
+      '@aws-sdk/util-user-agent-node': 3.947.0
       '@smithy/config-resolver': 4.4.3
       '@smithy/core': 3.18.7
       '@smithy/eventstream-serde-browser': 4.2.5
@@ -9125,20 +9125,20 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/client-sso@3.946.0':
+  '@aws-sdk/client-sso@3.947.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.946.0
+      '@aws-sdk/core': 3.947.0
       '@aws-sdk/middleware-host-header': 3.936.0
       '@aws-sdk/middleware-logger': 3.936.0
       '@aws-sdk/middleware-recursion-detection': 3.936.0
-      '@aws-sdk/middleware-user-agent': 3.946.0
+      '@aws-sdk/middleware-user-agent': 3.947.0
       '@aws-sdk/region-config-resolver': 3.936.0
       '@aws-sdk/types': 3.936.0
       '@aws-sdk/util-endpoints': 3.936.0
       '@aws-sdk/util-user-agent-browser': 3.936.0
-      '@aws-sdk/util-user-agent-node': 3.946.0
+      '@aws-sdk/util-user-agent-node': 3.947.0
       '@smithy/config-resolver': 4.4.3
       '@smithy/core': 3.18.7
       '@smithy/fetch-http-handler': 5.3.6
@@ -9168,7 +9168,7 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/core@3.946.0':
+  '@aws-sdk/core@3.947.0':
     dependencies:
       '@aws-sdk/types': 3.936.0
       '@aws-sdk/xml-builder': 3.930.0
@@ -9184,9 +9184,9 @@ snapshots:
       '@smithy/util-utf8': 4.2.0
       tslib: 2.8.1
 
-  '@aws-sdk/credential-provider-cognito-identity@3.946.0':
+  '@aws-sdk/credential-provider-cognito-identity@3.947.0':
     dependencies:
-      '@aws-sdk/client-cognito-identity': 3.946.0
+      '@aws-sdk/client-cognito-identity': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/property-provider': 4.2.5
       '@smithy/types': 4.9.0
@@ -9194,17 +9194,17 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/credential-provider-env@3.946.0':
+  '@aws-sdk/credential-provider-env@3.947.0':
     dependencies:
-      '@aws-sdk/core': 3.946.0
+      '@aws-sdk/core': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/property-provider': 4.2.5
       '@smithy/types': 4.9.0
       tslib: 2.8.1
 
-  '@aws-sdk/credential-provider-http@3.946.0':
+  '@aws-sdk/credential-provider-http@3.947.0':
     dependencies:
-      '@aws-sdk/core': 3.946.0
+      '@aws-sdk/core': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/fetch-http-handler': 5.3.6
       '@smithy/node-http-handler': 4.4.5
@@ -9215,16 +9215,16 @@ snapshots:
       '@smithy/util-stream': 4.5.6
       tslib: 2.8.1
 
-  '@aws-sdk/credential-provider-ini@3.946.0':
+  '@aws-sdk/credential-provider-ini@3.947.0':
     dependencies:
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/credential-provider-env': 3.946.0
-      '@aws-sdk/credential-provider-http': 3.946.0
-      '@aws-sdk/credential-provider-login': 3.946.0
-      '@aws-sdk/credential-provider-process': 3.946.0
-      '@aws-sdk/credential-provider-sso': 3.946.0
-      '@aws-sdk/credential-provider-web-identity': 3.946.0
-      '@aws-sdk/nested-clients': 3.946.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/credential-provider-env': 3.947.0
+      '@aws-sdk/credential-provider-http': 3.947.0
+      '@aws-sdk/credential-provider-login': 3.947.0
+      '@aws-sdk/credential-provider-process': 3.947.0
+      '@aws-sdk/credential-provider-sso': 3.947.0
+      '@aws-sdk/credential-provider-web-identity': 3.947.0
+      '@aws-sdk/nested-clients': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/credential-provider-imds': 4.2.5
       '@smithy/property-provider': 4.2.5
@@ -9234,10 +9234,10 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/credential-provider-login@3.946.0':
+  '@aws-sdk/credential-provider-login@3.947.0':
     dependencies:
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/nested-clients': 3.946.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/nested-clients': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/property-provider': 4.2.5
       '@smithy/protocol-http': 5.3.5
@@ -9247,14 +9247,14 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/credential-provider-node@3.946.0':
+  '@aws-sdk/credential-provider-node@3.947.0':
     dependencies:
-      '@aws-sdk/credential-provider-env': 3.946.0
-      '@aws-sdk/credential-provider-http': 3.946.0
-      '@aws-sdk/credential-provider-ini': 3.946.0
-      '@aws-sdk/credential-provider-process': 3.946.0
-      '@aws-sdk/credential-provider-sso': 3.946.0
-      '@aws-sdk/credential-provider-web-identity': 3.946.0
+      '@aws-sdk/credential-provider-env': 3.947.0
+      '@aws-sdk/credential-provider-http': 3.947.0
+      '@aws-sdk/credential-provider-ini': 3.947.0
+      '@aws-sdk/credential-provider-process': 3.947.0
+      '@aws-sdk/credential-provider-sso': 3.947.0
+      '@aws-sdk/credential-provider-web-identity': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/credential-provider-imds': 4.2.5
       '@smithy/property-provider': 4.2.5
@@ -9264,32 +9264,20 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/credential-provider-process@3.946.0':
+  '@aws-sdk/credential-provider-process@3.947.0':
     dependencies:
-      '@aws-sdk/core': 3.946.0
+      '@aws-sdk/core': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/property-provider': 4.2.5
       '@smithy/shared-ini-file-loader': 4.4.0
       '@smithy/types': 4.9.0
       tslib: 2.8.1
 
-  '@aws-sdk/credential-provider-sso@3.946.0':
+  '@aws-sdk/credential-provider-sso@3.947.0':
     dependencies:
-      '@aws-sdk/client-sso': 3.946.0
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/token-providers': 3.946.0
-      '@aws-sdk/types': 3.936.0
-      '@smithy/property-provider': 4.2.5
-      '@smithy/shared-ini-file-loader': 4.4.0
-      '@smithy/types': 4.9.0
-      tslib: 2.8.1
-    transitivePeerDependencies:
-      - aws-crt
-
-  '@aws-sdk/credential-provider-web-identity@3.946.0':
-    dependencies:
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/nested-clients': 3.946.0
+      '@aws-sdk/client-sso': 3.947.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/token-providers': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/property-provider': 4.2.5
       '@smithy/shared-ini-file-loader': 4.4.0
@@ -9298,20 +9286,32 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/credential-providers@3.946.0':
+  '@aws-sdk/credential-provider-web-identity@3.947.0':
     dependencies:
-      '@aws-sdk/client-cognito-identity': 3.946.0
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/credential-provider-cognito-identity': 3.946.0
-      '@aws-sdk/credential-provider-env': 3.946.0
-      '@aws-sdk/credential-provider-http': 3.946.0
-      '@aws-sdk/credential-provider-ini': 3.946.0
-      '@aws-sdk/credential-provider-login': 3.946.0
-      '@aws-sdk/credential-provider-node': 3.946.0
-      '@aws-sdk/credential-provider-process': 3.946.0
-      '@aws-sdk/credential-provider-sso': 3.946.0
-      '@aws-sdk/credential-provider-web-identity': 3.946.0
-      '@aws-sdk/nested-clients': 3.946.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/nested-clients': 3.947.0
+      '@aws-sdk/types': 3.936.0
+      '@smithy/property-provider': 4.2.5
+      '@smithy/shared-ini-file-loader': 4.4.0
+      '@smithy/types': 4.9.0
+      tslib: 2.8.1
+    transitivePeerDependencies:
+      - aws-crt
+
+  '@aws-sdk/credential-providers@3.947.0':
+    dependencies:
+      '@aws-sdk/client-cognito-identity': 3.947.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/credential-provider-cognito-identity': 3.947.0
+      '@aws-sdk/credential-provider-env': 3.947.0
+      '@aws-sdk/credential-provider-http': 3.947.0
+      '@aws-sdk/credential-provider-ini': 3.947.0
+      '@aws-sdk/credential-provider-login': 3.947.0
+      '@aws-sdk/credential-provider-node': 3.947.0
+      '@aws-sdk/credential-provider-process': 3.947.0
+      '@aws-sdk/credential-provider-sso': 3.947.0
+      '@aws-sdk/credential-provider-web-identity': 3.947.0
+      '@aws-sdk/nested-clients': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/config-resolver': 4.4.3
       '@smithy/core': 3.18.7
@@ -9354,12 +9354,12 @@ snapshots:
       '@smithy/types': 4.9.0
       tslib: 2.8.1
 
-  '@aws-sdk/middleware-flexible-checksums@3.946.0':
+  '@aws-sdk/middleware-flexible-checksums@3.947.0':
     dependencies:
       '@aws-crypto/crc32': 5.2.0
       '@aws-crypto/crc32c': 5.2.0
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/core': 3.946.0
+      '@aws-sdk/core': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/is-array-buffer': 4.2.0
       '@smithy/node-config-provider': 4.3.5
@@ -9397,9 +9397,9 @@ snapshots:
       '@smithy/types': 4.9.0
       tslib: 2.8.1
 
-  '@aws-sdk/middleware-sdk-s3@3.946.0':
+  '@aws-sdk/middleware-sdk-s3@3.947.0':
     dependencies:
-      '@aws-sdk/core': 3.946.0
+      '@aws-sdk/core': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@aws-sdk/util-arn-parser': 3.893.0
       '@smithy/core': 3.18.7
@@ -9420,9 +9420,9 @@ snapshots:
       '@smithy/types': 4.9.0
       tslib: 2.8.1
 
-  '@aws-sdk/middleware-user-agent@3.946.0':
+  '@aws-sdk/middleware-user-agent@3.947.0':
     dependencies:
-      '@aws-sdk/core': 3.946.0
+      '@aws-sdk/core': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@aws-sdk/util-endpoints': 3.936.0
       '@smithy/core': 3.18.7
@@ -9443,20 +9443,20 @@ snapshots:
       '@smithy/util-hex-encoding': 4.2.0
       tslib: 2.8.1
 
-  '@aws-sdk/nested-clients@3.946.0':
+  '@aws-sdk/nested-clients@3.947.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.946.0
+      '@aws-sdk/core': 3.947.0
       '@aws-sdk/middleware-host-header': 3.936.0
       '@aws-sdk/middleware-logger': 3.936.0
       '@aws-sdk/middleware-recursion-detection': 3.936.0
-      '@aws-sdk/middleware-user-agent': 3.946.0
+      '@aws-sdk/middleware-user-agent': 3.947.0
       '@aws-sdk/region-config-resolver': 3.936.0
       '@aws-sdk/types': 3.936.0
       '@aws-sdk/util-endpoints': 3.936.0
       '@aws-sdk/util-user-agent-browser': 3.936.0
-      '@aws-sdk/util-user-agent-node': 3.946.0
+      '@aws-sdk/util-user-agent-node': 3.947.0
       '@smithy/config-resolver': 4.4.3
       '@smithy/core': 3.18.7
       '@smithy/fetch-http-handler': 5.3.6
@@ -9494,19 +9494,19 @@ snapshots:
       '@smithy/types': 4.9.0
       tslib: 2.8.1
 
-  '@aws-sdk/signature-v4-multi-region@3.946.0':
+  '@aws-sdk/signature-v4-multi-region@3.947.0':
     dependencies:
-      '@aws-sdk/middleware-sdk-s3': 3.946.0
+      '@aws-sdk/middleware-sdk-s3': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/protocol-http': 5.3.5
       '@smithy/signature-v4': 5.3.5
       '@smithy/types': 4.9.0
       tslib: 2.8.1
 
-  '@aws-sdk/token-providers@3.946.0':
+  '@aws-sdk/token-providers@3.947.0':
     dependencies:
-      '@aws-sdk/core': 3.946.0
-      '@aws-sdk/nested-clients': 3.946.0
+      '@aws-sdk/core': 3.947.0
+      '@aws-sdk/nested-clients': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/property-provider': 4.2.5
       '@smithy/shared-ini-file-loader': 4.4.0
@@ -9550,9 +9550,9 @@ snapshots:
       bowser: 2.13.1
       tslib: 2.8.1
 
-  '@aws-sdk/util-user-agent-node@3.946.0':
+  '@aws-sdk/util-user-agent-node@3.947.0':
     dependencies:
-      '@aws-sdk/middleware-user-agent': 3.946.0
+      '@aws-sdk/middleware-user-agent': 3.947.0
       '@aws-sdk/types': 3.936.0
       '@smithy/node-config-provider': 4.3.5
       '@smithy/types': 4.9.0
@@ -9941,7 +9941,7 @@ snapshots:
       nanoid: 3.3.11
       ow: 0.28.2
       p-limit: 3.1.0
-      proxy-chain: 2.6.0
+      proxy-chain: 2.6.1
       quick-lru: 5.1.1
       tiny-typed-emitter: 2.1.0
       tslib: 2.8.1
@@ -10112,7 +10112,7 @@ snapshots:
       '@crawlee/types': 3.15.3
       '@crawlee/utils': 3.15.3
       cheerio: 1.0.0-rc.12
-      devtools-protocol: 0.0.1551306
+      devtools-protocol: 0.0.1555890
       idcac-playwright: 0.1.3
       jquery: 3.7.1
       ow: 0.28.2
@@ -10457,7 +10457,7 @@ snapshots:
       '@shikijs/types': 3.19.0
       '@shikijs/vscode-textmate': 10.0.2
 
-  '@google/genai@1.31.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))':
+  '@google/genai@1.32.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))':
     dependencies:
       google-auth-library: 10.5.0
       ws: 8.18.3
@@ -10513,12 +10513,12 @@ snapshots:
       onnxruntime-node: 1.23.2
       sharp: 0.33.5
 
-  '@happyvertical/ai@0.59.5(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)':
+  '@happyvertical/ai@0.59.6(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)':
     dependencies:
       '@anthropic-ai/sdk': 0.68.0(zod@3.25.76)
-      '@aws-sdk/client-bedrock-runtime': 3.946.0
-      '@google/genai': 1.31.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))
-      '@happyvertical/utils': 0.59.5
+      '@aws-sdk/client-bedrock-runtime': 3.947.0
+      '@google/genai': 1.32.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))
+      '@happyvertical/utils': 0.59.6
       openai: 6.10.0(ws@8.18.3)(zod@3.25.76)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -10529,22 +10529,22 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/cache@0.59.5':
+  '@happyvertical/cache@0.59.6':
     dependencies:
-      '@aws-sdk/client-s3': 3.946.0
-      '@aws-sdk/credential-providers': 3.946.0
-      '@happyvertical/utils': 0.59.5
+      '@aws-sdk/client-s3': 3.947.0
+      '@aws-sdk/credential-providers': 3.947.0
+      '@happyvertical/utils': 0.59.6
       redis: 5.10.0
     transitivePeerDependencies:
       - aws-crt
 
-  '@happyvertical/documents@0.59.5(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)':
+  '@happyvertical/documents@0.59.6(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)':
     dependencies:
-      '@happyvertical/files': 0.59.5
-      '@happyvertical/ocr': 0.59.5
-      '@happyvertical/pdf': 0.59.5(@napi-rs/canvas@0.1.84)
-      '@happyvertical/spider': 0.59.5(@types/node@24.0.0)(postcss@8.5.6)
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/files': 0.59.6
+      '@happyvertical/ocr': 0.59.6
+      '@happyvertical/pdf': 0.59.6(@napi-rs/canvas@0.1.84)
+      '@happyvertical/spider': 0.59.6(@types/node@24.0.0)(postcss@8.5.6)
+      '@happyvertical/utils': 0.59.6
       uuid: 13.0.0
     transitivePeerDependencies:
       - '@napi-rs/canvas'
@@ -10558,10 +10558,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@happyvertical/email@0.59.5':
+  '@happyvertical/email@0.59.6':
     dependencies:
-      '@happyvertical/logger': 0.59.5
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/logger': 0.59.6
+      '@happyvertical/utils': 0.59.6
       google-auth-library: 10.5.0
       googleapis: 131.0.0
       imapflow: 1.1.1
@@ -10584,64 +10584,64 @@ snapshots:
       - '@types/node'
       - typescript
 
-  '@happyvertical/files@0.59.5':
+  '@happyvertical/files@0.59.6':
     dependencies:
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/utils': 0.59.6
 
-  '@happyvertical/geo@0.59.5':
+  '@happyvertical/geo@0.59.6':
     dependencies:
       '@googlemaps/google-maps-services-js': 3.4.2
-      '@happyvertical/cache': 0.59.5
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/cache': 0.59.6
+      '@happyvertical/utils': 0.59.6
     transitivePeerDependencies:
       - aws-crt
       - debug
 
-  '@happyvertical/graphql@0.59.5': {}
+  '@happyvertical/graphql@0.59.6': {}
 
   '@happyvertical/logger@0.59.0':
     dependencies:
       '@happyvertical/utils': 0.59.0
 
-  '@happyvertical/logger@0.59.5':
+  '@happyvertical/logger@0.59.6':
     dependencies:
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/utils': 0.59.6
 
-  '@happyvertical/ocr@0.59.5':
+  '@happyvertical/ocr@0.59.6':
     dependencies:
       '@gutenye/ocr-node': 1.4.8
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/utils': 0.59.6
       jpeg-js: 0.4.4
       pngjs: 7.0.0
       tesseract.js: 6.0.1
     transitivePeerDependencies:
       - encoding
 
-  '@happyvertical/pdf@0.59.5(@napi-rs/canvas@0.1.84)':
+  '@happyvertical/pdf@0.59.6(@napi-rs/canvas@0.1.84)':
     dependencies:
-      '@happyvertical/ocr': 0.59.5
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/ocr': 0.59.6
+      '@happyvertical/utils': 0.59.6
       pdf-to-png-converter: 3.11.0
       unpdf: 1.4.0(@napi-rs/canvas@0.1.84)
     transitivePeerDependencies:
       - '@napi-rs/canvas'
       - encoding
 
-  '@happyvertical/projects@0.59.5':
+  '@happyvertical/projects@0.59.6':
     dependencies:
-      '@happyvertical/graphql': 0.59.5
-      '@happyvertical/repos': 0.59.5
+      '@happyvertical/graphql': 0.59.6
+      '@happyvertical/repos': 0.59.6
 
-  '@happyvertical/repos@0.59.5':
+  '@happyvertical/repos@0.59.6':
     dependencies:
-      '@happyvertical/graphql': 0.59.5
+      '@happyvertical/graphql': 0.59.6
       js-yaml: 4.1.1
 
-  '@happyvertical/spider@0.59.5(@types/node@24.0.0)(postcss@8.5.6)':
+  '@happyvertical/spider@0.59.6(@types/node@24.0.0)(postcss@8.5.6)':
     dependencies:
-      '@happyvertical/cache': 0.59.5
-      '@happyvertical/files': 0.59.5
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/cache': 0.59.6
+      '@happyvertical/files': 0.59.6
+      '@happyvertical/utils': 0.59.6
       '@mozilla/readability': 0.6.0
       cheerio: 1.1.2
       crawlee: 3.15.3(@types/node@24.0.0)(playwright@1.57.0)
@@ -10659,10 +10659,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@happyvertical/sql@0.59.5':
+  '@happyvertical/sql@0.59.6':
     dependencies:
       '@duckdb/node-api': 1.4.1-r.4
-      '@happyvertical/utils': 0.59.5
+      '@happyvertical/utils': 0.59.6
       '@libsql/client': 0.15.15
       pg: 8.16.3
       sqlite-vss: 0.1.2
@@ -10678,7 +10678,7 @@ snapshots:
       pluralize: 8.0.0
       uuid: 13.0.0
 
-  '@happyvertical/utils@0.59.5':
+  '@happyvertical/utils@0.59.6':
     dependencies:
       '@paralleldrive/cuid2': 3.0.4
       date-fns: 4.1.0
@@ -10856,7 +10856,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@langchain/community@0.3.58(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.946.0)(@aws-sdk/client-s3@3.946.0)(@aws-sdk/credential-provider-node@3.946.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(zod@3.25.76))(@ibm-cloud/watsonx-ai@1.7.4)(@langchain/core@0.3.79(openai@6.10.0(ws@8.18.3)(zod@3.25.76)))(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@10.5.0)(googleapis@131.0.0)(handlebars@4.7.8)(html-to-text@9.0.5)(ibm-cloud-sdk-core@5.4.5)(ignore@5.3.2)(jsdom@27.1.0(postcss@8.5.6))(jsonwebtoken@9.0.3)(lodash@4.17.21)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(pg@8.16.3)(playwright@1.57.0)(redis@5.10.0)(weaviate-client@3.10.0)(ws@8.18.3)':
+  '@langchain/community@0.3.58(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-bedrock-runtime@3.947.0)(@aws-sdk/client-s3@3.947.0)(@aws-sdk/credential-provider-node@3.947.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(zod@3.25.76))(@ibm-cloud/watsonx-ai@1.7.4)(@langchain/core@0.3.79(openai@6.10.0(ws@8.18.3)(zod@3.25.76)))(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(axios@1.13.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@10.5.0)(googleapis@131.0.0)(handlebars@4.7.8)(html-to-text@9.0.5)(ibm-cloud-sdk-core@5.4.5)(ignore@5.3.2)(jsdom@27.1.0(postcss@8.5.6))(jsonwebtoken@9.0.3)(lodash@4.17.21)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(pg@8.16.3)(playwright@1.57.0)(redis@5.10.0)(weaviate-client@3.10.0)(ws@8.18.3)':
     dependencies:
       '@browserbasehq/stagehand': 1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.10.0(ws@8.18.3)(zod@3.25.76))(zod@3.25.76)
       '@ibm-cloud/watsonx-ai': 1.7.4
@@ -10875,9 +10875,9 @@ snapshots:
       zod: 3.25.76
     optionalDependencies:
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/client-bedrock-runtime': 3.946.0
-      '@aws-sdk/client-s3': 3.946.0
-      '@aws-sdk/credential-provider-node': 3.946.0
+      '@aws-sdk/client-bedrock-runtime': 3.947.0
+      '@aws-sdk/client-s3': 3.947.0
+      '@aws-sdk/credential-provider-node': 3.947.0
       '@browserbasehq/sdk': 2.6.0
       '@mozilla/readability': 0.6.0
       '@smithy/util-utf8': 2.3.0
@@ -12712,7 +12712,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  baseline-browser-mapping@2.9.4: {}
+  baseline-browser-mapping@2.9.5: {}
 
   bech32@2.0.0: {}
 
@@ -12798,9 +12798,9 @@ snapshots:
 
   browserslist@4.28.1:
     dependencies:
-      baseline-browser-mapping: 2.9.4
-      caniuse-lite: 1.0.30001759
-      electron-to-chromium: 1.5.266
+      baseline-browser-mapping: 2.9.5
+      caniuse-lite: 1.0.30001760
+      electron-to-chromium: 1.5.267
       node-releases: 2.0.27
       update-browserslist-db: 1.2.2(browserslist@4.28.1)
 
@@ -12859,7 +12859,7 @@ snapshots:
 
   camelcase@6.3.0: {}
 
-  caniuse-lite@1.0.30001759: {}
+  caniuse-lite@1.0.30001760: {}
 
   chai@5.3.3:
     dependencies:
@@ -13342,7 +13342,7 @@ snapshots:
 
   devalue@5.5.0: {}
 
-  devtools-protocol@0.0.1551306: {}
+  devtools-protocol@0.0.1555890: {}
 
   diff@8.0.2: {}
 
@@ -13430,7 +13430,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  electron-to-chromium@1.5.266: {}
+  electron-to-chromium@1.5.267: {}
 
   emoji-regex@8.0.0: {}
 
@@ -15945,7 +15945,7 @@ snapshots:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
 
-  proxy-chain@2.6.0:
+  proxy-chain@2.6.1:
     dependencies:
       socks: 2.8.7
       socks-proxy-agent: 8.0.5
