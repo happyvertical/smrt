@@ -1,20 +1,9 @@
 /**
  * Test manifest loader with fallback
- * Synchronously loads test manifest if available, otherwise returns empty manifest
+ * Uses the committed stub file, which is kept in sync with test objects
  */
 
 import type { SmartObjectManifest } from '../scanner/types';
+import { testManifest as stubManifest } from './test-manifest-stub.js';
 
-// Try to import test manifest, fall back to empty manifest
-let loadedTestManifest: SmartObjectManifest | null = null;
-
-try {
-  // This will be replaced by the actual manifest after pretest script runs
-  const { testManifest } = await import('./test-manifest.js');
-  loadedTestManifest = testManifest;
-} catch {
-  // Test manifest not generated yet - use empty manifest
-  loadedTestManifest = null;
-}
-
-export const testManifest = loadedTestManifest;
+export const testManifest: SmartObjectManifest = stubManifest;
