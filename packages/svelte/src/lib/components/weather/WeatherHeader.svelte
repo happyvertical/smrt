@@ -172,7 +172,8 @@ const isFirst = $derived(selectedDayIndex === 0);
 const isLast = $derived(selectedDayIndex === dayForecasts.length - 1);
 
 // Drag-to-scroll for hourly grid
-const hourlyGridEl = $state<HTMLElement | null>(null);
+// biome-ignore lint/style/useConst: bind:this requires let, not const
+let hourlyGridEl = $state<HTMLElement | null>(null);
 let isDragging = $state(false);
 let startX = $state(0);
 let scrollLeft = $state(0);
