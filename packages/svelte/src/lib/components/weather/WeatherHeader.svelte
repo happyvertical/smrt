@@ -172,10 +172,22 @@ const isFirst = $derived(selectedDayIndex === 0);
 const isLast = $derived(selectedDayIndex === dayForecasts.length - 1);
 
 // Drag-to-scroll for hourly grid
-let hourlyGridEl: HTMLElement | null = null;
-let isDragging = false;
-let startX = 0;
-let scrollLeft = 0;
+const hourlyGridEl = $state<HTMLElement | null>(null);
+let isDragging = $state(false);
+let startX = $state(0);
+let scrollLeft = $state(0);
+
+// Document-level mouseup listener to handle drag release outside the element
+$effect(() => {
+  function handleDocumentMouseUp() {
+    if (isDragging) {
+      isDragging = false;
+      if (hourlyGridEl) hourlyGridEl.style.cursor = 'grab';
+    }
+  }
+  document.addEventListener('mouseup', handleDocumentMouseUp);
+  return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
+});
 
 function handleMouseDown(e: MouseEvent) {
   if (!hourlyGridEl) return;
@@ -201,6 +213,19 @@ function handleMouseUp() {
 function handleMouseLeave() {
   isDragging = false;
   if (hourlyGridEl) hourlyGridEl.style.cursor = 'grab';
+}
+
+// Keyboard navigation for accessibility
+function handleKeyDown(e: KeyboardEvent) {
+  if (!hourlyGridEl) return;
+  const scrollAmount = 100;
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    hourlyGridEl.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    hourlyGridEl.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+  }
 }
 </script>
 
@@ -237,10 +262,13 @@ function handleMouseLeave() {
         onmousemove={handleMouseMove}
         onmouseup={handleMouseUp}
         onmouseleave={handleMouseLeave}
+        onkeydown={handleKeyDown}
         role="list"
+        tabindex="0"
+        aria-label="Hourly forecast, use arrow keys to scroll"
       >
         {#each selectedDay.hourlyData as hour}
-          <div class="hour-card">
+          <div class="hour-card" role="listitem">
             <span class="hour-time">{hour.time}</span>
             <span class="hour-icon">{hour.icon}</span>
             <span class="hour-temp">{hour.temperature}°</span>
