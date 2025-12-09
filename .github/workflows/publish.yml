@@ -184,84 +184,9 @@ jobs:
           version="${{ steps.check_published.outputs.version }}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  cascade:
-    name: Trigger Dependency Cascade
-    runs-on: ubuntu-latest
-    needs: [release]
-    if: needs.release.outputs.published == 'true'
-
-    steps:
-      - name: Trigger dependency cascade
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "📢 Triggering dependency cascade for downstream repositories..."
-          echo ""
-
-          # Get published version
-          version="${{ needs.release.outputs.version }}"
-          echo "📦 Published version: $version"
-          echo ""
-
-          # Get list of downstream targets from cascade config
-          echo "🔍 Fetching cascade configuration..."
-          config_url="https://raw.githubusercontent.com/happyvertical"
-          config_url="${config_url}/sdk/main/.github/cascade-config.json"
-          echo "   Config URL: $config_url"
-
-          if ! config_json=$(curl -s -f "$config_url"); then
-            echo "❌ Failed to fetch cascade configuration"
-            echo "   Check if $config_url exists and is accessible"
-            exit 1
-          fi
-
-          if [ -z "$config_json" ]; then
-            echo "❌ Cascade configuration is empty"
-            echo "   Check if $config_url contains valid JSON"
-            exit 1
-          fi
-
-          echo "✅ Configuration fetched successfully"
-          echo ""
-
-          DOWNSTREAM_REPOS=$(echo "$config_json" | \
-            jq -r '.cascade.smrt.triggers[]' 2>/dev/null | tr '\n' ' ')
-
-          if [ -z "$DOWNSTREAM_REPOS" ]; then
-            echo "⚠️  No downstream repositories configured"
-            echo "   Check cascade config: $config_url"
-            exit 0
-          fi
-
-          echo "🎯 Downstream repositories: $DOWNSTREAM_REPOS"
-          echo ""
-
-          # Trigger each downstream repo using repository_dispatch
-          success_count=0
-          fail_count=0
-
-          for repo in $DOWNSTREAM_REPOS; do
-            echo "📤 Triggering: happyvertical/$repo"
-            if gh api "repos/happyvertical/$repo/dispatches" \
-              -f event_type="sdk-updated" \
-              -f 'client_payload[upstream_package]'="@happyvertical/smrt" \
-              -f 'client_payload[upstream_version]'="$version" \
-              -f 'client_payload[triggered_by]'="${{ github.actor }}"; then
-              echo "   ✅ Successfully triggered"
-              success_count=$((success_count + 1))
-            else
-              echo "   ⚠️  Failed to trigger (check repo access/permissions)"
-              fail_count=$((fail_count + 1))
-            fi
-            echo ""
-          done
-
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📊 Cascade Summary:"
-          echo "   ✅ Successful: $success_count"
-          echo "   ⚠️  Failed: $fail_count"
-          echo "   📦 Version: $version"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  # Note: Downstream dependency updates are handled by Renovate CE.
+  # When SMRT publishes, Renovate detects the new version and creates
+  # PRs in downstream repos (praeco, caelus, etc.) automatically.
 
   deploy-docs:
     name: Deploy Documentation

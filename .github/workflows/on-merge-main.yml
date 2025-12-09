@@ -5,10 +5,6 @@ on:
   push:
     branches: [main]
 
-  # Triggered by upstream dependency updates (e.g., from SDK)
-  repository_dispatch:
-    types: [dependency-updated, sdk-updated]
-
   workflow_dispatch:
     inputs:
       skip-docs:
@@ -101,97 +97,10 @@ jobs:
           fi
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  # Update dependencies when triggered by upstream cascade
-  update-dependencies:
-    name: Update Dependencies
-    if: github.event_name == 'repository_dispatch'
-    runs-on: ubuntu-latest
-    outputs:
-      updated: ${{ steps.check-updates.outputs.updated }}
-      pr-number: ${{ steps.create-pr.outputs.pull-request-number }}
-      pr-url: ${{ steps.create-pr.outputs.pull-request-url }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup environment
-        uses: ./.github/actions/setup-environment
-        with:
-          node-version: '24'
-          install-deps: 'false'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GH_TOKEN }}
-
-      - name: Update @happyvertical dependencies
-        id: update
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "🔄 Updating @happyvertical packages in all workspace packages..."
-          pnpm update -r '@happyvertical/*' --latest
-          pnpm install
-
-      - name: Check for updates
-        id: check-updates
-        run: |
-          if git diff --quiet \
-              package.json pnpm-lock.yaml packages/*/package.json \
-              2>/dev/null; then
-            echo "updated=false" >> "$GITHUB_OUTPUT"
-            echo "⏭️  No updates needed"
-          else
-            echo "updated=true" >> "$GITHUB_OUTPUT"
-            echo "✅ Dependencies updated"
-            echo "📦 Updated packages:"
-            git diff package.json packages/*/package.json | \
-              grep '^\+.*@happyvertical' | \
-              sed 's/^+//' || echo "  (lockfile changes only)"
-          fi
-
-      - name: Create Pull Request
-        id: create-pr
-        if: steps.check-updates.outputs.updated == 'true'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-          commit-message: 'chore: update @happyvertical dependencies'
-          title: 'chore: update @happyvertical dependencies'
-          body: >
-            ## Automated Dependency Update
-
-
-            Triggered by upstream dependency changes.
-
-
-            This PR will be automatically merged after tests pass.
-          branch: cascade/update-dependencies
-          delete-branch: true
-          labels: dependencies,automated
-
-      - name: Enable auto-merge
-        if: steps.create-pr.outputs.pull-request-number
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          pr_num="${{ steps.create-pr.outputs.pull-request-number }}"
-          echo "🔀 Enabling auto-merge for PR #$pr_num"
-          echo "⏳ Waiting 30 seconds for status checks to start..."
-          sleep 30
-          gh pr merge "$pr_num" \
-            --auto --squash \
-            --delete-branch
-
-  # Run tests (for both normal merges and cascade PRs)
+  # Run tests
   test:
     name: Test
-    needs: [update-dependencies]
-    if: |
-      always() &&
-      (needs.update-dependencies.result == 'success' ||
-       needs.update-dependencies.result == 'skipped')
+    if: always()
     uses: ./.github/workflows/test.yml
     permissions:
       contents: read
@@ -201,12 +110,7 @@ jobs:
   build:
     name: Build
     needs: test
-    # Only run on direct pushes to main or manual triggers (not cascade events)
-    if: |
-      always() &&
-      (github.event_name == 'push' ||
-       github.event_name == 'workflow_dispatch') &&
-      needs.test.result == 'success'
+    if: always() && needs.test.result == 'success'
     uses: ./.github/workflows/build.yml
     permissions:
       contents: read
