@@ -2,13 +2,12 @@
 /**
  * Auto-generate Changesets from conventional commits
  *
- * Analyzes commits since last release and creates changeset files
- * based on conventional commit messages (feat:, fix:, etc.)
+ * Analyzes commits since last release and creates changeset files.
+ * Every merge to main triggers a release.
  *
  * Version bump rules for 0.x.x releases:
  * - Breaking changes (feat!, BREAKING CHANGE) → minor bump (0.x.0)
- * - Features, fixes, perf → patch bump (0.0.x)
- * - Other commit types (chore, docs, etc.) → no bump
+ * - All other commits → patch bump (0.0.x)
  */
 
 import { execSync } from 'node:child_process';
@@ -90,31 +89,26 @@ function parseConventionalCommit(commitLine: string): ParsedCommit | null {
 
 function determineVersionBump(
   commits: ParsedCommit[],
-): 'major' | 'minor' | 'patch' | null {
-  // For 0.x.x versions, we use different rules:
+): 'major' | 'minor' | 'patch' {
+  // For 0.x.x versions:
   // - Breaking changes → minor (0.x.0)
-  // - Features, fixes, perf, refactor → patch (0.0.x)
-
+  // - All other commits → patch (0.0.x)
+  // Every merge to main triggers a release.
   const hasBreaking = commits.some((c) => c.breaking);
-  if (hasBreaking) return 'minor'; // Breaking in 0.x → minor bump
-
-  const hasFeature = commits.some((c) => c.type === 'feat');
-  const hasFix = commits.some((c) =>
-    ['fix', 'perf', 'refactor'].includes(c.type),
-  );
-
-  if (hasFeature || hasFix) return 'patch';
-
-  return null; // No releaseable commits
+  return hasBreaking ? 'minor' : 'patch';
 }
 
 function generateChangesetContent(
   commits: ParsedCommit[],
   bump: 'major' | 'minor' | 'patch',
 ): string {
-  const features = commits.filter((c) => c.type === 'feat');
-  const fixes = commits.filter((c) => c.type === 'fix');
+  // Group commits by type
   const breaking = commits.filter((c) => c.breaking);
+  const features = commits.filter((c) => c.type === 'feat' && !c.breaking);
+  const fixes = commits.filter((c) => c.type === 'fix' && !c.breaking);
+  const other = commits.filter(
+    (c) => !c.breaking && c.type !== 'feat' && c.type !== 'fix',
+  );
 
   let content = `---\n`;
   // Use @happyvertical/smrt-core as representative package (all packages in fixed group will bump together)
@@ -141,6 +135,14 @@ function generateChangesetContent(
     content += `### Bug Fixes\n\n`;
     fixes.forEach((c) => {
       content += `- ${c.message}${c.scope ? ` (${c.scope})` : ''}\n`;
+    });
+    content += `\n`;
+  }
+
+  if (other.length > 0) {
+    content += `### Other Changes\n\n`;
+    other.forEach((c) => {
+      content += `- ${c.type}: ${c.message}${c.scope ? ` (${c.scope})` : ''}\n`;
     });
   }
 
@@ -186,19 +188,8 @@ function main() {
 
   const bump = determineVersionBump(parsedCommits);
 
-  if (!bump) {
-    console.log('ℹ️  No releaseable commits found (only chore, docs, etc.)');
-    return;
-  }
-
   console.log(`📦 Version bump: ${bump}`);
   console.log(`   - ${parsedCommits.length} conventional commits`);
-  console.log(
-    `   - ${parsedCommits.filter((c) => c.type === 'feat').length} features`,
-  );
-  console.log(
-    `   - ${parsedCommits.filter((c) => c.type === 'fix').length} fixes`,
-  );
   console.log(
     `   - ${parsedCommits.filter((c) => c.breaking).length} breaking changes`,
   );
