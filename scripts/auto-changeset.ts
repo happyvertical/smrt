@@ -93,13 +93,15 @@ function determineVersionBump(
 ): 'major' | 'minor' | 'patch' | null {
   // For 0.x.x versions, we use different rules:
   // - Breaking changes → minor (0.x.0)
-  // - Features, fixes, perf → patch (0.0.x)
+  // - Features, fixes, perf, refactor → patch (0.0.x)
 
   const hasBreaking = commits.some((c) => c.breaking);
   if (hasBreaking) return 'minor'; // Breaking in 0.x → minor bump
 
   const hasFeature = commits.some((c) => c.type === 'feat');
-  const hasFix = commits.some((c) => ['fix', 'perf'].includes(c.type));
+  const hasFix = commits.some((c) =>
+    ['fix', 'perf', 'refactor'].includes(c.type),
+  );
 
   if (hasFeature || hasFix) return 'patch';
 
