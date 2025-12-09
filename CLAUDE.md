@@ -818,6 +818,51 @@ See [CHANGESETS.md](./CHANGESETS.md) for complete release workflow documentation
 
 ---
 
+## Dependency Management
+
+The SMRT framework uses [Renovate CE](https://github.com/renovatebot/renovate) for automated dependency updates:
+
+### How It Works
+
+1. **Upstream Changes (SDK)**: When `@happyvertical/sdk` packages publish new versions, Renovate CE detects the update via GitHub webhooks
+2. **PR Creation**: Renovate automatically creates a PR in SMRT with the updated dependencies
+3. **Automerge**: Patch version updates are automatically merged after tests pass
+4. **Downstream Propagation**: After SMRT publishes, Renovate detects the new version and creates PRs in downstream repos (praeco, caelus, etc.)
+
+### Configuration
+
+The Renovate configuration is defined in `renovate.json` and extends the shared config from [happyvertical/renovate-config](https://github.com/happyvertical/renovate-config):
+
+```json
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["local>happyvertical/renovate-config:smrt"]
+}
+```
+
+### Expected Behavior
+
+| Scenario | Renovate Action |
+|----------|-----------------|
+| SDK patch release (0.x.Y) | Auto-create PR, automerge after tests pass |
+| SDK minor release (0.X.0) | Create PR, requires manual review |
+| External dependency update | Grouped weekly PRs |
+| Security vulnerability | Immediate PR with priority label |
+
+### Dependency Flow
+
+```
+@happyvertical/sdk
+        │
+        ▼ (Renovate detects new version)
+@happyvertical/smrt-* (this repo)
+        │
+        ▼ (Renovate detects new version)
+praeco, caelus, create-gnode (downstream repos)
+```
+
+---
+
 ## Related Projects
 
 - **[HAppyVertical SDK](https://github.com/happyvertical/sdk)**: Infrastructure packages that use SMRT
