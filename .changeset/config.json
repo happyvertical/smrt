@@ -14,11 +14,15 @@
       "@happyvertical/smrt-docs-mcp",
       "@happyvertical/smrt-events",
       "@happyvertical/smrt-gnode",
+      "@happyvertical/smrt-messages",
       "@happyvertical/smrt-places",
       "@happyvertical/smrt-products",
       "@happyvertical/smrt-profiles",
+      "@happyvertical/smrt-projects",
       "@happyvertical/smrt-svelte",
       "@happyvertical/smrt-tags",
+      "@happyvertical/smrt-template-site-static-json",
+      "@happyvertical/smrt-template-sveltekit",
       "@happyvertical/smrt-types"
     ]
   ],

@@ -698,6 +698,66 @@ This project uses [Changesets](https://github.com/changesets/changesets) for ver
 
 For complete changeset workflow and troubleshooting, see [CHANGESETS.md](./CHANGESETS.md).
 
+### Adding New Packages
+
+When creating a new package in the monorepo, you **MUST** complete these steps to ensure proper versioning and release:
+
+#### 1. Add to Changeset Fixed Array
+
+All packages must be added to the `fixed` array in `.changeset/config.json` to ensure they stay version-locked together:
+
+```json
+{
+  "fixed": [
+    [
+      "@happyvertical/smrt-agents",
+      "@happyvertical/smrt-assets",
+      // ... existing packages ...
+      "@happyvertical/smrt-YOUR-NEW-PACKAGE"  // ADD HERE
+    ]
+  ]
+}
+```
+
+#### 2. Match Current Version
+
+Set the new package's version to match all other packages:
+
+```json
+{
+  "name": "@happyvertical/smrt-your-package",
+  "version": "0.17.34"  // Match current version of other packages
+}
+```
+
+Check current version: `node -p "require('./packages/core/package.json').version"`
+
+#### 3. Required Package.json Fields
+
+Ensure these fields are set correctly:
+
+```json
+{
+  "name": "@happyvertical/smrt-your-package",
+  "version": "0.17.34",
+  "type": "module",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
+```
+
+#### Why This Matters
+
+All `@happyvertical/smrt-*` packages are **version-locked** using Changeset's `fixed` configuration. This means:
+
+- When ANY package in the fixed group gets a bump, ALL packages bump together
+- This prevents version mismatches between interdependent packages (e.g., `smrt-core` vs `smrt-cli`)
+- Downstream projects can reliably use `@happyvertical/smrt-*@0.17.x` knowing all packages are compatible
+
+**Failure to add new packages to the fixed array** will cause them to drift to different versions, breaking compatibility.
+
 ### Testing Requirements
 
 All code changes must include tests following [TESTING_STANDARD.md](../TESTING_STANDARD.md):
