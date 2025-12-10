@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.37
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - update .npmrc to use NPM_TOKEN for GitHub Packages auth (#506)
+  - @happyvertical/smrt-config@0.17.37
+  - @happyvertical/smrt-types@0.17.37
+
 ## 0.17.36
 
 ### Patch Changes
