@@ -27,6 +27,6 @@
     "directory": "packages/template-sveltekit"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-core": "^0.17.35"
+    "@happyvertical/smrt-core": "^0.17.38"
   }
 }

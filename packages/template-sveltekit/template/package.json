@@ -19,6 +19,6 @@
     "vite": "^6.0.0"
   },
   "dependencies": {
-    "@happyvertical/smrt-core": "^0.17.0"
+    "@happyvertical/smrt-core": "^0.17.38"
   }
 }

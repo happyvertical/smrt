@@ -26,17 +26,17 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.60.0",
-    "@happyvertical/cache": "0.60.0",
-    "@happyvertical/files": "0.60.0",
-    "@happyvertical/geo": "0.60.0",
-    "@happyvertical/logger": "0.60.0",
+    "@happyvertical/ai": "0.60.3",
+    "@happyvertical/cache": "0.60.3",
+    "@happyvertical/files": "0.60.3",
+    "@happyvertical/geo": "0.60.3",
+    "@happyvertical/logger": "0.60.3",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "0.60.0",
-    "@happyvertical/utils": "0.60.0"
+    "@happyvertical/sql": "0.60.3",
+    "@happyvertical/utils": "0.60.3"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.10.3",
     "fast-glob": "3.3.3",
     "typescript": "^5.7.2",
     "vite": "^7.1.3",

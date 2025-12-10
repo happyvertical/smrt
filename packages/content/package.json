@@ -21,22 +21,22 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.60.0",
-    "@happyvertical/documents": "0.60.0",
-    "@happyvertical/files": "0.60.0",
-    "@happyvertical/logger": "0.60.0",
+    "@happyvertical/ai": "0.60.3",
+    "@happyvertical/documents": "0.60.3",
+    "@happyvertical/files": "0.60.3",
+    "@happyvertical/logger": "0.60.3",
     "@happyvertical/ocr": "0.60.0",
-    "@happyvertical/pdf": "0.60.0",
+    "@happyvertical/pdf": "0.60.2",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/spider": "0.60.0",
-    "@happyvertical/sql": "0.60.0",
-    "@happyvertical/utils": "0.60.0",
-    "yaml": "^2.8.1"
+    "@happyvertical/sql": "0.60.3",
+    "@happyvertical/utils": "0.60.3",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
-    "@faker-js/faker": "^9.3.0",
+    "@faker-js/faker": "^9.9.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.2",
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.10.3",
     "svelte": "^5.18.2",
     "typescript": "^5.7.2",
     "vite": "^7.1.3",

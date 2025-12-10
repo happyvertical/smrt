@@ -31,7 +31,7 @@
     "directory": "packages/template-site-static-json"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-core": "^0.17.0",
-    "@happyvertical/smrt-config": "^0.17.0"
+    "@happyvertical/smrt-core": "^0.17.38",
+    "@happyvertical/smrt-config": "^0.17.38"
   }
 }
