@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.17.35
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add missing packages to changeset fixed array and sync versions (#490)
+
+  ### Other Changes
+
+  - chore: prepare for Renovate CE migration (#486)
+  - @happyvertical/smrt-config@0.17.35
+  - @happyvertical/smrt-types@0.17.35
+
 ## 0.17.34
 
 ### Patch Changes
