@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@happyvertical/ai": "0.60.0",
-    "@happyvertical/documents": "0.60.0",
+    "@happyvertical/documents": "0.60.2",
     "@happyvertical/files": "0.60.0",
     "@happyvertical/logger": "0.60.0",
     "@happyvertical/ocr": "0.60.0",

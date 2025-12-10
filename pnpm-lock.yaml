@@ -247,8 +247,8 @@ importers:
         specifier: 0.60.0
         version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/documents':
-        specifier: 0.60.0
-        version: 0.60.0(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)
+        specifier: 0.60.2
+        version: 0.60.2(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -1998,8 +1998,11 @@ packages:
   '@happyvertical/cache@0.60.0':
     resolution: {integrity: sha512-vWkxaRZi/o/eiYzfX4T1VpuTU/JBe9c06vetFw2TELwX0Bm6vi3omtzoHVsJD5N0+eIkSBgCbqvegIqem4oo9A==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.60.0/49da7f570a0d1a8b25ef602c70f842c49adb2b15}
 
-  '@happyvertical/documents@0.60.0':
-    resolution: {integrity: sha512-mv1uj9P8JDQBJQXUEyLPpNp7TzhzkUSkbS0BHPlGyD0ZQhqr3hB/+vt6hqGRKOeImWh+lZk0KG+ISyC3BYVRiA==, tarball: https://npm.pkg.github.com/download/@happyvertical/documents/0.60.0/a4f40f4c35634387fd8a2373623d47f3c5087124}
+  '@happyvertical/cache@0.60.2':
+    resolution: {integrity: sha512-xBZ8AlgGM/OL4+VlMJL23TmDuf2+F2A6Bqf/l+RdJs7RmN9gvumsnggnSXvYb4ROEBgkGSza01BZ0+kE/CQd+g==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.60.2/6d8f05746ef360913cb33f52db56922fc470853c}
+
+  '@happyvertical/documents@0.60.2':
+    resolution: {integrity: sha512-aTA8Bbs4By53kreEevvfcHIl85qE9B7RPtlsrQ9BEv9mFsG2HSPXIzPD5o9ssQDt7Zb9gMMR6GkE5iJa9EMiMw==, tarball: https://npm.pkg.github.com/download/@happyvertical/documents/0.60.2/801a78c1e9fc78ecaf8a87dd8f53eea52c983be8}
 
   '@happyvertical/email@0.60.0':
     resolution: {integrity: sha512-oKYG/v5esCXcyJOFNQXuO79uKweE5wYLKQAaRRAjoeFTsA+NyhdlHy2+ZqCvFEPVHVbCi9WmAMLQiHmjwJIUkA==, tarball: https://npm.pkg.github.com/download/@happyvertical/email/0.60.0/e4bd926b1f38fa7b85fd97b356a68904ea7d376a}
@@ -2009,6 +2012,9 @@ packages:
 
   '@happyvertical/files@0.60.0':
     resolution: {integrity: sha512-AhisbdiQTNQXXV481uFbkjnDNnZjyB6P0Fca3T0TC8++aES3ZwThS7pHOmtV4v2gW42ijR6SHMGvM0t2LDgCPQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/files/0.60.0/128bc91ce360ea91678eee3d64b12c5de01036f1}
+
+  '@happyvertical/files@0.60.2':
+    resolution: {integrity: sha512-Et4SS/zJcYTQv7DcIHvtCB0rwerVoYQjx9tIMHyjGPAtuLSLC7lsCslVo0BrCd0EUxIGwikPPNkJDFlOQjQSDg==, tarball: https://npm.pkg.github.com/download/@happyvertical/files/0.60.2/211f914199b84ab2bb5bfa818481cdd85e98b47f}
 
   '@happyvertical/geo@0.60.0':
     resolution: {integrity: sha512-X1kM66/mEGDp/9wDTYJ9+iJuwCRg3roSAKCN3guggl7YiPs6BqRE1j591iQfaf5M/YF5L82guS9MJKuM6UY37A==, tarball: https://npm.pkg.github.com/download/@happyvertical/geo/0.60.0/db5100f78bae738b66edafa4f50541c1185edcd6}
@@ -2025,8 +2031,14 @@ packages:
   '@happyvertical/ocr@0.60.0':
     resolution: {integrity: sha512-A1xEBgW4P2atg1WDXkMOXX0l4KGFRFVCaewpYBTXQHWby9UNzPOyH4dFXImj5/RSiDOlG4jr6ZW8Rqm+nyKR0w==, tarball: https://npm.pkg.github.com/download/@happyvertical/ocr/0.60.0/fb4a9a6fa90e255d0b55968a550e858d236cfb44}
 
+  '@happyvertical/ocr@0.60.2':
+    resolution: {integrity: sha512-YyS0CyuCKq5BK3rq386gR4dZ3ie79OesL65eZpBLmRZi3YL8XI+IAioguefLn9iukDpQYptmY9VXrEc9RtBpeQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/ocr/0.60.2/e780bf3eb823ac67d50afbcf2cc8a0fea16fa2b1}
+
   '@happyvertical/pdf@0.60.0':
     resolution: {integrity: sha512-F0RBnNydOXv3JkBiBa3sNiZ09ES0mAmNtAhTpVDHXqjeIbcVHdoS7qPEmtRdJ6crmv/l6g4VJFTWqau8H8HHwA==, tarball: https://npm.pkg.github.com/download/@happyvertical/pdf/0.60.0/2d1784440a30e1619297dd83daccff41f56164a9}
+
+  '@happyvertical/pdf@0.60.2':
+    resolution: {integrity: sha512-Ov+rcrcANRxn9Jx2ja3xTm0AftPULIL/r8aOTd3YZ92sNVs2A9oceVXgHIBml6N5of4Cwh+Sq1AvYk2LP0YyLQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/pdf/0.60.2/a280c47b36634c90c29dc0b52ae9cb14b99a2932}
 
   '@happyvertical/projects@0.60.0':
     resolution: {integrity: sha512-dp0Q6FisLhylz7DUTapV87fy+lVNLYrRrSne0FMlnhGa8szH3WZK0HzXRuhEXvfdtDSev9KGs6yQMRWApYJNqQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/projects/0.60.0/66957a3ecb1b3dfe00b8e3f6c0cd8e78c3c5bb32}
@@ -2037,6 +2049,9 @@ packages:
   '@happyvertical/spider@0.60.0':
     resolution: {integrity: sha512-Ti8QSCeO7sIp9LnPgy5obDzdoA8rtsd0Hy+R19tVo9t+X7BOCWvDZWGiryEfh0/Ml8GkERyamWEDNKIL9166DQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.60.0/f24cf4278329bccc7ab7513de94e13873f3e664a}
 
+  '@happyvertical/spider@0.60.2':
+    resolution: {integrity: sha512-5jof3dKGHlOxEshsyANqHHYT+2WNyApDWIZXSig1aj5kRt3Z1mWwxdp19A0u1NojoH2tVUQkdq7VnAPlzM9shg==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.60.2/aa39d4bd490e7d75603c79287451dc3a20f1e603}
+
   '@happyvertical/sql@0.60.0':
     resolution: {integrity: sha512-lhboBt3aA5esWO+S7eOJgCpCmGTEXEFtcHbq2y+Ejx977pL+H8MRk04VdzHpYyp3crICEx6b6qlgssqQbP0swA==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.60.0/b8be1e51477b93edfe1a928e03f4e3e16b1a9a7e}
 
@@ -2045,6 +2060,9 @@ packages:
 
   '@happyvertical/utils@0.60.0':
     resolution: {integrity: sha512-7ws1FlngxMKrpL4N+CVVVrg6hz3A+LmjO5ImRbOwrpkwnI8KQYecF89nbNayj8oeFDseBLwJMjUiou7uFGH8PA==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.0/37c73235f12fbc14195bb5f19f086a11d190ed3a}
+
+  '@happyvertical/utils@0.60.2':
+    resolution: {integrity: sha512-O545bmkf++TAfCP/MbXV/U0ucx+6TRi4dsiOpOO92xnu6N8kNPBVsZ2Kt+M1XBwhRLuhE0Y0lBBpXFm021+18A==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.2/0e25ff142cbf8c3e24c7cfa014b0a1155896fe8f}
 
   '@humanwhocodes/config-array@0.9.5':
     resolution: {integrity: sha512-ObyMyWxZiCu/yTisA7uzx81s40xR2fD5Cg/2Kq7G02ajkNubJf6BopgDTmDyc3U7sXpNKM8cYOw7s7Tyr+DnCw==}
@@ -10538,13 +10556,22 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@happyvertical/documents@0.60.0(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)':
+  '@happyvertical/cache@0.60.2':
     dependencies:
-      '@happyvertical/files': 0.60.0
-      '@happyvertical/ocr': 0.60.0
-      '@happyvertical/pdf': 0.60.0(@napi-rs/canvas@0.1.84)
-      '@happyvertical/spider': 0.60.0(@types/node@24.0.0)(postcss@8.5.6)
-      '@happyvertical/utils': 0.60.0
+      '@aws-sdk/client-s3': 3.947.0
+      '@aws-sdk/credential-providers': 3.947.0
+      '@happyvertical/utils': 0.60.2
+      redis: 5.10.0
+    transitivePeerDependencies:
+      - aws-crt
+
+  '@happyvertical/documents@0.60.2(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)':
+    dependencies:
+      '@happyvertical/files': 0.60.2
+      '@happyvertical/ocr': 0.60.2
+      '@happyvertical/pdf': 0.60.2(@napi-rs/canvas@0.1.84)
+      '@happyvertical/spider': 0.60.2(@types/node@24.0.0)(postcss@8.5.6)
+      '@happyvertical/utils': 0.60.2
       uuid: 13.0.0
     transitivePeerDependencies:
       - '@napi-rs/canvas'
@@ -10588,6 +10615,10 @@ snapshots:
     dependencies:
       '@happyvertical/utils': 0.60.0
 
+  '@happyvertical/files@0.60.2':
+    dependencies:
+      '@happyvertical/utils': 0.60.2
+
   '@happyvertical/geo@0.60.0':
     dependencies:
       '@googlemaps/google-maps-services-js': 3.4.2
@@ -10617,10 +10648,30 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
+  '@happyvertical/ocr@0.60.2':
+    dependencies:
+      '@gutenye/ocr-node': 1.4.8
+      '@happyvertical/utils': 0.60.2
+      jpeg-js: 0.4.4
+      pngjs: 7.0.0
+      tesseract.js: 6.0.1
+    transitivePeerDependencies:
+      - encoding
+
   '@happyvertical/pdf@0.60.0(@napi-rs/canvas@0.1.84)':
     dependencies:
       '@happyvertical/ocr': 0.60.0
       '@happyvertical/utils': 0.60.0
+      pdf-to-png-converter: 3.11.0
+      unpdf: 1.4.0(@napi-rs/canvas@0.1.84)
+    transitivePeerDependencies:
+      - '@napi-rs/canvas'
+      - encoding
+
+  '@happyvertical/pdf@0.60.2(@napi-rs/canvas@0.1.84)':
+    dependencies:
+      '@happyvertical/ocr': 0.60.2
+      '@happyvertical/utils': 0.60.2
       pdf-to-png-converter: 3.11.0
       unpdf: 1.4.0(@napi-rs/canvas@0.1.84)
     transitivePeerDependencies:
@@ -10659,6 +10710,28 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  '@happyvertical/spider@0.60.2(@types/node@24.0.0)(postcss@8.5.6)':
+    dependencies:
+      '@happyvertical/cache': 0.60.2
+      '@happyvertical/files': 0.60.2
+      '@happyvertical/utils': 0.60.2
+      '@mozilla/readability': 0.6.0
+      cheerio: 1.1.2
+      crawlee: 3.15.3(@types/node@24.0.0)(playwright@1.57.0)
+      happy-dom: 20.0.11
+      jsdom: 27.1.0(postcss@8.5.6)
+      playwright: 1.57.0
+      undici: 7.16.0
+    transitivePeerDependencies:
+      - '@types/node'
+      - aws-crt
+      - bufferutil
+      - canvas
+      - postcss
+      - puppeteer
+      - supports-color
+      - utf-8-validate
+
   '@happyvertical/sql@0.60.0':
     dependencies:
       '@duckdb/node-api': 1.4.1-r.4
@@ -10679,6 +10752,13 @@ snapshots:
       uuid: 13.0.0
 
   '@happyvertical/utils@0.60.0':
+    dependencies:
+      '@paralleldrive/cuid2': 3.0.4
+      date-fns: 4.1.0
+      pluralize: 8.0.0
+      uuid: 13.0.0
+
+  '@happyvertical/utils@0.60.2':
     dependencies:
       '@paralleldrive/cuid2': 3.0.4
       date-fns: 4.1.0
@@ -13630,7 +13710,7 @@ snapshots:
       eslint-scope: 7.2.2
       eslint-utils: 3.0.0(eslint@8.4.1)
       eslint-visitor-keys: 3.4.3
-      espree: 9.2.0
+      espree: 9.6.1
       esquery: 1.6.0
       esutils: 2.0.3
       fast-deep-equal: 3.1.3
