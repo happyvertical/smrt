@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.38
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: extract smrt-docs-mcp and svelte to separate repos (#511)
+  - @happyvertical/smrt-config@0.17.38
+  - @happyvertical/smrt-types@0.17.38
+
 ## 0.17.37
 
 ### Patch Changes
