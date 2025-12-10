@@ -1,0 +1,20 @@
+---
+extends: default
+
+rules:
+  # GitHub Actions with pinned digests create long lines
+  # e.g., uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+  line-length:
+    max: 120
+    level: warning
+
+  # GitHub Actions workflows don't require document start
+  document-start: disable
+
+  # GitHub Actions uses 'on:' which yamllint considers truthy
+  truthy:
+    allowed-values: ['true', 'false', 'on']
+
+  # Allow single space before inline comments (common in workflows)
+  comments:
+    min-spaces-from-content: 1
