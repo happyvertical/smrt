@@ -446,8 +446,8 @@ importers:
         specifier: 0.60.0
         version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/email':
-        specifier: 0.60.0
-        version: 0.60.0
+        specifier: 0.60.2
+        version: 0.60.2
       '@happyvertical/encryption':
         specifier: '*'
         version: 0.59.0(@types/node@24.0.0)(typescript@5.9.3)
@@ -2001,8 +2001,8 @@ packages:
   '@happyvertical/documents@0.60.0':
     resolution: {integrity: sha512-mv1uj9P8JDQBJQXUEyLPpNp7TzhzkUSkbS0BHPlGyD0ZQhqr3hB/+vt6hqGRKOeImWh+lZk0KG+ISyC3BYVRiA==, tarball: https://npm.pkg.github.com/download/@happyvertical/documents/0.60.0/a4f40f4c35634387fd8a2373623d47f3c5087124}
 
-  '@happyvertical/email@0.60.0':
-    resolution: {integrity: sha512-oKYG/v5esCXcyJOFNQXuO79uKweE5wYLKQAaRRAjoeFTsA+NyhdlHy2+ZqCvFEPVHVbCi9WmAMLQiHmjwJIUkA==, tarball: https://npm.pkg.github.com/download/@happyvertical/email/0.60.0/e4bd926b1f38fa7b85fd97b356a68904ea7d376a}
+  '@happyvertical/email@0.60.2':
+    resolution: {integrity: sha512-/+f6sft3PzJNnC8HKAAkEvuMuvjisBNEVu3ObPECkaubSSBBduoLUCHBpb5NKn+pvSmeH6aZ+AxfbPgssJvw8Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/email/0.60.2/734b1074b981d65218eb27f5201730be71397aad}
 
   '@happyvertical/encryption@0.59.0':
     resolution: {integrity: sha512-C2ywFsqJ2kB4tl9L/NDSSPb2u2zQEMZybThiobdUneQzk4v/iaNo3uUuxvfYpbNddcImZ2fNJoU8Oj6XX5m02A==, tarball: https://npm.pkg.github.com/download/@happyvertical/encryption/0.59.0/699344ba5977b6564f383f7c1aecb08777b02890}
@@ -2021,6 +2021,9 @@ packages:
 
   '@happyvertical/logger@0.60.0':
     resolution: {integrity: sha512-3fDfmOgaVRAraJ9BRFF31RgqpxrWtIlAOSCWCyCH436zS66psHu/UlFETApr44zMO6e4L76ZNNuHtwgd1aAfng==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.60.0/956f53afb45d68709abfce642d053c81108c8894}
+
+  '@happyvertical/logger@0.60.2':
+    resolution: {integrity: sha512-HJ1SGkXyllCjkb/TEkxp913/4DpzyikEVMUo+cOzTRgTNfK+pCERzs+Hz2k94dYjecD9W66Hc3O4uh7AMUA+wQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.60.2/7ab9d808e137e7fc52c8aed2cfb7ac39a59a9341}
 
   '@happyvertical/ocr@0.60.0':
     resolution: {integrity: sha512-A1xEBgW4P2atg1WDXkMOXX0l4KGFRFVCaewpYBTXQHWby9UNzPOyH4dFXImj5/RSiDOlG4jr6ZW8Rqm+nyKR0w==, tarball: https://npm.pkg.github.com/download/@happyvertical/ocr/0.60.0/fb4a9a6fa90e255d0b55968a550e858d236cfb44}
@@ -2045,6 +2048,9 @@ packages:
 
   '@happyvertical/utils@0.60.0':
     resolution: {integrity: sha512-7ws1FlngxMKrpL4N+CVVVrg6hz3A+LmjO5ImRbOwrpkwnI8KQYecF89nbNayj8oeFDseBLwJMjUiou7uFGH8PA==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.0/37c73235f12fbc14195bb5f19f086a11d190ed3a}
+
+  '@happyvertical/utils@0.60.2':
+    resolution: {integrity: sha512-O545bmkf++TAfCP/MbXV/U0ucx+6TRi4dsiOpOO92xnu6N8kNPBVsZ2Kt+M1XBwhRLuhE0Y0lBBpXFm021+18A==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.2/0e25ff142cbf8c3e24c7cfa014b0a1155896fe8f}
 
   '@humanwhocodes/config-array@0.9.5':
     resolution: {integrity: sha512-ObyMyWxZiCu/yTisA7uzx81s40xR2fD5Cg/2Kq7G02ajkNubJf6BopgDTmDyc3U7sXpNKM8cYOw7s7Tyr+DnCw==}
@@ -10474,7 +10480,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
     transitivePeerDependencies:
       - debug
 
@@ -10558,10 +10564,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@happyvertical/email@0.60.0':
+  '@happyvertical/email@0.60.2':
     dependencies:
-      '@happyvertical/logger': 0.60.0
-      '@happyvertical/utils': 0.60.0
+      '@happyvertical/logger': 0.60.2
+      '@happyvertical/utils': 0.60.2
       google-auth-library: 10.5.0
       googleapis: 131.0.0
       imapflow: 1.1.1
@@ -10606,6 +10612,10 @@ snapshots:
   '@happyvertical/logger@0.60.0':
     dependencies:
       '@happyvertical/utils': 0.60.0
+
+  '@happyvertical/logger@0.60.2':
+    dependencies:
+      '@happyvertical/utils': 0.60.2
 
   '@happyvertical/ocr@0.60.0':
     dependencies:
@@ -10679,6 +10689,13 @@ snapshots:
       uuid: 13.0.0
 
   '@happyvertical/utils@0.60.0':
+    dependencies:
+      '@paralleldrive/cuid2': 3.0.4
+      date-fns: 4.1.0
+      pluralize: 8.0.0
+      uuid: 13.0.0
+
+  '@happyvertical/utils@0.60.2':
     dependencies:
       '@paralleldrive/cuid2': 3.0.4
       date-fns: 4.1.0
@@ -13630,7 +13647,7 @@ snapshots:
       eslint-scope: 7.2.2
       eslint-utils: 3.0.0(eslint@8.4.1)
       eslint-visitor-keys: 3.4.3
-      espree: 9.2.0
+      espree: 9.6.1
       esquery: 1.6.0
       esutils: 2.0.3
       fast-deep-equal: 3.1.3
@@ -14503,7 +14520,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -16154,7 +16171,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.13.2):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
