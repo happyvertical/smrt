@@ -102,8 +102,8 @@ importers:
   packages/agents:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -136,8 +136,8 @@ importers:
   packages/assets:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -173,8 +173,8 @@ importers:
   packages/cli:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -244,8 +244,8 @@ importers:
   packages/content:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/documents':
         specifier: 0.60.0
         version: 0.60.0(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)
@@ -302,8 +302,8 @@ importers:
   packages/core:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -366,8 +366,8 @@ importers:
   packages/events:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -406,8 +406,8 @@ importers:
   packages/gnode:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -443,8 +443,8 @@ importers:
   packages/messages:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/email':
         specifier: 0.60.0
         version: 0.60.0
@@ -483,8 +483,8 @@ importers:
   packages/places:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/cache':
         specifier: 0.60.0
         version: 0.60.0
@@ -526,8 +526,8 @@ importers:
   packages/products:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -572,8 +572,8 @@ importers:
   packages/profiles:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -621,8 +621,8 @@ importers:
   packages/projects:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/logger':
         specifier: 0.60.0
         version: 0.60.0
@@ -667,8 +667,8 @@ importers:
   packages/smrt-dev-mcp:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -707,8 +707,8 @@ importers:
   packages/smrt-docs-mcp:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -793,8 +793,8 @@ importers:
   packages/tags:
     dependencies:
       '@happyvertical/ai':
-        specifier: 0.60.0
-        version: 0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
+        specifier: 0.60.2
+        version: 0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)
       '@happyvertical/files':
         specifier: 0.60.0
         version: 0.60.0
@@ -1992,8 +1992,8 @@ packages:
   '@gutenye/ocr-node@1.4.8':
     resolution: {integrity: sha512-Ej6hHQSrBLCY74Qb2rRYZ0v97kp3h1Q8obLdQDM208ft9BOyqj+aUN2yTYQ/1c/BO695OWDgufRSiWiLB92KLw==}
 
-  '@happyvertical/ai@0.60.0':
-    resolution: {integrity: sha512-PCrV/73iG1g0ms3irHzSa0rLHJDJjIKwsvVwICEmWZ6dK2RVeQOIGvUwn+jscUJhCQtjQA9JxqB6AxVLQqNcLw==, tarball: https://npm.pkg.github.com/download/@happyvertical/ai/0.60.0/0bfc1ed45cca4e831baac6a8a01b5d32e12aee27}
+  '@happyvertical/ai@0.60.2':
+    resolution: {integrity: sha512-CYFShw6P/V4ZtwyoY8hHZLRkAfLV6XEkfCns6ZDxmw8SykhSp1paeN4mJc2qve46UyvTyqZrIvogaT3aH1hkag==, tarball: https://npm.pkg.github.com/download/@happyvertical/ai/0.60.2/149b85f60197b64b1612aca1b055bed7bf220c9e}
 
   '@happyvertical/cache@0.60.0':
     resolution: {integrity: sha512-vWkxaRZi/o/eiYzfX4T1VpuTU/JBe9c06vetFw2TELwX0Bm6vi3omtzoHVsJD5N0+eIkSBgCbqvegIqem4oo9A==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.60.0/49da7f570a0d1a8b25ef602c70f842c49adb2b15}
@@ -2045,6 +2045,9 @@ packages:
 
   '@happyvertical/utils@0.60.0':
     resolution: {integrity: sha512-7ws1FlngxMKrpL4N+CVVVrg6hz3A+LmjO5ImRbOwrpkwnI8KQYecF89nbNayj8oeFDseBLwJMjUiou7uFGH8PA==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.0/37c73235f12fbc14195bb5f19f086a11d190ed3a}
+
+  '@happyvertical/utils@0.60.2':
+    resolution: {integrity: sha512-O545bmkf++TAfCP/MbXV/U0ucx+6TRi4dsiOpOO92xnu6N8kNPBVsZ2Kt+M1XBwhRLuhE0Y0lBBpXFm021+18A==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.2/0e25ff142cbf8c3e24c7cfa014b0a1155896fe8f}
 
   '@humanwhocodes/config-array@0.9.5':
     resolution: {integrity: sha512-ObyMyWxZiCu/yTisA7uzx81s40xR2fD5Cg/2Kq7G02ajkNubJf6BopgDTmDyc3U7sXpNKM8cYOw7s7Tyr+DnCw==}
@@ -10513,12 +10516,12 @@ snapshots:
       onnxruntime-node: 1.23.2
       sharp: 0.33.5
 
-  '@happyvertical/ai@0.60.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)':
+  '@happyvertical/ai@0.60.2(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ws@8.18.3)(zod@3.25.76)':
     dependencies:
       '@anthropic-ai/sdk': 0.68.0(zod@3.25.76)
       '@aws-sdk/client-bedrock-runtime': 3.947.0
       '@google/genai': 1.32.0(@modelcontextprotocol/sdk@1.24.3(@cfworker/json-schema@4.1.1)(zod@3.25.76))
-      '@happyvertical/utils': 0.60.0
+      '@happyvertical/utils': 0.60.2
       openai: 6.10.0(ws@8.18.3)(zod@3.25.76)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -10679,6 +10682,13 @@ snapshots:
       uuid: 13.0.0
 
   '@happyvertical/utils@0.60.0':
+    dependencies:
+      '@paralleldrive/cuid2': 3.0.4
+      date-fns: 4.1.0
+      pluralize: 8.0.0
+      uuid: 13.0.0
+
+  '@happyvertical/utils@0.60.2':
     dependencies:
       '@paralleldrive/cuid2': 3.0.4
       date-fns: 4.1.0
@@ -13630,7 +13640,7 @@ snapshots:
       eslint-scope: 7.2.2
       eslint-utils: 3.0.0(eslint@8.4.1)
       eslint-visitor-keys: 3.4.3
-      espree: 9.2.0
+      espree: 9.6.1
       esquery: 1.6.0
       esutils: 2.0.3
       fast-deep-equal: 3.1.3

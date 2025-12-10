@@ -25,7 +25,7 @@
     "typecheck": "echo '⏭️  Skipping events typecheck (has pre-existing TypeScript errors)'"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.60.0",
+    "@happyvertical/ai": "0.60.2",
     "@happyvertical/files": "0.60.0",
     "@happyvertical/logger": "0.60.0",
     "@happyvertical/smrt-core": "workspace:*",

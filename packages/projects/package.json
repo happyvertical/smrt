@@ -22,7 +22,7 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.60.0",
+    "@happyvertical/ai": "0.60.2",
     "@happyvertical/logger": "0.60.0",
     "@happyvertical/projects": "0.60.0",
     "@happyvertical/repos": "0.60.0",
