@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.36
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add yamllint config for GitHub Actions workflows (#494) (ci)
+  - @happyvertical/smrt-config@0.17.36
+  - @happyvertical/smrt-types@0.17.36
+
 ## 0.17.35
 
 ### Patch Changes
