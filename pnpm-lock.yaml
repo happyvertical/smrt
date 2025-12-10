@@ -492,8 +492,8 @@ importers:
         specifier: 0.60.0
         version: 0.60.0
       '@happyvertical/geo':
-        specifier: 0.60.0
-        version: 0.60.0
+        specifier: 0.60.2
+        version: 0.60.2
       '@happyvertical/logger':
         specifier: 0.60.0
         version: 0.60.0
@@ -1998,6 +1998,9 @@ packages:
   '@happyvertical/cache@0.60.0':
     resolution: {integrity: sha512-vWkxaRZi/o/eiYzfX4T1VpuTU/JBe9c06vetFw2TELwX0Bm6vi3omtzoHVsJD5N0+eIkSBgCbqvegIqem4oo9A==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.60.0/49da7f570a0d1a8b25ef602c70f842c49adb2b15}
 
+  '@happyvertical/cache@0.60.2':
+    resolution: {integrity: sha512-xBZ8AlgGM/OL4+VlMJL23TmDuf2+F2A6Bqf/l+RdJs7RmN9gvumsnggnSXvYb4ROEBgkGSza01BZ0+kE/CQd+g==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.60.2/6d8f05746ef360913cb33f52db56922fc470853c}
+
   '@happyvertical/documents@0.60.0':
     resolution: {integrity: sha512-mv1uj9P8JDQBJQXUEyLPpNp7TzhzkUSkbS0BHPlGyD0ZQhqr3hB/+vt6hqGRKOeImWh+lZk0KG+ISyC3BYVRiA==, tarball: https://npm.pkg.github.com/download/@happyvertical/documents/0.60.0/a4f40f4c35634387fd8a2373623d47f3c5087124}
 
@@ -2010,8 +2013,8 @@ packages:
   '@happyvertical/files@0.60.0':
     resolution: {integrity: sha512-AhisbdiQTNQXXV481uFbkjnDNnZjyB6P0Fca3T0TC8++aES3ZwThS7pHOmtV4v2gW42ijR6SHMGvM0t2LDgCPQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/files/0.60.0/128bc91ce360ea91678eee3d64b12c5de01036f1}
 
-  '@happyvertical/geo@0.60.0':
-    resolution: {integrity: sha512-X1kM66/mEGDp/9wDTYJ9+iJuwCRg3roSAKCN3guggl7YiPs6BqRE1j591iQfaf5M/YF5L82guS9MJKuM6UY37A==, tarball: https://npm.pkg.github.com/download/@happyvertical/geo/0.60.0/db5100f78bae738b66edafa4f50541c1185edcd6}
+  '@happyvertical/geo@0.60.2':
+    resolution: {integrity: sha512-gQUp4qtnaRIRUN6zK+j2SAgCjCiOJW7o+G9dWYMYe5DJq8rsSYBVN1j/kVMK/IOHfpjYJEl3V9mYcFHS9zcTNw==, tarball: https://npm.pkg.github.com/download/@happyvertical/geo/0.60.2/33de4d5f0d750c8de9a63783493ca74faa96995b}
 
   '@happyvertical/graphql@0.60.0':
     resolution: {integrity: sha512-Lhkxex4wiT2KJqhM1Kp6XgolnCRfr7xAZZ678nWoVFwiov4YbL8KwlXYpE4hL6InCx5IxsWgVhKxgFGgydqS8Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/graphql/0.60.0/5b2f731335cd3b92654410a6e59f8218d1105849}
@@ -2045,6 +2048,9 @@ packages:
 
   '@happyvertical/utils@0.60.0':
     resolution: {integrity: sha512-7ws1FlngxMKrpL4N+CVVVrg6hz3A+LmjO5ImRbOwrpkwnI8KQYecF89nbNayj8oeFDseBLwJMjUiou7uFGH8PA==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.0/37c73235f12fbc14195bb5f19f086a11d190ed3a}
+
+  '@happyvertical/utils@0.60.2':
+    resolution: {integrity: sha512-O545bmkf++TAfCP/MbXV/U0ucx+6TRi4dsiOpOO92xnu6N8kNPBVsZ2Kt+M1XBwhRLuhE0Y0lBBpXFm021+18A==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.2/0e25ff142cbf8c3e24c7cfa014b0a1155896fe8f}
 
   '@humanwhocodes/config-array@0.9.5':
     resolution: {integrity: sha512-ObyMyWxZiCu/yTisA7uzx81s40xR2fD5Cg/2Kq7G02ajkNubJf6BopgDTmDyc3U7sXpNKM8cYOw7s7Tyr+DnCw==}
@@ -10474,7 +10480,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
     transitivePeerDependencies:
       - debug
 
@@ -10538,6 +10544,15 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
+  '@happyvertical/cache@0.60.2':
+    dependencies:
+      '@aws-sdk/client-s3': 3.947.0
+      '@aws-sdk/credential-providers': 3.947.0
+      '@happyvertical/utils': 0.60.2
+      redis: 5.10.0
+    transitivePeerDependencies:
+      - aws-crt
+
   '@happyvertical/documents@0.60.0(@napi-rs/canvas@0.1.84)(@types/node@24.0.0)(postcss@8.5.6)':
     dependencies:
       '@happyvertical/files': 0.60.0
@@ -10588,11 +10603,11 @@ snapshots:
     dependencies:
       '@happyvertical/utils': 0.60.0
 
-  '@happyvertical/geo@0.60.0':
+  '@happyvertical/geo@0.60.2':
     dependencies:
       '@googlemaps/google-maps-services-js': 3.4.2
-      '@happyvertical/cache': 0.60.0
-      '@happyvertical/utils': 0.60.0
+      '@happyvertical/cache': 0.60.2
+      '@happyvertical/utils': 0.60.2
     transitivePeerDependencies:
       - aws-crt
       - debug
@@ -10679,6 +10694,13 @@ snapshots:
       uuid: 13.0.0
 
   '@happyvertical/utils@0.60.0':
+    dependencies:
+      '@paralleldrive/cuid2': 3.0.4
+      date-fns: 4.1.0
+      pluralize: 8.0.0
+      uuid: 13.0.0
+
+  '@happyvertical/utils@0.60.2':
     dependencies:
       '@paralleldrive/cuid2': 3.0.4
       date-fns: 4.1.0
@@ -13630,7 +13652,7 @@ snapshots:
       eslint-scope: 7.2.2
       eslint-utils: 3.0.0(eslint@8.4.1)
       eslint-visitor-keys: 3.4.3
-      espree: 9.2.0
+      espree: 9.6.1
       esquery: 1.6.0
       esutils: 2.0.3
       fast-deep-equal: 3.1.3
@@ -14503,7 +14525,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -16154,7 +16176,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.13.2):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
