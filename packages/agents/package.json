@@ -30,7 +30,7 @@
     "@happyvertical/utils": "0.60.0"
   },
   "devDependencies": {
-    "@happyvertical/logger": "0.60.0",
+    "@happyvertical/logger": "0.60.2",
     "@happyvertical/sql": "0.60.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.3",

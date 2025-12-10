@@ -24,7 +24,7 @@
     "@happyvertical/ai": "0.60.0",
     "@happyvertical/email": "0.60.0",
     "@happyvertical/files": "0.60.0",
-    "@happyvertical/logger": "0.60.0",
+    "@happyvertical/logger": "0.60.2",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/sql": "0.60.0",
     "@happyvertical/utils": "0.60.0"

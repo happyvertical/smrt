@@ -38,7 +38,7 @@
   "dependencies": {
     "@happyvertical/ai": "0.60.0",
     "@happyvertical/files": "0.60.0",
-    "@happyvertical/logger": "0.60.0",
+    "@happyvertical/logger": "0.60.2",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "0.60.0",
