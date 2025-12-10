@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@happyvertical/ai": "0.60.0",
-    "@happyvertical/files": "0.60.0",
+    "@happyvertical/files": "0.60.2",
     "@happyvertical/logger": "0.60.0",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-places": "workspace:*",
