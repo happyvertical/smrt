@@ -447,13 +447,32 @@ export abstract class Agent extends SmrtObject {
       // Ensure manifest is loaded for this class and its ancestors (Issue #515)
       // This is critical for cross-package STI where getTableStrategy() needs
       // the complete inheritance chain to detect inherited STI configuration
+      //
+      // We walk the extends chain directly (not using cached getInheritanceChain)
+      // to avoid caching an incomplete chain before all manifests are loaded.
+      // After loading all ancestors, we invalidate the cache so getTableStrategy
+      // rebuilds it with complete data.
       await ObjectRegistry.ensureManifestLoaded(_className);
-      const preliminaryChain = ObjectRegistry.getInheritanceChain(_className);
-      for (const ancestorName of preliminaryChain) {
-        if (ancestorName !== _className) {
-          await ObjectRegistry.ensureManifestLoaded(ancestorName);
+      let currentClass = ObjectRegistry.getClass(_className);
+      while (currentClass?.extends) {
+        const parentName = currentClass.extends;
+        // Skip framework base classes
+        if (
+          parentName === 'SmrtObject' ||
+          parentName === 'SmrtClass' ||
+          parentName === 'SmrtCollection'
+        ) {
+          break;
         }
+        try {
+          await ObjectRegistry.ensureManifestLoaded(parentName);
+        } catch {
+          // Manifest loading can fail for classes not in manifest - continue
+        }
+        currentClass = ObjectRegistry.getClass(parentName);
       }
+      // Invalidate cached chain so getTableStrategy rebuilds with complete data
+      ObjectRegistry.invalidateInheritanceCache(_className);
 
       // Add STI discriminator filter if this is an STI child class
       const tableStrategy = ObjectRegistry.getTableStrategy(_className);
