@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.40
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - ensure manifest loaded before STI check in interesting() (#517) (agents)
+  - @happyvertical/smrt-config@0.17.40
+  - @happyvertical/smrt-types@0.17.40
+
 ## 0.17.39
 
 ### Patch Changes
