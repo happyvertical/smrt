@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.39
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - update @happyvertical/spider to 0.60.3 (#513) (content)
+  - @happyvertical/smrt-config@0.17.39
+  - @happyvertical/smrt-types@0.17.39
+
 ## 0.17.38
 
 ### Patch Changes
