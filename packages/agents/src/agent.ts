@@ -444,6 +444,17 @@ export abstract class Agent extends SmrtObject {
     if (filter.query) {
       let [whereClause, params] = filter.query(collection.tableName);
 
+      // Ensure manifest is loaded for this class and its ancestors (Issue #515)
+      // This is critical for cross-package STI where getTableStrategy() needs
+      // the complete inheritance chain to detect inherited STI configuration
+      await ObjectRegistry.ensureManifestLoaded(_className);
+      const preliminaryChain = ObjectRegistry.getInheritanceChain(_className);
+      for (const ancestorName of preliminaryChain) {
+        if (ancestorName !== _className) {
+          await ObjectRegistry.ensureManifestLoaded(ancestorName);
+        }
+      }
+
       // Add STI discriminator filter if this is an STI child class
       const tableStrategy = ObjectRegistry.getTableStrategy(_className);
       if (tableStrategy === 'sti') {
