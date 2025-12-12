@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.42
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - STI child classes correctly inherit tableName from manifest (#522) (core)
+  - @happyvertical/smrt-config@0.17.42
+  - @happyvertical/smrt-types@0.17.42
+
 ## 0.17.41
 
 ### Patch Changes
