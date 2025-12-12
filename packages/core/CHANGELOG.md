@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.41
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use getTableStrategy() in getSTIBase() for proper inheritance detection (#520) (core)
+  - address review feedback on STI manifest loading (#518) (agents)
+  - @happyvertical/smrt-config@0.17.41
+  - @happyvertical/smrt-types@0.17.41
+
 ## 0.17.40
 
 ### Patch Changes
