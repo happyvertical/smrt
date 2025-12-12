@@ -97,9 +97,9 @@ describe('Content STI Support', () => {
 
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('ContentDocument');
-      // ContentDocument explicitly declares tableStrategy: 'sti' so it's its own base
-      // This is valid but redundant - inherits STI from Content anyway
-      expect(base).toBe('ContentDocument');
+      // ContentDocument inherits STI from Content, so Content is the actual STI base
+      // Even though ContentDocument explicitly declares tableStrategy: 'sti', that's redundant
+      expect(base).toBe('Content');
     });
 
     it('should set _meta_type to ContentDocument', async () => {
@@ -161,8 +161,8 @@ describe('Content STI Support', () => {
 
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('Article');
-      // Article inherits STI from Content
-      expect(base).toBe('Article');
+      // Article inherits STI from Content, so Content is the actual STI base
+      expect(base).toBe('Content');
     });
 
     it('should set _meta_type to Article', async () => {
