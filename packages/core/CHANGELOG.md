@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.43
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add @smrt() decorator to Agent for inheritance chain discovery (#524) (agents)
+  - @happyvertical/smrt-config@0.17.43
+  - @happyvertical/smrt-types@0.17.43
+
 ## 0.17.42
 
 ### Patch Changes
