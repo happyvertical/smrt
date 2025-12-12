@@ -3084,7 +3084,13 @@ export function smrt(config: SmartObjectConfig = {}) {
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
         } else if (config.tableStrategy === 'sti') {
-          // Check if any parent uses STI before assuming this is the STI base
+          // Fallback: Runtime prototype chain walking for STI detection
+          // This is used when:
+          // 1. Class is dynamically registered (not in manifest)
+          // 2. Development mode without a build
+          // 3. Test scenarios without manifest generation
+          // Note: This relies on parents being registered first, which is why
+          // the manifest check above is preferred (it has correct build-time data).
           let proto = Object.getPrototypeOf(ctor);
           let stiBaseName: string | null = null;
 
@@ -3104,7 +3110,8 @@ export function smrt(config: SmartObjectConfig = {}) {
             tableName = classnameToTablename(ctor.name);
           }
         } else {
-          // Check if any parent uses STI
+          // Fallback: Check if any parent uses STI (implicit STI inheritance)
+          // Same caveats as above - used only when manifest data unavailable.
           let proto = Object.getPrototypeOf(ctor);
           let stiBaseName: string | null = null;
 
