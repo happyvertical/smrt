@@ -4,6 +4,7 @@ import {
   type SmrtCollection,
   SmrtObject,
   type SmrtObjectOptions,
+  smrt,
 } from '@happyvertical/smrt-core';
 import type {
   AgentWithInterestsOptions,
@@ -35,7 +36,8 @@ export interface AgentOptions
  * Agents can define their own properties for state management - since they extend
  * SmrtObject, any properties defined will be automatically persisted to the database.
  *
- * **Important**: Extending classes must add the `@smrt()` decorator themselves.
+ * **Important**: Extending classes must add the `@smrt()` decorator themselves
+ * to configure CLI/API/MCP exposure.
  *
  * @example
  * ```typescript
@@ -72,6 +74,15 @@ export interface AgentOptions
  * await agent.execute();
  * ```
  */
+@smrt({
+  // Abstract class - no direct CLI/API/MCP exposure
+  // But must be registered for inheritance chain to work (issue #523)
+  cli: false,
+  api: false,
+  mcp: false,
+  // STI: All agents share 'agents' table for polymorphic queries
+  tableStrategy: 'sti',
+})
 export abstract class Agent extends SmrtObject {
   /**
    * Current agent status
