@@ -511,10 +511,12 @@ export class ManifestGenerator {
       // STI subclasses share the parent's table, so they should use the same collection name
       const stiBase = this.findSTIBase(obj, objectsByName, manifest);
       if (stiBase && stiBase !== obj) {
-        // Determine the STI base's table name (explicit or derived from collection/className)
+        // Determine the STI base's table name (explicit or derived from className)
+        // Note: We don't use stiBase.collection as fallback because collection uses
+        // lowercase-only format (e.g., 'querytestevents') while tableName needs
+        // snake_case format (e.g., 'query_test_events')
         const baseTableName =
           stiBase.decoratorConfig?.tableName ||
-          stiBase.collection ||
           this.classNameToTableName(stiBase.className);
 
         // Inherit tableName from STI base
