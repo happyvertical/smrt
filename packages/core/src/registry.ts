@@ -722,8 +722,14 @@ export class ObjectRegistry {
 
     // Defer schema generation until needed (generateSchema now uses dynamic import)
     // Store table name for lazy schema generation
-    // Note: For STI classes, tableName is already set correctly by the decorator
-    const tableName = config.tableName || tableNameFromClass(ctor);
+    // Priority for STI: manifest's tableName > decorator config > derived from class name
+    // The manifest's tableName is computed at build-time when full class hierarchy is known,
+    // which correctly handles STI inheritance. The decorator may derive wrong tableName
+    // if parent class isn't registered yet at decorator execution time.
+    const tableName =
+      manifestEntry?.decoratorConfig?.tableName ||
+      config.tableName ||
+      tableNameFromClass(ctor);
 
     // Load pre-generated schema from manifest if available, otherwise placeholder
     let schema: SchemaDefinition;
@@ -787,10 +793,18 @@ export class ObjectRegistry {
       }
     }
 
+    // Merge manifest's decoratorConfig into config
+    // Use the computed tableName which prioritizes manifest's value for STI correctness
+    const mergedConfig = {
+      ...manifestEntry?.decoratorConfig,
+      ...config,
+      tableName, // Override with correctly computed tableName
+    };
+
     ObjectRegistry.classes.set(name, {
       name,
       constructor: ctor,
-      config,
+      config: mergedConfig,
       fields,
       methods,
       schema,
@@ -3063,12 +3077,41 @@ export function smrt(config: SmartObjectConfig = {}) {
       let tableName = config.tableName;
 
       if (!tableName) {
-        // For STI: Use base class's table name if this is a child
-        if (config.tableStrategy === 'sti') {
-          // This class is the STI base - use its own table name
-          tableName = classnameToTablename(ctor.name);
+        // First, check manifest for tableName (manifest generator correctly handles STI inheritance)
+        // This handles the case where a child class sets tableStrategy: 'sti' explicitly
+        // but should still inherit the parent's table name
+        const manifestEntry = discoverManifestSync(ctor.name);
+        if (manifestEntry?.decoratorConfig?.tableName) {
+          tableName = manifestEntry.decoratorConfig.tableName;
+        } else if (config.tableStrategy === 'sti') {
+          // Fallback: Runtime prototype chain walking for STI detection
+          // This is used when:
+          // 1. Class is dynamically registered (not in manifest)
+          // 2. Development mode without a build
+          // 3. Test scenarios without manifest generation
+          // Note: This relies on parents being registered first, which is why
+          // the manifest check above is preferred (it has correct build-time data).
+          let proto = Object.getPrototypeOf(ctor);
+          let stiBaseName: string | null = null;
+
+          while (proto?.name && proto.name !== 'SmrtObject') {
+            if (ObjectRegistry.getTableStrategy(proto.name) === 'sti') {
+              stiBaseName = ObjectRegistry.getSTIBase(proto.name);
+              break;
+            }
+            proto = Object.getPrototypeOf(proto);
+          }
+
+          if (stiBaseName) {
+            // This is an STI child - use parent's table name
+            tableName = classnameToTablename(stiBaseName);
+          } else {
+            // This is the actual STI base - use its own table name
+            tableName = classnameToTablename(ctor.name);
+          }
         } else {
-          // Check if any parent uses STI
+          // Fallback: Check if any parent uses STI (implicit STI inheritance)
+          // Same caveats as above - used only when manifest data unavailable.
           let proto = Object.getPrototypeOf(ctor);
           let stiBaseName: string | null = null;
 

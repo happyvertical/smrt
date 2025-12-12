@@ -539,13 +539,10 @@ export function discoverManifestSync(
     `[manifest-loader] discoverManifestSync called for: ${className}`,
   );
 
-  // 1. Check localTestManifest (domain package test classes) - ONLY in test environment
-  // IMPORTANT: Always try to load if not cached (null or undefined), in case manifest was generated after first attempt
+  // 1. Check localTestManifest (domain package classes) - ONLY in test environment
+  // This prevents test classes from polluting production code
   if (isTestEnvironment()) {
     if (!localTestManifest) {
-      console.log(
-        `[manifest-loader] LocalTestManifest not cached, attempting to load...`,
-      );
       loadLocalTestManifestSync();
     }
 
