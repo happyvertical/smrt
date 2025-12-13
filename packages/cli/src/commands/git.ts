@@ -31,6 +31,7 @@ export function mergeArraysByKey(
   keyField: string = 'id',
 ): any[] {
   const merged = new Map<string, any>();
+  const keylessObjects: any[] = [];
 
   // Helper to get key from object
   const getKey = (obj: any): string | null => {
@@ -39,12 +40,15 @@ export function mergeArraysByKey(
   };
 
   // Helper to get timestamp for conflict resolution
+  // Returns 0 for invalid/missing timestamps
   const getTimestamp = (obj: any): number => {
     if (obj.updated_at) {
-      return new Date(obj.updated_at).getTime();
+      const t = new Date(obj.updated_at).getTime();
+      return Number.isNaN(t) ? 0 : t;
     }
     if (obj.created_at) {
-      return new Date(obj.created_at).getTime();
+      const t = new Date(obj.created_at).getTime();
+      return Number.isNaN(t) ? 0 : t;
     }
     return 0;
   };
@@ -55,6 +59,8 @@ export function mergeArraysByKey(
     if (key) {
       merged.set(key, { ...obj, _source: 'base' });
     }
+    // Note: keyless objects from base are not preserved
+    // (they will come from ours or theirs)
   }
 
   // Process "ours" - overwrites base if same ID
@@ -66,6 +72,9 @@ export function mergeArraysByKey(
         // New in ours or replacing base
         merged.set(key, { ...obj, _source: 'ours' });
       }
+    } else if (obj && typeof obj === 'object') {
+      // Preserve objects without keys from "ours"
+      keylessObjects.push(obj);
     }
   }
 
@@ -92,6 +101,8 @@ export function mergeArraysByKey(
         // Otherwise keep ours (existing)
       }
     }
+    // Note: keyless objects from theirs are not added to avoid duplicates
+    // (we already have them from ours if they existed)
   }
 
   // Remove _source markers and convert to array
@@ -100,10 +111,19 @@ export function mergeArraysByKey(
     return rest;
   });
 
+  // Append keyless objects (from ours) at the end
+  result.push(...keylessObjects);
+
   // Sort by created_at (ascending) for consistent ordering
+  const safeGetTime = (val: any): number => {
+    if (!val) return 0;
+    const t = new Date(val).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
+
   result.sort((a, b) => {
-    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+    const aTime = safeGetTime(a.created_at);
+    const bTime = safeGetTime(b.created_at);
     if (aTime !== bTime) return aTime - bTime;
     // Fallback to ID comparison for stable sort
     return String(a.id || '').localeCompare(String(b.id || ''));

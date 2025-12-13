@@ -136,6 +136,48 @@ describe('git:merge-json', () => {
       expect(result).toHaveLength(1);
     });
 
+    it('should preserve objects without id or slug from ours', () => {
+      const base: any[] = [];
+      const ours = [
+        { id: 'a', name: 'Event A' },
+        { name: 'Keyless Object' }, // No id or slug
+      ];
+      const theirs = [{ id: 'b', name: 'Event B' }];
+
+      const result = mergeArraysByKey(base, ours, theirs);
+
+      expect(result).toHaveLength(3);
+      expect(result.some((o) => o.name === 'Keyless Object')).toBe(true);
+    });
+
+    it('should handle invalid date strings gracefully', () => {
+      const base = [{ id: 'a', name: 'Original', updated_at: 'invalid-date' }];
+      const ours = [{ id: 'a', name: 'Ours', updated_at: 'also-invalid' }];
+      const theirs = [{ id: 'a', name: 'Theirs', updated_at: 'not-a-date' }];
+
+      // Should not throw, treats invalid dates as 0
+      const result = mergeArraysByKey(base, ours, theirs);
+
+      expect(result).toHaveLength(1);
+      // With all invalid timestamps (treated as 0), ours wins
+      expect(result[0].name).toBe('Ours');
+    });
+
+    it('should handle mixed valid and invalid timestamps', () => {
+      const base = [{ id: 'a', name: 'Original' }];
+      const ours = [{ id: 'a', name: 'Ours', updated_at: 'invalid' }];
+      const theirs = [
+        { id: 'a', name: 'Theirs', updated_at: '2024-01-01T00:00:00Z' },
+      ];
+
+      const result = mergeArraysByKey(base, ours, theirs);
+
+      expect(result).toHaveLength(1);
+      // Theirs has valid timestamp (non-zero), ours has invalid (0)
+      // So theirs wins because theirsTime > oursTime
+      expect(result[0].name).toBe('Theirs');
+    });
+
     it('should handle example from issue #514', () => {
       // Example from issue description
       const base = [{ id: 'a', name: 'Event A' }];
