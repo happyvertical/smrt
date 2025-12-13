@@ -212,6 +212,62 @@ smrt agent:research <id> --query "AI safety"  # Custom method!
 - Include/exclude lists control which methods are exposed
 - Results output in JSON format
 
+### Git Integration
+
+The CLI includes a JSON-aware git merge driver to prevent conflicts when multiple workflows modify the same JSON data files (e.g., `events.json`, `places.json`).
+
+**Setup:**
+```bash
+# Configure the merge driver for your repository
+smrt git:init
+
+# Or with custom patterns
+smrt git:init --patterns "data/*.json,*.data.json"
+
+# Configure globally (for all repositories)
+smrt git:init --global
+```
+
+**What it does:**
+1. Configures a git merge driver named `smrt-json`
+2. Updates `.gitattributes` to use this driver for JSON data files
+3. When git encounters a merge conflict in matching files, it:
+   - Parses all versions as JSON
+   - Merges arrays by `id` field (union, deduplicated)
+   - Resolves conflicts using `updated_at` timestamp (newer wins)
+   - Preserves `_meta_type` for STI support
+   - Maintains consistent ordering by `created_at`
+
+**Commands:**
+- `smrt git:init` - Configure the merge driver
+  - `--patterns <patterns>` - Comma-separated file patterns (default: `data/*.json`)
+  - `--global` - Configure globally instead of per-repository
+  - `--force` - Overwrite existing configuration
+- `smrt merge-json <base> <ours> <theirs>` - Manual merge (called by git automatically)
+  - `--dry-run` - Preview merge result without modifying files
+  - `--verbose` - Show detailed merge information
+
+**Example scenario:**
+```
+# Two concurrent workflows modify events.json:
+
+# Weather workflow adds:
+{ id: "weather-1", name: "Forecast", ... }
+
+# Meeting workflow adds:
+{ id: "meeting-1", name: "Council Meeting", ... }
+
+# After merge, events.json contains both:
+[
+  { id: "weather-1", name: "Forecast" },
+  { id: "meeting-1", name: "Council Meeting" }
+]
+```
+
+**Team setup:**
+1. One developer runs `smrt git:init` and commits `.gitattributes`
+2. Other team members run `smrt git:init` once to configure their local git
+
 ### Project Scaffolding
 
 - `smrt gnode create <name>` - Create new gnode from template
@@ -223,11 +279,16 @@ smrt agent:research <id> --query "AI safety"  # Custom method!
   - Finds static-manifest.js and manifest.json files
   - Discovers manifests from installed SMRT packages
   - No manual configuration needed
-- **Custom Method Discovery** ⭐ NEW: Auto-generates CLI commands from custom methods
+- **Custom Method Discovery**: Auto-generates CLI commands from custom methods
   - Discovers all public methods from SMRT objects
   - Maps method parameters to CLI options (kebab-case)
   - Respects include/exclude configuration
   - Works for CLI, API, and MCP generators
+- **Git Merge Driver** ⭐ NEW: JSON-aware merge driver for data files
+  - Prevents conflicts when multiple workflows modify JSON files
+  - Merges arrays by ID with automatic deduplication
+  - Resolves conflicts using timestamps (newer wins)
+  - Preserves STI `_meta_type` fields
 - **Introspection**: View discovered objects, their fields, and sources
 - **Gnode Scaffolding**: Create new federated knowledge base projects
 - **Code Generation**: Generate MCP servers from registered objects
