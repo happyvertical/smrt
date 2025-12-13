@@ -43,6 +43,7 @@ function countRequiredArgs(args: string[] | undefined): number {
 // Lazy-load commands to avoid loading tar dependencies unless needed
 let _gnodeCommands: Record<string, Command> | null = null;
 let _generateCommands: Record<string, Command> | null = null;
+let _gitCommands: Record<string, Command> | null = null;
 let _initCommands: Record<string, Command> | null = null;
 let _utilityCommands: Record<string, Command> | null = null;
 
@@ -52,6 +53,14 @@ async function getGnodeCommands(): Promise<Record<string, Command>> {
     _gnodeCommands = gnodeCommands;
   }
   return _gnodeCommands;
+}
+
+async function getGitCommands(): Promise<Record<string, Command>> {
+  if (!_gitCommands) {
+    const { gitCommands } = await import('./commands/index.js');
+    _gitCommands = gitCommands;
+  }
+  return _gitCommands;
 }
 
 async function getGenerateCommands(): Promise<Record<string, Command>> {
@@ -824,16 +833,23 @@ export class CLIGenerator {
 
     // Only load built-in commands if not found in object commands
     // This avoids loading tar dependencies unless actually needed
-    const [gnodeCommands, generateCommands, initCommands, utilityCommands] =
-      await Promise.all([
-        getGnodeCommands(),
-        getGenerateCommands(),
-        getInitCommands(),
-        getUtilityCommands(),
-      ]);
+    const [
+      gnodeCommands,
+      generateCommands,
+      gitCommands,
+      initCommands,
+      utilityCommands,
+    ] = await Promise.all([
+      getGnodeCommands(),
+      getGenerateCommands(),
+      getGitCommands(),
+      getInitCommands(),
+      getUtilityCommands(),
+    ]);
     const builtInCommands = {
       ...gnodeCommands,
       ...generateCommands,
+      ...gitCommands,
       ...initCommands,
       ...utilityCommands,
     };
@@ -1150,13 +1166,19 @@ export class CLIGenerator {
     console.log();
 
     // Show built-in subcommands first
-    const [gnodeCommands, generateCommands, initCommands, utilityCommands] =
-      await Promise.all([
-        getGnodeCommands(),
-        getGenerateCommands(),
-        getInitCommands(),
-        getUtilityCommands(),
-      ]);
+    const [
+      gnodeCommands,
+      generateCommands,
+      gitCommands,
+      initCommands,
+      utilityCommands,
+    ] = await Promise.all([
+      getGnodeCommands(),
+      getGenerateCommands(),
+      getGitCommands(),
+      getInitCommands(),
+      getUtilityCommands(),
+    ]);
 
     console.log('Project Setup:');
     for (const command of Object.values(initCommands)) {
@@ -1166,6 +1188,12 @@ export class CLIGenerator {
 
     console.log('Utility Commands:');
     for (const command of Object.values(utilityCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
+
+    console.log('Git Integration:');
+    for (const command of Object.values(gitCommands)) {
       this.showCommandHelp(command);
     }
     console.log();
