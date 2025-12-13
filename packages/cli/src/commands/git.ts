@@ -270,7 +270,8 @@ export const gitCommands: Record<string, CLICommand> = {
       }
 
       const gitRoot = getGitRoot();
-      const patterns = options.patterns
+      const patternsStr = options.patterns || DEFAULT_DATA_PATTERNS.join(',');
+      const patterns = patternsStr
         .split(',')
         .map((p: string) => p.trim())
         .filter(Boolean);

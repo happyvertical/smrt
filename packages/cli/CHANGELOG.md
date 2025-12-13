@@ -1,5 +1,11 @@
 # @happyvertical/smrt-cli
 
+## 0.17.45
+
+### Patch Changes
+
+- fix(cli): apply default patterns in git:init command
+
 ## 0.17.44
 
 ### Patch Changes
