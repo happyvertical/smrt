@@ -26,7 +26,7 @@
     "@happyvertical/files": "0.60.3",
     "@happyvertical/logger": "0.60.3",
     "@happyvertical/ocr": "0.60.4",
-    "@happyvertical/pdf": "0.60.3",
+    "@happyvertical/pdf": "0.60.4",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/spider": "0.60.3",
     "@happyvertical/sql": "0.60.3",
