@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.44
+
+### Patch Changes
+
+- ### Features
+
+  - add JSON-aware git merge driver for SMRT data files (#525) (cli)
+  - @happyvertical/smrt-config@0.17.44
+  - @happyvertical/smrt-types@0.17.44
+
 ## 0.17.43
 
 ### Patch Changes
