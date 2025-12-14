@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.46
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - apply default patterns in git:init command (#526) (cli)
+  - @happyvertical/smrt-config@0.17.46
+  - @happyvertical/smrt-types@0.17.46
+
 ## 0.17.44
 
 ### Patch Changes
