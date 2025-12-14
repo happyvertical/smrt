@@ -192,8 +192,10 @@ export class ManifestGenerator {
           );
 
           // Use aggregated manifest to include all descendants
+          // FIX #527: Use actual STI base class name, not child class name
+          // This ensures findDescendantsInManifest() finds ALL STI children
           obj.schema = generator.generateSTISchemaFromManifest(
-            name,
+            stiBase?.className || name,
             baseTableName,
             obj.fields,
             aggregatedManifest,
