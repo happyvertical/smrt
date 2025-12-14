@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.47
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use STI base class name in schema generation for external parents (#528) (core)
+  - @happyvertical/smrt-config@0.17.47
+  - @happyvertical/smrt-types@0.17.47
+
 ## 0.17.46
 
 ### Patch Changes
