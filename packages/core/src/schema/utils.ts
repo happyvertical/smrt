@@ -422,23 +422,20 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
     // FIX #527: For STI classes with cross-package descendants, regenerate schema at runtime
     // Pre-generated schemas from external packages won't have columns from
     // child classes defined in consuming packages (e.g., Agenda.meetingId from praeco)
-    const currentTableStrategy = ObjectRegistry.getTableStrategy(className);
     const descendants = ObjectRegistry.getDescendants(className);
 
     // Check if any STI descendants are from a different package than the base class
     // If so, pre-generated schema may be missing their columns
     let hasCrossPackageDescendants = false;
-    if (currentTableStrategy === 'sti' && descendants.length > 0) {
+    if (tableStrategy === 'sti' && descendants.length > 0) {
       const baseClass = ObjectRegistry.getClass(className);
       const basePackage = baseClass?.packageName;
 
       for (const descendantName of descendants) {
         const descendant = ObjectRegistry.getClass(descendantName);
-        // Descendant is from different package if:
-        // - Base has a package name AND descendant has a different one
-        // - OR base has no package (local) AND descendant has one (external)
-        // - OR descendant has no package (local) AND base has one (external)
-        if (basePackage !== descendant?.packageName) {
+        if (!descendant) continue;
+        // Descendant is from a different package if packageName values don't match
+        if (basePackage !== descendant.packageName) {
           hasCrossPackageDescendants = true;
           break;
         }
