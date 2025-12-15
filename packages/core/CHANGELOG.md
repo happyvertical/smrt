@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.48
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - only regenerate STI schema when descendants are from different packages (#529) (core)
+  - @happyvertical/smrt-config@0.17.48
+  - @happyvertical/smrt-types@0.17.48
+
 ## 0.17.47
 
 ### Patch Changes
