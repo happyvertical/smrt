@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.49
+
+### Patch Changes
+
+- ### Features
+
+  - add contactEmail and publisher to SiteConfig (#530) (config)
+  - @happyvertical/smrt-config@0.17.49
+  - @happyvertical/smrt-types@0.17.49
+
 ## 0.17.48
 
 ### Patch Changes
