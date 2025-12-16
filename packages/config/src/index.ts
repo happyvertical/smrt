@@ -15,6 +15,7 @@ export type {
   SiteLocation,
   SiteNavigation,
   SiteNavigationLink,
+  SitePublisher,
   SiteTheme,
   SmrtConfig,
   SmrtGlobalConfig,
