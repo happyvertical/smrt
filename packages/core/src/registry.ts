@@ -440,7 +440,7 @@ export class ObjectRegistry {
   ): void {
     const name = config.name || ctor.name;
 
-    // Prevent duplicate registrations
+    // Prevent duplicate registrations - check exact match first
     if (ObjectRegistry.classes.has(name)) {
       const existing = ObjectRegistry.classes.get(name);
       if (!existing) {
@@ -485,6 +485,49 @@ export class ObjectRegistry {
           `  - Use unique class names (e.g., ${name}_UniqueId)\n` +
           `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
       );
+    }
+
+    // Case-insensitive check for manifest stubs (Issue #531)
+    // Manifest keys are lowercase (e.g., 'praeco') but class names are PascalCase (e.g., 'Praeco')
+    // When the real class is loaded via @smrt() decorator, we need to find and replace the stub
+    const lowerName = name.toLowerCase();
+    for (const [existingKey, existing] of ObjectRegistry.classes.entries()) {
+      if (existingKey.toLowerCase() === lowerName && existingKey !== name) {
+        // Found case-insensitive match with different casing
+        if ((existing.constructor as any)._isManifestStub === true) {
+          // Replace stub with real class
+          // Use the new PascalCase name as the canonical key
+          ObjectRegistry.classes.delete(existingKey);
+          existing.constructor = ctor;
+          existing.name = name; // Update to PascalCase
+          // Merge config from decorator (new) with manifest config (existing)
+          existing.config = { ...existing.config, ...config };
+          ObjectRegistry.classes.set(name, existing);
+          console.log(
+            `[registry] Replaced manifest stub '${existingKey}' with real class '${name}'`,
+          );
+          return;
+        }
+
+        // Non-stub case-insensitive collision - same constructor is OK
+        if (existing.constructor === ctor) {
+          return; // Same class, skip silently
+        }
+
+        // Different constructors with case-insensitive name match
+        throw new Error(
+          `SMRT Class Name Collision: "${name}" (case-insensitive match with "${existingKey}")\n\n` +
+            `A class with this name is already registered, but with a different constructor.\n` +
+            `This usually happens when:\n` +
+            `  1. Multiple test files define classes with the same name\n` +
+            `  2. Different packages export classes with the same name\n\n` +
+            `The collision will cause the wrong field definitions to be used,\n` +
+            `leading to properties not being initialized correctly.\n\n` +
+            `To fix:\n` +
+            `  - Use unique class names (e.g., ${name}_UniqueId)\n` +
+            `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
+        );
+      }
     }
 
     // CRITICAL: Capture package name NOW, while stack trace still shows external package
