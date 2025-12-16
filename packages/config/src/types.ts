@@ -101,6 +101,18 @@ export interface SiteTheme {
 }
 
 /**
+ * Publisher/organization information
+ */
+export interface SitePublisher {
+  /** Organization name (e.g., "Blindman Press") */
+  name: string;
+  /** Organization website URL */
+  url?: string;
+  /** GitHub organization URL */
+  github?: string;
+}
+
+/**
  * Site identity and configuration
  * Used by site templates to define site-specific settings
  */
@@ -113,6 +125,10 @@ export interface SiteConfig {
   description: string;
   /** Production URL */
   url?: string;
+  /** Contact email for the site */
+  contactEmail?: string;
+  /** Publisher/organization info */
+  publisher?: SitePublisher;
   /** Geographic location */
   location: SiteLocation;
   /** Navigation structure */
