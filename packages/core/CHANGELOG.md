@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.50
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - case-insensitive manifest stub replacement (#531) (#532) (core)
+  - @happyvertical/smrt-config@0.17.50
+  - @happyvertical/smrt-types@0.17.50
+
 ## 0.17.49
 
 ### Patch Changes
