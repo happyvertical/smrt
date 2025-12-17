@@ -21,13 +21,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@happyvertical/ai": "0.60.4",
-    "@happyvertical/email": "0.60.4",
-    "@happyvertical/files": "0.60.4",
-    "@happyvertical/logger": "0.60.4",
+    "@happyvertical/ai": "0.60.5",
+    "@happyvertical/email": "0.60.5",
+    "@happyvertical/files": "0.60.5",
+    "@happyvertical/logger": "0.60.5",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "0.60.4",
-    "@happyvertical/utils": "0.60.4"
+    "@happyvertical/sql": "0.60.5",
+    "@happyvertical/utils": "0.60.5"
   },
   "peerDependencies": {
     "@happyvertical/encryption": "*"
