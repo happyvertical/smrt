@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.51
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: upgrade @happyvertical SDK dependencies to 0.60.4 (#535) (deps)
+  - @happyvertical/smrt-config@0.17.51
+  - @happyvertical/smrt-types@0.17.51
+
 ## 0.17.50
 
 ### Patch Changes
