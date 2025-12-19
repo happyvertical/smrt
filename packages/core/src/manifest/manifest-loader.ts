@@ -34,14 +34,116 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 
-// Lazy-load staticManifest with fallback for build-time loading
-// During vite config loading, static-manifest.js may not exist yet
-let staticManifest: SmartObjectManifest | null = null;
-let staticManifestLoadAttempted = false;
+/**
+ * Extend globalThis to include manifest loader state.
+ * Using globalThis ensures all module instances share the same manifest caches,
+ * which is critical in monorepos where the same package can be loaded
+ * from different paths (e.g., pnpm store vs workspace symlink).
+ *
+ * @see https://github.com/happyvertical/smrt/issues/543
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtManifestStatic: SmartObjectManifest | null | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtManifestStaticLoadAttempted: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtManifestTest: SmartObjectManifest | null | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtManifestTestLoadAttempted: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtManifestCache: Map<string, SmartObjectManifest> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtManifestLocalTest: SmartObjectManifest | null | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtManifestCollisions:
+    | Map<
+        string,
+        Array<{
+          packageName: string;
+          filePath?: string;
+          manifestSource: string;
+        }>
+      >
+    | undefined;
+}
 
-// Lazy-load testManifest ONLY in test environments to avoid collisions
-let testManifest: SmartObjectManifest | null = null;
-let testManifestLoadAttempted = false;
+// Use globalThis for cross-module state sharing
+// This ensures loadConfig() in one module instance affects all packages
+
+/**
+ * Get/set staticManifest from globalThis
+ */
+function getStaticManifestCache(): SmartObjectManifest | null {
+  return globalThis.__smrtManifestStatic ?? null;
+}
+
+function setStaticManifestCache(manifest: SmartObjectManifest | null): void {
+  globalThis.__smrtManifestStatic = manifest;
+}
+
+function getStaticManifestLoadAttempted(): boolean {
+  return globalThis.__smrtManifestStaticLoadAttempted ?? false;
+}
+
+function setStaticManifestLoadAttempted(value: boolean): void {
+  globalThis.__smrtManifestStaticLoadAttempted = value;
+}
+
+/**
+ * Get/set testManifest from globalThis
+ */
+function getTestManifestCache(): SmartObjectManifest | null {
+  return globalThis.__smrtManifestTest ?? null;
+}
+
+function setTestManifestCache(manifest: SmartObjectManifest | null): void {
+  globalThis.__smrtManifestTest = manifest;
+}
+
+function getTestManifestLoadAttempted(): boolean {
+  return globalThis.__smrtManifestTestLoadAttempted ?? false;
+}
+
+function setTestManifestLoadAttempted(value: boolean): void {
+  globalThis.__smrtManifestTestLoadAttempted = value;
+}
+
+/**
+ * Get the manifest cache Map from globalThis
+ */
+function getManifestCacheMap(): Map<string, SmartObjectManifest> {
+  if (!globalThis.__smrtManifestCache) {
+    globalThis.__smrtManifestCache = new Map<string, SmartObjectManifest>();
+  }
+  return globalThis.__smrtManifestCache;
+}
+
+/**
+ * Get/set localTestManifest from globalThis
+ */
+function getLocalTestManifestCache(): SmartObjectManifest | null | undefined {
+  return globalThis.__smrtManifestLocalTest;
+}
+
+function setLocalTestManifestCache(
+  manifest: SmartObjectManifest | null | undefined,
+): void {
+  globalThis.__smrtManifestLocalTest = manifest;
+}
+
+/**
+ * Get the manifest collisions Map from globalThis
+ */
+function getManifestCollisionsMap(): Map<
+  string,
+  Array<{ packageName: string; filePath?: string; manifestSource: string }>
+> {
+  if (!globalThis.__smrtManifestCollisions) {
+    globalThis.__smrtManifestCollisions = new Map();
+  }
+  return globalThis.__smrtManifestCollisions;
+}
 
 // Create require function once for reuse
 const require = createRequire(import.meta.url);
@@ -69,23 +171,23 @@ function isTestEnvironment(): boolean {
 }
 
 function getStaticManifest(): SmartObjectManifest {
-  if (!staticManifestLoadAttempted) {
-    staticManifestLoadAttempted = true;
+  if (!getStaticManifestLoadAttempted()) {
+    setStaticManifestLoadAttempted(true);
     try {
       // Try to import the generated static manifest
       const imported = require('./static-manifest.js');
-      staticManifest = imported.staticManifest || imported.default;
+      setStaticManifestCache(imported.staticManifest || imported.default);
     } catch {
       // Fallback to empty manifest if file doesn't exist yet (during build)
-      staticManifest = {
+      setStaticManifestCache({
         version: '1.0.0',
         timestamp: Date.now(),
         objects: {},
         packageName: '@happyvertical/smrt-core',
-      };
+      });
     }
   }
-  return staticManifest!;
+  return getStaticManifestCache()!;
 }
 
 /**
@@ -93,8 +195,8 @@ function getStaticManifest(): SmartObjectManifest {
  * This prevents test classes from being loaded in production and causing collisions
  */
 function getTestManifest(): SmartObjectManifest | null {
-  if (!testManifestLoadAttempted) {
-    testManifestLoadAttempted = true;
+  if (!getTestManifestLoadAttempted()) {
+    setTestManifestLoadAttempted(true);
 
     // CRITICAL: Only load test manifest in test environment
     if (!isTestEnvironment()) {
@@ -103,17 +205,18 @@ function getTestManifest(): SmartObjectManifest | null {
           '[manifest-loader] ⚠️  Skipping test manifest load (not in test environment)',
         );
       }
-      testManifest = null;
+      setTestManifestCache(null);
       return null;
     }
 
     try {
       // Dynamically import test manifest to avoid loading in production
       const imported = require('./test-manifest-stub.js');
-      testManifest = imported.testManifest || imported.default;
+      const manifest = imported.testManifest || imported.default;
+      setTestManifestCache(manifest);
       if (process.env.DEBUG_TEST_ENV) {
         console.log(
-          `[manifest-loader] ✅ Loaded test manifest (${Object.keys(testManifest?.objects || {}).length} objects)`,
+          `[manifest-loader] ✅ Loaded test manifest (${Object.keys(manifest?.objects || {}).length} objects)`,
         );
       }
     } catch (error) {
@@ -122,10 +225,10 @@ function getTestManifest(): SmartObjectManifest | null {
           '[manifest-loader] ⚠️  Test manifest not found (this is normal in production)',
         );
       }
-      testManifest = null;
+      setTestManifestCache(null);
     }
   }
-  return testManifest;
+  return getTestManifestCache();
 }
 
 // Re-export types for convenience
@@ -133,16 +236,8 @@ export type Manifest = SmartObjectManifest;
 export type ManifestEntry = SmartObjectDefinition;
 export type { FieldDefinition, MethodDefinition };
 
-/**
- * Manifest cache - stores loaded manifests to avoid repeated imports
- */
-const manifestCache = new Map<string, Manifest>();
-
-/**
- * Local test manifest - loaded from current package during test runs
- * undefined = not attempted yet, null = attempted but not found, Manifest = successfully loaded
- */
-let localTestManifest: Manifest | null | undefined;
+// Note: manifestCache and localTestManifest are now accessed via globalThis helper functions
+// getManifestCacheMap() and getLocalTestManifestCache()/setLocalTestManifestCache()
 
 /**
  * Load local test manifest from current package (synchronous)
@@ -158,9 +253,10 @@ let localTestManifest: Manifest | null | undefined;
 export function loadLocalTestManifestSync(): Manifest | null | undefined {
   // Only return cached manifest if it was successfully loaded
   // Don't cache null (failed loads) - allow retries
-  if (localTestManifest !== undefined && localTestManifest !== null) {
+  const cached = getLocalTestManifestCache();
+  if (cached !== undefined && cached !== null) {
     console.log('[manifest-loader] Returning cached test manifest');
-    return localTestManifest;
+    return cached;
   }
 
   // Try multiple possible manifest locations
@@ -178,7 +274,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     try {
       const manifestJson = readFileSync(manifestPath, 'utf-8');
       const manifest: Manifest = JSON.parse(manifestJson);
-      localTestManifest = manifest;
+      setLocalTestManifestCache(manifest);
 
       const objectCount = Object.keys(manifest.objects).length;
       console.log(
@@ -334,9 +430,9 @@ export function getPackageName(
  */
 export function loadExternalManifestSync(packageName: string): Manifest | null {
   // Check cache first
-  if (manifestCache.has(packageName)) {
+  if (getManifestCacheMap().has(packageName)) {
     console.log(`[manifest-loader] Using cached manifest for ${packageName}`);
-    return manifestCache.get(packageName)!;
+    return getManifestCacheMap().get(packageName)!;
   }
 
   console.log(
@@ -497,7 +593,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     }
 
     // Cache the loaded manifest
-    manifestCache.set(packageName, manifest);
+    getManifestCacheMap().set(packageName, manifest);
     console.log(
       `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(manifest.objects).length} objects)`,
     );
@@ -542,21 +638,21 @@ export function discoverManifestSync(
   // 1. Check localTestManifest (domain package classes) - ONLY in test environment
   // This prevents test classes from polluting production code
   if (isTestEnvironment()) {
-    if (!localTestManifest) {
+    if (!getLocalTestManifestCache()) {
       loadLocalTestManifestSync();
     }
 
-    if (localTestManifest?.objects[name]) {
+    if (getLocalTestManifestCache()?.objects[name]) {
       console.log(
         `[manifest-loader] ✅ Found ${className} in localTestManifest (lowercase key)`,
       );
-      return localTestManifest.objects[name];
+      return getLocalTestManifestCache()?.objects[name];
     }
-    if (localTestManifest?.objects[className]) {
+    if (getLocalTestManifestCache()?.objects[className]) {
       console.log(
         `[manifest-loader] ✅ Found ${className} in localTestManifest (exact key)`,
       );
-      return localTestManifest.objects[className];
+      return getLocalTestManifestCache()?.objects[className];
     }
   }
 
@@ -596,7 +692,7 @@ export function discoverManifestSync(
   }
 
   // 4. Check cached external manifests
-  for (const manifest of manifestCache.values()) {
+  for (const manifest of getManifestCacheMap().values()) {
     const entry = manifest.objects[name] || manifest.objects[className];
     if (entry) {
       console.log(
@@ -618,7 +714,7 @@ export function discoverManifestSync(
   );
 
   // Read discovered packages from manifest (populated at build time)
-  const smrtPackages = localTestManifest?.smrtDependencies || [];
+  const smrtPackages = getLocalTestManifestCache()?.smrtDependencies || [];
 
   if (smrtPackages.length === 0) {
     console.log(
@@ -661,7 +757,7 @@ export function discoverManifestSync(
       for (const pkg of packages) {
         const fullPackageName = `@happyvertical/${pkg}`;
         // Skip if already in cache (already checked above)
-        if (manifestCache.has(fullPackageName)) {
+        if (getManifestCacheMap().has(fullPackageName)) {
           continue;
         }
         // Check for manifest in dist/ or root
@@ -675,7 +771,7 @@ export function discoverManifestSync(
               const manifestContent = readFileSync(manifestPath, 'utf-8');
               const manifest: Manifest = JSON.parse(manifestContent);
               // Cache it for future lookups
-              manifestCache.set(fullPackageName, manifest);
+              getManifestCacheMap().set(fullPackageName, manifest);
               // Check if this manifest has the class we're looking for
               const entry =
                 manifest.objects[name] || manifest.objects[className];
@@ -709,14 +805,8 @@ export function discoverManifestSync(
   return undefined;
 }
 
-/**
- * Track discovered manifest entries to detect collisions
- * Maps className -> Array<{packageName, filePath, manifestSource}>
- */
-const manifestCollisions = new Map<
-  string,
-  Array<{ packageName: string; filePath?: string; manifestSource: string }>
->();
+// Note: manifestCollisions is now accessed via globalThis helper function
+// getManifestCollisionsMap()
 
 /**
  * Discover manifest entry asynchronously (includes external package loading)
@@ -753,15 +843,16 @@ export async function discoverManifestEntry(
   // Do this BEFORE loading external manifest to avoid duplicate loading
   let localEntry: SmartObjectDefinition | undefined;
   if (isTestEnvironment()) {
-    if (localTestManifest === undefined) {
+    if (getLocalTestManifestCache() === undefined) {
       loadLocalTestManifestSync();
     }
     localEntry =
-      localTestManifest?.objects[name] || localTestManifest?.objects[className];
+      getLocalTestManifestCache()?.objects[name] ||
+      getLocalTestManifestCache()?.objects[className];
     if (localEntry) {
       foundEntries.push({
         entry: localEntry,
-        packageName: localTestManifest?.packageName || 'local-test',
+        packageName: getLocalTestManifestCache()?.packageName || 'local-test',
         filePath: localEntry.filePath,
         manifestSource: 'local test manifest',
       });
@@ -772,8 +863,8 @@ export async function discoverManifestEntry(
   // BUT skip if it's the same package as the local test manifest to avoid collisions
   if (constructorPackage) {
     const skipExternal =
-      localTestManifest?.packageName &&
-      constructorPackage === localTestManifest.packageName;
+      getLocalTestManifestCache()?.packageName &&
+      constructorPackage === getLocalTestManifestCache()?.packageName;
 
     if (!skipExternal) {
       const manifest = await loadExternalManifest(constructorPackage);
@@ -798,7 +889,7 @@ export async function discoverManifestEntry(
 
   // 3. Check testManifest (core test classes) - ONLY in test environment
   // Skip if we already loaded a local test manifest (avoids duplicate entries from same package)
-  if (isTestEnvironment() && (!localTestManifest || !localEntry)) {
+  if (isTestEnvironment() && (!getLocalTestManifestCache() || !localEntry)) {
     const manifest = getTestManifest();
     const testEntry = manifest?.objects[name] || manifest?.objects[className];
     if (testEntry) {
@@ -828,7 +919,7 @@ export async function discoverManifestEntry(
   }
 
   // 5. Check other cached external manifests
-  for (const [cachedPkgName, manifest] of manifestCache.entries()) {
+  for (const [cachedPkgName, manifest] of getManifestCacheMap().entries()) {
     // Skip if this is the constructor's package (already checked above)
     if (cachedPkgName === constructorPackage) {
       continue;
@@ -856,7 +947,7 @@ export async function discoverManifestEntry(
     );
 
     // Store collision info for reporting
-    manifestCollisions.set(
+    getManifestCollisionsMap().set(
       className,
       foundEntries.map((f) => ({
         packageName: f.packageName,
@@ -896,7 +987,7 @@ export function getManifestCollisions(): Map<
   string,
   Array<{ packageName: string; filePath?: string; manifestSource: string }>
 > {
-  return new Map(manifestCollisions);
+  return new Map(getManifestCollisionsMap());
 }
 
 /**
@@ -905,7 +996,7 @@ export function getManifestCollisions(): Map<
  * Useful for testing or when packages are updated at runtime.
  */
 export function clearManifestCache(): void {
-  manifestCache.clear();
+  getManifestCacheMap().clear();
 }
 
 /**
@@ -916,7 +1007,7 @@ export function clearManifestCache(): void {
  * @returns Array of [packageName, manifest] entries
  */
 export function getLoadedManifests(): Array<[string, Manifest]> {
-  return Array.from(manifestCache.entries());
+  return Array.from(getManifestCacheMap().entries());
 }
 
 /**
@@ -983,10 +1074,10 @@ export function discoverSTISiblingsSync(
 
   // 1. Check local test manifest (domain package test classes)
   if (isTestEnvironment()) {
-    if (!localTestManifest) {
+    if (!getLocalTestManifestCache()) {
       loadLocalTestManifestSync();
     }
-    addFromManifest(localTestManifest, 'localTestManifest');
+    addFromManifest(getLocalTestManifestCache(), 'localTestManifest');
   }
 
   // 2. Check test manifest (core test classes)
@@ -1000,7 +1091,7 @@ export function discoverSTISiblingsSync(
   addFromManifest(staticManifestData, 'staticManifest');
 
   // 4. Check cached external manifests
-  for (const [pkgName, manifest] of manifestCache.entries()) {
+  for (const [pkgName, manifest] of getManifestCacheMap().entries()) {
     addFromManifest(manifest, `manifestCache:${pkgName}`);
   }
 
@@ -1009,14 +1100,14 @@ export function discoverSTISiblingsSync(
   const allSmrtDeps = new Set<string>();
 
   // Collect from localTestManifest (test environment)
-  if (localTestManifest?.smrtDependencies) {
-    for (const pkg of localTestManifest.smrtDependencies) {
+  if (getLocalTestManifestCache()?.smrtDependencies) {
+    for (const pkg of getLocalTestManifestCache()?.smrtDependencies!) {
       allSmrtDeps.add(pkg);
     }
   }
 
   // Collect from ALL cached manifests (production)
-  for (const [, manifest] of manifestCache.entries()) {
+  for (const [, manifest] of getManifestCacheMap().entries()) {
     if (manifest.smrtDependencies) {
       for (const pkg of manifest.smrtDependencies) {
         allSmrtDeps.add(pkg);
@@ -1037,7 +1128,7 @@ export function discoverSTISiblingsSync(
 
   // Load and scan each dependency
   for (const pkg of allSmrtDeps) {
-    if (!manifestCache.has(pkg)) {
+    if (!getManifestCacheMap().has(pkg)) {
       const manifest = loadExternalManifestSync(pkg);
       if (manifest) {
         addFromManifest(manifest, `smrtDependency:${pkg}`);
@@ -1061,7 +1152,7 @@ export function discoverSTISiblingsSync(
       for (const pkg of packages) {
         const fullPackageName = `@happyvertical/${pkg}`;
         // Skip if already in cache
-        if (manifestCache.has(fullPackageName)) {
+        if (getManifestCacheMap().has(fullPackageName)) {
           continue;
         }
         // Check for manifest in dist/ or root
@@ -1075,7 +1166,7 @@ export function discoverSTISiblingsSync(
               const manifestContent = readFileSync(manifestPath, 'utf-8');
               const manifest = JSON.parse(manifestContent);
               // Cache it
-              manifestCache.set(fullPackageName, manifest);
+              getManifestCacheMap().set(fullPackageName, manifest);
               addFromManifest(manifest, `nodeModules:${fullPackageName}`);
               break; // Found manifest, skip other paths
             } catch (parseError) {

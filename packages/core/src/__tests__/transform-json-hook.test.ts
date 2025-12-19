@@ -273,7 +273,7 @@ describe('transformJSON() Hook', () => {
 
     it('should allow intermediate classes to modify parent transformations', async () => {
       @smrt({ tableStrategy: 'sti' })
-      class Base extends SmrtObject {
+      class TransformBase extends SmrtObject {
         public name: string = '';
         public value: number = 0;
 
@@ -292,7 +292,7 @@ describe('transformJSON() Hook', () => {
       }
 
       @smrt() // Inherit STI from parent
-      class Child extends Base {
+      class TransformChild extends TransformBase {
         protected transformJSON(data: any): any {
           const parentData = super.transformJSON(data);
           return {
@@ -302,7 +302,7 @@ describe('transformJSON() Hook', () => {
         }
       }
 
-      const obj = new Child({
+      const obj = new TransformChild({
         name: 'test',
         value: 5,
         db,

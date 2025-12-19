@@ -3,9 +3,42 @@ import type { LoadConfigOptions, SmrtConfig } from './types.js';
 
 const MODULE_NAME = 'smrt';
 
-// Singleton cache
-let cachedConfig: SmrtConfig | null = null;
-let explorer: ReturnType<typeof cosmiconfig> | null = null;
+/**
+ * Extend globalThis to include loader cache properties.
+ * Using globalThis ensures all module instances share the same loader state,
+ * which is critical in monorepos where the same package can be loaded
+ * from different paths (e.g., pnpm store vs workspace symlink).
+ *
+ * @see https://github.com/happyvertical/smrt/issues/543
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtLoaderCachedConfig: SmrtConfig | null | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtLoaderExplorer: ReturnType<typeof cosmiconfig> | null | undefined;
+}
+
+/**
+ * Get/set cached config from globalThis
+ */
+function getCachedConfig(): SmrtConfig | null {
+  return globalThis.__smrtLoaderCachedConfig ?? null;
+}
+
+function setCachedConfig(config: SmrtConfig | null): void {
+  globalThis.__smrtLoaderCachedConfig = config;
+}
+
+/**
+ * Get/set cosmiconfig explorer from globalThis
+ */
+function getExplorer(): ReturnType<typeof cosmiconfig> | null {
+  return globalThis.__smrtLoaderExplorer ?? null;
+}
+
+function setExplorer(exp: ReturnType<typeof cosmiconfig> | null): void {
+  globalThis.__smrtLoaderExplorer = exp;
+}
 
 /**
  * Load and parse configuration from project root
@@ -17,11 +50,13 @@ export async function loadConfig(
   const { configPath, searchParents = true, cache = true } = options;
 
   // Return cached config if available
-  if (cache && cachedConfig) {
-    return cachedConfig;
+  const cached = getCachedConfig();
+  if (cache && cached) {
+    return cached;
   }
 
   // Initialize or reuse cosmiconfig explorer
+  let explorer = getExplorer();
   if (!explorer || !cache) {
     explorer = cosmiconfig(MODULE_NAME, {
       searchPlaces: [
@@ -33,6 +68,7 @@ export async function loadConfig(
       stopDir: searchParents ? undefined : process.cwd(),
       cache: cache, // Respect cache option
     });
+    setExplorer(explorer);
   }
 
   let result: Awaited<ReturnType<typeof explorer.load>> = null;
@@ -53,7 +89,7 @@ export async function loadConfig(
 
   // Cache the config
   if (cache) {
-    cachedConfig = config;
+    setCachedConfig(config);
   }
 
   return config;
@@ -64,12 +100,13 @@ export async function loadConfig(
  * Useful for testing or hot-reloading
  */
 export function clearConfigCache(): void {
-  cachedConfig = null;
+  setCachedConfig(null);
 
   // Clear cosmiconfig's cache
+  const explorer = getExplorer();
   if (explorer) {
     explorer.clearCaches();
-    explorer = null;
+    setExplorer(null);
   }
 }
 
@@ -77,5 +114,5 @@ export function clearConfigCache(): void {
  * Check if config is loaded and cached
  */
 export function isConfigLoaded(): boolean {
-  return cachedConfig !== null;
+  return getCachedConfig() !== null;
 }

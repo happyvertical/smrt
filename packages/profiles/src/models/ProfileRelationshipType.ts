@@ -20,9 +20,34 @@ export interface ProfileRelationshipTypeOptions extends SmrtObjectOptions {
 }
 
 /**
- * Registry of reciprocal relationship handlers
+ * Extend globalThis to include reciprocal handlers registry.
+ * Using globalThis ensures all module instances share the same handlers,
+ * which is critical in monorepos where the same package can be loaded
+ * from different paths (e.g., pnpm store vs workspace symlink).
+ *
+ * @see https://github.com/happyvertical/smrt/issues/543
  */
-const reciprocalHandlers = new Map<string, ReciprocalHandler>();
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtProfileRelationshipHandlers:
+    | Map<string, ReciprocalHandler>
+    | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtProfileRelationshipHandlersInitialized: boolean | undefined;
+}
+
+/**
+ * Get the reciprocal handlers Map from globalThis
+ */
+function getReciprocalHandlers(): Map<string, ReciprocalHandler> {
+  if (!globalThis.__smrtProfileRelationshipHandlers) {
+    globalThis.__smrtProfileRelationshipHandlers = new Map<
+      string,
+      ReciprocalHandler
+    >();
+  }
+  return globalThis.__smrtProfileRelationshipHandlers;
+}
 
 /**
  * Default handlers for common reciprocal relationship patterns
@@ -50,9 +75,12 @@ const DEFAULT_HANDLERS: Record<string, ReciprocalHandler> = {
   },
 };
 
-// Register default handlers
-for (const [slug, handler] of Object.entries(DEFAULT_HANDLERS)) {
-  reciprocalHandlers.set(slug, handler);
+// Register default handlers (only once across all module instances)
+if (!globalThis.__smrtProfileRelationshipHandlersInitialized) {
+  globalThis.__smrtProfileRelationshipHandlersInitialized = true;
+  for (const [slug, handler] of Object.entries(DEFAULT_HANDLERS)) {
+    getReciprocalHandlers().set(slug, handler);
+  }
 }
 
 @smrt({
@@ -98,7 +126,7 @@ export class ProfileRelationshipType extends SmrtObject {
     slug: string,
     handler: ReciprocalHandler,
   ): void {
-    reciprocalHandlers.set(slug, handler);
+    getReciprocalHandlers().set(slug, handler);
   }
 
   /**
@@ -108,7 +136,7 @@ export class ProfileRelationshipType extends SmrtObject {
    * @returns The handler function or undefined
    */
   static getReciprocalHandler(slug: string): ReciprocalHandler | undefined {
-    return reciprocalHandlers.get(slug);
+    return getReciprocalHandlers().get(slug);
   }
 
   /**
