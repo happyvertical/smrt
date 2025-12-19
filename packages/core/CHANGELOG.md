@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.53
+
+### Patch Changes
+
+- ### Features
+
+  - add db:validate command for JSON database integrity checking (#541) (cli)
+  - @happyvertical/smrt-config@0.17.53
+  - @happyvertical/smrt-types@0.17.53
+
 ## 0.17.52
 
 ### Patch Changes
