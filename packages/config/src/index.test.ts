@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   clearCache,
+  getConfig,
   getModuleConfig,
   getPackageConfig,
   loadConfig,
@@ -372,6 +373,108 @@ describe('@smrt/config', () => {
       expect(config.enabled).toBe(false);
       expect(config.maxItems).toBe(0);
       expect(config.name).toBe('');
+    });
+  });
+
+  describe('cross-module config sharing (issue #543)', () => {
+    /**
+     * Tests for globalThis-based config caching.
+     * This ensures that loadConfig() in smrt-cli affects all packages
+     * that use smrt-config, even when loaded from different paths
+     * (e.g., pnpm store vs workspace symlink).
+     *
+     * @see https://github.com/happyvertical/smrt/issues/543
+     */
+
+    it('should store config in globalThis after loadConfig', async () => {
+      const testConfigPath = join(testDir, 'smrt-globalthis-1.config.js');
+      const configContent = `
+        export default {
+          smrt: { logLevel: 'debug' },
+          modules: { 'test-module': { enabled: true } }
+        };
+      `;
+
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
+
+      // Verify globalThis cache is populated
+      expect(globalThis.__smrtConfigCache).not.toBeNull();
+      expect(globalThis.__smrtConfigCache?.smrt?.logLevel).toBe('debug');
+    });
+
+    it('should return config from globalThis via getConfig', async () => {
+      const testConfigPath = join(testDir, 'smrt-globalthis-2.config.js');
+      const configContent = `
+        export default {
+          smrt: { cacheDir: '.test-cache' }
+        };
+      `;
+
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
+
+      // getConfig should read from globalThis
+      const config = getConfig();
+      expect(config).not.toBeNull();
+      expect(config?.smrt?.cacheDir).toBe('.test-cache');
+    });
+
+    it('should clear globalThis cache on clearCache', async () => {
+      const testConfigPath = join(testDir, 'smrt-globalthis-3.config.js');
+      const configContent = `
+        export default {
+          smrt: { logLevel: 'info' }
+        };
+      `;
+
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
+
+      // Verify config is loaded
+      expect(globalThis.__smrtConfigCache).not.toBeNull();
+
+      // Clear cache
+      clearCache();
+
+      // Verify globalThis cache is cleared
+      expect(globalThis.__smrtConfigCache).toBeNull();
+      expect(getConfig()).toBeNull();
+    });
+
+    it('should share config across getModuleConfig calls after loadConfig', async () => {
+      const testConfigPath = join(testDir, 'smrt-globalthis-4.config.js');
+      const configContent = `
+        export default {
+          modules: {
+            'external-package': { apiKey: 'test-key-123' }
+          }
+        };
+      `;
+
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
+
+      // Simulate external package calling getModuleConfig
+      // (would previously get defaults due to separate module instance)
+      const config = getModuleConfig('external-package', {
+        apiKey: 'default-key',
+        timeout: 5000,
+      });
+
+      // Should receive the loaded config, not defaults
+      expect(config.apiKey).toBe('test-key-123');
+      expect(config.timeout).toBe(5000); // Default for unspecified field
+    });
+
+    it('should return null from getConfig before loadConfig is called', () => {
+      // After clearCache in beforeEach, getConfig should return null
+      const config = getConfig();
+      expect(config).toBeNull();
     });
   });
 });
