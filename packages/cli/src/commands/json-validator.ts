@@ -19,6 +19,29 @@ import {
   type ValidationSummary,
 } from './validation-types.js';
 
+/**
+ * Converts a camelCase string to snake_case
+ *
+ * JSON database files store data with snake_case field names (matching database columns),
+ * but ObjectRegistry field names use camelCase (matching JavaScript conventions).
+ * This function bridges the gap when validating JSON files.
+ *
+ * @param str - String in camelCase format
+ * @returns String in snake_case format
+ * @example
+ * ```typescript
+ * toSnakeCase('typeId'); // 'type_id'
+ * toSnakeCase('createdAt'); // 'created_at'
+ * toSnakeCase('id'); // 'id'
+ * ```
+ */
+function toSnakeCase(str: string): string {
+  return str
+    .replace(/([A-Z])/g, '_$1')
+    .toLowerCase()
+    .replace(/^_/, '');
+}
+
 interface ValidatorOptions {
   dataPath: string;
   quickMode: boolean;
@@ -571,7 +594,11 @@ export class JsonDatabaseValidator {
     objectId: string,
   ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
-    const value = record[fieldName];
+    // JSON files use snake_case field names (matching database columns)
+    // ObjectRegistry uses camelCase (matching JavaScript conventions)
+    // Convert camelCase to snake_case for lookup in JSON data
+    const snakeCaseFieldName = toSnakeCase(fieldName);
+    const value = record[snakeCaseFieldName];
     const fieldType = fieldDef.type as string;
 
     // Check required fields
@@ -896,7 +923,9 @@ export class JsonDatabaseValidator {
         const recordId = (rec.id as string) || `[unknown]`;
 
         for (const [fieldName, fieldDef] of fkFields) {
-          const fkValue = rec[fieldName];
+          // Convert camelCase field name to snake_case for JSON lookup
+          const snakeCaseFieldName = toSnakeCase(fieldName);
+          const fkValue = rec[snakeCaseFieldName];
           if (!fkValue) continue;
 
           const def = fieldDef as Record<string, unknown>;
@@ -1014,7 +1043,9 @@ export class JsonDatabaseValidator {
                 | Record<string, unknown>
                 | undefined;
               if (fieldDef?.default !== undefined) {
-                record[issue.field] = fieldDef.default;
+                // Convert camelCase field name to snake_case for JSON storage
+                const snakeCaseField = toSnakeCase(issue.field);
+                record[snakeCaseField] = fieldDef.default;
                 fixedCount++;
               }
             }

@@ -646,6 +646,46 @@ describe('db:validate', () => {
     });
   });
 
+  describe('snake_case field name handling (issue #549)', () => {
+    it('should correctly validate fields with snake_case names in JSON', async () => {
+      // JSON files use snake_case field names (matching database columns)
+      // This tests the fix for issue #549 where the validator was looking
+      // for camelCase field names (typeId) instead of snake_case (type_id)
+      await writeFile(
+        resolve(dataDir, 'profiles.json'),
+        JSON.stringify([
+          {
+            id: '5e75e8fa-c12f-45d6-bbfa-667a3b6a832e',
+            _meta_type: 'Person',
+            type_id: 'e0f5c6f6-31e7-416c-8f58-4d2a5d0748e2',
+            name: 'Mayor Hansen',
+            created_at: '2024-01-01T00:00:00.000Z',
+            updated_at: '2024-01-01T00:00:00.000Z',
+          },
+        ]),
+      );
+
+      const validator = new JsonDatabaseValidator({
+        dataPath: dataDir,
+        quickMode: true,
+        verbose: false,
+      });
+
+      const files = await discoverJsonFiles(dataDir);
+      const results = await validator.validate(files);
+
+      // Should not have MISSING_REQUIRED_FIELD errors for snake_case fields
+      const missingFieldErrors = results.objectResults[0].issues.filter(
+        (i) =>
+          i.code === ValidationCodes.MISSING_REQUIRED_FIELD &&
+          (i.field === 'typeId' ||
+            i.field === 'createdAt' ||
+            i.field === 'updatedAt'),
+      );
+      expect(missingFieldErrors).toHaveLength(0);
+    });
+  });
+
   describe('command structure', () => {
     it('should have correct command definition', async () => {
       const { utilityCommands } = await import('../utilities.js');
