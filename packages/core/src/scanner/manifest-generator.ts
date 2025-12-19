@@ -401,6 +401,9 @@ export class ManifestGenerator {
    * (they inherit from parent). This method merges parent fields into child manifests
    * so that runtime code doesn't need to do field resolution.
    *
+   * Also handles collection classes (SmrtCollection<T>) that should inherit their
+   * item class's tableName and collection when the item uses STI.
+   *
    * Handles multi-level inheritance (grandparents, great-grandparents, etc.)
    * Automatically loads parent class definitions from external SMRT packages when needed
    *
@@ -415,7 +418,10 @@ export class ManifestGenerator {
       objectsByName.set(obj.className.toLowerCase(), obj);
     }
 
-    // Process each object that has a parent (extends another class)
+    // FIRST PASS: Handle STI field merging and tableName inheritance
+    // This must happen FIRST so that item classes (like Meeting) have their tableName
+    // inherited from their STI base (like Event) before collection classes (like Meetings)
+    // try to read it
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.extends) continue; // No parent, skip
 
@@ -550,6 +556,176 @@ export class ManifestGenerator {
         `[manifest-generator] ✅ ${obj.className} now has ${Object.keys(mergedFields).length} fields (including inherited)`,
       );
     }
+
+    // SECOND PASS: Handle collection classes that should inherit from their item class
+    // This must happen AFTER STI field merging so item classes have their tableName set
+    for (const obj of Object.values(manifest.objects)) {
+      // Check if this is a collection class (extends SmrtCollection)
+      const isCollection =
+        obj.extends === 'SmrtCollection' ||
+        this.extendsCollection(obj, objectsByName);
+
+      if (isCollection) {
+        // Find the item class from _itemClass static property
+        const itemClass = this.findItemClass(obj, manifest, objectsByName);
+
+        if (itemClass) {
+          console.log(
+            `[manifest-generator] ${obj.className} is a collection class for ${itemClass.className}`,
+          );
+
+          // Inherit tableName from item class (which may have inherited it from STI base)
+          if (itemClass.decoratorConfig?.tableName) {
+            obj.decoratorConfig = obj.decoratorConfig || {};
+            obj.decoratorConfig.tableName = itemClass.decoratorConfig.tableName;
+            console.log(
+              `[manifest-generator] ${obj.className} inherits tableName: '${itemClass.decoratorConfig.tableName}' from item class ${itemClass.className}`,
+            );
+          }
+
+          // Inherit collection name from item class
+          if (itemClass.collection !== obj.collection) {
+            console.log(
+              `[manifest-generator] ${obj.className} inherits collection: '${itemClass.collection}' from item class ${itemClass.className} (was '${obj.collection}')`,
+            );
+            obj.collection = itemClass.collection;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Check if a class extends SmrtCollection (directly or indirectly)
+   *
+   * @param obj - The object definition to check
+   * @param objectsByName - Map of className -> objectDef for lookups
+   * @returns true if this class extends SmrtCollection
+   */
+  private extendsCollection(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): boolean {
+    if (!obj.extends) return false;
+
+    // Walk up inheritance chain looking for SmrtCollection
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) break;
+      visited.add(currentClass);
+
+      if (currentClass === 'SmrtCollection') return true;
+
+      const parentObj = objectsByName.get(currentClass);
+      if (!parentObj) break;
+
+      currentClass = parentObj.extends;
+    }
+
+    return false;
+  }
+
+  /**
+   * Find the item class for a collection class
+   *
+   * Looks for the _itemClass static property first, then falls back to
+   * name-based inference (e.g., "Meetings" -> "Meeting", "EventCollection" -> "Event").
+   *
+   * @param collectionObj - The collection class definition
+   * @param manifest - The manifest
+   * @param objectsByName - Map of className -> objectDef for lookups
+   * @returns Item class definition or undefined
+   */
+  private findItemClass(
+    collectionObj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): SmartObjectDefinition | undefined {
+    // Look for _itemClass static field in the collection class
+    // This is defined like: static readonly _itemClass = Meeting;
+    const itemClassField = collectionObj.fields._itemClass;
+
+    if (itemClassField) {
+      // Extract class name from the field's default value or metadata
+      // The AST scanner might capture this as a reference
+      const itemClassName = itemClassField.related || itemClassField.default;
+
+      if (itemClassName && typeof itemClassName === 'string') {
+        // Try to find the item class by name
+        const itemClass = objectsByName.get(itemClassName);
+        if (itemClass) {
+          return itemClass;
+        }
+
+        // Try loading from external packages
+        if (manifest.smrtDependencies && manifest.smrtDependencies.length > 0) {
+          return this.loadParentFromExternalPackage(
+            itemClassName,
+            manifest.smrtDependencies,
+            objectsByName,
+          );
+        }
+      }
+    }
+
+    // Fallback: Try to infer from collection class name
+    // Generate candidate item class names and check if they exist
+    const collectionName = collectionObj.className;
+    const candidates: string[] = [];
+
+    // Strip "Collection" suffix first if present
+    let baseName = collectionName;
+    if (baseName.endsWith('Collection')) {
+      baseName = baseName.slice(0, -'Collection'.length);
+    }
+
+    // Generate singularization candidates (order matters - try most specific first)
+    // 1. Exact name (e.g., "Event" from "EventCollection")
+    candidates.push(baseName);
+
+    // 2. Remove trailing 's' (e.g., "Meetings" -> "Meeting")
+    if (baseName.endsWith('s') && baseName.length > 1) {
+      candidates.push(baseName.slice(0, -1));
+    }
+
+    // 3. Handle 'ies' -> 'y' (e.g., "Categories" -> "Category")
+    if (baseName.endsWith('ies') && baseName.length > 3) {
+      candidates.push(`${baseName.slice(0, -3)}y`);
+    }
+
+    // 4. Handle 'es' -> '' for words ending in s/x/z/ch/sh (e.g., "Statuses" -> "Status")
+    if (baseName.endsWith('es') && baseName.length > 2) {
+      candidates.push(baseName.slice(0, -2));
+    }
+
+    // Try each candidate against local classes first, then external packages
+    // Skip candidates that match the collection class itself
+    for (const candidate of candidates) {
+      if (candidate === collectionObj.className) continue; // Don't match self
+      const itemClass = objectsByName.get(candidate);
+      if (itemClass) {
+        return itemClass;
+      }
+    }
+
+    // Try loading from external packages
+    if (manifest.smrtDependencies && manifest.smrtDependencies.length > 0) {
+      for (const candidate of candidates) {
+        if (candidate === collectionObj.className) continue; // Don't match self
+        const itemClass = this.loadParentFromExternalPackage(
+          candidate,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+        if (itemClass) {
+          return itemClass;
+        }
+      }
+    }
+
+    return undefined;
   }
 
   /**
