@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.55
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - fix heuristic for instance vs singleton custom methods (#545) (cli)
+  - @happyvertical/smrt-config@0.17.55
+  - @happyvertical/smrt-types@0.17.55
+
 ## 0.17.54
 
 ### Patch Changes
