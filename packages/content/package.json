@@ -25,10 +25,10 @@
     "@happyvertical/documents": "0.60.5",
     "@happyvertical/files": "0.60.5",
     "@happyvertical/logger": "0.60.5",
-    "@happyvertical/ocr": "0.60.4",
+    "@happyvertical/ocr": "0.60.6",
     "@happyvertical/pdf": "0.60.4",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/spider": "0.60.4",
+    "@happyvertical/spider": "0.60.5",
     "@happyvertical/sql": "0.60.5",
     "@happyvertical/utils": "0.60.5",
     "yaml": "^2.8.1"
