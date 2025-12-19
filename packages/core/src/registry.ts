@@ -2997,6 +2997,7 @@ export class ObjectRegistry {
     const chain = ObjectRegistry.getInheritanceChain(className);
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (!ancestor) continue;
       // Use getTableStrategy() to properly detect inherited STI strategy
       // (not ancestor.config.tableStrategy which only shows explicit config)
       if (ObjectRegistry.getTableStrategy(ancestorName) === 'sti') {
