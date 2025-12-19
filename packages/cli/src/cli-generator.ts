@@ -744,16 +744,10 @@ export class CLIGenerator {
       }
 
       // Determine if method needs an object instance (ID lookup) vs singleton
-      // Methods with object-type parameters (options: {...}) are singleton methods
-      // Methods with no parameters or first param named 'id' need instance lookup
+      // Instance methods: first parameter is explicitly named 'id' → fetch from DB
+      // Singleton methods: everything else → create new instance, pass options
       const firstParam = (methodDef.parameters || [])[0];
-      const hasObjectTypeParam =
-        firstParam && this.isObjectTypeParameter(firstParam.type || '');
-
-      // Singleton: object-type params (options objects passed via CLI flags)
-      // Instance: no params, or first param is explicitly named 'id'
-      const needsInstance =
-        !hasObjectTypeParam && (!firstParam || firstParam.name === 'id');
+      const needsInstance = firstParam?.name === 'id';
 
       commands.push({
         name: `${lowerName}:${methodName}`,
