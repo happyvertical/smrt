@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.54
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use globalThis for cross-module state sharing (#544) (core)
+  - @happyvertical/smrt-config@0.17.54
+  - @happyvertical/smrt-types@0.17.54
+
 ## 0.17.53
 
 ### Patch Changes

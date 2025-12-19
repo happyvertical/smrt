@@ -1,5 +1,7 @@
 # @happyvertical/smrt-template-sveltekit
 
+## 0.17.54
+
 ## 0.17.53
 
 ## 0.17.52
