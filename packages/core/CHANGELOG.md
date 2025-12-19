@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.56
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - fix regression - methods with no params marked as needing ID (#546) (cli)
+  - @happyvertical/smrt-config@0.17.56
+  - @happyvertical/smrt-types@0.17.56
+
 ## 0.17.55
 
 ### Patch Changes
