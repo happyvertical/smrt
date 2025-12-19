@@ -44,6 +44,41 @@ import { classnameToTablename, tableNameFromClass } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
 /**
+ * Extend globalThis to include ObjectRegistry state.
+ * Using globalThis ensures all module instances share the same registry,
+ * which is critical in monorepos where the same package can be loaded
+ * from different paths (e.g., pnpm store vs workspace symlink).
+ *
+ * This fixes cross-module state sharing issues where different module
+ * instances would have different class registrations, causing STI failures,
+ * missing schemas, etc.
+ *
+ * @see https://github.com/happyvertical/smrt/issues/543
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtRegistryClasses: Map<string, any> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryCollections: Map<string, typeof SmrtCollection> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryCollectionCache:
+    | LRUCache<string, SmrtCollection<any>>
+    | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryDbInstanceIds: WeakMap<object, number> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryNextDbId: number | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryInheritanceChainCache:
+    | LRUCache<string, string[]>
+    | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryFieldDecorators: Map<string, Map<string, any>> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
+}
+
+/**
  * Get inheritance config synchronously
  * Uses the config package's sync accessor which returns already-loaded config
  */
@@ -277,51 +312,113 @@ interface RegisteredClass {
 
 /**
  * Central registry for all SMRT objects
+ *
+ * Uses globalThis for cross-module state sharing, ensuring all module instances
+ * (even from different package resolution paths) share the same registry state.
  */
 export class ObjectRegistry {
-  private static classes = new Map<string, RegisteredClass>();
-  private static collections = new Map<string, typeof SmrtCollection>();
-  private static collectionCache = new LRUCache<string, SmrtCollection<any>>(
-    100,
-  );
+  /**
+   * Get the classes map from globalThis, initializing if needed
+   */
+  private static get classes(): Map<string, RegisteredClass> {
+    if (!globalThis.__smrtRegistryClasses) {
+      globalThis.__smrtRegistryClasses = new Map<string, RegisteredClass>();
+    }
+    return globalThis.__smrtRegistryClasses;
+  }
+
+  /**
+   * Get the collections map from globalThis, initializing if needed
+   */
+  private static get collections(): Map<string, typeof SmrtCollection> {
+    if (!globalThis.__smrtRegistryCollections) {
+      globalThis.__smrtRegistryCollections = new Map<
+        string,
+        typeof SmrtCollection
+      >();
+    }
+    return globalThis.__smrtRegistryCollections;
+  }
+
+  /**
+   * Get the collection cache from globalThis, initializing if needed
+   */
+  private static get collectionCache(): LRUCache<string, SmrtCollection<any>> {
+    if (!globalThis.__smrtRegistryCollectionCache) {
+      globalThis.__smrtRegistryCollectionCache = new LRUCache<
+        string,
+        SmrtCollection<any>
+      >(100);
+    }
+    return globalThis.__smrtRegistryCollectionCache;
+  }
+
   /**
    * WeakMap to assign unique IDs to database instances for cache keys
    * Prevents cache key collisions when different db instances are used
    */
-  private static dbInstanceIds = new WeakMap<object, number>();
-  private static nextDbId = 1;
+  private static get dbInstanceIds(): WeakMap<object, number> {
+    if (!globalThis.__smrtRegistryDbInstanceIds) {
+      globalThis.__smrtRegistryDbInstanceIds = new WeakMap<object, number>();
+    }
+    return globalThis.__smrtRegistryDbInstanceIds;
+  }
+
   /**
-   * Global cache for inheritance chains (shared across all instances)
-   * Maps className → full inheritance chain (base to child)
-   * Performance optimization: ~100x faster than re-walking prototype chain
-   * Cache size is configurable via smrt.inheritance.cacheSize (default: 200)
+   * Get/set the next database ID counter
    */
-  private static inheritanceChainCache: LRUCache<string, string[]>;
+  private static get nextDbId(): number {
+    if (globalThis.__smrtRegistryNextDbId === undefined) {
+      globalThis.__smrtRegistryNextDbId = 1;
+    }
+    return globalThis.__smrtRegistryNextDbId;
+  }
+
+  private static set nextDbId(value: number) {
+    globalThis.__smrtRegistryNextDbId = value;
+  }
 
   /**
    * Storage for field decorator metadata (decorator pattern)
    * Maps className → Map<propertyKey, FieldOptions>
    * Used by @field(), @foreignKey(), @oneToMany(), @manyToMany() decorators
    */
-  private static fieldDecorators = new Map<string, Map<string, any>>();
+  private static get fieldDecorators(): Map<string, Map<string, any>> {
+    if (!globalThis.__smrtRegistryFieldDecorators) {
+      globalThis.__smrtRegistryFieldDecorators = new Map<
+        string,
+        Map<string, any>
+      >();
+    }
+    return globalThis.__smrtRegistryFieldDecorators;
+  }
 
   /**
    * Track collections that have been processed for STI siblings
    * Prevents infinite recursion when loading siblings
    */
-  private static stiSiblingsLoaded = new Set<string>();
+  private static get stiSiblingsLoaded(): Set<string> {
+    if (!globalThis.__smrtRegistryStiSiblingsLoaded) {
+      globalThis.__smrtRegistryStiSiblingsLoaded = new Set<string>();
+    }
+    return globalThis.__smrtRegistryStiSiblingsLoaded;
+  }
 
   /**
-   * Initialize the inheritance chain cache with size from config
+   * Global cache for inheritance chains (shared across all instances)
+   * Maps className → full inheritance chain (base to child)
+   * Performance optimization: ~100x faster than re-walking prototype chain
+   * Cache size is configurable via smrt.inheritance.cacheSize (default: 200)
    */
   private static getInheritanceCache(): LRUCache<string, string[]> {
-    if (!ObjectRegistry.inheritanceChainCache) {
+    if (!globalThis.__smrtRegistryInheritanceChainCache) {
       const { cacheSize } = getInheritanceConfig();
-      ObjectRegistry.inheritanceChainCache = new LRUCache<string, string[]>(
-        cacheSize,
-      );
+      globalThis.__smrtRegistryInheritanceChainCache = new LRUCache<
+        string,
+        string[]
+      >(cacheSize);
     }
-    return ObjectRegistry.inheritanceChainCache;
+    return globalThis.__smrtRegistryInheritanceChainCache;
   }
 
   /**
@@ -2900,6 +2997,7 @@ export class ObjectRegistry {
     const chain = ObjectRegistry.getInheritanceChain(className);
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
+      if (!ancestor) continue;
       // Use getTableStrategy() to properly detect inherited STI strategy
       // (not ancestor.config.tableStrategy which only shows explicit config)
       if (ObjectRegistry.getTableStrategy(ancestorName) === 'sti') {

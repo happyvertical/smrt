@@ -14,26 +14,30 @@ import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
 // Test class with known fields (moved to top level for AST scanner)
+// Using unique class name to avoid collisions with other test files (see issue #543)
 @smrt({ api: { include: ['list', 'get'] } })
-class Product extends SmrtObject {
+class SQLInjectionTestProduct extends SmrtObject {
   name: string = '';
   price: number = 0.0;
   category: string = '';
   active: boolean = false;
 }
 
-class ProductCollection extends SmrtCollection<Product> {
-  static readonly _itemClass = Product;
+class SQLInjectionTestProductCollection extends SmrtCollection<SQLInjectionTestProduct> {
+  static readonly _itemClass = SQLInjectionTestProduct;
 }
 
 describe('Issue #115: SQL Injection Prevention', () => {
   // Register the collection
-  ObjectRegistry.registerCollection('Product', ProductCollection);
+  ObjectRegistry.registerCollection(
+    'SQLInjectionTestProduct',
+    SQLInjectionTestProductCollection,
+  );
 
-  let collection: ProductCollection;
+  let collection: SQLInjectionTestProductCollection;
 
   beforeAll(async () => {
-    collection = await ProductCollection.create({
+    collection = await SQLInjectionTestProductCollection.create({
       db: { type: 'sqlite', url: ':memory:' },
     });
 

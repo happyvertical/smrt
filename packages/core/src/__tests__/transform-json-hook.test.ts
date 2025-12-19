@@ -273,7 +273,7 @@ describe('transformJSON() Hook', () => {
 
     it('should allow intermediate classes to modify parent transformations', async () => {
       @smrt({ tableStrategy: 'sti' })
-      class Base extends SmrtObject {
+      class TransformBase extends SmrtObject {
         public name: string = '';
         public value: number = 0;
 
@@ -292,7 +292,7 @@ describe('transformJSON() Hook', () => {
       }
 
       @smrt() // Inherit STI from parent
-      class Child extends Base {
+      class TransformChild extends TransformBase {
         protected transformJSON(data: any): any {
           const parentData = super.transformJSON(data);
           return {
@@ -302,7 +302,7 @@ describe('transformJSON() Hook', () => {
         }
       }
 
-      const obj = new Child({
+      const obj = new TransformChild({
         name: 'test',
         value: 5,
         db,
@@ -318,8 +318,9 @@ describe('transformJSON() Hook', () => {
   });
 
   describe('Instance Property Access', () => {
+    // Using unique class name to avoid collisions with other test files (see issue #543)
     @smrt()
-    class Product extends SmrtObject {
+    class TransformJSONTestProduct extends SmrtObject {
       public name: string = '';
       public price: number = 0.0;
       public quantity: number = 0;
@@ -341,7 +342,7 @@ describe('transformJSON() Hook', () => {
     }
 
     it('should have access to instance properties', async () => {
-      const product = new Product({
+      const product = new TransformJSONTestProduct({
         name: 'Widget',
         price: 19.99,
         quantity: 10,
@@ -356,7 +357,7 @@ describe('transformJSON() Hook', () => {
     });
 
     it('should compute based on current instance state', async () => {
-      const product = new Product({
+      const product = new TransformJSONTestProduct({
         name: 'Widget',
         price: 10.0,
         quantity: 5,

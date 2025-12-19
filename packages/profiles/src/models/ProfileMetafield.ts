@@ -21,9 +21,32 @@ export interface ProfileMetafieldOptions extends SmrtObjectOptions {
 }
 
 /**
- * Registry of custom validator functions
+ * Extend globalThis to include custom validators registry.
+ * Using globalThis ensures all module instances share the same validators,
+ * which is critical in monorepos where the same package can be loaded
+ * from different paths (e.g., pnpm store vs workspace symlink).
+ *
+ * @see https://github.com/happyvertical/smrt/issues/543
  */
-const customValidators = new Map<string, ValidatorFunction>();
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtProfileMetafieldValidators:
+    | Map<string, ValidatorFunction>
+    | undefined;
+}
+
+/**
+ * Get the custom validators Map from globalThis
+ */
+function getCustomValidators(): Map<string, ValidatorFunction> {
+  if (!globalThis.__smrtProfileMetafieldValidators) {
+    globalThis.__smrtProfileMetafieldValidators = new Map<
+      string,
+      ValidatorFunction
+    >();
+  }
+  return globalThis.__smrtProfileMetafieldValidators;
+}
 
 @smrt({
   tableStrategy: 'sti',
@@ -67,7 +90,7 @@ export class ProfileMetafield extends SmrtObject {
    * @param validator - The validator function
    */
   static registerValidator(name: string, validator: ValidatorFunction): void {
-    customValidators.set(name, validator);
+    getCustomValidators().set(name, validator);
   }
 
   /**
@@ -77,7 +100,7 @@ export class ProfileMetafield extends SmrtObject {
    * @returns The validator function or undefined
    */
   static getValidator(name: string): ValidatorFunction | undefined {
-    return customValidators.get(name);
+    return getCustomValidators().get(name);
   }
 
   /**

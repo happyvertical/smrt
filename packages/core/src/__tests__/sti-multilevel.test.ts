@@ -17,41 +17,42 @@ import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 
 // Simulate multi-level inheritance like Council → Organization → Profile → SmrtObject
-// Profile is the STI base class
+// Using unique class names to avoid collisions with @happyvertical/smrt-profiles (see issue #543)
+// STITestProfile is the STI base class
 @smrt({ tableStrategy: 'sti' })
-class Profile extends SmrtObject {
+class STITestProfile extends SmrtObject {
   name: string = '';
   bio: string = '';
 }
 
-// Organization extends Profile (middle level)
+// STITestOrganization extends STITestProfile (middle level)
 @smrt()
-class Organization extends Profile {
+class STITestOrganization extends STITestProfile {
   website: string = '';
   foundedYear: number = 0;
 }
 
-// Council extends Organization (leaf level)
+// STITestCouncil extends STITestOrganization (leaf level)
 @smrt()
-class Council extends Organization {
+class STITestCouncil extends STITestOrganization {
   meetingsUrl: string = '';
   jurisdiction: string = '';
 }
 
 // Collection for the STI hierarchy
-class ProfileCollection extends SmrtCollection<Profile> {
-  static readonly _itemClass = Profile;
+class STITestProfileCollection extends SmrtCollection<STITestProfile> {
+  static readonly _itemClass = STITestProfile;
 }
 
 describe('Multi-Level STI Save Operations', () => {
   let db: DatabaseInterface;
   let dbPath: string;
-  let profiles: ProfileCollection;
+  let profiles: STITestProfileCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `test-sti-multilevel-${Date.now()}.db`);
     db = await getDatabase({ type: 'sqlite', url: dbPath });
-    profiles = await ProfileCollection.create({ db });
+    profiles = await STITestProfileCollection.create({ db });
   });
 
   afterEach(async () => {
@@ -61,9 +62,9 @@ describe('Multi-Level STI Save Operations', () => {
   });
 
   describe('Save operations', () => {
-    it('should save Profile (base class) successfully', async () => {
+    it('should save STITestProfile (base class) successfully', async () => {
       const profile = await profiles.create({
-        _meta_type: 'Profile',
+        _meta_type: 'STITestProfile',
         name: 'John Doe',
         bio: 'Software developer',
       });
@@ -74,9 +75,9 @@ describe('Multi-Level STI Save Operations', () => {
       expect(profile.bio).toBe('Software developer');
     });
 
-    it('should save Organization (middle level) successfully', async () => {
+    it('should save STITestOrganization (middle level) successfully', async () => {
       const org = await profiles.create({
-        _meta_type: 'Organization',
+        _meta_type: 'STITestOrganization',
         name: 'Acme Corp',
         bio: 'We make everything',
         website: 'https://acme.com',
@@ -91,9 +92,9 @@ describe('Multi-Level STI Save Operations', () => {
       expect((org as any).foundedYear).toBe(1920);
     });
 
-    it('should save Council (leaf level) successfully', async () => {
+    it('should save STITestCouncil (leaf level) successfully', async () => {
       const council = await profiles.create({
-        _meta_type: 'Council',
+        _meta_type: 'STITestCouncil',
         name: 'Springfield City Council',
         bio: 'Municipal government',
         website: 'https://springfield.gov',
@@ -115,10 +116,10 @@ describe('Multi-Level STI Save Operations', () => {
       expect((council as any).jurisdiction).toBe('Springfield, IL');
     });
 
-    it('should load Council from database with all inherited fields', async () => {
+    it('should load STITestCouncil from database with all inherited fields', async () => {
       // Create and save
       const council = await profiles.create({
-        _meta_type: 'Council',
+        _meta_type: 'STITestCouncil',
         name: 'Springfield City Council',
         bio: 'Municipal government',
         website: 'https://springfield.gov',
@@ -149,14 +150,14 @@ describe('Multi-Level STI Save Operations', () => {
     it('should list mixed types in one query', async () => {
       // Create one of each type
       const profile = await profiles.create({
-        _meta_type: 'Profile',
+        _meta_type: 'STITestProfile',
         name: 'John Doe',
         bio: 'Developer',
       });
       await profile.save();
 
       const org = await profiles.create({
-        _meta_type: 'Organization',
+        _meta_type: 'STITestOrganization',
         name: 'Acme Corp',
         bio: 'Company',
         website: 'https://acme.com',
@@ -165,7 +166,7 @@ describe('Multi-Level STI Save Operations', () => {
       await org.save();
 
       const council = await profiles.create({
-        _meta_type: 'Council',
+        _meta_type: 'STITestCouncil',
         name: 'Springfield Council',
         bio: 'Government',
         website: 'https://springfield.gov',
@@ -188,14 +189,14 @@ describe('Multi-Level STI Save Operations', () => {
       // Create one of each type
       await (
         await profiles.create({
-          _meta_type: 'Profile',
+          _meta_type: 'STITestProfile',
           name: 'John',
           bio: 'Developer',
         })
       ).save();
       await (
         await profiles.create({
-          _meta_type: 'Organization',
+          _meta_type: 'STITestOrganization',
           name: 'Acme',
           bio: 'Company',
           website: 'https://acme.com',
@@ -203,7 +204,7 @@ describe('Multi-Level STI Save Operations', () => {
       ).save();
       await (
         await profiles.create({
-          _meta_type: 'Council',
+          _meta_type: 'STITestCouncil',
           name: 'Springfield',
           bio: 'Government',
           meetingsUrl: 'https://gov.com/meetings',
@@ -213,7 +214,7 @@ describe('Multi-Level STI Save Operations', () => {
 
       // Filter by type
       const councils = await profiles.list({
-        where: { _meta_type: 'Council' },
+        where: { _meta_type: 'STITestCouncil' },
       });
 
       expect(councils).toHaveLength(1);

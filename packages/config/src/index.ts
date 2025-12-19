@@ -21,18 +21,52 @@ export type {
   SmrtGlobalConfig,
 } from './types.js';
 
-// Cached loaded config
-let loadedConfig: SmrtConfig | null = null;
+/**
+ * Extend globalThis to include our config cache properties.
+ * Using globalThis ensures all module instances share the same config,
+ * which is critical in monorepos where the same package can be loaded
+ * from different paths (e.g., pnpm store vs workspace symlink).
+ *
+ * This fixes issue #543: external packages not receiving user config
+ * when smrt-cli loads them.
+ *
+ * @see https://github.com/happyvertical/smrt/issues/543
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtConfigCache: SmrtConfig | null | undefined;
+}
+
+// Use globalThis for cross-module config sharing
+// This ensures loadConfig() in smrt-cli affects all packages that use smrt-config
+globalThis.__smrtConfigCache ??= null;
+
+/**
+ * Get the cached config from globalThis
+ */
+function getLoadedConfig(): SmrtConfig | null {
+  return globalThis.__smrtConfigCache ?? null;
+}
+
+/**
+ * Set the cached config in globalThis
+ */
+function setLoadedConfig(config: SmrtConfig | null): void {
+  globalThis.__smrtConfigCache = config;
+}
 
 /**
  * Load and parse configuration from project root
+ *
+ * This function caches the config in globalThis, ensuring all module instances
+ * (even from different package resolution paths) share the same config.
  */
 export async function loadConfig(
   options?: LoadConfigOptions,
 ): Promise<SmrtConfig> {
   const config = await _loadConfig(options);
-  // Always update loadedConfig (even if caching is disabled)
-  loadedConfig = config;
+  // Always update config cache (even if caching is disabled)
+  setLoadedConfig(config);
   return config;
 }
 
@@ -43,7 +77,7 @@ export async function loadConfig(
  * @returns The cached config or null if not loaded
  */
 export function getConfig(): SmrtConfig | null {
-  return loadedConfig;
+  return getLoadedConfig();
 }
 
 /**
@@ -53,7 +87,7 @@ export function getConfig(): SmrtConfig | null {
  * @returns The site config or null if not defined
  */
 export function getSiteConfig(): import('./types.js').SiteConfig | null {
-  const config = loadedConfig || {};
+  const config = getLoadedConfig() || {};
   return config.site || null;
 }
 
@@ -70,7 +104,7 @@ export function getModuleConfig<T extends Record<string, unknown>>(
   defaults?: T,
 ): T {
   // Ensure config is loaded (will use empty config if not loaded)
-  const fileConfig = loadedConfig || {};
+  const fileConfig = getLoadedConfig() || {};
   const runtime = getRuntimeConfig();
 
   // Get global smrt config
@@ -108,7 +142,7 @@ export function getPackageConfig<T extends Record<string, unknown>>(
   defaults?: T,
 ): T {
   // Ensure config is loaded (will use empty config if not loaded)
-  const fileConfig = loadedConfig || {};
+  const fileConfig = getLoadedConfig() || {};
   const runtime = getRuntimeConfig();
 
   // Get global smrt config
@@ -147,7 +181,7 @@ export function setConfig(config: Partial<SmrtConfig>): void {
  * Useful for testing or hot-reloading
  */
 export function clearCache(): void {
-  loadedConfig = null;
+  setLoadedConfig(null);
   clearConfigCache(); // Clear loader.ts cache
   clearRuntimeConfig(); // Clear runtime config
 }

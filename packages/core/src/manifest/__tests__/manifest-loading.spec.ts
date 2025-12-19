@@ -66,11 +66,11 @@ describe('Manifest Loading', () => {
     it('should find test classes in test environment', async () => {
       const { discoverManifestSync } = await import('../manifest-loader.js');
 
-      // Test Profile from __tests__/sti-multilevel.test.ts
-      const testProfile = discoverManifestSync('Profile');
+      // STITestProfile from __tests__/sti-multilevel.test.ts (renamed from Profile to avoid collision with @happyvertical/smrt-profiles)
+      const testProfile = discoverManifestSync('STITestProfile');
 
       expect(testProfile).toBeDefined();
-      expect(testProfile?.className).toBe('Profile');
+      expect(testProfile?.className).toBe('STITestProfile');
       expect(testProfile?.filePath).toContain('__tests__');
     });
 
@@ -85,8 +85,8 @@ describe('Manifest Loading', () => {
         vi.resetModules();
         const { discoverManifestSync } = await import('../manifest-loader.js');
 
-        // Test Profile should NOT be found in production
-        const testProfile = discoverManifestSync('Profile');
+        // STITestProfile should NOT be found in production
+        const testProfile = discoverManifestSync('STITestProfile');
 
         expect(testProfile).toBeUndefined();
       } finally {
@@ -101,11 +101,11 @@ describe('Manifest Loading', () => {
 
       // Should not throw collision error
       expect(() => {
-        discoverManifestSync('Profile');
+        discoverManifestSync('STITestProfile');
       }).not.toThrow();
 
-      // In test environment, finds test Profile
-      const testProfile = discoverManifestSync('Profile');
+      // In test environment, finds test STITestProfile
+      const testProfile = discoverManifestSync('STITestProfile');
       expect(testProfile).toBeDefined();
       expect(testProfile?.filePath).toContain('__tests__');
     });
@@ -115,8 +115,8 @@ describe('Manifest Loading', () => {
         '../manifest-loader.js'
       );
 
-      // In test environment: test Profile found
-      const testProfile = testDiscover('Profile');
+      // In test environment: test STITestProfile found
+      const testProfile = testDiscover('STITestProfile');
       expect(testProfile).toBeDefined();
       expect(testProfile?.filePath).toContain('__tests__');
 
@@ -133,8 +133,8 @@ describe('Manifest Loading', () => {
           '../manifest-loader.js'
         );
 
-        // In production environment: test Profile NOT found
-        const prodProfile = prodDiscover('Profile');
+        // In production environment: test STITestProfile NOT found
+        const prodProfile = prodDiscover('STITestProfile');
         expect(prodProfile).toBeUndefined();
       } finally {
         process.env.NODE_ENV = originalNodeEnv;
