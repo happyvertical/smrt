@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.58
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - collection classes inherit tableName from STI item class (#548) (core)
+  - @happyvertical/smrt-config@0.17.58
+  - @happyvertical/smrt-types@0.17.58
+
 ## 0.17.57
 
 ### Patch Changes
