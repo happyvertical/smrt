@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.57
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: update spider to 0.60.5 and ocr to 0.60.6 (#547) (deps)
+  - @happyvertical/smrt-config@0.17.57
+  - @happyvertical/smrt-types@0.17.57
+
 ## 0.17.56
 
 ### Patch Changes
