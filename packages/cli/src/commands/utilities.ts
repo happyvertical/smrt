@@ -580,6 +580,217 @@ export default testManifest;
     },
   },
 
+  'db:validate': {
+    name: 'db:validate',
+    description: 'Validate JSON database integrity against manifest schema',
+    aliases: ['json:validate', 'validate-db'],
+    args: [],
+    options: {
+      data: {
+        type: 'string',
+        description: 'Path to data directory (auto-detected if not provided)',
+        short: 'd',
+      },
+      quick: {
+        type: 'boolean',
+        description:
+          'Quick validation (structure and types only, skip FK checks)',
+        default: false,
+        short: 'q',
+      },
+      json: {
+        type: 'boolean',
+        description: 'Output results as JSON (for CI integration)',
+        default: false,
+      },
+      verbose: {
+        type: 'boolean',
+        description: 'Show detailed validation information',
+        default: false,
+        short: 'v',
+      },
+      fix: {
+        type: 'boolean',
+        description:
+          'Attempt to fix correctable issues (e.g., missing defaults)',
+        default: false,
+        short: 'f',
+      },
+    },
+    handler: async (_args: string[], options: any) => {
+      const startTime = Date.now();
+
+      try {
+        const {
+          resolveDataPath,
+          discoverJsonFiles,
+          JsonDatabaseValidator,
+          displayValidationResults,
+        } = await import('./json-validator.js');
+
+        // 1. Resolve data path
+        const dataPath = await resolveDataPath(options.data);
+
+        if (!dataPath) {
+          console.error('\n❌ Could not find data directory');
+          console.error('\nPlease specify the data path:');
+          console.error('  smrt db:validate --data ./data');
+          console.error('\nOr configure it in smrt.config.js:');
+          console.error('  database: { type: "json", url: "./data" }');
+          process.exit(1);
+        }
+
+        if (!options.json) {
+          console.log('\n🔍 Validating JSON database...\n');
+          console.log(`  Data path: ${dataPath}`);
+        }
+
+        // 2. Auto-discover manifests
+        const { discovered, totalObjects } = await autoDiscoverAndLoad();
+
+        if (discovered.length === 0 && !options.json) {
+          console.log('\n⚠️  No SMRT manifests found - generating...');
+
+          // Generate manifest on the fly (like smrt test does)
+          try {
+            const { ASTScanner, ManifestGenerator } = await import(
+              '@happyvertical/smrt-core/scanner'
+            );
+            const fg = await import('fast-glob');
+
+            const sourceFiles = fg.default.sync(['src/**/*.ts'], {
+              absolute: true,
+              ignore: ['src/**/*.d.ts', 'node_modules/**', 'dist/**'],
+            });
+
+            if (sourceFiles.length > 0) {
+              const { discoverBaseClasses } = await import(
+                '@happyvertical/smrt-core/manifest/discover-base-classes'
+              );
+              const baseClasses = await discoverBaseClasses();
+
+              const scanner = new ASTScanner(sourceFiles, {
+                baseClasses,
+                includePrivateMethods: false,
+                includeStaticMethods: true,
+              });
+
+              const scanResults = scanner.scanFiles();
+              const generator = new ManifestGenerator();
+              generator.generateManifest(scanResults, {});
+
+              console.log('  ✓ Generated manifest from source files');
+            }
+          } catch (err) {
+            if (!options.json) {
+              console.warn('  ⚠️  Could not generate manifest:', err);
+            }
+          }
+        } else if (!options.json) {
+          console.log(`  Manifest: ${totalObjects} object(s) discovered`);
+        }
+
+        // 3. Discover JSON files
+        const jsonFiles = await discoverJsonFiles(dataPath);
+
+        if (jsonFiles.length === 0) {
+          if (options.json) {
+            console.log(
+              JSON.stringify(
+                {
+                  timestamp: new Date().toISOString(),
+                  dataPath,
+                  manifestPath: null,
+                  duration: Date.now() - startTime,
+                  totalFiles: 0,
+                  totalRecords: 0,
+                  validRecords: 0,
+                  invalidRecords: 0,
+                  issues: { errors: 0, warnings: 1, info: 0 },
+                  objectResults: [],
+                },
+                null,
+                2,
+              ),
+            );
+          } else {
+            console.log('\n⚠️  No JSON data files found in', dataPath);
+            console.log(
+              '   Looking for: *.json (excluding schema/config files)\n',
+            );
+          }
+          return;
+        }
+
+        if (!options.json) {
+          console.log(`  Files: ${jsonFiles.length} JSON file(s)\n`);
+        }
+
+        // 4. Create validator and run
+        const validator = new JsonDatabaseValidator({
+          dataPath,
+          quickMode: options.quick || false,
+          verbose: options.verbose || false,
+        });
+
+        const results = await validator.validate(jsonFiles);
+
+        // 5. Apply fixes if requested
+        if (options.fix && results.fixableIssues.length > 0) {
+          const fixedCount = await validator.applyFixes(results.fixableIssues);
+          if (!options.json && fixedCount > 0) {
+            console.log(`  🔧 Fixed ${fixedCount} issue(s)\n`);
+          }
+        }
+
+        // 6. Generate and display summary
+        const manifestPath = discovered.length > 0 ? discovered[0].path : null;
+        const summary = validator.generateSummary(
+          results,
+          Date.now() - startTime,
+          manifestPath,
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(summary, null, 2));
+        } else {
+          displayValidationResults(summary, options.verbose || false);
+        }
+
+        // 7. Exit with appropriate code
+        if (summary.issues.errors > 0) {
+          process.exit(1);
+        }
+      } catch (error) {
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              {
+                timestamp: new Date().toISOString(),
+                error: error instanceof Error ? error.message : String(error),
+                duration: Date.now() - startTime,
+              },
+              null,
+              2,
+            ),
+          );
+        } else {
+          console.error('\n❌ Validation failed:');
+          if (error instanceof Error) {
+            console.error(`   ${error.message}`);
+            if (options.verbose && error.stack) {
+              console.error('\nStack trace:');
+              console.error(error.stack);
+            }
+          } else {
+            console.error(error);
+          }
+        }
+        process.exit(1);
+      }
+    },
+  },
+
   doctor: {
     name: 'doctor',
     description: 'Diagnose and report on SMRT project health',
