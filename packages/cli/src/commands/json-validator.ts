@@ -26,7 +26,18 @@ interface ValidatorOptions {
 }
 
 /**
- * Resolve data path from explicit argument, config, or common locations
+ * Resolve data path from explicit argument, config, or common locations.
+ *
+ * Resolution order:
+ * 1. Explicit --data argument if provided
+ * 2. Database URL from smrt.config.js (if it looks like a directory path)
+ * 3. Common data directory patterns: ./data, ./db, ./.data, ./json-db
+ *
+ * @param explicitPath - Optional explicit path from --data CLI argument
+ * @returns Resolved absolute path to data directory, or null if:
+ *   - Explicit path was provided but doesn't exist
+ *   - No data directory could be auto-detected
+ *   - Auto-detected directories contain no JSON files
  */
 export async function resolveDataPath(
   explicitPath?: string,
@@ -99,17 +110,67 @@ export async function discoverJsonFiles(dataPath: string): Promise<string[]> {
 /**
  * Infer table name from JSON filename
  * e.g., "events.json" → "events", "my_data.json" → "my_data"
+ *
+ * Note: Table names are converted to lowercase for case-insensitive matching.
  */
 function inferTableName(fileName: string): string {
   return fileName.replace(/\.json$/, '').toLowerCase();
 }
 
 /**
- * Find the SMRT object type for a given table name
+ * Common irregular plural mappings for table name to class name matching.
+ * Add entries here for domain-specific irregular plurals.
+ */
+const IRREGULAR_PLURALS: Record<string, string> = {
+  people: 'person',
+  children: 'child',
+  men: 'man',
+  women: 'woman',
+  mice: 'mouse',
+  geese: 'goose',
+  teeth: 'tooth',
+  feet: 'foot',
+  data: 'datum',
+  media: 'medium',
+  criteria: 'criterion',
+  phenomena: 'phenomenon',
+  analyses: 'analysis',
+  indices: 'index',
+  matrices: 'matrix',
+  vertices: 'vertex',
+};
+
+/**
+ * Convert a plural table name to its singular form for class name matching.
+ *
+ * @remarks
+ * Uses a simple heuristic: checks irregular plurals first, then removes trailing 's'.
+ * This handles common cases but may not work for all irregular plurals.
+ * For domain-specific irregular plurals, add them to IRREGULAR_PLURALS.
+ */
+function toSingular(tableName: string): string {
+  const lower = tableName.toLowerCase();
+
+  // Check irregular plurals first
+  if (IRREGULAR_PLURALS[lower]) {
+    return IRREGULAR_PLURALS[lower];
+  }
+
+  // Simple heuristic: remove trailing 's'
+  return tableName.replace(/s$/, '');
+}
+
+/**
+ * Find the SMRT object type for a given table name.
+ *
+ * Matching order:
+ * 1. Exact table name match from ObjectRegistry
+ * 2. Class name matching singular form of table name (handles "events" → "Event")
  */
 function findObjectTypeForTable(tableName: string): string | null {
   const allClasses = ObjectRegistry.getAllClasses();
 
+  // First, try exact table name match
   for (const [className] of allClasses) {
     const registeredTableName = ObjectRegistry.getTableName(className);
     if (registeredTableName === tableName) {
@@ -117,8 +178,8 @@ function findObjectTypeForTable(tableName: string): string | null {
     }
   }
 
-  // Try singular form (e.g., "event" for "events" table)
-  const singular = tableName.replace(/s$/, '');
+  // Try singular form (e.g., "event" for "events" table, "person" for "people" table)
+  const singular = toSingular(tableName);
   for (const [className] of allClasses) {
     if (className.toLowerCase() === singular) {
       return className;
@@ -129,7 +190,38 @@ function findObjectTypeForTable(tableName: string): string | null {
 }
 
 /**
- * JSON Database Validator class
+ * JSON Database Validator class.
+ *
+ * Validates JSON database files against SMRT manifest schema, checking:
+ * - JSON structure (valid JSON, root is array)
+ * - Required fields (id, slug for sluggable objects)
+ * - Field types (string, integer, decimal, boolean, datetime, json)
+ * - STI discriminator validation (_meta_type exists and is registered)
+ * - Uniqueness within file (no duplicate IDs, no duplicate slug+context)
+ * - Constraint validation (min/max, minLength/maxLength)
+ * - Foreign key references (full mode only)
+ *
+ * @remarks
+ * **Memory considerations**: All JSON files are loaded into memory for
+ * cross-file validation (FK checks). For very large datasets (>1GB total),
+ * consider using quick mode (--quick) which skips FK validation and
+ * processes files independently.
+ *
+ * **Auto-fixable validation codes**:
+ * - `MISSING_REQUIRED_FIELD`: Can be fixed if the field has a default value
+ *   defined in the manifest. Other codes require manual intervention.
+ *
+ * @example
+ * ```typescript
+ * const validator = new JsonDatabaseValidator({
+ *   dataPath: './data',
+ *   quickMode: false,
+ *   verbose: true
+ * });
+ *
+ * const results = await validator.validate(jsonFiles);
+ * const summary = validator.generateSummary(results, duration);
+ * ```
  */
 export class JsonDatabaseValidator {
   private dataPath: string;
@@ -175,7 +267,12 @@ export class JsonDatabaseValidator {
   }
 
   /**
-   * Load all JSON files into memory
+   * Load all JSON files into memory for cross-file validation (FK checks).
+   *
+   * @remarks
+   * Files that fail to load are silently skipped here but will produce
+   * validation errors when validateFile() is called. In verbose mode,
+   * load failures are logged for debugging.
    */
   private async loadAllFiles(jsonFiles: string[]): Promise<void> {
     for (const filePath of jsonFiles) {
@@ -188,8 +285,15 @@ export class JsonDatabaseValidator {
         if (Array.isArray(data)) {
           this.loadedData.set(tableName, data);
         }
-      } catch {
-        // Will be caught during validation
+      } catch (error) {
+        // Will be caught during validation, but log in verbose mode for debugging
+        if (this.verbose) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          console.error(
+            `  [verbose] Failed to pre-load ${filePath}: ${errorMessage}`,
+          );
+        }
       }
     }
   }
@@ -451,7 +555,13 @@ export class JsonDatabaseValidator {
   }
 
   /**
-   * Validate a single field against its definition
+   * Validate a single field against its definition.
+   *
+   * @remarks
+   * Null handling varies by field type:
+   * - Required fields: null triggers MISSING_REQUIRED_FIELD error
+   * - JSON type: null is valid (it's a valid JSON value)
+   * - Other types: null is treated as "no value" and skips validation
    */
   private validateField(
     record: Record<string, unknown>,
@@ -462,6 +572,7 @@ export class JsonDatabaseValidator {
   ): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const value = record[fieldName];
+    const fieldType = fieldDef.type as string;
 
     // Check required fields
     if (fieldDef.required && (value === undefined || value === null)) {
@@ -477,15 +588,21 @@ export class JsonDatabaseValidator {
       return issues;
     }
 
-    // Skip validation if value is null/undefined (and not required)
-    if (value === undefined || value === null) {
+    // Skip validation if value is undefined (and not required)
+    if (value === undefined) {
+      return issues;
+    }
+
+    // For JSON type, null is a valid JSON value - don't skip
+    // For other types, null means "no value" - skip validation
+    if (value === null && fieldType !== 'json') {
       return issues;
     }
 
     // Type validation
     const typeIssue = this.validateFieldType(
       value,
-      fieldDef.type as string,
+      fieldType,
       fieldName,
       objectId,
       filePath,
@@ -494,16 +611,18 @@ export class JsonDatabaseValidator {
       issues.push(typeIssue);
     }
 
-    // Constraint validation
-    issues.push(
-      ...this.validateConstraints(
-        value,
-        fieldDef,
-        fieldName,
-        objectId,
-        filePath,
-      ),
-    );
+    // Constraint validation (skip for null values)
+    if (value !== null) {
+      issues.push(
+        ...this.validateConstraints(
+          value,
+          fieldDef,
+          fieldName,
+          objectId,
+          filePath,
+        ),
+      );
+    }
 
     return issues;
   }
@@ -597,15 +716,18 @@ export class JsonDatabaseValidator {
       }
 
       case 'json':
-        if (typeof value !== 'object' && !Array.isArray(value)) {
+        // null is a valid JSON value (handled explicitly)
+        // typeof null === 'object', so this check passes for null
+        // Arrays are also valid (Array.isArray returns true for arrays)
+        if (value !== null && typeof value !== 'object') {
           return {
             severity: 'error',
             code: ValidationCodes.INVALID_JSON_FIELD,
-            message: `Field '${fieldName}' expected JSON object/array, got ${typeof value}`,
+            message: `Field '${fieldName}' expected JSON value (object, array, or null), got ${typeof value}`,
             file: filePath,
             objectId,
             field: fieldName,
-            expected: 'object or array',
+            expected: 'object, array, or null',
             actual: typeof value,
           };
         }
@@ -724,11 +846,36 @@ export class JsonDatabaseValidator {
   }
 
   /**
-   * Validate foreign key references across files (full mode only)
+   * Validate foreign key references across files (full mode only).
+   *
+   * @remarks
+   * Uses Set-based lookup for target IDs (O(1) per lookup instead of O(n)),
+   * optimizing validation from O(n*m*k) to O(n*k + m) where:
+   * - n = number of records with FK fields
+   * - m = number of target records
+   * - k = number of FK fields per record
+   *
+   * Note: This method mutates the results to add FK validation issues.
+   * The validCount/invalidCount are updated to reflect records that
+   * failed FK validation (a record is counted as invalid if it has
+   * any FK errors).
    */
   private async validateForeignKeys(
     results: ObjectValidationResult[],
   ): Promise<void> {
+    // Build ID lookup Sets for all loaded tables (optimization: O(m) once, O(1) per lookup)
+    const tableIdSets = new Map<string, Set<string>>();
+    for (const [tableName, records] of this.loadedData) {
+      const idSet = new Set<string>();
+      for (const record of records) {
+        const id = (record as Record<string, unknown>).id;
+        if (typeof id === 'string') {
+          idSet.add(id);
+        }
+      }
+      tableIdSets.set(tableName, idSet);
+    }
+
     for (const result of results) {
       if (!result.objectType) continue;
 
@@ -741,8 +888,13 @@ export class JsonDatabaseValidator {
 
       const records = this.loadedData.get(result.tableName) || [];
 
+      // Track which records have FK errors (by ID or index)
+      const recordsWithFKErrors = new Set<string>();
+
       for (const record of records) {
         const rec = record as Record<string, unknown>;
+        const recordId = (rec.id as string) || `[unknown]`;
+
         for (const [fieldName, fieldDef] of fkFields) {
           const fkValue = rec[fieldName];
           if (!fkValue) continue;
@@ -758,47 +910,66 @@ export class JsonDatabaseValidator {
               code: ValidationCodes.MISSING_FK_TABLE,
               message: `FK target class '${targetClass}' not registered`,
               file: result.file,
-              objectId: rec.id as string,
+              objectId: recordId,
               field: fieldName,
             });
             continue;
           }
 
-          const targetRecords = this.loadedData.get(targetTable);
+          const targetIdSet = tableIdSets.get(targetTable);
 
-          if (!targetRecords) {
+          if (!targetIdSet) {
             result.issues.push({
               severity: 'error',
               code: ValidationCodes.MISSING_FK_TABLE,
               message: `FK reference to missing table file: ${targetTable}.json`,
               file: result.file,
-              objectId: rec.id as string,
+              objectId: recordId,
               field: fieldName,
             });
+            recordsWithFKErrors.add(recordId);
             continue;
           }
 
-          const exists = targetRecords.some(
-            (r) => (r as Record<string, unknown>).id === fkValue,
-          );
-          if (!exists) {
+          // O(1) Set lookup instead of O(n) array.some()
+          if (!targetIdSet.has(fkValue as string)) {
             result.issues.push({
               severity: 'error',
               code: ValidationCodes.INVALID_FOREIGN_KEY,
               message: `FK reference to non-existent record: ${fkValue} in ${targetTable}`,
               file: result.file,
-              objectId: rec.id as string,
+              objectId: recordId,
               field: fieldName,
               actual: fkValue,
             });
+            recordsWithFKErrors.add(recordId);
           }
         }
+      }
+
+      // Update counts: records with FK errors that were previously counted as valid
+      // Note: We only adjust if the record was counted as valid in the initial pass
+      // (i.e., it had no structural/type errors but has FK errors)
+      const newInvalidCount = recordsWithFKErrors.size;
+      if (newInvalidCount > 0) {
+        // Only count records that weren't already invalid
+        const previouslyValid = result.validCount;
+        const newlyInvalid = Math.min(newInvalidCount, previouslyValid);
+        result.validCount -= newlyInvalid;
+        result.invalidCount += newlyInvalid;
       }
     }
   }
 
   /**
-   * Apply fixes to fixable issues
+   * Apply fixes to fixable issues.
+   *
+   * Currently supports auto-fixing:
+   * - MISSING_REQUIRED_FIELD: Applies default value from field definition
+   *
+   * @remarks
+   * Records are matched by ID. Records identified by index only (objectId = '[index:N]')
+   * require the ID to be present and are matched by array position as a fallback.
    */
   async applyFixes(fixableIssues: ValidationIssue[]): Promise<number> {
     // Group fixes by file
@@ -822,8 +993,21 @@ export class JsonDatabaseValidator {
             issue.code === ValidationCodes.MISSING_REQUIRED_FIELD &&
             issue.field
           ) {
-            // Find the record and apply default value
-            const record = records.find((r) => r.id === issue.objectId);
+            // Find the record - by ID or by index if objectId is '[index:N]' format
+            let record: Record<string, unknown> | undefined;
+
+            if (issue.objectId?.startsWith('[index:')) {
+              // Extract index from '[index:N]' format
+              const indexMatch = issue.objectId.match(/\[index:(\d+)\]/);
+              if (indexMatch) {
+                const index = parseInt(indexMatch[1], 10);
+                record = records[index];
+              }
+            } else {
+              // Match by ID
+              record = records.find((r) => r.id === issue.objectId);
+            }
+
             if (record && issue.objectType) {
               const fields = ObjectRegistry.getFields(issue.objectType);
               const fieldDef = fields.get(issue.field) as
@@ -838,8 +1022,15 @@ export class JsonDatabaseValidator {
         }
 
         await writeFile(filePath, `${JSON.stringify(records, null, 2)}\n`);
-      } catch {
-        // Skip files that can't be fixed
+      } catch (error) {
+        // Log in verbose mode for debugging
+        if (this.verbose) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          console.error(
+            `  [verbose] Failed to apply fixes to ${filePath}: ${errorMessage}`,
+          );
+        }
       }
     }
 
