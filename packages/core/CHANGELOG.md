@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.59
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - validator uses snake_case for JSON file field lookups (#550) (cli)
+  - @happyvertical/smrt-config@0.17.59
+  - @happyvertical/smrt-types@0.17.59
+
 ## 0.17.58
 
 ### Patch Changes
