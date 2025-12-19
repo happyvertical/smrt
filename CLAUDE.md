@@ -486,6 +486,11 @@ Infrastructure packages from [@happyvertical/sdk](https://github.com/happyvertic
 - **@happyvertical/utils**: Shared utilities
 - **@happyvertical/logger**: Logging infrastructure
 
+Standalone packages (separate repositories):
+- **@happyvertical/spider**: Web content scraping
+- **@happyvertical/pdf**: PDF text extraction
+- **@happyvertical/ocr**: OCR text extraction
+
 ### Package Dependencies
 
 **Within SMRT framework:**
