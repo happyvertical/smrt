@@ -117,6 +117,7 @@ export class CLIGenerator {
   private config: CLIConfig;
   private context: CLIContext;
   private collections = new Map<string, SmrtCollection<any>>();
+  private commandCache: CLICommand[] | null = null;
 
   constructor(config: CLIConfig = {}, context: CLIContext = {}) {
     this.config = {
@@ -447,8 +448,15 @@ export class CLIGenerator {
    * Generate all CLI commands
    */
   private async generateCommands(): Promise<CLICommand[]> {
+    // Return cached commands if already generated (prevents duplicate execution)
+    if (this.commandCache) {
+      console.log('[CLI DEBUG] generateCommands() returning cached commands');
+      return this.commandCache;
+    }
+
     console.log('[CLI DEBUG] generateCommands() starting');
     const commands: CLICommand[] = [];
+    const commandNames = new Set<string>(); // Track registered command names
 
     // IMPORTANT: Load local project manifest before generating commands
     // This populates ObjectRegistry with objects from the user's project
@@ -485,15 +493,31 @@ export class CLIGenerator {
 
     const registeredClasses = ObjectRegistry.getAllClasses();
 
-    // Generate object commands
+    // Generate object commands (with duplicate detection)
     for (const [name, classInfo] of registeredClasses) {
       const objectCommands = await this.generateObjectCommands(name, classInfo);
-      commands.push(...objectCommands);
+      for (const cmd of objectCommands) {
+        if (commandNames.has(cmd.name)) {
+          console.warn(`[CLI] Skipping duplicate command: ${cmd.name}`);
+          continue;
+        }
+        commandNames.add(cmd.name);
+        commands.push(cmd);
+      }
     }
 
-    // Add utility commands
-    commands.push(...this.generateUtilityCommands());
+    // Add utility commands (with duplicate detection)
+    for (const cmd of this.generateUtilityCommands()) {
+      if (commandNames.has(cmd.name)) {
+        console.warn(`[CLI] Skipping duplicate utility command: ${cmd.name}`);
+        continue;
+      }
+      commandNames.add(cmd.name);
+      commands.push(cmd);
+    }
 
+    // Cache the commands to prevent duplicate generation
+    this.commandCache = commands;
     return commands;
   }
 
