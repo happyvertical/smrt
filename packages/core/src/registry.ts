@@ -76,6 +76,8 @@ declare global {
   var __smrtRegistryFieldDecorators: Map<string, Map<string, any>> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
 }
 
 /**
@@ -338,6 +340,28 @@ export class ObjectRegistry {
       >();
     }
     return globalThis.__smrtRegistryCollections;
+  }
+
+  /**
+   * Get the collection table names map from globalThis, initializing if needed
+   * Maps collection class name -> tableName for getTableName lookups
+   */
+  private static get collectionTableNames(): Map<string, string> {
+    if (!globalThis.__smrtRegistryCollectionTableNames) {
+      globalThis.__smrtRegistryCollectionTableNames = new Map<string, string>();
+    }
+    return globalThis.__smrtRegistryCollectionTableNames;
+  }
+
+  /**
+   * Set the table name for a collection class
+   * Used by @smrt() decorator to enable getTableName lookups for collections
+   */
+  static setCollectionTableName(
+    collectionName: string,
+    tableName: string,
+  ): void {
+    ObjectRegistry.collectionTableNames.set(collectionName, tableName);
   }
 
   /**
@@ -1386,6 +1410,7 @@ export class ObjectRegistry {
     ObjectRegistry.classes.clear();
     ObjectRegistry.collections.clear();
     ObjectRegistry.collectionCache.clear();
+    ObjectRegistry.collectionTableNames.clear();
     ObjectRegistry.getInheritanceCache().clear();
     ObjectRegistry.fieldDecorators.clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
@@ -1954,6 +1979,12 @@ export class ObjectRegistry {
    * ```
    */
   static getTableName(name: string): string | undefined {
+    // Check if this is a collection class - collections have their own tableName mapping
+    const collectionTableName = ObjectRegistry.collectionTableNames.get(name);
+    if (collectionTableName) {
+      return collectionTableName;
+    }
+
     // For STI classes, return the STI base class's table name
     const stiBase = ObjectRegistry.getSTIBase(name);
     if (stiBase && stiBase !== name) {
@@ -3212,6 +3243,10 @@ export function smrt(config: SmartObjectConfig = {}) {
         // Register the collection constructor using tableName (not class name)
         // This ensures CLI lookups by tableName (e.g., "meetings") find the collection
         ObjectRegistry.registerCollection(tableName, ctor as any);
+
+        // Store collection class name -> tableName mapping for getTableName lookups
+        // This enables ObjectRegistry.getTableName('CollectionClassName') to work
+        ObjectRegistry.setCollectionTableName(ctor.name, tableName);
       }
     } else {
       // Handle SmrtObject registration (existing behavior)

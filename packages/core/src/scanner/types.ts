@@ -90,6 +90,7 @@ export interface SmartObjectDefinition {
   methods: Record<string, MethodDefinition>;
   decoratorConfig: SmartObjectConfig;
   extends?: string; // Base class name
+  extendsTypeArg?: string; // Generic type argument (e.g., "Meeting" from "SmrtCollection<Meeting>")
   tools?: Array<{
     type: 'function';
     function: {

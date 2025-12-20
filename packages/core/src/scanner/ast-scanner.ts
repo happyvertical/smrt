@@ -225,8 +225,8 @@ export class ASTScanner {
     // Generate collection name (pluralized)
     const collection = this.pluralize(className.toLowerCase());
 
-    // Extract parent class name from extends clause
-    const parentClass = this.extractParentClassName(node);
+    // Extract parent class name and generic type argument from extends clause
+    const { parentClass, typeArg } = this.extractExtendsInfo(node);
 
     const objectDef: SmartObjectDefinition = {
       name: className.toLowerCase(),
@@ -236,7 +236,8 @@ export class ASTScanner {
       fields: {},
       methods: {},
       decoratorConfig,
-      extends: parentClass, // NEW: Capture inheritance
+      extends: parentClass, // Capture inheritance
+      extendsTypeArg: typeArg, // Capture generic type argument (e.g., Meeting from SmrtCollection<Meeting>)
     };
 
     // Parse class members
@@ -399,18 +400,20 @@ export class ASTScanner {
   }
 
   /**
-   * Extract parent class name from extends clause
+   * Extract parent class name and generic type argument from extends clause
    *
-   * Returns the direct parent class name, or undefined if no extends clause.
-   * This enables inheritance chain tracking in the ObjectRegistry.
+   * Parses the class declaration to find which class it extends and
+   * any generic type argument (e.g., SmrtCollection<Meeting>).
+   * This enables inheritance chain tracking and collection item class detection.
    *
    * @param node - Class declaration node
-   * @returns Parent class name or undefined
+   * @returns Object with parentClass and optional typeArg
    */
-  private extractParentClassName(
-    node: ts.ClassDeclaration,
-  ): string | undefined {
-    if (!node.heritageClauses) return undefined;
+  private extractExtendsInfo(node: ts.ClassDeclaration): {
+    parentClass?: string;
+    typeArg?: string;
+  } {
+    if (!node.heritageClauses) return {};
 
     for (const clause of node.heritageClauses) {
       if (clause.token === ts.SyntaxKind.ExtendsKeyword) {
@@ -418,21 +421,39 @@ export class ASTScanner {
         const type = clause.types[0];
         if (!type) continue;
 
+        let parentClass: string | undefined;
+
         // Handle both simple identifiers and complex expressions
         if (ts.isIdentifier(type.expression)) {
-          return type.expression.text;
+          parentClass = type.expression.text;
         } else if (ts.isPropertyAccessExpression(type.expression)) {
           // Handle cases like 'SmrtBase.SubClass'
-          return type.expression.name?.text;
+          parentClass = type.expression.name?.text;
         } else if (type.expression) {
           // Try to extract text from any expression
           const expressionText = type.expression.getText?.();
-          return expressionText?.split('.').pop()?.trim();
+          parentClass = expressionText?.split('.').pop()?.trim();
         }
+
+        // Extract generic type argument (e.g., <Meeting> from SmrtCollection<Meeting>)
+        let typeArg: string | undefined;
+        if (type.typeArguments && type.typeArguments.length > 0) {
+          const firstTypeArg = type.typeArguments[0];
+          if (ts.isTypeReferenceNode(firstTypeArg) && firstTypeArg.typeName) {
+            if (ts.isIdentifier(firstTypeArg.typeName)) {
+              typeArg = firstTypeArg.typeName.text;
+            } else if (ts.isQualifiedName(firstTypeArg.typeName)) {
+              // Handle qualified names like Namespace.ClassName
+              typeArg = firstTypeArg.typeName.right.text;
+            }
+          }
+        }
+
+        return { parentClass, typeArg };
       }
     }
 
-    return undefined;
+    return {};
   }
 
   /**

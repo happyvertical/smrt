@@ -630,8 +630,10 @@ export class ManifestGenerator {
   /**
    * Find the item class for a collection class
    *
-   * Looks for the _itemClass static property first, then falls back to
-   * name-based inference (e.g., "Meetings" -> "Meeting", "EventCollection" -> "Event").
+   * Lookup priority:
+   * 1. extendsTypeArg - Generic type argument from extends clause (e.g., "Meeting" from SmrtCollection<Meeting>)
+   * 2. _itemClass static property - May be captured by AST scanner
+   * 3. Name-based inference - Fallback (e.g., "Meetings" -> "Meeting")
    *
    * @param collectionObj - The collection class definition
    * @param manifest - The manifest
@@ -643,8 +645,42 @@ export class ManifestGenerator {
     manifest: SmartObjectManifest,
     objectsByName: Map<string, SmartObjectDefinition>,
   ): SmartObjectDefinition | undefined {
-    // Look for _itemClass static field in the collection class
+    // PRIORITY 1: Use generic type argument from extends clause
+    // This is the most reliable method: SmrtCollection<Meeting> -> "Meeting"
+    if (collectionObj.extendsTypeArg) {
+      const itemClassName = collectionObj.extendsTypeArg;
+      console.log(
+        `[manifest-generator] ${collectionObj.className} has extendsTypeArg: ${itemClassName}`,
+      );
+
+      // Try to find the item class by name in local manifest
+      const itemClass = objectsByName.get(itemClassName);
+      if (itemClass) {
+        console.log(
+          `[manifest-generator] Found item class ${itemClassName} in local manifest`,
+        );
+        return itemClass;
+      }
+
+      // Try loading from external packages
+      if (manifest.smrtDependencies && manifest.smrtDependencies.length > 0) {
+        const externalItemClass = this.loadParentFromExternalPackage(
+          itemClassName,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+        if (externalItemClass) {
+          console.log(
+            `[manifest-generator] Found item class ${itemClassName} in external package`,
+          );
+          return externalItemClass;
+        }
+      }
+    }
+
+    // PRIORITY 2: Look for _itemClass static field in the collection class
     // This is defined like: static readonly _itemClass = Meeting;
+    // Note: AST scanner currently skips static properties, so this rarely works
     const itemClassField = collectionObj.fields._itemClass;
 
     if (itemClassField) {
@@ -670,7 +706,7 @@ export class ManifestGenerator {
       }
     }
 
-    // Fallback: Try to infer from collection class name
+    // PRIORITY 3: Fallback - Try to infer from collection class name
     // Generate candidate item class names and check if they exist
     const collectionName = collectionObj.className;
     const candidates: string[] = [];
