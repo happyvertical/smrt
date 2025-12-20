@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.62
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - prevent duplicate command registration and execution (#554) (cli)
+  - @happyvertical/smrt-config@0.17.62
+  - @happyvertical/smrt-types@0.17.62
+
 ## 0.17.61
 
 ### Patch Changes
