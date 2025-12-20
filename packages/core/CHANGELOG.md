@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.61
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - update sql dependency to 0.60.6 for JSON export fix (#553) (deps)
+  - @happyvertical/smrt-config@0.17.61
+  - @happyvertical/smrt-types@0.17.61
+
 ## 0.17.60
 
 ### Patch Changes
