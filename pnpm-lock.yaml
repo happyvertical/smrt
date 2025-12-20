@@ -191,8 +191,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: 0.60.5
-        version: 0.60.5
+        specifier: 0.60.6
+        version: 0.60.6
       '@happyvertical/utils':
         specifier: 0.60.5
         version: 0.60.5
@@ -317,8 +317,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: 0.60.5
-        version: 0.60.5
+        specifier: 0.60.6
+        version: 0.60.6
       '@happyvertical/utils':
         specifier: 0.60.5
         version: 0.60.5
@@ -384,8 +384,8 @@ importers:
         specifier: workspace:*
         version: link:../profiles
       '@happyvertical/sql':
-        specifier: 0.60.5
-        version: 0.60.5
+        specifier: 0.60.6
+        version: 0.60.6
       '@happyvertical/utils':
         specifier: 0.60.5
         version: 0.60.5
@@ -1954,11 +1954,17 @@ packages:
   '@happyvertical/sql@0.60.5':
     resolution: {integrity: sha512-SnswzsbWCci+mHevm+CkUHT4le5Zmt799gS0Jik44eH2zJ7Z1E5LJFA7s29IbT8MLTHGXgqxYpb1ZkKdLWpQJQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.60.5/430917f5260b1280a4a0fb4a93902aee8aee1709}
 
+  '@happyvertical/sql@0.60.6':
+    resolution: {integrity: sha512-gnOA3hNa1bRBrSkXQoyVzNKP6qgFBe+Be8sFWDJ8c3i1M98tLEdybLcPOcolhNrfAcUIZPmf/sW3AU1IPu7z+Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.60.6/08d141570044af673ece19585625dea549fe5c3a}
+
   '@happyvertical/utils@0.59.0':
     resolution: {integrity: sha512-57qm82lVdRuw1bfwCbU+GJ9gLTP01ZYP/cFTSOpybWlOYdqAJeM4FCGGxzhmfSqc1OX/i+A5erjI/bGVhPETrw==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.59.0/4f6be20e49954cb2f1b60908499870ff26b8bc9f}
 
   '@happyvertical/utils@0.60.5':
     resolution: {integrity: sha512-foh5qcPDRe73XaGX0too3RfuZeciasKE+K2NCaNFZR9Bp6VGNSTCa5jCES0rPK3SInZNr3+710n84vIYMtN16Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.5/2c3673198da8170ffb5347bb23b1865f63659b7e}
+
+  '@happyvertical/utils@0.60.6':
+    resolution: {integrity: sha512-BawxatfkvHskogsQIoGWNq0gD399biwOSuiLPARfrtCBxuiMnFJ8zu3Lactz/kN4MLNlYHxBb3S7UtjUtUILyg==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.6/15a6fc5eced2b5e388746a1f2177ac299890988f}
 
   '@ibm-cloud/watsonx-ai@1.7.4':
     resolution: {integrity: sha512-5cVSUToeZBDEG6q3OfjuYO3yTOjI8dMsi3jgp1PGZ83hBbMeNrTA+hjT6gXPlxpTIgQeov3rSie5w7B3qzFOgg==}
@@ -5498,6 +5504,23 @@ packages:
       openai:
         optional: true
 
+  langsmith@0.3.87:
+    resolution: {integrity: sha512-XXR1+9INH8YX96FKWc5tie0QixWz6tOqAsAKfcJyPkE0xPep+NDz0IQLR32q4bn10QK3LqD2HN6T3n6z1YLW7Q==}
+    peerDependencies:
+      '@opentelemetry/api': '*'
+      '@opentelemetry/exporter-trace-otlp-proto': '*'
+      '@opentelemetry/sdk-trace-base': '*'
+      openai: '*'
+    peerDependenciesMeta:
+      '@opentelemetry/api':
+        optional: true
+      '@opentelemetry/exporter-trace-otlp-proto':
+        optional: true
+      '@opentelemetry/sdk-trace-base':
+        optional: true
+      openai:
+        optional: true
+
   leac@0.6.0:
     resolution: {integrity: sha512-y+SqErxb8h7nE/fiEX07jsbuhrpO9lL8eca7/Y1nuWV2moNlXhyd59iDGcRf6moVyDMbmTNzL40SUyrFU/yDpg==}
 
@@ -5566,6 +5589,7 @@ packages:
 
   libsql@0.5.22:
     resolution: {integrity: sha512-NscWthMQt7fpU8lqd7LXMvT9pi+KhhmTHAJWUB/Lj6MWa0MKFv0F2V4C6WKKpjCVZl0VwcDz4nOI3CyaT1DDiA==}
+    cpu: [x64, arm64, wasm32, arm]
     os: [darwin, linux, win32]
 
   lines-and-columns@1.2.4:
@@ -9689,7 +9713,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
     transitivePeerDependencies:
       - debug
 
@@ -9903,6 +9927,18 @@ snapshots:
       - pg-native
       - utf-8-validate
 
+  '@happyvertical/sql@0.60.6':
+    dependencies:
+      '@duckdb/node-api': 1.4.1-r.5
+      '@happyvertical/utils': 0.60.6
+      '@libsql/client': 0.15.15
+      pg: 8.16.3
+      sqlite-vss: 0.1.2
+    transitivePeerDependencies:
+      - bufferutil
+      - pg-native
+      - utf-8-validate
+
   '@happyvertical/utils@0.59.0':
     dependencies:
       '@paralleldrive/cuid2': 3.0.4
@@ -9911,6 +9947,13 @@ snapshots:
       uuid: 13.0.0
 
   '@happyvertical/utils@0.60.5':
+    dependencies:
+      '@paralleldrive/cuid2': 3.0.4
+      date-fns: 4.1.0
+      pluralize: 8.0.0
+      uuid: 13.0.0
+
+  '@happyvertical/utils@0.60.6':
     dependencies:
       '@paralleldrive/cuid2': 3.0.4
       date-fns: 4.1.0
@@ -10146,7 +10189,7 @@ snapshots:
       camelcase: 6.3.0
       decamelize: 1.2.0
       js-tiktoken: 1.0.21
-      langsmith: 0.3.82(openai@6.14.0(ws@8.18.3)(zod@3.25.76))
+      langsmith: 0.3.87(openai@6.14.0(ws@8.18.3)(zod@3.25.76))
       mustache: 4.2.0
       p-queue: 6.6.2
       p-retry: 4.6.2
@@ -13164,7 +13207,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -13567,6 +13610,17 @@ snapshots:
       - ws
 
   langsmith@0.3.82(openai@6.14.0(ws@8.18.3)(zod@3.25.76)):
+    dependencies:
+      '@types/uuid': 10.0.0
+      chalk: 4.1.2
+      console-table-printer: 2.15.0
+      p-queue: 6.6.2
+      semver: 7.7.3
+      uuid: 10.0.0
+    optionalDependencies:
+      openai: 6.14.0(ws@8.18.3)(zod@3.25.76)
+
+  langsmith@0.3.87(openai@6.14.0(ws@8.18.3)(zod@3.25.76)):
     dependencies:
       '@types/uuid': 10.0.0
       chalk: 4.1.2
@@ -14689,7 +14743,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2):
+  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
