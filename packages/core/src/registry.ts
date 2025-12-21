@@ -94,6 +94,45 @@ function getInheritanceConfig() {
 }
 
 /**
+ * Extract the source file path from the call stack
+ *
+ * Used to identify where a class was defined for collision detection.
+ * This allows the same class to be re-registered when modules are re-evaluated
+ * (e.g., during vitest test file collection with isolation enabled).
+ *
+ * @returns The file path where the @smrt() decorator was called, or undefined
+ */
+function getSourceFileFromStack(): string | undefined {
+  const error = new Error();
+  const stack = error.stack || '';
+  const stackLines = stack.split('\n');
+
+  // Look for the first file path that's NOT from smrt-core internal files
+  // Stack trace format: "    at FunctionName (file:///path/to/file.ts:line:col)"
+  // or "    at file:///path/to/file.ts:line:col"
+  for (const line of stackLines) {
+    // Match file paths in stack trace
+    const fileMatch = line.match(
+      /(?:file:\/\/)?([^)\s]+\.(?:js|ts|mjs|mts))(?::\d+:\d+)?/,
+    );
+    if (fileMatch) {
+      const filePath = fileMatch[1];
+      // Skip smrt-core internal files
+      if (
+        filePath.includes('/smrt-core/') ||
+        filePath.includes('registry') ||
+        filePath.includes('manifest-loader')
+      ) {
+        continue;
+      }
+      // Normalize the path (remove file:// prefix if present)
+      return filePath.replace(/^file:\/\//, '');
+    }
+  }
+  return undefined;
+}
+
+/**
  * Configuration options for SMRT objects registered in the system
  *
  * Controls how objects are exposed through generated APIs, CLIs, and MCP servers.
@@ -302,6 +341,8 @@ interface RegisteredClass {
   }>;
   /** Package name from manifest (for external package classes) */
   packageName?: string;
+  /** Source file path where the class was defined (for collision detection) */
+  sourceFilePath?: string;
   /** Parent class name (for inheritance chain tracking) */
   extends?: string;
   /** Full inheritance chain from base to this class (cached for performance) */
@@ -592,7 +633,26 @@ export class ObjectRegistry {
         return;
       }
 
-      // Different constructors with same name - this is a collision!
+      // Check if this is the same class being re-registered from module re-evaluation
+      // This happens during vitest test collection when modules are re-evaluated for isolation
+      // (Issue #555: Test isolation - class name collision during vitest collection)
+      const newSourceFile = getSourceFileFromStack();
+      if (
+        newSourceFile &&
+        existing.sourceFilePath &&
+        newSourceFile === existing.sourceFilePath
+      ) {
+        // Same source file = same class being re-registered after module re-evaluation
+        // Update the constructor reference to the new one
+        existing.constructor = ctor;
+        existing.config = { ...existing.config, ...config };
+        console.log(
+          `[registry] Updated constructor for ${name} after module re-evaluation`,
+        );
+        return;
+      }
+
+      // Different constructors with same name from different source files - this is a collision!
       // This will cause silent bugs where the wrong fields are used
       throw new Error(
         `SMRT Class Name Collision: "${name}"\n\n` +
@@ -635,7 +695,28 @@ export class ObjectRegistry {
           return; // Same class, skip silently
         }
 
-        // Different constructors with case-insensitive name match
+        // Check if this is the same class being re-registered from module re-evaluation
+        // (Issue #555: Test isolation - class name collision during vitest collection)
+        const newSourceFile = getSourceFileFromStack();
+        if (
+          newSourceFile &&
+          existing.sourceFilePath &&
+          newSourceFile === existing.sourceFilePath
+        ) {
+          // Same source file = same class being re-registered after module re-evaluation
+          // Update the constructor reference and fix the key casing
+          ObjectRegistry.classes.delete(existingKey);
+          existing.constructor = ctor;
+          existing.name = name;
+          existing.config = { ...existing.config, ...config };
+          ObjectRegistry.classes.set(name, existing);
+          console.log(
+            `[registry] Updated constructor for ${name} after module re-evaluation (case-insensitive match)`,
+          );
+          return;
+        }
+
+        // Different constructors with case-insensitive name match from different source files
         throw new Error(
           `SMRT Class Name Collision: "${name}" (case-insensitive match with "${existingKey}")\n\n` +
             `A class with this name is already registered, but with a different constructor.\n` +
@@ -657,6 +738,10 @@ export class ObjectRegistry {
     // Skip registry check to avoid circular dependency - class isn't registered yet!
     // This solves issue #159 where external package manifests couldn't be loaded.
     const packageNameFromStack = getPackageName(ctor, true) || undefined;
+
+    // Capture source file path for collision detection during module re-evaluation
+    // (Issue #555: Test isolation - class name collision during vitest collection)
+    const sourceFilePath = getSourceFileFromStack();
 
     // Get field definitions from manifest
     // Priority order (Issue #270 Phase 1 - synchronous manifest loading):
@@ -974,6 +1059,7 @@ export class ObjectRegistry {
       schema,
       validators,
       packageName, // Store package name from manifest for getPackageName() lookup
+      sourceFilePath, // Store source file for collision detection (Issue #555)
       extends: extendsClass, // Capture parent class name from manifest OR prototype chain
       // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
       // it lazily using the `extends` field. This ensures correct chain for both
@@ -1179,6 +1265,7 @@ export class ObjectRegistry {
       schema,
       validators,
       packageName,
+      sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
       extends: objectDef.extends, // Parent class name for inheritance chain
     });
 
