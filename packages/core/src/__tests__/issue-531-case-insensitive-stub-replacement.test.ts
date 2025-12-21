@@ -175,6 +175,10 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
     expect(entry).toBeDefined();
     expect((entry?.constructor as any)?._isManifestStub).toBeUndefined();
 
+    // Simulate the first class being from a different source file
+    // This is needed because classes from the same file are treated as module re-evaluations (Issue #555)
+    entry!.sourceFilePath = '/different/path/to/file.ts';
+
     // Now try to register a different class with case-insensitive match
     expect(() => {
       @smrt({ name: 'CollisionTest' })
