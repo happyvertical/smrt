@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.63
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - prevent class collision during vitest module re-evaluation (#556) (core)
+  - @happyvertical/smrt-config@0.17.63
+  - @happyvertical/smrt-types@0.17.63
+
 ## 0.17.62
 
 ### Patch Changes
