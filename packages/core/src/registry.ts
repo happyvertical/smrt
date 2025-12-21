@@ -111,22 +111,34 @@ function getSourceFileFromStack(): string | undefined {
   // Stack trace format: "    at FunctionName (file:///path/to/file.ts:line:col)"
   // or "    at file:///path/to/file.ts:line:col"
   for (const line of stackLines) {
-    // Match file paths in stack trace
+    // Match file paths in stack trace (include all JS/TS file extensions)
     const fileMatch = line.match(
-      /(?:file:\/\/)?([^)\s]+\.(?:js|ts|mjs|mts))(?::\d+:\d+)?/,
+      /(?:file:\/\/)?([^)\s]+\.(?:js|ts|mjs|mts|jsx|tsx|cjs|cts))(?::\d+:\d+)?/,
     );
     if (fileMatch) {
-      const filePath = fileMatch[1];
-      // Skip smrt-core internal files
+      const rawPath = fileMatch[1];
+      // Normalize the path:
+      // - remove any leading file:// or file:/// prefix
+      // - convert Windows backslashes to POSIX-style forward slashes
+      const normalizedPath = rawPath
+        .replace(/^file:\/+/, '')
+        .replace(/\\/g, '/');
+      const lowerPath = normalizedPath.toLowerCase();
+
+      // Skip smrt-core internal files using specific path patterns
+      // to avoid false positives with user files containing "registry" in name
       if (
-        filePath.includes('/smrt-core/') ||
-        filePath.includes('registry') ||
-        filePath.includes('manifest-loader')
+        // Installed package form: node_modules/@happyvertical/smrt-core/...
+        lowerPath.includes('/node_modules/@happyvertical/smrt-core/') ||
+        // Monorepo/workspace form: packages/core/src/...
+        (lowerPath.includes('/packages/core/src/') &&
+          !lowerPath.includes('__tests__')) ||
+        // Specific manifest loader internals
+        lowerPath.includes('/manifest/manifest-loader')
       ) {
         continue;
       }
-      // Normalize the path (remove file:// prefix if present)
-      return filePath.replace(/^file:\/\//, '');
+      return normalizedPath;
     }
   }
   return undefined;
@@ -637,18 +649,21 @@ export class ObjectRegistry {
       // This happens during vitest test collection when modules are re-evaluated for isolation
       // (Issue #555: Test isolation - class name collision during vitest collection)
       const newSourceFile = getSourceFileFromStack();
-      if (
+
+      // Allow re-registration if:
+      // 1. Both source files are defined and match (same file being re-evaluated)
+      // 2. Either source file is unavailable (can't do proper comparison, allow as fallback)
+      const sourceFilesMatch =
         newSourceFile &&
         existing.sourceFilePath &&
-        newSourceFile === existing.sourceFilePath
-      ) {
-        // Same source file = same class being re-registered after module re-evaluation
-        // Update the constructor reference to the new one
+        newSourceFile === existing.sourceFilePath;
+      const cannotCompareSourceFiles =
+        !newSourceFile || !existing.sourceFilePath;
+
+      if (sourceFilesMatch || cannotCompareSourceFiles) {
+        // Same source file or can't compare = allow constructor update
         existing.constructor = ctor;
         existing.config = { ...existing.config, ...config };
-        console.log(
-          `[registry] Updated constructor for ${name} after module re-evaluation`,
-        );
         return;
       }
 
@@ -698,21 +713,24 @@ export class ObjectRegistry {
         // Check if this is the same class being re-registered from module re-evaluation
         // (Issue #555: Test isolation - class name collision during vitest collection)
         const newSourceFile = getSourceFileFromStack();
-        if (
+
+        // Allow re-registration if:
+        // 1. Both source files are defined and match (same file being re-evaluated)
+        // 2. Either source file is unavailable (can't do proper comparison, allow as fallback)
+        const sourceFilesMatch =
           newSourceFile &&
           existing.sourceFilePath &&
-          newSourceFile === existing.sourceFilePath
-        ) {
-          // Same source file = same class being re-registered after module re-evaluation
-          // Update the constructor reference and fix the key casing
+          newSourceFile === existing.sourceFilePath;
+        const cannotCompareSourceFiles =
+          !newSourceFile || !existing.sourceFilePath;
+
+        if (sourceFilesMatch || cannotCompareSourceFiles) {
+          // Same source file or can't compare = allow constructor update
           ObjectRegistry.classes.delete(existingKey);
           existing.constructor = ctor;
           existing.name = name;
           existing.config = { ...existing.config, ...config };
           ObjectRegistry.classes.set(name, existing);
-          console.log(
-            `[registry] Updated constructor for ${name} after module re-evaluation (case-insensitive match)`,
-          );
           return;
         }
 

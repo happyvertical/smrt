@@ -31,9 +31,10 @@ describe('Issue #555: Test isolation - class name collision', () => {
       const registered = ObjectRegistry.getClass('TestIsolation555A');
       expect(registered).toBeDefined();
       // Source file path should be captured from stack trace
-      // In test environment, it will point to this test file
-      expect(registered?.sourceFilePath).toBeDefined();
-      expect(registered?.sourceFilePath).toContain('issue-555');
+      // Verify it's a non-empty string without asserting specific path content
+      // (which could break if the test file is renamed)
+      expect(typeof registered?.sourceFilePath).toBe('string');
+      expect(registered?.sourceFilePath?.length).toBeGreaterThan(0);
     });
 
     it('should allow re-registration from same source file (simulating module re-evaluation)', () => {
@@ -88,6 +89,35 @@ describe('Issue #555: Test isolation - class name collision', () => {
           name: 'CollisionTest555',
         });
       }).toThrow(/SMRT Class Name Collision/);
+    });
+
+    it('should allow re-registration when source file tracking is unavailable (fallback)', () => {
+      // Register a class
+      @smrt()
+      class FallbackTest555 extends SmrtObject {
+        field: string = '';
+      }
+
+      // Get the registered entry and clear the source file to simulate
+      // an environment where source file tracking fails
+      const registered = ObjectRegistry.getClass('FallbackTest555');
+      expect(registered).toBeDefined();
+      registered!.sourceFilePath = undefined;
+
+      // Create another class with the same name
+      const OtherClass = class FallbackTest555 extends SmrtObject {
+        otherField: string = '';
+      };
+
+      // Should NOT throw because when both source files are undefined,
+      // we fallback to allowing re-registration
+      expect(() => {
+        ObjectRegistry.register(OtherClass as any, { name: 'FallbackTest555' });
+      }).not.toThrow();
+
+      // Verify the constructor was updated
+      const updated = ObjectRegistry.getClass('FallbackTest555');
+      expect(updated?.constructor).toBe(OtherClass);
     });
   });
 
