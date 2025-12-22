@@ -155,6 +155,15 @@ function parseExpectedIndexes(schema: {
 }
 
 /**
+ * Quote a SQL identifier (table name, column name, etc.)
+ * Uses double quotes which is ANSI SQL standard and works across SQLite, PostgreSQL, and DuckDB
+ */
+function quoteIdentifier(name: string): string {
+  // Escape any double quotes in the identifier by doubling them
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/**
  * Normalize SQL types for comparison
  * Different databases use different type names for the same logical type
  */
@@ -1281,10 +1290,11 @@ export default testManifest;
         }
 
         // 11. Generate SQL statements for preview
+        // Use proper identifier quoting for safety (ANSI SQL double quotes)
         for (const migration of migrations) {
           if (migration.type === 'add_column' && migration.column) {
             const col = migration.column;
-            const parts: string[] = [col.name, col.type];
+            const parts: string[] = [quoteIdentifier(col.name), col.type];
             if (col.notNull) parts.push('NOT NULL');
             if (col.unique) parts.push('UNIQUE');
             if (col.defaultValue !== undefined) {
@@ -1294,11 +1304,14 @@ export default testManifest;
                   : String(col.defaultValue);
               parts.push(`DEFAULT ${defaultVal}`);
             }
-            migration.sql = `ALTER TABLE ${migration.tableName} ADD COLUMN ${parts.join(' ')}`;
+            migration.sql = `ALTER TABLE ${quoteIdentifier(migration.tableName)} ADD COLUMN ${parts.join(' ')}`;
           } else if (migration.type === 'add_index' && migration.index) {
             const idx = migration.index;
             const uniqueStr = idx.unique ? 'UNIQUE ' : '';
-            migration.sql = `CREATE ${uniqueStr}INDEX ${idx.name} ON ${migration.tableName} (${idx.columns.join(', ')})`;
+            const quotedColumns = idx.columns
+              .map((c) => quoteIdentifier(c))
+              .join(', ');
+            migration.sql = `CREATE ${uniqueStr}INDEX ${quoteIdentifier(idx.name)} ON ${quoteIdentifier(migration.tableName)} (${quotedColumns})`;
           }
         }
 
