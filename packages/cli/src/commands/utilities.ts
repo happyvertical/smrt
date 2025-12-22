@@ -100,13 +100,18 @@ function parseExpectedColumns(schema: {
         primaryKey: /PRIMARY\s+KEY/i.test(constraints),
       };
 
-      // Extract default value
+      // Extract default value - handle SQL escaped quotes ('' -> ')
       const defaultMatch = constraints.match(
-        /DEFAULT\s+(?:'([^']*)'|(\d+(?:\.\d+)?)|(\w+))/i,
+        /DEFAULT\s+(?:'((?:[^']|'{2})*)'|(\d+(?:\.\d+)?)|(\w+))/i,
       );
       if (defaultMatch) {
-        columns[colName].defaultValue =
+        const rawDefault =
           defaultMatch[1] ?? defaultMatch[2] ?? defaultMatch[3];
+        // Unescape SQL single-quoted strings: '' -> '
+        columns[colName].defaultValue =
+          defaultMatch[1] !== undefined
+            ? rawDefault.replace(/''/g, "'")
+            : rawDefault;
       }
     }
   }
@@ -131,14 +136,16 @@ function parseExpectedIndexes(schema: {
 
   for (const indexSQL of schema.indexes) {
     // Parse: CREATE [UNIQUE] INDEX index_name ON table_name (columns)
+    // Support both quoted and unquoted identifiers
     const match = indexSQL.match(
-      /CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?(\w+)["']?\s+ON\s+["']?\w+["']?\s*\(([^)]+)\)/i,
+      /CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([^"]+)"|'([^']+)'|(\w+))\s+ON\s+(?:"[^"]+"|'[^']+'|\w+)\s*\(([^)]+)\)/i,
     );
 
     if (match) {
       const isUnique = !!match[1];
-      const indexName = match[2];
-      const columnsStr = match[3];
+      // Index name can be in group 2 (double-quoted), 3 (single-quoted), or 4 (unquoted)
+      const indexName = match[2] ?? match[3] ?? match[4];
+      const columnsStr = match[5];
       const columns = columnsStr
         .split(',')
         .map((c) => c.trim().replace(/["']/g, ''));
@@ -165,19 +172,35 @@ function quoteIdentifier(name: string): string {
 
 /**
  * Normalize SQL types for comparison
- * Different databases use different type names for the same logical type
+ * Different databases use different type names for the same logical type.
+ * Preserves size distinctions (BIGINT vs INTEGER, VARCHAR(50) vs TEXT) to avoid
+ * hiding important schema differences.
  */
 function normalizeType(type: string): string {
   const upper = type.toUpperCase().trim();
 
-  // Normalize integer types
-  if (/^(INTEGER|INT|BIGINT|SMALLINT|TINYINT)$/i.test(upper)) {
+  // Normalize integer types - preserve size distinctions
+  if (/^(INTEGER|INT)$/i.test(upper)) {
     return 'INTEGER';
   }
+  if (/^BIGINT$/i.test(upper)) {
+    return 'BIGINT';
+  }
+  if (/^SMALLINT$/i.test(upper)) {
+    return 'SMALLINT';
+  }
+  if (/^TINYINT$/i.test(upper)) {
+    return 'TINYINT';
+  }
 
-  // Normalize text types
-  if (/^(TEXT|VARCHAR|CHAR|STRING|CLOB)/i.test(upper)) {
+  // Normalize text types - preserve length-limited types
+  // Only normalize truly unbounded text types to TEXT
+  if (/^(TEXT|CLOB|STRING)$/i.test(upper)) {
     return 'TEXT';
+  }
+  // Keep VARCHAR and CHAR with their size specs (e.g., VARCHAR(50))
+  if (/^(VARCHAR|CHAR)/i.test(upper)) {
+    return upper; // Preserve as-is to detect size mismatches
   }
 
   // Normalize decimal/float types
@@ -1006,12 +1029,6 @@ export default testManifest;
         description: 'Show detailed output',
         default: false,
         short: 'v',
-      },
-      force: {
-        type: 'boolean',
-        description: 'Skip confirmation prompt for destructive operations',
-        default: false,
-        short: 'f',
       },
     },
     handler: async (_args: string[], options: any) => {
