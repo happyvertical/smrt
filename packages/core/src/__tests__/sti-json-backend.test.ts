@@ -370,6 +370,287 @@ describe('STI with JSON Backend', () => {
     });
   });
 
+  describe('Issue #563: save() on loaded objects', () => {
+    it('should persist updates to JSON file when saving objects loaded via list()', async () => {
+      // This test directly reads the JSON file to verify what the user reported
+      // Issue: save() completes without error but JSON file isn't updated
+
+      const { readFile } = await import('node:fs/promises');
+
+      // Step 1: Create initial data
+      const collection1 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      const event = await collection1.create({
+        title: 'Test Event',
+        date: new Date('2024-01-15'),
+        location: 'Test Location',
+        description: 'Original description',
+      });
+
+      const eventId = event.id;
+
+      // Verify JSON file contains original description
+      const jsonPath = path.join(jsonDbPath, 'issue391events.json');
+      const initialContent = await readFile(jsonPath, 'utf-8');
+      const initialData = JSON.parse(initialContent);
+      const initialEvent = initialData.find((e: any) => e.id === eventId);
+      expect(initialEvent.description).toBe('Original description');
+
+      // Step 2: Create NEW collection (simulates new script run with FRESH connection)
+      // Clear the connection cache to truly simulate a new script run
+      const { clearConnectionCache } = await import('@happyvertical/sql');
+      clearConnectionCache();
+
+      const collection2 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      // Step 3: Load via list()
+      const allEvents = await collection2.list({});
+      const venue = allEvents.find((e) => e.title === 'Test Event');
+      expect(venue).toBeDefined();
+
+      // Step 4: Modify and save
+      venue!.description = 'Updated description';
+      await venue?.save();
+
+      // Step 5: Directly read JSON file to verify persistence
+      const updatedContent = await readFile(jsonPath, 'utf-8');
+      const updatedData = JSON.parse(updatedContent);
+      const updatedEvent = updatedData.find((e: any) => e.id === eventId);
+
+      // THIS IS THE ACTUAL BUG CHECK - does the JSON file have the updated value?
+      expect(updatedEvent.description).toBe('Updated description');
+    });
+
+    it('should persist null-to-value updates (parentId pattern from issue)', async () => {
+      // The user's issue specifically mentions updating parentId from null to a value
+      const { readFile } = await import('node:fs/promises');
+
+      // Step 1: Create initial data with null field
+      const collection1 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      const event = await collection1.create({
+        title: 'Venue With No Parent',
+        date: new Date('2024-01-15'),
+        location: 'Bentley, Alberta',
+        description: '', // Start with empty string (simulates null-like behavior)
+      });
+
+      const eventId = event.id;
+
+      // Clear cache to simulate fresh script run
+      const { clearConnectionCache } = await import('@happyvertical/sql');
+      clearConnectionCache();
+
+      // Step 2: Create new collection instance
+      const collection2 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      // Step 3: Load via list()
+      const allEvents = await collection2.list({});
+      const venue = allEvents.find((e) => e.title === 'Venue With No Parent');
+      expect(venue).toBeDefined();
+
+      // Step 4: Update from empty/null to actual value (simulates parentId update)
+      venue!.description = 'some-parent-id-value';
+      await venue?.save();
+
+      // Step 5: Verify JSON file directly
+      const jsonPath = path.join(jsonDbPath, 'issue391events.json');
+      const content = await readFile(jsonPath, 'utf-8');
+      const data = JSON.parse(content);
+      const savedEvent = data.find((e: any) => e.id === eventId);
+
+      expect(savedEvent.description).toBe('some-parent-id-value');
+    });
+
+    it('should persist updates when saving objects loaded via get()', async () => {
+      // Test using get() instead of list() to isolate the issue
+      const { readFile } = await import('node:fs/promises');
+
+      // Step 1: Create initial data
+      const collection1 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      const event = await collection1.create({
+        title: 'Get Test Event',
+        date: new Date('2024-01-15'),
+        location: 'Test Location',
+        description: 'Original via get',
+      });
+
+      const eventId = event.id;
+
+      // Clear cache
+      const { clearConnectionCache } = await import('@happyvertical/sql');
+      clearConnectionCache();
+
+      // Step 2: Create new collection
+      const collection2 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      // Step 3: Load via get() (not list())
+      const venue = await collection2.get({ id: eventId });
+      expect(venue).toBeDefined();
+
+      // Step 4: Modify and save
+      venue!.description = 'Updated via get';
+      await venue?.save();
+
+      // Step 5: Verify JSON file
+      const jsonPath = path.join(jsonDbPath, 'issue391events.json');
+      const content = await readFile(jsonPath, 'utf-8');
+      const data = JSON.parse(content);
+      const savedEvent = data.find((e: any) => e.id === eventId);
+
+      expect(savedEvent.description).toBe('Updated via get');
+    });
+
+    it('should persist updates when saving objects loaded via list()', async () => {
+      // Step 1: Create initial data
+      const collection1 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      const event = await collection1.create({
+        title: 'Bentley Arena',
+        date: new Date('2024-01-15'),
+        location: 'Bentley, Alberta',
+        description: 'Local arena',
+      });
+
+      const eventId = event.id;
+      expect(event.description).toBe('Local arena');
+
+      // Step 2: Create a NEW collection instance (simulates new script run)
+      const collection2 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      // Step 3: Load existing objects via list()
+      const allEvents = await collection2.list({});
+      const venue = allEvents.find((e) => e.title === 'Bentley Arena');
+
+      expect(venue).toBeDefined();
+      expect(venue?.id).toBe(eventId);
+
+      // Step 4: Modify and save
+      venue!.description = 'Updated description';
+      await venue?.save();
+
+      // Step 5: Create ANOTHER collection instance to verify persistence
+      const collection3 = await Issue391EventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      // Step 6: Verify the update was persisted
+      const verified = await collection3.get({ id: eventId });
+      expect(verified).toBeDefined();
+      expect(verified?.description).toBe('Updated description');
+    });
+
+    it('should persist updates when saving STI objects loaded via list()', async () => {
+      // Step 1: Create initial STI data
+      const collection1 = await Issue391BaseEventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      const meeting = await collection1.create({
+        _meta_type: 'Issue391Meeting',
+        title: 'Town Council Meeting',
+        date: new Date('2024-01-15'),
+        location: 'Town Hall',
+        roomNumber: 'Room A',
+        attendees: ['Mayor', 'Council'],
+      });
+
+      const meetingId = meeting.id;
+
+      // Step 2: Create NEW collection instance
+      const collection2 = await Issue391BaseEventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      // Step 3: Load via list()
+      const allEvents = await collection2.list({});
+      const loadedMeeting = allEvents.find(
+        (e) => e.title === 'Town Council Meeting',
+      ) as any;
+
+      expect(loadedMeeting).toBeDefined();
+      expect(loadedMeeting.constructor.name).toBe('Issue391Meeting');
+
+      // Step 4: Modify STI-specific field and save
+      loadedMeeting.roomNumber = 'Room B';
+      await loadedMeeting.save();
+
+      // Step 5: Verify with fresh collection
+      const collection3 = await Issue391BaseEventCollection.create({
+        persistence: {
+          type: 'json',
+          url: jsonDbPath,
+          writeStrategy: 'immediate',
+        },
+      });
+
+      const verified = (await collection3.get({ id: meetingId })) as any;
+      expect(verified).toBeDefined();
+      expect(verified.roomNumber).toBe('Room B');
+    });
+  });
+
   describe('Error Handling with JSON Backend', () => {
     it('should handle missing database path gracefully', async () => {
       await expect(
