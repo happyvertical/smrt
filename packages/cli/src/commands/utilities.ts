@@ -11,6 +11,227 @@ import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 
 /**
+ * Column definition type for migration comparison
+ */
+interface ColumnDef {
+  type: string;
+  notNull?: boolean;
+  defaultValue?: any;
+  unique?: boolean;
+  primaryKey?: boolean;
+}
+
+/**
+ * Index definition type for migration comparison
+ */
+interface IndexDef {
+  name: string;
+  columns: string[];
+  unique?: boolean;
+}
+
+/**
+ * Parse expected columns from a schema definition
+ * Handles both DDL string parsing and columns object format
+ */
+function parseExpectedColumns(schema: {
+  ddl: string;
+  tableName: string;
+  indexes?: string[];
+}): Record<string, ColumnDef> {
+  const columns: Record<string, ColumnDef> = {};
+
+  // Try to extract columns from DDL using regex
+  // Match: CREATE TABLE ... ( column definitions )
+  const createTableMatch = schema.ddl.match(
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?(\w+)["']?\s*\(([\s\S]+?)\)(?:\s*;)?$/im,
+  );
+
+  if (!createTableMatch) {
+    return columns;
+  }
+
+  const columnSection = createTableMatch[2];
+
+  // Split by comma, but not commas inside parentheses (for CHECK constraints)
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+
+  for (const char of columnSection) {
+    if (char === '(') depth++;
+    else if (char === ')') depth--;
+
+    if (char === ',' && depth === 0) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  if (current.trim()) {
+    parts.push(current.trim());
+  }
+
+  for (const part of parts) {
+    // Skip foreign key constraints, primary key constraints, etc.
+    if (
+      /^\s*(FOREIGN\s+KEY|PRIMARY\s+KEY|UNIQUE|CHECK|CONSTRAINT)/i.test(part)
+    ) {
+      continue;
+    }
+
+    // Parse column definition: "column_name" TYPE [constraints]
+    // Handle both quoted and unquoted column names
+    const colMatch = part.match(
+      /^["']?(\w+)["']?\s+(\w+(?:\s*\([^)]+\))?)\s*(.*)?$/i,
+    );
+
+    if (colMatch) {
+      const colName = colMatch[1];
+      const colType = colMatch[2].toUpperCase();
+      const constraints = colMatch[3] || '';
+
+      columns[colName] = {
+        type: colType,
+        notNull:
+          /NOT\s+NULL/i.test(constraints) || /PRIMARY\s+KEY/i.test(constraints),
+        unique: /UNIQUE/i.test(constraints),
+        primaryKey: /PRIMARY\s+KEY/i.test(constraints),
+      };
+
+      // Extract default value - handle SQL escaped quotes ('' -> ')
+      const defaultMatch = constraints.match(
+        /DEFAULT\s+(?:'((?:[^']|'{2})*)'|(\d+(?:\.\d+)?)|(\w+))/i,
+      );
+      if (defaultMatch) {
+        const rawDefault =
+          defaultMatch[1] ?? defaultMatch[2] ?? defaultMatch[3];
+        // Unescape SQL single-quoted strings: '' -> '
+        columns[colName].defaultValue =
+          defaultMatch[1] !== undefined
+            ? rawDefault.replace(/''/g, "'")
+            : rawDefault;
+      }
+    }
+  }
+
+  return columns;
+}
+
+/**
+ * Parse expected indexes from a schema definition
+ * Handles index SQL strings in the indexes array
+ */
+function parseExpectedIndexes(schema: {
+  ddl: string;
+  tableName: string;
+  indexes?: string[];
+}): IndexDef[] {
+  const indexes: IndexDef[] = [];
+
+  if (!schema.indexes || schema.indexes.length === 0) {
+    return indexes;
+  }
+
+  for (const indexSQL of schema.indexes) {
+    // Parse: CREATE [UNIQUE] INDEX index_name ON table_name (columns)
+    // Support both quoted and unquoted identifiers
+    const match = indexSQL.match(
+      /CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([^"]+)"|'([^']+)'|(\w+))\s+ON\s+(?:"[^"]+"|'[^']+'|\w+)\s*\(([^)]+)\)/i,
+    );
+
+    if (match) {
+      const isUnique = !!match[1];
+      // Index name can be in group 2 (double-quoted), 3 (single-quoted), or 4 (unquoted)
+      const indexName = match[2] ?? match[3] ?? match[4];
+      const columnsStr = match[5];
+      const columns = columnsStr
+        .split(',')
+        .map((c) => c.trim().replace(/["']/g, ''));
+
+      indexes.push({
+        name: indexName,
+        columns,
+        unique: isUnique,
+      });
+    }
+  }
+
+  return indexes;
+}
+
+/**
+ * Quote a SQL identifier (table name, column name, etc.)
+ * Uses double quotes which is ANSI SQL standard and works across SQLite, PostgreSQL, and DuckDB
+ */
+function quoteIdentifier(name: string): string {
+  // Escape any double quotes in the identifier by doubling them
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Normalize SQL types for comparison
+ * Different databases use different type names for the same logical type.
+ * Preserves size distinctions (BIGINT vs INTEGER, VARCHAR(50) vs TEXT) to avoid
+ * hiding important schema differences.
+ */
+function normalizeType(type: string): string {
+  const upper = type.toUpperCase().trim();
+
+  // Normalize integer types - preserve size distinctions
+  if (/^(INTEGER|INT)$/i.test(upper)) {
+    return 'INTEGER';
+  }
+  if (/^BIGINT$/i.test(upper)) {
+    return 'BIGINT';
+  }
+  if (/^SMALLINT$/i.test(upper)) {
+    return 'SMALLINT';
+  }
+  if (/^TINYINT$/i.test(upper)) {
+    return 'TINYINT';
+  }
+
+  // Normalize text types - preserve length-limited types
+  // Only normalize truly unbounded text types to TEXT
+  if (/^(TEXT|CLOB|STRING)$/i.test(upper)) {
+    return 'TEXT';
+  }
+  // Keep VARCHAR and CHAR with their size specs (e.g., VARCHAR(50))
+  if (/^(VARCHAR|CHAR)/i.test(upper)) {
+    return upper; // Preserve as-is to detect size mismatches
+  }
+
+  // Normalize decimal/float types
+  if (/^(REAL|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER)/i.test(upper)) {
+    return 'REAL';
+  }
+
+  // Normalize boolean types
+  if (/^(BOOLEAN|BOOL)/i.test(upper)) {
+    return 'BOOLEAN';
+  }
+
+  // Normalize date/time types
+  if (/^(DATETIME|TIMESTAMP|DATE|TIME)/i.test(upper)) {
+    return 'DATETIME';
+  }
+
+  // Normalize blob types
+  if (/^(BLOB|BINARY|BYTEA)/i.test(upper)) {
+    return 'BLOB';
+  }
+
+  // Normalize JSON types
+  if (/^(JSON|JSONB)/i.test(upper)) {
+    return 'JSON';
+  }
+
+  return upper;
+}
+
+/**
  * Utility commands for CLI
  */
 export const utilityCommands: Record<string, CLICommand> = {
@@ -785,6 +1006,439 @@ export default testManifest;
           } else {
             console.error(error);
           }
+        }
+        process.exit(1);
+      }
+    },
+  },
+
+  'db:migrate': {
+    name: 'db:migrate',
+    description:
+      'Synchronize database schema with registered SMRT objects (add missing columns/indexes)',
+    aliases: ['migrate', 'db-migrate'],
+    args: [],
+    options: {
+      'dry-run': {
+        type: 'boolean',
+        description: 'Show SQL changes without executing',
+        default: false,
+      },
+      verbose: {
+        type: 'boolean',
+        description: 'Show detailed output',
+        default: false,
+        short: 'v',
+      },
+    },
+    handler: async (_args: string[], options: any) => {
+      console.log('\n🔄 Migrating database schema...\n');
+
+      try {
+        // 1. Load CLI config
+        const { getPackageConfig } = await import('@happyvertical/smrt-config');
+        const { DEFAULT_CLI_CONFIG } = await import('../config.js');
+        const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+        // 2. Validate database configuration
+        if (!config.database?.url || config.database.url === ':memory:') {
+          console.error('❌ Database configuration required for db:migrate');
+          console.error('\nPlease configure database in smrt.config.js:');
+          console.error('\n  export default {');
+          console.error('    packages: {');
+          console.error('      cli: {');
+          console.error('        database: {');
+          console.error("          type: 'sqlite',");
+          console.error("          url: './dev.db'");
+          console.error('        }');
+          console.error('      }');
+          console.error('    }');
+          console.error('  }\n');
+          process.exit(1);
+        }
+
+        const dbUrl = config.database.url;
+        const dbType = config.database.type || 'sqlite';
+
+        if (options.verbose) {
+          console.log(`Database type: ${dbType}`);
+          console.log(`Database URL:  ${dbUrl}\n`);
+        }
+
+        // 3. Check for JSON adapter (limited support)
+        // Note: JSON adapter type may not be in strict config types but could be used
+        if ((dbType as string) === 'json') {
+          console.log('⚠️  JSON adapter has limited migration support');
+          console.log(
+            '   JSON databases infer schema from data, not DDL statements.',
+          );
+          console.log(
+            '   New columns will be available automatically when data is written.\n',
+          );
+          console.log('💡 To sync schema, consider:');
+          console.log('   - Re-exporting data with updated schema');
+          console.log('   - Using smrt db:validate --fix to check integrity\n');
+          return;
+        }
+
+        // 4. Auto-discover and load manifests
+        const { discovered, totalObjects } = await autoDiscoverAndLoad();
+
+        if (discovered.length === 0) {
+          console.error('❌ No SMRT manifests found');
+          console.error('\nTo generate a manifest:');
+          console.error('  1. Build your project with SMRT objects');
+          console.error('  2. Or run: smrt test (generates test manifest)\n');
+          process.exit(1);
+        }
+
+        console.log(
+          `✓ Found ${totalObjects} object(s) in ${discovered.length} manifest(s)\n`,
+        );
+
+        // 5. Get initialization order (topological sort respecting FK dependencies)
+        const initOrder = ObjectRegistry.getInitializationOrder();
+
+        // 6. Get all merged schemas (handles STI column merging)
+        const allSchemas = ObjectRegistry.getAllSchemas();
+
+        if (options.verbose) {
+          console.log('📋 Tables to check (in dependency order):');
+          for (let i = 0; i < initOrder.length; i++) {
+            const className = initOrder[i];
+            const tableName = ObjectRegistry.getTableName(className);
+            const tableStrategy = ObjectRegistry.getTableStrategy(className);
+            const stiBase = ObjectRegistry.getSTIBase(className);
+
+            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+              console.log(
+                `  ${i + 1}. ${className} → ${tableName} (STI child of ${stiBase})`,
+              );
+            } else {
+              console.log(`  ${i + 1}. ${className} → ${tableName}`);
+            }
+          }
+          console.log();
+        }
+
+        // 7. Connect to database
+        console.log('🗄️  Connecting to database...\n');
+
+        const { getDatabase } = await import('@happyvertical/sql');
+        const db = await getDatabase({ type: dbType, url: dbUrl });
+
+        // Check if adapter supports schema introspection
+        if (!db.getTableSchema || !db.alterTable) {
+          console.error(
+            `❌ Database adapter '${dbType}' does not support schema migration`,
+          );
+          console.error('   Required methods: getTableSchema, alterTable');
+          console.error('\n   Supported adapters: sqlite, postgres, duckdb\n');
+          process.exit(1);
+        }
+
+        console.log(`✓ Connected to ${dbType}://${dbUrl}\n`);
+
+        // 8. Compare schemas and collect migrations
+        type MigrationAction = {
+          type: 'add_column' | 'add_index' | 'type_mismatch';
+          tableName: string;
+          className: string;
+          column?: {
+            name: string;
+            type: string;
+            notNull?: boolean;
+            defaultValue?: any;
+            unique?: boolean;
+          };
+          index?: {
+            name: string;
+            columns: string[];
+            unique?: boolean;
+          };
+          mismatch?: {
+            column: string;
+            expected: string;
+            actual: string;
+          };
+          sql?: string;
+        };
+
+        const migrations: MigrationAction[] = [];
+        const typeMismatches: MigrationAction[] = [];
+        const tablesProcessed = new Set<string>();
+
+        console.log('🔍 Comparing schemas...\n');
+
+        for (const className of initOrder) {
+          const tableName = ObjectRegistry.getTableName(className);
+          if (!tableName) continue;
+
+          // Skip if we've already processed this table (STI children share tables)
+          if (tablesProcessed.has(tableName)) {
+            if (options.verbose) {
+              console.log(
+                `  ⊙ ${className} → ${tableName} (already processed)`,
+              );
+            }
+            continue;
+          }
+          tablesProcessed.add(tableName);
+
+          // Get current schema from database
+          const currentSchema = await db.getTableSchema(tableName);
+
+          if (!currentSchema) {
+            // Table doesn't exist - use db:setup instead
+            console.log(
+              `  ⚠️  ${tableName}: Table does not exist (use db:setup to create)`,
+            );
+            continue;
+          }
+
+          // Get expected schema (merged for STI)
+          const expectedSchema = allSchemas[tableName];
+          if (!expectedSchema) {
+            if (options.verbose) {
+              console.log(`  ⊙ ${tableName}: No schema definition found`);
+            }
+            continue;
+          }
+
+          // Parse expected columns from DDL or columns definition
+          const expectedColumns = parseExpectedColumns(expectedSchema);
+
+          // Compare columns
+          const currentColumnNames = new Set(
+            Object.keys(currentSchema.columns),
+          );
+          let hasChanges = false;
+
+          for (const [colName, colDef] of Object.entries(expectedColumns)) {
+            if (!currentColumnNames.has(colName)) {
+              // Missing column - add migration
+              migrations.push({
+                type: 'add_column',
+                tableName,
+                className,
+                column: {
+                  name: colName,
+                  type: colDef.type,
+                  notNull: colDef.notNull,
+                  defaultValue: colDef.defaultValue,
+                  unique: colDef.unique,
+                },
+              });
+              hasChanges = true;
+            } else {
+              // Column exists - check for type mismatch
+              const currentCol = currentSchema.columns[colName];
+              const normalizedExpected = normalizeType(colDef.type);
+              const normalizedActual = normalizeType(currentCol.type);
+
+              if (normalizedExpected !== normalizedActual) {
+                typeMismatches.push({
+                  type: 'type_mismatch',
+                  tableName,
+                  className,
+                  mismatch: {
+                    column: colName,
+                    expected: colDef.type,
+                    actual: currentCol.type,
+                  },
+                });
+              }
+            }
+          }
+
+          // Compare indexes
+          const currentIndexNames = new Set(
+            currentSchema.indexes.map((idx) => idx.name),
+          );
+          const expectedIndexes = parseExpectedIndexes(expectedSchema);
+
+          for (const idx of expectedIndexes) {
+            if (!currentIndexNames.has(idx.name)) {
+              migrations.push({
+                type: 'add_index',
+                tableName,
+                className,
+                index: idx,
+              });
+              hasChanges = true;
+            }
+          }
+
+          if (options.verbose) {
+            if (hasChanges) {
+              console.log(`  📝 ${tableName}: Changes detected`);
+            } else {
+              console.log(`  ✓ ${tableName}: Up to date`);
+            }
+          }
+        }
+
+        console.log();
+
+        // 9. Report type mismatches (these require manual intervention)
+        if (typeMismatches.length > 0) {
+          console.log(
+            '⚠️  Type mismatches detected (require manual intervention):\n',
+          );
+          for (const mm of typeMismatches) {
+            if (mm.mismatch) {
+              console.log(
+                `   ${mm.tableName}.${mm.mismatch.column}: expected ${mm.mismatch.expected}, found ${mm.mismatch.actual}`,
+              );
+            }
+          }
+          console.log();
+          console.log(
+            '   Type changes require manual migration (backup, recreate, restore).\n',
+          );
+        }
+
+        // 10. Handle no migrations needed
+        if (migrations.length === 0) {
+          console.log(
+            '✅ Database schema is up to date - no migrations needed\n',
+          );
+          return;
+        }
+
+        // 11. Generate SQL statements for preview
+        // Use proper identifier quoting for safety (ANSI SQL double quotes)
+        for (const migration of migrations) {
+          if (migration.type === 'add_column' && migration.column) {
+            const col = migration.column;
+            const parts: string[] = [quoteIdentifier(col.name), col.type];
+            if (col.notNull) parts.push('NOT NULL');
+            if (col.unique) parts.push('UNIQUE');
+            if (col.defaultValue !== undefined) {
+              const defaultVal =
+                typeof col.defaultValue === 'string'
+                  ? `'${col.defaultValue.replace(/'/g, "''")}'`
+                  : String(col.defaultValue);
+              parts.push(`DEFAULT ${defaultVal}`);
+            }
+            migration.sql = `ALTER TABLE ${quoteIdentifier(migration.tableName)} ADD COLUMN ${parts.join(' ')}`;
+          } else if (migration.type === 'add_index' && migration.index) {
+            const idx = migration.index;
+            const uniqueStr = idx.unique ? 'UNIQUE ' : '';
+            const quotedColumns = idx.columns
+              .map((c) => quoteIdentifier(c))
+              .join(', ');
+            migration.sql = `CREATE ${uniqueStr}INDEX ${quoteIdentifier(idx.name)} ON ${quoteIdentifier(migration.tableName)} (${quotedColumns})`;
+          }
+        }
+
+        // 12. Preview or execute migrations
+        if (options.dryRun) {
+          console.log('📋 Migration Preview (not executed):\n');
+
+          const columnMigrations = migrations.filter(
+            (m) => m.type === 'add_column',
+          );
+          const indexMigrations = migrations.filter(
+            (m) => m.type === 'add_index',
+          );
+
+          if (columnMigrations.length > 0) {
+            console.log(`  📊 Columns to add: ${columnMigrations.length}`);
+            for (const m of columnMigrations) {
+              console.log(
+                `     ${m.tableName}.${m.column?.name} (${m.column?.type})`,
+              );
+            }
+            console.log();
+          }
+
+          if (indexMigrations.length > 0) {
+            console.log(`  🗂️  Indexes to add: ${indexMigrations.length}`);
+            for (const m of indexMigrations) {
+              console.log(`     ${m.index?.name} on ${m.tableName}`);
+            }
+            console.log();
+          }
+
+          console.log('  SQL Statements:\n');
+          for (const m of migrations) {
+            if (m.sql) {
+              console.log(`    ${m.sql};`);
+            }
+          }
+          console.log();
+
+          console.log('✅ Dry-run complete (no changes made)');
+          console.log('   Run without --dry-run to apply migrations\n');
+          return;
+        }
+
+        // 13. Execute migrations
+        console.log(`🔨 Applying ${migrations.length} migration(s)...\n`);
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const migration of migrations) {
+          try {
+            if (migration.type === 'add_column' && migration.column) {
+              await db.alterTable.addColumn(migration.tableName, {
+                name: migration.column.name,
+                type: migration.column.type,
+                notNull: migration.column.notNull,
+                defaultValue: migration.column.defaultValue,
+                unique: migration.column.unique,
+              });
+              console.log(
+                `  ✓ Added column ${migration.tableName}.${migration.column.name}`,
+              );
+              successCount++;
+            } else if (migration.type === 'add_index' && migration.index) {
+              await db.alterTable.addIndex(
+                migration.tableName,
+                migration.index,
+              );
+              console.log(
+                `  ✓ Created index ${migration.index.name} on ${migration.tableName}`,
+              );
+              successCount++;
+            }
+          } catch (error) {
+            errorCount++;
+            const errorMsg =
+              error instanceof Error ? error.message : String(error);
+            console.error(`  ✗ ${migration.type} failed: ${errorMsg}`);
+            if (options.verbose && error instanceof Error && error.stack) {
+              console.error(`\n${error.stack}\n`);
+            }
+          }
+        }
+
+        // 14. Report summary
+        console.log();
+        if (errorCount > 0) {
+          console.log(
+            `⚠️  Migration completed with errors: ${successCount} succeeded, ${errorCount} failed\n`,
+          );
+        } else {
+          console.log(`✅ Successfully applied ${successCount} migration(s)\n`);
+        }
+
+        console.log('💡 Next steps:');
+        console.log('  - Run: smrt db:validate (verify database integrity)');
+        console.log('  - Run: smrt introspect (view discovered objects)');
+        console.log();
+      } catch (error) {
+        console.error('\n❌ Migration failed:');
+        if (error instanceof Error) {
+          console.error(`   ${error.message}`);
+          if (options.verbose && error.stack) {
+            console.error('\nStack trace:');
+            console.error(error.stack);
+          }
+        } else {
+          console.error(error);
         }
         process.exit(1);
       }
