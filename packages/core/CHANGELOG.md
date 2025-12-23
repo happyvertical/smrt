@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.65
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: update @happyvertical/sdk packages to latest (#566) (deps)
+  - @happyvertical/smrt-config@0.17.65
+  - @happyvertical/smrt-types@0.17.65
+
 ## 0.17.64
 
 ### Patch Changes
