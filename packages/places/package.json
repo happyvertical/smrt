@@ -26,14 +26,14 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.60.5",
+    "@happyvertical/ai": "^0.60.9",
     "@happyvertical/cache": "^0.60.5",
-    "@happyvertical/files": "^0.60.5",
+    "@happyvertical/files": "^0.60.9",
     "@happyvertical/geo": "^0.60.5",
-    "@happyvertical/logger": "^0.60.5",
+    "@happyvertical/logger": "^0.60.9",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "^0.60.5",
-    "@happyvertical/utils": "^0.60.5"
+    "@happyvertical/sql": "^0.60.9",
+    "@happyvertical/utils": "^0.60.9"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
