@@ -239,6 +239,14 @@ export class SmrtClass {
           ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
         } as any);
       }
+
+      // CRITICAL FIX for issue #567: Update options.db to the actual db instance
+      // This ensures that when this.options is passed to ObjectRegistry.getCollection(),
+      // the collection will use the SAME db instance instead of creating a new one.
+      // Without this, passing this.options to getCollection() would use the config object
+      // which causes a NEW db instance to be created, losing data isolation.
+      this.options.db = this._db;
+
       await this.ensureSystemTables();
     }
     if (this.options.fs) {
