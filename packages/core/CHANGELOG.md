@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.67
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - register boolean method options with correct type (#570) (cli)
+  - @happyvertical/smrt-config@0.17.67
+  - @happyvertical/smrt-types@0.17.67
+
 ## 0.17.66
 
 ### Patch Changes
