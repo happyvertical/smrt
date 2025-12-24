@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.66
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - ensure options.db contains db instance after initialization (#568) (core)
+  - @happyvertical/smrt-config@0.17.66
+  - @happyvertical/smrt-types@0.17.66
+
 ## 0.17.65
 
 ### Patch Changes
