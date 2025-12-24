@@ -745,9 +745,10 @@ export class CLIGenerator {
                   description: `JSON object${isOptional ? ' (optional)' : ''}`,
                 };
               } else {
+                const trimmedType = propType.trim();
                 methodOptions[optionName] = {
-                  type: 'string',
-                  description: `${propType.trim()}${isOptional ? ' (optional)' : ''}`,
+                  type: trimmedType === 'boolean' ? 'boolean' : 'string',
+                  description: `${trimmedType}${isOptional ? ' (optional)' : ''}`,
                 };
               }
             }
@@ -757,8 +758,9 @@ export class CLIGenerator {
           const optionName = param.name
             .replace(/([A-Z])/g, '-$1')
             .toLowerCase();
+          const paramType = (param.type || '').trim();
           methodOptions[optionName] = {
-            type: 'string',
+            type: paramType === 'boolean' ? 'boolean' : 'string',
             description: `${param.type}${param.optional ? ' (optional)' : ''}`,
             ...(param.default !== undefined && {
               default: String(param.default),
