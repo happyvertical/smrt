@@ -1,5 +1,9 @@
+import type { Asset, Image } from '@happyvertical/smrt-assets';
+import { ImageCollection } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { ThumbnailOptions } from './thumbnail-generator';
+import { ThumbnailGenerator } from './thumbnail-generator';
 
 /**
  * Options for Content initialization
@@ -93,6 +97,11 @@ export interface ContentOptions extends SmrtObjectOptions {
    * Additional metadata
    */
   metadata?: Record<string, any>;
+
+  /**
+   * ID of the thumbnail asset for this content
+   */
+  thumbnailAssetId?: string | null;
 }
 
 /**
@@ -214,6 +223,11 @@ export class Content extends SmrtObject {
   public metadata: Record<string, any> = {};
 
   /**
+   * ID of the thumbnail asset for this content
+   */
+  public thumbnailAssetId: string | null = null;
+
+  /**
    * Creates a new Content instance
    */
   constructor(options: ContentOptions = {}) {
@@ -235,6 +249,7 @@ export class Content extends SmrtObject {
     this.category = options.category || null;
     this.state = options.state || 'active';
     this.metadata = options.metadata || {};
+    this.thumbnailAssetId = options.thumbnailAssetId ?? null;
   }
 
   /**
@@ -347,5 +362,179 @@ export class Content extends SmrtObject {
       );
     }
     return this.category === categoryPath;
+  }
+
+  // ============================================
+  // Asset Relationship Methods
+  // ============================================
+
+  /**
+   * Get all assets associated with this content
+   * @param relationship - Optional filter by relationship type (e.g., 'thumbnail', 'attachment')
+   * @returns Promise resolving to array of assets
+   */
+  async getAssets(relationship?: string): Promise<Asset[]> {
+    const db = this.db;
+
+    let sql = `
+      SELECT a.* FROM assets a
+      INNER JOIN content_assets ca ON ca.asset_id = a.id
+      WHERE ca.content_id = ?
+    `;
+    const params: any[] = [this.id];
+
+    if (relationship) {
+      sql += ' AND ca.relationship = ?';
+      params.push(relationship);
+    }
+
+    sql += ' ORDER BY ca.sort_order ASC, ca.created_at ASC';
+
+    const { rows } = await db.query(sql, ...params);
+
+    // Use ImageCollection to properly instantiate assets with STI
+    const images = await (ImageCollection as any).create({
+      db: (this as any).options?.db,
+    });
+
+    const assets: Asset[] = [];
+    for (const row of rows) {
+      // Get the proper instance through the collection to handle STI
+      const asset = await images.get({ id: row.id });
+      if (asset) assets.push(asset);
+    }
+
+    return assets;
+  }
+
+  /**
+   * Add an asset to this content with a relationship type
+   * @param asset - The asset to associate
+   * @param relationship - Relationship type (e.g., 'thumbnail', 'attachment', 'inline')
+   * @param sortOrder - Optional sort order for display
+   */
+  async addAsset(
+    asset: Asset,
+    relationship = 'attachment',
+    sortOrder = 0,
+  ): Promise<void> {
+    const db = this.db;
+
+    // Ensure content_assets table exists
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS content_assets (
+        content_id TEXT NOT NULL,
+        asset_id TEXT NOT NULL,
+        relationship TEXT NOT NULL DEFAULT 'attachment',
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (content_id, asset_id, relationship)
+      )
+    `);
+
+    await db.query(
+      `INSERT INTO content_assets (content_id, asset_id, relationship, sort_order)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (content_id, asset_id, relationship) DO UPDATE SET sort_order = ?`,
+      this.id,
+      asset.id,
+      relationship,
+      sortOrder,
+      sortOrder,
+    );
+  }
+
+  /**
+   * Remove an asset from this content
+   * @param assetId - ID of the asset to remove
+   * @param relationship - Optional specific relationship to remove (removes all if not specified)
+   */
+  async removeAsset(assetId: string, relationship?: string): Promise<void> {
+    const db = this.db;
+
+    if (relationship) {
+      await db.query(
+        'DELETE FROM content_assets WHERE content_id = ? AND asset_id = ? AND relationship = ?',
+        this.id,
+        assetId,
+        relationship,
+      );
+    } else {
+      await db.query(
+        'DELETE FROM content_assets WHERE content_id = ? AND asset_id = ?',
+        this.id,
+        assetId,
+      );
+    }
+  }
+
+  // ============================================
+  // Thumbnail Convenience Methods
+  // ============================================
+
+  /**
+   * Get the thumbnail image for this content
+   * @returns Promise resolving to the thumbnail Image or null
+   */
+  async getThumbnail(): Promise<Image | null> {
+    if (!this.thumbnailAssetId) {
+      return null;
+    }
+
+    const images = await (ImageCollection as any).create({
+      db: (this as any).options?.db,
+    });
+
+    return images.get({ id: this.thumbnailAssetId });
+  }
+
+  /**
+   * Set the thumbnail image for this content
+   * @param image - The image to set as thumbnail
+   */
+  async setThumbnail(image: Image): Promise<void> {
+    // Add as asset with 'thumbnail' relationship
+    await this.addAsset(image, 'thumbnail', 0);
+
+    // Update thumbnailAssetId
+    this.thumbnailAssetId = image.id ?? null;
+    await this.save();
+  }
+
+  /**
+   * Generate a thumbnail for this content using the specified strategy
+   *
+   * @param options - Thumbnail generation options including strategy
+   * @returns Promise resolving to the generated Image
+   *
+   * @example Headline card thumbnail
+   * ```typescript
+   * const thumbnail = await content.generateThumbnail({
+   *   strategy: 'headline-card',
+   *   brandColor: '#1a56db',
+   *   logoUrl: 'https://example.com/logo.png'
+   * });
+   * ```
+   *
+   * @example Static map thumbnail (requires metadata.latitude/longitude)
+   * ```typescript
+   * const thumbnail = await content.generateThumbnail({
+   *   strategy: 'static-map',
+   *   mapProvider: 'mapbox'
+   * });
+   * ```
+   *
+   * @example AI-generated thumbnail
+   * ```typescript
+   * const thumbnail = await content.generateThumbnail({
+   *   strategy: 'ai-generate'
+   * });
+   * ```
+   */
+  async generateThumbnail(options: ThumbnailOptions): Promise<Image> {
+    const generator = new ThumbnailGenerator(this, (this as any).options);
+    const image = await generator.generate(options);
+    await this.setThumbnail(image);
+    return image;
   }
 }

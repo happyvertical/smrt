@@ -3,11 +3,16 @@ import path from 'node:path';
 import type { AIClientOptions } from '@happyvertical/ai';
 import { fetchDocument } from '@happyvertical/documents';
 import { ensureDirectoryExists } from '@happyvertical/files';
+import type { Image } from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { Content } from './content';
+import type {
+  ThumbnailOptions,
+  ThumbnailStrategy,
+} from './thumbnail-generator';
 
 /**
  * Configuration options for Contents collection
@@ -259,5 +264,123 @@ export class Contents extends SmrtCollection<Content> {
         contentDir: options.contentDir || this.options.contentDir || '',
       });
     }
+  }
+
+  /**
+   * Generate thumbnails for content that doesn't have one
+   *
+   * @param options - Options for bulk thumbnail generation
+   * @returns Promise resolving to array of generated images
+   *
+   * @example Generate headline cards for all published articles
+   * ```typescript
+   * const images = await contents.generateMissingThumbnails({
+   *   strategy: 'headline-card',
+   *   where: { type: 'article', status: 'published' },
+   *   brandColor: '#1a56db'
+   * });
+   * console.log(`Generated ${images.length} thumbnails`);
+   * ```
+   */
+  public async generateMissingThumbnails(options: {
+    /**
+     * Thumbnail generation strategy
+     */
+    strategy: ThumbnailStrategy;
+
+    /**
+     * Optional filter for content to process
+     */
+    where?: Record<string, any>;
+
+    /**
+     * Maximum number of thumbnails to generate
+     */
+    limit?: number;
+
+    // Headline card options
+    brandColor?: string;
+    backgroundColor?: string;
+    logoUrl?: string;
+    template?: 'default' | 'news' | 'minimal';
+
+    // Static map options
+    mapProvider?: 'mapbox' | 'google';
+    zoom?: number;
+
+    // AI options
+    style?: 'photorealistic' | 'illustration' | 'abstract' | 'minimal';
+
+    // Common options
+    width?: number;
+    height?: number;
+  }): Promise<Image[]> {
+    // Build query for content missing thumbnails
+    const whereClause = {
+      ...options.where,
+      thumbnailAssetId: null,
+    };
+
+    const contents = await this.list({
+      where: whereClause,
+      limit: options.limit,
+    });
+
+    const generatedImages: Image[] = [];
+
+    for (const content of contents) {
+      try {
+        // Build thumbnail options based on strategy
+        let thumbnailOptions: ThumbnailOptions;
+
+        switch (options.strategy) {
+          case 'headline-card':
+            thumbnailOptions = {
+              strategy: 'headline-card',
+              brandColor: options.brandColor,
+              backgroundColor: options.backgroundColor,
+              logoUrl: options.logoUrl,
+              template: options.template,
+              width: options.width,
+              height: options.height,
+            };
+            break;
+
+          case 'static-map':
+            thumbnailOptions = {
+              strategy: 'static-map',
+              mapProvider: options.mapProvider,
+              zoom: options.zoom,
+              width: options.width,
+              height: options.height,
+            };
+            break;
+
+          case 'ai-generate':
+            thumbnailOptions = {
+              strategy: 'ai-generate',
+              style: options.style,
+              width: options.width,
+              height: options.height,
+              ai: this.options.ai,
+            };
+            break;
+
+          default:
+            throw new Error(`Unknown strategy: ${options.strategy}`);
+        }
+
+        const image = await content.generateThumbnail(thumbnailOptions);
+        generatedImages.push(image);
+      } catch (error) {
+        // Log error but continue with other content
+        console.error(
+          `Failed to generate thumbnail for content ${content.id}:`,
+          error,
+        );
+      }
+    }
+
+    return generatedImages;
   }
 }
