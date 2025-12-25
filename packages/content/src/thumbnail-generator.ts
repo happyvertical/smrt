@@ -228,13 +228,9 @@ export class ThumbnailGenerator {
 
     // Parse and validate coordinates
     const latitude =
-      typeof rawLatitude === 'string'
-        ? Number.parseFloat(rawLatitude)
-        : rawLatitude;
+      typeof rawLatitude === 'string' ? +rawLatitude : rawLatitude;
     const longitude =
-      typeof rawLongitude === 'string'
-        ? Number.parseFloat(rawLongitude)
-        : rawLongitude;
+      typeof rawLongitude === 'string' ? +rawLongitude : rawLongitude;
 
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
       throw new Error(

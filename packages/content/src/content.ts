@@ -418,10 +418,10 @@ export class Content extends SmrtObject {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    // Validate relationship - only allow alphanumeric and underscores
+    // Validate relationship - must start with letter/underscore, contain only alphanumeric and underscores
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(relationship)) {
       throw new Error(
-        `Invalid relationship type "${relationship}"; must be alphanumeric with underscores only`,
+        `Invalid relationship type "${relationship}"; must start with a letter or underscore and contain only letters, digits, and underscores`,
       );
     }
 
