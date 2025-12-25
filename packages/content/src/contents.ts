@@ -15,7 +15,7 @@ import type {
   ThumbnailStrategy,
 } from './thumbnail-generator';
 
-const logger = createLogger({ level: 'info' });
+const logger = createLogger('smrt-content');
 
 /**
  * Configuration options for Contents collection

@@ -226,7 +226,7 @@ export class ThumbnailGenerator {
       );
     }
 
-    // Parse and validate coordinates
+    // Parse and validate coordinates (use unary + for strict parsing that rejects trailing chars)
     const latitude =
       typeof rawLatitude === 'string' ? +rawLatitude : rawLatitude;
     const longitude =

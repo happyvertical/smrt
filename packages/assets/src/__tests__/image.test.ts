@@ -145,7 +145,7 @@ describe('Image', () => {
       });
 
       const embedding = [0.1, 0.2, 0.3];
-      const descEmbedding = [0.4, 0.5, 0.6];
+      const descriptionEmbedding = [0.4, 0.5, 0.6];
 
       const image = await images.create({
         name: 'dual-embedded.jpg',
@@ -154,13 +154,13 @@ describe('Image', () => {
         width: 256,
         height: 256,
         embedding,
-        descriptionEmbedding: descEmbedding,
+        descriptionEmbedding,
       });
       await image.save();
 
       const loaded = await images.get({ id: image.id });
       expect(loaded?.embedding).toEqual(embedding);
-      expect(loaded?.descriptionEmbedding).toEqual(descEmbedding);
+      expect(loaded?.descriptionEmbedding).toEqual(descriptionEmbedding);
     });
 
     it('should handle large embedding vectors (1536 dimensions)', async () => {
