@@ -418,6 +418,24 @@ export class Content extends SmrtObject {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
+    // Validate relationship - only allow alphanumeric and underscores
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(relationship)) {
+      throw new Error(
+        `Invalid relationship type "${relationship}"; must be alphanumeric with underscores only`,
+      );
+    }
+
+    // Validate sortOrder is a reasonable integer
+    if (
+      !Number.isInteger(sortOrder) ||
+      sortOrder < 0 ||
+      sortOrder > 2147483647
+    ) {
+      throw new Error(
+        `Invalid sortOrder "${sortOrder}"; must be a non-negative integer`,
+      );
+    }
+
     const db = this.db;
 
     // Ensure content_assets table exists

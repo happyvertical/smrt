@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { AIClientOptions } from '@happyvertical/ai';
 import { fetchDocument } from '@happyvertical/documents';
 import { ensureDirectoryExists } from '@happyvertical/files';
+import { createLogger } from '@happyvertical/logger';
 import type { Image } from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection } from '@happyvertical/smrt-core';
@@ -13,6 +14,8 @@ import type {
   ThumbnailOptions,
   ThumbnailStrategy,
 } from './thumbnail-generator';
+
+const logger = createLogger('smrt-content');
 
 /**
  * Configuration options for Contents collection
@@ -270,16 +273,19 @@ export class Contents extends SmrtCollection<Content> {
    * Generate thumbnails for content that doesn't have one
    *
    * @param options - Options for bulk thumbnail generation
-   * @returns Promise resolving to array of generated images
+   * @returns Promise resolving to result object with generated images and failed content IDs
    *
    * @example Generate headline cards for all published articles
    * ```typescript
-   * const images = await contents.generateMissingThumbnails({
+   * const result = await contents.generateMissingThumbnails({
    *   strategy: 'headline-card',
    *   where: { type: 'article', status: 'published' },
    *   brandColor: '#1a56db'
    * });
-   * console.log(`Generated ${images.length} thumbnails`);
+   * console.log(`Generated ${result.images.length} thumbnails`);
+   * if (result.failed.length > 0) {
+   *   console.warn(`Failed to generate ${result.failed.length} thumbnails`);
+   * }
    * ```
    */
   public async generateMissingThumbnails(options: {
@@ -314,7 +320,10 @@ export class Contents extends SmrtCollection<Content> {
     // Common options
     width?: number;
     height?: number;
-  }): Promise<Image[]> {
+  }): Promise<{
+    images: Image[];
+    failed: Array<{ contentId: string; error: string }>;
+  }> {
     // Build query for content missing thumbnails
     const whereClause = {
       ...options.where,
@@ -327,6 +336,7 @@ export class Contents extends SmrtCollection<Content> {
     });
 
     const generatedImages: Image[] = [];
+    const failed: Array<{ contentId: string; error: string }> = [];
 
     for (const content of contents) {
       try {
@@ -373,14 +383,18 @@ export class Contents extends SmrtCollection<Content> {
         const image = await content.generateThumbnail(thumbnailOptions);
         generatedImages.push(image);
       } catch (error) {
-        // Log error but continue with other content
-        console.error(
-          `Failed to generate thumbnail for content ${content.id}:`,
-          error,
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        logger.error(
+          `Failed to generate thumbnail for content ${content.id}: ${errorMessage}`,
         );
+        failed.push({
+          contentId: content.id ?? 'unknown',
+          error: errorMessage,
+        });
       }
     }
 
-    return generatedImages;
+    return { images: generatedImages, failed };
   }
 }

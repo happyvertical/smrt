@@ -17,7 +17,6 @@ import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Asset } from '../asset';
 import { AssetCollection } from '../assets';
 import { Image } from '../image';
 import { ImageCollection } from '../images';

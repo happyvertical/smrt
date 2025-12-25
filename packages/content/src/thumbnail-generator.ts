@@ -213,18 +213,45 @@ export class ThumbnailGenerator {
   private async generateStaticMap(
     options: StaticMapThumbnailOptions,
   ): Promise<Image> {
-    const latitude =
+    const rawLatitude =
       this.content.metadata?.latitude ?? this.content.metadata?.lat;
-    const longitude =
+    const rawLongitude =
       this.content.metadata?.longitude ??
       this.content.metadata?.lng ??
       this.content.metadata?.lon;
 
-    if (!latitude || !longitude) {
+    if (rawLatitude == null || rawLongitude == null) {
       throw new Error(
         'Content metadata must contain latitude and longitude for static-map strategy',
       );
     }
+
+    // Parse and validate coordinates
+    const latitude =
+      typeof rawLatitude === 'string'
+        ? Number.parseFloat(rawLatitude)
+        : rawLatitude;
+    const longitude =
+      typeof rawLongitude === 'string'
+        ? Number.parseFloat(rawLongitude)
+        : rawLongitude;
+
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+      throw new Error(
+        `Invalid latitude value "${rawLatitude}" in content metadata; expected a number between -90 and 90.`,
+      );
+    }
+
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      throw new Error(
+        `Invalid longitude value "${rawLongitude}" in content metadata; expected a number between -180 and 180.`,
+      );
+    }
+
+    type FetchStaticMapOptions = Parameters<typeof fetchStaticMap>[2];
+    const mapboxStyle = options.mapboxStyle as
+      | FetchStaticMapOptions['mapboxStyle']
+      | undefined;
 
     const result = await fetchStaticMap(latitude, longitude, {
       provider: options.mapProvider ?? 'mapbox',
@@ -232,7 +259,7 @@ export class ThumbnailGenerator {
       height: options.height ?? 630,
       zoom: options.zoom ?? 14,
       markerColor: options.markerColor,
-      mapboxStyle: options.mapboxStyle as any,
+      mapboxStyle,
       googleMapType: options.googleMapType,
     });
 
