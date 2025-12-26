@@ -90,26 +90,6 @@ export class ImageCollection extends SmrtCollection<Image> {
   }
 
   /**
-   * Get images with embeddings
-   *
-   * @returns Array of images that have embedding vectors
-   */
-  async getWithEmbeddings(): Promise<Image[]> {
-    const images = (await this.list({})) as Image[];
-    return images.filter((img) => img.embedding && img.embedding.length > 0);
-  }
-
-  /**
-   * Get images without embeddings
-   *
-   * @returns Array of images missing embedding vectors
-   */
-  async getWithoutEmbeddings(): Promise<Image[]> {
-    const images = (await this.list({})) as Image[];
-    return images.filter((img) => !img.embedding || img.embedding.length === 0);
-  }
-
-  /**
    * Get high resolution images (4K+)
    *
    * @returns Array of high resolution images
