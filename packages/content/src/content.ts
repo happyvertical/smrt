@@ -393,6 +393,8 @@ export class Content extends SmrtObject {
     const { rows } = await db.query(sql, ...params);
 
     // Use ImageCollection to properly instantiate assets with STI
+    // Cast to any: ImageCollection.create is a protected factory method inherited from Collection
+    // that TypeScript doesn't expose on the static type. This is intentional SMRT ORM design.
     const images = await (ImageCollection as any).create({
       db: (this as any).options?.db,
     });
@@ -418,10 +420,10 @@ export class Content extends SmrtObject {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    // Validate relationship - only allow alphanumeric and underscores
+    // Validate relationship - must start with letter/underscore, contain only alphanumeric and underscores
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(relationship)) {
       throw new Error(
-        `Invalid relationship type "${relationship}"; must be alphanumeric with underscores only`,
+        `Invalid relationship type "${relationship}"; must start with a letter or underscore and contain only letters, digits, and underscores`,
       );
     }
 
@@ -453,11 +455,10 @@ export class Content extends SmrtObject {
     await db.query(
       `INSERT INTO content_assets (content_id, asset_id, relationship, sort_order)
        VALUES (?, ?, ?, ?)
-       ON CONFLICT (content_id, asset_id, relationship) DO UPDATE SET sort_order = ?`,
+       ON CONFLICT (content_id, asset_id, relationship) DO UPDATE SET sort_order = excluded.sort_order`,
       this.id,
       asset.id,
       relationship,
-      sortOrder,
       sortOrder,
     );
   }

@@ -256,8 +256,8 @@ importers:
         specifier: ^0.61.2
         version: 0.61.2
       '@happyvertical/images':
-        specifier: ^0.61.2
-        version: 0.61.2(jimp@1.6.0)(sharp@0.33.5)
+        specifier: ^0.61.4
+        version: 0.61.4(jimp@1.6.0)(sharp@0.33.5)
       '@happyvertical/logger':
         specifier: ^0.61.2
         version: 0.61.2
@@ -2080,8 +2080,8 @@ packages:
   '@happyvertical/graphql@0.60.5':
     resolution: {integrity: sha512-RLqVaaeeKmFizxfz1VNqTCBqcxmoywmmykx2bDIXUQ1B94cOaF1je9RNUUZ9QC38YlB6B18aFy53izb2GbiJKQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/graphql/0.60.5/0cc2d9335b44bfd61f970556dee36d7c24c81a51}
 
-  '@happyvertical/images@0.61.2':
-    resolution: {integrity: sha512-10iSYkoLmhoTnl5TgG/nJJbX4eOPywV/VCEpHD99PKaglFRO16mnHVEc6tGnHNGLMaM+4NzgYF4Vh9DrQc8HEw==, tarball: https://npm.pkg.github.com/download/@happyvertical/images/0.61.2/e7990d04c3c3aea45f1aed8cead5523b806f218e}
+  '@happyvertical/images@0.61.4':
+    resolution: {integrity: sha512-S2WZKiOktXFPzHet1cYUaHohN37fWlMeS/KfCthVigsTXJhf1sEtd49W/yASVmFPBhFnTiSRy2mOpm6EUih3tQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/images/0.61.4/767b27e31613a79386b8bde5f07497a34a9b756c}
     peerDependencies:
       jimp: '>=1.0.0'
       sharp: '>=0.33.0'
@@ -6159,6 +6159,7 @@ packages:
 
   libsql@0.5.22:
     resolution: {integrity: sha512-NscWthMQt7fpU8lqd7LXMvT9pi+KhhmTHAJWUB/Lj6MWa0MKFv0F2V4C6WKKpjCVZl0VwcDz4nOI3CyaT1DDiA==}
+    cpu: [x64, arm64, wasm32, arm]
     os: [darwin, linux, win32]
 
   linebreak@1.1.0:
@@ -11020,7 +11021,7 @@ snapshots:
 
   '@happyvertical/graphql@0.60.5': {}
 
-  '@happyvertical/images@0.61.2(jimp@1.6.0)(sharp@0.33.5)':
+  '@happyvertical/images@0.61.4(jimp@1.6.0)(sharp@0.33.5)':
     dependencies:
       '@resvg/resvg-js': 2.6.2
       jimp: 1.6.0
