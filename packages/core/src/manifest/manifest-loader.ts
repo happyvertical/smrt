@@ -263,6 +263,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   const possiblePaths = [
     resolve(process.cwd(), 'src/manifest/test-manifest.json'),
     resolve(process.cwd(), 'dist/manifest.json'),
+    resolve(process.cwd(), '.smrt/manifest.json'),
   ];
 
   console.log(

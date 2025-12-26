@@ -48,6 +48,63 @@ export interface SmrtGlobalConfig {
     cacheSize?: number;
   };
 
+  /**
+   * Embedding configuration for semantic search
+   *
+   * Project-level settings that apply to all SMRT objects
+   * unless overridden in the @smrt() decorator.
+   */
+  embeddings?: {
+    /**
+     * Standard dimensions for embeddings in this project
+     *
+     * All embeddings should use the same dimensions for consistency.
+     * Common values: 384, 768, 1536
+     *
+     * @default 768
+     */
+    dimensions?: number;
+
+    /**
+     * Embedding provider type
+     *
+     * - 'local': Use local Node.js model (@xenova/transformers)
+     * - 'ai': Use AI library (OpenAI, etc.)
+     * - 'auto': Try local first, fallback to AI
+     *
+     * @default 'local'
+     */
+    provider?: 'local' | 'ai' | 'auto';
+
+    /**
+     * Local model to use (when provider is 'local' or 'auto')
+     *
+     * Hugging Face model ID for @xenova/transformers.
+     * Model is downloaded on first use (~440MB for bge-base-en-v1.5).
+     *
+     * @default 'Xenova/bge-base-en-v1.5'
+     */
+    localModel?: string;
+
+    /**
+     * AI model to use (when provider is 'ai' or fallback)
+     *
+     * OpenAI embedding model name.
+     *
+     * @default 'text-embedding-3-small'
+     */
+    aiModel?: string;
+
+    /**
+     * Whether to fallback to AI if local embedding fails
+     *
+     * Only applies when provider is 'auto'.
+     *
+     * @default true
+     */
+    fallbackToAI?: boolean;
+  };
+
   [key: string]: unknown;
 }
 

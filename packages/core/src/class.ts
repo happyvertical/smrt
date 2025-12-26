@@ -257,34 +257,44 @@ export class SmrtClass {
     // Priority: instance options > env vars > global config > defaults
     const globalConfig = config.toJSON();
     if (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER) {
-      const { loadEnvConfig } = await import('@happyvertical/utils');
+      // Check if options.ai is already a client-like object with embed method
+      // This allows passing mock AI clients for testing
+      if (
+        this.options.ai &&
+        typeof this.options.ai.embed === 'function' &&
+        !this.options.ai.provider
+      ) {
+        this._ai = this.options.ai as unknown as AIClient;
+      } else {
+        const { loadEnvConfig } = await import('@happyvertical/utils');
 
-      // Start with global defaults
-      const baseConfig = globalConfig.ai || {};
+        // Start with global defaults
+        const baseConfig = globalConfig.ai || {};
 
-      // Merge with instance options (takes priority over global)
-      const userConfig = { ...baseConfig, ...this.options.ai };
+        // Merge with instance options (takes priority over global)
+        const userConfig = { ...baseConfig, ...this.options.ai };
 
-      // Load environment variables and merge (user options take priority)
-      const aiConfig = loadEnvConfig<any>(userConfig, {
-        packageName: 'ai',
-        prefix: 'SMRT',
-        schema: {
-          provider: 'string',
-          model: 'string',
-          apiKey: 'string',
-          timeout: 'number',
-          maxRetries: 'number',
-          temperature: 'number',
-          maxTokens: 'number',
-        },
-      });
+        // Load environment variables and merge (user options take priority)
+        const aiConfig = loadEnvConfig<any>(userConfig, {
+          packageName: 'ai',
+          prefix: 'SMRT',
+          schema: {
+            provider: 'string',
+            model: 'string',
+            apiKey: 'string',
+            timeout: 'number',
+            maxRetries: 'number',
+            temperature: 'number',
+            maxTokens: 'number',
+          },
+        });
 
-      // Only initialize if we have a provider configured
-      if (aiConfig.provider || aiConfig.apiKey) {
-        // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
-        // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
-        this._ai = (await getAI(aiConfig as any)) as any as AIClient;
+        // Only initialize if we have a provider configured
+        if (aiConfig.provider || aiConfig.apiKey) {
+          // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
+          // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
+          this._ai = (await getAI(aiConfig as any)) as any as AIClient;
+        }
       }
     }
 

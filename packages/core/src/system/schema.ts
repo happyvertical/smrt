@@ -99,6 +99,39 @@ CREATE INDEX IF NOT EXISTS idx_smrt_signals_timestamp
 `;
 
 /**
+ * Embedding storage for semantic search
+ * Stores embedding vectors for SMRT objects to enable vector similarity search
+ */
+export const CREATE_SMRT_EMBEDDINGS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_embeddings (
+  id TEXT PRIMARY KEY,
+  object_class TEXT NOT NULL,
+  object_id TEXT NOT NULL,
+  field_name TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  embedding TEXT NOT NULL,
+  model TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  provider TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(object_class, object_id, field_name, model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_embeddings_object
+  ON _smrt_embeddings(object_class, object_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_embeddings_class
+  ON _smrt_embeddings(object_class);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_embeddings_hash
+  ON _smrt_embeddings(content_hash);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_embeddings_model
+  ON _smrt_embeddings(model);
+`;
+
+/**
  * All system table creation statements
  */
 export const ALL_SYSTEM_TABLES = [
@@ -106,9 +139,10 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_MIGRATIONS_TABLE,
   CREATE_SMRT_REGISTRY_TABLE,
   CREATE_SMRT_SIGNALS_TABLE,
+  CREATE_SMRT_EMBEDDINGS_TABLE,
 ];
 
 /**
  * Current SMRT system schema version
  */
-export const SMRT_SCHEMA_VERSION = '1.0.0';
+export const SMRT_SCHEMA_VERSION = '1.1.0';

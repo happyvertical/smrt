@@ -30,6 +30,11 @@
 import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
+import type {
+  ClassEmbeddingConfig,
+  ProjectEmbeddingConfig,
+  ResolvedEmbeddingConfig,
+} from './embeddings/types';
 import { ConfigurationError } from './errors';
 import {
   discoverManifestEntry,
@@ -283,6 +288,75 @@ export interface SmartObjectConfig {
     afterUpdate?: string | ((instance: any) => Promise<void>);
     beforeDelete?: string | ((instance: any) => Promise<void>);
     afterDelete?: string | ((instance: any) => Promise<void>);
+  };
+
+  /**
+   * Embedding configuration for semantic search
+   *
+   * Enable vector embeddings on this class for similarity search.
+   * Project-level defaults come from smrt.config embeddings section.
+   *
+   * @example
+   * ```typescript
+   * @smrt({
+   *   embeddings: {
+   *     fields: ['title', 'body'],
+   *     autoGenerate: true
+   *   }
+   * })
+   * class Article extends SmrtObject {
+   *   title: string = '';
+   *   body: string = '';
+   * }
+   * ```
+   */
+  embeddings?: {
+    /**
+     * Fields to generate embeddings for
+     * Each field gets its own embedding vector stored in _smrt_embeddings
+     */
+    fields: string[];
+
+    /**
+     * Override project-level embedding provider
+     * - 'local': Use local Node.js model (@xenova/transformers)
+     * - 'ai': Use AI library (OpenAI, etc.)
+     * - 'auto': Try local first, fallback to AI
+     */
+    provider?: 'local' | 'ai' | 'auto';
+
+    /**
+     * Automatically generate embeddings on save
+     * Only regenerates when content changes (via content hash)
+     * @default true
+     */
+    autoGenerate?: boolean;
+
+    /**
+     * Regenerate embeddings when field content changes
+     * Uses content hash comparison to detect changes
+     * @default true
+     */
+    regenerateOnChange?: boolean;
+
+    /**
+     * Create a combined embedding from multiple fields
+     * Useful for holistic similarity search across an object
+     *
+     * @example
+     * ```typescript
+     * combinedField: {
+     *   name: 'content',
+     *   template: '{title}\n\n{body}'
+     * }
+     * ```
+     */
+    combinedField?: {
+      /** Field name for the combined embedding */
+      name: string;
+      /** Template with {fieldName} placeholders */
+      template: string;
+    };
   };
 
   /**
@@ -3273,6 +3347,163 @@ export class ObjectRegistry {
       'SELECT * FROM _smrt_registry ORDER BY class_name',
     );
     return rows;
+  }
+
+  // ============================================================================
+  // Embedding Configuration Methods
+  // ============================================================================
+
+  /**
+   * Get embedding configuration for a class
+   *
+   * Returns the class-specific embedding config if embeddings are enabled.
+   * This includes the fields to embed, provider override, and generation options.
+   *
+   * @param className - Name of the class to get embedding config for
+   * @returns Class embedding config or undefined if not configured
+   * @example
+   * ```typescript
+   * @smrt({
+   *   embeddings: {
+   *     fields: ['title', 'body'],
+   *     autoGenerate: true
+   *   }
+   * })
+   * class Article extends SmrtObject { }
+   *
+   * const config = ObjectRegistry.getEmbeddingConfig('Article');
+   * // { fields: ['title', 'body'], autoGenerate: true }
+   * ```
+   */
+  static getEmbeddingConfig(
+    className: string,
+  ): ClassEmbeddingConfig | undefined {
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered?.config?.embeddings) {
+      return undefined;
+    }
+    return registered.config.embeddings as ClassEmbeddingConfig;
+  }
+
+  /**
+   * Check if a class has embeddings enabled
+   *
+   * @param className - Name of the class to check
+   * @returns True if the class has embedding configuration
+   * @example
+   * ```typescript
+   * if (ObjectRegistry.hasEmbeddings('Article')) {
+   *   await article.generateEmbeddings();
+   * }
+   * ```
+   */
+  static hasEmbeddings(className: string): boolean {
+    const config = ObjectRegistry.getEmbeddingConfig(className);
+    return config !== undefined && config.fields.length > 0;
+  }
+
+  /**
+   * Get all registered classes that have embeddings enabled
+   *
+   * @returns Array of class names with embedding configuration
+   * @example
+   * ```typescript
+   * const embeddableClasses = ObjectRegistry.getEmbeddingClasses();
+   * // ['Article', 'Profile', 'Event']
+   * ```
+   */
+  static getEmbeddingClasses(): string[] {
+    const embeddingClasses: string[] = [];
+    for (const [className] of ObjectRegistry.classes) {
+      if (ObjectRegistry.hasEmbeddings(className)) {
+        embeddingClasses.push(className);
+      }
+    }
+    return embeddingClasses;
+  }
+
+  /**
+   * Get project-level embedding configuration
+   *
+   * Returns the global embedding settings from smrt.config (or defaults).
+   * These settings apply to all classes unless overridden at the class level.
+   *
+   * @returns Project embedding configuration with defaults applied
+   * @example
+   * ```typescript
+   * const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
+   * // {
+   * //   dimensions: 768,
+   * //   provider: 'local',
+   * //   localModel: 'Xenova/bge-base-en-v1.5',
+   * //   aiModel: 'text-embedding-3-small',
+   * //   fallbackToAI: true
+   * // }
+   * ```
+   */
+  static getProjectEmbeddingConfig(): ProjectEmbeddingConfig {
+    const globalConfig = getModuleConfig<SmrtGlobalConfig>('smrt', {});
+    const embeddingConfig = globalConfig?.embeddings;
+
+    // Return defaults merged with any project config
+    return {
+      dimensions: embeddingConfig?.dimensions ?? 768,
+      provider: embeddingConfig?.provider ?? 'local',
+      localModel: embeddingConfig?.localModel ?? 'Xenova/bge-base-en-v1.5',
+      aiModel: embeddingConfig?.aiModel ?? 'text-embedding-3-small',
+      fallbackToAI: embeddingConfig?.fallbackToAI ?? true,
+    };
+  }
+
+  /**
+   * Resolve complete embedding configuration for a class
+   *
+   * Merges project-level config with class-level overrides.
+   * Returns undefined if the class doesn't have embeddings enabled.
+   *
+   * @param className - Name of the class to resolve config for
+   * @returns Fully resolved embedding config or undefined
+   * @example
+   * ```typescript
+   * const config = ObjectRegistry.resolveEmbeddingConfig('Article');
+   * // Merges project defaults with class-specific settings
+   * // {
+   * //   fields: ['title', 'body'],
+   * //   dimensions: 768,
+   * //   provider: 'local',
+   * //   localModel: 'Xenova/bge-base-en-v1.5',
+   * //   autoGenerate: true,
+   * //   regenerateOnChange: true,
+   * //   ...
+   * // }
+   * ```
+   */
+  static resolveEmbeddingConfig(
+    className: string,
+  ): ResolvedEmbeddingConfig | undefined {
+    const classConfig = ObjectRegistry.getEmbeddingConfig(className);
+    if (!classConfig) {
+      return undefined;
+    }
+
+    const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
+
+    return {
+      // Class-specific fields (required)
+      fields: classConfig.fields,
+      combinedField: classConfig.combinedField,
+
+      // Merge provider settings (class overrides project)
+      dimensions: projectConfig.dimensions,
+      provider: classConfig.provider ?? projectConfig.provider,
+      localModel: projectConfig.localModel ?? 'Xenova/bge-base-en-v1.5',
+      aiModel: projectConfig.aiModel ?? 'text-embedding-3-small',
+      fallbackToAI: projectConfig.fallbackToAI ?? true,
+
+      // Generation behavior (defaults to true)
+      autoGenerate: classConfig.autoGenerate ?? true,
+      regenerateOnChange: classConfig.regenerateOnChange ?? true,
+    };
   }
 }
 
