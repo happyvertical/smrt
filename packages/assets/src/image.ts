@@ -1,11 +1,14 @@
 /**
  * Image model - Asset subclass for image files
  *
- * Represents an image asset with dimensions, accessibility text, and AI embeddings.
+ * Represents an image asset with dimensions and accessibility text.
  * Uses STI (Single Table Inheritance) - stored in the assets table with _meta_type='Image'.
+ *
+ * For semantic search on images, use the centralized embedding system:
+ * @smrt({ embeddings: { fields: ['alt', 'description'] } })
  */
 
-import { type Meta, smrt } from '@happyvertical/smrt-core';
+import { smrt } from '@happyvertical/smrt-core';
 import { Asset } from './asset';
 import type { ImageOptions } from './types';
 
@@ -22,18 +25,11 @@ export class Image extends Asset {
   // Accessibility text
   alt: string = '';
 
-  // AI embeddings stored in _meta_data JSONB (child-specific fields)
-  embedding: Meta<number[]> = [];
-  descriptionEmbedding: Meta<number[]> = [];
-
   constructor(options: ImageOptions = {}) {
     super(options);
     if (options.width !== undefined) this.width = options.width;
     if (options.height !== undefined) this.height = options.height;
     if (options.alt !== undefined) this.alt = options.alt;
-    if (options.embedding) this.embedding = options.embedding;
-    if (options.descriptionEmbedding)
-      this.descriptionEmbedding = options.descriptionEmbedding;
   }
 
   /**

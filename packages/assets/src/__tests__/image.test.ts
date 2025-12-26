@@ -4,9 +4,11 @@
  * Tests for:
  * 1. Image CRUD operations
  * 2. STI polymorphic queries (Asset collection returning Image instances)
- * 3. Embedding storage/retrieval
- * 4. Existing Asset functionality (inheritance of tag management, versioning)
- * 5. Image-specific computed properties
+ * 3. Existing Asset functionality (inheritance of tag management, versioning)
+ * 4. Image-specific computed properties
+ *
+ * Note: For semantic search on images, use the centralized embedding system
+ * in @happyvertical/smrt-core via @smrt({ embeddings: { fields: ['alt', 'description'] } })
  */
 
 import { existsSync, rmSync } from 'node:fs';
@@ -115,93 +117,6 @@ describe('Image', () => {
 
       const loaded = await images.get({ id: image.id });
       expect(loaded).toBeNull();
-    });
-  });
-
-  describe('Embedding Storage', () => {
-    it('should store and retrieve embedding vectors', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
-      const embedding = [0.1, 0.2, 0.3, 0.4, 0.5];
-      const image = await images.create({
-        name: 'embedded-image.jpg',
-        sourceUri: 'file:///images/embedded.jpg',
-        mimeType: 'image/jpeg',
-        width: 512,
-        height: 512,
-        embedding,
-      });
-      await image.save();
-
-      const loaded = await images.get({ id: image.id });
-      expect(loaded?.embedding).toEqual(embedding);
-    });
-
-    it('should store description embedding separately', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
-      const embedding = [0.1, 0.2, 0.3];
-      const descriptionEmbedding = [0.4, 0.5, 0.6];
-
-      const image = await images.create({
-        name: 'dual-embedded.jpg',
-        sourceUri: 'file:///images/dual.jpg',
-        mimeType: 'image/jpeg',
-        width: 256,
-        height: 256,
-        embedding,
-        descriptionEmbedding,
-      });
-      await image.save();
-
-      const loaded = await images.get({ id: image.id });
-      expect(loaded?.embedding).toEqual(embedding);
-      expect(loaded?.descriptionEmbedding).toEqual(descriptionEmbedding);
-    });
-
-    it('should handle large embedding vectors (1536 dimensions)', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
-      // OpenAI ada-002 embedding size
-      const largeEmbedding = Array.from({ length: 1536 }, (_, i) => i * 0.001);
-
-      const image = await images.create({
-        name: 'large-embedding.jpg',
-        mimeType: 'image/jpeg',
-        width: 512,
-        height: 512,
-        embedding: largeEmbedding,
-      });
-      await image.save();
-
-      const loaded = await images.get({ id: image.id });
-      expect(loaded?.embedding).toHaveLength(1536);
-      expect(loaded?.embedding?.[0]).toBeCloseTo(0);
-      expect(loaded?.embedding?.[1535]).toBeCloseTo(1.535);
-    });
-
-    it('should handle empty embeddings', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
-      const image = await images.create({
-        name: 'no-embedding.jpg',
-        mimeType: 'image/jpeg',
-        width: 256,
-        height: 256,
-      });
-      await image.save();
-
-      const loaded = await images.get({ id: image.id });
-      expect(loaded?.embedding).toEqual([]);
-      expect(loaded?.descriptionEmbedding).toEqual([]);
     });
   });
 
@@ -529,25 +444,6 @@ describe('Image', () => {
       const missing = await images.getMissingAltText();
       expect(missing).toHaveLength(1);
       expect(missing[0].name).toBe('no-alt.jpg');
-    });
-
-    it('should get images with embeddings', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
-      await (
-        await images.create({ name: 'with-embed.jpg', embedding: [0.1, 0.2] })
-      ).save();
-      await (await images.create({ name: 'no-embed.jpg' })).save();
-
-      const withEmbed = await images.getWithEmbeddings();
-      expect(withEmbed).toHaveLength(1);
-      expect(withEmbed[0].name).toBe('with-embed.jpg');
-
-      const withoutEmbed = await images.getWithoutEmbeddings();
-      expect(withoutEmbed).toHaveLength(1);
-      expect(withoutEmbed[0].name).toBe('no-embed.jpg');
     });
 
     it('should get high resolution images', async () => {

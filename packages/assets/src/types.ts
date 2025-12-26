@@ -57,6 +57,4 @@ export interface ImageOptions extends AssetOptions {
   width?: number;
   height?: number;
   alt?: string;
-  embedding?: number[];
-  descriptionEmbedding?: number[];
 }

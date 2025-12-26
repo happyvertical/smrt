@@ -7,8 +7,10 @@
  * Test Coverage:
  * 1. Basic CRUD operations with Image fields
  * 2. STI inheritance and polymorphic queries
- * 3. Embedding storage/retrieval across adapters
- * 4. Type preservation across save/load cycles
+ * 3. Type preservation across save/load cycles
+ *
+ * Note: For semantic search on images, use the centralized embedding system
+ * in @happyvertical/smrt-core via @smrt({ embeddings: { fields: ['alt', 'description'] } })
  */
 
 import { existsSync, rmSync, unlinkSync } from 'node:fs';
@@ -44,16 +46,6 @@ const fixtures = {
       width: 256,
       height: 256,
       alt: 'App icon',
-    },
-    withEmbedding: {
-      _meta_type: 'Image',
-      name: 'embedded.jpg',
-      sourceUri: 'file:///images/embedded.jpg',
-      mimeType: 'image/jpeg',
-      width: 512,
-      height: 512,
-      embedding: [0.1, 0.2, 0.3, 0.4, 0.5],
-      descriptionEmbedding: [0.5, 0.4, 0.3, 0.2, 0.1],
     },
   },
   asset: {
@@ -161,50 +153,6 @@ function runBasicCRUDTests(getContext: () => { images: ImageCollection }) {
   });
 }
 
-function runEmbeddingTests(getContext: () => { images: ImageCollection }) {
-  describe('Embedding Storage', () => {
-    it('should store and retrieve embedding vectors', async () => {
-      const { images } = getContext();
-      const image = await images.create(fixtures.image.withEmbedding);
-      await image.save();
-
-      const loaded = await images.get({ id: image.id });
-      expect(loaded?.embedding).toEqual([0.1, 0.2, 0.3, 0.4, 0.5]);
-      expect(loaded?.descriptionEmbedding).toEqual([0.5, 0.4, 0.3, 0.2, 0.1]);
-    });
-
-    it('should handle large embedding vectors', async () => {
-      const { images } = getContext();
-      const largeEmbedding = Array.from({ length: 1536 }, (_, i) => i * 0.001);
-
-      const image = await images.create({
-        ...fixtures.image.jpeg,
-        embedding: largeEmbedding,
-      });
-      await image.save();
-
-      const loaded = await images.get({ id: image.id });
-      expect(loaded?.embedding).toHaveLength(1536);
-      expect(loaded?.embedding?.[0]).toBeCloseTo(0);
-      expect(loaded?.embedding?.[1535]).toBeCloseTo(1.535);
-    });
-
-    it('should handle empty embeddings', async () => {
-      const { images } = getContext();
-      const image = await images.create({
-        ...fixtures.image.jpeg,
-        embedding: [],
-        descriptionEmbedding: [],
-      });
-      await image.save();
-
-      const loaded = await images.get({ id: image.id });
-      expect(loaded?.embedding).toEqual([]);
-      expect(loaded?.descriptionEmbedding).toEqual([]);
-    });
-  });
-}
-
 function runPolymorphicTests(
   getContext: () => {
     images: ImageCollection;
@@ -241,18 +189,16 @@ function runPolymorphicTests(
     it('should preserve Image fields in mixed queries', async () => {
       const { images, assets } = getContext();
 
-      await (await images.create(fixtures.image.withEmbedding)).save();
+      await (await images.create(fixtures.image.jpeg)).save();
       await (await assets.create(fixtures.asset.document)).save();
 
       const allAssets = await assets.list({});
-      const imageAsset = allAssets.find(
-        (a) => a.name === 'embedded.jpg',
-      ) as Image;
+      const imageAsset = allAssets.find((a) => a.name === 'photo.jpg') as Image;
 
       expect(imageAsset).toBeInstanceOf(Image);
-      expect(imageAsset.width).toBe(512);
-      expect(imageAsset.height).toBe(512);
-      expect(imageAsset.embedding).toEqual([0.1, 0.2, 0.3, 0.4, 0.5]);
+      expect(imageAsset.width).toBe(1920);
+      expect(imageAsset.height).toBe(1080);
+      expect(imageAsset.alt).toBe('A scenic photo');
     });
   });
 }
@@ -288,16 +234,6 @@ function runTypePreservationTests(
       const loaded = await images.get({ id: image.id });
       expect(typeof loaded?.alt).toBe('string');
     });
-
-    it('should preserve array types for embeddings', async () => {
-      const { images } = getContext();
-      const image = await images.create(fixtures.image.withEmbedding);
-      await image.save();
-
-      const loaded = await images.get({ id: image.id });
-      expect(Array.isArray(loaded?.embedding)).toBe(true);
-      expect(Array.isArray(loaded?.descriptionEmbedding)).toBe(true);
-    });
   });
 }
 
@@ -331,7 +267,6 @@ describe('Image Adapter Parity', () => {
       const getFullContext = () => ({ images, assets });
 
       runBasicCRUDTests(getImageContext);
-      runEmbeddingTests(getImageContext);
       runPolymorphicTests(getFullContext);
       runTypePreservationTests(getImageContext);
     });
