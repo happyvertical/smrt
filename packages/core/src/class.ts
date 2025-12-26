@@ -261,6 +261,7 @@ export class SmrtClass {
       // This allows passing mock AI clients for testing
       if (
         this.options.ai &&
+        typeof this.options.ai === 'object' &&
         typeof this.options.ai.embed === 'function' &&
         !this.options.ai.provider
       ) {

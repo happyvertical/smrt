@@ -973,7 +973,11 @@ export class SmrtObject extends SmrtClass {
       const embeddingConfig = ObjectRegistry.getEmbeddingConfig(
         this.constructor.name,
       );
-      if (embeddingConfig?.autoGenerate !== false && this.ai) {
+      if (
+        embeddingConfig &&
+        embeddingConfig.autoGenerate !== false &&
+        this.ai
+      ) {
         // Check if any embedding field content has changed
         const isStale = await this.hasStaleEmbeddings();
         if (isStale) {

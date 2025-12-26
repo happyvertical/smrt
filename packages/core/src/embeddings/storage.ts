@@ -4,6 +4,7 @@
  * CRUD operations for the _smrt_embeddings system table.
  */
 
+import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { StoredEmbedding } from './types';
 
@@ -31,7 +32,7 @@ export class EmbeddingStorage {
     },
   ): Promise<void> {
     const now = new Date().toISOString();
-    const id = crypto.randomUUID();
+    const id = randomUUID();
 
     await db.upsert(
       '_smrt_embeddings',
