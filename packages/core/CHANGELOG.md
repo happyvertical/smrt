@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.68
+
+### Patch Changes
+
+- ### Features
+
+  - add thumbnail generation system with multiple strategies (#571) (content)
+  - @happyvertical/smrt-config@0.17.68
+  - @happyvertical/smrt-types@0.17.68
+
 ## 0.17.67
 
 ### Patch Changes
