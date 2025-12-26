@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.70
+
+### Patch Changes
+
+- ### Features
+
+  - add centralized embedding support for semantic search (#577) (core)
+  - @happyvertical/smrt-config@0.17.70
+  - @happyvertical/smrt-types@0.17.70
+
 ## 0.17.69
 
 ### Patch Changes
