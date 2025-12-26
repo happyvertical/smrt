@@ -3,6 +3,10 @@
 import type { AITool } from '@happyvertical/ai';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
+import { ContentHasher } from './embeddings/hash';
+import { EmbeddingProvider } from './embeddings/provider';
+import { EmbeddingStorage } from './embeddings/storage';
+import type { GenerateEmbeddingsOptions } from './embeddings/types';
 import {
   DatabaseError,
   ErrorUtils,
@@ -965,6 +969,28 @@ export class SmrtObject extends SmrtClass {
         500,
       );
 
+      // Auto-generate embeddings if configured
+      const embeddingConfig = ObjectRegistry.getEmbeddingConfig(
+        this.constructor.name,
+      );
+      if (
+        embeddingConfig &&
+        embeddingConfig.autoGenerate !== false &&
+        this.ai
+      ) {
+        // Check if any embedding field content has changed
+        const isStale = await this.hasStaleEmbeddings();
+        if (isStale) {
+          // Generate embeddings in background to avoid blocking save
+          this.generateEmbeddings().catch((error) => {
+            console.warn(
+              `Failed to auto-generate embeddings for ${this.constructor.name}:`,
+              error instanceof Error ? error.message : error,
+            );
+          });
+        }
+      }
+
       return this;
     } catch (error) {
       // Re-throw SMRT errors as-is, wrap others
@@ -1346,7 +1372,7 @@ export class SmrtObject extends SmrtClass {
         id: foreignKeyValue as string,
       });
 
-      if (row && row._meta_type) {
+      if (row?._meta_type) {
         // Get the actual class from the registry based on _meta_type
         const actualClass = ObjectRegistry.getClass(row._meta_type);
         if (actualClass) {
@@ -1827,5 +1853,323 @@ export class SmrtObject extends SmrtClass {
 
     const result = await this.systemDb.delete('_smrt_contexts', where);
     return result.affected || 0;
+  }
+
+  // ============================================================================
+  // Embedding Methods for Semantic Search
+  // ============================================================================
+
+  /**
+   * Generate embeddings for configured fields
+   *
+   * Creates embedding vectors for fields configured in the @smrt decorator
+   * and stores them in the _smrt_embeddings system table. Uses content hashing
+   * to detect changes and avoid regenerating unchanged content.
+   *
+   * @param options - Generation options
+   * @returns Promise that resolves when embeddings are generated
+   * @throws Error if no embedding configuration or database not initialized
+   *
+   * @example
+   * ```typescript
+   * // Generate embeddings for all configured fields
+   * await article.generateEmbeddings();
+   *
+   * // Generate only for specific fields
+   * await article.generateEmbeddings({ fields: ['title'] });
+   *
+   * // Force regeneration (ignore content hash)
+   * await article.generateEmbeddings({ force: true });
+   * ```
+   */
+  public async generateEmbeddings(
+    options: GenerateEmbeddingsOptions = {},
+  ): Promise<void> {
+    if (!this.systemDb) {
+      throw new Error('Database not initialized. Call initialize() first.');
+    }
+
+    if (!this.id) {
+      throw new Error('Object must have an ID before generating embeddings.');
+    }
+
+    // Get embedding configuration for this class
+    const config = ObjectRegistry.resolveEmbeddingConfig(this.constructor.name);
+    if (!config) {
+      throw new Error(
+        `No embedding configuration found for ${this.constructor.name}. ` +
+          `Add embeddings config to the @smrt() decorator.`,
+      );
+    }
+
+    // Determine which fields to process
+    const fieldsToProcess = options.fields || config.fields;
+    const provider = options.provider || config.provider;
+
+    // Create embedding provider
+    const embeddingProvider = new EmbeddingProvider(
+      {
+        dimensions: config.dimensions,
+        provider,
+        localModel: config.localModel,
+        aiModel: config.aiModel,
+        fallbackToAI: config.fallbackToAI,
+      },
+      this._ai,
+    );
+
+    // Process each field
+    for (const fieldName of fieldsToProcess) {
+      const content = this.getPropertyValue(fieldName);
+      if (!content || typeof content !== 'string') {
+        continue; // Skip empty or non-string fields
+      }
+
+      // Check content hash to avoid regenerating unchanged content
+      const contentHash = ContentHasher.hash(content);
+
+      if (!options.force) {
+        const existing = await EmbeddingStorage.get(
+          this.systemDb,
+          this.constructor.name,
+          this.id,
+          fieldName,
+          embeddingProvider.getModelName(),
+        );
+
+        if (existing && existing.content_hash === contentHash) {
+          continue; // Content unchanged, skip regeneration
+        }
+      }
+
+      // Generate embedding
+      const embeddings = await embeddingProvider.embed(content);
+      const embedding = embeddings[0];
+
+      // Store embedding
+      await EmbeddingStorage.upsert(this.systemDb, {
+        objectClass: this.constructor.name,
+        objectId: this.id,
+        fieldName,
+        contentHash,
+        embedding,
+        model: embeddingProvider.getModelName(),
+        dimensions: config.dimensions,
+        provider,
+      });
+    }
+
+    // Handle combined field if configured
+    if (config.combinedField) {
+      const { name, template } = config.combinedField;
+
+      // Build combined content from template
+      let combinedContent = template;
+      for (const fieldName of config.fields) {
+        const value = this.getPropertyValue(fieldName) || '';
+        combinedContent = combinedContent.replace(
+          new RegExp(`\\{${fieldName}\\}`, 'g'),
+          String(value),
+        );
+      }
+
+      if (combinedContent.trim()) {
+        const contentHash = ContentHasher.hash(combinedContent);
+
+        if (!options.force) {
+          const existing = await EmbeddingStorage.get(
+            this.systemDb,
+            this.constructor.name,
+            this.id,
+            name,
+            embeddingProvider.getModelName(),
+          );
+
+          if (existing && existing.content_hash === contentHash) {
+            return; // Combined content unchanged
+          }
+        }
+
+        const embeddings = await embeddingProvider.embed(combinedContent);
+        const embedding = embeddings[0];
+
+        await EmbeddingStorage.upsert(this.systemDb, {
+          objectClass: this.constructor.name,
+          objectId: this.id,
+          fieldName: name,
+          contentHash,
+          embedding,
+          model: embeddingProvider.getModelName(),
+          dimensions: config.dimensions,
+          provider,
+        });
+      }
+    }
+  }
+
+  /**
+   * Get stored embedding for a field
+   *
+   * Retrieves the embedding vector for a specific field from storage.
+   * Returns null if no embedding exists for the field.
+   *
+   * @param fieldName - Name of the field to get embedding for
+   * @param model - Optional model name (defaults to configured model)
+   * @returns Promise resolving to embedding vector or null
+   *
+   * @example
+   * ```typescript
+   * const embedding = await article.getEmbedding('title');
+   * if (embedding) {
+   *   console.log(`Embedding has ${embedding.length} dimensions`);
+   * }
+   * ```
+   */
+  public async getEmbedding(
+    fieldName: string,
+    model?: string,
+  ): Promise<number[] | null> {
+    if (!this.systemDb) {
+      throw new Error('Database not initialized. Call initialize() first.');
+    }
+
+    if (!this.id) {
+      return null;
+    }
+
+    // Determine model name using EmbeddingProvider for consistency with generateEmbeddings()
+    let modelName = model;
+    if (!modelName) {
+      const config = ObjectRegistry.resolveEmbeddingConfig(
+        this.constructor.name,
+      );
+      if (config) {
+        // Create EmbeddingProvider to get consistent model name
+        const provider = new EmbeddingProvider(
+          {
+            dimensions: config.dimensions,
+            provider: config.provider,
+            localModel: config.localModel,
+            aiModel: config.aiModel,
+            fallbackToAI: config.fallbackToAI,
+          },
+          this._ai,
+        );
+        modelName = provider.getModelName();
+      } else {
+        // Fallback to default
+        modelName = 'Xenova/bge-base-en-v1.5';
+      }
+    }
+
+    const stored = await EmbeddingStorage.get(
+      this.systemDb,
+      this.constructor.name,
+      this.id,
+      fieldName,
+      modelName,
+    );
+
+    return stored?.embedding || null;
+  }
+
+  /**
+   * Check if any embeddings are stale (content has changed)
+   *
+   * Compares content hashes of configured fields with stored embeddings
+   * to determine if regeneration is needed.
+   *
+   * @returns Promise resolving to true if any embeddings are stale
+   *
+   * @example
+   * ```typescript
+   * if (await article.hasStaleEmbeddings()) {
+   *   await article.generateEmbeddings();
+   * }
+   * ```
+   */
+  public async hasStaleEmbeddings(): Promise<boolean> {
+    if (!this.systemDb || !this.id) {
+      return false;
+    }
+
+    const config = ObjectRegistry.resolveEmbeddingConfig(this.constructor.name);
+    if (!config) {
+      return false;
+    }
+
+    // Get stored embeddings for this object
+    const storedEmbeddings = await EmbeddingStorage.getForObject(
+      this.systemDb,
+      this.constructor.name,
+      this.id,
+    );
+
+    // Check each configured field
+    for (const fieldName of config.fields) {
+      const content = this.getPropertyValue(fieldName);
+      if (!content || typeof content !== 'string') {
+        continue;
+      }
+
+      const currentHash = ContentHasher.hash(content);
+      const stored = storedEmbeddings.find((e) => e.field_name === fieldName);
+
+      if (!stored) {
+        return true; // No embedding exists
+      }
+
+      if (stored.content_hash !== currentHash) {
+        return true; // Content has changed
+      }
+    }
+
+    // Check combined field if configured
+    if (config.combinedField) {
+      let combinedContent = config.combinedField.template;
+      for (const fieldName of config.fields) {
+        const value = this.getPropertyValue(fieldName) || '';
+        combinedContent = combinedContent.replace(
+          new RegExp(`\\{${fieldName}\\}`, 'g'),
+          String(value),
+        );
+      }
+
+      const currentHash = ContentHasher.hash(combinedContent);
+      const stored = storedEmbeddings.find(
+        (e) => e.field_name === config.combinedField?.name,
+      );
+
+      if (!stored || stored.content_hash !== currentHash) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Clear all embeddings for this object
+   *
+   * Removes all stored embeddings from the _smrt_embeddings table.
+   * Useful when deleting objects or resetting embedding state.
+   *
+   * @returns Promise that resolves when embeddings are cleared
+   *
+   * @example
+   * ```typescript
+   * await article.clearEmbeddings();
+   * ```
+   */
+  public async clearEmbeddings(): Promise<void> {
+    if (!this.systemDb || !this.id) {
+      return;
+    }
+
+    await EmbeddingStorage.deleteForObject(
+      this.systemDb,
+      this.constructor.name,
+      this.id,
+    );
   }
 }

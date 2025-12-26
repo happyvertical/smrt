@@ -1,6 +1,9 @@
 import { buildWhere } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
+import { EmbeddingProvider } from './embeddings/provider';
+import { CosineSimilarity } from './embeddings/similarity';
+import { EmbeddingStorage } from './embeddings/storage';
 import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
 import { generateSchema } from './schema/utils';
@@ -1461,5 +1464,375 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const { rowCount } = await this.systemDb.query(query, ...params);
     return rowCount || 0;
+  }
+
+  // ============================================================================
+  // Semantic Search Methods
+  // ============================================================================
+
+  /**
+   * Semantic search by text query
+   *
+   * Generates an embedding for the query text and finds similar objects
+   * based on cosine similarity of stored embeddings.
+   *
+   * @param query - Text to search for
+   * @param options - Search options
+   * @param options.field - Specific field to search (defaults to first embedding field)
+   * @param options.limit - Maximum results to return (default: 10)
+   * @param options.minSimilarity - Minimum similarity threshold 0-1 (default: 0)
+   * @param options.where - Additional WHERE filters to apply
+   * @returns Promise resolving to array of objects with _similarity score
+   *
+   * @example
+   * ```typescript
+   * const results = await articles.semanticSearch('machine learning trends', {
+   *   limit: 10,
+   *   minSimilarity: 0.7
+   * });
+   *
+   * for (const article of results) {
+   *   console.log(`${article.title} (similarity: ${article._similarity})`);
+   * }
+   * ```
+   */
+  public async semanticSearch(
+    query: string,
+    options: {
+      field?: string;
+      limit?: number;
+      minSimilarity?: number;
+      where?: Record<string, any>;
+    } = {},
+  ): Promise<Array<ModelType & { _similarity: number }>> {
+    const { field, limit = 10, minSimilarity = 0, where } = options;
+
+    // Get embedding config
+    const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(
+      this._itemClass.name,
+    );
+
+    if (!embeddingConfig) {
+      throw new Error(
+        `No embedding configuration found for ${this._itemClass.name}. ` +
+          `Add embeddings config to @smrt() decorator.`,
+      );
+    }
+
+    // Determine which field to search
+    const searchField = field || embeddingConfig.fields[0];
+    if (!embeddingConfig.fields.includes(searchField)) {
+      throw new Error(
+        `Field '${searchField}' is not configured for embeddings on ${this._itemClass.name}. ` +
+          `Available fields: ${embeddingConfig.fields.join(', ')}`,
+      );
+    }
+
+    // Get project config for embedding provider
+    const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
+
+    // Create embedding provider
+    const provider = new EmbeddingProvider(projectConfig, this.ai);
+
+    // Generate embedding for query
+    const [queryEmbedding] = await provider.embed(query);
+
+    // Find similar embeddings
+    return this.findSimilarToEmbedding(queryEmbedding, {
+      field: searchField,
+      limit,
+      minSimilarity,
+      where,
+    });
+  }
+
+  /**
+   * Find objects similar to a given object
+   *
+   * Uses stored embeddings to find objects most similar to the provided object.
+   *
+   * @param object - Object to find similar items for (or object ID)
+   * @param options - Search options
+   * @param options.field - Specific field to compare (defaults to first embedding field)
+   * @param options.limit - Maximum results to return (default: 5)
+   * @param options.excludeSelf - Whether to exclude the source object (default: true)
+   * @returns Promise resolving to array of similar objects with _similarity score
+   *
+   * @example
+   * ```typescript
+   * const article = await articles.get('some-article-id');
+   * const similar = await articles.findSimilar(article, {
+   *   limit: 5,
+   *   excludeSelf: true
+   * });
+   * ```
+   */
+  public async findSimilar(
+    object: ModelType | string,
+    options: {
+      field?: string;
+      limit?: number;
+      excludeSelf?: boolean;
+    } = {},
+  ): Promise<Array<ModelType & { _similarity: number }>> {
+    const { field, limit = 5, excludeSelf = true } = options;
+
+    // Get the object if ID was provided
+    let sourceObject: ModelType;
+    if (typeof object === 'string') {
+      const found = await this.get(object);
+      if (!found) {
+        throw new Error(`Object not found: ${object}`);
+      }
+      sourceObject = found;
+    } else {
+      sourceObject = object;
+    }
+
+    // Get embedding config
+    const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(
+      this._itemClass.name,
+    );
+
+    if (!embeddingConfig) {
+      throw new Error(
+        `No embedding configuration found for ${this._itemClass.name}.`,
+      );
+    }
+
+    // Determine which field to use
+    const searchField = field || embeddingConfig.fields[0];
+
+    // Get the source object's embedding using consistent model name from EmbeddingProvider
+    const provider = new EmbeddingProvider(
+      {
+        dimensions: embeddingConfig.dimensions,
+        provider: embeddingConfig.provider,
+        localModel: embeddingConfig.localModel,
+        aiModel: embeddingConfig.aiModel,
+        fallbackToAI: embeddingConfig.fallbackToAI,
+      },
+      this.ai,
+    );
+    const model = provider.getModelName();
+
+    const storedEmbedding = await EmbeddingStorage.get(
+      this.systemDb,
+      this._itemClass.name,
+      sourceObject.id as string,
+      searchField,
+      model,
+    );
+
+    if (!storedEmbedding) {
+      throw new Error(
+        `No embedding found for object ${sourceObject.id} field '${searchField}'. ` +
+          `Generate embeddings first with object.generateEmbeddings().`,
+      );
+    }
+
+    // Find similar using the embedding
+    const where = excludeSelf ? { 'id !=': sourceObject.id } : undefined;
+
+    return this.findSimilarToEmbedding(storedEmbedding.embedding, {
+      field: searchField,
+      limit,
+      minSimilarity: 0,
+      where,
+    });
+  }
+
+  /**
+   * Find objects similar to a raw embedding vector
+   *
+   * Low-level method for finding objects by embedding similarity.
+   *
+   * @param embedding - Embedding vector to compare against
+   * @param options - Search options
+   * @param options.field - Field name to search (defaults to first embedding field)
+   * @param options.limit - Maximum results to return (default: 10)
+   * @param options.minSimilarity - Minimum similarity threshold 0-1 (default: 0)
+   * @param options.where - Additional WHERE filters to apply
+   * @returns Promise resolving to array of objects with _similarity score
+   *
+   * @example
+   * ```typescript
+   * // Using a pre-computed embedding
+   * const results = await articles.findSimilarToEmbedding(myEmbedding, {
+   *   limit: 10,
+   *   minSimilarity: 0.5
+   * });
+   * ```
+   */
+  public async findSimilarToEmbedding(
+    embedding: number[],
+    options: {
+      field?: string;
+      limit?: number;
+      minSimilarity?: number;
+      where?: Record<string, any>;
+    } = {},
+  ): Promise<Array<ModelType & { _similarity: number }>> {
+    const { field, limit = 10, minSimilarity = 0, where } = options;
+
+    // Get embedding config
+    const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(
+      this._itemClass.name,
+    );
+
+    if (!embeddingConfig) {
+      throw new Error(
+        `No embedding configuration found for ${this._itemClass.name}.`,
+      );
+    }
+
+    // Determine which field to search
+    const searchField = field || embeddingConfig.fields[0];
+
+    // Get model name using EmbeddingProvider for consistency
+    const provider = new EmbeddingProvider(
+      {
+        dimensions: embeddingConfig.dimensions,
+        provider: embeddingConfig.provider,
+        localModel: embeddingConfig.localModel,
+        aiModel: embeddingConfig.aiModel,
+        fallbackToAI: embeddingConfig.fallbackToAI,
+      },
+      this.ai,
+    );
+    const model = provider.getModelName();
+
+    // Get all embeddings for this class and field
+    const storedEmbeddings = await EmbeddingStorage.listForClass(
+      this.systemDb,
+      this._itemClass.name,
+      searchField,
+      model,
+    );
+
+    if (storedEmbeddings.length === 0) {
+      return [];
+    }
+
+    // Calculate similarity scores
+    const scored = storedEmbeddings
+      .map((stored) => ({
+        objectId: stored.object_id,
+        similarity: CosineSimilarity.calculate(embedding, stored.embedding),
+      }))
+      .filter((item) => item.similarity >= minSimilarity)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+
+    if (scored.length === 0) {
+      return [];
+    }
+
+    // Load the objects
+    const objectIds = scored.map((s) => s.objectId);
+    const similarityMap = new Map(
+      scored.map((s) => [s.objectId, s.similarity]),
+    );
+
+    // Build where clause with additional filters
+    const whereClause = where
+      ? { 'id in': objectIds, ...where }
+      : { 'id in': objectIds };
+
+    const objects = await this.list({ where: whereClause });
+
+    // Add similarity scores to objects and sort by similarity
+    // We directly assign _similarity to avoid losing class properties when spreading
+    const results = objects.map((obj) => {
+      (obj as any)._similarity = similarityMap.get(obj.id as string) || 0;
+      return obj as ModelType & { _similarity: number };
+    });
+
+    results.sort((a, b) => b._similarity - a._similarity);
+
+    return results;
+  }
+
+  /**
+   * Generate missing embeddings for all objects in the collection
+   *
+   * Batch generates embeddings for objects that don't have them yet
+   * or have stale embeddings.
+   *
+   * @param options - Generation options
+   * @param options.batchSize - Number of objects to process at once (default: 50)
+   * @param options.onProgress - Progress callback
+   * @returns Promise resolving to generation statistics
+   *
+   * @example
+   * ```typescript
+   * const stats = await articles.generateMissingEmbeddings({
+   *   batchSize: 100,
+   *   onProgress: ({ completed, total }) => {
+   *     console.log(`Progress: ${completed}/${total}`);
+   *   }
+   * });
+   *
+   * console.log(`Generated: ${stats.generated}, Skipped: ${stats.skipped}`);
+   * ```
+   */
+  public async generateMissingEmbeddings(
+    options: {
+      batchSize?: number;
+      onProgress?: (progress: { completed: number; total: number }) => void;
+    } = {},
+  ): Promise<{ generated: number; skipped: number }> {
+    const { batchSize = 50, onProgress } = options;
+
+    // Get embedding config
+    const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(
+      this._itemClass.name,
+    );
+
+    if (!embeddingConfig) {
+      throw new Error(
+        `No embedding configuration found for ${this._itemClass.name}.`,
+      );
+    }
+
+    // Count total objects
+    const total = await this.count({});
+    let completed = 0;
+    let generated = 0;
+    let skipped = 0;
+
+    // Process in batches
+    let offset = 0;
+    while (offset < total) {
+      const batch = await this.list({ limit: batchSize, offset });
+
+      for (const obj of batch) {
+        try {
+          // Check if embeddings are stale
+          const hasStale = await (obj as any).hasStaleEmbeddings();
+          if (hasStale) {
+            await (obj as any).generateEmbeddings();
+            generated++;
+          } else {
+            skipped++;
+          }
+        } catch (error) {
+          console.warn(
+            `Failed to generate embeddings for ${obj.id}:`,
+            error instanceof Error ? error.message : error,
+          );
+          skipped++;
+        }
+
+        completed++;
+        if (onProgress) {
+          onProgress({ completed, total });
+        }
+      }
+
+      offset += batchSize;
+    }
+
+    return { generated, skipped };
   }
 }

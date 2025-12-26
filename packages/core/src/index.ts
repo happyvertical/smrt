@@ -42,6 +42,8 @@ export {
   type RelationshipFieldOptions,
   type TextFieldOptions,
 } from './decorators/index';
+// Embeddings support (semantic search)
+export * from './embeddings/index';
 export * from './errors';
 // Code generators (tree-shakeable)
 export * from './generators/index';
