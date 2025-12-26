@@ -12,8 +12,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PropertyCollection } from '../collections/Properties';
-import { ZoneCollection } from '../collections/Zones';
-import { Property } from '../models/Property';
 
 describe('Property', () => {
   let dbPath: string;

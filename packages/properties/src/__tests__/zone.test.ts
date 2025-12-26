@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PropertyCollection } from '../collections/Properties';
 import { ZoneCollection } from '../collections/Zones';
 import type { Property } from '../models/Property';
-import { Zone } from '../models/Zone';
 
 describe('Zone', () => {
   let dbPath: string;

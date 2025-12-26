@@ -187,6 +187,9 @@ export class Zone extends SmrtObject {
   async createChild(
     options: Omit<ZoneOptions, 'propertyId' | 'parentId'>,
   ): Promise<Zone> {
+    if (!this.id) {
+      throw new Error('Zone must be saved before creating children');
+    }
     const { ZoneCollection } = await import('../collections/Zones');
     const collection = await (ZoneCollection as any).create(this.options);
     const zone = await collection.create({

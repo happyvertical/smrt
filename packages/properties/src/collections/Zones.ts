@@ -121,13 +121,12 @@ export class ZoneCollection extends SmrtCollection<Zone> {
    */
   async getAncestors(zoneId: string): Promise<Zone[]> {
     const ancestors: Zone[] = [];
-    let currentId: string | null = zoneId;
 
     // Get the starting zone
     const startZone = await this.get({ id: zoneId });
     if (!startZone) return ancestors;
 
-    currentId = startZone.parentId;
+    let currentId: string | null = startZone.parentId;
 
     // Walk up the tree
     while (currentId) {

@@ -98,6 +98,9 @@ export class Property extends SmrtObject {
   async createZone(
     options: Omit<import('../types').ZoneOptions, 'propertyId'>,
   ): Promise<import('./Zone').Zone> {
+    if (!this.id) {
+      throw new Error('Property must be saved before creating zones');
+    }
     const { ZoneCollection } = await import('../collections/Zones');
     const collection = await (ZoneCollection as any).create(this.options);
     const zone = await collection.create({
