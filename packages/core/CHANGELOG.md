@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.69
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: update @happyvertical/images to ^0.61.3 (#575) (content)
+  - @happyvertical/smrt-config@0.17.69
+  - @happyvertical/smrt-types@0.17.69
+
 ## 0.17.68
 
 ### Patch Changes
