@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.71
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: migrate Image embeddings to centralized system (#578) (assets)
+  - @happyvertical/smrt-config@0.17.71
+  - @happyvertical/smrt-types@0.17.71
+
 ## 0.17.70
 
 ### Patch Changes
