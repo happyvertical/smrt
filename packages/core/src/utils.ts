@@ -308,6 +308,14 @@ export function formatDataJs(
 
       if (isDate) {
         normalizedData[camelKey] = new Date(value);
+      } else if (fieldType === 'json') {
+        // Parse JSON strings back to objects
+        try {
+          normalizedData[camelKey] = JSON.parse(value);
+        } catch {
+          // Keep as string if parsing fails
+          normalizedData[camelKey] = value;
+        }
       } else {
         normalizedData[camelKey] = value;
       }
