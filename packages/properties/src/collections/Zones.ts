@@ -174,13 +174,51 @@ export class ZoneCollection extends SmrtCollection<Zone> {
    */
   async getMaxDepth(propertyId: string): Promise<number> {
     const allZones = await this.findByProperty(propertyId);
-    let maxDepth = 0;
 
+    // Build a lookup map for efficient in-memory traversal
+    const zonesById = new Map<string, Zone>();
     for (const zone of allZones) {
       if (zone.id) {
-        const ancestors = await this.getAncestors(zone.id);
-        maxDepth = Math.max(maxDepth, ancestors.length);
+        zonesById.set(zone.id, zone);
       }
+    }
+
+    // Cache computed depths
+    const depthCache = new Map<string, number>();
+
+    const getDepth = (zone: Zone): number => {
+      if (!zone.id) return 0;
+
+      const cached = depthCache.get(zone.id);
+      if (cached !== undefined) return cached;
+
+      let depth = 0;
+      let current: Zone | undefined = zone;
+      const visited = new Set<string>();
+
+      // Walk up the parent chain using in-memory lookup
+      while (current?.id) {
+        const parentId = current.parentId;
+        if (!parentId) break;
+
+        // Prevent infinite loops from cyclic data
+        if (visited.has(parentId)) break;
+        visited.add(parentId);
+
+        const parent = zonesById.get(parentId);
+        if (!parent) break;
+
+        depth += 1;
+        current = parent;
+      }
+
+      depthCache.set(zone.id, depth);
+      return depth;
+    };
+
+    let maxDepth = 0;
+    for (const zone of allZones) {
+      maxDepth = Math.max(maxDepth, getDepth(zone));
     }
 
     return maxDepth;

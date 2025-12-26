@@ -32,9 +32,9 @@
  * });
  * await site.save();
  *
- * // Create hierarchical zones
+ * // Create hierarchical zones (IDs are guaranteed after save())
  * const homePage = await zones.create({
- *   propertyId: site.id,
+ *   propertyId: site.id!,
  *   name: 'Home Page',
  *   type: 'page',
  *   path: '/'
@@ -42,8 +42,8 @@
  * await homePage.save();
  *
  * const headerSlot = await zones.create({
- *   propertyId: site.id,
- *   parentId: homePage.id,
+ *   propertyId: site.id!,
+ *   parentId: homePage.id!,
  *   name: 'Header Leaderboard',
  *   type: 'slot',
  *   width: 728,
@@ -52,7 +52,7 @@
  * await headerSlot.save();
  *
  * // Get zone tree
- * const tree = await zones.getTree(site.id);
+ * const tree = await zones.getTree(site.id!);
  * ```
  *
  * @packageDocumentation
