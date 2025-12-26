@@ -16,6 +16,8 @@ export { AssetType } from './asset-type';
 // Export collections
 export { AssetTypeCollection } from './asset-types';
 export { AssetCollection } from './assets';
+export { Image } from './image';
+export { ImageCollection } from './images';
 
 // Export types
 export type {
@@ -23,4 +25,5 @@ export type {
   AssetOptions,
   AssetStatusOptions,
   AssetTypeOptions,
+  ImageOptions,
 } from './types';

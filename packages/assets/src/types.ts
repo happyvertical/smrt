@@ -49,3 +49,14 @@ export interface AssetOptions extends SmrtObjectOptions {
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+/**
+ * Options for creating an Image instance
+ */
+export interface ImageOptions extends AssetOptions {
+  width?: number;
+  height?: number;
+  alt?: string;
+  embedding?: number[];
+  descriptionEmbedding?: number[];
+}
