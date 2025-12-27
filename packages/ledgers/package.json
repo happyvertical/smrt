@@ -17,7 +17,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "smrt test --manifest-only && npx vitest run",
+    "generate:test": "node scripts/generate-test-manifest.js",
+    "test": "pnpm run generate:test && npx vitest run",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "fast-glob": "^3.3.2",
     "typescript": "^5.7.2",
     "vitest": "^3.2.4"
   }
