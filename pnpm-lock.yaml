@@ -117,6 +117,9 @@ importers:
       '@happyvertical/logger':
         specifier: ^0.60.9
         version: 0.60.9
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.60.9
         version: 0.60.9
@@ -430,9 +433,15 @@ importers:
         specifier: ^0.60.9
         version: 0.60.9
     devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
+      fast-glob:
+        specifier: ^3.3.2
+        version: 3.3.3
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -486,6 +495,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
@@ -658,9 +670,9 @@ importers:
       '@faker-js/faker':
         specifier: ^9.3.0
         version: 9.9.0
-      '@happyvertical/smrt-cli':
+      '@happyvertical/smrt-vitest':
         specifier: workspace:*
-        version: link:../cli
+        version: link:../vitest
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
@@ -674,8 +686,8 @@ importers:
         specifier: ^7.1.3
         version: 7.2.2(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
       vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@24.0.0)(happy-dom@20.0.11)(jsdom@27.3.0(postcss@8.5.6))
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.0.0)(happy-dom@20.0.11)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(tsx@4.21.0)(yaml@2.8.2)
 
   packages/projects:
     dependencies:
@@ -707,6 +719,9 @@ importers:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
         version: link:../cli
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
@@ -738,6 +753,9 @@ importers:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
         version: link:../cli
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.60.9
         version: 0.60.9

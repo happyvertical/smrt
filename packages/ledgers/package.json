@@ -45,6 +45,7 @@
     "@happyvertical/smrt-core": "workspace:*"
   },
   "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "^24.0.0",
     "fast-glob": "^3.3.2",
     "typescript": "^5.7.2",
