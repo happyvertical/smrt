@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "smrt test",
+    "test": "npx vitest run",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
@@ -45,6 +45,6 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.7.2",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.4"
   }
 }
