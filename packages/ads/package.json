@@ -1,0 +1,71 @@
+{
+  "name": "@happyvertical/smrt-ads",
+  "version": "0.17.75",
+  "description": "Advertising delivery and tracking models for SMRT framework",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "generate:test": "node scripts/generate-test-manifest.js",
+    "test": "pnpm run generate:test && npx vitest run --passWithNoTests",
+    "test:watch": "npx vitest"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-commerce": "workspace:*",
+    "@happyvertical/smrt-properties": "workspace:*",
+    "@happyvertical/smrt-assets": "workspace:*",
+    "@happyvertical/smrt-tags": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-commerce": {
+      "optional": true
+    },
+    "@happyvertical/smrt-properties": {
+      "optional": true
+    },
+    "@happyvertical/smrt-assets": {
+      "optional": true
+    },
+    "@happyvertical/smrt-tags": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@happyvertical/sql": "^0.60.9",
+    "@types/node": "^24.0.0",
+    "fast-glob": "3.3.3",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "ai",
+    "smrt",
+    "ads",
+    "advertising",
+    "delivery",
+    "tracking"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}

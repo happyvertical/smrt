@@ -99,6 +99,46 @@ importers:
         specifier: 4.0.8
         version: 4.0.8(@types/debug@4.1.12)(@types/node@24.0.0)(happy-dom@20.0.11)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/ads:
+    dependencies:
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-properties':
+        specifier: workspace:*
+        version: link:../properties
+      '@happyvertical/smrt-tags':
+        specifier: workspace:*
+        version: link:../tags
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@happyvertical/sql':
+        specifier: ^0.60.9
+        version: 0.60.9
+      '@types/node':
+        specifier: 24.0.0
+        version: 24.0.0
+      fast-glob:
+        specifier: 3.3.3
+        version: 3.3.3
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vite:
+        specifier: ^7.1.3
+        version: 7.2.2(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.0.0)(happy-dom@20.0.11)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(tsx@4.21.0)(yaml@2.8.2)
+
   packages/agents:
     dependencies:
       '@happyvertical/ai':
@@ -2206,6 +2246,11 @@ packages:
     peerDependencies:
       jimp: '>=1.0.0'
       sharp: '>=0.33.0'
+    peerDependenciesMeta:
+      jimp:
+        optional: true
+      sharp:
+        optional: true
 
   '@happyvertical/logger@0.59.0':
     resolution: {integrity: sha512-GR9oh+vfe2fe8TDkkqMJySmHRA3W5Vk0U/P2pxmvV6eQBaQ5h34/3bh7xYjzp4JDng2nmdK23JJIVSWvxD7CRQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.59.0/1c794cf030c539a09a1e971a35fd7b2756d157ee}
@@ -6368,7 +6413,6 @@ packages:
 
   libsql@0.5.22:
     resolution: {integrity: sha512-NscWthMQt7fpU8lqd7LXMvT9pi+KhhmTHAJWUB/Lj6MWa0MKFv0F2V4C6WKKpjCVZl0VwcDz4nOI3CyaT1DDiA==}
-    cpu: [x64, arm64, wasm32, arm]
     os: [darwin, linux, win32]
 
   linebreak@1.1.0:
@@ -11145,7 +11189,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
     transitivePeerDependencies:
       - debug
 
@@ -11313,8 +11357,9 @@ snapshots:
   '@happyvertical/images@0.61.4(jimp@1.6.0)(sharp@0.33.5)':
     dependencies:
       '@resvg/resvg-js': 2.6.2
-      jimp: 1.6.0
       satori: 0.12.2
+    optionalDependencies:
+      jimp: 1.6.0
       sharp: 0.33.5
 
   '@happyvertical/logger@0.59.0':
@@ -11601,6 +11646,7 @@ snapshots:
       exif-parser: 0.1.12
       file-type: 16.5.4
       mime: 3.0.0
+    optional: true
 
   '@jimp/diff@1.6.0':
     dependencies:
@@ -11608,8 +11654,10 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       pixelmatch: 5.3.0
+    optional: true
 
-  '@jimp/file-ops@1.6.0': {}
+  '@jimp/file-ops@1.6.0':
+    optional: true
 
   '@jimp/js-bmp@1.6.0':
     dependencies:
@@ -11617,6 +11665,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       bmp-ts: 1.0.9
+    optional: true
 
   '@jimp/js-gif@1.6.0':
     dependencies:
@@ -11624,40 +11673,47 @@ snapshots:
       '@jimp/types': 1.6.0
       gifwrap: 0.10.1
       omggif: 1.0.10
+    optional: true
 
   '@jimp/js-jpeg@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       jpeg-js: 0.4.4
+    optional: true
 
   '@jimp/js-png@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       pngjs: 7.0.0
+    optional: true
 
   '@jimp/js-tiff@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       utif2: 4.1.0
+    optional: true
 
   '@jimp/plugin-blit@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-blur@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/utils': 1.6.0
+    optional: true
 
   '@jimp/plugin-circle@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-color@1.6.0':
     dependencies:
@@ -11666,6 +11722,7 @@ snapshots:
       '@jimp/utils': 1.6.0
       tinycolor2: 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-contain@1.6.0':
     dependencies:
@@ -11675,6 +11732,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-cover@1.6.0':
     dependencies:
@@ -11683,6 +11741,7 @@ snapshots:
       '@jimp/plugin-resize': 1.6.0
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-crop@1.6.0':
     dependencies:
@@ -11690,27 +11749,32 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-displace@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-dither@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
+    optional: true
 
   '@jimp/plugin-fisheye@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-flip@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-hash@1.6.0':
     dependencies:
@@ -11724,11 +11788,13 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       any-base: 1.1.0
+    optional: true
 
   '@jimp/plugin-mask@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-print@1.6.0':
     dependencies:
@@ -11742,17 +11808,20 @@ snapshots:
       parse-bmfont-xml: 1.1.6
       simple-xml-to-json: 1.2.3
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-quantize@1.6.0':
     dependencies:
       image-q: 4.0.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-resize@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-rotate@1.6.0':
     dependencies:
@@ -11762,6 +11831,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-threshold@1.6.0':
     dependencies:
@@ -11771,15 +11841,18 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/types@1.6.0':
     dependencies:
       zod: 3.25.76
+    optional: true
 
   '@jimp/utils@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       tinycolor2: 1.6.0
+    optional: true
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -13633,7 +13706,8 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  any-base@1.1.0: {}
+  any-base@1.1.0:
+    optional: true
 
   any-promise@1.3.0: {}
 
@@ -13664,7 +13738,8 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
-  await-to-js@3.0.0: {}
+  await-to-js@3.0.0:
+    optional: true
 
   axios@1.13.2(debug@4.4.3):
     dependencies:
@@ -13747,7 +13822,8 @@ snapshots:
 
   bmp-js@0.1.0: {}
 
-  bmp-ts@1.0.9: {}
+  bmp-ts@1.0.9:
+    optional: true
 
   body-parser@1.20.4:
     dependencies:
@@ -14649,7 +14725,8 @@ snapshots:
       strip-final-newline: 4.0.0
       yoctocolors: 2.1.2
 
-  exif-parser@0.1.12: {}
+  exif-parser@0.1.12:
+    optional: true
 
   expand-template@2.0.3: {}
 
@@ -15018,6 +15095,7 @@ snapshots:
     dependencies:
       image-q: 4.0.0
       omggif: 1.0.10
+    optional: true
 
   git-log-parser@1.2.1:
     dependencies:
@@ -15331,7 +15409,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -15361,6 +15439,7 @@ snapshots:
   image-q@4.0.0:
     dependencies:
       '@types/node': 24.0.0
+    optional: true
 
   imapflow@1.2.1:
     dependencies:
@@ -15584,6 +15663,7 @@ snapshots:
       '@jimp/plugin-threshold': 1.6.0
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
+    optional: true
 
   jiti@2.6.1: {}
 
@@ -16098,7 +16178,8 @@ snapshots:
 
   mime@1.6.0: {}
 
-  mime@3.0.0: {}
+  mime@3.0.0:
+    optional: true
 
   mime@4.1.0: {}
 
@@ -16296,7 +16377,8 @@ snapshots:
 
   object-keys@1.1.1: {}
 
-  omggif@1.0.10: {}
+  omggif@1.0.10:
+    optional: true
 
   on-exit-leak-free@2.1.2: {}
 
@@ -16488,7 +16570,8 @@ snapshots:
 
   pako@0.2.9: {}
 
-  pako@1.0.11: {}
+  pako@1.0.11:
+    optional: true
 
   parent-module@1.0.1:
     dependencies:
@@ -16496,14 +16579,17 @@ snapshots:
 
   parent-require@1.0.0: {}
 
-  parse-bmfont-ascii@1.0.6: {}
+  parse-bmfont-ascii@1.0.6:
+    optional: true
 
-  parse-bmfont-binary@1.0.6: {}
+  parse-bmfont-binary@1.0.6:
+    optional: true
 
   parse-bmfont-xml@1.1.6:
     dependencies:
       xml-parse-from-string: 1.0.1
       xml2js: 0.5.0
+    optional: true
 
   parse-css-color@0.2.1:
     dependencies:
@@ -16680,6 +16766,7 @@ snapshots:
   pixelmatch@5.3.0:
     dependencies:
       pngjs: 6.0.0
+    optional: true
 
   pkce-challenge@5.0.1: {}
 
@@ -16720,7 +16807,8 @@ snapshots:
 
   pluralize@8.0.0: {}
 
-  pngjs@6.0.0: {}
+  pngjs@6.0.0:
+    optional: true
 
   pngjs@7.0.0: {}
 
@@ -17008,7 +17096,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.13.2):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
@@ -17378,7 +17466,8 @@ snapshots:
 
   simple-wcswidth@1.1.2: {}
 
-  simple-xml-to-json@1.2.3: {}
+  simple-xml-to-json@1.2.3:
+    optional: true
 
   sisteransi@1.0.5: {}
 
@@ -17733,7 +17822,8 @@ snapshots:
 
   tinybench@2.9.0: {}
 
-  tinycolor2@1.6.0: {}
+  tinycolor2@1.6.0:
+    optional: true
 
   tinyexec@0.3.2: {}
 
@@ -17995,6 +18085,7 @@ snapshots:
   utif2@4.1.0:
     dependencies:
       pako: 1.0.11
+    optional: true
 
   util-deprecate@1.0.2: {}
 
@@ -18375,14 +18466,17 @@ snapshots:
 
   xml-name-validator@5.0.0: {}
 
-  xml-parse-from-string@1.0.1: {}
+  xml-parse-from-string@1.0.1:
+    optional: true
 
   xml2js@0.5.0:
     dependencies:
       sax: 1.4.3
       xmlbuilder: 11.0.1
+    optional: true
 
-  xmlbuilder@11.0.1: {}
+  xmlbuilder@11.0.1:
+    optional: true
 
   xmlchars@2.2.0: {}
 
