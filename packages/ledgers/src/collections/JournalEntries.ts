@@ -1,0 +1,240 @@
+/**
+ * JournalEntryCollection - Collection manager for JournalEntry objects
+ *
+ * Provides querying and balance calculations for ledger entries.
+ */
+
+import { SmrtCollection } from '@happyvertical/smrt-core';
+import { JournalEntry } from '../models/JournalEntry';
+import type { TrialBalanceRow } from '../types';
+
+export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
+  static readonly _itemClass = JournalEntry;
+
+  /**
+   * Find entries by journal
+   *
+   * @param journalId - Journal ID
+   * @returns Array of entries
+   */
+  async findByJournal(journalId: string): Promise<JournalEntry[]> {
+    return await this.list({
+      where: { journalId },
+    });
+  }
+
+  /**
+   * Find entries by account
+   *
+   * @param accountId - Account ID
+   * @returns Array of entries
+   */
+  async findByAccount(accountId: string): Promise<JournalEntry[]> {
+    return await this.list({
+      where: { accountId },
+    });
+  }
+
+  /**
+   * Get account balance
+   *
+   * For debit-normal accounts (Asset, Expense): balance = debits - credits
+   * For credit-normal accounts (Liability, Equity, Revenue): balance = credits - debits
+   *
+   * @param accountId - Account ID
+   * @param asOfDate - Optional date to calculate balance as of
+   * @returns Account balance
+   */
+  async getAccountBalance(accountId: string, asOfDate?: Date): Promise<number> {
+    // Get entries for this account from posted journals only
+    const { JournalCollection } = await import('./Journals');
+    const journalCollection = await (JournalCollection as any).create(
+      this.options,
+    );
+    const { AccountCollection } = await import('./Accounts');
+    const accountCollection = await (AccountCollection as any).create(
+      this.options,
+    );
+
+    // Get the account to determine if it's debit or credit normal
+    const account = await accountCollection.get({ id: accountId });
+    if (!account) {
+      throw new Error(`Account not found: ${accountId}`);
+    }
+
+    // Get all entries for this account
+    const allEntries = await this.findByAccount(accountId);
+
+    let totalDebits = 0;
+    let totalCredits = 0;
+
+    for (const entry of allEntries) {
+      // Get the journal to check status and date
+      const journal = await journalCollection.get({ id: entry.journalId });
+      if (!journal) continue;
+
+      // Only include posted journals
+      if (!journal.isPosted()) continue;
+
+      // Check date if specified
+      if (asOfDate && journal.date > asOfDate) continue;
+
+      totalDebits += entry.debit;
+      totalCredits += entry.credit;
+    }
+
+    // Calculate balance based on account type
+    if (account.isDebitNormal()) {
+      // Asset, Expense: increases with debits
+      return totalDebits - totalCredits;
+    } else {
+      // Liability, Equity, Revenue: increases with credits
+      return totalCredits - totalDebits;
+    }
+  }
+
+  /**
+   * Get trial balance
+   *
+   * @param asOfDate - Optional date for trial balance
+   * @returns Array of trial balance rows
+   */
+  async getTrialBalance(asOfDate?: Date): Promise<TrialBalanceRow[]> {
+    const { AccountCollection } = await import('./Accounts');
+    const accountCollection = await (AccountCollection as any).create(
+      this.options,
+    );
+
+    const accounts = await accountCollection.findActive();
+    const rows: TrialBalanceRow[] = [];
+
+    for (const account of accounts) {
+      if (!account.id) continue;
+
+      const balance = await this.getAccountBalance(account.id, asOfDate);
+
+      // Skip zero-balance accounts
+      if (Math.abs(balance) < 0.001) continue;
+
+      rows.push({
+        accountId: account.id,
+        accountNumber: account.number,
+        accountName: account.name,
+        accountType: account.type,
+        debitBalance: account.isDebitNormal() && balance > 0 ? balance : 0,
+        creditBalance: account.isCreditNormal() && balance > 0 ? balance : 0,
+      });
+    }
+
+    // Sort by account number
+    rows.sort((a, b) => a.accountNumber.localeCompare(b.accountNumber));
+
+    return rows;
+  }
+
+  /**
+   * Get total debits and credits for a date range
+   *
+   * @param start - Start date
+   * @param end - End date
+   * @returns Object with totalDebits and totalCredits
+   */
+  async getTotalsForDateRange(
+    start: Date,
+    end: Date,
+  ): Promise<{ totalDebits: number; totalCredits: number }> {
+    const { JournalCollection } = await import('./Journals');
+    const journalCollection = await (JournalCollection as any).create(
+      this.options,
+    );
+
+    const journals = await journalCollection.findByDateRange(start, end);
+
+    let totalDebits = 0;
+    let totalCredits = 0;
+
+    for (const journal of journals) {
+      if (!journal.isPosted()) continue;
+
+      const entries = await this.findByJournal(journal.id!);
+      for (const entry of entries) {
+        totalDebits += entry.debit;
+        totalCredits += entry.credit;
+      }
+    }
+
+    return { totalDebits, totalCredits };
+  }
+
+  /**
+   * Get entries for multiple accounts
+   *
+   * @param accountIds - Array of account IDs
+   * @returns Array of entries
+   */
+  async findByAccounts(accountIds: string[]): Promise<JournalEntry[]> {
+    const allEntries: JournalEntry[] = [];
+
+    for (const accountId of accountIds) {
+      const entries = await this.findByAccount(accountId);
+      allEntries.push(...entries);
+    }
+
+    return allEntries;
+  }
+
+  /**
+   * Get the running balance for an account (list of entries with running total)
+   *
+   * @param accountId - Account ID
+   * @returns Array of entries with running balance
+   */
+  async getAccountLedger(
+    accountId: string,
+  ): Promise<Array<{ entry: JournalEntry; runningBalance: number }>> {
+    const { JournalCollection } = await import('./Journals');
+    const { AccountCollection } = await import('./Accounts');
+    const journalCollection = await (JournalCollection as any).create(
+      this.options,
+    );
+    const accountCollection = await (AccountCollection as any).create(
+      this.options,
+    );
+
+    const account = await accountCollection.get({ id: accountId });
+    if (!account) {
+      throw new Error(`Account not found: ${accountId}`);
+    }
+
+    const entries = await this.findByAccount(accountId);
+    const ledger: Array<{ entry: JournalEntry; runningBalance: number }> = [];
+    let runningBalance = 0;
+
+    // Sort entries by journal date
+    const entriesWithJournals = await Promise.all(
+      entries.map(async (entry) => ({
+        entry,
+        journal: await journalCollection.get({ id: entry.journalId }),
+      })),
+    );
+
+    entriesWithJournals.sort((a, b) => {
+      if (!a.journal || !b.journal) return 0;
+      return a.journal.date.getTime() - b.journal.date.getTime();
+    });
+
+    for (const { entry, journal } of entriesWithJournals) {
+      if (!journal || !journal.isPosted()) continue;
+
+      if (account.isDebitNormal()) {
+        runningBalance += entry.debit - entry.credit;
+      } else {
+        runningBalance += entry.credit - entry.debit;
+      }
+
+      ledger.push({ entry, runningBalance });
+    }
+
+    return ledger;
+  }
+}
