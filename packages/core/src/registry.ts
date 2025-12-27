@@ -719,6 +719,23 @@ export class ObjectRegistry {
         return;
       }
 
+      // Check if existing entry was registered from external package manifest data
+      // (Issue #584: Registry collision when real class tries to replace manifest-loaded entry)
+      // This happens when:
+      // 1. CLI loads manifest and registers classes using manifest data via ObjectRegistry.register()
+      // 2. Later, register.js imports the real class, triggering the @smrt() decorator
+      // 3. The real class should replace the manifest-loaded entry
+      // We detect this by checking if existing has packageName from an external package
+      const newPackageName = getPackageName(ctor, true);
+      if (existing.packageName?.startsWith('@')) {
+        // If the new class is from the same package, allow replacement
+        if (newPackageName === existing.packageName) {
+          existing.constructor = ctor;
+          existing.config = { ...existing.config, ...config };
+          return;
+        }
+      }
+
       // Check if this is the same class being re-registered from module re-evaluation
       // This happens during vitest test collection when modules are re-evaluated for isolation
       // (Issue #555: Test isolation - class name collision during vitest collection)
