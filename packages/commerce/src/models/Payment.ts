@@ -165,9 +165,7 @@ export class Payment extends SmrtObject {
     }
 
     // Dynamic import to avoid hard dependency on smrt-ledgers
-    const { Journal, JournalCollection } = await import(
-      '@happyvertical/smrt-ledgers'
-    );
+    const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
 
     // Create the journal collection
     const journalCollection = await (JournalCollection as any).create(

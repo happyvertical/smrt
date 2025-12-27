@@ -192,12 +192,7 @@ export class Contract extends SmrtObject {
  */
 @smrt()
 export class Estimate extends Contract {
-  contractType = ContractType.ESTIMATE;
-
-  constructor(options: any = {}) {
-    super(options);
-    this.contractType = ContractType.ESTIMATE;
-  }
+  override contractType = ContractType.ESTIMATE;
 }
 
 /**
@@ -205,12 +200,7 @@ export class Estimate extends Contract {
  */
 @smrt()
 export class Order extends Contract {
-  contractType = ContractType.ORDER;
-
-  constructor(options: any = {}) {
-    super(options);
-    this.contractType = ContractType.ORDER;
-  }
+  override contractType = ContractType.ORDER;
 }
 
 /**
@@ -218,12 +208,7 @@ export class Order extends Contract {
  */
 @smrt()
 export class Lease extends Contract {
-  contractType = ContractType.LEASE;
-
-  constructor(options: any = {}) {
-    super(options);
-    this.contractType = ContractType.LEASE;
-  }
+  override contractType = ContractType.LEASE;
 }
 
 /**
@@ -231,12 +216,7 @@ export class Lease extends Contract {
  */
 @smrt()
 export class Agreement extends Contract {
-  contractType = ContractType.AGREEMENT;
-
-  constructor(options: any = {}) {
-    super(options);
-    this.contractType = ContractType.AGREEMENT;
-  }
+  override contractType = ContractType.AGREEMENT;
 }
 
 /**
@@ -244,12 +224,7 @@ export class Agreement extends Contract {
  */
 @smrt()
 export class PurchaseOrder extends Contract {
-  contractType = ContractType.PURCHASE_ORDER;
-
-  constructor(options: any = {}) {
-    super(options);
-    this.contractType = ContractType.PURCHASE_ORDER;
-  }
+  override contractType = ContractType.PURCHASE_ORDER;
 }
 
 export default Contract;

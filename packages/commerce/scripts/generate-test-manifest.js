@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test manifest generator for smrt-ledgers
+ * Test manifest generator for smrt-commerce
  * Scans source files and generates manifest for runtime field detection
  */
 

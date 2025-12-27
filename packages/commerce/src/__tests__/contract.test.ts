@@ -15,13 +15,6 @@ import { SmrtCollection } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
-import {
-  Contract,
-  Estimate,
-  Lease,
-  Order,
-  PurchaseOrder,
-} from '../models/Contract.js';
 import { ContractLineItem } from '../models/ContractLineItem.js';
 import { ContractStatus, ContractType } from '../types/index.js';
 
