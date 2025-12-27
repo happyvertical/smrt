@@ -14,13 +14,13 @@
       "types": "./dist/utils.d.ts",
       "default": "./dist/utils.js"
     },
-    "./manifest": "./dist/manifest.json"
+    "./manifest.json": "./dist/manifest.json"
   },
   "scripts": {
     "build": "VITE_BUILD_PACKAGE=events vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
     "dev": "vite",
-    "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "test": "npx vitest run --passWithNoTests",
+    "generate:test": "node scripts/generate-test-manifest.js",
+    "test": "pnpm run generate:test && npx vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "echo '⏭️  Skipping events typecheck (has pre-existing TypeScript errors)'"
   },
@@ -35,7 +35,9 @@
     "@happyvertical/utils": "^0.60.9"
   },
   "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "^20.11.5",
+    "fast-glob": "^3.3.2",
     "typescript": "^5.6.3",
     "vite": "^7.1.7",
     "vitest": "^3.0.5"

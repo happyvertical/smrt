@@ -155,17 +155,16 @@ export function createMagicLinkService(
 
       if (!nostrIdentity) {
         // Create new identity and profile
-        const { Profile: ProfileClass } = await import('../models/Profile');
-        const { ProfileCollection } = await import(
-          '../collections/ProfileCollection'
-        );
+        const { Person } = await import('../models/ProfileTypes');
 
-        // Create a new profile for this user
-        const profileCollection = await ProfileCollection.create({ db });
-        profile = await profileCollection.createPerson({
+        // Create a new profile for this user (Person is an STI subclass of Profile)
+        profile = new Person({
+          db,
           email: normalizedEmail,
           name: normalizedEmail.split('@')[0], // Default name from email
         });
+        await profile.initialize();
+        await profile.save();
 
         // Generate keypair and encrypt
         const keypair = generateNostrKeypair();
@@ -177,7 +176,7 @@ export function createMagicLinkService(
         );
         nostrIdentity = new NostrIdentityClass({
           db,
-          profileId: profile.id as string,
+          profileId: profile.id!,
           pubkey: keypair.pubkey,
           encryptedPrivkey: encrypted.ciphertext,
           encryptionIv: encrypted.iv,

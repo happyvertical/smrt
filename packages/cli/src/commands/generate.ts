@@ -226,11 +226,11 @@ export const generateCommands: Record<string, CLICommand> = {
 
             // Merge objects, adding packageName if from external package
             for (const [name, def] of Object.entries(manifestData.objects)) {
+              const defObj = def as Record<string, unknown>;
               mergedObjects[name] = {
-                ...def,
+                ...defObj,
                 // Ensure packageName is set for external packages
-                packageName:
-                  (def as any).packageName || manifestInfo.packageName,
+                packageName: defObj.packageName || manifestInfo.packageName,
               };
             }
           }

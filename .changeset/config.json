@@ -24,7 +24,8 @@
       "@happyvertical/smrt-tags",
       "@happyvertical/smrt-template-site-static-json",
       "@happyvertical/smrt-template-sveltekit",
-      "@happyvertical/smrt-types"
+      "@happyvertical/smrt-types",
+      "@happyvertical/smrt-vitest"
     ]
   ],
   "linked": [],

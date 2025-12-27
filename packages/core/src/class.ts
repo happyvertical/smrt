@@ -259,13 +259,14 @@ export class SmrtClass {
     if (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER) {
       // Check if options.ai is already a client-like object with embed method
       // This allows passing mock AI clients for testing
+      const aiOption = this.options.ai as Record<string, unknown> | undefined;
       if (
-        this.options.ai &&
-        typeof this.options.ai === 'object' &&
-        typeof this.options.ai.embed === 'function' &&
-        !this.options.ai.provider
+        aiOption &&
+        typeof aiOption === 'object' &&
+        typeof aiOption.embed === 'function' &&
+        !aiOption.provider
       ) {
-        this._ai = this.options.ai as unknown as AIClient;
+        this._ai = aiOption as unknown as AIClient;
       } else {
         const { loadEnvConfig } = await import('@happyvertical/utils');
 

@@ -152,7 +152,7 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
   }
 
   /**
-   * Find similar aliases (case-insensitive partial match)
+   * Find matching aliases (case-insensitive partial match)
    *
    * Note: This is a simple implementation. For production use,
    * consider using full-text search or fuzzy matching.
@@ -161,7 +161,10 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
    * @param language - Optional language filter
    * @returns Array of matching TagAlias instances
    */
-  async findSimilar(query: string, language?: string): Promise<TagAlias[]> {
+  async findMatchingAliases(
+    query: string,
+    language?: string,
+  ): Promise<TagAlias[]> {
     const where: any = {};
     if (language) where.language = language;
 

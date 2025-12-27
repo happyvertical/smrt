@@ -10,16 +10,16 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./manifest": "./dist/manifest.json"
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
   },
   "scripts": {
-    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js && [ -f test-manifest.json ] && cp test-manifest.json dist/manifest.json || true",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "test": "npx vitest run --passWithNoTests",
-    "test:watch": "npx vitest"
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@happyvertical/ai": "^0.60.9",
@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-cli": "workspace:*",
+    "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "^24.0.0",
     "fast-glob": "3.3.3",
     "typescript": "^5.7.2",

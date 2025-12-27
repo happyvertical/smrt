@@ -1,0 +1,51 @@
+{
+  "name": "@happyvertical/smrt-vitest",
+  "version": "0.17.74",
+  "description": "Vitest plugin for automatic cross-package manifest loading in SMRT tests",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "smrt",
+    "vitest",
+    "plugin",
+    "testing",
+    "manifest"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/happyvertical/smrt.git",
+    "directory": "packages/vitest"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "vitest": ">=2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}
