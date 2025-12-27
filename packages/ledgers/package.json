@@ -9,13 +9,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./manifest.json": "./dist/manifest.json"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm run generate:test && tsc && cp src/manifest/test-manifest.json dist/manifest.json",
     "dev": "tsc --watch",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "pnpm run generate:test && npx vitest run",
