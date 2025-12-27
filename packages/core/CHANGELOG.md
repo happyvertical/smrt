@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.72
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-properties package for digital property and zone management (#579) (properties)
+  - @happyvertical/smrt-config@0.17.72
+  - @happyvertical/smrt-types@0.17.72
+
 ## 0.17.71
 
 ### Patch Changes
