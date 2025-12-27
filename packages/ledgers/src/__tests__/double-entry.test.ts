@@ -119,19 +119,18 @@ describe('Double-Entry Accounting', () => {
 
       // create() auto-saves, so validation error is thrown there
       // Error is wrapped in RuntimeError.operationFailed()
-      try {
-        await entries.create({
+      const error: any = await entries
+        .create({
           journalId: journal.id!,
           accountId: cash.id!,
           debit: -100,
           credit: 0,
-        });
-        expect.fail('Should have thrown');
-      } catch (error: any) {
-        expect(error.cause?.message || error.message).toContain(
-          'cannot be negative',
-        );
-      }
+        })
+        .catch((e) => e);
+
+      expect(error.cause?.message || error.message).toContain(
+        'cannot be negative',
+      );
     });
 
     it('should reject both debit and credit', async () => {
@@ -140,19 +139,18 @@ describe('Double-Entry Accounting', () => {
 
       // create() auto-saves, so validation error is thrown there
       // Error is wrapped in RuntimeError.operationFailed()
-      try {
-        await entries.create({
+      const error: any = await entries
+        .create({
           journalId: journal.id!,
           accountId: cash.id!,
           debit: 100,
           credit: 100,
-        });
-        expect.fail('Should have thrown');
-      } catch (error: any) {
-        expect(error.cause?.message || error.message).toContain(
-          'cannot have both debit and credit',
-        );
-      }
+        })
+        .catch((e) => e);
+
+      expect(error.cause?.message || error.message).toContain(
+        'cannot have both debit and credit',
+      );
     });
 
     it('should reject zero amounts', async () => {
@@ -161,19 +159,18 @@ describe('Double-Entry Accounting', () => {
 
       // create() auto-saves, so validation error is thrown there
       // Error is wrapped in RuntimeError.operationFailed()
-      try {
-        await entries.create({
+      const error: any = await entries
+        .create({
           journalId: journal.id!,
           accountId: cash.id!,
           debit: 0,
           credit: 0,
-        });
-        expect.fail('Should have thrown');
-      } catch (error: any) {
-        expect(error.cause?.message || error.message).toContain(
-          'must have either a debit or credit',
-        );
-      }
+        })
+        .catch((e) => e);
+
+      expect(error.cause?.message || error.message).toContain(
+        'must have either a debit or credit',
+      );
     });
   });
 

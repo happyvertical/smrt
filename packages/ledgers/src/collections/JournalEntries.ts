@@ -6,7 +6,7 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { JournalEntry } from '../models/JournalEntry';
-import type { TrialBalanceRow } from '../types';
+import { BALANCE_EPSILON, type TrialBalanceRow } from '../types';
 
 export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
   static readonly _itemClass = JournalEntry;
@@ -114,7 +114,7 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
       const balance = await this.getAccountBalance(account.id, asOfDate);
 
       // Skip zero-balance accounts
-      if (Math.abs(balance) < 0.001) continue;
+      if (Math.abs(balance) < BALANCE_EPSILON) continue;
 
       rows.push({
         accountId: account.id,
@@ -173,14 +173,14 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
    * @returns Array of entries
    */
   async findByAccounts(accountIds: string[]): Promise<JournalEntry[]> {
-    const allEntries: JournalEntry[] = [];
-
-    for (const accountId of accountIds) {
-      const entries = await this.findByAccount(accountId);
-      allEntries.push(...entries);
+    if (accountIds.length === 0) {
+      return [];
     }
 
-    return allEntries;
+    // Use single query with IN clause to avoid N+1 problem
+    return await this.list({
+      where: { accountId: accountIds },
+    });
   }
 
   /**

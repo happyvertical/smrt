@@ -6,7 +6,12 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import type { JournalEntryData, JournalOptions, JournalStatus } from '../types';
+import {
+  BALANCE_EPSILON,
+  type JournalEntryData,
+  type JournalOptions,
+  type JournalStatus,
+} from '../types';
 
 @smrt({
   api: { include: ['list', 'get', 'create'] }, // No update/delete - immutable after posting
@@ -144,8 +149,7 @@ export class Journal extends SmrtObject {
   async isBalanced(): Promise<boolean> {
     const debits = await this.getTotalDebits();
     const credits = await this.getTotalCredits();
-    // Use small epsilon for floating point comparison
-    return Math.abs(debits - credits) < 0.001;
+    return Math.abs(debits - credits) < BALANCE_EPSILON;
   }
 
   /**

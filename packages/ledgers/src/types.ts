@@ -5,6 +5,12 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 
 /**
+ * Epsilon value for floating-point balance comparisons.
+ * Used to determine if debits and credits are balanced.
+ */
+export const BALANCE_EPSILON = 0.001;
+
+/**
  * The five core account types in double-entry accounting
  */
 export type AccountType =

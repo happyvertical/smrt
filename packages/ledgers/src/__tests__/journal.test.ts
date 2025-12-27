@@ -107,8 +107,9 @@ describe('Journal', () => {
         ],
       });
 
-      expect(j1.number).toMatch(/^JNL-\d{4}$/);
-      expect(j2.number).toMatch(/^JNL-\d{4}$/);
+      // Journal numbers use timestamp-based format: JNL-{timestamp}-{random}
+      expect(j1.number).toMatch(/^JNL-[a-z0-9]+-[a-z0-9]+$/);
+      expect(j2.number).toMatch(/^JNL-[a-z0-9]+-[a-z0-9]+$/);
       expect(j1.number).not.toBe(j2.number);
     });
   });

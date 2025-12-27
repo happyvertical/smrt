@@ -6,35 +6,25 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Journal } from '../models/Journal';
-import type { CreateJournalData, JournalStatus } from '../types';
+import {
+  BALANCE_EPSILON,
+  type CreateJournalData,
+  type JournalStatus,
+} from '../types';
 
 export class JournalCollection extends SmrtCollection<Journal> {
   static readonly _itemClass = Journal;
 
   /**
-   * Counter for journal number generation
-   */
-  private static journalCounter: number = 0;
-
-  /**
    * Generate next journal number
+   *
+   * Uses timestamp and random component to avoid collisions
+   * in concurrent environments without relying on shared state.
    */
-  private async generateJournalNumber(): Promise<string> {
-    // Get highest existing number
-    const journals = await this.list({
-      orderBy: 'created_at DESC',
-      limit: 1,
-    });
-
-    if (journals.length > 0 && journals[0].number) {
-      const match = journals[0].number.match(/JNL-(\d+)/);
-      if (match) {
-        JournalCollection.journalCounter = parseInt(match[1], 10);
-      }
-    }
-
-    JournalCollection.journalCounter++;
-    return `JNL-${String(JournalCollection.journalCounter).padStart(4, '0')}`;
+  private generateJournalNumber(): string {
+    const timestamp = Date.now().toString(36);
+    const randomPart = Math.random().toString(36).slice(2, 6);
+    return `JNL-${timestamp}-${randomPart}`;
   }
 
   /**
@@ -128,7 +118,7 @@ export class JournalCollection extends SmrtCollection<Journal> {
       totalCredits += entry.credit || 0;
     }
 
-    if (Math.abs(totalDebits - totalCredits) >= 0.001) {
+    if (Math.abs(totalDebits - totalCredits) >= BALANCE_EPSILON) {
       throw new Error(
         `Entries are not balanced. Debits: ${totalDebits}, Credits: ${totalCredits}`,
       );
