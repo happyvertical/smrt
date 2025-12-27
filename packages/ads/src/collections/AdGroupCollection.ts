@@ -56,7 +56,6 @@ export class AdGroupCollection extends SmrtCollection<AdGroup> {
    * @returns Array of active ad groups
    */
   async findActive(): Promise<AdGroup[]> {
-    const now = new Date().toISOString();
     const results = await this.list({
       where: {
         status: AdGroupStatus.ACTIVE,

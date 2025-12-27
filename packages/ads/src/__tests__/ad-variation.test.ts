@@ -15,7 +15,6 @@ import {
   type AdGroup,
   AdGroupCollection,
   AdGroupStatus,
-  AdVariation,
   AdVariationCollection,
   AdVariationStatus,
   PricingModel,
