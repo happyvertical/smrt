@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.74
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-commerce package for contracts, fulfillments, and payments (#582) (commerce)
+  - @happyvertical/smrt-config@0.17.74
+  - @happyvertical/smrt-types@0.17.74
+
 ## 0.17.73
 
 ### Patch Changes
