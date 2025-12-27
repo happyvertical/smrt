@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.75
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - allow real class to replace manifest-loaded entry (Issue #584) (#585) (core)
+  - @happyvertical/smrt-config@0.17.75
+  - @happyvertical/smrt-types@0.17.75
+
 ## 0.17.74
 
 ### Patch Changes
