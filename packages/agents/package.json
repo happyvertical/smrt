@@ -21,7 +21,8 @@
   "scripts": {
     "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",
     "build:watch": "vite build --watch",
-    "test": "npx vitest run",
+    "generate:test": "node scripts/generate-test-manifest.js",
+    "test": "pnpm run generate:test && npx vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -35,6 +36,7 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "^0.60.9",
     "@types/node": "^24.0.0",
+    "fast-glob": "3.3.3",
     "typescript": "^5.7.3",
     "vite": "^7.1.3",
     "vitest": "^3.2.4"
