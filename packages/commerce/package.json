@@ -1,0 +1,58 @@
+{
+  "name": "@happyvertical/smrt-commerce",
+  "version": "0.17.71",
+  "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "generate:test": "node scripts/generate-test-manifest.js",
+    "test": "pnpm run generate:test && npx vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "smrt",
+    "commerce",
+    "contracts",
+    "fulfillment",
+    "payments",
+    "ledger",
+    "accounting"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/commerce"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-ledgers": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-ledgers": "workspace:*",
+    "@types/node": "^24.0.0",
+    "fast-glob": "^3.3.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

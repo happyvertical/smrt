@@ -1,0 +1,103 @@
+/**
+ * FulfillmentCollection - Collection manager for Fulfillment objects
+ * @packageDocumentation
+ */
+
+import { SmrtCollection } from '@happyvertical/smrt-core';
+import { Fulfillment } from '../models/Fulfillment.js';
+import { FulfillmentStatus, type FulfillmentType } from '../types/index.js';
+
+export class FulfillmentCollection extends SmrtCollection<Fulfillment> {
+  static readonly _itemClass = Fulfillment;
+
+  /**
+   * Find fulfillments by contract
+   *
+   * @param contractId - Contract ID
+   * @returns Array of fulfillments
+   */
+  async findByContract(contractId: string): Promise<Fulfillment[]> {
+    return await this.list({
+      where: { contractId },
+      orderBy: 'created_at DESC',
+    });
+  }
+
+  /**
+   * Find fulfillments by status
+   *
+   * @param status - Fulfillment status
+   * @returns Array of fulfillments
+   */
+  async findByStatus(status: FulfillmentStatus): Promise<Fulfillment[]> {
+    return await this.list({
+      where: { status },
+      orderBy: 'created_at DESC',
+    });
+  }
+
+  /**
+   * Find fulfillments by type
+   *
+   * @param fulfillmentType - Fulfillment type
+   * @returns Array of fulfillments
+   */
+  async findByType(fulfillmentType: FulfillmentType): Promise<Fulfillment[]> {
+    return await this.list({
+      where: { fulfillmentType },
+      orderBy: 'created_at DESC',
+    });
+  }
+
+  /**
+   * Find all pending fulfillments
+   *
+   * @returns Array of pending fulfillments
+   */
+  async findPending(): Promise<Fulfillment[]> {
+    return await this.findByStatus(FulfillmentStatus.PENDING);
+  }
+
+  /**
+   * Find all in-transit shipments
+   *
+   * @returns Array of shipped fulfillments
+   */
+  async findInTransit(): Promise<Fulfillment[]> {
+    return await this.findByStatus(FulfillmentStatus.SHIPPED);
+  }
+
+  /**
+   * Find by tracking number
+   *
+   * @param trackingNumber - Tracking number
+   * @returns Fulfillment or null
+   */
+  async findByTracking(trackingNumber: string): Promise<Fulfillment | null> {
+    const results = await this.list({
+      where: { trackingNumber },
+      limit: 1,
+    });
+    return results[0] || null;
+  }
+
+  /**
+   * Find fulfillments shipped in date range
+   *
+   * @param startDate - Start date
+   * @param endDate - End date
+   * @returns Array of fulfillments
+   */
+  async findShippedInRange(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<Fulfillment[]> {
+    return await this.list({
+      where: {
+        'shippedAt >=': startDate.toISOString(),
+        'shippedAt <=': endDate.toISOString(),
+      },
+      orderBy: 'shippedAt DESC',
+    });
+  }
+}
