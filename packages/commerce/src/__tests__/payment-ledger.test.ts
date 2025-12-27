@@ -340,9 +340,9 @@ describe('Payment', () => {
   });
 });
 
-// TODO: Cross-package integration tests require proper manifest merging
+// TODO(#583): Cross-package integration tests require proper manifest merging
 // The smrt-ledgers classes aren't registered in commerce's test manifest
-// These tests will be enabled when cross-package testing infrastructure is set up
+// See: https://github.com/happyvertical/smrt/issues/583
 describe.skip('Payment Ledger Integration', () => {
   let dbPath: string;
   let payments: PaymentCollection;
