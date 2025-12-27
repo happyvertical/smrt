@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "npx vitest run",
+    "test": "smrt test --manifest-only && npx vitest run",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
