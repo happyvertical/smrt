@@ -37,11 +37,11 @@ export const gnodeCommands: Record<string, CLICommand> = {
         description: 'Site location name (e.g., "Bentley, AB")',
       },
       lat: {
-        type: 'number',
+        type: 'string',
         description: 'Latitude coordinate for weather/geo features',
       },
       lon: {
-        type: 'number',
+        type: 'string',
         description: 'Longitude coordinate for weather/geo features',
       },
       timezone: {
