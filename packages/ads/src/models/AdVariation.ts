@@ -1,0 +1,148 @@
+/**
+ * AdVariation model - Creative asset with A/B testing support
+ * @packageDocumentation
+ */
+
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { AdVariationStatus } from '../types/index.js';
+import { AdFormat } from './AdFormat.js';
+import { AdGroup } from './AdGroup.js';
+
+/**
+ * AdVariation represents a creative asset within an ad group.
+ * Supports A/B testing via weighted selection.
+ *
+ * References:
+ * - groupId: FK to AdGroup (within package)
+ * - formatId: FK to AdFormat (within package)
+ * - assetId: String reference to smrt-assets Asset (cross-package)
+ *
+ * @example
+ * ```typescript
+ * const variation = await variations.create({
+ *   groupId: adGroup.id,
+ *   formatId: leaderboard.id,
+ *   assetId: 'asset-uuid',
+ *   name: 'Version A - Blue CTA',
+ *   clickUrl: 'https://example.com/landing',
+ *   altText: 'Summer Sale - 50% off',
+ *   weight: 2  // 2x more likely than weight=1
+ * });
+ * ```
+ */
+@smrt({
+  api: { include: ['list', 'get', 'create', 'update'] },
+  mcp: { include: ['list', 'get', 'create'] },
+  cli: true,
+})
+export class AdVariation extends SmrtObject {
+  /**
+   * Ad group ID (FK to AdGroup)
+   */
+  groupId = foreignKey(AdGroup);
+
+  /**
+   * Ad format ID (FK to AdFormat)
+   */
+  formatId = foreignKey(AdFormat);
+
+  /**
+   * Asset ID (FK to smrt-assets Asset, cross-package)
+   */
+  assetId: string = '';
+
+  /**
+   * Display name (e.g., "Version A - Blue CTA")
+   */
+  name: string = '';
+
+  /**
+   * Click destination URL
+   */
+  clickUrl: string = '';
+
+  /**
+   * Accessibility alt text
+   */
+  altText: string = '';
+
+  /**
+   * A/B testing weight (higher = more likely to be selected)
+   */
+  weight: number = 1;
+
+  /**
+   * Current status
+   */
+  status: AdVariationStatus = AdVariationStatus.DRAFT;
+
+  /**
+   * Denormalized impression count (updated async)
+   */
+  impressions: number = 0;
+
+  /**
+   * Denormalized click count (updated async)
+   */
+  clicks: number = 0;
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.groupId !== undefined) this.groupId = options.groupId;
+    if (options.formatId !== undefined) this.formatId = options.formatId;
+    if (options.assetId !== undefined) this.assetId = options.assetId;
+    if (options.name !== undefined) this.name = options.name;
+    if (options.clickUrl !== undefined) this.clickUrl = options.clickUrl;
+    if (options.altText !== undefined) this.altText = options.altText;
+    if (options.weight !== undefined) this.weight = options.weight;
+    if (options.status !== undefined) this.status = options.status;
+    if (options.impressions !== undefined)
+      this.impressions = options.impressions;
+    if (options.clicks !== undefined) this.clicks = options.clicks;
+  }
+
+  /**
+   * Check if variation is active
+   */
+  isActive(): boolean {
+    return this.status === AdVariationStatus.ACTIVE;
+  }
+
+  /**
+   * Check if variation is in draft state
+   */
+  isDraft(): boolean {
+    return this.status === AdVariationStatus.DRAFT;
+  }
+
+  /**
+   * Check if variation is paused
+   */
+  isPaused(): boolean {
+    return this.status === AdVariationStatus.PAUSED;
+  }
+
+  /**
+   * Calculate click-through rate (CTR)
+   */
+  getCTR(): number {
+    if (this.impressions === 0) return 0;
+    return this.clicks / this.impressions;
+  }
+
+  /**
+   * Increment impression count
+   */
+  recordImpression(): void {
+    this.impressions += 1;
+  }
+
+  /**
+   * Increment click count
+   */
+  recordClick(): void {
+    this.clicks += 1;
+  }
+}
+
+export default AdVariation;
