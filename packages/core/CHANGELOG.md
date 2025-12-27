@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.73
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-ledgers package for double-entry accounting (#580) (ledgers)
+  - @happyvertical/smrt-config@0.17.73
+  - @happyvertical/smrt-types@0.17.73
+
 ## 0.17.72
 
 ### Patch Changes
