@@ -171,7 +171,7 @@ export abstract class Agent extends SmrtObject {
         );
       }
       this._dispatch = await createDispatchBus({
-        db: this._db as any,
+        db: this._db,
       });
     }
     return this._dispatch;

@@ -121,14 +121,37 @@ export class DispatchCollection {
       sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
-    sql += ` ORDER BY ${options.orderBy || 'created_at DESC'}`;
+    // Whitelist allowed orderBy values to prevent SQL injection
+    const allowedOrderBy = [
+      'created_at DESC',
+      'created_at ASC',
+      'updated_at DESC',
+      'updated_at ASC',
+      'type',
+      'type DESC',
+      'type ASC',
+      'status',
+      'status DESC',
+      'status ASC',
+      'source',
+      'source DESC',
+      'source ASC',
+    ];
+    const safeOrderBy =
+      options.orderBy && allowedOrderBy.includes(options.orderBy)
+        ? options.orderBy
+        : 'created_at DESC';
+    sql += ` ORDER BY ${safeOrderBy}`;
 
-    if (options.limit) {
-      sql += ` LIMIT ${options.limit}`;
+    // Use parameterized queries for limit/offset
+    if (options.limit !== undefined) {
+      sql += ' LIMIT ?';
+      params.push(options.limit);
     }
 
-    if (options.offset) {
-      sql += ` OFFSET ${options.offset}`;
+    if (options.offset !== undefined) {
+      sql += ' OFFSET ?';
+      params.push(options.offset);
     }
 
     const { rows } = await db.query(sql, ...params);

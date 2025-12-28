@@ -27,8 +27,9 @@ describe('Agent-to-Agent Communication', () => {
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
+      } catch (error) {
+        // Log cleanup errors but don't fail tests
+        console.warn('Failed to cleanup test database:', dbPath, error);
       }
     }
   });
@@ -168,14 +169,25 @@ describe('Agent-to-Agent Communication', () => {
       { source: 'Checkout' },
     );
 
-    // Each subscriber processes independently
-    await bus.process('Inventory', async () => {});
-    await bus.process('Billing', async () => {});
-    await bus.process('Notification', async () => {});
+    // First subscriber processes the dispatch
+    const inventoryProcessed = await bus.process('Inventory', async () => {});
+    expect(inventoryProcessed).toBe(1);
 
-    // All should see the same dispatch as completed
+    // Dispatch is now completed - subsequent subscribers won't find pending dispatches
+    // This is "at-most-once" delivery: the first subscriber to process claims the dispatch
+    const billingProcessed = await bus.process('Billing', async () => {});
+    const notificationProcessed = await bus.process(
+      'Notification',
+      async () => {},
+    );
+
+    expect(billingProcessed).toBe(0);
+    expect(notificationProcessed).toBe(0);
+
+    // Single dispatch was processed by Inventory
     const completed = await bus.list({ status: 'completed' });
     expect(completed).toHaveLength(1);
+    expect(completed[0].processedBy).toBe('Inventory');
   });
 
   it('should support event metadata for tracing', async () => {

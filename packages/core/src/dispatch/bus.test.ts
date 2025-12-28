@@ -26,8 +26,9 @@ describe('DispatchBus', () => {
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
+      } catch (error) {
+        // Log cleanup errors but don't fail tests
+        console.warn('Failed to cleanup test database:', dbPath, error);
       }
     }
   });
