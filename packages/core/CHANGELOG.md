@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.77
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-users module for multi-tenant user management (#594) (users)
+  - @happyvertical/smrt-config@0.17.77
+  - @happyvertical/smrt-types@0.17.77
+
 ## 0.17.76
 
 ### Patch Changes
