@@ -17,6 +17,11 @@ const sidebars: SidebarsConfig = {
           id: 'data-compartmentalization',
           label: 'Data Compartmentalization',
         },
+        {
+          type: 'doc',
+          id: 'dispatch',
+          label: 'Inter-Agent Communication',
+        },
       ],
     },
     {
