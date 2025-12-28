@@ -443,8 +443,11 @@ export async function createDispatchBus(
     // Already a DatabaseInterface (has query method)
     db = dbConfig as DatabaseInterface;
   } else if ('type' in dbConfig && 'url' in dbConfig) {
-    // Database config object - use getDatabase
-    db = await getDatabase(dbConfig.url);
+    // Database config object - use getDatabase with type and url
+    db = await getDatabase({
+      type: dbConfig.type as 'sqlite' | 'postgres' | 'duckdb',
+      url: dbConfig.url,
+    });
   } else {
     throw new Error('Invalid database configuration for DispatchBus');
   }
