@@ -1,0 +1,59 @@
+{
+  "name": "@happyvertical/smrt-users",
+  "version": "0.17.75",
+  "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm run generate:test && tsc && cp src/manifest/test-manifest.json dist/manifest.json",
+    "dev": "tsc --watch",
+    "generate:test": "node scripts/generate-test-manifest.js",
+    "test": "pnpm run generate:test && npx vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "smrt",
+    "users",
+    "tenants",
+    "roles",
+    "permissions",
+    "groups",
+    "multi-tenant",
+    "rbac"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/users"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-profiles": "workspace:*"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@types/node": "^24.0.0",
+    "fast-glob": "^3.3.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.16"
+  }
+}
