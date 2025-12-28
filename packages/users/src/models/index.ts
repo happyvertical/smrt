@@ -10,10 +10,15 @@ export { GroupRole } from './GroupRole.js';
 // Membership
 export { Membership } from './Membership.js';
 export { MembershipOverride } from './MembershipOverride.js';
-export { Permission } from './Permission.js';
+export {
+  isValidPermissionSlug,
+  type ParsedPermissionSlug,
+  Permission,
+  parsePermissionSlug,
+} from './Permission.js';
 export { Role } from './Role.js';
 // Roles and permissions
 export { RolePermission } from './RolePermission.js';
 export { Tenant } from './Tenant.js';
 // Core entities
-export { User } from './User.js';
+export { isValidEmail, normalizeEmail, User } from './User.js';

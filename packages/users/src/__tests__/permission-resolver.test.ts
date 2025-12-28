@@ -24,11 +24,7 @@ import { RolePermissionCollection } from '../collections/RolePermissionCollectio
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { PermissionResolver } from '../services/PermissionResolver.js';
-import {
-  MembershipStatus,
-  OverrideEffect,
-  UserStatus,
-} from '../types/index.js';
+import { UserStatus } from '../types/index.js';
 
 describe('User', () => {
   let dbPath: string;
@@ -45,8 +41,8 @@ describe('User', () => {
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
+      } catch (err) {
+        console.warn(`Test cleanup warning: failed to remove ${dbPath}:`, err);
       }
     }
   });
@@ -119,8 +115,8 @@ describe('Tenant', () => {
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
+      } catch (err) {
+        console.warn(`Test cleanup warning: failed to remove ${dbPath}:`, err);
       }
     }
   });
@@ -169,8 +165,8 @@ describe('Role and Permission', () => {
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
+      } catch (err) {
+        console.warn(`Test cleanup warning: failed to remove ${dbPath}:`, err);
       }
     }
   });
@@ -239,8 +235,8 @@ describe('Membership', () => {
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
+      } catch (err) {
+        console.warn(`Test cleanup warning: failed to remove ${dbPath}:`, err);
       }
     }
   });
@@ -323,8 +319,8 @@ describe('Groups', () => {
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
+      } catch (err) {
+        console.warn(`Test cleanup warning: failed to remove ${dbPath}:`, err);
       }
     }
   });
@@ -416,8 +412,8 @@ describe('PermissionResolver', () => {
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
+      } catch (err) {
+        console.warn(`Test cleanup warning: failed to remove ${dbPath}:`, err);
       }
     }
   });

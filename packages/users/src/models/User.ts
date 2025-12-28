@@ -7,6 +7,32 @@ import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { UserStatus } from '../types/index.js';
 
 /**
+ * Basic email validation regex.
+ * Validates format: local@domain.tld
+ */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Validate email format.
+ * @param email - Email address to validate
+ * @returns true if email format is valid
+ */
+export function isValidEmail(email: string): boolean {
+  if (!email || typeof email !== 'string') return false;
+  return EMAIL_REGEX.test(email.trim());
+}
+
+/**
+ * Normalize email address (lowercase and trim).
+ * @param email - Email address to normalize
+ * @returns Normalized email
+ */
+export function normalizeEmail(email: string): string {
+  if (!email || typeof email !== 'string') return '';
+  return email.trim().toLowerCase();
+}
+
+/**
  * User represents an authenticated identity in the system.
  *
  * Users are linked to Profiles from smrt-profiles via profileId.
@@ -52,10 +78,18 @@ export class User extends SmrtObject {
   constructor(options: any = {}) {
     super(options);
     if (options.profileId !== undefined) this.profileId = options.profileId;
-    if (options.email !== undefined) this.email = options.email;
+    if (options.email !== undefined) this.email = normalizeEmail(options.email);
     if (options.status !== undefined) this.status = options.status;
     if (options.lastLoginAt !== undefined)
       this.lastLoginAt = options.lastLoginAt;
+  }
+
+  /**
+   * Validate the user's email format.
+   * @returns true if email is valid
+   */
+  hasValidEmail(): boolean {
+    return isValidEmail(this.email);
   }
 
   /**

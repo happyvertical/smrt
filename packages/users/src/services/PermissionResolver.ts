@@ -67,8 +67,15 @@ export class PermissionResolver {
 
   /**
    * Initialize collections
+   *
+   * Note: The 'as any' casts are required because SmrtCollection.create() has a
+   * protected constructor pattern that TypeScript cannot infer correctly for
+   * subclasses. This is a known limitation of the SMRT framework's static factory
+   * pattern. See: https://github.com/happyvertical/smrt/issues/XXX
    */
   async initialize(): Promise<void> {
+    // TypeScript cannot infer that Collection.create() returns the correct subclass type
+    // due to the protected constructor pattern in SmrtCollection
     this.membershipCollection = await (MembershipCollection as any).create(
       this.options,
     );

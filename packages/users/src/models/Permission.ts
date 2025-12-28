@@ -6,6 +6,51 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
+ * Parsed permission slug components
+ */
+export interface ParsedPermissionSlug {
+  /** Resource part (e.g., 'articles' from 'articles.create') */
+  resource: string;
+  /** Action part (e.g., 'create' from 'articles.create') */
+  action: string;
+  /** Whether the slug follows the valid 'resource.action' pattern */
+  isValid: boolean;
+}
+
+/**
+ * Parse a permission slug into its resource and action components.
+ * Valid format: 'resource.action' (e.g., 'articles.create')
+ *
+ * @param slug - The permission slug to parse
+ * @returns Parsed components with validation status
+ */
+export function parsePermissionSlug(slug: string): ParsedPermissionSlug {
+  const parts = slug.split('.');
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    return {
+      resource: parts[0],
+      action: parts[1],
+      isValid: true,
+    };
+  }
+  return {
+    resource: slug,
+    action: '',
+    isValid: false,
+  };
+}
+
+/**
+ * Validate that a permission slug follows the 'resource.action' pattern.
+ *
+ * @param slug - The slug to validate
+ * @returns true if valid, false otherwise
+ */
+export function isValidPermissionSlug(slug: string): boolean {
+  return parsePermissionSlug(slug).isValid;
+}
+
+/**
  * Permission represents a named capability in the system.
  *
  * Permissions are defined by the application and assigned to roles.
@@ -52,13 +97,19 @@ export class Permission extends SmrtObject {
   }
 
   /**
+   * Parse the permission slug into resource and action components.
+   * @returns Parsed slug with resource, action, and validation status
+   */
+  parseSlug(): ParsedPermissionSlug {
+    return parsePermissionSlug(this.slug ?? '');
+  }
+
+  /**
    * Get the resource part of the permission slug
    * e.g., 'articles.create' -> 'articles'
    */
   getResource(): string {
-    const slug = this.slug ?? '';
-    const parts = slug.split('.');
-    return parts.length > 1 ? (parts[0] ?? '') : slug;
+    return this.parseSlug().resource;
   }
 
   /**
@@ -66,8 +117,13 @@ export class Permission extends SmrtObject {
    * e.g., 'articles.create' -> 'create'
    */
   getAction(): string {
-    const slug = this.slug ?? '';
-    const parts = slug.split('.');
-    return parts.length > 1 ? (parts[1] ?? '') : '';
+    return this.parseSlug().action;
+  }
+
+  /**
+   * Check if the permission slug is valid (follows 'resource.action' pattern)
+   */
+  isValidSlug(): boolean {
+    return this.parseSlug().isValid;
   }
 }

@@ -80,4 +80,26 @@ export class Role extends SmrtObject {
   isTenantRole(): boolean {
     return this.tenantId !== null && this.tenantId !== undefined;
   }
+
+  /**
+   * Check if this role can be deleted.
+   * System roles (isSystem = true) cannot be deleted.
+   * @returns true if the role can be deleted
+   */
+  canDelete(): boolean {
+    return !this.isSystem;
+  }
+
+  /**
+   * Delete guard - prevents deletion of system roles.
+   * Override the delete method to check isSystem flag first.
+   */
+  async delete(): Promise<void> {
+    if (this.isSystem) {
+      throw new Error(
+        `Cannot delete system role '${this.slug}'. System roles are protected.`,
+      );
+    }
+    return super.delete();
+  }
 }

@@ -8,6 +8,15 @@ Multi-tenant user management for the SMRT framework.
 pnpm add @happyvertical/smrt-users
 ```
 
+## Database Requirements
+
+This package uses `@happyvertical/smrt-core` for database operations. The following database types are supported:
+
+- **SQLite** (recommended for development): `{ type: 'sqlite', url: 'app.db' }`
+- **PostgreSQL** (recommended for production): `{ type: 'postgres', url: 'postgresql://...' }`
+
+Database adapters are provided by `@happyvertical/sql` which is included transitively via `smrt-core`.
+
 ## Features
 
 - **Multi-tenant architecture**: Users belong to multiple tenants with different roles
