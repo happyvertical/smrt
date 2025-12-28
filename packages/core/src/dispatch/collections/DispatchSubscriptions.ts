@@ -88,7 +88,7 @@ export class DispatchSubscriptionCollection {
 
     const { rows } = await db.query(sql, ...params);
     return rows.map((row: Record<string, unknown>) =>
-      DispatchSubscription.fromRow(row as DispatchSubscriptionData),
+      DispatchSubscription.fromRow(row as unknown as DispatchSubscriptionData),
     );
   }
 
@@ -108,7 +108,7 @@ export class DispatchSubscriptionCollection {
     );
 
     const subscriptions = rows.map((row: Record<string, unknown>) =>
-      DispatchSubscription.fromRow(row as DispatchSubscriptionData),
+      DispatchSubscription.fromRow(row as unknown as DispatchSubscriptionData),
     );
 
     // Filter for subscriptions that match this signal type
@@ -148,7 +148,7 @@ export class DispatchSubscriptionCollection {
 
     const { rows } = await db.query(sql);
     return rows.map((row: Record<string, unknown>) =>
-      DispatchSubscription.fromRow(row as DispatchSubscriptionData),
+      DispatchSubscription.fromRow(row as unknown as DispatchSubscriptionData),
     );
   }
 

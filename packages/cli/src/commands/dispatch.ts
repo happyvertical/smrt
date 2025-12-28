@@ -74,7 +74,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
           status: options.status,
           source: options.source,
           type: options.type,
-          limit: options.limit,
+          limit: options.limit || 50,
         });
 
         if (options.json) {
@@ -126,7 +126,6 @@ export const dispatchCommands: Record<string, CLICommand> = {
         type: 'string',
         description: 'Subscriber name (required)',
         short: 's',
-        required: true,
       },
       limit: {
         type: 'number',
@@ -161,7 +160,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
 
           const pending = await bus.list({
             status: 'pending',
-            limit: options.limit,
+            limit: options.limit || 100,
           });
 
           // Filter by subscription patterns
@@ -193,7 +192,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
             );
             processed++;
           },
-          { limit: options.limit },
+          { limit: options.limit || 100 },
         );
 
         console.log(`\nProcessed ${result} dispatch(es).`);
@@ -229,7 +228,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
         const bus = await getDispatchBus();
 
         const retryOptions: any = {
-          maxAttempts: options['max-attempts'],
+          maxAttempts: options['max-attempts'] || 3,
         };
 
         if (options.type) {
@@ -296,8 +295,9 @@ export const dispatchCommands: Record<string, CLICommand> = {
           console.log(
             `\nCurrent counts:\n  Completed: ${completed}\n  Failed: ${failed}`,
           );
+          const completedDays = options['completed-older-than'] || 30;
           console.log(
-            `\nWould delete completed older than ${options['completed-older-than']} days`,
+            `\nWould delete completed older than ${completedDays} days`,
           );
           if (options['failed-older-than']) {
             console.log(
@@ -308,8 +308,8 @@ export const dispatchCommands: Record<string, CLICommand> = {
         }
 
         const result = await bus.cleanup({
-          completedOlderThanDays: options['completed-older-than'],
-          failedOlderThanDays: options['failed-older-than'],
+          completedOlderThanDays: options['completed-older-than'] || 30,
+          failedOlderThanDays: options['failed-older-than'] || undefined,
         });
 
         console.log(`Cleanup complete:`);

@@ -4,6 +4,8 @@
  * Provides inter-agent communication through persistent dispatch messages.
  */
 
+import type { DatabaseInterface } from '@happyvertical/sql';
+
 /**
  * Dispatch message status
  */
@@ -127,11 +129,13 @@ export interface DispatchCleanupResult {
  * Options for creating a DispatchBus
  */
 export interface DispatchBusOptions {
-  /** Database configuration */
-  db?: {
-    type: 'sqlite' | 'postgres' | 'json' | 'duckdb';
-    url: string;
-  };
+  /** Database configuration or existing interface */
+  db?:
+    | DatabaseInterface
+    | {
+        type: 'sqlite' | 'postgres' | 'json' | 'duckdb';
+        url: string;
+      };
   /** Alias for db - persistence layer configuration */
   persistence?: {
     type: 'sql' | 'json' | 'duckdb';
