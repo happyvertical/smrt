@@ -241,7 +241,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @deprecated Use the static create() factory method instead
    * @param options - Configuration options
    */
-  protected constructor(options: SmrtCollectionOptions = {}) {
+  constructor(options: SmrtCollectionOptions = {}) {
     super(options);
 
     // Auto-register the collection if it's not the base SmrtCollection and has an _itemClass

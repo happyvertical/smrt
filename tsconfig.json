@@ -64,6 +64,7 @@
     { "path": "./packages/profiles" },
     { "path": "./packages/tags" },
     { "path": "./packages/users" },
+    { "path": "./packages/smrt-svelte" },
 
     // MCP Servers
     { "path": "./packages/smrt-dev-mcp" },
