@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.17.76
+
+### Patch Changes
+
+- ### Features
+
+  - add DispatchBus for inter-agent communication (#590) (dispatch)
+  - add smrt-ads package for advertising delivery and tracking (#587) (ads)
+  - add smrt-vitest plugin for cross-package manifest loading (#586) (vitest)
+
+  ### Bug Fixes
+
+  - TypeScript fixes and number type support for CLI (#591) (dispatch)
+  - @happyvertical/smrt-config@0.17.76
+  - @happyvertical/smrt-types@0.17.76
+
 ## 0.17.75
 
 ### Patch Changes
