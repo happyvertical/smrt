@@ -156,7 +156,7 @@ export class DispatchCollection {
 
     const { rows } = await db.query(sql, ...params);
     return rows.map((row: Record<string, unknown>) =>
-      Dispatch.fromRow(row as DispatchData),
+      Dispatch.fromRow(row as unknown as DispatchData),
     );
   }
 
@@ -184,7 +184,7 @@ export class DispatchCollection {
     );
 
     return rows.map((row: Record<string, unknown>) =>
-      Dispatch.fromRow(row as DispatchData),
+      Dispatch.fromRow(row as unknown as DispatchData),
     );
   }
 
@@ -220,7 +220,7 @@ export class DispatchCollection {
     );
 
     return rows.map((row: Record<string, unknown>) =>
-      Dispatch.fromRow(row as DispatchData),
+      Dispatch.fromRow(row as unknown as DispatchData),
     );
   }
 
@@ -260,22 +260,22 @@ export class DispatchCollection {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - options.completedOlderThanDays);
 
-      const { rowsAffected } = await db.query(
+      const { rowCount } = await db.query(
         `DELETE FROM _smrt_dispatch WHERE status = 'completed' AND processed_at < ?`,
         cutoff.toISOString(),
       );
-      result.completedDeleted = rowsAffected || 0;
+      result.completedDeleted = rowCount || 0;
     }
 
     if (options.failedOlderThanDays) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - options.failedOlderThanDays);
 
-      const { rowsAffected } = await db.query(
+      const { rowCount } = await db.query(
         `DELETE FROM _smrt_dispatch WHERE status = 'failed' AND updated_at < ?`,
         cutoff.toISOString(),
       );
-      result.failedDeleted = rowsAffected || 0;
+      result.failedDeleted = rowCount || 0;
     }
 
     return result;

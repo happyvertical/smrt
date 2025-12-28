@@ -439,8 +439,9 @@ export async function createDispatchBus(
   let db: DatabaseInterface;
   if (typeof dbConfig === 'string') {
     db = await getDatabase(dbConfig);
-  } else if ('type' in dbConfig) {
-    db = await getDatabase(dbConfig);
+  } else if ('type' in dbConfig && 'url' in dbConfig) {
+    // Cast to GetDatabaseOptions since dbConfig has compatible shape
+    db = await getDatabase(dbConfig as { type: string; url: string });
   } else {
     // Already a DatabaseInterface
     db = dbConfig as DatabaseInterface;
