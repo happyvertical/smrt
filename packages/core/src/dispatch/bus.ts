@@ -439,12 +439,14 @@ export async function createDispatchBus(
   let db: DatabaseInterface;
   if (typeof dbConfig === 'string') {
     db = await getDatabase(dbConfig);
-  } else if ('type' in dbConfig && 'url' in dbConfig) {
-    // Cast to GetDatabaseOptions since dbConfig has compatible shape
-    db = await getDatabase(dbConfig as { type: string; url: string });
-  } else {
-    // Already a DatabaseInterface
+  } else if ('query' in dbConfig) {
+    // Already a DatabaseInterface (has query method)
     db = dbConfig as DatabaseInterface;
+  } else if ('type' in dbConfig && 'url' in dbConfig) {
+    // Database config object - use getDatabase
+    db = await getDatabase(dbConfig.url);
+  } else {
+    throw new Error('Invalid database configuration for DispatchBus');
   }
 
   const bus = new DispatchBus(db);
