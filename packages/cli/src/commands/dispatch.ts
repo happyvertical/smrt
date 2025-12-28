@@ -55,10 +55,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
         short: 't',
       },
       limit: {
-        type: 'string',
+        type: 'number',
         description: 'Maximum results (default: 50)',
         short: 'l',
-        default: '50',
+        default: 50,
       },
       json: {
         type: 'boolean',
@@ -74,7 +74,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
           status: options.status,
           source: options.source,
           type: options.type,
-          limit: parseInt(options.limit, 10) || 50,
+          limit: options.limit || 50,
         });
 
         if (options.json) {
@@ -128,10 +128,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
         short: 's',
       },
       limit: {
-        type: 'string',
+        type: 'number',
         description: 'Maximum dispatches to process (default: 100)',
         short: 'l',
-        default: '100',
+        default: 100,
       },
       dry: {
         type: 'boolean',
@@ -160,7 +160,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
 
           const pending = await bus.list({
             status: 'pending',
-            limit: parseInt(options.limit, 10) || 100,
+            limit: options.limit || 100,
           });
 
           // Filter by subscription patterns
@@ -192,7 +192,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
             );
             processed++;
           },
-          { limit: parseInt(options.limit, 10) || 100 },
+          { limit: options.limit || 100 },
         );
 
         console.log(`\nProcessed ${result} dispatch(es).`);
@@ -212,10 +212,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
     args: [],
     options: {
       'max-attempts': {
-        type: 'string',
+        type: 'number',
         description: 'Maximum attempts before giving up (default: 3)',
         short: 'm',
-        default: '3',
+        default: 3,
       },
       type: {
         type: 'string',
@@ -228,7 +228,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
         const bus = await getDispatchBus();
 
         const retryOptions: any = {
-          maxAttempts: parseInt(options['max-attempts'], 10) || 3,
+          maxAttempts: options['max-attempts'] || 3,
         };
 
         if (options.type) {
@@ -253,13 +253,13 @@ export const dispatchCommands: Record<string, CLICommand> = {
     args: [],
     options: {
       'completed-older-than': {
-        type: 'string',
+        type: 'number',
         description: 'Delete completed dispatches older than N days',
         short: 'c',
-        default: '30',
+        default: 30,
       },
       'failed-older-than': {
-        type: 'string',
+        type: 'number',
         description: 'Delete failed dispatches older than N days',
         short: 'f',
       },
@@ -295,24 +295,21 @@ export const dispatchCommands: Record<string, CLICommand> = {
           console.log(
             `\nCurrent counts:\n  Completed: ${completed}\n  Failed: ${failed}`,
           );
-          const completedDays =
-            parseInt(options['completed-older-than'], 10) || 30;
+          const completedDays = options['completed-older-than'] || 30;
           console.log(
             `\nWould delete completed older than ${completedDays} days`,
           );
           if (options['failed-older-than']) {
-            const failedDays = parseInt(options['failed-older-than'], 10);
-            console.log(`Would delete failed older than ${failedDays} days`);
+            console.log(
+              `Would delete failed older than ${options['failed-older-than']} days`,
+            );
           }
           return;
         }
 
         const result = await bus.cleanup({
-          completedOlderThanDays:
-            parseInt(options['completed-older-than'], 10) || 30,
-          failedOlderThanDays: options['failed-older-than']
-            ? parseInt(options['failed-older-than'], 10)
-            : undefined,
+          completedOlderThanDays: options['completed-older-than'] || 30,
+          failedOlderThanDays: options['failed-older-than'] || undefined,
         });
 
         console.log(`Cleanup complete:`);
