@@ -63,6 +63,7 @@
     { "path": "./packages/products" },
     { "path": "./packages/profiles" },
     { "path": "./packages/tags" },
+    { "path": "./packages/users" },
 
     // MCP Servers
     { "path": "./packages/smrt-dev-mcp" },
