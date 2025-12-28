@@ -1,5 +1,8 @@
 import { createLogger, type Logger } from '@happyvertical/logger';
 import {
+  createDispatchBus,
+  type DispatchBus,
+  type DispatchMetadata,
   ObjectRegistry,
   type SmrtCollection,
   SmrtObject,
@@ -115,6 +118,11 @@ export abstract class Agent extends SmrtObject {
   private signalHandlers: Map<NodeJS.Signals, () => void> = new Map();
 
   /**
+   * Cached DispatchBus instance for inter-agent communication
+   */
+  private _dispatch: DispatchBus | null = null;
+
+  /**
    * Creates a new Agent instance
    *
    * @param options - Configuration options including identifiers and metadata
@@ -130,6 +138,93 @@ export abstract class Agent extends SmrtObject {
    */
   protected get interests(): InterestOptions | undefined {
     return (this.options as AgentOptions).interests;
+  }
+
+  /**
+   * Get the DispatchBus for inter-agent communication
+   *
+   * Creates a DispatchBus lazily on first access. Requires database configuration.
+   *
+   * @example
+   * ```typescript
+   * // Emit a dispatch to other agents
+   * await this.dispatch.emit('campaign.completed', {
+   *   campaignId: '123',
+   *   revenue: 5000
+   * }, { source: this.constructor.name });
+   *
+   * // Subscribe to dispatches
+   * await this.dispatch.subscribe({
+   *   signalType: 'campaign.*',
+   *   subscriber: this.constructor.name
+   * });
+   * ```
+   *
+   * @throws Error if database is not configured
+   */
+  async getDispatch(): Promise<DispatchBus> {
+    if (!this._dispatch) {
+      if (!this._db) {
+        throw new Error(
+          `Agent ${this.constructor.name} requires database configuration for dispatch. ` +
+            `Ensure the agent is initialized with a db option.`,
+        );
+      }
+      this._dispatch = await createDispatchBus({
+        db: this._db,
+      });
+    }
+    return this._dispatch;
+  }
+
+  /**
+   * Handle incoming dispatches
+   *
+   * Override this method to process dispatches targeted at this agent.
+   * Called when process() is invoked for this agent's subscriber name.
+   *
+   * @param payload - Dispatch payload data
+   * @param metadata - Dispatch metadata including type, source, and timing
+   *
+   * @example
+   * ```typescript
+   * async handleDispatch(payload: unknown, metadata: DispatchMetadata): Promise<void> {
+   *   if (metadata.type === 'campaign.completed') {
+   *     const data = payload as { campaignId: string; revenue: number };
+   *     await this.recordRevenue(data.campaignId, data.revenue);
+   *   }
+   * }
+   * ```
+   */
+  async handleDispatch(
+    _payload: unknown,
+    _metadata: DispatchMetadata,
+  ): Promise<void> {
+    // Default implementation does nothing
+    // Subclasses should override to process dispatches
+  }
+
+  /**
+   * Process pending dispatches for this agent
+   *
+   * Finds and processes all pending dispatches that match this agent's subscriptions.
+   * Uses handleDispatch() to process each dispatch.
+   *
+   * @returns Number of dispatches processed
+   *
+   * @example
+   * ```typescript
+   * // In your run() method
+   * const processed = await this.processDispatches();
+   * this.logger.info(`Processed ${processed} dispatches`);
+   * ```
+   */
+  async processDispatches(): Promise<number> {
+    const dispatch = await this.getDispatch();
+    return dispatch.process(
+      this.constructor.name,
+      this.handleDispatch.bind(this),
+    );
   }
 
   /**

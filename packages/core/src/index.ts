@@ -42,6 +42,8 @@ export {
   type RelationshipFieldOptions,
   type TextFieldOptions,
 } from './decorators/index';
+// Dispatch system (inter-agent communication)
+export * from './dispatch/index';
 // Embeddings support (semantic search)
 export * from './embeddings/index';
 export * from './errors';

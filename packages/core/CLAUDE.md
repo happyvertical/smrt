@@ -8,6 +8,7 @@ The `@happyvertical/smrt-core` package is the core framework for building vertic
 - **Object-Relational Mapping**: Automatic schema generation from TypeScript class properties
 - **AI-First Design**: Built-in `is()` and `do()` methods for AI-powered operations
 - **Collection Management**: Standardized CRUD operations with flexible querying
+- **Inter-Agent Communication**: DispatchBus for asynchronous agent-to-agent messaging
 - **Error Handling System**: Comprehensive error types with automatic retry logic
 - **Registry System**: Global object registry for runtime introspection and code generation
 
@@ -1292,6 +1293,340 @@ await ErrorUtils.withRetry(
 if (ErrorUtils.isRetryable(error)) {
   // Network, AI errors are retryable
 }
+```
+
+## Inter-Agent Communication (DispatchBus)
+
+The DispatchBus provides asynchronous messaging between agents. It enables loose coupling where agents like Suasor (marketing) can emit events that Fiscus (accounting) processes later.
+
+### Architecture
+
+```
+┌─────────────┐     emit()      ┌──────────────────┐
+│   Suasor    │ ───────────────▶│  _smrt_dispatch  │
+│   Agent     │                 │     (pending)    │
+└─────────────┘                 └────────┬─────────┘
+                                         │
+                                         │ process('fiscus')
+                                         ▼
+┌─────────────┐   handleDispatch()  ┌──────────────────┐
+│   Fiscus    │ ◀───────────────────│  DispatchBus     │
+│   Agent     │                     └──────────────────┘
+└─────────────┘
+```
+
+### Quick Start
+
+```typescript
+import { createDispatchBus } from '@happyvertical/smrt-core';
+
+// Create a dispatch bus
+const bus = await createDispatchBus({
+  db: { type: 'sqlite', url: 'app.db' }
+});
+
+// Subscribe to events (persistent - survives restarts)
+await bus.subscribe({
+  signalType: 'campaign.completed',
+  subscriber: 'Fiscus',
+  handler: 'handleCampaignRevenue'
+});
+
+// Emit an event
+await bus.emit(
+  'campaign.completed',
+  { campaignId: 'camp-123', revenue: 5000.00 },
+  { source: 'Suasor' }
+);
+
+// Process pending dispatches
+await bus.process('Fiscus', async (payload, metadata) => {
+  console.log(`Processing ${metadata.type} from ${metadata.source}`);
+  // Handle the campaign completion...
+});
+```
+
+### Two Types of Handlers
+
+**1. In-Memory Handlers (Immediate)**
+
+Called synchronously when `emit()` is invoked. Useful for real-time reactions:
+
+```typescript
+// Register in-memory handler
+bus.on('campaign.completed', async (payload, metadata) => {
+  console.log(`Campaign ${payload.campaignId} completed!`);
+  await sendSlackNotification(payload);
+});
+
+// Unregister when done
+bus.off('campaign.completed', handler);
+```
+
+**2. Persistent Subscriptions (Processed Later)**
+
+Stored in database, processed when `process()` is called. Survives restarts:
+
+```typescript
+// Create persistent subscription
+await bus.subscribe({
+  signalType: 'campaign.*',    // Wildcard pattern
+  subscriber: 'Fiscus',
+  handler: 'handleCampaign'
+});
+
+// Later, process all pending dispatches
+await bus.process('Fiscus', async (payload, metadata) => {
+  // Handle each dispatch
+});
+
+// Remove subscription
+await bus.unsubscribe('campaign.*', 'Fiscus');
+```
+
+### Wildcard Subscriptions
+
+Subscribe to event families using wildcard patterns:
+
+```typescript
+// Match all campaign events
+await bus.subscribe({ signalType: 'campaign.*', subscriber: 'Monitor' });
+
+// Matches: campaign.started, campaign.paused, campaign.completed
+// Does NOT match: campaign.summer.completed (single segment only)
+
+// Match events with wildcards in the middle
+await bus.subscribe({ signalType: 'agent.*.completed', subscriber: 'Logger' });
+
+// Matches: agent.suasor.completed, agent.fiscus.completed
+```
+
+**Wildcard Rules:**
+- `*` matches exactly one segment (anything except `.`)
+- `campaign.*` matches `campaign.started` but NOT `campaign.summer.started`
+- Multiple wildcards allowed: `*.*.completed`
+
+### Dispatch Lifecycle
+
+```
+pending → processing → completed
+                   ↘ failed → (retry) → pending
+```
+
+**Status Values:**
+- `pending`: Waiting to be processed
+- `processing`: Currently being handled
+- `completed`: Successfully processed
+- `failed`: Handler threw an error
+
+### Retry Failed Dispatches
+
+```typescript
+// Retry failed dispatches (up to 3 attempts)
+const count = await bus.retry({ maxAttempts: 3 });
+console.log(`Reset ${count} dispatches for retry`);
+
+// Then process again
+await bus.process('Fiscus', handler);
+```
+
+### Cleanup Old Dispatches
+
+```typescript
+// Delete completed dispatches older than 30 days
+const result = await bus.cleanup({
+  completedOlderThanDays: 30,
+  failedOlderThanDays: 90
+});
+console.log(`Deleted ${result.completedDeleted} completed, ${result.failedDeleted} failed`);
+```
+
+### Query Dispatches
+
+```typescript
+// List all pending dispatches
+const pending = await bus.list({ status: 'pending' });
+
+// Filter by source
+const fromSuasor = await bus.list({
+  status: 'completed',
+  source: 'Suasor'
+});
+
+// Filter by type
+const campaigns = await bus.list({ type: 'campaign.completed' });
+
+// Get single dispatch by ID
+const dispatch = await bus.get('dispatch-uuid');
+```
+
+### Agent Integration
+
+Agents have built-in dispatch support:
+
+```typescript
+import { Agent } from '@happyvertical/smrt-agents';
+
+class Fiscus extends Agent {
+  // Override to handle dispatches
+  async handleDispatch(payload: unknown, metadata: DispatchMetadata): Promise<void> {
+    if (metadata.type === 'campaign.completed') {
+      await this.recordRevenue(payload);
+    }
+  }
+
+  async processIncomingDispatches(): Promise<void> {
+    // Get the dispatch bus (lazy-created)
+    const bus = await this.getDispatch();
+
+    // Subscribe to relevant events
+    await bus.subscribe({
+      signalType: 'campaign.*',
+      subscriber: this.constructor.name
+    });
+
+    // Process with the built-in handler
+    await this.processDispatches();
+  }
+}
+```
+
+**Agent Methods:**
+- `getDispatch()`: Get or create DispatchBus instance
+- `handleDispatch(payload, metadata)`: Override to handle dispatches
+- `processDispatches(options)`: Process pending dispatches for this agent
+
+### Metadata and Tracing
+
+Include metadata for observability:
+
+```typescript
+await bus.emit(
+  'order.placed',
+  { orderId: 'ord-123', total: 99.99 },
+  {
+    source: 'Checkout',
+    sourceId: 'checkout-instance-1',
+    metadata: {
+      traceId: 'trace-abc123',
+      spanId: 'span-xyz789',
+      environment: 'production'
+    }
+  }
+);
+
+// Access metadata in handler
+await bus.process('Billing', async (payload, metadata) => {
+  console.log(`Trace: ${metadata.metadata.traceId}`);
+  console.log(`Source: ${metadata.source} (${metadata.sourceId})`);
+});
+```
+
+### CLI Commands
+
+```bash
+# List dispatches
+smrt dispatch:list
+smrt dispatch:list --status pending
+smrt dispatch:list --source Suasor
+
+# Process pending for a subscriber
+smrt dispatch:process --subscriber Fiscus
+
+# Retry failed dispatches
+smrt dispatch:retry --max-attempts 3
+
+# Cleanup old dispatches
+smrt dispatch:cleanup --completed-older-than 30
+
+# Manage subscriptions
+smrt dispatch:subscriptions
+smrt dispatch:subscriptions --subscriber Fiscus
+smrt dispatch:subscribe --signal-type campaign.* --subscriber Fiscus
+smrt dispatch:unsubscribe --signal-type campaign.* --subscriber Fiscus
+```
+
+### Database Tables
+
+The dispatch system uses two system tables:
+
+**`_smrt_dispatch`**: Stores dispatch messages
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT | Unique identifier |
+| type | TEXT | Signal type (e.g., 'campaign.completed') |
+| source | TEXT | Emitting agent name |
+| source_id | TEXT | Optional instance identifier |
+| payload | TEXT | JSON-encoded payload |
+| status | TEXT | pending, processing, completed, failed |
+| attempts | INTEGER | Number of processing attempts |
+| last_error | TEXT | Error message from last failure |
+| processed_at | DATETIME | When processing completed |
+| processed_by | TEXT | Subscriber that processed |
+| metadata | TEXT | JSON-encoded trace metadata |
+
+**`_smrt_dispatch_subscriptions`**: Stores persistent subscriptions
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT | Unique identifier |
+| signal_type | TEXT | Pattern to match (supports wildcards) |
+| subscriber | TEXT | Agent name |
+| handler | TEXT | Method name to invoke |
+| enabled | INTEGER | 1 = active, 0 = disabled |
+
+### Best Practices
+
+**1. Use descriptive signal types**
+```typescript
+// ✅ GOOD - Clear hierarchy
+'campaign.completed'
+'order.payment.failed'
+'agent.fiscus.ready'
+
+// ❌ BAD - Ambiguous
+'done'
+'error'
+'data'
+```
+
+**2. Include source in emit options**
+```typescript
+// ✅ GOOD - Traceable
+await bus.emit('event', payload, { source: 'Suasor', sourceId: 'instance-1' });
+
+// ❌ BAD - Unknown origin
+await bus.emit('event', payload);
+```
+
+**3. Handle failures gracefully**
+```typescript
+await bus.process('Fiscus', async (payload, metadata) => {
+  try {
+    await processPayload(payload);
+  } catch (error) {
+    // Log but rethrow to mark as failed
+    console.error(`Failed to process ${metadata.id}:`, error);
+    throw error;
+  }
+});
+```
+
+**4. Use wildcards for monitoring**
+```typescript
+// Monitor all events for logging/metrics
+await bus.subscribe({
+  signalType: '*',
+  subscriber: 'MetricsCollector'
+});
+```
+
+**5. Clean up regularly**
+```typescript
+// In a scheduled job
+await bus.cleanup({
+  completedOlderThanDays: 7,
+  failedOlderThanDays: 30
+});
 ```
 
 ## Common Gotchas

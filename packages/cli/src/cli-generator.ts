@@ -46,6 +46,7 @@ let _generateCommands: Record<string, Command> | null = null;
 let _gitCommands: Record<string, Command> | null = null;
 let _initCommands: Record<string, Command> | null = null;
 let _utilityCommands: Record<string, Command> | null = null;
+let _dispatchCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -85,6 +86,14 @@ async function getUtilityCommands(): Promise<Record<string, Command>> {
     _utilityCommands = utilityCommands;
   }
   return _utilityCommands;
+}
+
+async function getDispatchCommands(): Promise<Record<string, Command>> {
+  if (!_dispatchCommands) {
+    const { dispatchCommands } = await import('./commands/index.js');
+    _dispatchCommands = dispatchCommands;
+  }
+  return _dispatchCommands;
 }
 
 export interface CLIConfig {
@@ -863,12 +872,14 @@ export class CLIGenerator {
       gitCommands,
       initCommands,
       utilityCommands,
+      dispatchCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
       getGitCommands(),
       getInitCommands(),
       getUtilityCommands(),
+      getDispatchCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -876,6 +887,7 @@ export class CLIGenerator {
       ...gitCommands,
       ...initCommands,
       ...utilityCommands,
+      ...dispatchCommands,
     };
 
     const builtInCommand = builtInCommands[parsed.command];
@@ -1196,12 +1208,14 @@ export class CLIGenerator {
       gitCommands,
       initCommands,
       utilityCommands,
+      dispatchCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
       getGitCommands(),
       getInitCommands(),
       getUtilityCommands(),
+      getDispatchCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1212,6 +1226,12 @@ export class CLIGenerator {
 
     console.log('Utility Commands:');
     for (const command of Object.values(utilityCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
+
+    console.log('Dispatch (Inter-Agent Communication):');
+    for (const command of Object.values(dispatchCommands)) {
       this.showCommandHelp(command);
     }
     console.log();

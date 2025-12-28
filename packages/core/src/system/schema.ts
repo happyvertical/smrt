@@ -132,6 +132,66 @@ CREATE INDEX IF NOT EXISTS idx_smrt_embeddings_model
 `;
 
 /**
+ * Dispatch queue for inter-agent communication
+ * Stores dispatch messages for asynchronous agent-to-agent signaling
+ */
+export const CREATE_SMRT_DISPATCH_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_dispatch (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  source TEXT NOT NULL,
+  source_id TEXT,
+  payload TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER DEFAULT 0,
+  last_error TEXT,
+  processed_at DATETIME,
+  processed_by TEXT,
+  metadata TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status
+  ON _smrt_dispatch(status);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_type
+  ON _smrt_dispatch(type);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_source
+  ON _smrt_dispatch(source);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_created
+  ON _smrt_dispatch(created_at);
+`;
+
+/**
+ * Dispatch subscriptions for persistent handlers
+ * Stores subscriptions to dispatch types for agent processing
+ */
+export const CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_dispatch_subscriptions (
+  id TEXT PRIMARY KEY,
+  signal_type TEXT NOT NULL,
+  subscriber TEXT NOT NULL,
+  handler TEXT NOT NULL DEFAULT 'handleDispatch',
+  enabled INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(signal_type, subscriber)
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_subscriber
+  ON _smrt_dispatch_subscriptions(subscriber);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_signal_type
+  ON _smrt_dispatch_subscriptions(signal_type);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_enabled
+  ON _smrt_dispatch_subscriptions(enabled);
+`;
+
+/**
  * All system table creation statements
  */
 export const ALL_SYSTEM_TABLES = [
@@ -140,6 +200,8 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_REGISTRY_TABLE,
   CREATE_SMRT_SIGNALS_TABLE,
   CREATE_SMRT_EMBEDDINGS_TABLE,
+  CREATE_SMRT_DISPATCH_TABLE,
+  CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
 ];
 
 /**
