@@ -91,6 +91,12 @@ export class PermissionResolver {
 
   /**
    * Resolve all effective permissions for a user in a tenant
+   *
+   * Algorithm:
+   * 1. Get membership and collect all permission IDs from all sources
+   * 2. Batch fetch all permissions in a single query
+   * 3. Apply permissions from role, groups, and overrides
+   * 4. DENY overrides take precedence over GRANT
    */
   async resolvePermissions(
     userId: string,
@@ -116,49 +122,44 @@ export class PermissionResolver {
     result.membershipId = membership.id ?? null;
     result.roleId = membership.roleId ?? null;
 
-    // 2. Get base permissions from membership role
     if (!membership.roleId) {
       return result;
     }
-    const rolePermissionIds =
-      await this.rolePermissionCollection.getPermissionIds(membership.roleId);
 
-    // Convert permission IDs to slugs
-    const permissionIdToSlug = new Map<string, string>();
-    for (const permId of rolePermissionIds) {
-      const perm = await this.permissionCollection.get({ id: permId });
-      if (perm?.slug) {
-        permissionIdToSlug.set(permId, perm.slug);
-        result.permissions.add(perm.slug);
-      }
+    // 2. Collect all permission IDs from all sources (no awaits in loops)
+    const allPermissionIds: Set<string> = new Set();
+    const rolePermissionIds: string[] = [];
+    const groupRolePermissionIds: Map<string, string[]> = new Map();
+
+    // 2a. Get base role permissions
+    const baseRolePermIds =
+      await this.rolePermissionCollection.getPermissionIds(membership.roleId);
+    for (const id of baseRolePermIds) {
+      allPermissionIds.add(id);
+      rolePermissionIds.push(id);
     }
 
-    // 3. Get user's groups in the tenant
-    const groupIds = await this.groupMemberCollection.getGroupIds(userId);
+    // 2b. Get user's groups in the tenant (scoped to prevent cross-tenant leakage)
+    const groupIds = await this.groupMemberCollection.getGroupIdsForTenant(
+      userId,
+      tenantId,
+    );
     result.groupIds = groupIds;
 
-    // 4. Add permissions from group roles
+    // 2c. Collect permissions from group roles
     for (const groupId of groupIds) {
       const groupRoleIds = await this.groupRoleCollection.getRoleIds(groupId);
       for (const roleId of groupRoleIds) {
-        const groupRolePermissionIds =
+        const permIds =
           await this.rolePermissionCollection.getPermissionIds(roleId);
-        for (const permId of groupRolePermissionIds) {
-          if (!permissionIdToSlug.has(permId)) {
-            const perm = await this.permissionCollection.get({ id: permId });
-            if (perm?.slug) {
-              permissionIdToSlug.set(permId, perm.slug);
-            }
-          }
-          const slug = permissionIdToSlug.get(permId);
-          if (slug) {
-            result.permissions.add(slug);
-          }
+        for (const id of permIds) {
+          allPermissionIds.add(id);
         }
+        groupRolePermissionIds.set(roleId, permIds);
       }
     }
 
-    // 5. Apply membership overrides
+    // 2d. Get membership overrides
     if (!membership.id) {
       return result;
     }
@@ -174,31 +175,57 @@ export class PermissionResolver {
 
     result.deniedPermissionIds = deniedPermissionIds;
 
-    // Add granted overrides
-    for (const permId of grantedPermissionIds) {
-      if (!permissionIdToSlug.has(permId)) {
-        const perm = await this.permissionCollection.get({ id: permId });
-        if (perm?.slug) {
-          permissionIdToSlug.set(permId, perm.slug);
-        }
+    for (const id of grantedPermissionIds) {
+      allPermissionIds.add(id);
+    }
+    for (const id of deniedPermissionIds) {
+      allPermissionIds.add(id);
+    }
+
+    // 3. Batch fetch all permissions in a single query
+    const permissionsMap = await this.permissionCollection.findByIds(
+      Array.from(allPermissionIds),
+    );
+
+    // Build ID to slug mapping
+    const permissionIdToSlug = new Map<string, string>();
+    for (const [id, perm] of permissionsMap) {
+      if (perm.slug) {
+        permissionIdToSlug.set(id, perm.slug);
       }
+    }
+
+    // 4. Apply permissions from role
+    for (const permId of rolePermissionIds) {
       const slug = permissionIdToSlug.get(permId);
       if (slug) {
         result.permissions.add(slug);
       }
     }
 
-    // Remove denied overrides (DENY takes precedence)
+    // 5. Apply permissions from group roles
+    for (const permIds of groupRolePermissionIds.values()) {
+      for (const permId of permIds) {
+        const slug = permissionIdToSlug.get(permId);
+        if (slug) {
+          result.permissions.add(slug);
+        }
+      }
+    }
+
+    // 6. Apply granted overrides
+    for (const permId of grantedPermissionIds) {
+      const slug = permissionIdToSlug.get(permId);
+      if (slug) {
+        result.permissions.add(slug);
+      }
+    }
+
+    // 7. Remove denied overrides (DENY takes precedence)
     for (const permId of deniedPermissionIds) {
       const slug = permissionIdToSlug.get(permId);
       if (slug) {
         result.permissions.delete(slug);
-      } else {
-        // Look up the permission if not cached
-        const perm = await this.permissionCollection.get({ id: permId });
-        if (perm?.slug) {
-          result.permissions.delete(perm.slug);
-        }
       }
     }
 

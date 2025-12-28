@@ -77,10 +77,31 @@ export class GroupMemberCollection extends SmrtCollection<GroupMember> {
 
   /**
    * Get group IDs for a user
+   * @deprecated Use getGroupIdsForTenant to prevent cross-tenant leakage
    */
   async getGroupIds(userId: string): Promise<string[]> {
     const memberships = await this.findByUser(userId);
     return memberships.map((m) => m.groupId as string);
+  }
+
+  /**
+   * Get group IDs for a user within a specific tenant
+   * This prevents cross-tenant permission leakage by filtering groups by tenant
+   */
+  async getGroupIdsForTenant(
+    userId: string,
+    tenantId: string,
+  ): Promise<string[]> {
+    // Query group_members joined with groups to filter by tenant
+    // Use raw database query to get unhydrated results
+    const sql = `
+      SELECT gm.group_id
+      FROM ${this.tableName} gm
+      INNER JOIN groups g ON g.id = gm.group_id
+      WHERE gm.user_id = ? AND g.tenant_id = ?
+    `;
+    const result = await this.db.query(sql, [userId, tenantId]);
+    return result.rows.map((r: any) => r.group_id as string);
   }
 
   /**

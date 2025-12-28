@@ -34,6 +34,34 @@ export class PermissionCollection extends SmrtCollection<Permission> {
   }
 
   /**
+   * Batch fetch permissions by IDs
+   * Returns a Map of id -> Permission for efficient lookup
+   */
+  async findByIds(ids: string[]): Promise<Map<string, Permission>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    // Remove duplicates
+    const uniqueIds = [...new Set(ids)];
+
+    // Build placeholders for SQL IN clause
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const results = await this.query(
+      `SELECT * FROM ${this.tableName} WHERE id IN (${placeholders})`,
+      uniqueIds,
+    );
+
+    const map = new Map<string, Permission>();
+    for (const perm of results) {
+      if (perm.id) {
+        map.set(perm.id, perm);
+      }
+    }
+    return map;
+  }
+
+  /**
    * Get all unique categories
    */
   async getCategories(): Promise<string[]> {
