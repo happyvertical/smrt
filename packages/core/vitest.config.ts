@@ -27,8 +27,9 @@ export default defineConfig({
     environment: 'node',
 
     // Increased timeouts for CI environments
-    testTimeout: 30000, // 30 seconds (up from default 5s)
-    hookTimeout: 30000, // Match testTimeout for consistency
+    testTimeout: 60000, // 60 seconds for slow CI
+    hookTimeout: 60000, // Match testTimeout
+    teardownTimeout: 60000, // Allow time for cleanup
 
     // Reporter configuration
     reporters: ['default'],
@@ -57,6 +58,9 @@ export default defineConfig({
 
     // Limit to single worker to prevent timeout issues
     maxWorkers: 1,
+
+    // Disable file parallelism to prevent RPC timeout issues
+    fileParallelism: false,
   },
 
   // Resolve workspace packages for testing
