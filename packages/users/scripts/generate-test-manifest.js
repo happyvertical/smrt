@@ -87,14 +87,16 @@ export default testManifest;
 `;
 
     // Write and execute the TypeScript code
-    writeFileSync('temp-test-manifest-gen.ts', tsCode);
+    // Use unique filename to avoid race conditions with parallel builds
+    const tempFile = `temp-test-manifest-gen-${process.pid}.ts`;
+    writeFileSync(tempFile, tsCode);
 
     try {
-      execSync('npx tsx temp-test-manifest-gen.ts', { stdio: 'inherit' });
+      execSync(`npx tsx ${tempFile}`, { stdio: 'inherit' });
     } finally {
       // Clean up
       try {
-        execSync('rm temp-test-manifest-gen.ts');
+        execSync(`rm ${tempFile}`);
       } catch {}
     }
   } catch (error) {
