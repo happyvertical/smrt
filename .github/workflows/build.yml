@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical
     timeout-minutes: 20
     steps:
       - name: Checkout

@@ -6,7 +6,7 @@ on:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical
     timeout-minutes: 30
 
     services:
