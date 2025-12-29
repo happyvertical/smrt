@@ -24,6 +24,7 @@ import { Contract } from './Contract.js';
  * ```
  */
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: true,

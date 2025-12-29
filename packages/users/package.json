@@ -50,6 +50,7 @@
     "@happyvertical/smrt-profiles": "workspace:*"
   },
   "devDependencies": {
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "^24.0.0",
     "fast-glob": "^3.3.2",
