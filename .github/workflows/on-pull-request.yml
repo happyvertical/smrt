@@ -17,7 +17,7 @@ permissions:
 jobs:
   validate-commits:
     name: Validate Conventional Commits
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical
 
     steps:
       - name: Checkout PR branch
@@ -32,7 +32,7 @@ jobs:
 
   validate-workflows:
     name: Validate Workflow Files
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4

@@ -28,7 +28,7 @@ jobs:
   cancel-pr-checks:
     name: Cancel PR Validation Checks
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical
 
     steps:
       - name: Checkout repository
