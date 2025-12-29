@@ -3552,7 +3552,7 @@ export class ObjectRegistry {
  * ```
  */
 export function smrt(config: SmartObjectConfig = {}) {
-  return <T extends new (...args: any[]) => any>(ctor: T): T => {
+  return <T extends abstract new (...args: any[]) => any>(ctor: T): T => {
     // Check if this is a SmrtCollection class
     const isCollection = ctor.prototype instanceof SmrtCollection;
 
