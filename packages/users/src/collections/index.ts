@@ -16,4 +16,9 @@ export { RoleCollection } from './RoleCollection.js';
 export { RolePermissionCollection } from './RolePermissionCollection.js';
 export { TenantCollection } from './TenantCollection.js';
 // Core collections
-export { UserCollection } from './UserCollection.js';
+export {
+  type GetOrCreateFromOidcOptions,
+  type OidcClaims,
+  type OidcIdentityResult,
+  UserCollection,
+} from './UserCollection.js';
