@@ -41,11 +41,14 @@
 
 // Collections
 export {
+  type GetOrCreateFromOidcOptions,
   GroupCollection,
   GroupMemberCollection,
   GroupRoleCollection,
   MembershipCollection,
   MembershipOverrideCollection,
+  type OidcClaims,
+  type OidcIdentityResult,
   PermissionCollection,
   RoleCollection,
   RolePermissionCollection,
@@ -68,17 +71,23 @@ export {
 
 // Services
 export {
+  type EnsureTenantResult,
   type PermissionResolutionResult,
   PermissionResolver,
+  TenantService,
+  type TenantWithOwnershipResult,
 } from './services/index.js';
 
 // Types
 export {
   DEFAULT_ROLE_SLUGS,
   DEFAULT_ROLES,
+  DEFAULT_TENANT_POLICY,
   type DefaultRoleSlug,
   MembershipStatus,
   OverrideEffect,
+  type TenantPolicy,
+  type TenantPolicyMode,
   TenantStatus,
   UserStatus,
 } from './types/index.js';

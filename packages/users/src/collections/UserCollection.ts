@@ -4,8 +4,47 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import type { OidcIdentity, Profile } from '@happyvertical/smrt-profiles';
 import { User } from '../models/User.js';
 import { UserStatus } from '../types/index.js';
+
+/**
+ * OIDC claims used for identity resolution
+ */
+export interface OidcClaims {
+  /** Subject identifier from IdP */
+  sub: string;
+  /** Issuer URL */
+  iss: string;
+  /** User's email address */
+  email?: string;
+  /** User's display name */
+  name?: string;
+  /** Preferred username */
+  preferred_username?: string;
+}
+
+/**
+ * Result of OIDC identity resolution
+ */
+export interface OidcIdentityResult {
+  /** The User record */
+  user: User;
+  /** The linked Profile */
+  profile: Profile;
+  /** The OidcIdentity linking profile to IdP */
+  oidcIdentity: OidcIdentity;
+  /** Whether the profile was newly created */
+  created: boolean;
+}
+
+/**
+ * Options for getOrCreateFromOidc
+ */
+export interface GetOrCreateFromOidcOptions {
+  /** If false, skip recording login timestamp (default: true) */
+  recordLogin?: boolean;
+}
 
 /**
  * Collection for managing User objects
@@ -79,5 +118,95 @@ export class UserCollection extends SmrtCollection<User> {
     });
     await user.save();
     return user;
+  }
+
+  /**
+   * Get or create user from OIDC claims
+   *
+   * This is the primary method for resolving identity from an OIDC login.
+   * It handles the full flow:
+   * 1. Find or create Profile from OIDC claims (via smrt-profiles)
+   * 2. Link OidcIdentity to the Profile
+   * 3. Find or create User linked to the Profile
+   *
+   * @param claims - OIDC token claims (sub, iss, email, name)
+   * @param provider - Provider name (e.g., 'kanidm', 'keycloak', 'google')
+   * @param options - Optional settings (recordLogin)
+   * @returns User, Profile, OidcIdentity, and whether profile was created
+   *
+   * @example
+   * ```typescript
+   * const userCollection = await UserCollection.create({ db: dbConfig });
+   *
+   * // In your OIDC callback handler:
+   * const { user, profile } = await userCollection.getOrCreateFromOidc(
+   *   {
+   *     sub: tokenClaims.sub,
+   *     iss: tokenClaims.iss,
+   *     email: tokenClaims.email,
+   *     name: tokenClaims.name,
+   *   },
+   *   'kanidm'
+   * );
+   *
+   * // User and profile are now available
+   * // Login was auto-recorded; pass { recordLogin: false } to skip
+   * ```
+   */
+  async getOrCreateFromOidc(
+    claims: OidcClaims,
+    provider: string,
+    options?: GetOrCreateFromOidcOptions,
+  ): Promise<OidcIdentityResult> {
+    // Validate required OIDC claims at runtime
+    const sub = claims?.sub?.trim();
+    const iss = claims?.iss?.trim();
+    if (!sub || !iss) {
+      throw new Error(
+        'Invalid OIDC claims: both "sub" and "iss" must be non-empty strings.',
+      );
+    }
+
+    // Email is required for user creation
+    if (!claims.email) {
+      throw new Error(
+        'OIDC claims missing required "email" for user creation.',
+      );
+    }
+
+    // Dynamic import to avoid circular dependency between smrt-users and smrt-profiles.
+    // Both packages need to reference each other's types, so we defer the import.
+    const { createProfileFromOidc } = await import(
+      '@happyvertical/smrt-profiles'
+    );
+
+    // Get database options from this collection
+    const dbOptions = { db: this.options.db };
+
+    // Create or find profile with linked OIDC identity
+    const { profile, oidcIdentity, created } = await createProfileFromOidc(
+      claims,
+      provider,
+      dbOptions,
+    );
+
+    // Get or create user for this profile
+    const user = await this.getOrCreateForProfile(
+      profile.id as string,
+      claims.email,
+      { status: UserStatus.ACTIVE },
+    );
+
+    // Record login unless disabled
+    if (options?.recordLogin !== false) {
+      await user.recordLogin();
+    }
+
+    return {
+      user,
+      profile,
+      oidcIdentity,
+      created,
+    };
   }
 }
