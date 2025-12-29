@@ -860,12 +860,15 @@ importers:
 
   packages/smrt-svelte:
     dependencies:
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users
     devDependencies:
       '@sveltejs/package':
-        specifier: ^2.3.9
+        specifier: ^2.5.7
         version: 2.5.7(svelte@5.45.5)(typescript@5.9.3)
       '@sveltejs/vite-plugin-svelte':
         specifier: ^6.2.1

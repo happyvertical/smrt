@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.17.75",
+  "version": "0.17.76",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,8 +17,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "svelte-package",
-    "dev": "svelte-package --watch",
+    "build": "svelte-package -i src",
+    "dev": "svelte-package -i src --watch",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "npx vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
@@ -46,13 +46,14 @@
     "access": "public"
   },
   "dependencies": {
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*"
   },
   "peerDependencies": {
-    "svelte": "^5.0.0"
+    "svelte": "^5.18.2"
   },
   "devDependencies": {
-    "@sveltejs/package": "^2.3.9",
+    "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@types/node": "^24.0.0",
     "svelte": "^5.18.2",

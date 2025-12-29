@@ -20,19 +20,34 @@ export function permission(
   node: HTMLElement,
   params: PermissionParams,
 ): { update: (params: PermissionParams) => void; destroy: () => void } {
-  const originalDisplay = node.style.display;
+  // Save original styles for restoration
+  const originalStyles = {
+    display: node.style.display,
+    visibility: node.style.visibility,
+    position: node.style.position,
+    pointerEvents: node.style.pointerEvents,
+  };
 
   function update(params: PermissionParams) {
     const hasPermission = params.permissions.includes(params.slug);
 
     if (hasPermission) {
-      node.style.display = originalDisplay;
+      // Restore original styles
+      node.style.display = originalStyles.display;
+      node.style.visibility = originalStyles.visibility;
+      node.style.position = originalStyles.position;
+      node.style.pointerEvents = originalStyles.pointerEvents;
       node.removeAttribute('aria-hidden');
     } else if (params.hideOnly) {
+      // Hide only: make invisible but keep in DOM layout
       node.style.display = 'none';
       node.setAttribute('aria-hidden', 'true');
     } else {
+      // Default: remove from layout flow completely
       node.style.display = 'none';
+      node.style.visibility = 'hidden';
+      node.style.position = 'absolute';
+      node.style.pointerEvents = 'none';
       node.setAttribute('aria-hidden', 'true');
     }
   }
@@ -42,8 +57,11 @@ export function permission(
   return {
     update,
     destroy() {
-      // Restore original display on unmount
-      node.style.display = originalDisplay;
+      // Restore original styles on unmount
+      node.style.display = originalStyles.display;
+      node.style.visibility = originalStyles.visibility;
+      node.style.position = originalStyles.position;
+      node.style.pointerEvents = originalStyles.pointerEvents;
     },
   };
 }
