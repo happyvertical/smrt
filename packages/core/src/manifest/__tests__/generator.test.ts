@@ -54,7 +54,7 @@ class TestClass extends SmrtObject {
         const manifest = await builder.generate({
           include: ['src/**/*.ts'],
           exclude: ['src/**/*.d.ts'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -99,7 +99,7 @@ class User extends SmrtObject {
         const manifest = await builder.generate({
           include: ['src/**/*.ts'],
           exclude: ['**/*.test.ts', '**/__tests__/**'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -119,7 +119,7 @@ class User extends SmrtObject {
 
         const manifest = await builder.generate({
           include: ['nonexistent/**/*.ts'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -154,7 +154,7 @@ class Product extends SmrtObject {
 
         const manifest = await builder.generate({
           include: ['src/**/*.ts'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -187,7 +187,7 @@ class CustomClass extends SmrtClass {
         const manifest = await builder.generate({
           include: ['src/**/*.ts'],
           baseClasses: ['CustomClass'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -221,7 +221,7 @@ class TestClass extends SmrtObject {
         await builder.generate({
           include: ['src/**/*.ts'],
           followImports: true,
-          outputDir: 'output',
+          outputDir: testOutputDir,
           outputName: 'manifest-with-imports.json',
           generateTypeStub: false,
         });
@@ -230,7 +230,7 @@ class TestClass extends SmrtObject {
         await builder.generate({
           include: ['src/**/*.ts'],
           followImports: false,
-          outputDir: 'output',
+          outputDir: testOutputDir,
           outputName: 'manifest-no-imports.json',
           generateTypeStub: false,
         });
@@ -280,7 +280,7 @@ class Item extends SmrtObject {
         const manifest = await builder.generate({
           include: ['src/**/*.ts'],
           injectPackageInfo: true,
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -300,7 +300,7 @@ class Item extends SmrtObject {
         const manifest = await builder.generate({
           include: ['src/**/*.ts'],
           moduleType: 'smrt',
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -320,7 +320,7 @@ class Item extends SmrtObject {
         const manifest = await builder.generate({
           include: ['src/**/*.ts'],
           discoverExternalPackages: true,
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -353,7 +353,7 @@ class Document extends SmrtObject {
 
         await builder.generate({
           include: ['src/**/*.ts'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           outputName: 'test-manifest.json',
           generateTypeStub: false,
         });
@@ -386,7 +386,7 @@ class Article extends SmrtObject {
 
         await builder.generate({
           include: ['src/**/*.ts'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           outputName: 'manifest.json',
           generateTypeStub: true,
           stubName: 'manifest.ts',
@@ -422,7 +422,7 @@ class TestClass extends SmrtObject {
         // Build manifest
         await builder.generate({
           include: ['src/**/*.ts'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           outputName: 'static-manifest.json',
           generateTypeStub: true,
           stubName: 'static-manifest.ts',
@@ -431,7 +431,7 @@ class TestClass extends SmrtObject {
         // Test manifest
         await builder.generate({
           include: ['src/**/*.ts'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           outputName: 'test-manifest.json',
           generateTypeStub: true,
           stubName: 'test-manifest-stub.ts',
@@ -459,7 +459,7 @@ class TestClass extends SmrtObject {
 
         const manifest = await builder.generate({
           include: ['nonexistent/**/*.ts'],
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -488,7 +488,7 @@ class TestClass extends SmrtObject {
           include: ['nonexistent/**/*.ts'],
           injectPackageInfo: true,
           discoverExternalPackages: true,
-          outputDir: 'output',
+          outputDir: testOutputDir,
           generateTypeStub: false,
         });
 
@@ -533,7 +533,7 @@ class Model extends SmrtObject {
           loadViteConfig: false,
           discoverExternalPackages: true,
           includeExternalBaseClasses: false,
-          outputDir: 'output',
+          outputDir: testOutputDir,
           outputName: 'static-manifest.json',
           generateTypeStub: true,
           stubName: 'static-manifest.ts',
@@ -586,7 +586,7 @@ class TestClass extends SmrtObject {
           loadViteConfig: false, // Would be true in real scenario with vite.config.ts
           discoverExternalPackages: true,
           includeExternalBaseClasses: true,
-          outputDir: 'output',
+          outputDir: testOutputDir,
           outputName: 'test-manifest.json',
           generateTypeStub: true,
           stubName: 'test-manifest-stub.ts',
