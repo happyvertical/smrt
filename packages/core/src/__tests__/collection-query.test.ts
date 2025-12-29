@@ -15,6 +15,7 @@
  * - Issue #XXX: Custom query support for interests
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -91,7 +92,10 @@ const adapterConfigs = [
     name: 'SQLite (file)',
     getConfig: () => ({
       type: 'sqlite' as const,
-      url: join(tmpdir(), `test-collection-query-${Date.now()}.db`),
+      url: join(
+        tmpdir(),
+        `test-collection-query-${randomUUID().slice(0, 8)}.db`,
+      ),
     }),
     cleanup: async (config: any) => {
       if (config?.url && config.url !== ':memory:' && existsSync(config.url)) {
@@ -103,7 +107,10 @@ const adapterConfigs = [
     name: 'JSON (DuckDB)',
     getConfig: () => ({
       type: 'json' as const,
-      url: join(tmpdir(), `test-collection-query-json-${Date.now()}`),
+      url: join(
+        tmpdir(),
+        `test-collection-query-json-${randomUUID().slice(0, 8)}`,
+      ),
     }),
     cleanup: async (config: any) => {
       if (config?.url && existsSync(config.url)) {
@@ -529,8 +536,14 @@ describe('collection.query()', () => {
 
       afterEach(async () => {
         if (db && typeof db.close === 'function') {
-          await db.close();
+          try {
+            await db.close();
+          } catch {
+            // Ignore close errors
+          }
         }
+        // Small delay to allow DuckDB to release file locks before cleanup
+        await new Promise((resolve) => setTimeout(resolve, 50));
         await adapterConfig.cleanup(dbConfig);
       });
 

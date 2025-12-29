@@ -9,6 +9,7 @@
  * 5. DatabaseInterface instances are properly tracked without key collisions
  */
 
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -18,7 +19,7 @@ import { SmrtObject } from '../object';
 
 // Helper to create unique test database paths
 function getTempDbPath(name: string): string {
-  return join(tmpdir(), `test-issue-35-${name}-${Date.now()}.db`);
+  return join(tmpdir(), `test-issue-35-${name}-${randomUUID().slice(0, 8)}.db`);
 }
 
 // Move test classes to module level so AST scanner can pick them up during test manifest generation
@@ -126,8 +127,14 @@ describe('Issue #35: System Tables Initialization', () => {
 
   describe('JSON databases with different dataDirs', () => {
     it('should create system tables for each JSON database with different dataDir', async () => {
-      const dataDir1 = join(tmpdir(), `test-json-1-${Date.now()}`);
-      const dataDir2 = join(tmpdir(), `test-json-2-${Date.now()}`);
+      const dataDir1 = join(
+        tmpdir(),
+        `test-json-1-${randomUUID().slice(0, 8)}`,
+      );
+      const dataDir2 = join(
+        tmpdir(),
+        `test-json-2-${randomUUID().slice(0, 8)}`,
+      );
 
       // Create two JSON databases with different dataDirs
       const db1 = await getDatabase({

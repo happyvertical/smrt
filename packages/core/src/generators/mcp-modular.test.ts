@@ -3,6 +3,7 @@
  * Tests modular generation, configuration handling, and file structure
  */
 
+import { randomUUID } from 'node:crypto';
 import { access, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +16,10 @@ describe('MCPGenerator - Modular Generation', () => {
 
   beforeEach(async () => {
     // Create temp directory for test output
-    tmpDir = join(tmpdir(), `smrt-mcp-modular-test-${Date.now()}`);
+    tmpDir = join(
+      tmpdir(),
+      `smrt-mcp-modular-test-${randomUUID().slice(0, 8)}`,
+    );
     await mkdir(tmpDir, { recursive: true });
 
     generator = new MCPGenerator({

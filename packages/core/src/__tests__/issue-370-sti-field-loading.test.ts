@@ -18,6 +18,7 @@
  * Related: https://github.com/happyvertical/smrt/issues/370
  */
 
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -87,7 +88,7 @@ describe('Issue #370: STI Field Loading', () => {
   let dbPath: string;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `test-issue-370-${Date.now()}.db`);
+    dbPath = join(tmpdir(), `test-issue-370-${randomUUID().slice(0, 8)}.db`);
     db = await getDatabase({ type: 'sqlite', url: dbPath });
   });
 

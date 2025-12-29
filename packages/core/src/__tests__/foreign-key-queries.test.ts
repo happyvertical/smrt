@@ -12,6 +12,7 @@
  * Related: https://github.com/happyvertical/smrt/issues/384
  */
 
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -80,9 +81,7 @@ describe('Foreign Key Queries in STI Models', () => {
   let dbPath: string;
 
   beforeEach(async () => {
-    // Add random component to ensure uniqueness even with same timestamp
-    const random = Math.random().toString(36).substring(7);
-    dbPath = join(tmpdir(), `test-fk-queries-${Date.now()}-${random}.db`);
+    dbPath = join(tmpdir(), `test-fk-queries-${randomUUID().slice(0, 8)}.db`);
     db = await getDatabase({ type: 'sqlite', url: dbPath });
   });
 

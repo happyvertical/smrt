@@ -2,6 +2,7 @@
  * Minimal test to debug race condition in foreign key queries
  */
 
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -43,8 +44,7 @@ describe('Race Condition Debug', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
-    const random = Math.random().toString(36).substring(7);
-    const dbPath = join(tmpdir(), `race-debug-${Date.now()}-${random}.db`);
+    const dbPath = join(tmpdir(), `race-debug-${randomUUID().slice(0, 8)}.db`);
     db = await getDatabase({ type: 'sqlite', url: dbPath });
   });
 

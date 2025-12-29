@@ -5,6 +5,7 @@
  * Useful for functions, computed properties, and runtime-only data.
  */
 
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -56,7 +57,7 @@ describe('Issue #176: Transient fields', () => {
   let dbPath: string;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `test-transient-${Date.now()}.db`);
+    dbPath = join(tmpdir(), `test-transient-${randomUUID().slice(0, 8)}.db`);
     db = await getDatabase({ type: 'sqlite', url: dbPath });
   });
 
