@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.80
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - ensure all tables exist for JSON adapter cross-table queries (#604) (core)
+  - @happyvertical/smrt-config@0.17.80
+  - @happyvertical/smrt-types@0.17.80
+
 ## 0.17.79
 
 ### Patch Changes
