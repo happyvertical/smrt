@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.17.79
+
+### Patch Changes
+
+- ### Features
+
+  - add TenantService with configurable tenant policies (#597) (users)
+
+  ### Bug Fixes
+
+  - add missing build dependency and STI strategy (#601) (users,commerce)
+  - improve test isolation with randomUUID for temp paths (#599) (core)
+  - support @smrt() decorator on abstract classes (TS 5.9) (#598) (core)
+  - @happyvertical/smrt-config@0.17.79
+  - @happyvertical/smrt-types@0.17.79
+
 ## 0.17.78
 
 ### Patch Changes
