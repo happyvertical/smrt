@@ -5,6 +5,7 @@
  * communicate through the dispatch system.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,10 @@ describe('Agent-to-Agent Communication', () => {
   let dbPath: string;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `smrt-dispatch-integration-${Date.now()}.db`);
+    dbPath = join(
+      tmpdir(),
+      `smrt-dispatch-integration-${randomUUID().slice(0, 8)}.db`,
+    );
     bus = await createDispatchBus({
       db: { type: 'sqlite', url: dbPath },
     });

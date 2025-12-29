@@ -22,6 +22,7 @@
  * @see Issue396Event, Issue396Meeting - Test classes with default status field
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -128,7 +129,10 @@ const adapterConfigs = [
     name: 'SQLite (file)',
     getConfig: () => ({
       type: 'sqlite' as const,
-      url: join(tmpdir(), `test-issue-396-sqlite-${Date.now()}.db`),
+      url: join(
+        tmpdir(),
+        `test-issue-396-sqlite-${randomUUID().slice(0, 8)}.db`,
+      ),
     }),
     cleanup: async (config: any) => {
       if (config?.url && config.url !== ':memory:' && existsSync(config.url)) {
@@ -140,7 +144,7 @@ const adapterConfigs = [
     name: 'JSON (DuckDB)',
     getConfig: () => ({
       type: 'json' as const,
-      url: join(tmpdir(), `test-issue-396-json-${Date.now()}`),
+      url: join(tmpdir(), `test-issue-396-json-${randomUUID().slice(0, 8)}`),
     }),
     cleanup: async (config: any) => {
       if (config?.url && existsSync(config.url)) {
@@ -156,7 +160,10 @@ const adapterConfigs = [
     name: 'JSON (immediate writes)',
     getConfig: () => ({
       type: 'json' as const,
-      url: join(tmpdir(), `test-issue-396-json-immediate-${Date.now()}`),
+      url: join(
+        tmpdir(),
+        `test-issue-396-json-immediate-${randomUUID().slice(0, 8)}`,
+      ),
       writeStrategy: 'immediate' as const,
     }),
     cleanup: async (config: any) => {
@@ -586,8 +593,14 @@ describe('STI Adapter Parity', () => {
 
       afterEach(async () => {
         if (db && typeof db.close === 'function') {
-          await db.close();
+          try {
+            await db.close();
+          } catch {
+            // Ignore close errors
+          }
         }
+        // Small delay to allow DuckDB to release file locks before cleanup
+        await new Promise((resolve) => setTimeout(resolve, 50));
         await adapterConfig.cleanup(dbConfig);
       });
 

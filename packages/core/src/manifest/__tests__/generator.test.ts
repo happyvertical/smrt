@@ -3,16 +3,27 @@
  * Tests file discovery, scanner configuration, external packages, and output generation
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ManifestBuilder } from '../generator.js';
 
 describe('ManifestBuilder', () => {
-  const testFixturesDir = resolve(__dirname, 'fixtures', 'generator-test');
-  const testOutputDir = resolve(testFixturesDir, 'output');
+  // Use unique directories per test to avoid isolation issues
+  let testFixturesDir: string;
+  let testOutputDir: string;
 
   beforeEach(() => {
+    // Create unique test fixtures directory for each test
+    const uniqueId = randomUUID().slice(0, 8);
+    testFixturesDir = resolve(
+      __dirname,
+      'fixtures',
+      `generator-test-${uniqueId}`,
+    );
+    testOutputDir = resolve(testFixturesDir, 'output');
+
     // Create test fixtures directory
     mkdirSync(testFixturesDir, { recursive: true });
     mkdirSync(resolve(testFixturesDir, 'src'), { recursive: true });

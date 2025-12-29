@@ -7,6 +7,7 @@
  * Related to issue #332
  */
 
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -50,7 +51,10 @@ describe('Multi-Level STI Save Operations', () => {
   let profiles: STITestProfileCollection;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `test-sti-multilevel-${Date.now()}.db`);
+    dbPath = join(
+      tmpdir(),
+      `test-sti-multilevel-${randomUUID().slice(0, 8)}.db`,
+    );
     db = await getDatabase({ type: 'sqlite', url: dbPath });
     profiles = await STITestProfileCollection.create({ db });
   });

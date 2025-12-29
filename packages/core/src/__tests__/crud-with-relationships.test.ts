@@ -5,6 +5,7 @@
  * when objects have relationship fields that should NOT be persisted.
  */
 
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -45,7 +46,10 @@ describe('CRUD Operations with @oneToMany Relationships', () => {
   let parents: ParentCollection;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `test-crud-relationships-${Date.now()}.db`);
+    dbPath = join(
+      tmpdir(),
+      `test-crud-relationships-${randomUUID().slice(0, 8)}.db`,
+    );
     db = await getDatabase({ type: 'sqlite', url: dbPath });
     parents = await ParentCollection.create({ db });
   });

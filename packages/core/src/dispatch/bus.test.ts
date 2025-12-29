@@ -2,6 +2,7 @@
  * Tests for DispatchBus - Inter-Agent Communication
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +17,10 @@ describe('DispatchBus', () => {
   let dbPath: string;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `smrt-dispatch-test-${Date.now()}.db`);
+    dbPath = join(
+      tmpdir(),
+      `smrt-dispatch-test-${randomUUID().slice(0, 8)}.db`,
+    );
     bus = await createDispatchBus({
       db: { type: 'sqlite', url: dbPath },
     });

@@ -9,6 +9,7 @@
  * Issue #208 specifically mentions using DuckDB via JSON adapter, so we test both.
  */
 
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -41,7 +42,7 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
       // Create unique temp directory for JSON database
       dataDir = join(
         tmpdir(),
-        `test-issue-208-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        `test-issue-208-${randomUUID().slice(0, 8)}-${Math.random().toString(36).slice(2)}`,
       );
       db = await getDatabase({
         type: 'json',
@@ -134,7 +135,10 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
     let dbPath: string;
 
     beforeEach(async () => {
-      dbPath = join(tmpdir(), `test-issue-208-duckdb-${Date.now()}.db`);
+      dbPath = join(
+        tmpdir(),
+        `test-issue-208-duckdb-${randomUUID().slice(0, 8)}.db`,
+      );
       db = await getDatabase({ type: 'duckdb', url: dbPath });
     });
 

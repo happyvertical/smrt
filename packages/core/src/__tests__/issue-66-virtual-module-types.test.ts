@@ -8,6 +8,7 @@
  * 4. Search method is available in CrudOperations
  */
 
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
 
@@ -19,7 +20,7 @@ describe('Issue #66: Virtual Module Type Generation', () => {
     // Create a test manifest with a SMRT object that has custom methods
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
-      timestamp: Date.now(),
+      timestamp: randomUUID().slice(0, 8),
       objects: {
         praeco: {
           className: 'Praeco',
@@ -102,7 +103,7 @@ describe('Issue #66: Virtual Module Type Generation', () => {
 
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
-      timestamp: Date.now(),
+      timestamp: randomUUID().slice(0, 8),
       objects: {
         praeco: {
           className: 'Praeco',
