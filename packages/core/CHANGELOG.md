@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.78
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - make SmrtCollection constructor public + add smrt-svelte package (#595) (core)
+  - @happyvertical/smrt-config@0.17.78
+  - @happyvertical/smrt-types@0.17.78
+
 ## 0.17.77
 
 ### Patch Changes
