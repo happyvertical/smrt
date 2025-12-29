@@ -247,6 +247,15 @@ export class SmrtClass {
       // which causes a NEW db instance to be created, losing data isolation.
       this.options.db = this._db;
 
+      // CRITICAL FIX for issue #603: For JSON adapter, ensure ALL tables exist upfront
+      // This enables cross-table queries (JOINs, NOT EXISTS, etc.) to work correctly.
+      // Unlike SQLite/Postgres where all tables exist in the database file,
+      // JSON adapter loads tables on-demand which causes issues with subqueries.
+      // Detection: JSON adapter has exportTable method (see schema-manager.ts:50-54)
+      if ((this._db as any).exportTable) {
+        await ObjectRegistry.ensureAllSchemas(this._db);
+      }
+
       await this.ensureSystemTables();
     }
     if (this.options.fs) {
