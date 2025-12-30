@@ -134,8 +134,14 @@ export class InvoiceLineItem extends SmrtObject {
   }
 
   /**
-   * Calculate the line amount
+   * Calculate the line amount.
+   *
    * Formula: (quantity * unitPrice - discount) * (1 + taxRate)
+   *
+   * Tax is calculated on the discounted subtotal. This follows the common
+   * "discount before tax" approach used in most North American jurisdictions.
+   * For jurisdictions requiring different tax calculation methods, override
+   * this method or calculate amounts externally.
    */
   calculateAmount(): number {
     const subtotal = this.quantity * this.unitPrice - this.discount;

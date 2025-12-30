@@ -8,6 +8,17 @@ import { Invoice } from '../models/Invoice.js';
 import { InvoiceStatus } from '../types/index.js';
 
 /**
+ * Statuses that indicate an invoice has outstanding balance.
+ * Used for calculating outstanding amounts and finding unpaid invoices.
+ */
+export const UNPAID_STATUSES = [
+  InvoiceStatus.SENT,
+  InvoiceStatus.VIEWED,
+  InvoiceStatus.PARTIAL,
+  InvoiceStatus.OVERDUE,
+] as const;
+
+/**
  * Options for generating invoice numbers
  */
 export interface InvoiceNumberOptions {
@@ -96,7 +107,11 @@ export class InvoiceCollection extends SmrtCollection<Invoice> {
   }
 
   /**
-   * Find overdue invoices (past due date, not paid)
+   * Find overdue invoices (past due date, not paid).
+   *
+   * **Note**: This method finds invoices by date, but does not automatically
+   * update their status to OVERDUE. Use a background job or scheduled task
+   * to periodically update invoice statuses based on due dates.
    *
    * @returns Array of overdue invoices
    */
@@ -111,15 +126,9 @@ export class InvoiceCollection extends SmrtCollection<Invoice> {
       orderBy: 'dueDate ASC',
     });
 
-    // Filter to only include relevant statuses
-    const overdueStatuses = [
-      InvoiceStatus.SENT,
-      InvoiceStatus.VIEWED,
-      InvoiceStatus.PARTIAL,
-      InvoiceStatus.OVERDUE,
-    ];
-
-    return candidates.filter((inv) => overdueStatuses.includes(inv.status));
+    return candidates.filter((inv) =>
+      (UNPAID_STATUSES as readonly InvoiceStatus[]).includes(inv.status),
+    );
   }
 
   /**
@@ -208,7 +217,11 @@ export class InvoiceCollection extends SmrtCollection<Invoice> {
   }
 
   /**
-   * Generate the next invoice number
+   * Generate the next invoice number.
+   *
+   * **Warning**: This method has a potential race condition if multiple
+   * invoices are created concurrently. For high-concurrency environments,
+   * consider using a database sequence or atomic counter instead.
    *
    * @param options - Optional configuration for number format
    * @returns Generated invoice number (e.g., 'INV-2025-0001')
@@ -256,15 +269,10 @@ export class InvoiceCollection extends SmrtCollection<Invoice> {
       where: { customerId },
     });
 
-    const unpaidStatuses = [
-      InvoiceStatus.SENT,
-      InvoiceStatus.VIEWED,
-      InvoiceStatus.PARTIAL,
-      InvoiceStatus.OVERDUE,
-    ];
-
     return invoices
-      .filter((inv) => unpaidStatuses.includes(inv.status))
+      .filter((inv) =>
+        (UNPAID_STATUSES as readonly InvoiceStatus[]).includes(inv.status),
+      )
       .reduce((sum, inv) => sum + inv.getAmountDue(), 0);
   }
 }

@@ -58,18 +58,28 @@ export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocatio
   }
 
   /**
-   * Get remaining unallocated amount from a payment
+   * Get remaining unallocated amount from a payment.
    *
    * @param paymentId - Payment ID
    * @param paymentAmount - Total payment amount
    * @returns Unallocated amount
+   * @throws Error if payment is over-allocated (indicates data integrity issue)
    */
   async getUnallocatedFromPayment(
     paymentId: string,
     paymentAmount: number,
   ): Promise<number> {
     const allocated = await this.getTotalAllocatedFromPayment(paymentId);
-    return Math.max(0, paymentAmount - allocated);
+    const remaining = paymentAmount - allocated;
+
+    if (remaining < 0) {
+      throw new Error(
+        `Over-allocated payment detected for paymentId=${paymentId}: ` +
+          `allocated amount (${allocated}) exceeds payment amount (${paymentAmount})`,
+      );
+    }
+
+    return remaining;
   }
 
   /**

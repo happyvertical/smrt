@@ -297,14 +297,21 @@ export class Invoice extends SmrtObject {
    */
   markSent(): void {
     if (this.status !== InvoiceStatus.DRAFT) {
-      throw new Error('Can only send draft invoices');
+      throw new Error(
+        `Cannot send invoice with status '${this.status}'. Only draft invoices can be sent.`,
+      );
     }
     this.status = InvoiceStatus.SENT;
     this.sentAt = new Date();
   }
 
   /**
-   * Mark invoice as viewed
+   * Record that the invoice was viewed by the customer.
+   *
+   * This method is idempotent - calling it multiple times will only
+   * record the first view time. Status only transitions to VIEWED if
+   * the current status is SENT (other statuses like PARTIAL or PAID
+   * are preserved).
    */
   markViewed(): void {
     if (this.viewedAt) return; // Already viewed
@@ -315,17 +322,38 @@ export class Invoice extends SmrtObject {
   }
 
   /**
-   * Update payment amount and status
-   * Called when PaymentAllocations change
+   * Update payment amount and status.
+   *
+   * Called when PaymentAllocations change. Handles both forward transitions
+   * (SENT → PARTIAL → PAID) and reversals (PAID → PARTIAL → original status).
+   *
+   * Terminal statuses (CANCELLED, WRITTEN_OFF) are not modified.
    */
   updatePaymentStatus(amountPaid: number): void {
     this.amountPaid = amountPaid;
+
+    // Do not change payment status for terminal states
+    if (
+      this.status === InvoiceStatus.CANCELLED ||
+      this.status === InvoiceStatus.WRITTEN_OFF
+    ) {
+      return;
+    }
 
     if (amountPaid >= this.totalAmount) {
       this.status = InvoiceStatus.PAID;
       this.paidDate = new Date();
     } else if (amountPaid > 0) {
       this.status = InvoiceStatus.PARTIAL;
+      this.paidDate = null; // Clear paidDate if no longer fully paid
+    } else {
+      // No payment remaining: revert to the appropriate pre-payment status
+      this.paidDate = null;
+      if (this.sentAt) {
+        this.status = this.viewedAt ? InvoiceStatus.VIEWED : InvoiceStatus.SENT;
+      } else {
+        this.status = InvoiceStatus.DRAFT;
+      }
     }
   }
 
@@ -334,7 +362,9 @@ export class Invoice extends SmrtObject {
    */
   cancel(): void {
     if (this.isPaid()) {
-      throw new Error('Cannot cancel a paid invoice');
+      throw new Error(
+        `Cannot cancel invoice with status '${this.status}'. Paid invoices cannot be cancelled.`,
+      );
     }
     this.status = InvoiceStatus.CANCELLED;
   }
@@ -358,6 +388,8 @@ export class Invoice extends SmrtObject {
    * - Credit: Revenue (revenue increases)
    * - Credit: Tax Payable (liability increases, if taxAmount > 0)
    *
+   * **Note**: This method saves the invoice after setting arJournalId.
+   *
    * @param options - Account IDs for the journal entry
    * @returns The created journal
    *
@@ -372,11 +404,21 @@ export class Invoice extends SmrtObject {
    */
   async recognizeRevenue(options: RecognizeRevenueOptions): Promise<any> {
     if (this.arJournalId) {
-      throw new Error('Revenue already recognized for this invoice');
+      throw new Error(
+        `Revenue already recognized for invoice ${this.invoiceNumber} (journal ID: ${this.arJournalId})`,
+      );
     }
 
     if (this.totalAmount <= 0) {
-      throw new Error('Invoice total must be positive');
+      throw new Error(
+        `Cannot recognize revenue for invoice ${this.invoiceNumber} with non-positive total: ${this.totalAmount}`,
+      );
+    }
+
+    if (this.taxAmount > 0 && !options.taxAccountId) {
+      throw new Error(
+        `Invoice ${this.invoiceNumber} has taxAmount ${this.taxAmount} but no taxAccountId provided`,
+      );
     }
 
     // Dynamic import to avoid hard dependency on smrt-ledgers

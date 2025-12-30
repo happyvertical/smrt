@@ -110,8 +110,9 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
 
     for (const item of lineItems) {
       item.amount = item.calculateAmount();
-      await item.save();
     }
+
+    await Promise.all(lineItems.map((item) => item.save()));
 
     return lineItems;
   }
