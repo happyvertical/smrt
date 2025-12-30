@@ -82,6 +82,21 @@ export enum PaymentStatus {
 }
 
 // ============================================================================
+// Invoice Types
+// ============================================================================
+
+export enum InvoiceStatus {
+  DRAFT = 'draft',
+  SENT = 'sent',
+  VIEWED = 'viewed',
+  PARTIAL = 'partial',
+  PAID = 'paid',
+  OVERDUE = 'overdue',
+  CANCELLED = 'cancelled',
+  WRITTEN_OFF = 'written_off',
+}
+
+// ============================================================================
 // Common Interfaces
 // ============================================================================
 
@@ -107,4 +122,16 @@ export interface RecordPaymentOptions {
   receivablesAccountId: string;
   /** Account ID for cash/bank (debit side) */
   cashAccountId: string;
+}
+
+/**
+ * Options for recognizing revenue on an invoice
+ */
+export interface RecognizeRevenueOptions {
+  /** Account ID for accounts receivable (debit side) */
+  arAccountId: string;
+  /** Account ID for revenue (credit side) */
+  revenueAccountId: string;
+  /** Account ID for tax payable (credit side, optional) */
+  taxAccountId?: string;
 }

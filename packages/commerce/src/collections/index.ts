@@ -6,5 +6,8 @@
 export { ContractCollection } from './ContractCollection.js';
 export { CustomerCollection } from './CustomerCollection.js';
 export { FulfillmentCollection } from './FulfillmentCollection.js';
+export { InvoiceCollection } from './InvoiceCollection.js';
+export { InvoiceLineItemCollection } from './InvoiceLineItemCollection.js';
+export { PaymentAllocationCollection } from './PaymentAllocationCollection.js';
 export { PaymentCollection } from './PaymentCollection.js';
 export { VendorCollection } from './VendorCollection.js';
