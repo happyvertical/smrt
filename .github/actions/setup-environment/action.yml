@@ -39,13 +39,46 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    # Check if Node.js is already installed with the required version (custom ARC runner)
+    - name: Check Node.js version
+      id: node-check
+      shell: bash
+      run: |
+        REQUIRED="${{ inputs.node-version }}"
+        CURRENT=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
+        if [ -z "$CURRENT" ]; then
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "Node.js not found, will install $REQUIRED"
+        elif [ "$CURRENT" = "$REQUIRED" ]; then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "✓ Node.js $CURRENT already installed, skipping setup"
+        else
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "Node.js $CURRENT installed, need $REQUIRED"
+        fi
+
     - name: Setup Node.js
+      if: steps.node-check.outputs.skip != 'true'
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
         registry-url: ${{ inputs.registry-url || 'https://registry.npmjs.org' }}
 
+    # Check if pnpm is already installed (custom ARC runner with corepack)
+    - name: Check pnpm
+      id: pnpm-check
+      shell: bash
+      run: |
+        if command -v pnpm &> /dev/null; then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "✓ pnpm $(pnpm -v) already installed, skipping setup"
+        else
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "pnpm not found, will install"
+        fi
+
     - name: Setup pnpm
+      if: steps.pnpm-check.outputs.skip != 'true'
       uses: pnpm/action-setup@v4
       with:
         run_install: false
@@ -74,9 +107,21 @@ runs:
         restore-keys: |
           ${{ runner.os }}-playwright-
 
+    # Check if ONNX deps are already installed (custom ARC runner)
     - name: Install system dependencies for ONNX Runtime
       shell: bash
       run: |
+        # Skip if already installed (custom ARC runner image)
+        # Check for dpkg first (only available on Debian-based systems)
+        if command -v dpkg >/dev/null 2>&1; then
+          if dpkg -l | grep -q libprotobuf-dev && dpkg -l | grep -q build-essential; then
+            echo "✓ ONNX Runtime deps already installed, skipping"
+            exit 0
+          fi
+        else
+          echo "dpkg not found, skipping installed-package check"
+        fi
+        echo "Installing ONNX Runtime system dependencies..."
         sudo apt-get update && sudo apt-get install -y \
           libstdc++6 \
           libc6-dev \
