@@ -28,16 +28,14 @@ jobs:
   cancel-pr-checks:
     name: Cancel PR Validation Checks
     if: github.event_name == 'push'
-    runs-on: arc-happyvertical
+    # Use GitHub-hosted runner - has gh CLI preinstalled, no build tools needed
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - name: Setup GitHub CLI
-        uses: actions4gh/setup-gh@v1
 
       - name: Extract PR number from merge commit
         id: get-pr
