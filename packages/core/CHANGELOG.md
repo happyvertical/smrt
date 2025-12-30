@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.85
+
+### Patch Changes
+
+- ### Features
+
+  - add @happyvertical/smrt-analytics package (#635) (analytics)
+  - @happyvertical/smrt-config@0.17.85
+  - @happyvertical/smrt-types@0.17.85
+
 ## 0.17.84
 
 ### Patch Changes
