@@ -1821,6 +1821,16 @@ export class ObjectRegistry {
       options,
     )) as SmrtCollection<T>;
 
+    // CRITICAL FIX for issue #603: For JSON adapter, ensure ALL tables exist upfront
+    // This enables cross-table queries (JOINs, NOT EXISTS, etc.) to work correctly.
+    // Unlike SQLite/Postgres where all tables exist in the database file,
+    // JSON adapter loads tables on-demand which causes issues with subqueries.
+    // Detection: JSON adapter has exportTable method (see schema-manager.ts:50-54)
+    const db = (collection as any).db;
+    if (db && (db as any).exportTable) {
+      await ObjectRegistry.ensureAllSchemas(db);
+    }
+
     // Cache the initialized instance
     ObjectRegistry.collectionCache.set(cacheKey, collection);
 
