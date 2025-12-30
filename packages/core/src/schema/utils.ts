@@ -10,6 +10,7 @@
 
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import { syncSchema } from '@happyvertical/sql';
+import { discoverSTISiblingsSync } from '../manifest/manifest-loader.js';
 import { ObjectRegistry } from '../registry';
 import { tableNameFromClass, toSnakeCase } from '../utils';
 import { SchemaManager } from './schema-manager';
@@ -355,6 +356,36 @@ export async function setupTableFromClass(db: any, ClassType: any) {
  * ```
  */
 export async function ensureSchema(db: any, className: string): Promise<void> {
+  // FIX #623: For STI child classes from external packages, ensure the parent class
+  // is loaded before calling getSTIBase(). The parent might not be registered yet
+  // if it's from an external package manifest.
+  const registered = ObjectRegistry.findClass(className);
+  if (registered?.extends) {
+    const parentClass = ObjectRegistry.findClass(registered.extends);
+    if (!parentClass) {
+      // Parent class not registered yet - discover and load STI siblings
+      // This will register the parent and any other siblings sharing the same table
+      const collection =
+        registered.schema?.tableName ||
+        ObjectRegistry.getSchema(className)?.tableName;
+      if (collection) {
+        console.log(
+          `[ensureSchema] Loading STI siblings for ${className} (parent ${registered.extends} not registered)`,
+        );
+        const siblings = discoverSTISiblingsSync(collection);
+        for (const sibling of siblings) {
+          if (!ObjectRegistry.classes.has(sibling.className)) {
+            ObjectRegistry.registerFromManifest(
+              sibling.className,
+              sibling.entry,
+              sibling.packageName,
+            );
+          }
+        }
+      }
+    }
+  }
+
   // Get table name from registry (set during @smrt() decoration)
   const tableName = ObjectRegistry.getTableName(className);
 
