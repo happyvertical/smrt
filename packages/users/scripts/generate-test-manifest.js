@@ -86,9 +86,10 @@ export default testManifest;
 }).catch(console.error);
 `;
 
-    // Write and execute the TypeScript code
-    // Use unique filename to avoid race conditions with parallel builds
-    const tempFile = `temp-test-manifest-gen-${process.pid}.ts`;
+    // Write and execute the TypeScript code with unique name to avoid race conditions
+    // when multiple builds run in parallel (see issue #631)
+    const { unlinkSync } = await import('node:fs');
+    const tempFile = `temp-test-manifest-gen-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`;
     writeFileSync(tempFile, tsCode);
 
     try {
@@ -96,7 +97,7 @@ export default testManifest;
     } finally {
       // Clean up
       try {
-        execSync(`rm ${tempFile}`);
+        unlinkSync(tempFile);
       } catch {}
     }
   } catch (error) {

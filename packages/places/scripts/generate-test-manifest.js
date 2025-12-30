@@ -91,15 +91,18 @@ export default testManifest;
 }).catch(console.error);
 `;
 
-    // Write and execute the TypeScript code
-    writeFileSync('temp-test-manifest-gen.ts', tsCode);
+    // Write and execute the TypeScript code with unique name to avoid race conditions
+    // when multiple builds run in parallel (see issue #631)
+    const { unlinkSync } = await import('node:fs');
+    const tempFile = `temp-test-manifest-gen-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`;
+    writeFileSync(tempFile, tsCode);
 
     try {
-      execSync('npx tsx temp-test-manifest-gen.ts', { stdio: 'inherit' });
+      execSync(`npx tsx ${tempFile}`, { stdio: 'inherit' });
     } finally {
       // Clean up
       try {
-        execSync('rm temp-test-manifest-gen.ts');
+        unlinkSync(tempFile);
       } catch {}
     }
   } catch (error) {
