@@ -46,7 +46,10 @@ runs:
       run: |
         REQUIRED="${{ inputs.node-version }}"
         CURRENT=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
-        if [ "$CURRENT" = "$REQUIRED" ]; then
+        if [ -z "$CURRENT" ]; then
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "Node.js not found, will install $REQUIRED"
+        elif [ "$CURRENT" = "$REQUIRED" ]; then
           echo "skip=true" >> $GITHUB_OUTPUT
           echo "✓ Node.js $CURRENT already installed, skipping setup"
         else
@@ -109,9 +112,14 @@ runs:
       shell: bash
       run: |
         # Skip if already installed (custom ARC runner image)
-        if dpkg -l | grep -q libprotobuf-dev && dpkg -l | grep -q build-essential; then
-          echo "✓ ONNX Runtime deps already installed, skipping"
-          exit 0
+        # Check for dpkg first (only available on Debian-based systems)
+        if command -v dpkg >/dev/null 2>&1; then
+          if dpkg -l | grep -q libprotobuf-dev && dpkg -l | grep -q build-essential; then
+            echo "✓ ONNX Runtime deps already installed, skipping"
+            exit 0
+          fi
+        else
+          echo "dpkg not found, skipping installed-package check"
         fi
         echo "Installing ONNX Runtime system dependencies..."
         sudo apt-get update && sudo apt-get install -y \
