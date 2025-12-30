@@ -274,9 +274,21 @@ async function findProfileByExternalId(
  * and later with GitHub using the same email, they get the same profile.
  *
  * Resolution order:
- * 1. Check if OIDC identity (iss + sub) already exists → return linked profile
- * 2. If email provided, check if profile with same email exists → link new identity
+ * 1. If OIDC identity (iss + sub) already exists → return linked profile
+ * 2. If verified email provided, check if profile with same email exists → link new identity
  * 3. Otherwise, create new profile + identity
+ *
+ * Security considerations:
+ * - Email-based linking only occurs when `email_verified` is true. This prevents
+ *   attackers from claiming unverified emails to hijack accounts.
+ * - Linking is automatic and irreversible through this API. Multiple OIDC
+ *   identities from different providers sharing the same verified email will
+ *   be associated to the same Profile.
+ * - If an OIDC provider does not supply an email, or the email changes later,
+ *   existing links are not automatically updated. New sign-ins without an email
+ *   or with a different email may result in a new Profile being created.
+ * - This function trusts the OIDC provider to assert correct email_verified status.
+ *   Only use with trusted providers.
  *
  * @param claims - OIDC token claims
  * @param provider - Provider name (e.g., 'keycloak', 'google', 'github')
@@ -288,13 +300,14 @@ export async function createProfileFromOidc(
     sub: string;
     iss: string;
     email?: string;
+    email_verified?: boolean;
     name?: string;
     preferred_username?: string;
   },
   provider: string,
   options: SmrtObjectOptions,
 ): Promise<{ profile: Profile; oidcIdentity: OidcIdentity; created: boolean }> {
-  // 1. Check if OIDC identity already exists for this issuer+subject
+  // 1. If OIDC identity already exists for this issuer+subject, return linked profile
   const existingIdentity = await OidcIdentity.findBySubject(
     claims.iss,
     claims.sub,
@@ -317,8 +330,8 @@ export async function createProfileFromOidc(
     }
   }
 
-  // 2. Email-based account linking: check if profile with same email exists
-  if (claims.email) {
+  // 2. Email-based account linking: only link if email is verified (security)
+  if (claims.email && claims.email_verified) {
     const { ProfileCollection } = await import(
       '../collections/ProfileCollection'
     );
