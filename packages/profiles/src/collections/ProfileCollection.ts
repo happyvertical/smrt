@@ -11,6 +11,21 @@ export class ProfileCollection extends SmrtCollection<Profile> {
   static readonly _itemClass = Profile;
 
   /**
+   * Find a profile by email address
+   *
+   * @param email - The email address to search for
+   * @returns The matching profile or null
+   */
+  async findByEmail(email: string): Promise<Profile | null> {
+    const normalizedEmail = email.toLowerCase();
+    const profiles = await this.list({
+      where: { email: normalizedEmail },
+      limit: 1,
+    });
+    return profiles.length > 0 ? profiles[0] : null;
+  }
+
+  /**
    * Find profiles by type slug
    *
    * @param typeSlug - The profile type slug to filter by
