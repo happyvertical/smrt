@@ -270,8 +270,16 @@ async function findProfileByExternalId(
 /**
  * Create a profile from OIDC claims if it doesn't exist
  *
+ * Supports email-based account linking: if a user signs in with Google
+ * and later with GitHub using the same email, they get the same profile.
+ *
+ * Resolution order:
+ * 1. Check if OIDC identity (iss + sub) already exists → return linked profile
+ * 2. If email provided, check if profile with same email exists → link new identity
+ * 3. Otherwise, create new profile + identity
+ *
  * @param claims - OIDC token claims
- * @param provider - Provider name (e.g., 'keycloak', 'google')
+ * @param provider - Provider name (e.g., 'keycloak', 'google', 'github')
  * @param options - Database options
  * @returns The created or existing profile with linked OIDC identity
  */
@@ -286,7 +294,7 @@ export async function createProfileFromOidc(
   provider: string,
   options: SmrtObjectOptions,
 ): Promise<{ profile: Profile; oidcIdentity: OidcIdentity; created: boolean }> {
-  // Check if OIDC identity already exists
+  // 1. Check if OIDC identity already exists for this issuer+subject
   const existingIdentity = await OidcIdentity.findBySubject(
     claims.iss,
     claims.sub,
@@ -309,7 +317,37 @@ export async function createProfileFromOidc(
     }
   }
 
-  // Create new profile
+  // 2. Email-based account linking: check if profile with same email exists
+  if (claims.email) {
+    const { ProfileCollection } = await import(
+      '../collections/ProfileCollection'
+    );
+
+    const profileCollection = await (ProfileCollection as any).create(options);
+    const existingProfile = await profileCollection.findByEmail(claims.email);
+
+    if (existingProfile) {
+      // Link new OIDC identity to existing profile (email-based linking)
+      const oidcIdentity = await OidcIdentity.findOrCreate(
+        existingProfile,
+        {
+          provider,
+          issuer: claims.iss,
+          subject: claims.sub,
+          email: claims.email,
+        },
+        options,
+      );
+
+      return {
+        profile: existingProfile,
+        oidcIdentity,
+        created: false,
+      };
+    }
+  }
+
+  // 3. Create new profile
   const { Person } = await import('../models/ProfileTypes');
   const { ProfileTypeCollection } = await import(
     '../collections/ProfileTypeCollection'
