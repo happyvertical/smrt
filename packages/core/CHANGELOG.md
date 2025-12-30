@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.17.81
+
+### Patch Changes
+
+- ### Features
+
+  - add Invoice, InvoiceLineItem, and PaymentAllocation models (#609) (commerce)
+
+  ### Bug Fixes
+
+  - remove gh CLI setup step (#613) (ci)
+  - install gh CLI on self-hosted runners (#610) (ci)
+  - call ensureAllSchemas() for JSON adapter cross-table queries (#608) (cli)
+
+  ### Other Changes
+
+  - chore: optimize workflows for custom ARC runner image (#615) (ci)
+  - ci: use self-hosted arc-happyvertical runners (#605)
+  - @happyvertical/smrt-config@0.17.81
+  - @happyvertical/smrt-types@0.17.81
+
 ## 0.17.80
 
 ### Patch Changes
