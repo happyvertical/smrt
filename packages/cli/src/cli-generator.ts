@@ -1611,13 +1611,65 @@ export class CLIGenerator {
       );
 
       // Map CLI options to method parameters (kebab-case to camelCase)
-      const methodArgs: any = {};
-      for (const param of methodDef.parameters || []) {
-        const optionName = param.name.replace(/([A-Z])/g, '-$1').toLowerCase();
-        if (options[optionName] !== undefined) {
-          methodArgs[param.name] = options[optionName];
-        } else if (param.default !== undefined) {
-          methodArgs[param.name] = param.default;
+      // Handle both flat parameters and object type parameters (fix for issue #620)
+      const methodParams = methodDef.parameters || [];
+      const methodCallArgs: any[] = [];
+
+      for (const param of methodParams) {
+        const typeStr = param.type || '';
+        const isObjectType = this.isObjectTypeParameter(typeStr);
+
+        if (isObjectType) {
+          // Object type parameter - reconstruct from individual CLI options
+          const objArg: any = {};
+          // Extract property definitions from type string
+          const match = typeStr.match(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/);
+          if (match) {
+            const propsStr = match[1];
+            const propMatches = propsStr.matchAll(/(\w+)(\?)?:\s*([^;]+)/g);
+            for (const propMatch of propMatches) {
+              const [, propName] = propMatch;
+              // Convert camelCase to kebab-case for CLI option lookup
+              const optionName = propName
+                .replace(/([A-Z])/g, '-$1')
+                .toLowerCase();
+              if (options[optionName] !== undefined) {
+                // Auto-parse JSON objects and arrays from CLI strings
+                let value = options[optionName];
+                if (
+                  typeof value === 'string' &&
+                  (value.startsWith('{') || value.startsWith('['))
+                ) {
+                  try {
+                    value = JSON.parse(value);
+                  } catch {
+                    // Keep as string if JSON parsing fails
+                  }
+                }
+                objArg[propName] = value;
+              }
+            }
+          }
+          // Always push something to maintain parameter positions
+          if (Object.keys(objArg).length > 0) {
+            methodCallArgs.push(objArg);
+          } else if (!param.optional) {
+            methodCallArgs.push({});
+          } else {
+            methodCallArgs.push(undefined);
+          }
+        } else {
+          // Flat parameter - get from CLI option
+          const optionName = param.name
+            .replace(/([A-Z])/g, '-$1')
+            .toLowerCase();
+          if (options[optionName] !== undefined) {
+            methodCallArgs.push(options[optionName]);
+          } else if (param.default !== undefined) {
+            methodCallArgs.push(param.default);
+          } else {
+            methodCallArgs.push(undefined);
+          }
         }
       }
 
@@ -1629,7 +1681,7 @@ export class CLIGenerator {
         return;
       }
 
-      const result = await method.call(obj, methodArgs);
+      const result = await method.call(obj, ...methodCallArgs);
 
       spinner.succeed(`Executed ${methodName}`);
 
