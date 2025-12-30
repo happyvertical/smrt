@@ -50,8 +50,19 @@ jobs:
           files="${{ steps.changed-files.outputs.all_changed_files }}"
           echo "Changed files: $files"
 
-          # Install yamllint
-          pip install yamllint
+          # Check if yamllint is available (custom ARC runner image)
+          if command -v yamllint &> /dev/null; then
+            echo "✓ yamllint already installed"
+          elif command -v pip &> /dev/null; then
+            echo "Installing yamllint..."
+            pip install yamllint
+          elif command -v pip3 &> /dev/null; then
+            echo "Installing yamllint via pip3..."
+            pip3 install yamllint
+          else
+            echo "⚠️  No pip available, skipping yamllint validation"
+            exit 0
+          fi
 
           # Validate each changed workflow file
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
@@ -61,23 +72,19 @@ jobs:
 
           echo "✅ YAML syntax validation passed"
 
-      - name: Install actionlint
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: |
-          # Skip if already installed (custom ARC runner image)
-          if command -v actionlint &> /dev/null; then
-            echo "✓ actionlint $(actionlint -version) already installed"
-            exit 0
-          fi
-          # Install actionlint for comprehensive workflow validation
-          echo "Installing actionlint..."
-          bash <(curl \
-            https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          sudo mv actionlint /usr/local/bin/
-
       - name: Validate with actionlint
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
+          # Check if actionlint is available (custom ARC runner image)
+          if ! command -v actionlint &> /dev/null; then
+            echo "Installing actionlint..."
+            bash <(curl -s \
+              https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+            sudo mv actionlint /usr/local/bin/
+          else
+            echo "✓ actionlint $(actionlint -version) already installed"
+          fi
+
           echo "🔍 Running actionlint on changed workflows..."
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
             echo "  Checking $file with actionlint..."
