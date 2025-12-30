@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.17.83
+
+### Patch Changes
+
+- ### Features
+
+  - add email-based account linking for OAuth (#619) (profiles)
+
+  ### Bug Fixes
+
+  - improve error messages and STI parent class loading (#626) (core)
+  - @happyvertical/smrt-config@0.17.83
+  - @happyvertical/smrt-types@0.17.83
+
 ## 0.17.82
 
 ### Patch Changes

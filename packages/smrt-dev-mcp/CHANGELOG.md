@@ -1,5 +1,12 @@
 # @happyvertical/smrt-dev-mcp
 
+## 0.17.83
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.17.83
+
 ## 0.17.82
 
 ### Patch Changes
