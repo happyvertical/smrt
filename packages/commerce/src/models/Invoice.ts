@@ -151,6 +151,12 @@ export class Invoice extends SmrtObject {
   externalId: string = '';
 
   /**
+   * Customer's external ID in accounting provider.
+   * Used to link invoice to customer in external system.
+   */
+  customerExternalId: string = '';
+
+  /**
    * Accounting provider name ('quickbooks' | 'stripe' | etc.)
    */
   externalProvider: string = '';
@@ -225,6 +231,8 @@ export class Invoice extends SmrtObject {
     if (options.revenueJournalId !== undefined)
       this.revenueJournalId = options.revenueJournalId;
     if (options.externalId !== undefined) this.externalId = options.externalId;
+    if (options.customerExternalId !== undefined)
+      this.customerExternalId = options.customerExternalId;
     if (options.externalProvider !== undefined)
       this.externalProvider = options.externalProvider;
     if (options.syncedAt !== undefined) this.syncedAt = options.syncedAt;
@@ -494,33 +502,47 @@ export class Invoice extends SmrtObject {
   /**
    * Convert to InvoiceInput for SDK accounting provider sync.
    *
+   * Fetches line items and maps all fields to the format expected
+   * by @happyvertical/accounting providers.
+   *
    * @returns InvoiceInput compatible with @happyvertical/accounting
    *
    * @example
    * ```typescript
    * const provider = await getAccountingProvider({ type: 'quickbooks', ... });
-   * const result = await provider.invoices.push(invoice.toAccountingInput());
+   * const input = await invoice.toAccountingInput();
+   * const result = await provider.invoices.push(input);
    * invoice.externalId = result.externalId;
    * invoice.syncedAt = result.syncedAt;
    * await invoice.save();
    * ```
    */
-  toAccountingInput(): any {
+  async toAccountingInput(): Promise<any> {
+    // Dynamically import to avoid circular dependency
+    const { InvoiceLineItemCollection } = await import(
+      '../collections/InvoiceLineItemCollection.js'
+    );
+
+    const lineItemCollection = await (InvoiceLineItemCollection as any).create(
+      this.options,
+    );
+    const lineItems = await lineItemCollection.findByInvoice(this.id);
+
     return {
       id: this.id,
       externalId: this.externalId || undefined,
       invoiceNumber: this.invoiceNumber,
       customerId: this.customerId,
+      customerExternalId: this.customerExternalId || undefined,
       issueDate: this.issueDate,
       dueDate: this.dueDate,
-      lineItems: [], // Line items loaded separately via InvoiceLineItemCollection
+      lineItems: lineItems.map((item: any) => item.toAccountingLineItem()),
       subtotal: this.subtotal,
       taxAmount: this.taxAmount,
       totalAmount: this.totalAmount,
       currency: this.currency,
       reference: this.reference || undefined,
-      memo: this.notes || undefined,
-      status: this.status,
+      memo: this.customerNotes || undefined,
     };
   }
 }
