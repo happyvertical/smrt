@@ -67,8 +67,10 @@ export {
   FulfillmentCollection,
   InvoiceCollection,
   InvoiceLineItemCollection,
+  type InvoiceNumberOptions,
   PaymentAllocationCollection,
   PaymentCollection,
+  UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
 // Models
