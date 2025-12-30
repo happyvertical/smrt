@@ -36,9 +36,6 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Setup GitHub CLI
-        uses: actions4gh/setup-gh@v1
-
       - name: Extract PR number from merge commit
         id: get-pr
         run: |
