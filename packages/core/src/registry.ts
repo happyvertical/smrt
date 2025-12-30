@@ -1526,6 +1526,13 @@ export class ObjectRegistry {
     const classNames = this.getClassNames();
 
     for (const className of classNames) {
+      // Skip collection classes - they don't have their own tables
+      // Collections wrap item classes and share the item class's table
+      const registered = ObjectRegistry.classes.get(className);
+      if (registered?.extends === 'SmrtCollection') {
+        continue;
+      }
+
       await ensureSchema(db, className);
     }
   }
@@ -2262,6 +2269,12 @@ export class ObjectRegistry {
     > = {};
 
     for (const [_className, registered] of ObjectRegistry.classes) {
+      // Skip collection classes - they don't have their own tables
+      // Their schemas incorrectly contain collection properties (loaded, options, etc.)
+      if (registered.extends === 'SmrtCollection') {
+        continue;
+      }
+
       if (registered.schema?.tableName) {
         const tableName = registered.schema.tableName;
 
