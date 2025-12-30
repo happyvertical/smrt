@@ -29,6 +29,7 @@
 
 import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 import { getModuleConfig } from '@happyvertical/smrt-config';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { SmrtCollection } from './collection';
 import type {
   ClassEmbeddingConfig,
