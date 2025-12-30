@@ -1921,6 +1921,16 @@ export class CLIGenerator {
       });
 
       await collection.initialize();
+
+      // CRITICAL FIX for issue #607: For JSON adapter, ensure ALL tables exist upfront
+      // This mirrors the fix in class.ts for issue #603.
+      // CLI initialization bypasses SmrtObject.initialize() where ensureAllSchemas() is called,
+      // so we need to call it here for cross-table queries (JOINs, NOT EXISTS) to work.
+      // Detection: JSON adapter has exportTable method (see schema-manager.ts:50-54)
+      if ((db as any).exportTable) {
+        await ObjectRegistry.ensureAllSchemas(db);
+      }
+
       this.collections.set(objectName, collection);
     }
     const collection = this.collections.get(objectName);
