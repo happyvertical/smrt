@@ -86,10 +86,12 @@ export class DatabaseError extends SmrtError {
   }
 
   static queryFailed(query: string, cause?: Error): DatabaseError {
+    // Include root cause message for better debugging (issue #625)
+    const causeMsg = cause?.message ? `\nCause: ${cause.message}` : '';
     return new DatabaseError(
-      `Database query failed: ${query.substring(0, 100)}${query.length > 100 ? '...' : ''}`,
+      `Database query failed: ${query.substring(0, 100)}${query.length > 100 ? '...' : ''}${causeMsg}`,
       'DB_QUERY_FAILED',
-      { query },
+      { query, causeMessage: cause?.message },
       cause,
     );
   }
