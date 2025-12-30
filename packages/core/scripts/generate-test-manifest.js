@@ -48,17 +48,19 @@ await builder.generate({
 });
 `;
 
-    // Write temporary TypeScript file
-    const { writeFileSync } = await import('node:fs');
-    writeFileSync('temp-test-manifest-gen.ts', tsCode);
+    // Write temporary TypeScript file with unique name to avoid race conditions
+    // when multiple builds run in parallel (see issue #631)
+    const { writeFileSync, unlinkSync } = await import('node:fs');
+    const tempFile = `temp-test-manifest-gen-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`;
+    writeFileSync(tempFile, tsCode);
 
     try {
       // Execute with tsx
-      execSync('npx tsx temp-test-manifest-gen.ts', { stdio: 'inherit' });
+      execSync(`npx tsx ${tempFile}`, { stdio: 'inherit' });
     } finally {
       // Clean up temporary file
       try {
-        execSync('rm temp-test-manifest-gen.ts');
+        unlinkSync(tempFile);
       } catch {}
     }
   } catch (error) {
