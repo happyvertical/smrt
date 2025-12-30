@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.84
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - CI race conditions, foreignKey decorator, CLI method options (#634)
+  - @happyvertical/smrt-config@0.17.84
+  - @happyvertical/smrt-types@0.17.84
+
 ## 0.17.83
 
 ### Patch Changes
