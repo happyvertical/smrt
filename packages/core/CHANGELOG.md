@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.82
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve TypeScript error in thumbnail-generator (#617) (content)
+  - skip collection classes in schema operations (#616) (core)
+  - @happyvertical/smrt-config@0.17.82
+  - @happyvertical/smrt-types@0.17.82
+
 ## 0.17.81
 
 ### Patch Changes
