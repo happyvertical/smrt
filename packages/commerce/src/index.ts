@@ -65,7 +65,12 @@ export {
   ContractCollection,
   CustomerCollection,
   FulfillmentCollection,
+  InvoiceCollection,
+  InvoiceLineItemCollection,
+  type InvoiceNumberOptions,
+  PaymentAllocationCollection,
   PaymentCollection,
+  UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
 // Models
@@ -77,9 +82,12 @@ export {
   Estimate,
   Fulfillment,
   FulfillmentLineItem,
+  Invoice,
+  InvoiceLineItem,
   Lease,
   Order,
   Payment,
+  PaymentAllocation,
   PurchaseOrder,
   Vendor,
 } from './models/index.js';
@@ -92,8 +100,10 @@ export {
   CustomerStatus,
   FulfillmentStatus,
   FulfillmentType,
+  InvoiceStatus,
   PaymentMethod,
   PaymentStatus,
+  type RecognizeRevenueOptions,
   type RecordPaymentOptions,
   VendorStatus,
 } from './types/index.js';

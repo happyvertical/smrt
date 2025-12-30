@@ -98,6 +98,25 @@ export class Payment extends SmrtObject {
    */
   notes: string = '';
 
+  // ============================================================================
+  // Provider Sync
+  // ============================================================================
+
+  /**
+   * External ID in accounting provider (e.g., QBO payment ID)
+   */
+  externalId: string = '';
+
+  /**
+   * Accounting provider name ('quickbooks' | 'stripe' | 'paypal' | etc.)
+   */
+  externalProvider: string = '';
+
+  /**
+   * When payment was last synced to provider
+   */
+  syncedAt: Date | null = null;
+
   constructor(options: any = {}) {
     super(options);
     if (options.contractId !== undefined) this.contractId = options.contractId;
@@ -112,6 +131,10 @@ export class Payment extends SmrtObject {
     if (options.journalId !== undefined) this.journalId = options.journalId;
     if (options.paidAt !== undefined) this.paidAt = options.paidAt;
     if (options.notes !== undefined) this.notes = options.notes;
+    if (options.externalId !== undefined) this.externalId = options.externalId;
+    if (options.externalProvider !== undefined)
+      this.externalProvider = options.externalProvider;
+    if (options.syncedAt !== undefined) this.syncedAt = options.syncedAt;
   }
 
   /**

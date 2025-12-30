@@ -15,5 +15,8 @@ export { ContractLineItem } from './ContractLineItem.js';
 export { Customer } from './Customer.js';
 export { Fulfillment } from './Fulfillment.js';
 export { FulfillmentLineItem } from './FulfillmentLineItem.js';
+export { Invoice } from './Invoice.js';
+export { InvoiceLineItem } from './InvoiceLineItem.js';
 export { Payment } from './Payment.js';
+export { PaymentAllocation } from './PaymentAllocation.js';
 export { Vendor } from './Vendor.js';
