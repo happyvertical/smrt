@@ -64,7 +64,13 @@ jobs:
       - name: Install actionlint
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
+          # Skip if already installed (custom ARC runner image)
+          if command -v actionlint &> /dev/null; then
+            echo "✓ actionlint $(actionlint -version) already installed"
+            exit 0
+          fi
           # Install actionlint for comprehensive workflow validation
+          echo "Installing actionlint..."
           bash <(curl \
             https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           sudo mv actionlint /usr/local/bin/
