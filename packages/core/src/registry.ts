@@ -1526,6 +1526,13 @@ export class ObjectRegistry {
     const classNames = this.getClassNames();
 
     for (const className of classNames) {
+      // Skip collection classes - they don't have their own tables
+      // Collections wrap item classes and share the item class's table
+      const registered = ObjectRegistry.classes.get(className);
+      if (registered?.extends === 'SmrtCollection') {
+        continue;
+      }
+
       await ensureSchema(db, className);
     }
   }
@@ -1820,6 +1827,16 @@ export class ObjectRegistry {
     const collection = (await (collectionConstructor as any).create(
       options,
     )) as SmrtCollection<T>;
+
+    // CRITICAL FIX for issue #603: For JSON adapter, ensure ALL tables exist upfront
+    // This enables cross-table queries (JOINs, NOT EXISTS, etc.) to work correctly.
+    // Unlike SQLite/Postgres where all tables exist in the database file,
+    // JSON adapter loads tables on-demand which causes issues with subqueries.
+    // Detection: JSON adapter has exportTable method (see schema-manager.ts:50-54)
+    const db = (collection as any).db;
+    if (db && (db as any).exportTable) {
+      await ObjectRegistry.ensureAllSchemas(db);
+    }
 
     // Cache the initialized instance
     ObjectRegistry.collectionCache.set(cacheKey, collection);
@@ -2252,6 +2269,12 @@ export class ObjectRegistry {
     > = {};
 
     for (const [_className, registered] of ObjectRegistry.classes) {
+      // Skip collection classes - they don't have their own tables
+      // Their schemas incorrectly contain collection properties (loaded, options, etc.)
+      if (registered.extends === 'SmrtCollection') {
+        continue;
+      }
+
       if (registered.schema?.tableName) {
         const tableName = registered.schema.tableName;
 
