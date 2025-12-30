@@ -245,7 +245,9 @@ export class ThumbnailGenerator {
       );
     }
 
-    type FetchStaticMapOptions = Parameters<typeof fetchStaticMap>[2];
+    type FetchStaticMapOptions = NonNullable<
+      Parameters<typeof fetchStaticMap>[2]
+    >;
     const mapboxStyle = options.mapboxStyle as
       | FetchStaticMapOptions['mapboxStyle']
       | undefined;
