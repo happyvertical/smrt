@@ -117,7 +117,7 @@ export class AnalyticsPropertyCollection extends SmrtCollection<AnalyticsPropert
    */
   async findNeedingSync(hoursAgo: number = 24): Promise<AnalyticsProperty[]> {
     const cutoff = new Date();
-    cutoff.setHours(cutoff.getHours() - hoursAgo);
+    cutoff.setTime(cutoff.getTime() - hoursAgo * 60 * 60 * 1000);
 
     // Get properties where lastSyncAt is null or older than cutoff
     const all = await this.findActive();

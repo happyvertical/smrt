@@ -124,7 +124,7 @@ export class AnalyticsReportCollection extends SmrtCollection<AnalyticsReport> {
    */
   async findRecentlyRun(hoursAgo: number = 24): Promise<AnalyticsReport[]> {
     const cutoff = new Date();
-    cutoff.setHours(cutoff.getHours() - hoursAgo);
+    cutoff.setTime(cutoff.getTime() - hoursAgo * 60 * 60 * 1000);
 
     const all = await this.list({ orderBy: 'lastRunAt DESC' });
     return all.filter((r) => r.lastRunAt && r.lastRunAt >= cutoff);
