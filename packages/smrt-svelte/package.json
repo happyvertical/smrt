@@ -46,8 +46,10 @@
     "access": "public"
   },
   "dependencies": {
+    "@happyvertical/browser-ai": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
-    "@happyvertical/smrt-users": "workspace:*"
+    "@happyvertical/smrt-users": "workspace:*",
+    "chrono-node": "^2.9.0"
   },
   "peerDependencies": {
     "svelte": "^5.18.2"

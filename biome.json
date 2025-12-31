@@ -138,7 +138,8 @@
             "noExplicitAny": "off"
           },
           "style": {
-            "useNamingConvention": "off"
+            "useNamingConvention": "off",
+            "useConst": "off"
           },
           "correctness": {
             "noUnusedVariables": "off",

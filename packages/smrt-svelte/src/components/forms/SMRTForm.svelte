@@ -1,0 +1,690 @@
+<script lang="ts">
+import type { Snippet } from 'svelte';
+import { onDestroy } from 'svelte';
+import { useAppState } from '../../hooks/useAppState.svelte.js';
+import { useSTT } from '../../hooks/useSTT.svelte.js';
+import {
+  type FieldDefinition,
+  type SMRTFormContext,
+  setFormContext,
+} from '../../state/form-context.js';
+import type { LLMModelId, STTAdapterType } from './types.js';
+
+interface Props {
+  /** Form children */
+  children: Snippet;
+  /** Show mode toggle button */
+  showModeToggle?: boolean;
+  /** Show form-level listen button */
+  showFormListen?: boolean;
+  /** Silence timeout in seconds before stopping */
+  silenceTimeout?: number;
+  /** STT adapter type */
+  sttAdapter?: STTAdapterType;
+  /** LLM model for extraction (or 'none' for regex-only) */
+  llmModel?: LLMModelId;
+  /** Called when form is submitted */
+  onsubmit?: (data: Record<string, unknown>) => void;
+}
+
+const {
+  children,
+  showModeToggle = true,
+  showFormListen = true,
+  silenceTimeout = 5,
+  sttAdapter = 'whisper-wasm',
+  llmModel = 'none',
+  onsubmit,
+}: Props = $props();
+
+const app = useAppState();
+const stt = useSTT();
+
+// Internal state
+let fields = $state<Map<string, FieldDefinition>>(new Map());
+let isFormListening = $state(false);
+let isExtracting = $state(false);
+let spokenText = $state('');
+let extractError = $state<string | null>(null);
+let lastSpeechTime = $state(0);
+let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+let audioLevelInterval: ReturnType<typeof setInterval> | null = null;
+let audioContext: AudioContext | null = null;
+let analyser: AnalyserNode | null = null;
+let levelMonitorStream: MediaStream | null = null;
+
+const isSmrt = $derived(app.state.mode === 'smrt');
+
+// Create form context
+const formContext: SMRTFormContext = {
+  get mode() {
+    return app.state.mode === 'smrt' ? 'smrt' : 'dumb';
+  },
+  registerField(field: FieldDefinition) {
+    fields.set(field.name, field);
+    fields = new Map(fields); // Trigger reactivity
+  },
+  unregisterField(name: string) {
+    fields.delete(name);
+    fields = new Map(fields);
+  },
+  getFieldSchema() {
+    return Array.from(fields.values());
+  },
+  get isFormListening() {
+    return isFormListening;
+  },
+};
+
+// Provide context to children
+setFormContext(formContext);
+
+// Clean up extracted values based on field type
+function cleanValue(value: unknown, fieldType: string): unknown {
+  if (typeof value !== 'string') return value;
+
+  let cleaned = value.trim();
+
+  switch (fieldType) {
+    case 'text':
+      // Remove trailing periods from names
+      cleaned = cleaned.replace(/\.$/, '');
+      // Remove common speech artifacts
+      cleaned = cleaned.replace(/^(my |the |it's |is )/i, '');
+      break;
+    case 'email':
+      // Ensure email is properly formatted
+      cleaned = cleaned
+        .toLowerCase()
+        .replace(/\s+at\s+/gi, '@')
+        .replace(/\bat\b/gi, '@')
+        .replace(/\s+dot\s+/gi, '.')
+        .replace(/\bdot\b/gi, '.')
+        .replace(/\s+/g, '');
+      break;
+  }
+
+  return cleaned;
+}
+
+// Regex-based extraction from spoken text
+function extractFieldsFromText(text: string): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const fieldDefs = Array.from(fields.values());
+
+  // Normalize text: remove commas, extra spaces
+  const normalized = text.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+
+  console.log('[SMRTForm] Normalized text:', normalized);
+
+  // Build list of all field triggers for boundary detection
+  const allTriggers: string[] = [];
+  for (const f of fieldDefs) {
+    allTriggers.push(f.name.toLowerCase());
+    if (f.label) {
+      allTriggers.push(f.label.toLowerCase().replace(/\s+/g, '\\s+'));
+    }
+  }
+
+  for (const field of fieldDefs) {
+    const name = field.name.toLowerCase();
+    const label = field.label?.toLowerCase() || '';
+
+    // Build trigger patterns for this field
+    // For "email" field with label "Email Address", match both:
+    // - "email ..."
+    // - "email address ..."
+    const triggers: string[] = [];
+
+    // Add label first (more specific, e.g., "email address")
+    if (label) {
+      triggers.push(label.replace(/\s+/g, '\\s+'));
+    }
+    // Add field name
+    triggers.push(name);
+
+    // Build boundary pattern (other field triggers)
+    const otherTriggers = allTriggers.filter(
+      (t) => t !== name && t !== label.replace(/\s+/g, '\\s+'),
+    );
+    const boundaryPattern =
+      otherTriggers.length > 0
+        ? `(?=\\s+(?:${otherTriggers.join('|')})|$)`
+        : '$';
+
+    for (const trigger of triggers) {
+      // Match: trigger followed by optional "is", then capture value until boundary
+      const pattern = new RegExp(
+        `(?:^|\\s)${trigger}\\s+(?:is\\s+|and\\s+)?(.+?)${boundaryPattern}`,
+        'i',
+      );
+      const match = normalized.match(pattern);
+
+      if (match?.[1]) {
+        let value = match[1].trim();
+
+        // Remove trailing punctuation
+        value = value.replace(/[.,!?]+$/, '').trim();
+
+        // Clean up based on field type
+        if (field.type === 'email') {
+          value = value
+            .toLowerCase()
+            .replace(/\s+at\s+/gi, '@')
+            .replace(/\bat\b/gi, '@')
+            .replace(/\s+dot\s+/gi, '.')
+            .replace(/\bdot\b/gi, '.')
+            .replace(/\s+/g, '');
+        }
+
+        if (value) {
+          result[field.name] = value;
+          console.log(`[SMRTForm] Regex extracted ${field.name}:`, value);
+          break; // Found value for this field, move to next
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+// Extract fields from spoken text
+// Currently uses regex-only since small local LLMs produce unreliable output
+async function extractFields(text: string): Promise<Record<string, unknown>> {
+  console.log('[SMRTForm] Extracting fields from:', text);
+
+  // Use regex extraction directly - fast and reliable
+  // TODO: Add LLM enhancement when larger models are available
+  const result = extractFieldsFromText(text);
+
+  console.log('[SMRTForm] Extracted:', result);
+  return result;
+}
+
+// Apply extracted values to fields with cleanup
+function applyExtractedValues(values: Record<string, unknown>) {
+  for (const [name, value] of Object.entries(values)) {
+    const field = fields.get(name);
+    if (field && value !== undefined && value !== null) {
+      const cleanedValue = cleanValue(value, field.type);
+      field.setValue(cleanedValue);
+    }
+  }
+}
+
+// Reset silence timer
+function resetSilenceTimer() {
+  if (silenceTimer) {
+    clearTimeout(silenceTimer);
+  }
+  lastSpeechTime = Date.now();
+  silenceTimer = setTimeout(() => {
+    if (isFormListening) {
+      console.log('[SMRTForm] Silence timeout - stopping');
+      stopFormListening();
+    }
+  }, silenceTimeout * 1000);
+}
+
+// Start monitoring audio levels to detect speech (for Whisper which has no interim results)
+async function startAudioLevelMonitoring(stream: MediaStream) {
+  try {
+    levelMonitorStream = stream;
+    audioContext = new AudioContext();
+
+    // Ensure AudioContext is running (may be suspended until user interaction)
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.3;
+
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const SPEECH_THRESHOLD = 20; // Lowered from 30 for better sensitivity
+    let checksWithSpeech = 0;
+
+    console.log(
+      '[SMRTForm] Audio level monitoring started, AudioContext state:',
+      audioContext.state,
+    );
+
+    audioLevelInterval = setInterval(() => {
+      if (!analyser || !isFormListening) return;
+
+      analyser.getByteFrequencyData(dataArray);
+      const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+
+      // Log periodically to debug
+      checksWithSpeech++;
+      if (checksWithSpeech % 10 === 0) {
+        console.log('[SMRTForm] Audio level avg:', average.toFixed(1));
+      }
+
+      if (average > SPEECH_THRESHOLD) {
+        // Speech detected - reset silence timer
+        resetSilenceTimer();
+      }
+    }, 200); // Check every 200ms
+  } catch (err) {
+    console.warn('[SMRTForm] Could not set up audio level monitoring:', err);
+  }
+}
+
+// Stop audio level monitoring
+function stopAudioLevelMonitoring() {
+  if (audioLevelInterval) {
+    clearInterval(audioLevelInterval);
+    audioLevelInterval = null;
+  }
+  if (levelMonitorStream) {
+    for (const track of levelMonitorStream.getTracks()) {
+      track.stop();
+    }
+    levelMonitorStream = null;
+  }
+  if (audioContext) {
+    audioContext.close().catch(() => {});
+    audioContext = null;
+    analyser = null;
+  }
+}
+
+// Check for "done" keyword
+function checkForDoneKeyword(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  // Check if the last word is "done" or ends with "done"
+  return lowerText.endsWith('done') || lowerText.endsWith('done.');
+}
+
+// Guard to prevent multiple simultaneous stop calls
+let isStopping = false;
+
+// Watch STT results while form is listening
+// Only track speech and check for "done" - extraction happens at the end
+$effect(() => {
+  if (isFormListening && stt.lastResult && !isStopping) {
+    const newText = stt.lastResult;
+    spokenText = newText;
+
+    // Reset silence timer on new speech (for browser STT with interim results)
+    if (sttAdapter === 'browser') {
+      resetSilenceTimer();
+    }
+
+    // Check for "done" keyword
+    if (checkForDoneKeyword(newText)) {
+      console.log('[SMRTForm] "Done" keyword detected - stopping');
+      isStopping = true;
+      stopFormListening();
+    }
+  }
+});
+
+// Watch for STT stopping unexpectedly (e.g., browser STT auto-stops after silence)
+$effect(() => {
+  // If form thinks we're listening but STT has stopped, handle it
+  if (isFormListening && !stt.isListening && !isStopping) {
+    console.log('[SMRTForm] STT stopped unexpectedly - handling end of speech');
+    // Use setTimeout to avoid state update during render
+    setTimeout(() => {
+      if (isFormListening && !isStopping) {
+        stopFormListening();
+      }
+    }, 0);
+  }
+});
+
+async function toggleFormListening() {
+  if (isFormListening) {
+    await stopFormListening();
+  } else {
+    await startFormListening();
+  }
+}
+
+async function startFormListening() {
+  if (!isSmrt) return;
+
+  // Initialize STT with selected adapter
+  if (!stt.isReady || stt.adapterType !== sttAdapter) {
+    console.log(`[SMRTForm] Initializing STT adapter: ${sttAdapter}`);
+    await stt.initialize({ type: sttAdapter });
+  }
+
+  extractError = null;
+  spokenText = '';
+  isFormListening = true;
+  isStopping = false;
+  lastSpeechTime = Date.now();
+
+  // Start silence timer
+  resetSilenceTimer();
+
+  // Start audio level monitoring for Whisper (no interim results)
+  // Browser STT has interim results so doesn't need this
+  if (sttAdapter === 'whisper-wasm') {
+    try {
+      const levelStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      startAudioLevelMonitoring(levelStream);
+    } catch (err) {
+      console.warn('[SMRTForm] Could not get mic for level monitoring:', err);
+    }
+  }
+
+  await stt.start({ continuous: true, interimResults: true });
+}
+
+async function stopFormListening() {
+  if (!isFormListening || isStopping) return;
+  isStopping = true;
+
+  // Clear silence timer
+  if (silenceTimer) {
+    clearTimeout(silenceTimer);
+    silenceTimer = null;
+  }
+
+  // Stop audio level monitoring
+  stopAudioLevelMonitoring();
+
+  // IMPORTANT: Keep isFormListening = true until after stt.stop() completes
+  // This allows the $effect to capture any final results
+  await stt.stop();
+
+  // Now capture the final result AFTER stop completes
+  // stt.stop() waits for transcription to finish in whisper-wasm
+  const finalResult = stt.lastResult || '';
+
+  // NOW we can set isFormListening to false
+  isFormListening = false;
+
+  // Final extraction on the captured result
+  const textToExtract = (finalResult || spokenText || '')
+    .replace(/\s*done\.?$/i, '')
+    .trim();
+  console.log('[SMRTForm] Final text to extract:', textToExtract);
+
+  if (textToExtract) {
+    isExtracting = true;
+    extractError = null;
+
+    try {
+      console.log('[SMRTForm] Running final extraction...');
+      const values = await extractFields(textToExtract);
+      console.log('[SMRTForm] Extracted values:', values);
+      applyExtractedValues(values);
+    } catch (err) {
+      console.error('[SMRTForm] Extraction error:', err);
+      extractError =
+        err instanceof Error ? err.message : 'Failed to extract fields';
+    } finally {
+      isExtracting = false;
+      isStopping = false;
+    }
+  } else {
+    console.log('[SMRTForm] No text to extract');
+    isStopping = false;
+  }
+}
+
+// Cleanup on destroy
+onDestroy(() => {
+  if (silenceTimer) {
+    clearTimeout(silenceTimer);
+  }
+  stopAudioLevelMonitoring();
+});
+
+function handleModeToggle() {
+  const newMode = app.state.mode === 'smrt' ? 'dumb' : 'smrt';
+  app.setMode(newMode);
+}
+
+function handleSubmit(e: Event) {
+  e.preventDefault();
+
+  if (onsubmit) {
+    const data: Record<string, unknown> = {};
+    for (const [name, field] of fields) {
+      data[name] = field.getValue();
+    }
+    onsubmit(data);
+  }
+}
+
+function getFormData(): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  for (const [name, field] of fields) {
+    data[name] = field.getValue();
+  }
+  return data;
+}
+</script>
+
+<form class="smrt-form" onsubmit={handleSubmit}>
+  {#if showModeToggle || showFormListen}
+    <div class="form-controls">
+      {#if showModeToggle}
+        <div class="mode-toggle">
+          <button
+            type="button"
+            class="mode-btn"
+            class:active={!isSmrt}
+            onclick={handleModeToggle}
+          >
+            Dumb
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            class:active={isSmrt}
+            onclick={handleModeToggle}
+          >
+            Smrt
+          </button>
+        </div>
+      {/if}
+
+      {#if showFormListen && isSmrt}
+        <button
+          type="button"
+          class="form-listen-btn"
+          class:listening={isFormListening}
+          class:extracting={isExtracting}
+          onclick={toggleFormListening}
+        >
+          {#if isExtracting}
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              class="spinner"
+            >
+              <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/>
+            </svg>
+            Extracting...
+          {:else if isFormListening}
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="6" y="4" width="4" height="16"/>
+              <rect x="14" y="4" width="4" height="16"/>
+            </svg>
+            Listening... (say "done" to finish)
+          {:else}
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" x2="12" y1="19" y2="22"/>
+            </svg>
+            Speak all fields
+          {/if}
+        </button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if isFormListening && spokenText}
+    <div class="spoken-preview">
+      <strong>You said:</strong> {spokenText}
+    </div>
+  {/if}
+
+  {#if extractError}
+    <div class="extract-error">{extractError}</div>
+  {/if}
+
+  <div class="form-fields">
+    {@render children()}
+  </div>
+</form>
+
+<style>
+  .smrt-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .mode-toggle {
+    display: flex;
+    background: #f3f4f6;
+    padding: 4px;
+    border-radius: 8px;
+  }
+
+  .mode-btn {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: #6b7280;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .mode-btn:hover {
+    color: #374151;
+  }
+
+  .mode-btn.active {
+    background: #fff;
+    color: #3b82f6;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .form-listen-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border: 2px solid #3b82f6;
+    background: #fff;
+    color: #3b82f6;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .form-listen-btn:hover {
+    background: #eff6ff;
+  }
+
+  .form-listen-btn.listening {
+    background: #22c55e;
+    border-color: #22c55e;
+    color: #fff;
+    animation: pulse-btn 1.5s ease-in-out infinite;
+  }
+
+  .form-listen-btn.extracting {
+    background: #f59e0b;
+    border-color: #f59e0b;
+    color: #fff;
+  }
+
+  .form-listen-btn:disabled {
+    cursor: not-allowed;
+  }
+
+  @keyframes pulse-btn {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+    }
+  }
+
+  .spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .spoken-preview {
+    padding: 12px 16px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: #166534;
+  }
+
+  .extract-error {
+    padding: 12px 16px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: #dc2626;
+  }
+
+  .form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+</style>

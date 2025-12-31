@@ -1,7 +1,7 @@
 /**
  * @happyvertical/smrt-svelte
  *
- * Svelte 5 components for SMRT user management
+ * Svelte 5 components for SMRT user management and AI features
  */
 
 // Actions
@@ -11,8 +11,12 @@ export {
   hasPermission,
   permission,
 } from './actions/permission.js';
+// AI Components
+export * from './components/ai/index.js';
 // Auth components
 export { default as UserMenu } from './components/auth/UserMenu.svelte';
+// Form components
+export * from './components/forms/index.js';
 // Membership components
 export { default as MembershipCard } from './components/memberships/MembershipCard.svelte';
 export { default as MembershipList } from './components/memberships/MembershipList.svelte';
@@ -30,3 +34,7 @@ export { default as UserAvatar } from './components/users/UserAvatar.svelte';
 export { default as UserCard } from './components/users/UserCard.svelte';
 export { default as UserForm } from './components/users/UserForm.svelte';
 export { default as UserList } from './components/users/UserList.svelte';
+// Hooks
+export * from './hooks/index.js';
+// State management
+export * from './state/index.js';

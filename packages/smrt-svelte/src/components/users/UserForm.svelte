@@ -18,9 +18,9 @@ const {
   loading = false,
 }: Props = $props();
 
-const name = $state(profile?.name ?? '');
-const email = $state(user?.email ?? '');
-const status = $state<UserStatus>(user?.status ?? 'active');
+let name = $state(profile?.name ?? '');
+let email = $state(user?.email ?? '');
+let status: UserStatus = $state(user?.status ?? 'active');
 
 function handleSubmit(e: Event) {
   e.preventDefault();
