@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.86
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - merge thumbnail config in generateMissingThumbnails (#636) (content)
+  - @happyvertical/smrt-config@0.17.86
+  - @happyvertical/smrt-types@0.17.86
+
 ## 0.17.85
 
 ### Patch Changes
