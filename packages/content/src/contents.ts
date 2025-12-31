@@ -324,15 +324,24 @@ export class Contents extends SmrtCollection<Content> {
     images: Image[];
     failed: Array<{ contentId: string; error: string }>;
   }> {
+    // Merge with thumbnail config from smrt.config.js (passed via constructor)
+    // This allows CLI users to configure defaults in smrt.config.js:
+    //   thumbnail: { strategy: 'headline-card', brandColor: '#1976d2' }
+    const configDefaults = (this.options as any)?.thumbnail || {};
+    const mergedOptions = {
+      ...configDefaults,
+      ...options,
+    };
+
     // Build query for content missing thumbnails
     const whereClause = {
-      ...options.where,
+      ...mergedOptions.where,
       thumbnailAssetId: null,
     };
 
     const contents = await this.list({
       where: whereClause,
-      limit: options.limit,
+      limit: mergedOptions.limit,
     });
 
     const generatedImages: Image[] = [];
@@ -343,41 +352,41 @@ export class Contents extends SmrtCollection<Content> {
         // Build thumbnail options based on strategy
         let thumbnailOptions: ThumbnailOptions;
 
-        switch (options.strategy) {
+        switch (mergedOptions.strategy) {
           case 'headline-card':
             thumbnailOptions = {
               strategy: 'headline-card',
-              brandColor: options.brandColor,
-              backgroundColor: options.backgroundColor,
-              logoUrl: options.logoUrl,
-              template: options.template,
-              width: options.width,
-              height: options.height,
+              brandColor: mergedOptions.brandColor,
+              backgroundColor: mergedOptions.backgroundColor,
+              logoUrl: mergedOptions.logoUrl,
+              template: mergedOptions.template,
+              width: mergedOptions.width,
+              height: mergedOptions.height,
             };
             break;
 
           case 'static-map':
             thumbnailOptions = {
               strategy: 'static-map',
-              mapProvider: options.mapProvider,
-              zoom: options.zoom,
-              width: options.width,
-              height: options.height,
+              mapProvider: mergedOptions.mapProvider,
+              zoom: mergedOptions.zoom,
+              width: mergedOptions.width,
+              height: mergedOptions.height,
             };
             break;
 
           case 'ai-generate':
             thumbnailOptions = {
               strategy: 'ai-generate',
-              style: options.style,
-              width: options.width,
-              height: options.height,
+              style: mergedOptions.style,
+              width: mergedOptions.width,
+              height: mergedOptions.height,
               ai: this.options.ai,
             };
             break;
 
           default:
-            throw new Error(`Unknown strategy: ${options.strategy}`);
+            throw new Error(`Unknown strategy: ${mergedOptions.strategy}`);
         }
 
         const image = await content.generateThumbnail(thumbnailOptions);
