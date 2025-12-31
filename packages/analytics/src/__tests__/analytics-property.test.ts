@@ -2,10 +2,20 @@
  * Tests for AnalyticsProperty model and collection
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AnalyticsPropertyCollection } from '../collections/AnalyticsPropertyCollection.js';
 import { AnalyticsProperty } from '../models/AnalyticsProperty.js';
 import { AnalyticsPropertyStatus, AnalyticsProvider } from '../types/index.js';
+import {
+  createTestDb,
+  getAdapterDisplayName,
+  getTestAdapter,
+  isPostgresAvailable,
+} from './helpers/index.js';
+
+// Check postgres availability at module load (top-level await)
+const pgAvailable = await isPostgresAvailable();
+const skipTests = getTestAdapter() === 'postgres' && !pgAvailable;
 
 describe('AnalyticsProperty', () => {
   describe('constructor', () => {
@@ -106,86 +116,94 @@ describe('AnalyticsProperty', () => {
   });
 });
 
-describe('AnalyticsPropertyCollection', () => {
-  let collection: AnalyticsPropertyCollection;
+describe.skipIf(skipTests)(
+  `AnalyticsPropertyCollection [${getAdapterDisplayName()}]`,
+  () => {
+    let collection: AnalyticsPropertyCollection;
+    let cleanup: () => Promise<void>;
 
-  beforeEach(async () => {
-    // Use unique temp file for each test to ensure isolation
-    const tempDbPath = `/tmp/test-analytics-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
-    collection = await AnalyticsPropertyCollection.create({
-      persistence: { type: 'sqlite', url: tempDbPath },
+    beforeEach(async () => {
+      const testDb = await createTestDb();
+      cleanup = testDb.cleanup;
+      collection = await AnalyticsPropertyCollection.create({
+        persistence: testDb.config,
+      });
     });
-  });
 
-  it('should create and list properties', async () => {
-    const property = await collection.create({
-      name: 'Test Property',
-      displayName: 'Test Analytics',
-      provider: AnalyticsProvider.GA4,
-      measurementId: 'G-TEST123',
+    afterEach(async () => {
+      await cleanup();
     });
-    await property.save();
 
-    const properties = await collection.list({});
-    expect(properties).toHaveLength(1);
-    expect(properties[0].measurementId).toBe('G-TEST123');
-  });
+    it('should create and list properties', async () => {
+      const property = await collection.create({
+        name: 'Test Property',
+        displayName: 'Test Analytics',
+        provider: AnalyticsProvider.GA4,
+        measurementId: 'G-TEST123',
+      });
+      await property.save();
 
-  it('should find property by measurement ID', async () => {
-    const property = await collection.create({
-      name: 'GA4 Property',
-      displayName: 'GA4 Test',
-      provider: AnalyticsProvider.GA4,
-      measurementId: 'G-UNIQUE123',
+      const properties = await collection.list({});
+      expect(properties).toHaveLength(1);
+      expect(properties[0].measurementId).toBe('G-TEST123');
     });
-    await property.save();
 
-    const found = await collection.findByMeasurementId('G-UNIQUE123');
-    expect(found).not.toBeNull();
-    expect(found?.displayName).toBe('GA4 Test');
-  });
+    it('should find property by measurement ID', async () => {
+      const property = await collection.create({
+        name: 'GA4 Property',
+        displayName: 'GA4 Test',
+        provider: AnalyticsProvider.GA4,
+        measurementId: 'G-UNIQUE123',
+      });
+      await property.save();
 
-  it('should find properties by provider', async () => {
-    const ga4 = await collection.create({
-      name: 'GA4',
-      displayName: 'GA4 Property',
-      provider: AnalyticsProvider.GA4,
+      const found = await collection.findByMeasurementId('G-UNIQUE123');
+      expect(found).not.toBeNull();
+      expect(found?.displayName).toBe('GA4 Test');
     });
-    await ga4.save();
 
-    const plausible = await collection.create({
-      name: 'Plausible',
-      displayName: 'Plausible Site',
-      provider: AnalyticsProvider.PLAUSIBLE,
+    it('should find properties by provider', async () => {
+      const ga4 = await collection.create({
+        name: 'GA4',
+        displayName: 'GA4 Property',
+        provider: AnalyticsProvider.GA4,
+      });
+      await ga4.save();
+
+      const plausible = await collection.create({
+        name: 'Plausible',
+        displayName: 'Plausible Site',
+        provider: AnalyticsProvider.PLAUSIBLE,
+      });
+      await plausible.save();
+
+      const ga4Properties = await collection.findGA4Properties();
+      expect(ga4Properties).toHaveLength(1);
+      expect(ga4Properties[0].provider).toBe(AnalyticsProvider.GA4);
+
+      const plausibleSites = await collection.findPlausibleSites();
+      expect(plausibleSites).toHaveLength(1);
+      expect(plausibleSites[0].provider).toBe(AnalyticsProvider.PLAUSIBLE);
     });
-    await plausible.save();
 
-    const ga4Properties = await collection.findGA4Properties();
-    expect(ga4Properties).toHaveLength(1);
-    expect(ga4Properties[0].provider).toBe(AnalyticsProvider.GA4);
+    it('should find active properties', async () => {
+      const active = await collection.create({
+        name: 'Active',
+        displayName: 'Active Property',
+        status: AnalyticsPropertyStatus.ACTIVE,
+      });
+      await active.save();
 
-    const plausibleSites = await collection.findPlausibleSites();
-    expect(plausibleSites).toHaveLength(1);
-    expect(plausibleSites[0].provider).toBe(AnalyticsProvider.PLAUSIBLE);
-  });
+      const inactive = await collection.create({
+        name: 'Inactive',
+        displayName: 'Inactive Property',
+        status: AnalyticsPropertyStatus.INACTIVE,
+      });
+      await inactive.save();
 
-  it('should find active properties', async () => {
-    const active = await collection.create({
-      name: 'Active',
-      displayName: 'Active Property',
-      status: AnalyticsPropertyStatus.ACTIVE,
+      const activeProperties = await collection.findActive();
+      expect(activeProperties).toHaveLength(1);
+      expect(activeProperties[0].displayName).toBe('Active Property');
     });
-    await active.save();
-
-    const inactive = await collection.create({
-      name: 'Inactive',
-      displayName: 'Inactive Property',
-      status: AnalyticsPropertyStatus.INACTIVE,
-    });
-    await inactive.save();
-
-    const activeProperties = await collection.findActive();
-    expect(activeProperties).toHaveLength(1);
-    expect(activeProperties[0].displayName).toBe('Active Property');
-  });
-});
+  },
+);

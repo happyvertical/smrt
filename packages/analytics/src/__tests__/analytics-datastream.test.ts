@@ -2,10 +2,20 @@
  * Tests for AnalyticsDataStream model and collection
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AnalyticsDataStreamCollection } from '../collections/AnalyticsDataStreamCollection.js';
 import { AnalyticsDataStream } from '../models/AnalyticsDataStream.js';
 import { DataStreamStatus, DataStreamType } from '../types/index.js';
+import {
+  createTestDb,
+  getAdapterDisplayName,
+  getTestAdapter,
+  isPostgresAvailable,
+} from './helpers/index.js';
+
+// Check postgres availability at module load (top-level await)
+const pgAvailable = await isPostgresAvailable();
+const skipTests = getTestAdapter() === 'postgres' && !pgAvailable;
 
 describe('AnalyticsDataStream', () => {
   describe('constructor', () => {
@@ -132,174 +142,183 @@ describe('AnalyticsDataStream', () => {
   });
 });
 
-describe('AnalyticsDataStreamCollection', () => {
-  let collection: AnalyticsDataStreamCollection;
+describe.skipIf(skipTests)(
+  `AnalyticsDataStreamCollection [${getAdapterDisplayName()}]`,
+  () => {
+    let collection: AnalyticsDataStreamCollection;
+    let cleanup: () => Promise<void>;
 
-  beforeEach(async () => {
-    const tempDbPath = `/tmp/test-analytics-datastream-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
-    collection = await AnalyticsDataStreamCollection.create({
-      persistence: { type: 'sqlite', url: tempDbPath },
+    beforeEach(async () => {
+      const testDb = await createTestDb();
+      cleanup = testDb.cleanup;
+      collection = await AnalyticsDataStreamCollection.create({
+        persistence: testDb.config,
+      });
     });
-  });
 
-  it('should create and list streams', async () => {
-    const stream = await collection.create({
-      propertyId: 'prop-123',
-      displayName: 'Web Stream',
-      streamType: DataStreamType.WEB,
-      measurementId: 'G-TEST123',
+    afterEach(async () => {
+      await cleanup();
     });
-    await stream.save();
 
-    const streams = await collection.list({});
-    expect(streams).toHaveLength(1);
-    expect(streams[0].measurementId).toBe('G-TEST123');
-  });
+    it('should create and list streams', async () => {
+      const stream = await collection.create({
+        propertyId: 'prop-123',
+        displayName: 'Web Stream',
+        streamType: DataStreamType.WEB,
+        measurementId: 'G-TEST123',
+      });
+      await stream.save();
 
-  it('should find stream by measurement ID', async () => {
-    const stream = await collection.create({
-      displayName: 'Web Stream',
-      streamType: DataStreamType.WEB,
-      measurementId: 'G-UNIQUE123',
+      const streams = await collection.list({});
+      expect(streams).toHaveLength(1);
+      expect(streams[0].measurementId).toBe('G-TEST123');
     });
-    await stream.save();
 
-    const found = await collection.findByMeasurementId('G-UNIQUE123');
-    expect(found).not.toBeNull();
-    expect(found?.displayName).toBe('Web Stream');
-  });
+    it('should find stream by measurement ID', async () => {
+      const stream = await collection.create({
+        displayName: 'Web Stream',
+        streamType: DataStreamType.WEB,
+        measurementId: 'G-UNIQUE123',
+      });
+      await stream.save();
 
-  it('should find streams by type', async () => {
-    const web = await collection.create({
-      displayName: 'Web',
-      streamType: DataStreamType.WEB,
+      const found = await collection.findByMeasurementId('G-UNIQUE123');
+      expect(found).not.toBeNull();
+      expect(found?.displayName).toBe('Web Stream');
     });
-    await web.save();
 
-    const ios = await collection.create({
-      displayName: 'iOS',
-      streamType: DataStreamType.IOS,
+    it('should find streams by type', async () => {
+      const web = await collection.create({
+        displayName: 'Web',
+        streamType: DataStreamType.WEB,
+      });
+      await web.save();
+
+      const ios = await collection.create({
+        displayName: 'iOS',
+        streamType: DataStreamType.IOS,
+      });
+      await ios.save();
+
+      const android = await collection.create({
+        displayName: 'Android',
+        streamType: DataStreamType.ANDROID,
+      });
+      await android.save();
+
+      const webStreams = await collection.findWebStreams();
+      expect(webStreams).toHaveLength(1);
+      expect(webStreams[0].streamType).toBe(DataStreamType.WEB);
+
+      const iosStreams = await collection.findIOSStreams();
+      expect(iosStreams).toHaveLength(1);
+      expect(iosStreams[0].streamType).toBe(DataStreamType.IOS);
+
+      const androidStreams = await collection.findAndroidStreams();
+      expect(androidStreams).toHaveLength(1);
+      expect(androidStreams[0].streamType).toBe(DataStreamType.ANDROID);
     });
-    await ios.save();
 
-    const android = await collection.create({
-      displayName: 'Android',
-      streamType: DataStreamType.ANDROID,
+    it('should find mobile streams (iOS + Android)', async () => {
+      const web = await collection.create({
+        displayName: 'Web',
+        streamType: DataStreamType.WEB,
+      });
+      await web.save();
+
+      const ios = await collection.create({
+        displayName: 'iOS App',
+        streamType: DataStreamType.IOS,
+      });
+      await ios.save();
+
+      const android = await collection.create({
+        displayName: 'Android App',
+        streamType: DataStreamType.ANDROID,
+      });
+      await android.save();
+
+      const mobileStreams = await collection.findMobileStreams();
+      expect(mobileStreams).toHaveLength(2);
+      expect(mobileStreams.map((s) => s.streamType).sort()).toEqual([
+        DataStreamType.ANDROID,
+        DataStreamType.IOS,
+      ]);
     });
-    await android.save();
 
-    const webStreams = await collection.findWebStreams();
-    expect(webStreams).toHaveLength(1);
-    expect(webStreams[0].streamType).toBe(DataStreamType.WEB);
+    it('should find active streams', async () => {
+      const active = await collection.create({
+        displayName: 'Active Stream',
+        status: DataStreamStatus.ACTIVE,
+      });
+      await active.save();
 
-    const iosStreams = await collection.findIOSStreams();
-    expect(iosStreams).toHaveLength(1);
-    expect(iosStreams[0].streamType).toBe(DataStreamType.IOS);
+      const inactive = await collection.create({
+        displayName: 'Inactive Stream',
+        status: DataStreamStatus.INACTIVE,
+      });
+      await inactive.save();
 
-    const androidStreams = await collection.findAndroidStreams();
-    expect(androidStreams).toHaveLength(1);
-    expect(androidStreams[0].streamType).toBe(DataStreamType.ANDROID);
-  });
-
-  it('should find mobile streams (iOS + Android)', async () => {
-    const web = await collection.create({
-      displayName: 'Web',
-      streamType: DataStreamType.WEB,
+      const activeStreams = await collection.findActive();
+      expect(activeStreams).toHaveLength(1);
+      expect(activeStreams[0].displayName).toBe('Active Stream');
     });
-    await web.save();
 
-    const ios = await collection.create({
-      displayName: 'iOS App',
-      streamType: DataStreamType.IOS,
+    it('should find streams by property', async () => {
+      const stream1 = await collection.create({
+        propertyId: 'prop-1',
+        displayName: 'Stream 1',
+      });
+      await stream1.save();
+
+      const stream2 = await collection.create({
+        propertyId: 'prop-1',
+        displayName: 'Stream 2',
+      });
+      await stream2.save();
+
+      const stream3 = await collection.create({
+        propertyId: 'prop-2',
+        displayName: 'Stream 3',
+      });
+      await stream3.save();
+
+      const prop1Streams = await collection.findByProperty('prop-1');
+      expect(prop1Streams).toHaveLength(2);
     });
-    await ios.save();
 
-    const android = await collection.create({
-      displayName: 'Android App',
-      streamType: DataStreamType.ANDROID,
+    it('should find active streams by property', async () => {
+      const propertyId = 'prop-test';
+
+      const active = await collection.create({
+        propertyId,
+        displayName: 'Active',
+        status: DataStreamStatus.ACTIVE,
+      });
+      await active.save();
+
+      const inactive = await collection.create({
+        propertyId,
+        displayName: 'Inactive',
+        status: DataStreamStatus.INACTIVE,
+      });
+      await inactive.save();
+
+      const activeStreams = await collection.findActiveByProperty(propertyId);
+      expect(activeStreams).toHaveLength(1);
+      expect(activeStreams[0].displayName).toBe('Active');
     });
-    await android.save();
 
-    const mobileStreams = await collection.findMobileStreams();
-    expect(mobileStreams).toHaveLength(2);
-    expect(mobileStreams.map((s) => s.streamType).sort()).toEqual([
-      DataStreamType.ANDROID,
-      DataStreamType.IOS,
-    ]);
-  });
+    it('should find stream by external ID', async () => {
+      const stream = await collection.create({
+        displayName: 'External Stream',
+        externalId: 'dataStreams/123456789',
+      });
+      await stream.save();
 
-  it('should find active streams', async () => {
-    const active = await collection.create({
-      displayName: 'Active Stream',
-      status: DataStreamStatus.ACTIVE,
+      const found = await collection.findByExternalId('dataStreams/123456789');
+      expect(found).not.toBeNull();
+      expect(found?.displayName).toBe('External Stream');
     });
-    await active.save();
-
-    const inactive = await collection.create({
-      displayName: 'Inactive Stream',
-      status: DataStreamStatus.INACTIVE,
-    });
-    await inactive.save();
-
-    const activeStreams = await collection.findActive();
-    expect(activeStreams).toHaveLength(1);
-    expect(activeStreams[0].displayName).toBe('Active Stream');
-  });
-
-  it('should find streams by property', async () => {
-    const stream1 = await collection.create({
-      propertyId: 'prop-1',
-      displayName: 'Stream 1',
-    });
-    await stream1.save();
-
-    const stream2 = await collection.create({
-      propertyId: 'prop-1',
-      displayName: 'Stream 2',
-    });
-    await stream2.save();
-
-    const stream3 = await collection.create({
-      propertyId: 'prop-2',
-      displayName: 'Stream 3',
-    });
-    await stream3.save();
-
-    const prop1Streams = await collection.findByProperty('prop-1');
-    expect(prop1Streams).toHaveLength(2);
-  });
-
-  it('should find active streams by property', async () => {
-    const propertyId = 'prop-test';
-
-    const active = await collection.create({
-      propertyId,
-      displayName: 'Active',
-      status: DataStreamStatus.ACTIVE,
-    });
-    await active.save();
-
-    const inactive = await collection.create({
-      propertyId,
-      displayName: 'Inactive',
-      status: DataStreamStatus.INACTIVE,
-    });
-    await inactive.save();
-
-    const activeStreams = await collection.findActiveByProperty(propertyId);
-    expect(activeStreams).toHaveLength(1);
-    expect(activeStreams[0].displayName).toBe('Active');
-  });
-
-  it('should find stream by external ID', async () => {
-    const stream = await collection.create({
-      displayName: 'External Stream',
-      externalId: 'dataStreams/123456789',
-    });
-    await stream.save();
-
-    const found = await collection.findByExternalId('dataStreams/123456789');
-    expect(found).not.toBeNull();
-    expect(found?.displayName).toBe('External Stream');
-  });
-});
+  },
+);

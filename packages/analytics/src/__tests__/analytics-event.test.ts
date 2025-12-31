@@ -2,10 +2,20 @@
  * Tests for AnalyticsEvent model and collection
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AnalyticsEventCollection } from '../collections/AnalyticsEventCollection.js';
 import { AnalyticsEvent } from '../models/AnalyticsEvent.js';
 import { TrackingEventStatus } from '../types/index.js';
+import {
+  createTestDb,
+  getAdapterDisplayName,
+  getTestAdapter,
+  isPostgresAvailable,
+} from './helpers/index.js';
+
+// Check postgres availability at module load (top-level await)
+const pgAvailable = await isPostgresAvailable();
+const skipTests = getTestAdapter() === 'postgres' && !pgAvailable;
 
 describe('AnalyticsEvent', () => {
   describe('constructor', () => {
@@ -197,187 +207,196 @@ describe('AnalyticsEvent', () => {
   });
 });
 
-describe('AnalyticsEventCollection', () => {
-  let collection: AnalyticsEventCollection;
+describe.skipIf(skipTests)(
+  `AnalyticsEventCollection [${getAdapterDisplayName()}]`,
+  () => {
+    let collection: AnalyticsEventCollection;
+    let cleanup: () => Promise<void>;
 
-  beforeEach(async () => {
-    const tempDbPath = `/tmp/test-analytics-event-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
-    collection = await AnalyticsEventCollection.create({
-      persistence: { type: 'sqlite', url: tempDbPath },
+    beforeEach(async () => {
+      const testDb = await createTestDb();
+      cleanup = testDb.cleanup;
+      collection = await AnalyticsEventCollection.create({
+        persistence: testDb.config,
+      });
     });
-  });
 
-  it('should create and list events', async () => {
-    const event = await collection.create({
-      propertyId: 'prop-123',
-      eventName: 'purchase',
-      clientId: 'client-456',
+    afterEach(async () => {
+      await cleanup();
     });
-    await event.save();
 
-    const events = await collection.list({});
-    expect(events).toHaveLength(1);
-    expect(events[0].eventName).toBe('purchase');
-  });
-
-  it('should find events by event name', async () => {
-    const purchase = await collection.create({
-      eventName: 'purchase',
-      propertyId: 'prop-1',
-    });
-    await purchase.save();
-
-    const pageView = await collection.create({
-      eventName: 'page_view',
-      propertyId: 'prop-1',
-    });
-    await pageView.save();
-
-    const purchases = await collection.findByEventName('purchase');
-    expect(purchases).toHaveLength(1);
-    expect(purchases[0].eventName).toBe('purchase');
-  });
-
-  it('should find events by status', async () => {
-    const pending = await collection.create({
-      eventName: 'event1',
-      status: TrackingEventStatus.PENDING,
-    });
-    await pending.save();
-
-    const sent = await collection.create({
-      eventName: 'event2',
-      status: TrackingEventStatus.SENT,
-    });
-    await sent.save();
-
-    const failed = await collection.create({
-      eventName: 'event3',
-      status: TrackingEventStatus.FAILED,
-    });
-    await failed.save();
-
-    const pendingEvents = await collection.findPending();
-    expect(pendingEvents).toHaveLength(1);
-    expect(pendingEvents[0].eventName).toBe('event1');
-
-    const sentEvents = await collection.findSent();
-    expect(sentEvents).toHaveLength(1);
-    expect(sentEvents[0].eventName).toBe('event2');
-
-    const failedEvents = await collection.findFailed();
-    expect(failedEvents).toHaveLength(1);
-    expect(failedEvents[0].eventName).toBe('event3');
-  });
-
-  it('should find events for retry', async () => {
-    const retriable = await collection.create({
-      eventName: 'retriable',
-      status: TrackingEventStatus.FAILED,
-      retryCount: 1,
-    });
-    await retriable.save();
-
-    const exhausted = await collection.create({
-      eventName: 'exhausted',
-      status: TrackingEventStatus.FAILED,
-      retryCount: 5,
-    });
-    await exhausted.save();
-
-    const forRetry = await collection.findForRetry(3);
-    expect(forRetry).toHaveLength(1);
-    expect(forRetry[0].eventName).toBe('retriable');
-  });
-
-  it('should find conversion events', async () => {
-    const purchase = await collection.create({
-      eventName: 'purchase',
-      propertyId: 'prop-1',
-    });
-    await purchase.save();
-
-    const pageView = await collection.create({
-      eventName: 'page_view',
-      propertyId: 'prop-1',
-    });
-    await pageView.save();
-
-    const signUp = await collection.create({
-      eventName: 'sign_up',
-      propertyId: 'prop-1',
-    });
-    await signUp.save();
-
-    const conversions = await collection.findConversions('prop-1');
-    expect(conversions).toHaveLength(2);
-    expect(conversions.map((e) => e.eventName).sort()).toEqual([
-      'purchase',
-      'sign_up',
-    ]);
-  });
-
-  it('should get property stats', async () => {
-    const propertyId = 'prop-stats';
-
-    await (
-      await collection.create({
-        propertyId,
+    it('should create and list events', async () => {
+      const event = await collection.create({
+        propertyId: 'prop-123',
         eventName: 'purchase',
-        status: TrackingEventStatus.SENT,
-      })
-    ).save();
+        clientId: 'client-456',
+      });
+      await event.save();
 
-    await (
-      await collection.create({
-        propertyId,
+      const events = await collection.list({});
+      expect(events).toHaveLength(1);
+      expect(events[0].eventName).toBe('purchase');
+    });
+
+    it('should find events by event name', async () => {
+      const purchase = await collection.create({
+        eventName: 'purchase',
+        propertyId: 'prop-1',
+      });
+      await purchase.save();
+
+      const pageView = await collection.create({
         eventName: 'page_view',
-        status: TrackingEventStatus.SENT,
-      })
-    ).save();
+        propertyId: 'prop-1',
+      });
+      await pageView.save();
 
-    await (
-      await collection.create({
-        propertyId,
-        eventName: 'sign_up',
+      const purchases = await collection.findByEventName('purchase');
+      expect(purchases).toHaveLength(1);
+      expect(purchases[0].eventName).toBe('purchase');
+    });
+
+    it('should find events by status', async () => {
+      const pending = await collection.create({
+        eventName: 'event1',
         status: TrackingEventStatus.PENDING,
-      })
-    ).save();
+      });
+      await pending.save();
 
-    await (
-      await collection.create({
-        propertyId,
-        eventName: 'click',
+      const sent = await collection.create({
+        eventName: 'event2',
+        status: TrackingEventStatus.SENT,
+      });
+      await sent.save();
+
+      const failed = await collection.create({
+        eventName: 'event3',
         status: TrackingEventStatus.FAILED,
-      })
-    ).save();
+      });
+      await failed.save();
 
-    const stats = await collection.getPropertyStats(propertyId);
+      const pendingEvents = await collection.findPending();
+      expect(pendingEvents).toHaveLength(1);
+      expect(pendingEvents[0].eventName).toBe('event1');
 
-    expect(stats.total).toBe(4);
-    expect(stats.sent).toBe(2);
-    expect(stats.pending).toBe(1);
-    expect(stats.failed).toBe(1);
-    expect(stats.conversions).toBe(2); // purchase, sign_up
-    expect(stats.pageviews).toBe(1); // page_view
-  });
+      const sentEvents = await collection.findSent();
+      expect(sentEvents).toHaveLength(1);
+      expect(sentEvents[0].eventName).toBe('event2');
 
-  it('should count events by event name', async () => {
-    const propertyId = 'prop-count';
+      const failedEvents = await collection.findFailed();
+      expect(failedEvents).toHaveLength(1);
+      expect(failedEvents[0].eventName).toBe('event3');
+    });
 
-    await (
-      await collection.create({ propertyId, eventName: 'page_view' })
-    ).save();
-    await (
-      await collection.create({ propertyId, eventName: 'page_view' })
-    ).save();
-    await (
-      await collection.create({ propertyId, eventName: 'purchase' })
-    ).save();
+    it('should find events for retry', async () => {
+      const retriable = await collection.create({
+        eventName: 'retriable',
+        status: TrackingEventStatus.FAILED,
+        retryCount: 1,
+      });
+      await retriable.save();
 
-    const counts = await collection.countByEventName(propertyId);
+      const exhausted = await collection.create({
+        eventName: 'exhausted',
+        status: TrackingEventStatus.FAILED,
+        retryCount: 5,
+      });
+      await exhausted.save();
 
-    expect(counts.get('page_view')).toBe(2);
-    expect(counts.get('purchase')).toBe(1);
-  });
-});
+      const forRetry = await collection.findForRetry(3);
+      expect(forRetry).toHaveLength(1);
+      expect(forRetry[0].eventName).toBe('retriable');
+    });
+
+    it('should find conversion events', async () => {
+      const purchase = await collection.create({
+        eventName: 'purchase',
+        propertyId: 'prop-1',
+      });
+      await purchase.save();
+
+      const pageView = await collection.create({
+        eventName: 'page_view',
+        propertyId: 'prop-1',
+      });
+      await pageView.save();
+
+      const signUp = await collection.create({
+        eventName: 'sign_up',
+        propertyId: 'prop-1',
+      });
+      await signUp.save();
+
+      const conversions = await collection.findConversions('prop-1');
+      expect(conversions).toHaveLength(2);
+      expect(conversions.map((e) => e.eventName).sort()).toEqual([
+        'purchase',
+        'sign_up',
+      ]);
+    });
+
+    it('should get property stats', async () => {
+      const propertyId = 'prop-stats';
+
+      await (
+        await collection.create({
+          propertyId,
+          eventName: 'purchase',
+          status: TrackingEventStatus.SENT,
+        })
+      ).save();
+
+      await (
+        await collection.create({
+          propertyId,
+          eventName: 'page_view',
+          status: TrackingEventStatus.SENT,
+        })
+      ).save();
+
+      await (
+        await collection.create({
+          propertyId,
+          eventName: 'sign_up',
+          status: TrackingEventStatus.PENDING,
+        })
+      ).save();
+
+      await (
+        await collection.create({
+          propertyId,
+          eventName: 'click',
+          status: TrackingEventStatus.FAILED,
+        })
+      ).save();
+
+      const stats = await collection.getPropertyStats(propertyId);
+
+      expect(stats.total).toBe(4);
+      expect(stats.sent).toBe(2);
+      expect(stats.pending).toBe(1);
+      expect(stats.failed).toBe(1);
+      expect(stats.conversions).toBe(2); // purchase, sign_up
+      expect(stats.pageviews).toBe(1); // page_view
+    });
+
+    it('should count events by event name', async () => {
+      const propertyId = 'prop-count';
+
+      await (
+        await collection.create({ propertyId, eventName: 'page_view' })
+      ).save();
+      await (
+        await collection.create({ propertyId, eventName: 'page_view' })
+      ).save();
+      await (
+        await collection.create({ propertyId, eventName: 'purchase' })
+      ).save();
+
+      const counts = await collection.countByEventName(propertyId);
+
+      expect(counts.get('page_view')).toBe(2);
+      expect(counts.get('purchase')).toBe(1);
+    });
+  },
+);

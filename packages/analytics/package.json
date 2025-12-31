@@ -20,6 +20,9 @@
     "dev": "vite dev",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "pnpm run generate:test && npx vitest run --passWithNoTests",
+    "test:sqlite": "TEST_DB_ADAPTER=sqlite pnpm run generate:test && npx vitest run --project sqlite --passWithNoTests",
+    "test:postgres": "TEST_DB_ADAPTER=postgres pnpm run generate:test && npx vitest run --project postgres --passWithNoTests",
+    "test:json": "TEST_DB_ADAPTER=json pnpm run generate:test && npx vitest run --project json --passWithNoTests",
     "test:watch": "npx vitest"
   },
   "dependencies": {
@@ -32,7 +35,7 @@
     "fast-glob": "3.3.3",
     "typescript": "^5.7.2",
     "vite": "^7.1.3",
-    "vitest": "^3.2.4"
+    "vitest": "^4.0.8"
   },
   "keywords": [
     "ai",
