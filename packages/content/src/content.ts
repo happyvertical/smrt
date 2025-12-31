@@ -447,7 +447,7 @@ export class Content extends SmrtObject {
         asset_id TEXT NOT NULL,
         relationship TEXT NOT NULL DEFAULT 'attachment',
         sort_order INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (content_id, asset_id, relationship)
       )
     `);

@@ -22,10 +22,10 @@ CREATE TABLE IF NOT EXISTS _smrt_contexts (
   confidence REAL DEFAULT 1.0,
   success_count INTEGER DEFAULT 0,
   failure_count INTEGER DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  last_used_at DATETIME,
-  expires_at DATETIME,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_used_at TIMESTAMP,
+  expires_at TIMESTAMP,
   UNIQUE(owner_class, owner_id, scope, key, version)
 );
 
@@ -50,7 +50,7 @@ export const CREATE_SMRT_MIGRATIONS_TABLE = `
 CREATE TABLE IF NOT EXISTS _smrt_migrations (
   id TEXT PRIMARY KEY,
   version TEXT NOT NULL UNIQUE,
-  applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   description TEXT,
   checksum TEXT
 );
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS _smrt_registry (
   relationships TEXT,
   config TEXT,
   manifest TEXT,
-  last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+  last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 `;
 
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS _smrt_signals (
   target_class TEXT,
   target_id TEXT,
   payload TEXT,
-  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_signals_source
@@ -113,8 +113,8 @@ CREATE TABLE IF NOT EXISTS _smrt_embeddings (
   model TEXT NOT NULL,
   dimensions INTEGER NOT NULL,
   provider TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(object_class, object_id, field_name, model)
 );
 
@@ -145,11 +145,11 @@ CREATE TABLE IF NOT EXISTS _smrt_dispatch (
   status TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER DEFAULT 0,
   last_error TEXT,
-  processed_at DATETIME,
+  processed_at TIMESTAMP,
   processed_by TEXT,
   metadata TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status
@@ -176,8 +176,8 @@ CREATE TABLE IF NOT EXISTS _smrt_dispatch_subscriptions (
   subscriber TEXT NOT NULL,
   handler TEXT NOT NULL DEFAULT 'handleDispatch',
   enabled INTEGER DEFAULT 1,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(signal_type, subscriber)
 );
 
