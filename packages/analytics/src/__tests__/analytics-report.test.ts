@@ -2,10 +2,20 @@
  * Tests for AnalyticsReport model and collection
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AnalyticsReportCollection } from '../collections/AnalyticsReportCollection.js';
 import { AnalyticsReport } from '../models/AnalyticsReport.js';
 import { ReportFrequency, ReportStatus } from '../types/index.js';
+import {
+  createTestDb,
+  getAdapterDisplayName,
+  getTestAdapter,
+  isPostgresAvailable,
+} from './helpers/index.js';
+
+// Check postgres availability at module load (top-level await)
+const pgAvailable = await isPostgresAvailable();
+const skipTests = getTestAdapter() === 'postgres' && !pgAvailable;
 
 describe('AnalyticsReport', () => {
   describe('constructor', () => {
@@ -176,84 +186,92 @@ describe('AnalyticsReport', () => {
   });
 });
 
-describe('AnalyticsReportCollection', () => {
-  let collection: AnalyticsReportCollection;
+describe.skipIf(skipTests)(
+  `AnalyticsReportCollection [${getAdapterDisplayName()}]`,
+  () => {
+    let collection: AnalyticsReportCollection;
+    let cleanup: () => Promise<void>;
 
-  beforeEach(async () => {
-    // Use unique temp file for each test to ensure isolation
-    const tempDbPath = `/tmp/test-analytics-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
-    collection = await AnalyticsReportCollection.create({
-      persistence: { type: 'sqlite', url: tempDbPath },
+    beforeEach(async () => {
+      const testDb = await createTestDb();
+      cleanup = testDb.cleanup;
+      collection = await AnalyticsReportCollection.create({
+        persistence: testDb.config,
+      });
     });
-  });
 
-  it('should create and list reports', async () => {
-    const report = await collection.create({
-      propertyId: 'prop-123',
-      name: 'Test Report',
+    afterEach(async () => {
+      await cleanup();
     });
-    await report.save();
 
-    const reports = await collection.list({});
-    expect(reports).toHaveLength(1);
-    expect(reports[0].name).toBe('Test Report');
-  });
+    it('should create and list reports', async () => {
+      const report = await collection.create({
+        propertyId: 'prop-123',
+        name: 'Test Report',
+      });
+      await report.save();
 
-  it('should find reports by property', async () => {
-    const report1 = await collection.create({
-      propertyId: 'prop-1',
-      name: 'Report 1',
+      const reports = await collection.list({});
+      expect(reports).toHaveLength(1);
+      expect(reports[0].name).toBe('Test Report');
     });
-    await report1.save();
 
-    const report2 = await collection.create({
-      propertyId: 'prop-2',
-      name: 'Report 2',
+    it('should find reports by property', async () => {
+      const report1 = await collection.create({
+        propertyId: 'prop-1',
+        name: 'Report 1',
+      });
+      await report1.save();
+
+      const report2 = await collection.create({
+        propertyId: 'prop-2',
+        name: 'Report 2',
+      });
+      await report2.save();
+
+      const prop1Reports = await collection.findByProperty('prop-1');
+      expect(prop1Reports).toHaveLength(1);
+      expect(prop1Reports[0].name).toBe('Report 1');
     });
-    await report2.save();
 
-    const prop1Reports = await collection.findByProperty('prop-1');
-    expect(prop1Reports).toHaveLength(1);
-    expect(prop1Reports[0].name).toBe('Report 1');
-  });
+    it('should find reports by status', async () => {
+      const draft = await collection.create({
+        name: 'Draft Report',
+        status: ReportStatus.DRAFT,
+      });
+      await draft.save();
 
-  it('should find reports by status', async () => {
-    const draft = await collection.create({
-      name: 'Draft Report',
-      status: ReportStatus.DRAFT,
+      const scheduled = await collection.create({
+        name: 'Scheduled Report',
+        status: ReportStatus.SCHEDULED,
+      });
+      await scheduled.save();
+
+      const drafts = await collection.findDrafts();
+      expect(drafts).toHaveLength(1);
+      expect(drafts[0].name).toBe('Draft Report');
+
+      const scheduledReports = await collection.findScheduled();
+      expect(scheduledReports).toHaveLength(1);
+      expect(scheduledReports[0].name).toBe('Scheduled Report');
     });
-    await draft.save();
 
-    const scheduled = await collection.create({
-      name: 'Scheduled Report',
-      status: ReportStatus.SCHEDULED,
+    it('should find recurring reports', async () => {
+      const oneTime = await collection.create({
+        name: 'One Time',
+        frequency: ReportFrequency.ONCE,
+      });
+      await oneTime.save();
+
+      const daily = await collection.create({
+        name: 'Daily Report',
+        frequency: ReportFrequency.DAILY,
+      });
+      await daily.save();
+
+      const recurring = await collection.findRecurring();
+      expect(recurring).toHaveLength(1);
+      expect(recurring[0].name).toBe('Daily Report');
     });
-    await scheduled.save();
-
-    const drafts = await collection.findDrafts();
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0].name).toBe('Draft Report');
-
-    const scheduledReports = await collection.findScheduled();
-    expect(scheduledReports).toHaveLength(1);
-    expect(scheduledReports[0].name).toBe('Scheduled Report');
-  });
-
-  it('should find recurring reports', async () => {
-    const oneTime = await collection.create({
-      name: 'One Time',
-      frequency: ReportFrequency.ONCE,
-    });
-    await oneTime.save();
-
-    const daily = await collection.create({
-      name: 'Daily Report',
-      frequency: ReportFrequency.DAILY,
-    });
-    await daily.save();
-
-    const recurring = await collection.findRecurring();
-    expect(recurring).toHaveLength(1);
-    expect(recurring[0].name).toBe('Daily Report');
-  });
-});
+  },
+);

@@ -215,7 +215,7 @@ function normalizeType(type: string): string {
 
   // Normalize date/time types
   if (/^(DATETIME|TIMESTAMP|DATE|TIME)/i.test(upper)) {
-    return 'DATETIME';
+    return 'TIMESTAMP';
   }
 
   // Normalize blob types
