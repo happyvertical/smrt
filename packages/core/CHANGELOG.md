@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.87
+
+### Patch Changes
+
+- ### Features
+
+  - multi-adapter testing + PostgreSQL compatibility (#637) (analytics)
+  - @happyvertical/smrt-config@0.17.87
+  - @happyvertical/smrt-types@0.17.87
+
 ## 0.17.86
 
 ### Patch Changes
