@@ -30,7 +30,7 @@ export class DispatchCollection {
       `INSERT INTO _smrt_dispatch
         (id, type, source, source_id, payload, status, attempts, last_error,
          processed_at, processed_by, metadata, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       row.id,
       row.type,
       row.source,
@@ -57,10 +57,10 @@ export class DispatchCollection {
     const row = dispatch.toRow();
     await db.query(
       `UPDATE _smrt_dispatch SET
-        type = ?, source = ?, source_id = ?, payload = ?, status = ?,
-        attempts = ?, last_error = ?, processed_at = ?, processed_by = ?,
-        metadata = ?, updated_at = ?
-       WHERE id = ?`,
+        type = $1, source = $2, source_id = $3, payload = $4, status = $5,
+        attempts = $6, last_error = $7, processed_at = $8, processed_by = $9,
+        metadata = $10, updated_at = $11
+       WHERE id = $12`,
       row.type,
       row.source,
       row.source_id,
@@ -100,19 +100,20 @@ export class DispatchCollection {
   ): Promise<Dispatch[]> {
     const conditions: string[] = [];
     const params: unknown[] = [];
+    let paramIndex = 1;
 
     if (options.status) {
-      conditions.push('status = ?');
+      conditions.push(`status = $${paramIndex++}`);
       params.push(options.status);
     }
 
     if (options.source) {
-      conditions.push('source = ?');
+      conditions.push(`source = $${paramIndex++}`);
       params.push(options.source);
     }
 
     if (options.type) {
-      conditions.push('type = ?');
+      conditions.push(`type = $${paramIndex++}`);
       params.push(options.type);
     }
 
@@ -145,12 +146,12 @@ export class DispatchCollection {
 
     // Use parameterized queries for limit/offset
     if (options.limit !== undefined) {
-      sql += ' LIMIT ?';
+      sql += ` LIMIT $${paramIndex++}`;
       params.push(options.limit);
     }
 
     if (options.offset !== undefined) {
-      sql += ' OFFSET ?';
+      sql += ` OFFSET $${paramIndex++}`;
       params.push(options.offset);
     }
 
@@ -172,13 +173,14 @@ export class DispatchCollection {
       return [];
     }
 
-    const placeholders = signalTypes.map(() => '?').join(', ');
+    let paramIndex = 1;
+    const placeholders = signalTypes.map(() => `$${paramIndex++}`).join(', ');
     const { rows } = await db.query(
       `SELECT * FROM _smrt_dispatch
        WHERE status = 'pending'
        AND type IN (${placeholders})
        ORDER BY created_at ASC
-       LIMIT ?`,
+       LIMIT $${paramIndex}`,
       ...signalTypes,
       limit,
     );
@@ -197,19 +199,22 @@ export class DispatchCollection {
   ): Promise<Dispatch[]> {
     const conditions: string[] = ["status = 'failed'"];
     const params: unknown[] = [];
+    let paramIndex = 1;
 
     if (options.maxAttempts) {
-      conditions.push('attempts < ?');
+      conditions.push(`attempts < $${paramIndex++}`);
       params.push(options.maxAttempts);
     }
 
     if (options.olderThan) {
-      conditions.push('created_at < ?');
+      conditions.push(`created_at < $${paramIndex++}`);
       params.push(options.olderThan.toISOString());
     }
 
     if (options.signalTypes && options.signalTypes.length > 0) {
-      const placeholders = options.signalTypes.map(() => '?').join(', ');
+      const placeholders = options.signalTypes
+        .map(() => `$${paramIndex++}`)
+        .join(', ');
       conditions.push(`type IN (${placeholders})`);
       params.push(...options.signalTypes);
     }
@@ -241,7 +246,7 @@ export class DispatchCollection {
    * Delete a dispatch
    */
   static async delete(db: DatabaseInterface, id: string): Promise<void> {
-    await db.query(`DELETE FROM _smrt_dispatch WHERE id = ?`, id);
+    await db.query(`DELETE FROM _smrt_dispatch WHERE id = $1`, id);
   }
 
   /**
@@ -261,7 +266,7 @@ export class DispatchCollection {
       cutoff.setDate(cutoff.getDate() - options.completedOlderThanDays);
 
       const { rowCount } = await db.query(
-        `DELETE FROM _smrt_dispatch WHERE status = 'completed' AND processed_at < ?`,
+        `DELETE FROM _smrt_dispatch WHERE status = 'completed' AND processed_at < $1`,
         cutoff.toISOString(),
       );
       result.completedDeleted = rowCount || 0;
@@ -272,7 +277,7 @@ export class DispatchCollection {
       cutoff.setDate(cutoff.getDate() - options.failedOlderThanDays);
 
       const { rowCount } = await db.query(
-        `DELETE FROM _smrt_dispatch WHERE status = 'failed' AND updated_at < ?`,
+        `DELETE FROM _smrt_dispatch WHERE status = 'failed' AND updated_at < $1`,
         cutoff.toISOString(),
       );
       result.failedDeleted = rowCount || 0;

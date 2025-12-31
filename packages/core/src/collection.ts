@@ -450,7 +450,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
     const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql}`;
-    const { rows } = await this.db.query(fullSQL, whereValues);
+    const { rows } = await this.db.query(fullSQL, ...whereValues);
 
     if (!rows?.[0]) {
       return null;
@@ -584,22 +584,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     let limitOffsetSql = '';
-    const limitOffsetValues = [];
+    const limitOffsetValues: (number | undefined)[] = [];
+    let paramIndex = whereValues.length + 1;
 
     if (limit !== undefined) {
-      limitOffsetSql += ' LIMIT ?';
+      limitOffsetSql += ` LIMIT $${paramIndex++}`;
       limitOffsetValues.push(limit);
     }
 
     if (offset !== undefined) {
-      limitOffsetSql += ' OFFSET ?';
+      limitOffsetSql += ` OFFSET $${paramIndex++}`;
       limitOffsetValues.push(offset);
     }
 
     const sql = `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
     const params = [...whereValues, ...limitOffsetValues];
 
-    const result = await this.db.query(sql, params);
+    const result = await this.db.query(sql, ...params);
     const fields = await this.getFields();
 
     // STI: Hydrate instances polymorphically based on _meta_type
@@ -1095,7 +1096,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const result = await this.db.query(
       `SELECT COUNT(*) as count FROM ${this.tableName} ${whereSql}`,
-      whereValues,
+      ...whereValues,
     );
 
     return Number.parseInt(result.rows[0].count, 10);
@@ -1141,7 +1142,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Ensure manifest is loaded for external packages
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
-    const result = await this.db.query(sql, params);
+    const result = await this.db.query(sql, ...params);
     const fields = await this.getFields();
 
     // STI: Check if we need polymorphic hydration
