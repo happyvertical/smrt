@@ -525,6 +525,32 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
   try {
     const pkgDir = dirname(pkgPath);
 
+    // In test environment, prefer .smrt/manifest.json (test manifest with all classes)
+    // over dist/manifest.json (production manifest with 0 classes for core packages)
+    // This is critical for packages like smrt-core where production manifest excludes
+    // test classes but tests need access to them.
+    if (isTestEnvironment()) {
+      const testManifestPath = join(pkgDir, '.smrt', 'manifest.json');
+      if (existsSync(testManifestPath)) {
+        try {
+          const testManifestJson = readFileSync(testManifestPath, 'utf-8');
+          const testManifest: Manifest = JSON.parse(testManifestJson);
+          if (
+            testManifest.objects &&
+            Object.keys(testManifest.objects).length > 0
+          ) {
+            console.log(
+              `[manifest-loader] ✅ Loaded test manifest for ${packageName} from .smrt/manifest.json (${Object.keys(testManifest.objects).length} objects)`,
+            );
+            getManifestCacheMap().set(packageName, testManifest);
+            return testManifest;
+          }
+        } catch {
+          // Fall through to production manifest
+        }
+      }
+    }
+
     // Read package.json to get manifest export path
     const pkgJson = JSON.parse(readFileSync(pkgPath, 'utf-8'));
 
