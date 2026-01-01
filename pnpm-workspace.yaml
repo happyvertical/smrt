@@ -1,5 +1,7 @@
 packages:
   - 'packages/*'
+  - 'packages/smrt-svelte/playground'
+  - 'packages/browser-ai'
 
 # pnpm workspace configuration for SMRT Framework monorepo
 # Child packages use fixed versioning to stay in sync
