@@ -55,6 +55,14 @@ const currentProgress = $derived(() => {
 
 let dismissed = $state(false);
 
+// Reset dismissed state when loading completes so overlay can show again for future loads
+$effect(() => {
+  const phase = aiLoading.phase;
+  if (phase === 'idle' || phase === 'ready') {
+    dismissed = false;
+  }
+});
+
 function dismiss() {
   if (dismissible) {
     dismissed = true;

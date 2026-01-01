@@ -126,7 +126,13 @@ $effect(() => {
 // Manage socket lifecycle
 $effect(() => {
   if (socket) {
+    // connectSocket already handles disconnecting any existing socket
     appState.connectSocket(socket);
+
+    // Cleanup when socket prop changes or component unmounts
+    return () => {
+      appState.disconnectSocket();
+    };
   }
 });
 

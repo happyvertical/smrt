@@ -132,7 +132,10 @@ export function updateSTTCacheState(
 export function removeCachedSTT(type: STTType): void {
   const entry = sttCache.get(type);
   if (entry) {
-    entry.adapter.dispose?.();
+    const disposeResult = entry.adapter.dispose?.();
+    disposeResult?.catch?.((error: unknown) => {
+      console.error('Error disposing STT adapter:', type, error);
+    });
     sttCache.delete(type);
   }
 }
@@ -186,7 +189,10 @@ export function updateTTSCacheState(
 export function removeCachedTTS(type: TTSType): void {
   const entry = ttsCache.get(type);
   if (entry) {
-    entry.adapter.dispose?.();
+    const disposeResult = entry.adapter.dispose?.();
+    disposeResult?.catch?.((error: unknown) => {
+      console.error('Error disposing TTS adapter:', type, error);
+    });
     ttsCache.delete(type);
   }
 }
@@ -247,7 +253,10 @@ export function removeCachedLLM(type: LLMType, modelId?: string): void {
   const key = modelId ? `${type}:${modelId}` : type;
   const entry = llmCache.get(key);
   if (entry) {
-    entry.adapter.dispose?.();
+    const disposeResult = entry.adapter.dispose?.();
+    disposeResult?.catch?.((error: unknown) => {
+      console.error('Error disposing LLM adapter:', key, error);
+    });
     llmCache.delete(key);
   }
 }
@@ -256,23 +265,45 @@ export function removeCachedLLM(type: LLMType, modelId?: string): void {
  * Clear all cached adapters
  */
 export async function clearAllCaches(): Promise<void> {
+  const errors: unknown[] = [];
+
   // Dispose all STT adapters
-  for (const entry of sttCache.values()) {
-    await entry.adapter.dispose?.();
+  for (const [type, entry] of sttCache.entries()) {
+    try {
+      await entry.adapter.dispose?.();
+    } catch (error) {
+      console.error('Error disposing STT adapter:', type, error);
+      errors.push(error);
+    }
   }
   sttCache.clear();
 
   // Dispose all TTS adapters
-  for (const entry of ttsCache.values()) {
-    await entry.adapter.dispose?.();
+  for (const [type, entry] of ttsCache.entries()) {
+    try {
+      await entry.adapter.dispose?.();
+    } catch (error) {
+      console.error('Error disposing TTS adapter:', type, error);
+      errors.push(error);
+    }
   }
   ttsCache.clear();
 
   // Dispose all LLM adapters
-  for (const entry of llmCache.values()) {
-    await entry.adapter.dispose?.();
+  for (const [key, entry] of llmCache.entries()) {
+    try {
+      await entry.adapter.dispose?.();
+    } catch (error) {
+      console.error('Error disposing LLM adapter:', key, error);
+      errors.push(error);
+    }
   }
   llmCache.clear();
+
+  // Throw the first error after all caches are cleared
+  if (errors.length > 0) {
+    throw errors[0];
+  }
 }
 
 /**

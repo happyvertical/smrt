@@ -150,6 +150,17 @@ export class SmrtAppStateManager {
    */
   setAIConfig(config: AIConfig): void {
     this._aiConfig = config;
+
+    // Cancel any pending preload scheduling so we can re-schedule with new config
+    if (
+      this._idleCallbackId !== null &&
+      typeof cancelIdleCallback !== 'undefined'
+    ) {
+      cancelIdleCallback(this._idleCallbackId);
+      this._idleCallbackId = null;
+    }
+    this._preloadScheduled = false;
+
     // Re-schedule preloading with new config
     this.schedulePreload();
   }
