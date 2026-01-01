@@ -3,6 +3,8 @@
   "files": {
     "includes": [
       "packages/*/src/**/*.{js,ts,tsx,jsx,svelte}",
+      "packages/*/playground/src/**/*.{js,ts,tsx,jsx,svelte}",
+      "packages/*/playground/*.{js,ts}",
       "packages/*/scripts/**/*.{js,ts}",
       "scripts/**/*.{js,ts}",
       "docs/src/**/*.{js,ts,tsx,jsx}",
@@ -131,7 +133,10 @@
       }
     },
     {
-      "includes": ["packages/*/src/**/*.svelte"],
+      "includes": [
+        "packages/*/src/**/*.svelte",
+        "packages/*/playground/src/**/*.svelte"
+      ],
       "linter": {
         "rules": {
           "suspicious": {
