@@ -4,19 +4,29 @@ import type {
   SelectOption,
   STTAdapterType,
 } from '@happyvertical/smrt-svelte';
+import {
+  SMRTCheckbox,
+  SMRTDateTime,
+  SMRTForm,
+  SMRTNumber,
+  SMRTPhone,
+  SMRTSelect,
+  SMRTTextarea,
+  SMRTTextInput,
+} from '@happyvertical/smrt-svelte';
 
-let _name = $state('');
-let _email = $state('');
-let _phone = $state('');
-let _birthday = $state('');
-let _age = $state<number | null>(null);
-let _department = $state('');
-let _notes = $state('');
-let _newsletter = $state(false);
-const _appendMode = $state(false);
-let _submittedData = $state<Record<string, unknown> | null>(null);
+let name = $state('');
+let email = $state('');
+let phone = $state('');
+let birthday = $state('');
+let age = $state<number | null>(null);
+let department = $state('');
+let notes = $state('');
+let newsletter = $state(false);
+let appendMode = $state(false);
+let submittedData = $state<Record<string, unknown> | null>(null);
 
-const _departmentOptions: SelectOption[] = [
+const departmentOptions: SelectOption[] = [
   { value: 'engineering', label: 'Engineering' },
   { value: 'sales', label: 'Sales' },
   { value: 'marketing', label: 'Marketing' },
@@ -25,10 +35,10 @@ const _departmentOptions: SelectOption[] = [
 ];
 
 // Control panel state
-const _sttAdapter = $state<STTAdapterType>('whisper-wasm');
-const _llmModel = $state<LLMModelId>('none');
+let sttAdapter = $state<STTAdapterType>('whisper-wasm');
+let llmModel = $state<LLMModelId>('none');
 
-const _sttOptions: {
+const sttOptions: {
   value: STTAdapterType;
   label: string;
   description: string;
@@ -45,7 +55,7 @@ const _sttOptions: {
   },
 ];
 
-const _llmOptions: { value: LLMModelId; label: string; size: string }[] = [
+const llmOptions: { value: LLMModelId; label: string; size: string }[] = [
   { value: 'none', label: 'None (Regex only)', size: '0' },
   { value: 'smollm2-360m', label: 'SmolLM2 360M', size: '~250MB' },
   { value: 'smollm2-1.7b', label: 'SmolLM2 1.7B', size: '~1.1GB' },
@@ -53,21 +63,21 @@ const _llmOptions: { value: LLMModelId; label: string; size: string }[] = [
   { value: 'llama-3.2-1b', label: 'Llama 3.2 1B', size: '~800MB' },
 ];
 
-function _handleSubmit(data: Record<string, unknown>) {
-  _submittedData = data;
+function handleSubmit(data: Record<string, unknown>) {
+  submittedData = data;
   console.log('Form submitted:', data);
 }
 
-function _clearForm() {
-  _name = '';
-  _email = '';
-  _phone = '';
-  _birthday = '';
-  _age = null;
-  _department = '';
-  _notes = '';
-  _newsletter = false;
-  _submittedData = null;
+function clearForm() {
+  name = '';
+  email = '';
+  phone = '';
+  birthday = '';
+  age = null;
+  department = '';
+  notes = '';
+  newsletter = false;
+  submittedData = null;
 }
 </script>
 

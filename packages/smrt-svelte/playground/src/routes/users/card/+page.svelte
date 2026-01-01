@@ -1,18 +1,20 @@
 <script lang="ts">
+import { UserCard } from '@happyvertical/smrt-svelte';
+
 // Mock data
-const _users = [
+const users = [
   { id: '1', email: 'alice@example.com' },
   { id: '2', email: 'bob@example.com' },
   { id: '3', email: 'carol@example.com' },
 ];
 
-const _profiles = [
+const profiles = [
   { id: '1', name: 'Alice Johnson' },
   { id: '2', name: 'Bob Smith' },
   { id: '3', name: 'Carol Williams' },
 ];
 
-const _selectedId = $state<string | null>(null);
+let selectedId = $state<string | null>(null);
 </script>
 
 <h1>UserCard</h1>

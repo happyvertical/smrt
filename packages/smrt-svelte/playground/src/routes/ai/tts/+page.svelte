@@ -1,18 +1,18 @@
 <script lang="ts">
 import type { TTSVoice } from '@happyvertical/browser-ai';
-import { useTTS } from '@happyvertical/smrt-svelte';
+import { CapabilityGate, useTTS } from '@happyvertical/smrt-svelte';
 
 const tts = useTTS();
 
-const text = $state(
+let text = $state(
   'Hello! This is the text-to-speech demo. Try speaking some text!',
 );
-const selectedVoice = $state<string>('');
-const rate = $state(1);
-const pitch = $state(1);
-let _voices = $state<TTSVoice[]>([]);
+let selectedVoice = $state<string>('');
+let rate = $state(1);
+let pitch = $state(1);
+let voices = $state<TTSVoice[]>([]);
 
-async function _handleSpeak() {
+async function handleSpeak() {
   if (tts.isSpeaking) {
     tts.stop();
   } else {
@@ -24,7 +24,7 @@ async function _handleSpeak() {
   }
 }
 
-function _handlePauseResume() {
+function handlePauseResume() {
   if (tts.isPaused) {
     tts.resume();
   } else {
@@ -32,9 +32,9 @@ function _handlePauseResume() {
   }
 }
 
-async function _loadVoices() {
+async function loadVoices() {
   await tts.initialize();
-  _voices = tts.getVoices();
+  voices = tts.getVoices();
 }
 </script>
 
