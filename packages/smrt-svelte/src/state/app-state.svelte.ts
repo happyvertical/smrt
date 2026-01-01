@@ -26,7 +26,9 @@ import {
   type CreateAppStateOptions,
   createInitialState,
   type ModeSource,
+  type SocketConfig,
   type SmrtAppState,
+  type User,
   type UserSession,
 } from './app-state.js';
 
@@ -40,8 +42,20 @@ export class SmrtAppStateManager {
   // Options
   private options: CreateAppStateOptions;
 
+  // Socket management
+  private _socket: WebSocket | null = null;
+  private _socketConfig: SocketConfig | null = null;
+  private _reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
   constructor(options: CreateAppStateOptions = {}) {
     this.options = options;
+  }
+
+  /**
+   * Get the current socket configuration (for reconnection)
+   */
+  get socketConfig(): SocketConfig | null {
+    return this._socketConfig;
   }
 
   /**
@@ -154,6 +168,134 @@ export class SmrtAppStateManager {
    */
   hasAnyPermission(permissions: string[]): boolean {
     return permissions.some((p) => this._state.session.permissions.includes(p));
+  }
+
+  // === User/Auth Methods ===
+
+  /**
+   * Set the current user and permissions
+   * Called by SmrtProvider when user prop changes
+   */
+  setUser(user: User | null, permissions: string[] = []): void {
+    this._state.session.user = user;
+    this._state.session.isAuthenticated = user !== null;
+    this._state.session.permissions = permissions;
+  }
+
+  // === Socket Methods ===
+
+  /**
+   * Connect to a WebSocket server
+   */
+  connectSocket(config: SocketConfig): void {
+    // Disconnect existing socket if any
+    this.disconnectSocket();
+
+    this._socketConfig = config;
+    this._state.socket.status = 'connecting';
+    this._state.socket.lastError = null;
+
+    try {
+      this._socket = new WebSocket(config.url);
+
+      this._socket.onopen = () => {
+        this._state.socket.status = 'connected';
+        this._state.socket.reconnectAttempts = 0;
+        config.onOpen?.();
+      };
+
+      this._socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          config.onMessage?.(data);
+        } catch {
+          // If not JSON, pass raw data
+          config.onMessage?.(event.data);
+        }
+      };
+
+      this._socket.onclose = (event) => {
+        this._state.socket.status = 'disconnected';
+        config.onClose?.(event);
+
+        // Attempt reconnection if enabled and not a clean close
+        if (!event.wasClean && config.reconnect?.enabled !== false) {
+          this.scheduleReconnect();
+        }
+      };
+
+      this._socket.onerror = (event) => {
+        this._state.socket.lastError = event;
+        config.onError?.(event);
+      };
+    } catch (error) {
+      this._state.socket.status = 'disconnected';
+      this._state.socket.lastError = error as Event;
+    }
+  }
+
+  /**
+   * Disconnect from the WebSocket server
+   */
+  disconnectSocket(): void {
+    // Clear any pending reconnect
+    if (this._reconnectTimeout) {
+      clearTimeout(this._reconnectTimeout);
+      this._reconnectTimeout = null;
+    }
+
+    if (this._socket) {
+      this._socket.close();
+      this._socket = null;
+    }
+
+    this._state.socket.status = 'disconnected';
+  }
+
+  /**
+   * Send a message through the WebSocket
+   */
+  sendMessage(data: unknown): void {
+    if (this._socket?.readyState === WebSocket.OPEN) {
+      this._socket.send(JSON.stringify(data));
+    } else {
+      console.warn('[Socket] Cannot send message - socket not connected');
+    }
+  }
+
+  /**
+   * Schedule a reconnection attempt with exponential backoff
+   */
+  private scheduleReconnect(): void {
+    if (!this._socketConfig) return;
+
+    const { reconnect } = this._socketConfig;
+    const maxAttempts = reconnect?.maxAttempts ?? 5;
+    const baseDelay = reconnect?.baseDelay ?? 1000;
+
+    if (this._state.socket.reconnectAttempts >= maxAttempts) {
+      console.warn('[Socket] Max reconnection attempts reached');
+      return;
+    }
+
+    this._state.socket.status = 'reconnecting';
+    this._state.socket.reconnectAttempts++;
+
+    // Exponential backoff: baseDelay * 2^attempts (capped at 30s)
+    const delay = Math.min(
+      baseDelay * Math.pow(2, this._state.socket.reconnectAttempts - 1),
+      30000,
+    );
+
+    console.log(
+      `[Socket] Reconnecting in ${delay}ms (attempt ${this._state.socket.reconnectAttempts}/${maxAttempts})`,
+    );
+
+    this._reconnectTimeout = setTimeout(() => {
+      if (this._socketConfig) {
+        this.connectSocket(this._socketConfig);
+      }
+    }, delay);
   }
 
   // === STT Methods ===
@@ -428,6 +570,10 @@ export class SmrtAppStateManager {
    * Dispose of all resources
    */
   async dispose(): Promise<void> {
+    // Disconnect socket
+    this.disconnectSocket();
+
+    // Dispose AI adapters
     await this._state.ai.stt.adapter?.dispose();
     await this._state.ai.tts.adapter?.dispose();
     await this._state.ai.llm.adapter?.dispose();

@@ -47,6 +47,20 @@ export enum MembershipStatus {
   PENDING = 'pending',
 }
 
+// ============= Session Status =============
+
+/**
+ * Session status
+ */
+export enum SessionStatus {
+  /** Active session */
+  ACTIVE = 'active',
+  /** Expired session (past expiresAt) */
+  EXPIRED = 'expired',
+  /** Revoked by user or admin */
+  REVOKED = 'revoked',
+}
+
 // ============= Permission Override =============
 
 /**

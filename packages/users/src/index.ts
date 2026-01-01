@@ -41,6 +41,7 @@
 
 // Collections
 export {
+  type CreateSessionOptions,
   type GetOrCreateFromOidcOptions,
   GroupCollection,
   GroupMemberCollection,
@@ -52,11 +53,14 @@ export {
   PermissionCollection,
   RoleCollection,
   RolePermissionCollection,
+  SessionCollection,
   TenantCollection,
   UserCollection,
 } from './collections/index.js';
 // Models
 export {
+  DEFAULT_SESSION_TTL,
+  generateSessionId,
   Group,
   GroupMember,
   GroupRole,
@@ -65,6 +69,7 @@ export {
   Permission,
   Role,
   RolePermission,
+  Session,
   Tenant,
   User,
 } from './models/index.js';
@@ -74,6 +79,9 @@ export {
   type EnsureTenantResult,
   type PermissionResolutionResult,
   PermissionResolver,
+  type SessionContext,
+  SessionService,
+  type SessionServiceOptions,
   TenantService,
   type TenantWithOwnershipResult,
 } from './services/index.js';
@@ -86,6 +94,7 @@ export {
   type DefaultRoleSlug,
   MembershipStatus,
   OverrideEffect,
+  SessionStatus,
   type TenantPolicy,
   type TenantPolicyMode,
   TenantStatus,

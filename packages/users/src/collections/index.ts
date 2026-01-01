@@ -14,6 +14,11 @@ export { PermissionCollection } from './PermissionCollection.js';
 export { RoleCollection } from './RoleCollection.js';
 // Role-permission join
 export { RolePermissionCollection } from './RolePermissionCollection.js';
+// Session collection
+export {
+  type CreateSessionOptions,
+  SessionCollection,
+} from './SessionCollection.js';
 export { TenantCollection } from './TenantCollection.js';
 // Core collections
 export {

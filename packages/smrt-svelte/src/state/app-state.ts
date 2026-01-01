@@ -12,6 +12,10 @@ import type {
   STTAdapter,
   TTSAdapter,
 } from '@happyvertical/browser-ai';
+import type { User } from '@happyvertical/smrt-users';
+
+// Re-export User type for convenience
+export type { User } from '@happyvertical/smrt-users';
 
 /**
  * App mode determines which features are enabled
@@ -26,26 +30,31 @@ export type AppMode = 'dumb' | 'smrt';
 export type ModeSource = 'explicit' | 'auto' | 'toggled';
 
 /**
+ * User preferences for AI features
+ */
+export interface UserPreferences {
+  /** Preferred STT backend */
+  preferredSTT?: 'browser-speech' | 'whisper-cpp' | 'whisper-wasm';
+  /** Preferred LLM backend */
+  preferredLLM?: 'webllm' | 'transformers-llm';
+  /** Default LLM model */
+  defaultLLMModel?: string;
+  /** Auto-enable smrt mode when available */
+  autoEnableSmrt?: boolean;
+}
+
+/**
  * User session information
  */
 export interface UserSession {
-  /** User ID, null if not authenticated */
-  id: string | null;
-  /** Whether user is authenticated */
+  /** The smrt-users User object (null if not authenticated) */
+  user: User | null;
+  /** Whether user is authenticated (derived from user !== null) */
   isAuthenticated: boolean;
-  /** User's permissions */
+  /** Resolved permissions (from PermissionResolver) */
   permissions: string[];
   /** User preferences for AI features */
-  preferences: {
-    /** Preferred STT backend */
-    preferredSTT?: 'browser-speech' | 'whisper-cpp' | 'whisper-wasm';
-    /** Preferred LLM backend */
-    preferredLLM?: 'webllm' | 'transformers-llm';
-    /** Default LLM model */
-    defaultLLMModel?: string;
-    /** Auto-enable smrt mode when available */
-    autoEnableSmrt?: boolean;
-  };
+  preferences: UserPreferences;
 }
 
 /**
@@ -114,6 +123,57 @@ export interface AIState {
 }
 
 /**
+ * WebSocket connection status
+ */
+export type SocketStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting';
+
+/**
+ * WebSocket reconnection settings
+ */
+export interface SocketReconnectConfig {
+  /** Whether to automatically reconnect on disconnect (default: true) */
+  enabled?: boolean;
+  /** Maximum number of reconnection attempts (default: 5) */
+  maxAttempts?: number;
+  /** Base delay in ms for exponential backoff (default: 1000) */
+  baseDelay?: number;
+}
+
+/**
+ * WebSocket configuration
+ */
+export interface SocketConfig {
+  /** WebSocket URL (wss:// or ws://) */
+  url: string;
+  /** Reconnection settings */
+  reconnect?: SocketReconnectConfig;
+  /** Called when connection opens */
+  onOpen?: () => void;
+  /** Called when a message is received */
+  onMessage?: (data: unknown) => void;
+  /** Called when connection closes */
+  onClose?: (event: CloseEvent) => void;
+  /** Called on connection error */
+  onError?: (event: Event) => void;
+}
+
+/**
+ * WebSocket connection state
+ */
+export interface SocketState {
+  /** Current connection status */
+  status: SocketStatus;
+  /** Number of reconnection attempts made */
+  reconnectAttempts: number;
+  /** Last connection error */
+  lastError: Event | null;
+}
+
+/**
  * Complete app state shape
  */
 export interface SmrtAppState {
@@ -127,6 +187,8 @@ export interface SmrtAppState {
   capabilities: BrowserAICapabilities | null;
   /** AI adapter states */
   ai: AIState;
+  /** WebSocket connection state */
+  socket: SocketState;
   /** Global error */
   error: Error | null;
   /** Whether state has been initialized */
@@ -141,7 +203,7 @@ export function createInitialState(): SmrtAppState {
     mode: 'dumb',
     modeSource: 'auto',
     session: {
-      id: null,
+      user: null,
       isAuthenticated: false,
       permissions: [],
       preferences: {},
@@ -173,6 +235,11 @@ export function createInitialState(): SmrtAppState {
         isGenerating: false,
         error: null,
       },
+    },
+    socket: {
+      status: 'disconnected',
+      reconnectAttempts: 0,
+      lastError: null,
     },
     error: null,
     initialized: false,

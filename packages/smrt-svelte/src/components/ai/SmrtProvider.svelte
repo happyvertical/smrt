@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
-import { untrack } from 'svelte';
-import type { AppMode, CreateAppStateOptions } from '../../state/app-state.js';
+import { onDestroy, untrack } from 'svelte';
+import type { AppMode, SocketConfig, User } from '../../state/app-state.js';
 import { createAppState } from '../../state/app-state.svelte.js';
 import { setAppStateContext } from '../../state/context.js';
 
@@ -16,6 +16,20 @@ interface Props {
    * @default true
    */
   autoEnableSmrt?: boolean;
+  /**
+   * User object from smrt-users (from your load function)
+   * Pass null when not authenticated
+   */
+  user?: User | null;
+  /**
+   * Resolved permissions (from PermissionResolver in your load function)
+   */
+  permissions?: string[];
+  /**
+   * WebSocket configuration
+   * If provided, connects on mount and disconnects on unmount
+   */
+  socket?: SocketConfig;
   /**
    * Callback when capabilities are detected
    */
@@ -33,6 +47,9 @@ interface Props {
 const {
   mode,
   autoEnableSmrt = true,
+  user = null,
+  permissions = [],
+  socket,
   onReady,
   onModeChange,
   children,
@@ -62,6 +79,23 @@ $effect(() => {
   untrack(() => {
     appState.initialize();
   });
+});
+
+// Sync user and permissions when they change
+$effect(() => {
+  appState.setUser(user, permissions);
+});
+
+// Manage socket lifecycle
+$effect(() => {
+  if (socket) {
+    appState.connectSocket(socket);
+  }
+});
+
+// Cleanup on destroy
+onDestroy(() => {
+  appState.disconnectSocket();
 });
 </script>
 
