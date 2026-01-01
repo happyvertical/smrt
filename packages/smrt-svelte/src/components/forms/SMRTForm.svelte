@@ -23,18 +23,24 @@ interface Props {
   sttAdapter?: STTAdapterType;
   /** LLM model for extraction (or 'none' for regex-only) */
   llmModel?: LLMModelId;
-  /** Called when form is submitted */
+  /** Called when form is submitted (if provided, prevents native submission) */
   onsubmit?: (data: Record<string, unknown>) => void;
+  /** HTTP method for native form submission (default: GET) */
+  method?: 'GET' | 'POST';
+  /** Form action URL for native form submission */
+  action?: string;
 }
 
 const {
   children,
-  showModeToggle = true,
-  showFormListen = true,
+  showModeToggle = false,
+  showFormListen = false,
   silenceTimeout = 5,
   sttAdapter = 'whisper-wasm',
   llmModel = 'none',
   onsubmit,
+  method,
+  action,
 }: Props = $props();
 
 const app = useAppState();
@@ -74,6 +80,10 @@ const formContext: SMRTFormContext = {
   get isFormListening() {
     return isFormListening;
   },
+  get isExtracting() {
+    return isExtracting;
+  },
+  toggleListening: () => toggleFormListening(),
 };
 
 // Provide context to children
@@ -449,15 +459,17 @@ function handleModeToggle() {
 }
 
 function handleSubmit(e: Event) {
-  e.preventDefault();
-
+  // Only prevent default if we have an onsubmit handler
+  // This allows native form submission for SvelteKit form actions
   if (onsubmit) {
+    e.preventDefault();
     const data: Record<string, unknown> = {};
     for (const [name, field] of fields) {
       data[name] = field.getValue();
     }
     onsubmit(data);
   }
+  // Otherwise, let native form submission happen (e.g., for SvelteKit use:enhance)
 }
 
 function getFormData(): Record<string, unknown> {
@@ -469,7 +481,7 @@ function getFormData(): Record<string, unknown> {
 }
 </script>
 
-<form class="smrt-form" onsubmit={handleSubmit}>
+<form class="smrt-form" onsubmit={handleSubmit} {method} {action}>
   {#if showModeToggle || showFormListen}
     <div class="form-controls">
       {#if showModeToggle}
@@ -488,7 +500,7 @@ function getFormData(): Record<string, unknown> {
             class:active={isSmrt}
             onclick={handleModeToggle}
           >
-            Smrt
+            s-m-r-t
           </button>
         </div>
       {/if}
