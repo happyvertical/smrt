@@ -5,6 +5,9 @@
  * This solves Issue #583 where cross-package integration tests fail because
  * external package classes aren't registered in the test manifest.
  *
+ * Uses ManifestManager for unified manifest loading, which properly handles
+ * the manifest priority order: .smrt/manifest.json (test) -> dist/manifest.json (production)
+ *
  * @example
  * ```typescript
  * // vitest.config.ts
@@ -24,7 +27,8 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import type { Plugin } from 'vitest/config';
 
 /**
@@ -90,20 +94,113 @@ function discoverSmrtPackages(
 }
 
 /**
- * Load manifest from a package and register its classes
+ * Find the root directory of a package
+ * Tries require.resolve first, then falls back to node_modules lookup
+ */
+function findPackageRoot(packageName: string): string | null {
+  const require = createRequire(`${process.cwd()}/package.json`);
+
+  // Method 1: Try require.resolve to find package entry, then walk up to package.json
+  try {
+    const pkgMainPath = require.resolve(packageName);
+    let dir = dirname(pkgMainPath);
+
+    for (let i = 0; i < 10; i++) {
+      const pkgJsonPath = join(dir, 'package.json');
+      if (existsSync(pkgJsonPath)) {
+        try {
+          const content = readFileSync(pkgJsonPath, 'utf-8');
+          const json = JSON.parse(content);
+          if (json.name === packageName) {
+            return dir;
+          }
+        } catch {
+          // Keep walking up
+        }
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch {
+    // Fall through to Method 2
+  }
+
+  // Method 2: Direct node_modules lookup (for file: protocol linked packages)
+  const nodeModulesPath = join(process.cwd(), 'node_modules', packageName);
+  const pkgJsonPath = join(nodeModulesPath, 'package.json');
+
+  if (existsSync(pkgJsonPath)) {
+    try {
+      const content = readFileSync(pkgJsonPath, 'utf-8');
+      const json = JSON.parse(content);
+      if (json.name === packageName) {
+        return nodeModulesPath;
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  // Method 3: Workspace package (sibling in monorepo)
+  const packageShortName = packageName.split('/').pop() || '';
+  const packageWithoutScope = packageShortName.replace(/^smrt-/, '');
+
+  const workspacePaths = [
+    join(process.cwd(), '..', packageWithoutScope),
+    join(process.cwd(), '..', packageShortName),
+  ];
+
+  for (const workspacePath of workspacePaths) {
+    const workspacePkgPath = join(workspacePath, 'package.json');
+    if (existsSync(workspacePkgPath)) {
+      try {
+        const content = readFileSync(workspacePkgPath, 'utf-8');
+        const json = JSON.parse(content);
+        if (json.name === packageName) {
+          return workspacePath;
+        }
+      } catch {
+        // Keep trying
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Load manifest from a package using ManifestManager
+ *
+ * This properly handles the manifest priority order:
+ * 1. .smrt/manifest.json (test/dev manifest with all classes)
+ * 2. dist/manifest.json (production manifest)
  */
 async function loadAndRegisterManifest(
   packageName: string,
   verbose: boolean,
 ): Promise<boolean> {
   try {
-    // Import the manifest loader from smrt-core
-    const { loadExternalManifestSync } = await import(
+    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+    const { ManifestManager } = await import(
       '@happyvertical/smrt-core/manifest'
     );
-    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
 
-    const manifest = loadExternalManifestSync(packageName);
+    // Find the package root directory
+    const packageRoot = findPackageRoot(packageName);
+    if (!packageRoot) {
+      if (verbose) {
+        console.log(
+          `[smrt-vitest] Could not find package root for ${packageName}`,
+        );
+      }
+      return false;
+    }
+
+    // Use ManifestManager to load manifest with proper priority
+    // (.smrt/manifest.json -> dist/manifest.json)
+    const manager = new ManifestManager(packageRoot);
+    const manifest = manager.loadLocal();
 
     if (!manifest) {
       if (verbose) {
@@ -119,7 +216,7 @@ async function loadAndRegisterManifest(
         ObjectRegistry.registerFromManifest(
           name,
           objectDef,
-          manifest.packageName,
+          manifest.packageName || packageName,
         );
         registered++;
       }
