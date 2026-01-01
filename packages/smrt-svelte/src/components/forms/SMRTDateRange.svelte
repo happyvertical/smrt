@@ -7,11 +7,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
-
-export interface DateRangeValue {
-  startDate: string;
-  endDate: string;
-}
+import type { DateRangeValue } from './types.js';
 
 interface Props {
   /** Field name */
@@ -111,7 +107,9 @@ function updateValue(start: string, end: string) {
 }
 
 // Parse date range from natural language using chrono-node
-function parseNaturalLanguageRange(text: string): { start: string; end: string } | null {
+function parseNaturalLanguageRange(
+  text: string,
+): { start: string; end: string } | null {
   console.log('[SMRTDateRange] Parsing text:', text);
 
   // Try to parse as a range first (e.g., "January 15th to March 30th")
@@ -173,7 +171,9 @@ onMount(() => {
       name,
       type: 'daterange',
       label,
-      description: description || 'A date range with start and end dates (say "from [start] to [end]")',
+      description:
+        description ||
+        'A date range with start and end dates (say "from [start] to [end]")',
       setValue: (v: unknown) => {
         if (v === null || v === undefined) {
           updateValue('', '');
@@ -238,7 +238,8 @@ async function stopRecording() {
   const finalTranscript = stt.lastResult?.trim() || '';
 
   if (!finalTranscript || finalTranscript.length < MIN_TRANSCRIPT_LENGTH) {
-    parseError = 'No speech detected. Try saying "from January 15th to March 30th"';
+    parseError =
+      'No speech detected. Try saying "from January 15th to March 30th"';
     return;
   }
 
@@ -253,7 +254,8 @@ async function stopRecording() {
       throw new Error('Could not parse date range');
     }
   } catch (err) {
-    parseError = err instanceof Error ? err.message : 'Failed to parse date range';
+    parseError =
+      err instanceof Error ? err.message : 'Failed to parse date range';
   } finally {
     isParsing = false;
   }

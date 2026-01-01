@@ -18,3 +18,27 @@ export interface SelectOption {
   value: string;
   label: string;
 }
+
+/** Address value for SMRTAddress component */
+export interface AddressValue {
+  street: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  country: string;
+}
+
+/** Date range value for SMRTDateRange component */
+export interface DateRangeValue {
+  startDate: string;
+  endDate: string;
+}
+
+/** Measurement unit types */
+export type MeasurementUnit = 'ft' | 'in' | 'm' | 'cm' | 'mm' | 'yd';
+
+/** Measurement value for SMRTMeasurement component */
+export interface MeasurementValue {
+  value: number;
+  unit: MeasurementUnit;
+}

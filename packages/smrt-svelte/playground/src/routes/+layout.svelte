@@ -79,6 +79,7 @@ function toggleLogin() {
 
         <li class="section">Forms</li>
         <li><a href="/forms">SMRT Forms</a></li>
+        <li><a href="/forms/construction">Construction</a></li>
 
         <li class="section">Users</li>
         <li><a href="/users/avatar">UserAvatar</a></li>

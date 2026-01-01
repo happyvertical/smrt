@@ -319,12 +319,20 @@ let isStarting = false;
 // Timestamp of last stop to prevent immediate restart
 let lastStopTime = 0;
 const RESTART_COOLDOWN_MS = 1000; // 1 second cooldown after stopping
+// Track the last processed STT result to avoid re-processing stale results
+let lastProcessedResult = '';
 
 // Watch STT results while form is listening
 // Only track speech and check for "done" - extraction happens at the end
 $effect(() => {
   if (isFormListening && stt.lastResult && !isStopping) {
     const newText = stt.lastResult;
+
+    // Skip if this is the same result we already processed (stale from previous session)
+    if (newText === lastProcessedResult) {
+      return;
+    }
+    lastProcessedResult = newText;
     spokenText = newText;
 
     // Reset silence timer on new speech (for browser STT with interim results)
@@ -335,7 +343,7 @@ $effect(() => {
     // Check for "done" keyword
     if (checkForDoneKeyword(newText)) {
       console.log('[SMRTForm] "Done" keyword detected - stopping');
-      isStopping = true;
+      // Don't set isStopping here - let stopFormListening() do it after passing the guard
       stopFormListening();
     }
   }
@@ -357,7 +365,10 @@ $effect(() => {
 });
 
 async function toggleFormListening() {
-  console.log('[SMRTForm] toggleFormListening called, isFormListening:', isFormListening);
+  console.log(
+    '[SMRTForm] toggleFormListening called, isFormListening:',
+    isFormListening,
+  );
 
   if (isFormListening) {
     await stopFormListening();
@@ -365,7 +376,10 @@ async function toggleFormListening() {
     // Prevent immediate restart after stopping (UI might lag behind state)
     const timeSinceStop = Date.now() - lastStopTime;
     if (lastStopTime > 0 && timeSinceStop < RESTART_COOLDOWN_MS) {
-      console.log('[SMRTForm] Ignoring start - cooldown active, time since stop:', timeSinceStop);
+      console.log(
+        '[SMRTForm] Ignoring start - cooldown active, time since stop:',
+        timeSinceStop,
+      );
       return;
     }
     await startFormListening();
@@ -386,6 +400,8 @@ async function startFormListening() {
 
   extractError = null;
   spokenText = '';
+  // Set to current stale result so the effect skips it, but new results will be processed
+  lastProcessedResult = stt.lastResult || '';
   isFormListening = true;
   isStopping = false;
   lastSpeechTime = Date.now();
@@ -413,7 +429,12 @@ async function startFormListening() {
 }
 
 async function stopFormListening() {
-  console.log('[SMRTForm] stopFormListening called, isFormListening:', isFormListening, 'isStopping:', isStopping);
+  console.log(
+    '[SMRTForm] stopFormListening called, isFormListening:',
+    isFormListening,
+    'isStopping:',
+    isStopping,
+  );
   if (!isFormListening || isStopping) {
     console.log('[SMRTForm] stopFormListening returning early');
     return;
@@ -593,12 +614,6 @@ function getFormData(): Record<string, unknown> {
     </div>
   {/if}
 
-  {#if isFormListening && spokenText}
-    <div class="spoken-preview">
-      <strong>You said:</strong> {spokenText}
-    </div>
-  {/if}
-
   {#if extractError}
     <div class="extract-error">{extractError}</div>
   {/if}
@@ -607,6 +622,12 @@ function getFormData(): Record<string, unknown> {
     {@render children()}
   </div>
 </form>
+
+{#if isFormListening && spokenText}
+  <div class="spoken-toaster">
+    <strong>You said:</strong> {spokenText}
+  </div>
+{/if}
 
 <style>
   .smrt-form {
@@ -706,13 +727,35 @@ function getFormData(): Record<string, unknown> {
     }
   }
 
-  .spoken-preview {
-    padding: 12px 16px;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
-    border-radius: 8px;
+  .spoken-toaster {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 24px;
+    background: rgba(22, 101, 52, 0.9);
+    color: white;
     font-size: 0.875rem;
-    color: #166534;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+    z-index: 9999;
+    text-align: center;
+    backdrop-filter: blur(8px);
+    animation: slideUp 0.2s ease-out;
+  }
+
+  .spoken-toaster strong {
+    color: #bbf7d0;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .extract-error {

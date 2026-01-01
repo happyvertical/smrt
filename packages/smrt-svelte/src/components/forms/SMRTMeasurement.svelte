@@ -5,13 +5,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
-
-export type MeasurementUnit = 'ft' | 'in' | 'm' | 'cm' | 'mm' | 'yd';
-
-export interface MeasurementValue {
-  value: number;
-  unit: MeasurementUnit;
-}
+import type { MeasurementUnit, MeasurementValue } from './types.js';
 
 interface Props {
   /** Field name */
@@ -112,7 +106,11 @@ function updateValue(newValue: number | null, newUnit?: MeasurementUnit) {
 }
 
 // Convert between units
-function convert(val: number, fromUnit: MeasurementUnit, toUnit: MeasurementUnit): number {
+function convert(
+  val: number,
+  fromUnit: MeasurementUnit,
+  toUnit: MeasurementUnit,
+): number {
   if (fromUnit === toUnit) return val;
   const meters = val * toMeters[fromUnit];
   return meters / toMeters[toUnit];
@@ -124,14 +122,39 @@ function parseSpokenMeasurement(text: string): MeasurementValue | null {
 
   // Word to number mapping
   const wordNumbers: Record<string, number> = {
-    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
-    six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
-    sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
-    thirty: 30, forty: 40, fifty: 50, sixty: 60,
-    seventy: 70, eighty: 80, ninety: 90,
-    hundred: 100, thousand: 1000,
-    half: 0.5, quarter: 0.25, third: 0.333,
+    zero: 0,
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+    thirty: 30,
+    forty: 40,
+    fifty: 50,
+    sixty: 60,
+    seventy: 70,
+    eighty: 80,
+    ninety: 90,
+    hundred: 100,
+    thousand: 1000,
+    half: 0.5,
+    quarter: 0.25,
+    third: 0.333,
   };
 
   // Unit patterns
@@ -162,12 +185,18 @@ function parseSpokenMeasurement(text: string): MeasurementValue | null {
 
   // Handle compound measurements like "twelve feet six inches"
   const compoundMatch = normalized.match(
-    /(\d+(?:\.\d+)?|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b)\s*(?:feet|foot|ft)\s+(?:and\s+)?(\d+(?:\.\d+)?|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b)\s*(?:inch(?:es)?|in)/i
+    /(\d+(?:\.\d+)?|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b)\s*(?:feet|foot|ft)\s+(?:and\s+)?(\d+(?:\.\d+)?|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b)\s*(?:inch(?:es)?|in)/i,
   );
 
   if (compoundMatch) {
-    let feet = parseFloat(compoundMatch[1]) || wordNumbers[compoundMatch[1].toLowerCase()] || 0;
-    let inches = parseFloat(compoundMatch[2]) || wordNumbers[compoundMatch[2].toLowerCase()] || 0;
+    let feet =
+      parseFloat(compoundMatch[1]) ||
+      wordNumbers[compoundMatch[1].toLowerCase()] ||
+      0;
+    let inches =
+      parseFloat(compoundMatch[2]) ||
+      wordNumbers[compoundMatch[2].toLowerCase()] ||
+      0;
     // Convert to feet (feet + inches/12)
     return { value: feet + inches / 12, unit: 'ft' };
   }
@@ -234,7 +263,10 @@ onMount(() => {
       name,
       type: 'measurement',
       label,
-      description: (description || 'A measurement with value and unit (e.g., "12 feet 6 inches")') + rangeDesc,
+      description:
+        (description ||
+          'A measurement with value and unit (e.g., "12 feet 6 inches")') +
+        rangeDesc,
       setValue: (v: unknown) => {
         if (v === null || v === undefined || v === '') {
           updateValue(null);

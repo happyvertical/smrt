@@ -5,14 +5,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
-
-export interface AddressValue {
-  street: string;
-  city: string;
-  province: string;
-  postalCode: string;
-  country: string;
-}
+import type { AddressValue } from './types.js';
 
 type AddressField = keyof AddressValue;
 
@@ -97,11 +90,15 @@ let country = $state(value.country ?? 'CA');
 
 // Keep in sync with external value changes
 $effect(() => {
-  if (value.street !== undefined && value.street !== street) street = value.street;
+  if (value.street !== undefined && value.street !== street)
+    street = value.street;
   if (value.city !== undefined && value.city !== city) city = value.city;
-  if (value.province !== undefined && value.province !== province) province = value.province;
-  if (value.postalCode !== undefined && value.postalCode !== postalCode) postalCode = value.postalCode;
-  if (value.country !== undefined && value.country !== country) country = value.country;
+  if (value.province !== undefined && value.province !== province)
+    province = value.province;
+  if (value.postalCode !== undefined && value.postalCode !== postalCode)
+    postalCode = value.postalCode;
+  if (value.country !== undefined && value.country !== country)
+    country = value.country;
 });
 
 function updateValue() {
@@ -121,14 +118,19 @@ function parseSpokenAddress(text: string): Partial<AddressValue> {
   const normalized = text.toLowerCase().trim();
 
   // Try to extract postal code (Canadian format: A1A 1A1 or US: 12345)
-  const postalMatch = normalized.match(/([a-z]\d[a-z]\s?\d[a-z]\d)|(\d{5}(-\d{4})?)/i);
+  const postalMatch = normalized.match(
+    /([a-z]\d[a-z]\s?\d[a-z]\d)|(\d{5}(-\d{4})?)/i,
+  );
   if (postalMatch) {
     result.postalCode = postalMatch[0].toUpperCase().replace(/\s/g, ' ');
   }
 
   // Try to extract province/state
   for (const prov of provinces) {
-    const regex = new RegExp(`\\b${prov.label.toLowerCase()}\\b|\\b${prov.value.toLowerCase()}\\b`, 'i');
+    const regex = new RegExp(
+      `\\b${prov.label.toLowerCase()}\\b|\\b${prov.value.toLowerCase()}\\b`,
+      'i',
+    );
     if (regex.test(normalized)) {
       result.province = prov.value;
       break;
@@ -149,15 +151,17 @@ function parseSpokenAddress(text: string): Partial<AddressValue> {
   for (const pattern of cityPatterns) {
     const match = normalized.match(pattern);
     if (match) {
-      result.city = match[1].trim().replace(/\b\w/g, c => c.toUpperCase());
+      result.city = match[1].trim().replace(/\b\w/g, (c) => c.toUpperCase());
       break;
     }
   }
 
   // Street address - try to extract number + street name pattern
-  const streetMatch = normalized.match(/(\d+\s+[a-z\s]+(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|way|lane|ln|crescent|cres|place|pl|court|ct))/i);
+  const streetMatch = normalized.match(
+    /(\d+\s+[a-z\s]+(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|way|lane|ln|crescent|cres|place|pl|court|ct))/i,
+  );
   if (streetMatch) {
-    result.street = streetMatch[1].replace(/\b\w/g, c => c.toUpperCase());
+    result.street = streetMatch[1].replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   return result;
@@ -179,7 +183,9 @@ onMount(() => {
       name,
       type: 'address',
       label,
-      description: description || 'A mailing address with street, city, province, postal code, and country',
+      description:
+        description ||
+        'A mailing address with street, city, province, postal code, and country',
       setValue: (v: unknown) => {
         if (v === null || v === undefined) {
           street = '';

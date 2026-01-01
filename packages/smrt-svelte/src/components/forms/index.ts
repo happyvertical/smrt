@@ -17,9 +17,12 @@ export { default as SMRTTextarea } from './SMRTTextarea.svelte';
 export { default as SMRTTextInput } from './SMRTTextInput.svelte';
 
 // Types
-export type { LLMModelId, SelectOption, STTAdapterType } from './types.js';
-
-// Re-export component-specific types
-export type { AddressValue } from './SMRTAddress.svelte';
-export type { DateRangeValue } from './SMRTDateRange.svelte';
-export type { MeasurementUnit, MeasurementValue } from './SMRTMeasurement.svelte';
+export type {
+  AddressValue,
+  DateRangeValue,
+  LLMModelId,
+  MeasurementUnit,
+  MeasurementValue,
+  SelectOption,
+  STTAdapterType,
+} from './types.js';

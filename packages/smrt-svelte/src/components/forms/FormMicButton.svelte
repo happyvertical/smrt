@@ -1,54 +1,64 @@
 <script lang="ts">
-  import { useAppState } from '../../hooks/useAppState.svelte.js';
-  import { tryGetFormContext } from '../../state/form-context.js';
+import { useAppState } from '../../hooks/useAppState.svelte.js';
+import { tryGetFormContext } from '../../state/form-context.js';
 
-  interface Props {
-    /** Size of the mic icon */
-    size?: number;
-    /** Additional CSS class */
-    class?: string;
-  }
+interface Props {
+  /** Size of the mic icon */
+  size?: number;
+  /** Additional CSS class */
+  class?: string;
+}
 
-  let { size = 16, class: className = '' }: Props = $props();
+let { size = 16, class: className = '' }: Props = $props();
 
-  const app = useAppState();
-  const formContext = tryGetFormContext();
+const app = useAppState();
+const formContext = tryGetFormContext();
 
-  const isSmrt = $derived(app.state.mode === 'smrt');
+const isSmrt = $derived(app.state.mode === 'smrt');
 
-  // Use $state + $effect to track context values since getters don't propagate reactivity
-  let isListening = $state(false);
-  let isExtracting = $state(false);
+// Use $state + $effect to track context values since getters don't propagate reactivity
+let isListening = $state(false);
+let isExtracting = $state(false);
 
-  // Poll the context state - this will update when the form state changes
-  // Using a fast polling interval (50ms) to reduce UI lag
-  $effect(() => {
-    const checkState = () => {
-      if (formContext) {
-        const newListening = formContext.isFormListening;
-        const newExtracting = formContext.isExtracting;
-        // Only log on change to reduce noise
-        if (newListening !== isListening || newExtracting !== isExtracting) {
-          console.log('[FormMicButton] State change: listening:', newListening, 'extracting:', newExtracting);
-        }
-        isListening = newListening;
-        isExtracting = newExtracting;
+// Poll the context state - this will update when the form state changes
+// Using a fast polling interval (50ms) to reduce UI lag
+$effect(() => {
+  const checkState = () => {
+    if (formContext) {
+      const newListening = formContext.isFormListening;
+      const newExtracting = formContext.isExtracting;
+      // Only log on change to reduce noise
+      if (newListening !== isListening || newExtracting !== isExtracting) {
+        console.log(
+          '[FormMicButton] State change: listening:',
+          newListening,
+          'extracting:',
+          newExtracting,
+        );
       }
-    };
+      isListening = newListening;
+      isExtracting = newExtracting;
+    }
+  };
 
-    // Check immediately
-    checkState();
+  // Check immediately
+  checkState();
 
-    // Set up fast polling interval for state changes
-    const interval = setInterval(checkState, 50);
+  // Set up fast polling interval for state changes
+  const interval = setInterval(checkState, 50);
 
-    return () => clearInterval(interval);
-  });
+  return () => clearInterval(interval);
+});
 
-  function handleClick() {
-    console.log('[FormMicButton] Click! isListening:', isListening, 'isExtracting:', isExtracting);
-    formContext?.toggleListening();
-  }
+function handleClick() {
+  console.log(
+    '[FormMicButton] Click! isListening:',
+    isListening,
+    'isExtracting:',
+    isExtracting,
+  );
+  formContext?.toggleListening();
+}
 </script>
 
 {#if isSmrt && formContext}
@@ -135,7 +145,7 @@
     font-weight: 400;
     border-radius: 0.375rem;
     white-space: nowrap;
-    z-index: 50;
+    z-index: 9999;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   }
 
