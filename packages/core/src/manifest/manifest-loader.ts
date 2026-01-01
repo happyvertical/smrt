@@ -264,21 +264,58 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   const manager = new ManifestManager(process.cwd());
   const manifest = manager.loadLocal();
 
+  // Fallback location: src/manifest/test-manifest.json
+  // This is still used by smrt-core and other packages that generate test manifests here
+  const testManifestPath = join(
+    process.cwd(),
+    'src/manifest/test-manifest.json',
+  );
+
+  // If ManifestManager found a manifest, check if it has objects
+  // If it has 0 objects but the fallback exists with objects, use the fallback instead
+  // This handles the case where dist/manifest.json is the static-manifest.json (0 objects)
+  // but src/manifest/test-manifest.json has the real test classes
   if (manifest) {
-    setLocalTestManifestCache(manifest);
     const objectCount = Object.keys(manifest.objects).length;
+
+    // If manifest has objects, use it
+    if (objectCount > 0) {
+      setLocalTestManifestCache(manifest);
+      console.log(
+        `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
+      );
+      return manifest;
+    }
+
+    // Manifest has 0 objects - check if fallback has more
+    if (existsSync(testManifestPath)) {
+      try {
+        const testManifest: Manifest = JSON.parse(
+          readFileSync(testManifestPath, 'utf-8'),
+        );
+        const testObjectCount = Object.keys(testManifest.objects).length;
+
+        if (testObjectCount > 0) {
+          setLocalTestManifestCache(testManifest);
+          console.log(
+            `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${testObjectCount} objects) - preferred over empty ManifestManager result`,
+          );
+          return testManifest;
+        }
+      } catch {
+        // Fallback also failed, use the empty manifest
+      }
+    }
+
+    // No better option, cache and use the empty manifest
+    setLocalTestManifestCache(manifest);
     console.log(
       `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
     );
     return manifest;
   }
 
-  // Fallback: Check src/manifest/test-manifest.json for backward compatibility
-  // This is still used by smrt-core and other packages that generate test manifests here
-  const testManifestPath = join(
-    process.cwd(),
-    'src/manifest/test-manifest.json',
-  );
+  // ManifestManager returned null - check fallback
   if (existsSync(testManifestPath)) {
     try {
       const testManifest: Manifest = JSON.parse(
