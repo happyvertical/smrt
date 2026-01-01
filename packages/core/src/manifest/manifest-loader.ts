@@ -25,7 +25,7 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { ObjectRegistry } from '../registry.js';
 import type {
   FieldDefinition,
@@ -33,6 +33,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { ManifestManager } from './manager.js';
 
 /**
  * Extend globalThis to include manifest loader state.
@@ -255,44 +256,26 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   // Don't cache null (failed loads) - allow retries
   const cached = getLocalTestManifestCache();
   if (cached !== undefined && cached !== null) {
-    console.log('[manifest-loader] Returning cached test manifest');
     return cached;
   }
 
-  // Try multiple possible manifest locations
-  const possiblePaths = [
-    resolve(process.cwd(), 'src/manifest/test-manifest.json'),
-    resolve(process.cwd(), 'dist/manifest.json'),
-    resolve(process.cwd(), '.smrt/manifest.json'),
-  ];
+  // Use ManifestManager for unified local loading
+  const manager = new ManifestManager(process.cwd());
+  const manifest = manager.loadLocal();
 
-  console.log(
-    '[manifest-loader] Attempting to load test manifest from:',
-    possiblePaths,
-  );
-
-  for (const manifestPath of possiblePaths) {
-    try {
-      const manifestJson = readFileSync(manifestPath, 'utf-8');
-      const manifest: Manifest = JSON.parse(manifestJson);
-      setLocalTestManifestCache(manifest);
-
-      const objectCount = Object.keys(manifest.objects).length;
-      console.log(
-        `[manifest-loader] ✅ Loaded local test manifest from ${manifestPath} (${objectCount} objects)`,
-      );
-      return manifest;
-    } catch (error) {
-      console.log(
-        `[manifest-loader] ✗ Failed to load from ${manifestPath}: ${error instanceof Error ? error.message : 'unknown error'}`,
-      );
-    }
+  if (manifest) {
+    setLocalTestManifestCache(manifest);
+    const objectCount = Object.keys(manifest.objects).length;
+    console.log(
+      `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
+    );
+    return manifest;
   }
 
   // No manifest found - DON'T cache null, allow retries
   // This is important because the manifest may be generated later
   console.log(
-    '[manifest-loader] ⚠️  No test manifest found (will retry on next call)',
+    '[manifest-loader] ⚠️  No local manifest found (will retry on next call)',
   );
   return null;
 }

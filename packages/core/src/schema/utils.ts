@@ -359,9 +359,9 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
   // FIX #623: For STI child classes from external packages, ensure the parent class
   // is loaded before calling getSTIBase(). The parent might not be registered yet
   // if it's from an external package manifest.
-  const registered = ObjectRegistry.findClass(className);
+  const registered = ObjectRegistry.getClass(className);
   if (registered?.extends) {
-    const parentClass = ObjectRegistry.findClass(registered.extends);
+    const parentClass = ObjectRegistry.getClass(registered.extends);
     if (!parentClass) {
       // Parent class not registered yet - discover and load STI siblings
       // This will register the parent and any other siblings sharing the same table
@@ -374,7 +374,7 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
         );
         const siblings = discoverSTISiblingsSync(collection);
         for (const sibling of siblings) {
-          if (!ObjectRegistry.classes.has(sibling.className)) {
+          if (!ObjectRegistry.hasClass(sibling.className)) {
             ObjectRegistry.registerFromManifest(
               sibling.className,
               sibling.entry,

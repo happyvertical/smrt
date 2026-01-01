@@ -151,6 +151,16 @@ export default defineConfig({
         'cosmiconfig',
         '@libsql/client',
         'tar',
+        'vite',
+        /^vite\//,
+        'chokidar',
+        'fsevents',
+        'fast-glob',
+        'micromatch',
+        'picomatch',
+        'braces',
+        'fill-range',
+        'to-regex-range',
 
         // Internal SMRT packages
         /^@smrt\//,
