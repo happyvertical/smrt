@@ -324,14 +324,30 @@ export function smrtVitestPlugin(
 
         if (localManifest) {
           console.log(
-            `[smrt-vitest] Local manifest: ${Object.keys(localManifest.objects).length} objects`,
+            `[smrt-vitest] ✓ Local manifest: ${Object.keys(localManifest.objects).length} objects`,
           );
-        } else if (verbose) {
-          console.warn(
-            `[smrt-vitest] No local manifest found. ` +
-              `Run 'smrt generate:test' or 'pnpm turbo generate:test' if tests fail with "unregistered class" errors.\n` +
-              `Checked: ${manager.getOutputPath('dev')}, ${manager.getOutputPath('build')}`,
-          );
+        } else {
+          // Always warn when manifest is missing (not just verbose mode)
+          // Use box format for visibility
+          const devPath = manager.getOutputPath('dev');
+          const buildPath = manager.getOutputPath('build');
+
+          console.warn(`
+╔═══════════════════════════════════════════════════════════════════════╗
+║  [smrt-vitest] WARNING: No local manifest found                       ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║  Tests may fail with "No field metadata found" errors.                ║
+║                                                                       ║
+║  Checked locations:                                                   ║
+║    • ${devPath.padEnd(55)}║
+║    • ${buildPath.padEnd(55)}║
+║                                                                       ║
+║  To fix, run one of:                                                  ║
+║    • smrt generate:test                                               ║
+║    • pnpm turbo generate:test                                         ║
+║    • npm run build (if manifest is part of build)                     ║
+╚═══════════════════════════════════════════════════════════════════════╝
+          `);
         }
       } catch (error) {
         if (verbose) {

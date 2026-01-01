@@ -174,6 +174,25 @@ Requires `@happyvertical/sql` with transaction handle support (SDK PR #722).
 | `isPostgresAvailable()` | Check if DATABASE_URL is set |
 | `getAdapterDisplayName()` | Get human-readable adapter name |
 
+## GlobalThis Isolation
+
+For complete test isolation, use the setup file to prevent manifest cache bleeding across test files:
+
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
+
+export default defineConfig({
+  plugins: [smrtVitestPlugin()],
+  test: {
+    setupFiles: ['@happyvertical/smrt-vitest/setup'],
+  },
+});
+```
+
+This ensures each test file starts with a clean global state.
+
 ## Development
 
 ```bash

@@ -65,7 +65,7 @@ export async function generateSchema(
       ? providedFields
       : await ObjectRegistry.getAllFields(className);
 
-  // Throw error if class is not registered AND no fields provided
+  // Throw error if no fields found
   if (cachedFields.size === 0) {
     // Detect if running in test environment
     const isTestEnv =
@@ -81,12 +81,26 @@ export async function generateSchema(
         `   ❌ NOT:  npx vitest\n`
       : '';
 
-    throw new Error(
-      `Cannot generate schema for unregistered class '${className}'. ` +
-        `Ensure the class is decorated with @smrt() for schema generation to work. ` +
-        `Runtime introspection has been removed per issue #131.` +
-        testHint,
-    );
+    // Check if class is actually registered (decorator ran but no fields loaded)
+    const isRegistered = ObjectRegistry.hasClass(className);
+
+    if (isRegistered) {
+      // Class registered but no fields - manifest problem
+      throw new Error(
+        `No field metadata found for class '${className}'. ` +
+          `The class is registered (decorator ran) but has no field definitions. ` +
+          `This usually means the manifest file is missing or stale.` +
+          testHint,
+      );
+    } else {
+      // Class not registered - decorator never ran
+      throw new Error(
+        `Cannot generate schema for unregistered class '${className}'. ` +
+          `Ensure the class is decorated with @smrt() for schema generation to work. ` +
+          `Runtime introspection has been removed per issue #131.` +
+          testHint,
+      );
+    }
   }
 
   // Check if class uses STI strategy
