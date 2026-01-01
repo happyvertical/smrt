@@ -44,6 +44,129 @@ export interface UserPreferences {
 }
 
 /**
+ * When to preload AI models
+ *
+ * - 'none': Don't preload, initialize on first use
+ * - 'eager': Preload immediately when SmrtProvider mounts
+ * - 'idle': Preload during browser idle time (requestIdleCallback)
+ * - 'on-visible': Preload when a SMRT component becomes visible
+ */
+export type AIPreloadStrategy = 'none' | 'eager' | 'idle' | 'on-visible';
+
+/**
+ * STT adapter configuration
+ */
+export interface STTConfig {
+  /** Which STT backend to use */
+  type: 'browser-speech' | 'whisper-cpp' | 'whisper-wasm';
+  /** Whisper model to use (for whisper-cpp/whisper-wasm) */
+  model?: string;
+  /** Whether to enable this adapter */
+  enabled?: boolean;
+}
+
+/**
+ * TTS adapter configuration
+ */
+export interface TTSConfig {
+  /** Which TTS backend to use */
+  type: 'browser-synthesis';
+  /** Preferred voice name */
+  voice?: string;
+  /** Whether to enable this adapter */
+  enabled?: boolean;
+}
+
+/**
+ * LLM adapter configuration
+ */
+export interface LLMConfig {
+  /** Which LLM backend to use */
+  type: 'webllm' | 'transformers-llm';
+  /** Model to load */
+  model?: string;
+  /** Whether to enable this adapter */
+  enabled?: boolean;
+}
+
+/**
+ * Complete AI configuration for SmrtProvider.
+ *
+ * Configures preloading strategy and which AI adapters to initialize.
+ * Uses a warm client cache to persist adapters across navigation.
+ *
+ * @example
+ * ```svelte
+ * <SmrtProvider
+ *   ai={{
+ *     preload: 'idle',
+ *     stt: { type: 'whisper-cpp', model: 'tiny.en' },
+ *     tts: { type: 'browser-synthesis' },
+ *     llm: { type: 'webllm', model: 'Llama-3.1-8B-Instruct' },
+ *     showLoadingOverlay: true,
+ *     loadingMessage: 'Preparing AI...'
+ *   }}
+ * >
+ * ```
+ */
+export interface AIConfig {
+  /**
+   * When to preload models.
+   * - 'none': Don't preload, initialize on first use
+   * - 'eager': Preload immediately when SmrtProvider mounts
+   * - 'idle': Preload during browser idle time (recommended)
+   * - 'on-visible': Preload when a SMRT AI component becomes visible
+   * @default 'idle'
+   */
+  preload?: AIPreloadStrategy;
+  /** STT (Speech-to-Text) configuration */
+  stt?: STTConfig;
+  /** TTS (Text-to-Speech) configuration */
+  tts?: TTSConfig;
+  /** LLM (Large Language Model) configuration */
+  llm?: LLMConfig;
+  /**
+   * Show a loading overlay while models download.
+   * The overlay shows progress and can be dismissed.
+   * @default true
+   */
+  showLoadingOverlay?: boolean;
+  /** Custom message to show in the loading overlay */
+  loadingMessage?: string;
+}
+
+/**
+ * Overall AI loading state for the loading overlay
+ */
+export type AILoadingPhase =
+  | 'idle' // No preloading configured or complete
+  | 'checking' // Checking what needs to be loaded
+  | 'downloading' // Downloading models/WASM
+  | 'initializing' // Initializing adapters
+  | 'ready' // All configured adapters ready
+  | 'error'; // At least one adapter failed
+
+/**
+ * AI loading state details
+ */
+export interface AILoadingState {
+  /** Current loading phase */
+  phase: AILoadingPhase;
+  /** What's currently loading (e.g., 'whisper-cpp', 'webllm') */
+  currentAdapter: string | null;
+  /** Overall progress percentage (0-100) */
+  overallProgress: number;
+  /** Human-readable status message */
+  message: string;
+  /** Adapters that have been loaded */
+  loaded: string[];
+  /** Adapters that failed to load */
+  failed: string[];
+  /** Error if phase is 'error' */
+  error: Error | null;
+}
+
+/**
  * User session information
  */
 export interface UserSession {
@@ -187,6 +310,8 @@ export interface SmrtAppState {
   capabilities: BrowserAICapabilities | null;
   /** AI adapter states */
   ai: AIState;
+  /** AI loading state (for preload/overlay) */
+  aiLoading: AILoadingState;
   /** WebSocket connection state */
   socket: SocketState;
   /** Global error */
@@ -236,6 +361,15 @@ export function createInitialState(): SmrtAppState {
         error: null,
       },
     },
+    aiLoading: {
+      phase: 'idle',
+      currentAdapter: null,
+      overallProgress: 0,
+      message: '',
+      loaded: [],
+      failed: [],
+      error: null,
+    },
     socket: {
       status: 'disconnected',
       reconnectAttempts: 0,
@@ -254,8 +388,12 @@ export interface CreateAppStateOptions {
   initialMode?: AppMode;
   /** Initial session data */
   session?: Partial<UserSession>;
+  /** AI preloading and warm client configuration */
+  ai?: AIConfig;
   /** Callback when capabilities are detected */
   onCapabilitiesDetected?: (caps: BrowserAICapabilities) => void;
   /** Callback when mode changes */
   onModeChange?: (mode: AppMode, source: ModeSource) => void;
+  /** Callback when AI loading state changes */
+  onAILoadingChange?: (state: AILoadingState) => void;
 }

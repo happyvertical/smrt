@@ -22,15 +22,32 @@ import {
 } from '@happyvertical/browser-ai';
 
 import {
+  type AIConfig,
+  type AILoadingState,
   type AppMode,
   type CreateAppStateOptions,
   createInitialState,
   type ModeSource,
-  type SocketConfig,
   type SmrtAppState,
+  type SocketConfig,
   type User,
   type UserSession,
 } from './app-state.js';
+
+import {
+  getCachedLLM,
+  getCachedSTT,
+  getCachedTTS,
+  type LLMType,
+  type STTType,
+  setCachedLLM,
+  setCachedSTT,
+  setCachedTTS,
+  type TTSType,
+  updateLLMCacheState,
+  updateSTTCacheState,
+  updateTTSCacheState,
+} from './warm-clients.js';
 
 /**
  * Reactive app state manager for Svelte 5
@@ -42,6 +59,11 @@ export class SmrtAppStateManager {
   // Options
   private options: CreateAppStateOptions;
 
+  // AI configuration
+  private _aiConfig: AIConfig | null = null;
+  private _preloadScheduled = false;
+  private _idleCallbackId: number | null = null;
+
   // Socket management
   private _socket: WebSocket | null = null;
   private _socketConfig: SocketConfig | null = null;
@@ -49,6 +71,7 @@ export class SmrtAppStateManager {
 
   constructor(options: CreateAppStateOptions = {}) {
     this.options = options;
+    this._aiConfig = options.ai ?? null;
   }
 
   /**
@@ -63,6 +86,20 @@ export class SmrtAppStateManager {
    */
   get state(): Readonly<SmrtAppState> {
     return this._state;
+  }
+
+  /**
+   * Get the current AI configuration
+   */
+  get aiConfig(): AIConfig | null {
+    return this._aiConfig;
+  }
+
+  /**
+   * Get the current AI loading state
+   */
+  get aiLoading(): Readonly<AILoadingState> {
+    return this._state.aiLoading;
   }
 
   /**
@@ -101,6 +138,177 @@ export class SmrtAppStateManager {
     }
 
     this._state.initialized = true;
+
+    // Schedule AI preloading based on strategy
+    this.schedulePreload();
+  }
+
+  // === AI Preloading Methods ===
+
+  /**
+   * Set or update AI configuration
+   */
+  setAIConfig(config: AIConfig): void {
+    this._aiConfig = config;
+    // Re-schedule preloading with new config
+    this.schedulePreload();
+  }
+
+  /**
+   * Schedule preloading based on the configured strategy
+   */
+  private schedulePreload(): void {
+    if (!this._aiConfig || this._preloadScheduled) return;
+
+    const strategy = this._aiConfig.preload ?? 'idle';
+
+    if (strategy === 'none') {
+      return;
+    }
+
+    if (strategy === 'eager') {
+      // Preload immediately
+      this._preloadScheduled = true;
+      this.executePreload();
+      return;
+    }
+
+    if (strategy === 'idle') {
+      // Schedule during browser idle time
+      this._preloadScheduled = true;
+      if (typeof requestIdleCallback !== 'undefined') {
+        this._idleCallbackId = requestIdleCallback(
+          () => this.executePreload(),
+          { timeout: 5000 }, // Don't wait more than 5 seconds
+        );
+      } else {
+        // Fallback for browsers without requestIdleCallback
+        setTimeout(() => this.executePreload(), 100);
+      }
+      return;
+    }
+
+    // 'on-visible' is handled by components calling triggerPreload()
+  }
+
+  /**
+   * Trigger preloading (called by components for 'on-visible' strategy)
+   */
+  triggerPreload(): void {
+    if (!this._aiConfig || this._preloadScheduled) return;
+    if (this._aiConfig.preload !== 'on-visible') return;
+
+    this._preloadScheduled = true;
+    this.executePreload();
+  }
+
+  /**
+   * Execute the preloading of configured adapters
+   */
+  private async executePreload(): Promise<void> {
+    if (!this._aiConfig) return;
+
+    const adaptersToLoad: string[] = [];
+
+    // Determine which adapters need loading
+    if (this._aiConfig.stt?.enabled !== false && this._aiConfig.stt?.type) {
+      adaptersToLoad.push(`stt:${this._aiConfig.stt.type}`);
+    }
+    if (this._aiConfig.tts?.enabled !== false && this._aiConfig.tts?.type) {
+      adaptersToLoad.push(`tts:${this._aiConfig.tts.type}`);
+    }
+    if (this._aiConfig.llm?.enabled !== false && this._aiConfig.llm?.type) {
+      const modelKey = this._aiConfig.llm.model
+        ? `${this._aiConfig.llm.type}:${this._aiConfig.llm.model}`
+        : this._aiConfig.llm.type;
+      adaptersToLoad.push(`llm:${modelKey}`);
+    }
+
+    if (adaptersToLoad.length === 0) {
+      this.updateLoadingState({ phase: 'idle' });
+      return;
+    }
+
+    this.updateLoadingState({
+      phase: 'checking',
+      message: 'Checking AI capabilities...',
+      loaded: [],
+      failed: [],
+    });
+
+    // Load adapters sequentially to show progress
+    for (const adapterKey of adaptersToLoad) {
+      const [category, type] = adapterKey.split(':') as [
+        'stt' | 'tts' | 'llm',
+        string,
+      ];
+
+      this.updateLoadingState({
+        phase: 'downloading',
+        currentAdapter: type,
+        message: `Loading ${type}...`,
+      });
+
+      try {
+        if (category === 'stt') {
+          await this.initializeSTT({ type: type as STTType });
+        } else if (category === 'tts') {
+          await this.initializeTTS({ type: type as TTSType });
+        } else if (category === 'llm') {
+          const llmConfig = this._aiConfig.llm!;
+          await this.initializeLLM(llmConfig.model, { type: llmConfig.type });
+        }
+
+        this.updateLoadingState({
+          loaded: [...this._state.aiLoading.loaded, type],
+        });
+      } catch (error) {
+        console.error(`Failed to preload ${type}:`, error);
+        this.updateLoadingState({
+          failed: [...this._state.aiLoading.failed, type],
+        });
+      }
+    }
+
+    // Determine final state
+    const hasFailures = this._state.aiLoading.failed.length > 0;
+    const allLoaded =
+      this._state.aiLoading.loaded.length === adaptersToLoad.length;
+
+    if (allLoaded) {
+      this.updateLoadingState({
+        phase: 'ready',
+        currentAdapter: null,
+        overallProgress: 100,
+        message: 'AI ready',
+      });
+    } else if (hasFailures && this._state.aiLoading.loaded.length === 0) {
+      this.updateLoadingState({
+        phase: 'error',
+        currentAdapter: null,
+        message: 'Failed to load AI models',
+        error: new Error('All AI adapters failed to load'),
+      });
+    } else {
+      // Partial success
+      this.updateLoadingState({
+        phase: 'ready',
+        currentAdapter: null,
+        message: `Loaded with ${this._state.aiLoading.failed.length} failure(s)`,
+      });
+    }
+
+    this.options.onAILoadingChange?.(this._state.aiLoading);
+  }
+
+  /**
+   * Update the AI loading state
+   */
+  private updateLoadingState(updates: Partial<AILoadingState>): void {
+    this._state.aiLoading = {
+      ...this._state.aiLoading,
+      ...updates,
+    };
   }
 
   /**
@@ -283,7 +491,7 @@ export class SmrtAppStateManager {
 
     // Exponential backoff: baseDelay * 2^attempts (capped at 30s)
     const delay = Math.min(
-      baseDelay * Math.pow(2, this._state.socket.reconnectAttempts - 1),
+      baseDelay * 2 ** (this._state.socket.reconnectAttempts - 1),
       30000,
     );
 
@@ -302,14 +510,26 @@ export class SmrtAppStateManager {
 
   /**
    * Initialize STT adapter
+   * Uses warm client cache to avoid re-downloading models
    */
   async initializeSTT(options?: GetSTTOptions): Promise<STTAdapter> {
-    const currentAdapter = this._state.ai.stt.adapter;
-    const requestedType = options?.type;
+    const requestedType = (options?.type ?? 'browser-speech') as STTType;
 
-    // Return existing adapter if it matches the requested type (or no type specified)
+    // Check warm client cache first
+    const cached = getCachedSTT(requestedType);
+    if (cached && cached.initState === 'ready') {
+      // Restore cached adapter to state
+      this._state.ai.stt.adapter = cached.adapter;
+      this._state.ai.stt.initState = 'ready';
+      this._state.ai.stt.error = null;
+      this.subscribeToSTTEvents(cached.adapter);
+      return cached.adapter;
+    }
+
+    // Check if we have a different adapter type loaded
+    const currentAdapter = this._state.ai.stt.adapter;
     if (currentAdapter && this._state.ai.stt.initState === 'ready') {
-      if (!requestedType || currentAdapter.type === requestedType) {
+      if (currentAdapter.type === requestedType) {
         return currentAdapter;
       }
       // Type mismatch - dispose old adapter before creating new one
@@ -322,54 +542,75 @@ export class SmrtAppStateManager {
     this._state.ai.stt.initState = 'initializing';
     this._state.ai.stt.error = null;
 
+    // Update cache state for tracking
+    updateSTTCacheState(requestedType, { initState: 'initializing' });
+
     const onProgress: OnProgress = (progress) => {
       this._state.ai.stt.downloadProgress = progress;
+      updateSTTCacheState(requestedType, { downloadProgress: progress });
+
+      // Update overall loading progress
+      if (progress.percent > 0) {
+        this.updateLoadingState({
+          overallProgress: progress.percent,
+        });
+      }
     };
 
     try {
       const adapter = await getSTT(options);
       await adapter.ensureInitialized(onProgress);
 
+      // Cache the adapter for future use
+      setCachedSTT(requestedType, adapter, 'ready');
+
       this._state.ai.stt.adapter = adapter;
       this._state.ai.stt.initState = 'ready';
       this._state.ai.stt.downloadProgress = null;
 
-      // Subscribe to adapter events
-      adapter.onResult((result) => {
-        if (result.isFinal) {
-          // Accumulate final results (for continuous mode where multiple phrases are spoken)
-          const existing = this._state.ai.stt.lastResult;
-          if (existing) {
-            this._state.ai.stt.lastResult = `${existing} ${result.text}`;
-          } else {
-            this._state.ai.stt.lastResult = result.text;
-          }
-          this._state.ai.stt.interimResult = '';
-        } else {
-          // Interim result - update live
-          this._state.ai.stt.interimResult = result.text;
-        }
-      });
-
-      adapter.onStart(() => {
-        this._state.ai.stt.isListening = true;
-      });
-
-      adapter.onEnd(() => {
-        this._state.ai.stt.isListening = false;
-      });
-
-      adapter.onError((error) => {
-        this._state.ai.stt.error = error;
-      });
+      this.subscribeToSTTEvents(adapter);
 
       return adapter;
     } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
       this._state.ai.stt.initState = 'error';
-      this._state.ai.stt.error =
-        error instanceof Error ? error : new Error(String(error));
+      this._state.ai.stt.error = err;
+      updateSTTCacheState(requestedType, { initState: 'error', error: err });
       throw error;
     }
+  }
+
+  /**
+   * Subscribe to STT adapter events
+   */
+  private subscribeToSTTEvents(adapter: STTAdapter): void {
+    adapter.onResult((result) => {
+      if (result.isFinal) {
+        // Accumulate final results (for continuous mode where multiple phrases are spoken)
+        const existing = this._state.ai.stt.lastResult;
+        if (existing) {
+          this._state.ai.stt.lastResult = `${existing} ${result.text}`;
+        } else {
+          this._state.ai.stt.lastResult = result.text;
+        }
+        this._state.ai.stt.interimResult = '';
+      } else {
+        // Interim result - update live
+        this._state.ai.stt.interimResult = result.text;
+      }
+    });
+
+    adapter.onStart(() => {
+      this._state.ai.stt.isListening = true;
+    });
+
+    adapter.onEnd(() => {
+      this._state.ai.stt.isListening = false;
+    });
+
+    adapter.onError((error) => {
+      this._state.ai.stt.error = error;
+    });
   }
 
   /**
@@ -398,8 +639,22 @@ export class SmrtAppStateManager {
 
   /**
    * Initialize TTS adapter
+   * Uses warm client cache to avoid re-initialization
    */
   async initializeTTS(options?: GetTTSOptions): Promise<TTSAdapter> {
+    const requestedType = (options?.type ?? 'browser-synthesis') as TTSType;
+
+    // Check warm client cache first
+    const cached = getCachedTTS(requestedType);
+    if (cached && cached.initState === 'ready') {
+      // Restore cached adapter to state
+      this._state.ai.tts.adapter = cached.adapter;
+      this._state.ai.tts.initState = 'ready';
+      this._state.ai.tts.error = null;
+      this.subscribeToTTSEvents(cached.adapter);
+      return cached.adapter;
+    }
+
     if (
       this._state.ai.tts.adapter &&
       this._state.ai.tts.initState === 'ready'
@@ -410,41 +665,55 @@ export class SmrtAppStateManager {
     this._state.ai.tts.initState = 'initializing';
     this._state.ai.tts.error = null;
 
+    // Update cache state for tracking
+    updateTTSCacheState(requestedType, { initState: 'initializing' });
+
     const onProgress: OnProgress = (progress) => {
       this._state.ai.tts.downloadProgress = progress;
+      updateTTSCacheState(requestedType, { downloadProgress: progress });
     };
 
     try {
       const adapter = await getTTS(options);
       await adapter.ensureInitialized(onProgress);
 
+      // Cache the adapter for future use
+      setCachedTTS(requestedType, adapter, 'ready');
+
       this._state.ai.tts.adapter = adapter;
       this._state.ai.tts.initState = 'ready';
       this._state.ai.tts.downloadProgress = null;
 
-      // Subscribe to adapter events
-      adapter.onStart(() => {
-        this._state.ai.tts.isSpeaking = true;
-        this._state.ai.tts.isPaused = false;
-      });
-
-      adapter.onEnd(() => {
-        this._state.ai.tts.isSpeaking = false;
-        this._state.ai.tts.isPaused = false;
-      });
-
-      adapter.onError((error) => {
-        this._state.ai.tts.error = error;
-        this._state.ai.tts.isSpeaking = false;
-      });
+      this.subscribeToTTSEvents(adapter);
 
       return adapter;
     } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
       this._state.ai.tts.initState = 'error';
-      this._state.ai.tts.error =
-        error instanceof Error ? error : new Error(String(error));
+      this._state.ai.tts.error = err;
+      updateTTSCacheState(requestedType, { initState: 'error', error: err });
       throw error;
     }
+  }
+
+  /**
+   * Subscribe to TTS adapter events
+   */
+  private subscribeToTTSEvents(adapter: TTSAdapter): void {
+    adapter.onStart(() => {
+      this._state.ai.tts.isSpeaking = true;
+      this._state.ai.tts.isPaused = false;
+    });
+
+    adapter.onEnd(() => {
+      this._state.ai.tts.isSpeaking = false;
+      this._state.ai.tts.isPaused = false;
+    });
+
+    adapter.onError((error) => {
+      this._state.ai.tts.error = error;
+      this._state.ai.tts.isSpeaking = false;
+    });
   }
 
   /**
@@ -493,11 +762,25 @@ export class SmrtAppStateManager {
 
   /**
    * Initialize LLM adapter
+   * Uses warm client cache to avoid re-downloading models
    */
   async initializeLLM(
     modelId?: string,
     options?: GetLLMOptions,
   ): Promise<LLMAdapter> {
+    const requestedType = (options?.type ?? 'webllm') as LLMType;
+
+    // Check warm client cache first
+    const cached = getCachedLLM(requestedType, modelId);
+    if (cached && cached.initState === 'ready') {
+      // Restore cached adapter to state
+      this._state.ai.llm.adapter = cached.adapter;
+      this._state.ai.llm.initState = 'ready';
+      this._state.ai.llm.currentModel = cached.adapter.currentModel;
+      this._state.ai.llm.error = null;
+      return cached.adapter;
+    }
+
     // Check if already initialized with the right model
     if (
       this._state.ai.llm.adapter &&
@@ -510,13 +793,29 @@ export class SmrtAppStateManager {
     this._state.ai.llm.initState = 'initializing';
     this._state.ai.llm.error = null;
 
+    // Update cache state for tracking
+    updateLLMCacheState(requestedType, modelId, { initState: 'initializing' });
+
     const onProgress: OnProgress = (progress) => {
       this._state.ai.llm.downloadProgress = progress;
+      updateLLMCacheState(requestedType, modelId, {
+        downloadProgress: progress,
+      });
+
+      // Update overall loading progress
+      if (progress.percent > 0) {
+        this.updateLoadingState({
+          overallProgress: progress.percent,
+        });
+      }
     };
 
     try {
       const adapter = await getLLM(options);
       await adapter.ensureInitialized(modelId, onProgress);
+
+      // Cache the adapter for future use
+      setCachedLLM(requestedType, adapter, modelId, 'ready');
 
       this._state.ai.llm.adapter = adapter;
       this._state.ai.llm.initState = 'ready';
@@ -525,9 +824,13 @@ export class SmrtAppStateManager {
 
       return adapter;
     } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
       this._state.ai.llm.initState = 'error';
-      this._state.ai.llm.error =
-        error instanceof Error ? error : new Error(String(error));
+      this._state.ai.llm.error = err;
+      updateLLMCacheState(requestedType, modelId, {
+        initState: 'error',
+        error: err,
+      });
       throw error;
     }
   }
@@ -570,15 +873,45 @@ export class SmrtAppStateManager {
    * Dispose of all resources
    */
   async dispose(): Promise<void> {
+    // Cancel pending idle callback
+    if (
+      this._idleCallbackId !== null &&
+      typeof cancelIdleCallback !== 'undefined'
+    ) {
+      cancelIdleCallback(this._idleCallbackId);
+      this._idleCallbackId = null;
+    }
+
     // Disconnect socket
     this.disconnectSocket();
 
-    // Dispose AI adapters
+    // Dispose AI adapters (but don't clear the cache - they survive navigation)
     await this._state.ai.stt.adapter?.dispose();
     await this._state.ai.tts.adapter?.dispose();
     await this._state.ai.llm.adapter?.dispose();
 
     this._state = createInitialState();
+  }
+
+  /**
+   * Check if AI is ready to use (all configured adapters loaded)
+   */
+  get isAIReady(): boolean {
+    return (
+      this._state.aiLoading.phase === 'ready' ||
+      this._state.aiLoading.phase === 'idle'
+    );
+  }
+
+  /**
+   * Check if AI is currently loading
+   */
+  get isAILoading(): boolean {
+    return (
+      this._state.aiLoading.phase === 'checking' ||
+      this._state.aiLoading.phase === 'downloading' ||
+      this._state.aiLoading.phase === 'initializing'
+    );
   }
 }
 

@@ -1,9 +1,16 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
-import type { AppMode, SocketConfig, User } from '../../state/app-state.js';
+import type {
+  AIConfig,
+  AILoadingState,
+  AppMode,
+  SocketConfig,
+  User,
+} from '../../state/app-state.js';
 import { createAppState } from '../../state/app-state.svelte.js';
 import { setAppStateContext } from '../../state/context.js';
+import AILoadingOverlay from './AILoadingOverlay.svelte';
 
 interface Props {
   /**
@@ -31,6 +38,23 @@ interface Props {
    */
   socket?: SocketConfig;
   /**
+   * AI configuration for preloading and warm clients
+   *
+   * @example
+   * ```svelte
+   * <SmrtProvider
+   *   ai={{
+   *     preload: 'idle',
+   *     stt: { type: 'whisper-cpp' },
+   *     showLoadingOverlay: true
+   *   }}
+   * >
+   *   ...
+   * </SmrtProvider>
+   * ```
+   */
+  ai?: AIConfig;
+  /**
    * Callback when capabilities are detected
    */
   onReady?: () => void;
@@ -38,6 +62,10 @@ interface Props {
    * Callback when mode changes
    */
   onModeChange?: (mode: AppMode) => void;
+  /**
+   * Callback when AI loading state changes
+   */
+  onAILoadingChange?: (state: AILoadingState) => void;
   /**
    * Children to render
    */
@@ -50,10 +78,15 @@ const {
   user = null,
   permissions = [],
   socket,
+  ai,
   onReady,
   onModeChange,
+  onAILoadingChange,
   children,
 }: Props = $props();
+
+// Determine if we should show the loading overlay
+const showLoadingOverlay = $derived(ai?.showLoadingOverlay ?? true);
 
 // Create app state
 const appState = createAppState({
@@ -63,11 +96,15 @@ const appState = createAppState({
       autoEnableSmrt,
     },
   },
+  ai,
   onCapabilitiesDetected: () => {
     onReady?.();
   },
   onModeChange: (newMode) => {
     onModeChange?.(newMode);
+  },
+  onAILoadingChange: (state) => {
+    onAILoadingChange?.(state);
   },
 });
 
@@ -93,10 +130,26 @@ $effect(() => {
   }
 });
 
+// Update AI config when it changes (for dynamic config updates)
+$effect(() => {
+  if (ai) {
+    untrack(() => {
+      appState.setAIConfig(ai);
+    });
+  }
+});
+
 // Cleanup on destroy
 onDestroy(() => {
   appState.disconnectSocket();
 });
 </script>
+
+{#if ai && showLoadingOverlay}
+  <AILoadingOverlay
+    message={ai.loadingMessage}
+    dismissible={true}
+  />
+{/if}
 
 {@render children()}

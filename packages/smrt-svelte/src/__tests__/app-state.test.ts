@@ -132,3 +132,55 @@ describe('SocketConfig type', () => {
     expect(config.reconnect?.maxAttempts).toBe(10);
   });
 });
+
+describe('AIConfig type', () => {
+  it('creates initial AI loading state', () => {
+    const state = createInitialState();
+
+    expect(state.aiLoading.phase).toBe('idle');
+    expect(state.aiLoading.currentAdapter).toBeNull();
+    expect(state.aiLoading.overallProgress).toBe(0);
+    expect(state.aiLoading.message).toBe('');
+    expect(state.aiLoading.loaded).toEqual([]);
+    expect(state.aiLoading.failed).toEqual([]);
+    expect(state.aiLoading.error).toBeNull();
+  });
+});
+
+describe('AIConfig types', () => {
+  it('allows preload strategies', () => {
+    const strategies = ['none', 'eager', 'idle', 'on-visible'] as const;
+    strategies.forEach((strategy) => {
+      expect(strategy).toBeDefined();
+    });
+  });
+
+  it('allows STT config', () => {
+    const sttConfig = {
+      type: 'whisper-cpp' as const,
+      model: 'tiny.en',
+      enabled: true,
+    };
+    expect(sttConfig.type).toBe('whisper-cpp');
+    expect(sttConfig.model).toBe('tiny.en');
+  });
+
+  it('allows TTS config', () => {
+    const ttsConfig = {
+      type: 'browser-synthesis' as const,
+      voice: 'Google UK English Female',
+      enabled: true,
+    };
+    expect(ttsConfig.type).toBe('browser-synthesis');
+  });
+
+  it('allows LLM config', () => {
+    const llmConfig = {
+      type: 'webllm' as const,
+      model: 'Llama-3.1-8B-Instruct',
+      enabled: true,
+    };
+    expect(llmConfig.type).toBe('webllm');
+    expect(llmConfig.model).toBe('Llama-3.1-8B-Instruct');
+  });
+});
