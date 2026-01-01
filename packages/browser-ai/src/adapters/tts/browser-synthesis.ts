@@ -25,6 +25,8 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
   private synthesis: SpeechSynthesis | null = null;
   private options: BrowserSynthesisTTSOptions;
   private voices: SpeechSynthesisVoice[] = [];
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: Used in speak/stop/pause
+  private currentUtterance: SpeechSynthesisUtterance | null = null;
 
   // Event listeners
   private startListeners = new Set<() => void>();
@@ -95,7 +97,7 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
       // Wait for voices to load
       await new Promise<void>((resolve) => {
         const handleVoicesChanged = () => {
-          this.voices = this.synthesis?.getVoices();
+          this.voices = this.synthesis?.getVoices() ?? [];
           if (this.voices.length > 0) {
             this.synthesis?.removeEventListener(
               'voiceschanged',
@@ -109,7 +111,7 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
 
         // Timeout after 2 seconds - some browsers may not fire the event
         setTimeout(() => {
-          this.voices = this.synthesis?.getVoices();
+          this.voices = this.synthesis?.getVoices() ?? [];
           resolve();
         }, 2000);
       });

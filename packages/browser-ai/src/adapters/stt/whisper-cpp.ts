@@ -59,6 +59,8 @@ export class WhisperCppSTTAdapter implements STTAdapter {
 
   // @remotion/whisper-web module
   private whisperWeb: any = null;
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: Used in init/dispose
+  private modelDownloaded = false;
 
   // Promise that resolves when transcription is complete
   private processingPromise: Promise<void> | null = null;
