@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.89
+
+### Patch Changes
+
+- ### Features
+
+  - add AI preloading and warm client caching (#641) (smrt-svelte)
+  - @happyvertical/smrt-config@0.17.89
+  - @happyvertical/smrt-types@0.17.89
+
 ## 0.17.88
 
 ### Patch Changes
