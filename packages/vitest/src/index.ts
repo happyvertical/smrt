@@ -411,7 +411,7 @@ export {
   isPostgresAvailable,
   type TestDbAdapter,
   type TestDbConfig,
-} from './test-db';
+} from './test-db.js';
 
 // Export transaction types (temporary until SDK #722 is merged)
-export type { TransactionHandle } from './types';
+export type { TransactionHandle } from './types.js';

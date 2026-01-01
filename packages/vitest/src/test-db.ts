@@ -37,7 +37,7 @@ import { join } from 'node:path';
 import type {
   DatabaseInterfaceWithTransaction,
   TransactionHandle,
-} from './types';
+} from './types.js';
 
 export type TestDbAdapter = 'sqlite' | 'postgres';
 
