@@ -38,7 +38,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@happyvertical/smrt-core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/sql": "^0.66.0"
   },
   "peerDependencies": {
     "vitest": ">=2.0.0"

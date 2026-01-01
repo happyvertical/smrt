@@ -110,6 +110,70 @@ describe('Payment Ledger Integration', () => {
 
 With this plugin in `vitest.config.ts`, the test works because smrt-ledgers classes are pre-registered.
 
+## Transaction Isolation for Parallel Tests
+
+For reliable parallel test execution (especially in CI with PostgreSQL), use `createIsolatedTestDb`:
+
+```typescript
+import { createIsolatedTestDb, type TransactionHandle } from '@happyvertical/smrt-vitest';
+import { beforeEach, afterEach, it, expect } from 'vitest';
+
+let db: TransactionHandle;
+let cleanup: () => Promise<void>;
+
+beforeEach(async () => {
+  const result = await createIsolatedTestDb({
+    schema: `CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL)`
+  });
+  db = result.db;
+  cleanup = result.cleanup;
+});
+
+afterEach(async () => {
+  await cleanup(); // Rolls back transaction - no data persists
+});
+
+it('should insert and query', async () => {
+  await db.insert('users', { id: '1', name: 'Alice' });
+  const user = await db.get('users', { id: '1' });
+  expect(user?.name).toBe('Alice');
+});
+
+it('should start with clean state', async () => {
+  // Previous test's data was rolled back
+  const users = await db.list('users', {});
+  expect(users).toHaveLength(0);
+});
+```
+
+### Benefits
+
+- **Complete isolation**: Each test runs in its own transaction
+- **Fast**: No table drops/recreates between tests
+- **Parallel-safe**: Multiple tests can run simultaneously
+- **Works with PostgreSQL in CI**: Eliminates SQLite concurrency issues
+
+### Environment Detection
+
+The package automatically detects the database adapter:
+- **CI (DATABASE_URL set)**: Uses PostgreSQL
+- **Local development**: Creates unique SQLite temp files
+
+### Requirements
+
+Requires `@happyvertical/sql` with transaction handle support (SDK PR #722).
+
+## Test Database Utilities
+
+| Function | Description |
+|----------|-------------|
+| `createIsolatedTestDb()` | Create DB with transaction isolation (recommended) |
+| `createTestDb()` | Create DB with cleanup function (no isolation) |
+| `getTestDbConfig()` | Get DB config for current environment |
+| `getTestAdapter()` | Detect adapter: 'postgres' or 'sqlite' |
+| `isPostgresAvailable()` | Check if DATABASE_URL is set |
+| `getAdapterDisplayName()` | Get human-readable adapter name |
+
 ## Development
 
 ```bash

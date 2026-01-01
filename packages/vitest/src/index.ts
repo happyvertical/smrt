@@ -314,6 +314,34 @@ export function smrtVitestPlugin(
         `[smrt-vitest] Loaded manifests from ${successCount}/${smrtPackages.length} packages`,
       );
 
+      // Validate local manifest is loaded (fail fast with actionable error)
+      try {
+        const { ManifestManager } = await import(
+          '@happyvertical/smrt-core/manifest'
+        );
+        const manager = new ManifestManager(root);
+        const localManifest = manager.loadLocal();
+
+        if (localManifest) {
+          console.log(
+            `[smrt-vitest] Local manifest: ${Object.keys(localManifest.objects).length} objects`,
+          );
+        } else if (verbose) {
+          console.warn(
+            `[smrt-vitest] No local manifest found. ` +
+              `Run 'smrt generate:test' or 'pnpm turbo generate:test' if tests fail with "unregistered class" errors.\n` +
+              `Checked: ${manager.getOutputPath('dev')}, ${manager.getOutputPath('build')}`,
+          );
+        }
+      } catch (error) {
+        if (verbose) {
+          console.warn(
+            '[smrt-vitest] Could not validate local manifest:',
+            error,
+          );
+        }
+      }
+
       manifestsLoaded = true;
     },
   };
@@ -369,3 +397,21 @@ export async function setupSmrtManifests(
 }
 
 export default smrtVitestPlugin;
+
+// Export test database utilities
+export {
+  createIsolatedTestDb,
+  createTestDb,
+  getAdapterDisplayName,
+  getInMemoryDbConfig,
+  getTestAdapter,
+  getTestDbConfig,
+  type IsolatedTestDbOptions,
+  type IsolatedTestDbResult,
+  isPostgresAvailable,
+  type TestDbAdapter,
+  type TestDbConfig,
+} from './test-db';
+
+// Export transaction types (temporary until SDK #722 is merged)
+export type { TransactionHandle } from './types';
