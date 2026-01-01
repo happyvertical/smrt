@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.88
+
+### Patch Changes
+
+- ### Features
+
+  - add voice-enabled form components and browser-ai package (#640) (smrt-svelte)
+  - @happyvertical/smrt-config@0.17.88
+  - @happyvertical/smrt-types@0.17.88
+
 ## 0.17.87
 
 ### Patch Changes

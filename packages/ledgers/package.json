@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-ledgers",
-  "version": "0.17.87",
+  "version": "0.17.88",
   "description": "Double-entry accounting ledger for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
