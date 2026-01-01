@@ -1,9 +1,16 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
-import { untrack } from 'svelte';
-import type { AppMode, CreateAppStateOptions } from '../../state/app-state.js';
+import { onDestroy, untrack } from 'svelte';
+import type {
+  AIConfig,
+  AILoadingState,
+  AppMode,
+  SocketConfig,
+  User,
+} from '../../state/app-state.js';
 import { createAppState } from '../../state/app-state.svelte.js';
 import { setAppStateContext } from '../../state/context.js';
+import AILoadingOverlay from './AILoadingOverlay.svelte';
 
 interface Props {
   /**
@@ -17,6 +24,37 @@ interface Props {
    */
   autoEnableSmrt?: boolean;
   /**
+   * User object from smrt-users (from your load function)
+   * Pass null when not authenticated
+   */
+  user?: User | null;
+  /**
+   * Resolved permissions (from PermissionResolver in your load function)
+   */
+  permissions?: string[];
+  /**
+   * WebSocket configuration
+   * If provided, connects on mount and disconnects on unmount
+   */
+  socket?: SocketConfig;
+  /**
+   * AI configuration for preloading and warm clients
+   *
+   * @example
+   * ```svelte
+   * <SmrtProvider
+   *   ai={{
+   *     preload: 'idle',
+   *     stt: { type: 'whisper-cpp' },
+   *     showLoadingOverlay: true
+   *   }}
+   * >
+   *   ...
+   * </SmrtProvider>
+   * ```
+   */
+  ai?: AIConfig;
+  /**
    * Callback when capabilities are detected
    */
   onReady?: () => void;
@@ -24,6 +62,10 @@ interface Props {
    * Callback when mode changes
    */
   onModeChange?: (mode: AppMode) => void;
+  /**
+   * Callback when AI loading state changes
+   */
+  onAILoadingChange?: (state: AILoadingState) => void;
   /**
    * Children to render
    */
@@ -33,10 +75,18 @@ interface Props {
 const {
   mode,
   autoEnableSmrt = true,
+  user = null,
+  permissions = [],
+  socket,
+  ai,
   onReady,
   onModeChange,
+  onAILoadingChange,
   children,
 }: Props = $props();
+
+// Determine if we should show the loading overlay
+const showLoadingOverlay = $derived(ai?.showLoadingOverlay ?? true);
 
 // Create app state
 const appState = createAppState({
@@ -46,11 +96,15 @@ const appState = createAppState({
       autoEnableSmrt,
     },
   },
+  ai,
   onCapabilitiesDetected: () => {
     onReady?.();
   },
   onModeChange: (newMode) => {
     onModeChange?.(newMode);
+  },
+  onAILoadingChange: (state) => {
+    onAILoadingChange?.(state);
   },
 });
 
@@ -63,6 +117,45 @@ $effect(() => {
     appState.initialize();
   });
 });
+
+// Sync user and permissions when they change
+$effect(() => {
+  appState.setUser(user, permissions);
+});
+
+// Manage socket lifecycle
+$effect(() => {
+  if (socket) {
+    // connectSocket already handles disconnecting any existing socket
+    appState.connectSocket(socket);
+
+    // Cleanup when socket prop changes or component unmounts
+    return () => {
+      appState.disconnectSocket();
+    };
+  }
+});
+
+// Update AI config when it changes (for dynamic config updates)
+$effect(() => {
+  if (ai) {
+    untrack(() => {
+      appState.setAIConfig(ai);
+    });
+  }
+});
+
+// Cleanup on destroy
+onDestroy(() => {
+  appState.disconnectSocket();
+});
 </script>
+
+{#if ai && showLoadingOverlay}
+  <AILoadingOverlay
+    message={ai.loadingMessage}
+    dismissible={true}
+  />
+{/if}
 
 {@render children()}

@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./sveltekit": {
+      "types": "./dist/sveltekit/index.d.ts",
+      "import": "./dist/sveltekit/index.js"
+    },
     "./manifest.json": "./dist/manifest.json"
   },
   "files": [

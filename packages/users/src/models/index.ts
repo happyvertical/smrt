@@ -19,6 +19,12 @@ export {
 export { Role } from './Role.js';
 // Roles and permissions
 export { RolePermission } from './RolePermission.js';
+// Sessions
+export {
+  DEFAULT_SESSION_TTL,
+  generateSessionId,
+  Session,
+} from './Session.js';
 export { Tenant } from './Tenant.js';
 // Core entities
 export { isValidEmail, normalizeEmail, User } from './User.js';

@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { AppMode } from '@happyvertical/smrt-svelte';
+import type { AppMode, User } from '@happyvertical/smrt-svelte';
 import { SmrtProvider } from '@happyvertical/smrt-svelte';
 import type { Snippet } from 'svelte';
 
@@ -9,9 +9,37 @@ interface Props {
 
 const { children }: Props = $props();
 let mode: AppMode = $state('dumb');
+
+// Mock user for demo purposes
+// In a real app, this would come from your +layout.server.ts load function
+let mockUser: User | null = $state({
+  id: 'user-123',
+  profileId: 'profile-456',
+  email: 'demo@example.com',
+  status: 'active' as const,
+  lastLoginAt: new Date(),
+  createdAt: new Date(),
+  updatedAt: new Date(),
+} as User);
+
+let mockPermissions = $state([
+  'articles.create',
+  'articles.read',
+  'users.view',
+]);
+let isLoggedIn = $state(true);
+
+function toggleLogin() {
+  isLoggedIn = !isLoggedIn;
+}
 </script>
 
-<SmrtProvider {mode} onModeChange={(m) => mode = m}>
+<SmrtProvider
+  {mode}
+  user={isLoggedIn ? mockUser : null}
+  permissions={isLoggedIn ? mockPermissions : []}
+  onModeChange={(m) => mode = m}
+>
   <div class="layout">
     <nav class="sidebar">
       <h1>SMRT Svelte</h1>
@@ -27,6 +55,16 @@ let mode: AppMode = $state('dumb');
           class:active={mode === 'smrt'}
           onclick={() => mode = 'smrt'}
         >Smrt</button>
+      </div>
+
+      <div class="auth-toggle">
+        <button
+          class="auth-btn"
+          class:logged-in={isLoggedIn}
+          onclick={toggleLogin}
+        >
+          {isLoggedIn ? 'Logged In' : 'Logged Out'}
+        </button>
       </div>
 
       <ul>
@@ -61,6 +99,8 @@ let mode: AppMode = $state('dumb');
         <li><a href="/memberships/list">MembershipList</a></li>
         <li class="section">Permissions</li>
         <li><a href="/permissions/check">PermissionCheck</a></li>
+        <li class="section">State</li>
+        <li><a href="/auth-socket">Auth & Socket</a></li>
       </ul>
     </nav>
     <main class="content">
@@ -159,5 +199,30 @@ let mode: AppMode = $state('dumb');
   .mode-btn.active {
     background: #3b82f6;
     color: #fff;
+  }
+
+  .auth-toggle {
+    margin-bottom: 20px;
+  }
+
+  .auth-btn {
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: #dc2626;
+    color: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .auth-btn:hover {
+    opacity: 0.9;
+  }
+
+  .auth-btn.logged-in {
+    background: #059669;
   }
 </style>

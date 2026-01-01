@@ -9,6 +9,12 @@ export {
 } from './PermissionResolver.js';
 
 export {
+  type SessionContext,
+  SessionService,
+  type SessionServiceOptions,
+} from './SessionService.js';
+
+export {
   type EnsureTenantResult,
   TenantService,
   type TenantWithOwnershipResult,
