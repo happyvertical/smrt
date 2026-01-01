@@ -69,6 +69,10 @@ export class SmrtAppStateManager {
   private _socketConfig: SocketConfig | null = null;
   private _reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // Track adapters we've already subscribed to (prevents duplicate listeners)
+  private _subscribedSTTAdapters = new WeakSet<STTAdapter>();
+  private _subscribedTTSAdapters = new WeakSet<TTSAdapter>();
+
   constructor(options: CreateAppStateOptions = {}) {
     this.options = options;
     this._aiConfig = options.ai ?? null;
@@ -593,8 +597,15 @@ export class SmrtAppStateManager {
 
   /**
    * Subscribe to STT adapter events
+   * Only subscribes once per adapter instance to prevent duplicate listeners
    */
   private subscribeToSTTEvents(adapter: STTAdapter): void {
+    // Prevent duplicate subscriptions
+    if (this._subscribedSTTAdapters.has(adapter)) {
+      return;
+    }
+    this._subscribedSTTAdapters.add(adapter);
+
     adapter.onResult((result) => {
       if (result.isFinal) {
         // Accumulate final results (for continuous mode where multiple phrases are spoken)
@@ -709,8 +720,15 @@ export class SmrtAppStateManager {
 
   /**
    * Subscribe to TTS adapter events
+   * Only subscribes once per adapter instance to prevent duplicate listeners
    */
   private subscribeToTTSEvents(adapter: TTSAdapter): void {
+    // Prevent duplicate subscriptions
+    if (this._subscribedTTSAdapters.has(adapter)) {
+      return;
+    }
+    this._subscribedTTSAdapters.add(adapter);
+
     adapter.onStart(() => {
       this._state.ai.tts.isSpeaking = true;
       this._state.ai.tts.isPaused = false;
