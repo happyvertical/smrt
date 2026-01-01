@@ -314,6 +314,11 @@ function checkForDoneKeyword(text: string): boolean {
 
 // Guard to prevent multiple simultaneous stop calls
 let isStopping = false;
+// Guard to prevent premature stop during startup
+let isStarting = false;
+// Timestamp of last stop to prevent immediate restart
+let lastStopTime = 0;
+const RESTART_COOLDOWN_MS = 1000; // 1 second cooldown after stopping
 
 // Watch STT results while form is listening
 // Only track speech and check for "done" - extraction happens at the end
@@ -339,11 +344,12 @@ $effect(() => {
 // Watch for STT stopping unexpectedly (e.g., browser STT auto-stops after silence)
 $effect(() => {
   // If form thinks we're listening but STT has stopped, handle it
-  if (isFormListening && !stt.isListening && !isStopping) {
+  // Don't trigger during startup phase (isStarting) or shutdown phase (isStopping)
+  if (isFormListening && !stt.isListening && !isStopping && !isStarting) {
     console.log('[SMRTForm] STT stopped unexpectedly - handling end of speech');
     // Use setTimeout to avoid state update during render
     setTimeout(() => {
-      if (isFormListening && !isStopping) {
+      if (isFormListening && !isStopping && !isStarting) {
         stopFormListening();
       }
     }, 0);
@@ -351,15 +357,26 @@ $effect(() => {
 });
 
 async function toggleFormListening() {
+  console.log('[SMRTForm] toggleFormListening called, isFormListening:', isFormListening);
+
   if (isFormListening) {
     await stopFormListening();
   } else {
+    // Prevent immediate restart after stopping (UI might lag behind state)
+    const timeSinceStop = Date.now() - lastStopTime;
+    if (lastStopTime > 0 && timeSinceStop < RESTART_COOLDOWN_MS) {
+      console.log('[SMRTForm] Ignoring start - cooldown active, time since stop:', timeSinceStop);
+      return;
+    }
     await startFormListening();
   }
 }
 
 async function startFormListening() {
   if (!isSmrt) return;
+
+  // Set starting flag to prevent premature stop detection
+  isStarting = true;
 
   // Initialize STT with selected adapter
   if (!stt.isReady || stt.adapterType !== sttAdapter) {
@@ -390,11 +407,19 @@ async function startFormListening() {
   }
 
   await stt.start({ continuous: true, interimResults: true });
+
+  // Clear starting flag now that STT is actually listening
+  isStarting = false;
 }
 
 async function stopFormListening() {
-  if (!isFormListening || isStopping) return;
+  console.log('[SMRTForm] stopFormListening called, isFormListening:', isFormListening, 'isStopping:', isStopping);
+  if (!isFormListening || isStopping) {
+    console.log('[SMRTForm] stopFormListening returning early');
+    return;
+  }
   isStopping = true;
+  isStarting = false; // Ensure starting flag is cleared
 
   // Clear silence timer
   if (silenceTimer) {
@@ -404,6 +429,7 @@ async function stopFormListening() {
 
   // Stop audio level monitoring
   stopAudioLevelMonitoring();
+  console.log('[SMRTForm] Audio monitoring stopped, calling stt.stop()');
 
   // IMPORTANT: Keep isFormListening = true until after stt.stop() completes
   // This allows the $effect to capture any final results
@@ -443,6 +469,10 @@ async function stopFormListening() {
     console.log('[SMRTForm] No text to extract');
     isStopping = false;
   }
+
+  // Record stop time to prevent immediate restart
+  lastStopTime = Date.now();
+  console.log('[SMRTForm] Stop complete, cooldown started');
 }
 
 // Cleanup on destroy

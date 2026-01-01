@@ -21,24 +21,32 @@
   let isExtracting = $state(false);
 
   // Poll the context state - this will update when the form state changes
+  // Using a fast polling interval (50ms) to reduce UI lag
   $effect(() => {
     const checkState = () => {
       if (formContext) {
-        isListening = formContext.isFormListening;
-        isExtracting = formContext.isExtracting;
+        const newListening = formContext.isFormListening;
+        const newExtracting = formContext.isExtracting;
+        // Only log on change to reduce noise
+        if (newListening !== isListening || newExtracting !== isExtracting) {
+          console.log('[FormMicButton] State change: listening:', newListening, 'extracting:', newExtracting);
+        }
+        isListening = newListening;
+        isExtracting = newExtracting;
       }
     };
 
     // Check immediately
     checkState();
 
-    // Set up polling interval for state changes
-    const interval = setInterval(checkState, 100);
+    // Set up fast polling interval for state changes
+    const interval = setInterval(checkState, 50);
 
     return () => clearInterval(interval);
   });
 
   function handleClick() {
+    console.log('[FormMicButton] Click! isListening:', isListening, 'isExtracting:', isExtracting);
     formContext?.toggleListening();
   }
 </script>
