@@ -515,12 +515,12 @@ describe('SessionService', () => {
 
     const sessionId = await sessionService.createSession(user.id!, tenant.id!);
 
-    expect(await sessionService.hasPermission(sessionId, 'articles.write')).toBe(
-      true,
-    );
-    expect(await sessionService.hasPermission(sessionId, 'articles.delete')).toBe(
-      false,
-    );
+    expect(
+      await sessionService.hasPermission(sessionId, 'articles.write'),
+    ).toBe(true);
+    expect(
+      await sessionService.hasPermission(sessionId, 'articles.delete'),
+    ).toBe(false);
   });
 
   it('should manage session data through service', async () => {

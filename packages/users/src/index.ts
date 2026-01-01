@@ -60,10 +60,10 @@ export {
 // Models
 export {
   DEFAULT_SESSION_TTL,
-  generateSessionId,
   Group,
   GroupMember,
   GroupRole,
+  generateSessionId,
   Membership,
   MembershipOverride,
   Permission,

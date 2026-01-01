@@ -111,9 +111,7 @@ export class Session extends SmrtObject {
    * Check if the session is currently valid (active and not expired)
    */
   isValid(): boolean {
-    return (
-      this.status === SessionStatus.ACTIVE && new Date() < this.expiresAt
-    );
+    return this.status === SessionStatus.ACTIVE && new Date() < this.expiresAt;
   }
 
   /**

@@ -22,7 +22,11 @@ let mockUser: User | null = $state({
   updatedAt: new Date(),
 } as User);
 
-let mockPermissions = $state(['articles.create', 'articles.read', 'users.view']);
+let mockPermissions = $state([
+  'articles.create',
+  'articles.read',
+  'users.view',
+]);
 let isLoggedIn = $state(true);
 
 function toggleLogin() {

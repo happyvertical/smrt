@@ -17,11 +17,10 @@
  */
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
-import { SessionService } from '../services/SessionService.js';
 import { DEFAULT_SESSION_TTL } from '../models/Session.js';
-import { defaultSessionLocals, type SessionLocals } from './types.js';
+import { SessionService } from '../services/SessionService.js';
 
-export { type SessionLocals, defaultSessionLocals } from './types.js';
+export { defaultSessionLocals, type SessionLocals } from './types.js';
 
 /**
  * Options for session handler
@@ -219,12 +218,13 @@ export async function createSessionCookie(
   event: HandleInput['event'],
   userId: string,
   tenantId: string | undefined,
-  options: SmrtClassOptions & CreateSessionCookieOptions & {
-    cookieName?: string;
-    cookiePath?: string;
-    cookieSecure?: boolean;
-    cookieSameSite?: 'strict' | 'lax' | 'none';
-  },
+  options: SmrtClassOptions &
+    CreateSessionCookieOptions & {
+      cookieName?: string;
+      cookiePath?: string;
+      cookieSecure?: boolean;
+      cookieSameSite?: 'strict' | 'lax' | 'none';
+    },
 ): Promise<string> {
   const cookieName = options.cookieName ?? 'sid';
   const ttl = options.ttl ?? DEFAULT_SESSION_TTL;
@@ -232,8 +232,7 @@ export async function createSessionCookie(
   const cookieSameSite = options.cookieSameSite ?? 'lax';
   // Default to secure in production (check for localhost in URL)
   const cookieSecure =
-    options.cookieSecure ??
-    !event.url.pathname.includes('localhost');
+    options.cookieSecure ?? !event.url.pathname.includes('localhost');
 
   const service = await getOrCreateSessionService(options, ttl);
 

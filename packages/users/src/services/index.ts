@@ -10,8 +10,8 @@ export {
 
 export {
   type SessionContext,
-  type SessionServiceOptions,
   SessionService,
+  type SessionServiceOptions,
 } from './SessionService.js';
 
 export {

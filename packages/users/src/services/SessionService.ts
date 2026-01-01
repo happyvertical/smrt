@@ -204,10 +204,7 @@ export class SessionService {
   /**
    * Check if a permission is granted for the session
    */
-  async hasPermission(
-    sessionId: string,
-    permission: string,
-  ): Promise<boolean> {
+  async hasPermission(sessionId: string, permission: string): Promise<boolean> {
     const context = await this.loadSessionContext(sessionId);
     if (!context) return false;
     return context.permissions.includes(permission);
@@ -237,9 +234,7 @@ export class SessionService {
   /**
    * Static factory method
    */
-  static async create(
-    options: SessionServiceOptions,
-  ): Promise<SessionService> {
+  static async create(options: SessionServiceOptions): Promise<SessionService> {
     const service = new SessionService(options);
     await service.initialize();
     return service;
