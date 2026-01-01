@@ -260,6 +260,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   }
 
   // Use ManifestManager for unified local loading
+  // This checks: .smrt/manifest.json -> dist/manifest.json
   const manager = new ManifestManager(process.cwd());
   const manifest = manager.loadLocal();
 
@@ -270,6 +271,30 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
       `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
     );
     return manifest;
+  }
+
+  // Fallback: Check src/manifest/test-manifest.json for backward compatibility
+  // This is still used by smrt-core and other packages that generate test manifests here
+  const testManifestPath = join(
+    process.cwd(),
+    'src/manifest/test-manifest.json',
+  );
+  if (existsSync(testManifestPath)) {
+    try {
+      const testManifest: Manifest = JSON.parse(
+        readFileSync(testManifestPath, 'utf-8'),
+      );
+      setLocalTestManifestCache(testManifest);
+      const objectCount = Object.keys(testManifest.objects).length;
+      console.log(
+        `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${objectCount} objects)`,
+      );
+      return testManifest;
+    } catch (error) {
+      console.log(
+        `[manifest-loader] ✗ Failed to load test manifest from ${testManifestPath}: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
   }
 
   // No manifest found - DON'T cache null, allow retries
