@@ -29,7 +29,8 @@
       "@happyvertical/smrt-types",
       "@happyvertical/smrt-users",
       "@happyvertical/smrt-vitest",
-      "@happyvertical/smrt-svelte"
+      "@happyvertical/smrt-svelte",
+      "@happyvertical/smrt-scanner"
     ]
   ],
   "linked": [],

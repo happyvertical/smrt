@@ -483,6 +483,9 @@ importers:
       '@faker-js/faker':
         specifier: ^9.4.0
         version: 9.9.0
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@types/node':
         specifier: 24.0.0
         version: 24.0.0
@@ -869,6 +872,40 @@ importers:
         version: 7.2.2(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
       vitest:
         specifier: ^4.0.8
+        version: 4.0.16(@types/node@24.0.0)(happy-dom@20.0.11)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/scanner:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      fast-glob:
+        specifier: 3.3.3
+        version: 3.3.3
+      minimatch:
+        specifier: 10.0.3
+        version: 10.0.3
+      oxc-parser:
+        specifier: ^0.52.0
+        version: 0.52.0
+      oxc-resolver:
+        specifier: ^4.0.0
+        version: 4.2.0
+    devDependencies:
+      '@types/node':
+        specifier: 24.0.0
+        version: 24.0.0
+      tsx:
+        specifier: ^4.7.0
+        version: 4.21.0
+      vite:
+        specifier: 7.1.3
+        version: 7.1.3(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
+      vite-plugin-dts:
+        specifier: 4.3.0
+        version: 4.3.0(@types/node@24.0.0)(rollup@4.53.3)(typescript@5.9.3)(vite@7.1.3(@types/node@24.0.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
+      vitest:
+        specifier: ^4.0.16
         version: 4.0.16(@types/node@24.0.0)(happy-dom@20.0.11)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(tsx@4.21.0)(yaml@2.8.2)
 
   packages/smrt-dev-mcp:
@@ -1858,8 +1895,14 @@ packages:
   '@duckdb/node-bindings@1.4.1-r.5':
     resolution: {integrity: sha512-HUncdmpfjT4HxbH5NO6myazzudhddPc9lly7AgsYBdQSfTr1LCaQGb45cGiS5jEafpod9VOlk0bwJVbAIaBDWw==}
 
+  '@emnapi/core@1.7.1':
+    resolution: {integrity: sha512-o1uhUASyo921r2XtHYOHy7gdkGLge8ghBEQHMWmyJFoXlpU58kIrhhN3w26lpQb6dspetweapMn2CSNwQ8I4wg==}
+
   '@emnapi/runtime@1.7.1':
     resolution: {integrity: sha512-PVtJr5CmLwYAU9PZDMITZoR5iAOShYREoR45EyyLrbntV50mdePTgUn4AmOw90Ifcj+x2kRjdzr1HP3RrNiHGA==}
+
+  '@emnapi/wasi-threads@1.1.0':
+    resolution: {integrity: sha512-WI0DdZ8xFSbgMjR1sFsKABJ/C5OnRrjT06JXbZKexJGrDuPTzZdDYfFlsgcCXCyf+suG5QU2e/y1Wo2V/OapLQ==}
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -3336,6 +3379,9 @@ packages:
     resolution: {integrity: sha512-88FTNFs4uuiFKP0tUrPsEXhpe9dg7za9ILZJE08pGdUveMIDeana1zwfVkqRHJDPJFAmGY3dXmJ99dzsy57YnA==}
     engines: {node: '>= 10'}
 
+  '@napi-rs/wasm-runtime@0.2.12':
+    resolution: {integrity: sha512-ZVWUcfwY4E/yPitQJl481FjFo3K22D6qF0DuFH6Y/nbnE11GY5uguDxZMGXPQ8WQ0128MXQD7TnfHyK4oWoIJQ==}
+
   '@neon-rs/load@0.0.4':
     resolution: {integrity: sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw==}
 
@@ -3432,6 +3478,104 @@ packages:
   '@originjs/vite-plugin-federation@1.4.1':
     resolution: {integrity: sha512-Uo08jW5pj1t58OUKuZNkmzcfTN2pqeVuAWCCiKf/75/oll4Efq4cHOqSE1FXMlvwZNGDziNdDyBbQ5IANem3CQ==}
     engines: {node: '>=14.0.0', pnpm: '>=7.0.1'}
+
+  '@oxc-parser/binding-darwin-arm64@0.52.0':
+    resolution: {integrity: sha512-ca2PF1YxxAXEKRxi2QMQ08SveTnmz2sXRAEnldfh+WVUZy+GTwaPt0+Cvekq/lpMYVMXicqsDqN1ui4kiXYg1A==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@oxc-parser/binding-darwin-x64@0.52.0':
+    resolution: {integrity: sha512-nDPBIIiWneiPvx0tSVVGBy5gFSNfJhjnU4m5s+egDV2BTbW9V/6pqw/5eDIgV1FbXzGzCZaqZxEAKANLNcMmUg==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@oxc-parser/binding-linux-arm64-gnu@0.52.0':
+    resolution: {integrity: sha512-haji5+wpAFeQNGif18rQWaI6EedXhyW2o8/ha+8aCjrFMm2yQkKx09Db2kox+1hS0a8rqDRVU29T23LTsy2S8g==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@oxc-parser/binding-linux-arm64-musl@0.52.0':
+    resolution: {integrity: sha512-/qJ9qVOo6ezl76vWFNpgI4ElzPlrg1m1/AtPWSbqIeh7+XOHcndLFDUgzKcK61XlvE//b8EVNwhLTymHsImx/g==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@oxc-parser/binding-linux-x64-gnu@0.52.0':
+    resolution: {integrity: sha512-0WVDzM7uUrTrerJ0yDCOEHVf7wN/Wze1dPgQnt/7WGZfHD/o+JFG2Scxom0afqGHWNoSHJAhYjHjpNTpy6ooKg==}
+    cpu: [x64]
+    os: [linux]
+
+  '@oxc-parser/binding-linux-x64-musl@0.52.0':
+    resolution: {integrity: sha512-N6Rp/3ddgro04D/j/nJhTX7z1GfEirfztONU+hAd/Iqa1Wbf6aFA/0Tm4nyRO+9zBM3EDJs1pEG4ciUjbL1A/g==}
+    cpu: [x64]
+    os: [linux]
+
+  '@oxc-parser/binding-win32-arm64-msvc@0.52.0':
+    resolution: {integrity: sha512-lj2Dm0msatwT129h5fRlADM3gZ5vPTV6ZqLhR7tOYnZdz1mpUlehcjGjlVFVkK2FomfWgK7jAPCwEUH8dE4kdQ==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@oxc-parser/binding-win32-x64-msvc@0.52.0':
+    resolution: {integrity: sha512-Msf7I1QlDIkEwRunVfDu0r/aZOStJuKYyWFTRr84V1Vtc0V1geWczK21ymTSeMyLzlo+LoJgHSaT3uhgyd1nig==}
+    cpu: [x64]
+    os: [win32]
+
+  '@oxc-project/types@0.52.0':
+    resolution: {integrity: sha512-vR+SuiprVAlbUSkBnmL/h0DNVhwmecxfLWyssN5wGUsOTz4VL5OWrVtb/Q5D/Jb1V+iqcDYBRWrhtyuCaKBBqg==}
+
+  '@oxc-resolver/binding-darwin-arm64@4.2.0':
+    resolution: {integrity: sha512-DP+KY4nXRJvL5XayKda0P7NCjcP1zZ5x6RZznMM/bMPCBrjcYNG4XKV9v/EbkSq3Et24mEJFYOM55WmPxtqf0w==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@oxc-resolver/binding-darwin-x64@4.2.0':
+    resolution: {integrity: sha512-k8wrYcZPE94Wq7QvLi7FVqdbnlg52L/J7dZOvdjmQaJN9zp2Gg/rhIXlXGf1yFqOC0NfiDIW0C4CpEat/zmw+Q==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@oxc-resolver/binding-freebsd-x64@4.2.0':
+    resolution: {integrity: sha512-ozYwrwsJMBPCF6PEvO4UeGcV1klyV3raVMoZeGPElF0QQpWTiLiOc1CEN3U/H82ZVYWLMDLNPTmTOdsc3CELqA==}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@oxc-resolver/binding-linux-arm-gnueabihf@4.2.0':
+    resolution: {integrity: sha512-3LjgnQBIrQywemSbVJvjCP+X6kcmChF1NRytgccbVCtOFocNh8JWtykdUnAbeJRY8SeM49QP0WtAPlEEdHMNTQ==}
+    cpu: [arm]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-arm64-gnu@4.2.0':
+    resolution: {integrity: sha512-mMB1AvqzTH25rbUo1eRfvFzNqBopX6aRlDmO1fIVVzIWi6YJNKckxbkGaatez4hH/n86IR6aEdZFM3qBUjn3Tg==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-arm64-musl@4.2.0':
+    resolution: {integrity: sha512-9oPBU8Yb35z15/14LzALn/8rRwwrtfe19l25N1MRZVSONGiOwfzWNqDNjWiDdyW+EUt/hlylmFOItZmreL6iIw==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-x64-gnu@4.2.0':
+    resolution: {integrity: sha512-8wU4fwHb0b45i0qMBJ24UYBEtaLyvYWUOqVVCn0SpQZ1mhWWC8dvD6+zIVAKRVex/cKdgzi3imXoKGIDqVEu9w==}
+    cpu: [x64]
+    os: [linux]
+
+  '@oxc-resolver/binding-linux-x64-musl@4.2.0':
+    resolution: {integrity: sha512-5CS2wlGxzESPJCj4NlNGr73QCku75VpGtkwNp8qJF4hLELKAzkoqIB0eBbcvNPg8m2rB7YeXb1u+puGUKXDhNQ==}
+    cpu: [x64]
+    os: [linux]
+
+  '@oxc-resolver/binding-wasm32-wasi@4.2.0':
+    resolution: {integrity: sha512-VOLpvmVAQZjvj/7Et/gYzW6yBqL9VKjLWOGaFiQ7cvTpY9R9d/1mrNKEuP3beDHF2si2fM5f2pl9bL+N4tvwiA==}
+    engines: {node: '>=14.0.0'}
+    cpu: [wasm32]
+
+  '@oxc-resolver/binding-win32-arm64-msvc@4.2.0':
+    resolution: {integrity: sha512-8tPj93hd1H5vXMtud1jN3C+prLZnvNzGw+BuyMer1+Z6RCQZHqn0XrfCalcuDOggKUYFagcKDdpdhv/CSW2/ZQ==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@oxc-resolver/binding-win32-x64-msvc@4.2.0':
+    resolution: {integrity: sha512-of3dYwB4RN825qq9kBu/79QPVXDZFb5S/opLtJScLqyRhI6owkFWV4P9VmFih8dfBh/7SImdvt/B4HQTF1fthg==}
+    cpu: [x64]
+    os: [win32]
 
   '@paralleldrive/cuid2@3.0.4':
     resolution: {integrity: sha512-sM6M2PWrByOEpN2QYAdulhEbSZmChwj0e52u4hpwB7u4PznFiNAavtE6m7O8tWUlzX+jT2eKKtc5/ZgX+IHrtg==}
@@ -4304,6 +4448,9 @@ packages:
 
   '@tokenizer/token@0.3.0':
     resolution: {integrity: sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A==}
+
+  '@tybys/wasm-util@0.10.1':
+    resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
 
   '@types/argparse@1.0.38':
     resolution: {integrity: sha512-ebDJ9b0e702Yr7pWgB0jzm+CX4Srzz8RcXtLJDJB+BSccqMa36uyH/zUsSYao5+BD1ytv3k3rPYCq4mAE1hsXA==}
@@ -7301,6 +7448,12 @@ packages:
   ow@1.1.1:
     resolution: {integrity: sha512-sJBRCbS5vh1Jp9EOgwp1Ws3c16lJrUkJYlvWTYC03oyiYVwS/ns7lKRWow4w4XjDyTrA2pplQv4B2naWSR6yDA==}
     engines: {node: '>=14.16'}
+
+  oxc-parser@0.52.0:
+    resolution: {integrity: sha512-6zWGoGd8KcISp1INXJL7sCW/GeJdg5O0bFtyNOBuwRDZjqplJ3FVbXKg6eNyGpj4NZrDiVbdIQWqj0cd4fd5eg==}
+
+  oxc-resolver@4.2.0:
+    resolution: {integrity: sha512-x9bzmn1rQRu2cRT6dC6qOCKyStDVubXsf5H3UloUG/UFjzufmNu8DHTxafYDaSlA9Y+rorD+EnmF7sWSaFdd7g==}
 
   p-cancelable@4.0.1:
     resolution: {integrity: sha512-wBowNApzd45EIKdO1LaU+LrMBwAcjfPaYtVzV3lmfM3gf8Z4CHZsiIqlM8TZZ8okYvh5A1cP6gTfCRQtwUpaUg==}
@@ -11153,7 +11306,18 @@ snapshots:
       '@duckdb/node-bindings-linux-x64': 1.4.1-r.5
       '@duckdb/node-bindings-win32-x64': 1.4.1-r.5
 
+  '@emnapi/core@1.7.1':
+    dependencies:
+      '@emnapi/wasi-threads': 1.1.0
+      tslib: 2.8.1
+    optional: true
+
   '@emnapi/runtime@1.7.1':
+    dependencies:
+      tslib: 2.8.1
+    optional: true
+
+  '@emnapi/wasi-threads@1.1.0':
     dependencies:
       tslib: 2.8.1
     optional: true
@@ -12449,6 +12613,13 @@ snapshots:
       '@napi-rs/canvas-linux-x64-musl': 0.1.84
       '@napi-rs/canvas-win32-x64-msvc': 0.1.84
 
+  '@napi-rs/wasm-runtime@0.2.12':
+    dependencies:
+      '@emnapi/core': 1.7.1
+      '@emnapi/runtime': 1.7.1
+      '@tybys/wasm-util': 0.10.1
+    optional: true
+
   '@neon-rs/load@0.0.4': {}
 
   '@noble/curves@1.9.7':
@@ -12545,6 +12716,67 @@ snapshots:
     dependencies:
       estree-walker: 3.0.3
       magic-string: 0.27.0
+
+  '@oxc-parser/binding-darwin-arm64@0.52.0':
+    optional: true
+
+  '@oxc-parser/binding-darwin-x64@0.52.0':
+    optional: true
+
+  '@oxc-parser/binding-linux-arm64-gnu@0.52.0':
+    optional: true
+
+  '@oxc-parser/binding-linux-arm64-musl@0.52.0':
+    optional: true
+
+  '@oxc-parser/binding-linux-x64-gnu@0.52.0':
+    optional: true
+
+  '@oxc-parser/binding-linux-x64-musl@0.52.0':
+    optional: true
+
+  '@oxc-parser/binding-win32-arm64-msvc@0.52.0':
+    optional: true
+
+  '@oxc-parser/binding-win32-x64-msvc@0.52.0':
+    optional: true
+
+  '@oxc-project/types@0.52.0': {}
+
+  '@oxc-resolver/binding-darwin-arm64@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-darwin-x64@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-freebsd-x64@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-linux-arm-gnueabihf@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-linux-arm64-gnu@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-linux-arm64-musl@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-linux-x64-gnu@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-linux-x64-musl@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-wasm32-wasi@4.2.0':
+    dependencies:
+      '@napi-rs/wasm-runtime': 0.2.12
+    optional: true
+
+  '@oxc-resolver/binding-win32-arm64-msvc@4.2.0':
+    optional: true
+
+  '@oxc-resolver/binding-win32-x64-msvc@4.2.0':
+    optional: true
 
   '@paralleldrive/cuid2@3.0.4':
     dependencies:
@@ -13653,6 +13885,11 @@ snapshots:
       - supports-color
 
   '@tokenizer/token@0.3.0': {}
+
+  '@tybys/wasm-util@0.10.1':
+    dependencies:
+      tslib: 2.8.1
+    optional: true
 
   '@types/argparse@1.0.38': {}
 
@@ -16791,6 +17028,33 @@ snapshots:
       dot-prop: 7.2.0
       lodash.isequal: 4.5.0
       vali-date: 1.0.0
+
+  oxc-parser@0.52.0:
+    dependencies:
+      '@oxc-project/types': 0.52.0
+    optionalDependencies:
+      '@oxc-parser/binding-darwin-arm64': 0.52.0
+      '@oxc-parser/binding-darwin-x64': 0.52.0
+      '@oxc-parser/binding-linux-arm64-gnu': 0.52.0
+      '@oxc-parser/binding-linux-arm64-musl': 0.52.0
+      '@oxc-parser/binding-linux-x64-gnu': 0.52.0
+      '@oxc-parser/binding-linux-x64-musl': 0.52.0
+      '@oxc-parser/binding-win32-arm64-msvc': 0.52.0
+      '@oxc-parser/binding-win32-x64-msvc': 0.52.0
+
+  oxc-resolver@4.2.0:
+    optionalDependencies:
+      '@oxc-resolver/binding-darwin-arm64': 4.2.0
+      '@oxc-resolver/binding-darwin-x64': 4.2.0
+      '@oxc-resolver/binding-freebsd-x64': 4.2.0
+      '@oxc-resolver/binding-linux-arm-gnueabihf': 4.2.0
+      '@oxc-resolver/binding-linux-arm64-gnu': 4.2.0
+      '@oxc-resolver/binding-linux-arm64-musl': 4.2.0
+      '@oxc-resolver/binding-linux-x64-gnu': 4.2.0
+      '@oxc-resolver/binding-linux-x64-musl': 4.2.0
+      '@oxc-resolver/binding-wasm32-wasi': 4.2.0
+      '@oxc-resolver/binding-win32-arm64-msvc': 4.2.0
+      '@oxc-resolver/binding-win32-x64-msvc': 4.2.0
 
   p-cancelable@4.0.1: {}
 
