@@ -426,10 +426,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @example
    * ```typescript
-   * const profiles = await profileCollection.findByIds(['id1', 'id2', 'id3']);
+   * const profiles = await profileCollection.listByIds(['id1', 'id2', 'id3']);
    * ```
    */
-  public async findByIds(ids: string[]): Promise<ModelType[]> {
+  public async listByIds(ids: string[]): Promise<ModelType[]> {
     if (ids.length === 0) return [];
     return this.list({ where: { id: ids } });
   }

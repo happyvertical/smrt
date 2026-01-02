@@ -182,7 +182,7 @@ const recentDocs = await documents.list({
 
 // Batch ID lookup (avoids N+1 queries)
 const docIds = ['uuid-1', 'uuid-2', 'uuid-3'];
-const batchDocs = await documents.findByIds(docIds);
+const batchDocs = await documents.listByIds(docIds);
 
 // Alternative: implicit IN with array values
 const sameDocs = await documents.list({

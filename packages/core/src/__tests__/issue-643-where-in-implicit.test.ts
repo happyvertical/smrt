@@ -1,12 +1,12 @@
 /**
- * Tests for implicit WHERE IN support and findByIds() method
+ * Tests for implicit WHERE IN support and listByIds() method
  *
  * Issue #643: Add WHERE IN support for batch ID lookups
  *
  * This tests:
  * 1. Implicit IN detection when passing array values without explicit operator
  * 2. Backward compatibility with explicit 'in' operator
- * 3. findByIds() convenience method
+ * 3. listByIds() convenience method
  * 4. Edge cases (empty array, single element, mixed operators)
  */
 
@@ -194,16 +194,16 @@ function runImplicitInTests(
       expect(results[0].name).toBe('Widget');
     });
 
-    it('should handle empty array via findByIds', async () => {
+    it('should handle empty array via listByIds', async () => {
       const { products } = getContext();
 
       await products.create({ name: 'Widget', price: 10.0, category: 'A' });
       await products.create({ name: 'Gadget', price: 20.0, category: 'B' });
 
-      // Empty array returns empty results when using findByIds
+      // Empty array returns empty results when using listByIds
       // Note: Direct list({ where: { id: [] } }) generates invalid SQL (IN ())
-      // so use findByIds() which handles empty arrays gracefully
-      const results = await products.findByIds([]);
+      // so use listByIds() which handles empty arrays gracefully
+      const results = await products.listByIds([]);
 
       expect(results.length).toBe(0);
     });
@@ -249,7 +249,7 @@ function runImplicitInTests(
 function runFindByIdsTests(
   getContext: () => { products: WhereInTestProductCollection },
 ) {
-  describe('findByIds() Method', () => {
+  describe('listByIds() Method', () => {
     it('should find multiple objects by IDs', async () => {
       const { products } = getContext();
 
@@ -269,7 +269,7 @@ function runFindByIdsTests(
         category: 'C',
       });
 
-      const results = await products.findByIds([p1.id!, p3.id!]);
+      const results = await products.listByIds([p1.id!, p3.id!]);
 
       expect(results.length).toBe(2);
       const names = results.map((r) => r.name).sort();
@@ -281,7 +281,7 @@ function runFindByIdsTests(
 
       await products.create({ name: 'Widget', price: 10.0, category: 'A' });
 
-      const results = await products.findByIds([]);
+      const results = await products.listByIds([]);
 
       expect(results).toEqual([]);
     });
@@ -296,7 +296,7 @@ function runFindByIdsTests(
       });
       await products.create({ name: 'Gadget', price: 20.0, category: 'B' });
 
-      const results = await products.findByIds([p1.id!]);
+      const results = await products.listByIds([p1.id!]);
 
       expect(results.length).toBe(1);
       expect(results[0].name).toBe('Widget');
@@ -311,7 +311,7 @@ function runFindByIdsTests(
         category: 'A',
       });
 
-      const results = await products.findByIds([
+      const results = await products.listByIds([
         p1.id!,
         'non-existent-uuid-12345',
         '00000000-0000-0000-0000-000000000000',
@@ -331,7 +331,7 @@ function runFindByIdsTests(
       });
 
       // Pass the same ID multiple times
-      const results = await products.findByIds([p1.id!, p1.id!, p1.id!]);
+      const results = await products.listByIds([p1.id!, p1.id!, p1.id!]);
 
       // Should only return one result (DB handles dedup)
       expect(results.length).toBe(1);

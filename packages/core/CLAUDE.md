@@ -409,7 +409,7 @@ await collection.list({
 });
 
 // Batch ID lookup (avoids N+1 queries)
-const profiles = await profileCollection.findByIds(['id1', 'id2', 'id3']);
+const profiles = await profileCollection.listByIds(['id1', 'id2', 'id3']);
 ```
 
 **Raw SQL queries** (for complex patterns like NOT EXISTS, JOINs, CTEs):
