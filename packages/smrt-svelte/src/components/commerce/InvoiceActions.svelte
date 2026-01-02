@@ -5,13 +5,7 @@
  * Renders appropriate action buttons based on invoice status.
  */
 
-export type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'viewed'
-  | 'paid'
-  | 'overdue'
-  | 'cancelled';
+import type { InvoiceStatus } from './types.js';
 
 interface Props {
   /** Current invoice status */

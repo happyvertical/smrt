@@ -6,14 +6,7 @@
  * or allows custom styling via CSS variables.
  */
 
-export type StatusType =
-  | 'default'
-  | 'invoice'
-  | 'project'
-  | 'expense'
-  | 'time'
-  | 'compliance'
-  | 'estimate';
+import type { StatusType } from './types.js';
 
 interface Props {
   /** The status value to display */

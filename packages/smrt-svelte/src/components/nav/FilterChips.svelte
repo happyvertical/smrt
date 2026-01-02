@@ -6,16 +6,7 @@
  * Supports optional counts and "all" option.
  */
 
-export interface FilterOption {
-  /** Option value */
-  value: string;
-  /** Display label */
-  label: string;
-  /** Optional count badge */
-  count?: number;
-  /** Disabled state */
-  disabled?: boolean;
-}
+import type { FilterOption } from './types.js';
 
 interface Props {
   /** Available filter options */

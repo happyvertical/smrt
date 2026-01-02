@@ -5,24 +5,7 @@
  * Compact card view for displaying invoices in lists.
  */
 
-export type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'viewed'
-  | 'paid'
-  | 'overdue'
-  | 'cancelled';
-
-export interface InvoiceData {
-  id: string;
-  invoiceNumber: string;
-  status: InvoiceStatus;
-  issueDate: Date | string;
-  dueDate?: Date | string | null;
-  totalAmount: number;
-  customerName?: string;
-  projectName?: string;
-}
+import type { InvoiceData, InvoiceStatus } from './types.js';
 
 interface Props {
   /** Invoice data */

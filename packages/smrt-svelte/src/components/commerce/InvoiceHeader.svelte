@@ -5,13 +5,7 @@
  * Shows invoice number, status, dates, and customer info.
  */
 
-export type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'viewed'
-  | 'paid'
-  | 'overdue'
-  | 'cancelled';
+import type { InvoiceStatus } from './types.js';
 
 interface Props {
   /** Invoice number/reference */

@@ -6,17 +6,7 @@
  */
 
 import type { Snippet } from 'svelte';
-
-export interface Tab {
-  /** Tab identifier */
-  id: string;
-  /** Display label */
-  label: string;
-  /** Optional count badge */
-  count?: number;
-  /** Disabled state */
-  disabled?: boolean;
-}
+import type { Tab } from './types.js';
 
 interface Props {
   /** Available tabs */

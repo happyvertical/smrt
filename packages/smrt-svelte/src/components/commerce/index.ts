@@ -2,14 +2,17 @@
  * Commerce components - Invoice, estimate, and billing components
  */
 
+// Export components
 export { default as InvoiceActions } from './InvoiceActions.svelte';
-export type { InvoiceData } from './InvoiceCard.svelte';
 export { default as InvoiceCard } from './InvoiceCard.svelte';
-export type { InvoiceStatus } from './InvoiceHeader.svelte';
 export { default as InvoiceHeader } from './InvoiceHeader.svelte';
-// Re-export types
-export type { LineItem } from './InvoiceLineItems.svelte';
 export { default as InvoiceLineItems } from './InvoiceLineItems.svelte';
 export { default as InvoiceTotals } from './InvoiceTotals.svelte';
-export type { UnbilledItem } from './UnbilledItems.svelte';
+// Re-export types from types file
+export type {
+  InvoiceData,
+  InvoiceStatus,
+  LineItem,
+  UnbilledItem,
+} from './types.js';
 export { default as UnbilledItems } from './UnbilledItems.svelte';
