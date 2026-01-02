@@ -319,9 +319,10 @@ export const utilityCommands: Record<string, CLICommand> = {
       console.log('\n🧪 Generating test manifest...\n');
 
       try {
-        // Import scanner and manifest generator
-        const { ASTScanner, ManifestGenerator } = await import(
-          '@happyvertical/smrt-core/scanner'
+        // Import scanner and manifest manager
+        const { ASTScanner } = await import('@happyvertical/smrt-core/scanner');
+        const { ManifestManager } = await import(
+          '@happyvertical/smrt-core/manifest'
         );
         const fg = await import('fast-glob');
         const { writeFileSync, mkdirSync } = await import('node:fs');
@@ -392,10 +393,10 @@ export const utilityCommands: Record<string, CLICommand> = {
           console.log('[smrt test] No external SMRT packages found');
         }
 
-        // Generate manifest WITH external dependencies upfront
-        // This ensures STI classes inherit correct tableName from external bases
-        const generator = new ManifestGenerator();
-        const manifest = generator.generateManifest(scanResults, {
+        // Generate manifest using ManifestManager
+        const manager = new ManifestManager(process.cwd());
+        const manifest = await manager.generateFromScanResults(scanResults, {
+          mode: 'dev',
           packageName,
           smrtDependencies:
             smrtDependencies.length > 0 ? smrtDependencies : undefined,
@@ -415,14 +416,15 @@ export const utilityCommands: Record<string, CLICommand> = {
           Object.keys(manifest.objects).join(', '),
         );
 
-        // Create output directory
+        // Legacy compatibility: Still write to requested output directory if specified
+        // But the primary manifest is now in .smrt/manifest.json (via ManifestManager)
         const outputDir = resolve(
           process.cwd(),
           options.output || 'src/manifest',
         );
         mkdirSync(outputDir, { recursive: true });
 
-        // Write manifest.json
+        // Write manifest.json to legacy location
         const jsonPath = resolve(outputDir, 'test-manifest.json');
         writeFileSync(jsonPath, JSON.stringify(manifest, null, 2));
 
@@ -447,8 +449,9 @@ export default testManifest;
         console.log(
           `✅ Generated test manifest with ${objectCount} test object(s)`,
         );
-        console.log(`   JSON: ${jsonPath}`);
-        console.log(`   TS:   ${tsPath}\n`);
+        console.log(`   Unified: .smrt/manifest.json`);
+        console.log(`   Legacy:  ${jsonPath}`);
+        console.log(`   TS:      ${tsPath}\n`);
 
         // Run tests if requested
         if (!options.manifestOnly) {
@@ -874,8 +877,11 @@ export default testManifest;
 
           // Generate manifest on the fly (like smrt test does)
           try {
-            const { ASTScanner, ManifestGenerator } = await import(
+            const { ASTScanner } = await import(
               '@happyvertical/smrt-core/scanner'
+            );
+            const { ManifestManager } = await import(
+              '@happyvertical/smrt-core/manifest'
             );
             const fg = await import('fast-glob');
 
@@ -897,8 +903,10 @@ export default testManifest;
               });
 
               const scanResults = scanner.scanFiles();
-              const generator = new ManifestGenerator();
-              generator.generateManifest(scanResults, {});
+              const manager = new ManifestManager(process.cwd());
+              await manager.generateFromScanResults(scanResults, {
+                mode: 'dev',
+              });
 
               console.log('  ✓ Generated manifest from source files');
             }

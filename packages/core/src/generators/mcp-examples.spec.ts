@@ -361,8 +361,12 @@ describe('MCP Generator - Example Projects', () => {
       const content = await readFile(defaultPath, 'utf-8');
       expect(content).toContain('note-mcp');
 
-      // Clean up
-      await rm(join(process.cwd(), '.smrt'), { recursive: true, force: true });
+      // Clean up - only remove the mcp-server subdirectory, not the entire .smrt/
+      // (which contains manifest.json that other tests depend on)
+      await rm(join(process.cwd(), '.smrt', 'mcp-server'), {
+        recursive: true,
+        force: true,
+      });
     });
   });
 

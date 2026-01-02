@@ -226,10 +226,12 @@ describe('MCPGenerator - Modular Generation', () => {
         const content = await readFile(expectedPath, 'utf-8');
         expect(content).toContain('default-path-server');
       } finally {
-        // Clean up
-        await rm(join(cwd, '.smrt'), { recursive: true, force: true }).catch(
-          () => {},
-        );
+        // Clean up - only remove mcp-server subdirectory, not entire .smrt/
+        // (which may contain manifest.json needed by other tests)
+        await rm(join(cwd, '.smrt', 'mcp-server'), {
+          recursive: true,
+          force: true,
+        }).catch(() => {});
       }
     });
   });

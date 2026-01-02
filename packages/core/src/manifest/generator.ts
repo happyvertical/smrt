@@ -10,6 +10,7 @@ import { ASTScanner } from '../scanner/ast-scanner.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { ScanResult, SmartObjectManifest } from '../scanner/types.js';
 import { discoverSmrtPackages } from './discover-smrt-packages.js';
+import { ManifestManager } from './manager.js';
 
 /**
  * Options for ManifestBuilder.generate()
@@ -219,15 +220,29 @@ export class ManifestBuilder {
     manifest: SmartObjectManifest,
     options: ManifestBuilderOptions,
   ): Promise<void> {
+    const manager = new ManifestManager(process.cwd());
+    const isTest =
+      options.outputName?.includes('test') ||
+      options.stubName?.includes('test');
+    const mode = isTest ? 'dev' : 'build';
+
+    // 1. Always write to the unified location via ManifestManager
+    manager.write(manifest, mode);
+
+    // 2. Legacy/Explicit Output (if requested or for stubs)
     const outputDir = options.outputDir || 'src/manifest';
     const outputName = options.outputName || 'manifest.json';
 
-    // Ensure output directory exists
+    // Ensure output directory exists for legacy/stubs
     mkdirSync(outputDir, { recursive: true });
 
-    // Write JSON manifest
+    // Write JSON manifest to legacy location if different from unified path
     const manifestPath = resolve(outputDir, outputName);
-    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    const unifiedPath = manager.getOutputPath(mode);
+
+    if (resolve(manifestPath) !== resolve(unifiedPath)) {
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    }
 
     // Write TypeScript stub if requested
     if (options.generateTypeStub) {
@@ -239,6 +254,7 @@ export class ManifestBuilder {
 
     const objectCount = Object.keys(manifest.objects).length;
     console.log(`[smrt] ✅ Generated manifest with ${objectCount} object(s)`);
+    console.log(`[smrt]    Unified: ${unifiedPath}`);
   }
 
   /**
@@ -268,7 +284,7 @@ export class ManifestBuilder {
 
     return `${comment}
 
-import type { SmartObjectManifest } from '../scanner/types';
+import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner/types';
 
 export const ${exportName}: SmartObjectManifest = ${JSON.stringify(manifest, null, 2)} as const;
 

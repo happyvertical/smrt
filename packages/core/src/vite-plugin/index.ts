@@ -88,7 +88,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
   let server: ViteDevServer | undefined;
   let manifest: SmartObjectManifest | null = null;
-  let manifestGenerator: any = null; // Will be lazily created in server mode
+  const manifestGenerator: any = null; // Will be lazily created in server mode
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
   let config: any = null; // Store resolved config for closeBundle hook
@@ -394,11 +394,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       const [{ default: fg }, { ASTScanner, ManifestGenerator }] =
         await Promise.all([import('fast-glob'), import('../scanner/index.js')]);
 
-      // Create manifest generator if not already created
-      if (!manifestGenerator) {
-        manifestGenerator = new ManifestGenerator();
-      }
-
       // Find all TypeScript files matching patterns
       // IMPORTANT: Set cwd to project root to avoid scanning workspace packages
       const sourceFiles = fg.sync(include, {
@@ -428,83 +423,20 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         `[smrt] Discovered ${discoveredBaseClasses.length} base classes (including ${discoveredBaseClasses.length - 3} from external packages)`,
       );
 
-      // Scan files with AST scanner
-      const scanner = new ASTScanner(sourceFiles, {
+      const { ManifestBuilder } = await import('../manifest/generator.js');
+      const builder = new ManifestBuilder();
+
+      // Use ManifestBuilder for unified scanning and generation
+      // This automatically writes to .smrt/manifest.json in dev mode
+      const newManifest = await builder.generate({
+        include,
+        exclude,
         baseClasses: discoveredBaseClasses,
-        includePrivateMethods: false,
-        includeStaticMethods: true,
         followImports,
+        injectPackageInfo: true,
+        moduleType: 'smrt',
+        loadViteConfig: false, // We are already in Vite context
       });
-
-      const scanResults = scanner.scanFiles();
-
-      // Check for scan errors and fail build if any exist
-      const allErrors = scanResults.flatMap((result) => result.errors);
-      if (allErrors.length > 0) {
-        console.error(
-          `\n[smrt] ❌ Build failed: ${allErrors.length} error(s) during scanning:\n`,
-        );
-        for (const error of allErrors) {
-          console.error(`  ${error.message}\n`);
-        }
-        throw new Error(
-          '[smrt] Build aborted due to scan errors. See above for details.',
-        );
-      }
-
-      // Read package.json for package metadata
-      let packageName: string | undefined;
-      let packageVersion: string | undefined;
-      let packageJson: any;
-      try {
-        const { readFileSync } = await import('node:fs');
-        const { join } = await import('node:path');
-        const pkgPath = join(rootDir, 'package.json');
-        const pkgContent = readFileSync(pkgPath, 'utf-8');
-        packageJson = JSON.parse(pkgContent);
-        packageName = packageJson.name || undefined;
-        packageVersion = packageJson.version || undefined;
-      } catch {
-        // package.json not found or invalid - continue without packageName
-      }
-
-      // Discover SMRT dependencies BEFORE generateManifest so field inheritance works
-      let smrtDependencies: string[] = [];
-      try {
-        const { discoverSmrtPackages } = await import(
-          '../manifest/discover-smrt-packages.js'
-        );
-        smrtDependencies = discoverSmrtPackages();
-        if (smrtDependencies.length > 0) {
-          console.log(
-            `[smrt] Found ${smrtDependencies.length} SMRT dependencies: ${smrtDependencies.join(', ')}`,
-          );
-        }
-      } catch (error) {
-        console.warn(
-          '[smrt] Failed to discover SMRT dependencies:',
-          error instanceof Error ? error.message : error,
-        );
-      }
-
-      const newManifest = manifestGenerator.generateManifest(scanResults, {
-        packageName,
-        packageVersion,
-        packageJson,
-        smrtDependencies,
-      });
-
-      // Add moduleType identifier for SMRT package discovery
-      newManifest.moduleType = 'smrt';
-
-      // Log scan results
-      const objectCount = Object.keys(newManifest.objects).length;
-      if (objectCount > 0) {
-        const names = Object.keys(newManifest.objects).join(', ');
-        console.log(`[smrt] Found ${objectCount} SMRT objects: ${names}`);
-      } else {
-        console.log('[smrt] No SMRT objects found');
-      }
 
       // Generate TypeScript declarations if enabled
       if (generateTypes && server) {

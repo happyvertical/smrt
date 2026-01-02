@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["pnpm-lock.yaml"],
   "tasks": {
     "generate": {
       "dependsOn": ["^build"],
@@ -37,7 +38,8 @@
       ],
       "outputs": [
         "src/manifest/test-manifest.json",
-        "src/manifest/test-manifest-stub.ts"
+        "src/manifest/test-manifest-stub.ts",
+        ".smrt/manifest.json"
       ],
       "cache": true
     },

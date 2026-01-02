@@ -9,6 +9,8 @@ export type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
+export { ManifestBuilder } from './generator';
+export { ManifestManager } from './manager';
 export {
   loadExternalManifestSync,
   loadLocalTestManifestSync,

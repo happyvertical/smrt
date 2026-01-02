@@ -181,7 +181,9 @@ runs:
         # Force ONNX Runtime to skip CUDA installation
         ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'
         # Authentication token for GitHub Package Registry
+        # .npmrc uses NPM_TOKEN, setup-node uses NODE_AUTH_TOKEN
         NODE_AUTH_TOKEN: ${{ inputs.auth-token }}
+        NPM_TOKEN: ${{ inputs.auth-token }}
 
     - name: Install Playwright browsers
       if: inputs.install-deps == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'

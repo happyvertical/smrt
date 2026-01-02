@@ -71,9 +71,9 @@ export async function createTestDb(): Promise<{
   const db = await getDatabase(config);
 
   const cleanup = async () => {
-    if (db && typeof db.close === 'function') {
+    if (db && typeof (db as any).close === 'function') {
       try {
-        await db.close();
+        await (db as any).close();
       } catch {
         // Ignore close errors
       }
@@ -128,7 +128,7 @@ export async function isPostgresAvailable(): Promise<boolean> {
     const config = getTestDbConfig();
     const db = await getDatabase(config);
     await db.query('SELECT 1');
-    await db.close();
+    await (db as any).close();
     postgresAvailableCache = true;
     return true;
   } catch {

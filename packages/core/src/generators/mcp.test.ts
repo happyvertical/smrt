@@ -22,7 +22,7 @@ function smrt(config?: any) {
     include: ['list', 'get', 'research', 'report', 'analyze'],
   },
 })
-class TestAgent extends SmrtObject {
+class MCPTestAgent extends SmrtObject {
   name = '';
   source = '';
 
@@ -125,27 +125,27 @@ describe('MCPGenerator with Custom Actions', () => {
 
       // Find tools for our test agent
       const agentTools = tools.filter((tool) =>
-        tool.name.startsWith('testagent_'),
+        tool.name.startsWith('mcptestagent_'),
       );
 
       // Should have standard CRUD tools plus custom actions
       const toolNames = agentTools.map((tool) => tool.name);
-      expect(toolNames).toContain('testagent_list');
-      expect(toolNames).toContain('testagent_get');
-      expect(toolNames).toContain('testagent_research');
-      expect(toolNames).toContain('testagent_report');
-      expect(toolNames).toContain('testagent_analyze');
+      expect(toolNames).toContain('mcptestagent_list');
+      expect(toolNames).toContain('mcptestagent_get');
+      expect(toolNames).toContain('mcptestagent_research');
+      expect(toolNames).toContain('mcptestagent_report');
+      expect(toolNames).toContain('mcptestagent_analyze');
     });
 
     it('should have correct schema for custom action tools', async () => {
       const tools = await generator.generateTools();
       const researchTool = tools.find(
-        (tool) => tool.name === 'testagent_research',
+        (tool) => tool.name === 'mcptestagent_research',
       );
 
       expect(researchTool).toBeDefined();
       expect(researchTool?.description).toBe(
-        'Execute research action on TestAgent',
+        'Execute research action on MCPTestAgent',
       );
       expect(researchTool?.inputSchema.type).toBe('object');
       expect(researchTool?.inputSchema.properties.id).toBeDefined();
@@ -181,7 +181,7 @@ describe('MCPGenerator with Custom Actions', () => {
   describe('Custom Action Execution', () => {
     it('should execute custom actions on object instances', async () => {
       // Mock collection and object
-      const mockObject = new TestAgent({
+      const mockObject = new MCPTestAgent({
         db: null,
         ai: null,
         fs: null,
@@ -198,7 +198,7 @@ describe('MCPGenerator with Custom Actions', () => {
       const request = {
         method: 'tools/call',
         params: {
-          name: 'testagent_research',
+          name: 'mcptestagent_research',
           arguments: {
             id: 'test-id',
             options: { query: 'test query' },
@@ -211,7 +211,9 @@ describe('MCPGenerator with Custom Actions', () => {
       (generator as any).getCollection = vi
         .fn()
         .mockReturnValue(mockCollection);
-      (generator as any).collections = new Map([['TestAgent', mockCollection]]);
+      (generator as any).collections = new Map([
+        ['MCPTestAgent', mockCollection],
+      ]);
 
       const response = await generator.handleToolCall(request);
 
@@ -235,7 +237,7 @@ describe('MCPGenerator with Custom Actions', () => {
       const request = {
         method: 'tools/call',
         params: {
-          name: 'testagent_research',
+          name: 'mcptestagent_research',
           arguments: {
             options: { query: 'collection query' },
           },
@@ -246,7 +248,9 @@ describe('MCPGenerator with Custom Actions', () => {
       (generator as any).getCollection = vi
         .fn()
         .mockReturnValue(mockCollection);
-      (generator as any).collections = new Map([['TestAgent', mockCollection]]);
+      (generator as any).collections = new Map([
+        ['MCPTestAgent', mockCollection],
+      ]);
 
       const response = await generator.handleToolCall(request);
 
@@ -257,7 +261,7 @@ describe('MCPGenerator with Custom Actions', () => {
     });
 
     it('should handle errors in custom action execution', async () => {
-      const mockObject = new TestAgent({
+      const mockObject = new MCPTestAgent({
         db: null,
         ai: null,
         fs: null,
@@ -277,7 +281,7 @@ describe('MCPGenerator with Custom Actions', () => {
       const request = {
         method: 'tools/call',
         params: {
-          name: 'testagent_research',
+          name: 'mcptestagent_research',
           arguments: {
             id: 'test-id',
           },
@@ -287,7 +291,9 @@ describe('MCPGenerator with Custom Actions', () => {
       (generator as any).getCollection = vi
         .fn()
         .mockReturnValue(mockCollection);
-      (generator as any).collections = new Map([['TestAgent', mockCollection]]);
+      (generator as any).collections = new Map([
+        ['MCPTestAgent', mockCollection],
+      ]);
 
       const response = await generator.handleToolCall(request);
 

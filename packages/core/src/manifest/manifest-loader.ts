@@ -25,7 +25,7 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { ObjectRegistry } from '../registry.js';
 import type {
   FieldDefinition,
@@ -33,6 +33,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { ManifestManager } from './manager.js';
 
 /**
  * Extend globalThis to include manifest loader state.
@@ -255,36 +256,80 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   // Don't cache null (failed loads) - allow retries
   const cached = getLocalTestManifestCache();
   if (cached !== undefined && cached !== null) {
-    console.log('[manifest-loader] Returning cached test manifest');
     return cached;
   }
 
-  // Try multiple possible manifest locations
-  const possiblePaths = [
-    resolve(process.cwd(), 'src/manifest/test-manifest.json'),
-    resolve(process.cwd(), 'dist/manifest.json'),
-    resolve(process.cwd(), '.smrt/manifest.json'),
-  ];
+  // Use ManifestManager for unified local loading
+  // This checks: .smrt/manifest.json -> dist/manifest.json
+  const manager = new ManifestManager(process.cwd());
+  const manifest = manager.loadLocal();
 
-  console.log(
-    '[manifest-loader] Attempting to load test manifest from:',
-    possiblePaths,
+  // Fallback location: src/manifest/test-manifest.json
+  // This is still used by smrt-core and other packages that generate test manifests here
+  const testManifestPath = join(
+    process.cwd(),
+    'src/manifest/test-manifest.json',
   );
 
-  for (const manifestPath of possiblePaths) {
-    try {
-      const manifestJson = readFileSync(manifestPath, 'utf-8');
-      const manifest: Manifest = JSON.parse(manifestJson);
-      setLocalTestManifestCache(manifest);
+  // If ManifestManager found a manifest, check if it has objects
+  // If it has 0 objects but the fallback exists with objects, use the fallback instead
+  // This handles the case where dist/manifest.json is the static-manifest.json (0 objects)
+  // but src/manifest/test-manifest.json has the real test classes
+  if (manifest) {
+    const objectCount = Object.keys(manifest.objects).length;
 
-      const objectCount = Object.keys(manifest.objects).length;
+    // If manifest has objects, use it
+    if (objectCount > 0) {
+      setLocalTestManifestCache(manifest);
       console.log(
-        `[manifest-loader] ✅ Loaded local test manifest from ${manifestPath} (${objectCount} objects)`,
+        `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
       );
       return manifest;
+    }
+
+    // Manifest has 0 objects - check if fallback has more
+    if (existsSync(testManifestPath)) {
+      try {
+        const testManifest: Manifest = JSON.parse(
+          readFileSync(testManifestPath, 'utf-8'),
+        );
+        const testObjectCount = Object.keys(testManifest.objects).length;
+
+        if (testObjectCount > 0) {
+          setLocalTestManifestCache(testManifest);
+          console.log(
+            `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${testObjectCount} objects) - preferred over empty ManifestManager result`,
+          );
+          return testManifest;
+        }
+      } catch {
+        // Fallback also failed, use the empty manifest
+      }
+    }
+
+    // No better option, cache and use the empty manifest
+    setLocalTestManifestCache(manifest);
+    console.log(
+      `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
+    );
+    return manifest;
+  }
+
+  // ManifestManager returned null - check fallback
+  if (existsSync(testManifestPath)) {
+    try {
+      const testManifest: Manifest = JSON.parse(
+        readFileSync(testManifestPath, 'utf-8'),
+      );
+      setLocalTestManifestCache(testManifest);
+      const objectCount = Object.keys(testManifest.objects).length;
+      console.log(
+        `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${objectCount} objects)`,
+      );
+      return testManifest;
     } catch (error) {
       console.log(
-        `[manifest-loader] ✗ Failed to load from ${manifestPath}: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `[manifest-loader] ✗ Failed to load test manifest from ${testManifestPath}: ${error instanceof Error ? error.message : 'unknown'}`,
       );
     }
   }
@@ -292,7 +337,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   // No manifest found - DON'T cache null, allow retries
   // This is important because the manifest may be generated later
   console.log(
-    '[manifest-loader] ⚠️  No test manifest found (will retry on next call)',
+    '[manifest-loader] ⚠️  No local manifest found (will retry on next call)',
   );
   return null;
 }
@@ -542,11 +587,30 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
   try {
     const pkgDir = dirname(pkgPath);
 
-    // Read package.json to get manifest export path
-    const pkgJson = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    // Use ManifestManager for unified manifest loading
+    // This properly handles the priority order: .smrt/manifest.json -> dist/manifest.json
+    // which ensures test manifests are loaded during tests in monorepo environments
+    const manager = new ManifestManager(pkgDir);
+    const manifest = manager.loadLocal();
 
-    // Try ./manifest.json first (explicit JSON export), then fall back to ./manifest
-    // Some packages (like smrt-core) have ./manifest as a JS module and ./manifest.json for the data
+    if (manifest) {
+      // Validate manifest structure
+      if (!manifest.objects || typeof manifest.objects !== 'object') {
+        console.warn(`Invalid manifest structure for package ${packageName}`);
+        return null;
+      }
+
+      // Cache the loaded manifest
+      getManifestCacheMap().set(packageName, manifest);
+      console.log(
+        `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(manifest.objects).length} objects)`,
+      );
+
+      return manifest;
+    }
+
+    // Fallback: Try package.json exports (for published packages without .smrt/)
+    const pkgJson = JSON.parse(readFileSync(pkgPath, 'utf-8'));
     let manifestExport = pkgJson.exports?.['./manifest.json'];
 
     if (!manifestExport) {
@@ -585,21 +649,24 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
 
     // Read and parse manifest JSON
     const manifestJson = readFileSync(manifestPath, 'utf-8');
-    const manifest: Manifest = JSON.parse(manifestJson);
+    const fallbackManifest: Manifest = JSON.parse(manifestJson);
 
     // Validate manifest structure
-    if (!manifest.objects || typeof manifest.objects !== 'object') {
+    if (
+      !fallbackManifest.objects ||
+      typeof fallbackManifest.objects !== 'object'
+    ) {
       console.warn(`Invalid manifest structure for package ${packageName}`);
       return null;
     }
 
     // Cache the loaded manifest
-    getManifestCacheMap().set(packageName, manifest);
+    getManifestCacheMap().set(packageName, fallbackManifest);
     console.log(
-      `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(manifest.objects).length} objects)`,
+      `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(fallbackManifest.objects).length} objects) via exports`,
     );
 
-    return manifest;
+    return fallbackManifest;
   } catch (error) {
     console.warn(
       `Failed to load manifest for package ${packageName}: ${error instanceof Error ? error.message : error}`,

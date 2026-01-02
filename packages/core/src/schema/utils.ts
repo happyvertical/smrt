@@ -65,7 +65,7 @@ export async function generateSchema(
       ? providedFields
       : await ObjectRegistry.getAllFields(className);
 
-  // Throw error if class is not registered AND no fields provided
+  // Throw error if no fields found
   if (cachedFields.size === 0) {
     // Detect if running in test environment
     const isTestEnv =
@@ -81,12 +81,26 @@ export async function generateSchema(
         `   ❌ NOT:  npx vitest\n`
       : '';
 
-    throw new Error(
-      `Cannot generate schema for unregistered class '${className}'. ` +
-        `Ensure the class is decorated with @smrt() for schema generation to work. ` +
-        `Runtime introspection has been removed per issue #131.` +
-        testHint,
-    );
+    // Check if class is actually registered (decorator ran but no fields loaded)
+    const isRegistered = ObjectRegistry.hasClass(className);
+
+    if (isRegistered) {
+      // Class registered but no fields - manifest problem
+      throw new Error(
+        `No field metadata found for class '${className}'. ` +
+          `The class is registered (decorator ran) but has no field definitions. ` +
+          `This usually means the manifest file is missing or stale.` +
+          testHint,
+      );
+    } else {
+      // Class not registered - decorator never ran
+      throw new Error(
+        `Cannot generate schema for unregistered class '${className}'. ` +
+          `Ensure the class is decorated with @smrt() for schema generation to work. ` +
+          `Runtime introspection has been removed per issue #131.` +
+          testHint,
+      );
+    }
   }
 
   // Check if class uses STI strategy
@@ -359,9 +373,9 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
   // FIX #623: For STI child classes from external packages, ensure the parent class
   // is loaded before calling getSTIBase(). The parent might not be registered yet
   // if it's from an external package manifest.
-  const registered = ObjectRegistry.findClass(className);
+  const registered = ObjectRegistry.getClass(className);
   if (registered?.extends) {
-    const parentClass = ObjectRegistry.findClass(registered.extends);
+    const parentClass = ObjectRegistry.getClass(registered.extends);
     if (!parentClass) {
       // Parent class not registered yet - discover and load STI siblings
       // This will register the parent and any other siblings sharing the same table
@@ -374,7 +388,7 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
         );
         const siblings = discoverSTISiblingsSync(collection);
         for (const sibling of siblings) {
-          if (!ObjectRegistry.classes.has(sibling.className)) {
+          if (!ObjectRegistry.hasClass(sibling.className)) {
             ObjectRegistry.registerFromManifest(
               sibling.className,
               sibling.entry,
