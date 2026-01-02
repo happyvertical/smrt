@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-types",
-  "version": "0.17.91",
+  "version": "0.17.92",
   "description": "Shared type definitions for the HAVE SDK",
   "type": "module",
   "main": "./dist/index.js",

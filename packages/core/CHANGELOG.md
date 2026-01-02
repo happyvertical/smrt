@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.92
+
+### Patch Changes
+
+- ### Features
+
+  - add implicit WHERE IN support for batch ID lookups (#645) (core)
+  - @happyvertical/smrt-config@0.17.92
+  - @happyvertical/smrt-types@0.17.92
+
 ## 0.17.91
 
 ### Patch Changes
