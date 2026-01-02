@@ -258,18 +258,21 @@ describe.skipIf(skipTests)(
 
     it('should find events by status', async () => {
       const pending = await collection.create({
+        propertyId: 'prop-status',
         eventName: 'event1',
         status: TrackingEventStatus.PENDING,
       });
       await pending.save();
 
       const sent = await collection.create({
+        propertyId: 'prop-status',
         eventName: 'event2',
         status: TrackingEventStatus.SENT,
       });
       await sent.save();
 
       const failed = await collection.create({
+        propertyId: 'prop-status',
         eventName: 'event3',
         status: TrackingEventStatus.FAILED,
       });
@@ -290,6 +293,7 @@ describe.skipIf(skipTests)(
 
     it('should find events for retry', async () => {
       const retriable = await collection.create({
+        propertyId: 'prop-retry',
         eventName: 'retriable',
         status: TrackingEventStatus.FAILED,
         retryCount: 1,
@@ -297,6 +301,7 @@ describe.skipIf(skipTests)(
       await retriable.save();
 
       const exhausted = await collection.create({
+        propertyId: 'prop-retry',
         eventName: 'exhausted',
         status: TrackingEventStatus.FAILED,
         retryCount: 5,
