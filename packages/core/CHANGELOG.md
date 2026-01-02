@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.90
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - FormMicButton improvements and bug fixes (#642) (forms)
+  - @happyvertical/smrt-config@0.17.90
+  - @happyvertical/smrt-types@0.17.90
+
 ## 0.17.89
 
 ### Patch Changes
