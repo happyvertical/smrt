@@ -397,7 +397,8 @@ class MyCollection extends SmrtCollection<MyObject> {
 await collection.list({
   where: {
     'price >': 100,
-    'category in': ['A', 'B'],
+    category: ['A', 'B'],           // Implicit IN - arrays auto-detect
+    'category in': ['A', 'B'],      // Explicit IN - also works
     'name like': '%product%',
     'deleted_at !=': null
   },
@@ -406,6 +407,9 @@ await collection.list({
   offset: 0,
   include: ['customerId', 'productId'] // Eager load relationships
 });
+
+// Batch ID lookup (avoids N+1 queries)
+const profiles = await profileCollection.findByIds(['id1', 'id2', 'id3']);
 ```
 
 **Raw SQL queries** (for complex patterns like NOT EXISTS, JOINs, CTEs):

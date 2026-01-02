@@ -180,6 +180,15 @@ const recentDocs = await documents.list({
   limit: 10
 });
 
+// Batch ID lookup (avoids N+1 queries)
+const docIds = ['uuid-1', 'uuid-2', 'uuid-3'];
+const batchDocs = await documents.findByIds(docIds);
+
+// Alternative: implicit IN with array values
+const sameDocs = await documents.list({
+  where: { id: docIds }  // Arrays auto-detect IN operator
+});
+
 // Raw SQL query for complex patterns (NOT EXISTS, JOINs, etc.)
 const unpublished = await documents.query(`
   SELECT * FROM documents
