@@ -93,7 +93,7 @@ function runImplicitInTests(
         price: 10.0,
         category: 'A',
       });
-      const p2 = await products.create({
+      await products.create({
         name: 'Gadget',
         price: 20.0,
         category: 'B',
@@ -127,7 +127,7 @@ function runImplicitInTests(
         price: 20.0,
         category: 'B',
       });
-      const p3 = await products.create({
+      await products.create({
         name: 'Gizmo',
         price: 30.0,
         category: 'C',
@@ -258,7 +258,7 @@ function runFindByIdsTests(
         price: 10.0,
         category: 'A',
       });
-      const p2 = await products.create({
+      await products.create({
         name: 'Gadget',
         price: 20.0,
         category: 'B',
