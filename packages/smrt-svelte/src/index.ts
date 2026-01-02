@@ -38,6 +38,8 @@ export { default as RoleSelector } from './components/roles/RoleSelector.svelte'
 export { default as TenantCard } from './components/tenants/TenantCard.svelte';
 // Tenant components
 export { default as TenantSwitcher } from './components/tenants/TenantSwitcher.svelte';
+// Time tracking components
+export * from './components/time/index.js';
 export { default as InviteUserModal } from './components/users/InviteUserModal.svelte';
 // User components
 export { default as UserAvatar } from './components/users/UserAvatar.svelte';
