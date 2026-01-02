@@ -36,6 +36,10 @@ export interface SMRTFormContext {
   getFieldSchema: () => FieldDefinition[];
   /** Whether form-level listening is active */
   readonly isFormListening: boolean;
+  /** Whether currently extracting from speech */
+  readonly isExtracting: boolean;
+  /** Toggle form-level listening on/off */
+  toggleListening: () => void;
 }
 
 /**

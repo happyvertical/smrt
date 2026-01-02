@@ -23,18 +23,24 @@ interface Props {
   sttAdapter?: STTAdapterType;
   /** LLM model for extraction (or 'none' for regex-only) */
   llmModel?: LLMModelId;
-  /** Called when form is submitted */
+  /** Called when form is submitted (if provided, prevents native submission) */
   onsubmit?: (data: Record<string, unknown>) => void;
+  /** HTTP method for native form submission (default: GET) */
+  method?: 'GET' | 'POST';
+  /** Form action URL for native form submission */
+  action?: string;
 }
 
 const {
   children,
-  showModeToggle = true,
-  showFormListen = true,
+  showModeToggle = false,
+  showFormListen = false,
   silenceTimeout = 5,
   sttAdapter = 'whisper-wasm',
   llmModel = 'none',
   onsubmit,
+  method,
+  action,
 }: Props = $props();
 
 const app = useAppState();
@@ -74,6 +80,10 @@ const formContext: SMRTFormContext = {
   get isFormListening() {
     return isFormListening;
   },
+  get isExtracting() {
+    return isExtracting;
+  },
+  toggleListening: () => toggleFormListening(),
 };
 
 // Provide context to children
@@ -304,12 +314,25 @@ function checkForDoneKeyword(text: string): boolean {
 
 // Guard to prevent multiple simultaneous stop calls
 let isStopping = false;
+// Guard to prevent premature stop during startup
+let isStarting = false;
+// Timestamp of last stop to prevent immediate restart
+let lastStopTime = 0;
+const RESTART_COOLDOWN_MS = 1000; // 1 second cooldown after stopping
+// Track the last processed STT result to avoid re-processing stale results
+let lastProcessedResult = '';
 
 // Watch STT results while form is listening
 // Only track speech and check for "done" - extraction happens at the end
 $effect(() => {
   if (isFormListening && stt.lastResult && !isStopping) {
     const newText = stt.lastResult;
+
+    // Skip if this is the same result we already processed (stale from previous session)
+    if (newText === lastProcessedResult) {
+      return;
+    }
+    lastProcessedResult = newText;
     spokenText = newText;
 
     // Reset silence timer on new speech (for browser STT with interim results)
@@ -320,7 +343,7 @@ $effect(() => {
     // Check for "done" keyword
     if (checkForDoneKeyword(newText)) {
       console.log('[SMRTForm] "Done" keyword detected - stopping');
-      isStopping = true;
+      // Don't set isStopping here - let stopFormListening() do it after passing the guard
       stopFormListening();
     }
   }
@@ -329,11 +352,12 @@ $effect(() => {
 // Watch for STT stopping unexpectedly (e.g., browser STT auto-stops after silence)
 $effect(() => {
   // If form thinks we're listening but STT has stopped, handle it
-  if (isFormListening && !stt.isListening && !isStopping) {
+  // Don't trigger during startup phase (isStarting) or shutdown phase (isStopping)
+  if (isFormListening && !stt.isListening && !isStopping && !isStarting) {
     console.log('[SMRTForm] STT stopped unexpectedly - handling end of speech');
     // Use setTimeout to avoid state update during render
     setTimeout(() => {
-      if (isFormListening && !isStopping) {
+      if (isFormListening && !isStopping && !isStarting) {
         stopFormListening();
       }
     }, 0);
@@ -341,15 +365,32 @@ $effect(() => {
 });
 
 async function toggleFormListening() {
+  console.log(
+    '[SMRTForm] toggleFormListening called, isFormListening:',
+    isFormListening,
+  );
+
   if (isFormListening) {
     await stopFormListening();
   } else {
+    // Prevent immediate restart after stopping (UI might lag behind state)
+    const timeSinceStop = Date.now() - lastStopTime;
+    if (lastStopTime > 0 && timeSinceStop < RESTART_COOLDOWN_MS) {
+      console.log(
+        '[SMRTForm] Ignoring start - cooldown active, time since stop:',
+        timeSinceStop,
+      );
+      return;
+    }
     await startFormListening();
   }
 }
 
 async function startFormListening() {
   if (!isSmrt) return;
+
+  // Set starting flag to prevent premature stop detection
+  isStarting = true;
 
   // Initialize STT with selected adapter
   if (!stt.isReady || stt.adapterType !== sttAdapter) {
@@ -359,6 +400,8 @@ async function startFormListening() {
 
   extractError = null;
   spokenText = '';
+  // Set to current stale result so the effect skips it, but new results will be processed
+  lastProcessedResult = stt.lastResult || '';
   isFormListening = true;
   isStopping = false;
   lastSpeechTime = Date.now();
@@ -380,11 +423,24 @@ async function startFormListening() {
   }
 
   await stt.start({ continuous: true, interimResults: true });
+
+  // Clear starting flag now that STT is actually listening
+  isStarting = false;
 }
 
 async function stopFormListening() {
-  if (!isFormListening || isStopping) return;
+  console.log(
+    '[SMRTForm] stopFormListening called, isFormListening:',
+    isFormListening,
+    'isStopping:',
+    isStopping,
+  );
+  if (!isFormListening || isStopping) {
+    console.log('[SMRTForm] stopFormListening returning early');
+    return;
+  }
   isStopping = true;
+  isStarting = false; // Ensure starting flag is cleared
 
   // Clear silence timer
   if (silenceTimer) {
@@ -394,6 +450,7 @@ async function stopFormListening() {
 
   // Stop audio level monitoring
   stopAudioLevelMonitoring();
+  console.log('[SMRTForm] Audio monitoring stopped, calling stt.stop()');
 
   // IMPORTANT: Keep isFormListening = true until after stt.stop() completes
   // This allows the $effect to capture any final results
@@ -433,6 +490,10 @@ async function stopFormListening() {
     console.log('[SMRTForm] No text to extract');
     isStopping = false;
   }
+
+  // Record stop time to prevent immediate restart
+  lastStopTime = Date.now();
+  console.log('[SMRTForm] Stop complete, cooldown started');
 }
 
 // Cleanup on destroy
@@ -449,15 +510,17 @@ function handleModeToggle() {
 }
 
 function handleSubmit(e: Event) {
-  e.preventDefault();
-
+  // Only prevent default if we have an onsubmit handler
+  // This allows native form submission for SvelteKit form actions
   if (onsubmit) {
+    e.preventDefault();
     const data: Record<string, unknown> = {};
     for (const [name, field] of fields) {
       data[name] = field.getValue();
     }
     onsubmit(data);
   }
+  // Otherwise, let native form submission happen (e.g., for SvelteKit use:enhance)
 }
 
 function getFormData(): Record<string, unknown> {
@@ -469,7 +532,7 @@ function getFormData(): Record<string, unknown> {
 }
 </script>
 
-<form class="smrt-form" onsubmit={handleSubmit}>
+<form class="smrt-form" onsubmit={handleSubmit} {method} {action}>
   {#if showModeToggle || showFormListen}
     <div class="form-controls">
       {#if showModeToggle}
@@ -488,7 +551,7 @@ function getFormData(): Record<string, unknown> {
             class:active={isSmrt}
             onclick={handleModeToggle}
           >
-            Smrt
+            s-m-r-t
           </button>
         </div>
       {/if}
@@ -551,12 +614,6 @@ function getFormData(): Record<string, unknown> {
     </div>
   {/if}
 
-  {#if isFormListening && spokenText}
-    <div class="spoken-preview">
-      <strong>You said:</strong> {spokenText}
-    </div>
-  {/if}
-
   {#if extractError}
     <div class="extract-error">{extractError}</div>
   {/if}
@@ -565,6 +622,12 @@ function getFormData(): Record<string, unknown> {
     {@render children()}
   </div>
 </form>
+
+{#if isFormListening && spokenText}
+  <div class="spoken-toaster">
+    <strong>You said:</strong> {spokenText}
+  </div>
+{/if}
 
 <style>
   .smrt-form {
@@ -664,13 +727,35 @@ function getFormData(): Record<string, unknown> {
     }
   }
 
-  .spoken-preview {
-    padding: 12px 16px;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
-    border-radius: 8px;
+  .spoken-toaster {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 24px;
+    background: rgba(22, 101, 52, 0.9);
+    color: white;
     font-size: 0.875rem;
-    color: #166534;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+    z-index: 9999;
+    text-align: center;
+    backdrop-filter: blur(8px);
+    animation: slideUp 0.2s ease-out;
+  }
+
+  .spoken-toaster strong {
+    color: #bbf7d0;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .extract-error {
