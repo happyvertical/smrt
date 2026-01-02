@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.17.95
+
+### Patch Changes
+
+- ### Features
+
+  - add invoice and UI components (#650) (smrt-svelte)
+
+  ### Bug Fixes
+
+  - add missing required fields to tests (#649) (analytics)
+  - @happyvertical/smrt-scanner@0.17.95
+  - @happyvertical/smrt-config@0.17.95
+  - @happyvertical/smrt-types@0.17.95
+
 ## 0.17.94
 
 ### Patch Changes
