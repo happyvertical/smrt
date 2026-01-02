@@ -1,0 +1,5938 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322695426,
+  "objects": {
+    "profilerelationshipterm": {
+      "name": "profilerelationshipterm",
+      "className": "ProfileRelationshipTerm",
+      "collection": "profilerelationshipterms",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileRelationshipTerm.ts",
+      "fields": {
+        "relationshipId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "ProfileRelationship"
+        },
+        "startedAt": {
+          "type": "datetime",
+          "required": true,
+          "_meta": {}
+        },
+        "endedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "isActive": {
+          "name": "isActive",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "end": {
+          "name": "end",
+          "async": true,
+          "parameters": [
+            {
+              "name": "endedAt",
+              "type": "Date",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getDurationDays": {
+          "name": "getDurationDays",
+          "async": false,
+          "parameters": [],
+          "returnType": "number",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProfileRelationshipTerm",
+      "collectionExportName": "ProfileRelationshipTermCollection",
+      "schema": {
+        "tableName": "profile_relationship_terms",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_terms\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"relationship_id\" TEXT,\n  \"started_at\" TIMESTAMP,\n  \"ended_at\" TIMESTAMP\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "relationship_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "started_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "ended_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_relationship_terms_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_relationship_terms_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profile_relationship_terms_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "05566169"
+      }
+    },
+    "profilerelationshiptermcollection": {
+      "name": "profilerelationshiptermcollection",
+      "className": "ProfileRelationshipTermCollection",
+      "collection": "profilerelationshipterms",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/ProfileRelationshipTermCollection.ts",
+      "fields": {},
+      "methods": {
+        "getByRelationship": {
+          "name": "getByRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationshipId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileRelationshipTerm[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getActiveTerm": {
+          "name": "getActiveTerm",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationshipId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileRelationshipTerm | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getHistoricalTerms": {
+          "name": "getHistoricalTerms",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationshipId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileRelationshipTerm[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProfileRelationshipTerm",
+      "exportName": "ProfileRelationshipTermCollection",
+      "collectionExportName": "ProfileRelationshipTermCollectionCollection",
+      "schema": {
+        "tableName": "profile_relationship_term_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_term_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_relationship_term_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_relationship_term_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "a7d89674"
+      }
+    },
+    "profilerelationship": {
+      "name": "profilerelationship",
+      "className": "ProfileRelationship",
+      "collection": "profilerelationships",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileRelationship.ts",
+      "fields": {
+        "fromProfileId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Profile"
+        },
+        "toProfileId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Profile"
+        },
+        "typeId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "ProfileRelationshipType"
+        },
+        "contextProfileId": {
+          "type": "foreignKey",
+          "required": false,
+          "_meta": {},
+          "related": "Profile"
+        },
+        "terms": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationshipTerm",
+          "default": []
+        }
+      },
+      "methods": {
+        "getTypeSlug": {
+          "name": "getTypeSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addTerm": {
+          "name": "addTerm",
+          "async": true,
+          "parameters": [
+            {
+              "name": "startedAt",
+              "type": "Date",
+              "optional": false
+            },
+            {
+              "name": "endedAt",
+              "type": "Date",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "endCurrentTerm": {
+          "name": "endCurrentTerm",
+          "async": true,
+          "parameters": [
+            {
+              "name": "endedAt",
+              "type": "Date",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getTerms": {
+          "name": "getTerms",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProfileRelationshipTerm[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getActiveTerm": {
+          "name": "getActiveTerm",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProfileRelationshipTerm | null>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProfileRelationship",
+      "collectionExportName": "ProfileRelationshipCollection",
+      "schema": {
+        "tableName": "profile_relationships",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationships\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"from_profile_id\" TEXT,\n  \"to_profile_id\" TEXT,\n  \"type_id\" TEXT,\n  \"context_profile_id\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "from_profile_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "to_profile_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "type_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "context_profile_id": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_relationships_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_relationships_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profile_relationships_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "604e027a"
+      }
+    },
+    "profiletype": {
+      "name": "profiletype",
+      "className": "ProfileType",
+      "collection": "profiletypes",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileType.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileType | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProfileType",
+      "collectionExportName": "ProfileTypeCollection",
+      "schema": {
+        "tableName": "profile_types",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_types\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_types_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_types_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profile_types_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "11632546"
+      }
+    },
+    "profilemetafield": {
+      "name": "profilemetafield",
+      "className": "ProfileMetafield",
+      "collection": "profilemetafields",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileMetafield.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false
+        },
+        "validation": {
+          "type": "json",
+          "required": false
+        }
+      },
+      "methods": {
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileMetafield | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "registerValidator": {
+          "name": "registerValidator",
+          "async": false,
+          "parameters": [
+            {
+              "name": "name",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "validator",
+              "type": "ValidatorFunction",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "getValidator": {
+          "name": "getValidator",
+          "async": false,
+          "parameters": [
+            {
+              "name": "name",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "ValidatorFunction | undefined",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "validateValue": {
+          "name": "validateValue",
+          "async": true,
+          "parameters": [
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProfileMetafield",
+      "collectionExportName": "ProfileMetafieldCollection",
+      "schema": {
+        "tableName": "profile_metafields",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafields\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"validation\" JSON\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "validation": {
+            "type": "JSON",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_metafields_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_metafields_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profile_metafields_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "e943656d"
+      }
+    },
+    "profilemetafieldcollection": {
+      "name": "profilemetafieldcollection",
+      "className": "ProfileMetafieldCollection",
+      "collection": "profilemetafields",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/ProfileMetafieldCollection.ts",
+      "fields": {},
+      "methods": {
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileMetafield | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOrCreateBySlug": {
+          "name": "getOrCreateBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "defaults",
+              "type": "{\n      name: string;\n      description?: string;\n      validation?: ValidationSchema;\n    }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileMetafield>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProfileMetafield",
+      "exportName": "ProfileMetafieldCollection",
+      "collectionExportName": "ProfileMetafieldCollectionCollection",
+      "schema": {
+        "tableName": "profile_metafield_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafield_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_metafield_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_metafield_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "f4531635"
+      }
+    },
+    "profilemetadata": {
+      "name": "profilemetadata",
+      "className": "ProfileMetadata",
+      "collection": "profilemetadatas",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileMetadata.ts",
+      "fields": {
+        "profileId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Profile"
+        },
+        "metafieldId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "ProfileMetafield"
+        },
+        "value": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        }
+      },
+      "methods": {
+        "validate": {
+          "name": "validate",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMetafieldSlug": {
+          "name": "getMetafieldSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProfileMetadata",
+      "collectionExportName": "ProfileMetadataCollection",
+      "schema": {
+        "tableName": "profile_metadatas",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metadatas\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" TEXT,\n  \"metafield_id\" TEXT,\n  \"value\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "profile_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "metafield_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "value": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_metadatas_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_metadatas_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profile_metadatas_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "95a51719"
+      }
+    },
+    "profilemetadatacollection": {
+      "name": "profilemetadatacollection",
+      "className": "ProfileMetadataCollection",
+      "collection": "profilemetadatas",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/ProfileMetadataCollection.ts",
+      "fields": {},
+      "methods": {
+        "getByProfile": {
+          "name": "getByProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileMetadata[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMetadataObject": {
+          "name": "getMetadataObject",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Record<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findProfilesByMetadata": {
+          "name": "findProfilesByMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<string[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProfileMetadata",
+      "exportName": "ProfileMetadataCollection",
+      "collectionExportName": "ProfileMetadataCollectionCollection",
+      "schema": {
+        "tableName": "profile_metadata_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metadata_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_metadata_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_metadata_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "49482483"
+      }
+    },
+    "profilerelationshiptype": {
+      "name": "profilerelationshiptype",
+      "className": "ProfileRelationshipType",
+      "collection": "profilerelationshiptypes",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileRelationshipType.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "reciprocal": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        }
+      },
+      "methods": {
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileRelationshipType | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "registerReciprocalHandler": {
+          "name": "registerReciprocalHandler",
+          "async": false,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "handler",
+              "type": "ReciprocalHandler",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "getReciprocalHandler": {
+          "name": "getReciprocalHandler",
+          "async": false,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "ReciprocalHandler | undefined",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "isReciprocal": {
+          "name": "isReciprocal",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProfileRelationshipType",
+      "collectionExportName": "ProfileRelationshipTypeCollection",
+      "schema": {
+        "tableName": "profile_relationship_types",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_types\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"reciprocal\" BOOLEAN DEFAULT TRUE\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "reciprocal": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_relationship_types_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_relationship_types_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profile_relationship_types_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "cb94b103"
+      }
+    },
+    "profilerelationshiptypecollection": {
+      "name": "profilerelationshiptypecollection",
+      "className": "ProfileRelationshipTypeCollection",
+      "collection": "profilerelationshiptypes",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/ProfileRelationshipTypeCollection.ts",
+      "fields": {},
+      "methods": {
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileRelationshipType | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOrCreateBySlug": {
+          "name": "getOrCreateBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "defaults",
+              "type": "{ name: string; reciprocal?: boolean }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileRelationshipType>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReciprocal": {
+          "name": "getReciprocal",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProfileRelationshipType[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getDirectional": {
+          "name": "getDirectional",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProfileRelationshipType[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProfileRelationshipType",
+      "exportName": "ProfileRelationshipTypeCollection",
+      "collectionExportName": "ProfileRelationshipTypeCollectionCollection",
+      "schema": {
+        "tableName": "profile_relationship_type_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_type_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_relationship_type_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_relationship_type_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "9d97e26c"
+      }
+    },
+    "profilerelationshipcollection": {
+      "name": "profilerelationshipcollection",
+      "className": "ProfileRelationshipCollection",
+      "collection": "profilerelationships",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/ProfileRelationshipCollection.ts",
+      "fields": {},
+      "methods": {
+        "getFromProfile": {
+          "name": "getFromProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fromProfileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "typeId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ProfileRelationship[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getToProfile": {
+          "name": "getToProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "typeId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ProfileRelationship[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getForProfile": {
+          "name": "getForProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "typeId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ProfileRelationship[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "exists": {
+          "name": "exists",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fromProfileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "toProfileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "typeId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProfileRelationship",
+      "exportName": "ProfileRelationshipCollection",
+      "collectionExportName": "ProfileRelationshipCollectionCollection",
+      "schema": {
+        "tableName": "profile_relationship_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_relationship_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_relationship_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "48d3dd05"
+      }
+    },
+    "profilecollection": {
+      "name": "profilecollection",
+      "className": "ProfileCollection",
+      "collection": "profiles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/ProfileCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByEmail": {
+          "name": "findByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByType": {
+          "name": "findByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "typeSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "batchGetMetadata": {
+          "name": "batchGetMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileIds",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Map<string, Record<string, any>>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "batchUpdateMetadata": {
+          "name": "batchUpdateMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "updates",
+              "type": "Array<{ profileId: string; data: Record<string, any> }>",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findRelated": {
+          "name": "findRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelationshipNetwork": {
+          "name": "getRelationshipNetwork",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "{ maxDepth?: number }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Map<string, number>>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Profile",
+      "exportName": "ProfileCollection",
+      "collectionExportName": "ProfileCollectionCollection",
+      "schema": {
+        "tableName": "profile_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "d98eb39e"
+      }
+    },
+    "apikey": {
+      "name": "apikey",
+      "className": "ApiKey",
+      "collection": "apikeies",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ApiKey.ts",
+      "fields": {
+        "profileId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Profile"
+        },
+        "keyHash": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "keyPrefix": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "scopes": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "lastUsedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "expiresAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "revokedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "getProfile": {
+          "name": "getProfile",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isValid": {
+          "name": "isValid",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasScope": {
+          "name": "hasScope",
+          "async": false,
+          "parameters": [
+            {
+              "name": "scope",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "revoke": {
+          "name": "revoke",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recordUsage": {
+          "name": "recordUsage",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hashKey": {
+          "name": "hashKey",
+          "async": false,
+          "parameters": [
+            {
+              "name": "key",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "string",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "generate": {
+          "name": "generate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "{\n      name: string;\n      scopes?: string[];\n      expiresAt?: Date | null;\n      db?: SmrtObjectOptions['db'];\n    }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<GenerateKeyResult>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "verify": {
+          "name": "verify",
+          "async": true,
+          "parameters": [
+            {
+              "name": "key",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<ApiKey | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "api_keys",
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "revoke"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "ApiKey",
+      "collectionExportName": "ApiKeyCollection",
+      "schema": {
+        "tableName": "api_keys",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"api_keys\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" TEXT NOT NULL,\n  \"key_hash\" TEXT DEFAULT '',\n  \"key_prefix\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"scopes\" JSON DEFAULT '',\n  \"last_used_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"expires_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"revoked_at\" TIMESTAMP DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "profile_id": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "key_hash": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "key_prefix": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "scopes": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "last_used_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "expires_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "revoked_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "api_keys_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "api_keys_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "967b45df"
+      }
+    },
+    "apikeycollection": {
+      "name": "apikeycollection",
+      "className": "ApiKeyCollection",
+      "collection": "apikeies",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/ApiKeyCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByProfile": {
+          "name": "findByProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ApiKey[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findActiveByProfile": {
+          "name": "findActiveByProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ApiKey[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByHash": {
+          "name": "findByHash",
+          "async": true,
+          "parameters": [
+            {
+              "name": "keyHash",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ApiKey | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "verify": {
+          "name": "verify",
+          "async": true,
+          "parameters": [
+            {
+              "name": "key",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ApiKey | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateForProfile": {
+          "name": "generateForProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "{\n      name: string;\n      scopes?: string[];\n      expiresAt?: Date | null;\n    }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<GenerateKeyResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "revokeAllForProfile": {
+          "name": "revokeAllForProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "revokeByPrefix": {
+          "name": "revokeByPrefix",
+          "async": true,
+          "parameters": [
+            {
+              "name": "keyPrefix",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "cleanupExpired": {
+          "name": "cleanupExpired",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "api_keys"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ApiKey",
+      "exportName": "ApiKeyCollection",
+      "collectionExportName": "ApiKeyCollectionCollection",
+      "schema": {
+        "tableName": "api_keys",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"api_keys\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "api_keys_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "api_keys_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "a3641207"
+      }
+    },
+    "oidcidentity": {
+      "name": "oidcidentity",
+      "className": "OidcIdentity",
+      "collection": "oidcidentities",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/OidcIdentity.ts",
+      "fields": {
+        "profileId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Profile"
+        },
+        "provider": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "issuer": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "subject": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "email": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "lastUsedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "getProfile": {
+          "name": "getProfile",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findBySubject": {
+          "name": "findBySubject",
+          "async": true,
+          "parameters": [
+            {
+              "name": "issuer",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "subject",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<OidcIdentity | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findOrCreate": {
+          "name": "findOrCreate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "oidcData",
+              "type": "{\n      provider: string;\n      issuer: string;\n      subject: string;\n      email?: string;\n    }",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<OidcIdentity>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "recordUsage": {
+          "name": "recordUsage",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "oidc_identities",
+        "api": {
+          "exclude": [
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "OidcIdentity",
+      "collectionExportName": "OidcIdentityCollection",
+      "schema": {
+        "tableName": "oidc_identities",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_identities\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" TEXT NOT NULL,\n  \"provider\" TEXT DEFAULT '',\n  \"issuer\" TEXT DEFAULT '',\n  \"subject\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"last_used_at\" TIMESTAMP DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "profile_id": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "provider": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "issuer": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "subject": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "email": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "last_used_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "oidc_identities_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "oidc_identities_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "f359b855"
+      }
+    },
+    "oidcidentitycollection": {
+      "name": "oidcidentitycollection",
+      "className": "OidcIdentityCollection",
+      "collection": "oidcidentities",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/OidcIdentityCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByProfile": {
+          "name": "findByProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<OidcIdentity[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findBySubject": {
+          "name": "findBySubject",
+          "async": true,
+          "parameters": [
+            {
+              "name": "issuer",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "subject",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<OidcIdentity | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByProvider": {
+          "name": "findByProvider",
+          "async": true,
+          "parameters": [
+            {
+              "name": "provider",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<OidcIdentity[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkToProfile": {
+          "name": "linkToProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "oidcData",
+              "type": "{\n      provider: string;\n      issuer: string;\n      subject: string;\n      email?: string;\n    }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<OidcIdentity>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "unlinkFromProfile": {
+          "name": "unlinkFromProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "issuer",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "subject",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "oidc_identities"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "OidcIdentity",
+      "exportName": "OidcIdentityCollection",
+      "collectionExportName": "OidcIdentityCollectionCollection",
+      "schema": {
+        "tableName": "oidc_identities",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_identities\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "oidc_identities_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "oidc_identities_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "90c5598d"
+      }
+    },
+    "nostridentitycollection": {
+      "name": "nostridentitycollection",
+      "className": "NostrIdentityCollection",
+      "collection": "nostridentities",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/NostrIdentityCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByProfile": {
+          "name": "findByProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<NostrIdentity[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByPubkey": {
+          "name": "findByPubkey",
+          "async": true,
+          "parameters": [
+            {
+              "name": "pubkey",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<NostrIdentity | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByEmail": {
+          "name": "findByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<NostrIdentity | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByNip05": {
+          "name": "findByNip05",
+          "async": true,
+          "parameters": [
+            {
+              "name": "username",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<NostrIdentity | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createForProfile": {
+          "name": "createForProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "masterSecret",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "nip05Username",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<NostrIdentity>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkToProfile": {
+          "name": "linkToProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "nostrData",
+              "type": "{\n      pubkey: string;\n      encryptedPrivkey: string;\n      encryptionIv: string;\n      encryptionTag: string;\n      email: string;\n      nip05Username?: string;\n    }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<NostrIdentity>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "unlinkFromProfile": {
+          "name": "unlinkFromProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "pubkey",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getNip05Response": {
+          "name": "getNip05Response",
+          "async": true,
+          "parameters": [
+            {
+              "name": "username",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Nip05Response>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isNip05Available": {
+          "name": "isNip05Available",
+          "async": true,
+          "parameters": [
+            {
+              "name": "username",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateNip05Username": {
+          "name": "updateNip05Username",
+          "async": true,
+          "parameters": [
+            {
+              "name": "identity",
+              "type": "NostrIdentity",
+              "optional": false
+            },
+            {
+              "name": "newUsername",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<NostrIdentity>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "nostr_identities"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "NostrIdentity",
+      "exportName": "NostrIdentityCollection",
+      "collectionExportName": "NostrIdentityCollectionCollection",
+      "schema": {
+        "tableName": "nostr_identities",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"nostr_identities\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "nostr_identities_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "nostr_identities_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "219e883c"
+      }
+    },
+    "auditlog": {
+      "name": "auditlog",
+      "className": "AuditLog",
+      "collection": "auditlogs",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/AuditLog.ts",
+      "fields": {
+        "profileId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Profile"
+        },
+        "action": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "resourceType": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "resourceId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "source": {
+          "type": "text",
+          "required": false,
+          "default": "web"
+        },
+        "metadata": {
+          "type": "json",
+          "required": false,
+          "default": {}
+        },
+        "onBehalfOfId": {
+          "type": "foreignKey",
+          "required": false,
+          "_meta": {
+            "nullable": true
+          },
+          "related": "Profile"
+        }
+      },
+      "methods": {
+        "getProfile": {
+          "name": "getProfile",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOnBehalfOf": {
+          "name": "getOnBehalfOf",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEffectiveActor": {
+          "name": "getEffectiveActor",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "record": {
+          "name": "record",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AuditLogOptions & {\n      profile: Profile;\n      onBehalfOf?: Profile | null;\n    }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AuditLog>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "audit_logs",
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "AuditLog",
+      "collectionExportName": "AuditLogCollection",
+      "schema": {
+        "tableName": "audit_logs",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" TEXT NOT NULL,\n  \"action\" TEXT DEFAULT '',\n  \"resource_type\" TEXT DEFAULT '',\n  \"resource_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT 'web',\n  \"metadata\" JSON DEFAULT '[object Object]',\n  \"on_behalf_of_id\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "profile_id": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "action": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "resource_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "resource_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "web"
+          },
+          "metadata": {
+            "type": "JSON",
+            "notNull": false,
+            "default": {}
+          },
+          "on_behalf_of_id": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "audit_logs_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "audit_logs_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "b4f4f914"
+      }
+    },
+    "auditlogcollection": {
+      "name": "auditlogcollection",
+      "className": "AuditLogCollection",
+      "collection": "auditlogs",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/AuditLogCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByProfile": {
+          "name": "findByProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AuditLog[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByResource": {
+          "name": "findByResource",
+          "async": true,
+          "parameters": [
+            {
+              "name": "resourceType",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "resourceId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AuditLog[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByAction": {
+          "name": "findByAction",
+          "async": true,
+          "parameters": [
+            {
+              "name": "action",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AuditLog[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findBySource": {
+          "name": "findBySource",
+          "async": true,
+          "parameters": [
+            {
+              "name": "source",
+              "type": "AuditSource",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AuditLog[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findOnBehalfOf": {
+          "name": "findOnBehalfOf",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AuditLog[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "record": {
+          "name": "record",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    profile: Profile;\n    action: string;\n    resourceType: string;\n    resourceId: string;\n    source?: AuditSource;\n    metadata?: Record<string, any>;\n    onBehalfOf?: Profile | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AuditLog>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRecentActivity": {
+          "name": "getRecentActivity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": false,
+              "default": 50
+            }
+          ],
+          "returnType": "Promise<AuditLog[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getResourceTimeline": {
+          "name": "getResourceTimeline",
+          "async": true,
+          "parameters": [
+            {
+              "name": "resourceType",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "resourceId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AuditLog[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "audit_logs"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AuditLog",
+      "exportName": "AuditLogCollection",
+      "collectionExportName": "AuditLogCollectionCollection",
+      "schema": {
+        "tableName": "audit_logs",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "audit_logs_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "audit_logs_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "c985303d"
+      }
+    },
+    "profile": {
+      "name": "profile",
+      "className": "Profile",
+      "collection": "profiles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/Profile.ts",
+      "fields": {
+        "typeId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "ProfileType"
+        },
+        "email": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "unique": true
+          }
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false
+        },
+        "metadata": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileMetadata",
+          "default": []
+        },
+        "relationshipsFrom": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationship",
+          "default": []
+        },
+        "relationshipsTo": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationship",
+          "default": []
+        }
+      },
+      "methods": {
+        "getTypeSlug": {
+          "name": "getTypeSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setTypeBySlug": {
+          "name": "setTypeBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addMetadata": {
+          "name": "addMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Record<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateMetadata": {
+          "name": "updateMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metadata",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeMetadata": {
+          "name": "removeMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addRelationship": {
+          "name": "addRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "contextProfile",
+              "type": "Profile",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelationships": {
+          "name": "getRelationships",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    typeSlug?: string;\n    direction?: 'from' | 'to' | 'all';\n  }",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ProfileRelationship[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelatedProfiles": {
+          "name": "getRelatedProfiles",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeRelationship": {
+          "name": "removeRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateBio": {
+          "name": "generateBio",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "matches": {
+          "name": "matches",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByMetadata": {
+          "name": "findByMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_metafieldSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findByType": {
+          "name": "findByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_typeSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findRelated": {
+          "name": "findRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "searchByEmail": {
+          "name": "searchByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "getApiKeys": {
+          "name": "getApiKeys",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getActiveApiKeys": {
+          "name": "getActiveApiKeys",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateApiKey": {
+          "name": "generateApiKey",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    name: string;\n    scopes?: string[];\n    expiresAt?: Date | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{ key: string; apiKey: any }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOidcIdentities": {
+          "name": "getOidcIdentities",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkOidcIdentity": {
+          "name": "linkOidcIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "oidcData",
+              "type": "{\n    provider: string;\n    issuer: string;\n    subject: string;\n    email?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getNostrIdentities": {
+          "name": "getNostrIdentities",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkNostrIdentity": {
+          "name": "linkNostrIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "nostrData",
+              "type": "{\n    pubkey: string;\n    encryptedPrivkey: string;\n    encryptionIv: string;\n    encryptionTag: string;\n    email: string;\n    nip05Username?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAuditLogs": {
+          "name": "getAuditLogs",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": false,
+              "default": 50
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recordAction": {
+          "name": "recordAction",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    action: string;\n    resourceType: string;\n    resourceId: string;\n    source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';\n    metadata?: Record<string, any>;\n    onBehalfOf?: Profile | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "Profile",
+      "collectionExportName": "ProfileCollection",
+      "schema": {
+        "tableName": "profiles",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"type_id\" TEXT,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "type_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "email": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "profiles_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profiles_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profiles_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "1b30b29b"
+      }
+    },
+    "nostridentity": {
+      "name": "nostridentity",
+      "className": "NostrIdentity",
+      "collection": "nostridentities",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/NostrIdentity.ts",
+      "fields": {
+        "profileId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Profile"
+        },
+        "pubkey": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "encryptedPrivkey": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "encryptionIv": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "encryptionTag": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "email": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "nip05Username": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "lastUsedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "verifiedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "getProfile": {
+          "name": "getProfile",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByPubkey": {
+          "name": "findByPubkey",
+          "async": true,
+          "parameters": [
+            {
+              "name": "pubkey",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<NostrIdentity | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findByEmail": {
+          "name": "findByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<NostrIdentity | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findByNip05": {
+          "name": "findByNip05",
+          "async": true,
+          "parameters": [
+            {
+              "name": "username",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<NostrIdentity | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "decryptPrivkey": {
+          "name": "decryptPrivkey",
+          "async": false,
+          "parameters": [
+            {
+              "name": "masterSecret",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getKeypair": {
+          "name": "getKeypair",
+          "async": false,
+          "parameters": [
+            {
+              "name": "masterSecret",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "{\n    pubkey: string;\n    privkey: string;\n    npub: string;\n    nsec: string;\n  }",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recordUsage": {
+          "name": "recordUsage",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markVerified": {
+          "name": "markVerified",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isVerified": {
+          "name": "isVerified",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getNip05Identifier": {
+          "name": "getNip05Identifier",
+          "async": false,
+          "parameters": [
+            {
+              "name": "domain",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "nostr_identities",
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "NostrIdentity",
+      "collectionExportName": "NostrIdentityCollection",
+      "schema": {
+        "tableName": "nostr_identities",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"nostr_identities\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" TEXT NOT NULL,\n  \"pubkey\" TEXT DEFAULT '',\n  \"encrypted_privkey\" TEXT DEFAULT '',\n  \"encryption_iv\" TEXT DEFAULT '',\n  \"encryption_tag\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"nip05_username\" TEXT DEFAULT '',\n  \"last_used_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"verified_at\" TIMESTAMP DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "profile_id": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "pubkey": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "encrypted_privkey": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "encryption_iv": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "encryption_tag": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "email": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "nip05_username": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "last_used_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "verified_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "nostr_identities_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "nostr_identities_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "af0aeb0f"
+      }
+    },
+    "magiclinktoken": {
+      "name": "magiclinktoken",
+      "className": "MagicLinkToken",
+      "collection": "magiclinktokens",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/MagicLinkToken.ts",
+      "fields": {
+        "nostrIdentityId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "NostrIdentity"
+        },
+        "tokenHash": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "email": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "expiresAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "usedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "requestedFromIp": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "hashToken": {
+          "name": "hashToken",
+          "async": false,
+          "parameters": [
+            {
+              "name": "token",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "string",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "generate": {
+          "name": "generate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "nostrIdentity",
+              "type": "NostrIdentity",
+              "optional": false
+            },
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "{\n      expiresInMinutes?: number;\n      requestedFromIp?: string;\n      db?: SmrtObjectOptions['db'];\n    }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<GenerateTokenResult>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "verify": {
+          "name": "verify",
+          "async": true,
+          "parameters": [
+            {
+              "name": "token",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<MagicLinkToken | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "isValid": {
+          "name": "isValid",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isExpired": {
+          "name": "isExpired",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isUsed": {
+          "name": "isUsed",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markUsed": {
+          "name": "markUsed",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getNostrIdentity": {
+          "name": "getNostrIdentity",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<NostrIdentity | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getTimeRemainingSeconds": {
+          "name": "getTimeRemainingSeconds",
+          "async": false,
+          "parameters": [],
+          "returnType": "number",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "magic_link_tokens",
+        "api": {
+          "exclude": [
+            "*"
+          ]
+        },
+        "mcp": {
+          "exclude": [
+            "*"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "MagicLinkToken",
+      "collectionExportName": "MagicLinkTokenCollection",
+      "schema": {
+        "tableName": "magic_link_tokens",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"magic_link_tokens\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"nostr_identity_id\" TEXT NOT NULL,\n  \"token_hash\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"expires_at\" TIMESTAMP,\n  \"used_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"requested_from_ip\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "nostr_identity_id": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "token_hash": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "email": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "expires_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "used_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "requested_from_ip": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "magic_link_tokens_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "magic_link_tokens_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "46460a8d"
+      }
+    },
+    "magiclinktokencollection": {
+      "name": "magiclinktokencollection",
+      "className": "MagicLinkTokenCollection",
+      "collection": "magiclinktokens",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/MagicLinkTokenCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByTokenHash": {
+          "name": "findByTokenHash",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tokenHash",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<MagicLinkToken | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findActiveForEmail": {
+          "name": "findActiveForEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<MagicLinkToken[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByIdentity": {
+          "name": "findByIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "nostrIdentityId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<MagicLinkToken[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countRecentByEmail": {
+          "name": "countRecentByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "withinMinutes",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countRecentByIp": {
+          "name": "countRecentByIp",
+          "async": true,
+          "parameters": [
+            {
+              "name": "ip",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "withinMinutes",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "verify": {
+          "name": "verify",
+          "async": true,
+          "parameters": [
+            {
+              "name": "token",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<MagicLinkToken | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "cleanupExpired": {
+          "name": "cleanupExpired",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "revokeForIdentity": {
+          "name": "revokeForIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "nostrIdentityId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRateLimitedByEmail": {
+          "name": "isRateLimitedByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "maxPerHour",
+              "type": "number",
+              "optional": false,
+              "default": 5
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRateLimitedByIp": {
+          "name": "isRateLimitedByIp",
+          "async": true,
+          "parameters": [
+            {
+              "name": "ip",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "maxPerHour",
+              "type": "number",
+              "optional": false,
+              "default": 10
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "magic_link_tokens"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "MagicLinkToken",
+      "exportName": "MagicLinkTokenCollection",
+      "collectionExportName": "MagicLinkTokenCollectionCollection",
+      "schema": {
+        "tableName": "magic_link_tokens",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"magic_link_tokens\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "magic_link_tokens_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "magic_link_tokens_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "2370bbb5"
+      }
+    },
+    "person": {
+      "name": "person",
+      "className": "Person",
+      "collection": "profiles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileTypes.ts",
+      "fields": {
+        "typeId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "ProfileType"
+        },
+        "email": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "unique": true
+          }
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false
+        },
+        "metadata": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileMetadata",
+          "default": []
+        },
+        "relationshipsFrom": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationship",
+          "default": []
+        },
+        "relationshipsTo": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationship",
+          "default": []
+        }
+      },
+      "methods": {
+        "getTypeSlug": {
+          "name": "getTypeSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setTypeBySlug": {
+          "name": "setTypeBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addMetadata": {
+          "name": "addMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Record<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateMetadata": {
+          "name": "updateMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metadata",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeMetadata": {
+          "name": "removeMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addRelationship": {
+          "name": "addRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "contextProfile",
+              "type": "Profile",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelationships": {
+          "name": "getRelationships",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    typeSlug?: string;\n    direction?: 'from' | 'to' | 'all';\n  }",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ProfileRelationship[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelatedProfiles": {
+          "name": "getRelatedProfiles",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeRelationship": {
+          "name": "removeRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateBio": {
+          "name": "generateBio",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "matches": {
+          "name": "matches",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByMetadata": {
+          "name": "findByMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_metafieldSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findByType": {
+          "name": "findByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_typeSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findRelated": {
+          "name": "findRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "searchByEmail": {
+          "name": "searchByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "getApiKeys": {
+          "name": "getApiKeys",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getActiveApiKeys": {
+          "name": "getActiveApiKeys",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateApiKey": {
+          "name": "generateApiKey",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    name: string;\n    scopes?: string[];\n    expiresAt?: Date | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{ key: string; apiKey: any }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOidcIdentities": {
+          "name": "getOidcIdentities",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkOidcIdentity": {
+          "name": "linkOidcIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "oidcData",
+              "type": "{\n    provider: string;\n    issuer: string;\n    subject: string;\n    email?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getNostrIdentities": {
+          "name": "getNostrIdentities",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkNostrIdentity": {
+          "name": "linkNostrIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "nostrData",
+              "type": "{\n    pubkey: string;\n    encryptedPrivkey: string;\n    encryptionIv: string;\n    encryptionTag: string;\n    email: string;\n    nip05Username?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAuditLogs": {
+          "name": "getAuditLogs",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": false,
+              "default": 50
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recordAction": {
+          "name": "recordAction",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    action: string;\n    resourceType: string;\n    resourceId: string;\n    source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';\n    metadata?: Record<string, any>;\n    onBehalfOf?: Profile | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "tableName": "profiles"
+      },
+      "extends": "Profile",
+      "exportName": "Person",
+      "collectionExportName": "PersonCollection",
+      "schema": {
+        "tableName": "profiles",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"type_id\" TEXT,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "type_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "email": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "profiles_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profiles_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profiles_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "d4c9abe8"
+      }
+    },
+    "organization": {
+      "name": "organization",
+      "className": "Organization",
+      "collection": "profiles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileTypes.ts",
+      "fields": {
+        "typeId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "ProfileType"
+        },
+        "email": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "unique": true
+          }
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false
+        },
+        "metadata": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileMetadata",
+          "default": []
+        },
+        "relationshipsFrom": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationship",
+          "default": []
+        },
+        "relationshipsTo": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationship",
+          "default": []
+        }
+      },
+      "methods": {
+        "getTypeSlug": {
+          "name": "getTypeSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setTypeBySlug": {
+          "name": "setTypeBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addMetadata": {
+          "name": "addMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Record<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateMetadata": {
+          "name": "updateMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metadata",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeMetadata": {
+          "name": "removeMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addRelationship": {
+          "name": "addRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "contextProfile",
+              "type": "Profile",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelationships": {
+          "name": "getRelationships",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    typeSlug?: string;\n    direction?: 'from' | 'to' | 'all';\n  }",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ProfileRelationship[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelatedProfiles": {
+          "name": "getRelatedProfiles",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeRelationship": {
+          "name": "removeRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateBio": {
+          "name": "generateBio",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "matches": {
+          "name": "matches",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByMetadata": {
+          "name": "findByMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_metafieldSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findByType": {
+          "name": "findByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_typeSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findRelated": {
+          "name": "findRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "searchByEmail": {
+          "name": "searchByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "getApiKeys": {
+          "name": "getApiKeys",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getActiveApiKeys": {
+          "name": "getActiveApiKeys",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateApiKey": {
+          "name": "generateApiKey",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    name: string;\n    scopes?: string[];\n    expiresAt?: Date | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{ key: string; apiKey: any }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOidcIdentities": {
+          "name": "getOidcIdentities",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkOidcIdentity": {
+          "name": "linkOidcIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "oidcData",
+              "type": "{\n    provider: string;\n    issuer: string;\n    subject: string;\n    email?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getNostrIdentities": {
+          "name": "getNostrIdentities",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkNostrIdentity": {
+          "name": "linkNostrIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "nostrData",
+              "type": "{\n    pubkey: string;\n    encryptedPrivkey: string;\n    encryptionIv: string;\n    encryptionTag: string;\n    email: string;\n    nip05Username?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAuditLogs": {
+          "name": "getAuditLogs",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": false,
+              "default": 50
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recordAction": {
+          "name": "recordAction",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    action: string;\n    resourceType: string;\n    resourceId: string;\n    source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';\n    metadata?: Record<string, any>;\n    onBehalfOf?: Profile | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "tableName": "profiles"
+      },
+      "extends": "Profile",
+      "exportName": "Organization",
+      "collectionExportName": "OrganizationCollection",
+      "schema": {
+        "tableName": "profiles",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"type_id\" TEXT,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "type_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "email": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "profiles_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profiles_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profiles_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "b4d5e74c"
+      }
+    },
+    "bot": {
+      "name": "bot",
+      "className": "Bot",
+      "collection": "profiles",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/models/ProfileTypes.ts",
+      "fields": {
+        "typeId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "ProfileType"
+        },
+        "email": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "unique": true
+          }
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false
+        },
+        "metadata": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileMetadata",
+          "default": []
+        },
+        "relationshipsFrom": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationship",
+          "default": []
+        },
+        "relationshipsTo": {
+          "type": "oneToMany",
+          "required": false,
+          "_meta": {
+            "transient": true
+          },
+          "transient": true,
+          "related": "ProfileRelationship",
+          "default": []
+        }
+      },
+      "methods": {
+        "getTypeSlug": {
+          "name": "getTypeSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setTypeBySlug": {
+          "name": "setTypeBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addMetadata": {
+          "name": "addMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Record<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateMetadata": {
+          "name": "updateMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metadata",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeMetadata": {
+          "name": "removeMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metafieldSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addRelationship": {
+          "name": "addRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "contextProfile",
+              "type": "Profile",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelationships": {
+          "name": "getRelationships",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    typeSlug?: string;\n    direction?: 'from' | 'to' | 'all';\n  }",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ProfileRelationship[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelatedProfiles": {
+          "name": "getRelatedProfiles",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeRelationship": {
+          "name": "removeRelationship",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toProfile",
+              "type": "Profile",
+              "optional": false
+            },
+            {
+              "name": "relationshipSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateBio": {
+          "name": "generateBio",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "matches": {
+          "name": "matches",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByMetadata": {
+          "name": "findByMetadata",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_metafieldSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findByType": {
+          "name": "findByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_typeSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "findRelated": {
+          "name": "findRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_relationshipSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "searchByEmail": {
+          "name": "searchByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "getApiKeys": {
+          "name": "getApiKeys",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getActiveApiKeys": {
+          "name": "getActiveApiKeys",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateApiKey": {
+          "name": "generateApiKey",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    name: string;\n    scopes?: string[];\n    expiresAt?: Date | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{ key: string; apiKey: any }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOidcIdentities": {
+          "name": "getOidcIdentities",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkOidcIdentity": {
+          "name": "linkOidcIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "oidcData",
+              "type": "{\n    provider: string;\n    issuer: string;\n    subject: string;\n    email?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getNostrIdentities": {
+          "name": "getNostrIdentities",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "linkNostrIdentity": {
+          "name": "linkNostrIdentity",
+          "async": true,
+          "parameters": [
+            {
+              "name": "nostrData",
+              "type": "{\n    pubkey: string;\n    encryptedPrivkey: string;\n    encryptionIv: string;\n    encryptionTag: string;\n    email: string;\n    nip05Username?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAuditLogs": {
+          "name": "getAuditLogs",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": false,
+              "default": 50
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recordAction": {
+          "name": "recordAction",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    action: string;\n    resourceType: string;\n    resourceId: string;\n    source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';\n    metadata?: Record<string, any>;\n    onBehalfOf?: Profile | null;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "tableName": "profiles"
+      },
+      "extends": "Profile",
+      "exportName": "Bot",
+      "collectionExportName": "BotCollection",
+      "schema": {
+        "tableName": "profiles",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"type_id\" TEXT,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "type_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "email": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "profiles_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profiles_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "profiles_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "12b61481"
+      }
+    },
+    "profiletypecollection": {
+      "name": "profiletypecollection",
+      "className": "ProfileTypeCollection",
+      "collection": "profiletypes",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/profiles/src/collections/ProfileTypeCollection.ts",
+      "fields": {},
+      "methods": {
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileType | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOrCreateBySlug": {
+          "name": "getOrCreateBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "defaults",
+              "type": "{ name: string; description?: string }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileType>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProfileType",
+      "exportName": "ProfileTypeCollection",
+      "collectionExportName": "ProfileTypeCollectionCollection",
+      "schema": {
+        "tableName": "profile_type_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_type_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_type_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "profile_type_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "40b730f6"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-profiles"
+}

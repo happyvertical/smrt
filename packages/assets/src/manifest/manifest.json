@@ -1,0 +1,1707 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322693643,
+  "objects": {
+    "assetmetafield": {
+      "name": "assetmetafield",
+      "className": "AssetMetafield",
+      "collection": "assetmetafields",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-metafield.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "validation": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "getValidation": {
+          "name": "getValidation",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, unknown>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setValidation": {
+          "name": "setValidation",
+          "async": false,
+          "parameters": [
+            {
+              "name": "rules",
+              "type": "Record<string, unknown>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AssetMetafield | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AssetMetafield",
+      "collectionExportName": "AssetMetafieldCollection",
+      "schema": {
+        "tableName": "asset_metafields",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_metafields\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"validation\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "validation": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_metafields_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_metafields_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "asset_metafields_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "a0450430"
+      }
+    },
+    "assetmetafieldcollection": {
+      "name": "assetmetafieldcollection",
+      "className": "AssetMetafieldCollection",
+      "collection": "assetmetafields",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-metafields.ts",
+      "fields": {},
+      "methods": {
+        "getOrCreate": {
+          "name": "getOrCreate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "optional": true
+            },
+            {
+              "name": "validation",
+              "type": "string | Record<string, unknown>",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<AssetMetafield>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initializeCommonMetafields": {
+          "name": "initializeCommonMetafields",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AssetMetafield",
+      "exportName": "AssetMetafieldCollection",
+      "collectionExportName": "AssetMetafieldCollectionCollection",
+      "schema": {
+        "tableName": "asset_metafield_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_metafield_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_metafield_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_metafield_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "d4538b87"
+      }
+    },
+    "assetstatus": {
+      "name": "assetstatus",
+      "className": "AssetStatus",
+      "collection": "assetstatuses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-status.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AssetStatus | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AssetStatus",
+      "collectionExportName": "AssetStatusCollection",
+      "schema": {
+        "tableName": "asset_status",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_status\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_status_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_status_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "asset_status_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "464617a1"
+      }
+    },
+    "assetstatuscollection": {
+      "name": "assetstatuscollection",
+      "className": "AssetStatusCollection",
+      "collection": "assetstatuses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-statuses.ts",
+      "fields": {},
+      "methods": {
+        "getOrCreate": {
+          "name": "getOrCreate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "optional": true
+            },
+            {
+              "name": "description",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<AssetStatus>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initializeCommonStatuses": {
+          "name": "initializeCommonStatuses",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AssetStatus",
+      "exportName": "AssetStatusCollection",
+      "collectionExportName": "AssetStatusCollectionCollection",
+      "schema": {
+        "tableName": "asset_status_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_status_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_status_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_status_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "589b4e08"
+      }
+    },
+    "assettype": {
+      "name": "assettype",
+      "className": "AssetType",
+      "collection": "assettypes",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-type.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AssetType | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AssetType",
+      "collectionExportName": "AssetTypeCollection",
+      "schema": {
+        "tableName": "asset_types",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_types\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_types_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_types_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "asset_types_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "5f243f09"
+      }
+    },
+    "assettypecollection": {
+      "name": "assettypecollection",
+      "className": "AssetTypeCollection",
+      "collection": "assettypes",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-types.ts",
+      "fields": {},
+      "methods": {
+        "getOrCreate": {
+          "name": "getOrCreate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "optional": true
+            },
+            {
+              "name": "description",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<AssetType>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initializeCommonTypes": {
+          "name": "initializeCommonTypes",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AssetType",
+      "exportName": "AssetTypeCollection",
+      "collectionExportName": "AssetTypeCollectionCollection",
+      "schema": {
+        "tableName": "asset_type_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_type_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_type_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_type_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "0f069611"
+      }
+    },
+    "asset": {
+      "name": "asset",
+      "className": "Asset",
+      "collection": "assets",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "sourceUri": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "mimeType": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "version": {
+          "type": "integer",
+          "required": false,
+          "default": 1
+        },
+        "primaryVersionId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "typeSlug": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "statusSlug": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "ownerProfileId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "parentId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getTags": {
+          "name": "getTags",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasTag": {
+          "name": "hasTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParent": {
+          "name": "getParent",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Asset | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getChildren": {
+          "name": "getChildren",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getType": {
+          "name": "getType",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AssetType | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getStatus": {
+          "name": "getStatus",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AssetStatus | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "Asset",
+      "collectionExportName": "AssetCollection",
+      "schema": {
+        "tableName": "assets",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"source_uri\" TEXT DEFAULT '',\n  \"mime_type\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"version\" INTEGER DEFAULT 1,\n  \"primary_version_id\" TEXT DEFAULT 'null',\n  \"type_slug\" TEXT DEFAULT '',\n  \"status_slug\" TEXT DEFAULT '',\n  \"owner_profile_id\" TEXT DEFAULT 'null',\n  \"parent_id\" TEXT DEFAULT 'null',\n  \"width\" INTEGER DEFAULT 0,\n  \"height\" INTEGER DEFAULT 0,\n  \"alt\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "source_uri": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "mime_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "version": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 1
+          },
+          "primary_version_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "type_slug": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "status_slug": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "owner_profile_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "parent_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "width": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "height": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "alt": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "assets_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "assets_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "assets_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "523d27c7"
+      }
+    },
+    "assetcollection": {
+      "name": "assetcollection",
+      "className": "AssetCollection",
+      "collection": "assets",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/assets.ts",
+      "fields": {},
+      "methods": {
+        "addTag": {
+          "name": "addTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeTag": {
+          "name": "removeTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByTag": {
+          "name": "getByTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByType": {
+          "name": "getByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "typeSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByStatus": {
+          "name": "getByStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "statusSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByOwner": {
+          "name": "getByOwner",
+          "async": true,
+          "parameters": [
+            {
+              "name": "ownerProfileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createNewVersion": {
+          "name": "createNewVersion",
+          "async": true,
+          "parameters": [
+            {
+              "name": "primaryVersionId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "newSourceUri",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "updates",
+              "type": "Partial<Asset>",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Asset>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLatestVersion": {
+          "name": "getLatestVersion",
+          "async": true,
+          "parameters": [
+            {
+              "name": "primaryVersionId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listVersions": {
+          "name": "listVersions",
+          "async": true,
+          "parameters": [
+            {
+              "name": "primaryVersionId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getChildren": {
+          "name": "getChildren",
+          "async": true,
+          "parameters": [
+            {
+              "name": "parentId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByMimeType": {
+          "name": "getByMimeType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "mimePattern",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Asset",
+      "exportName": "AssetCollection",
+      "collectionExportName": "AssetCollectionCollection",
+      "schema": {
+        "tableName": "asset_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "fbe7f4cf"
+      }
+    },
+    "image": {
+      "name": "image",
+      "className": "Image",
+      "collection": "assets",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/image.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "sourceUri": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "mimeType": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "version": {
+          "type": "integer",
+          "required": false,
+          "default": 1
+        },
+        "primaryVersionId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "typeSlug": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "statusSlug": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "ownerProfileId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "parentId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "width": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "height": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "alt": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "getTags": {
+          "name": "getTags",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasTag": {
+          "name": "hasTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParent": {
+          "name": "getParent",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Asset | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getChildren": {
+          "name": "getChildren",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getType": {
+          "name": "getType",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AssetType | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getStatus": {
+          "name": "getStatus",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AssetStatus | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "isValidImageFormat": {
+          "name": "isValidImageFormat",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isHighResolution": {
+          "name": "isHighResolution",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateAltText": {
+          "name": "generateAltText",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "generateAltText"
+          ]
+        },
+        "cli": true,
+        "tableName": "assets",
+        "tableStrategy": "sti"
+      },
+      "extends": "Asset",
+      "exportName": "Image",
+      "collectionExportName": "ImageCollection",
+      "schema": {
+        "tableName": "assets",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"source_uri\" TEXT DEFAULT '',\n  \"mime_type\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"version\" INTEGER DEFAULT 1,\n  \"primary_version_id\" TEXT DEFAULT 'null',\n  \"type_slug\" TEXT DEFAULT '',\n  \"status_slug\" TEXT DEFAULT '',\n  \"owner_profile_id\" TEXT DEFAULT 'null',\n  \"parent_id\" TEXT DEFAULT 'null',\n  \"width\" INTEGER DEFAULT 0,\n  \"height\" INTEGER DEFAULT 0,\n  \"alt\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "source_uri": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "mime_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "version": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 1
+          },
+          "primary_version_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "type_slug": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "status_slug": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "owner_profile_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "parent_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "width": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "height": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "alt": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "assets_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "assets_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "assets_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "23e04c30"
+      }
+    },
+    "imagecollection": {
+      "name": "imagecollection",
+      "className": "ImageCollection",
+      "collection": "assets",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/images.ts",
+      "fields": {},
+      "methods": {
+        "getByMinDimensions": {
+          "name": "getByMinDimensions",
+          "async": true,
+          "parameters": [
+            {
+              "name": "minWidth",
+              "type": "number",
+              "optional": false
+            },
+            {
+              "name": "minHeight",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Image[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByMaxDimensions": {
+          "name": "getByMaxDimensions",
+          "async": true,
+          "parameters": [
+            {
+              "name": "maxWidth",
+              "type": "number",
+              "optional": false
+            },
+            {
+              "name": "maxHeight",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Image[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLandscape": {
+          "name": "getLandscape",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getPortrait": {
+          "name": "getPortrait",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSquare": {
+          "name": "getSquare",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMissingAltText": {
+          "name": "getMissingAltText",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getHighResolution": {
+          "name": "getHighResolution",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByAspectRatio": {
+          "name": "getByAspectRatio",
+          "async": true,
+          "parameters": [
+            {
+              "name": "minRatio",
+              "type": "number",
+              "optional": false
+            },
+            {
+              "name": "maxRatio",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Image[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "assets"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Image",
+      "exportName": "ImageCollection",
+      "collectionExportName": "ImageCollectionCollection",
+      "schema": {
+        "tableName": "assets",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "assets_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "assets_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "411d565d"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-assets"
+}

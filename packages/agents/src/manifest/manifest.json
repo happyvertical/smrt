@@ -1,0 +1,182 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322692069,
+  "objects": {
+    "agent": {
+      "name": "agent",
+      "className": "Agent",
+      "collection": "agents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/agents/src/agent.ts",
+      "fields": {
+        "status": {
+          "type": "text",
+          "required": false,
+          "default": "idle"
+        }
+      },
+      "methods": {
+        "getDispatch": {
+          "name": "getDispatch",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<DispatchBus>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "handleDispatch": {
+          "name": "handleDispatch",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_payload",
+              "type": "unknown",
+              "optional": false
+            },
+            {
+              "name": "_metadata",
+              "type": "DispatchMetadata",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "processDispatches": {
+          "name": "processDispatches",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "validate": {
+          "name": "validate",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "run": {
+          "name": "run",
+          "async": false,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "shutdown": {
+          "name": "shutdown",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "execute": {
+          "name": "execute",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "interesting": {
+          "name": "interesting",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<InterestResult[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "cli": false,
+        "api": false,
+        "mcp": false,
+        "tableStrategy": "sti"
+      },
+      "extends": "SmrtObject",
+      "exportName": "Agent",
+      "collectionExportName": "AgentCollection",
+      "schema": {
+        "tableName": "agents",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"status\" TEXT DEFAULT 'idle'\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "idle"
+          }
+        },
+        "indexes": [
+          {
+            "name": "agents_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "agents_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "agents_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "0298c555"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-agents"
+}

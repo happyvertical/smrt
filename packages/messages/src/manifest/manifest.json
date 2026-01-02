@@ -1,0 +1,2256 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322690806,
+  "objects": {
+    "emailfolder": {
+      "name": "emailfolder",
+      "className": "EmailFolder",
+      "collection": "emailfolders",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/messages/src/models/EmailFolder.ts",
+      "fields": {
+        "accountId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "path": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "delimiter": {
+          "type": "text",
+          "required": false,
+          "default": "/"
+        },
+        "specialUse": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "messageCount": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "unreadCount": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "subscribed": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getAccount": {
+          "name": "getAccount",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmails": {
+          "name": "getEmails",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": true
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getUnreadEmails": {
+          "name": "getUnreadEmails",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": true
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "refreshCounts": {
+          "name": "refreshCounts",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isInbox": {
+          "name": "isInbox",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSent": {
+          "name": "isSent",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isDrafts": {
+          "name": "isDrafts",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isTrash": {
+          "name": "isTrash",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSpam": {
+          "name": "isSpam",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSystemFolder": {
+          "name": "isSystemFolder",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "subscribe": {
+          "name": "subscribe",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "unsubscribe": {
+          "name": "unsubscribe",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "EmailFolder",
+      "collectionExportName": "EmailFolderCollection",
+      "schema": {
+        "tableName": "email_folders",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_folders\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"account_id\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"path\" TEXT DEFAULT '',\n  \"delimiter\" TEXT DEFAULT '/',\n  \"special_use\" TEXT DEFAULT '',\n  \"message_count\" INTEGER DEFAULT 0,\n  \"unread_count\" INTEGER DEFAULT 0,\n  \"subscribed\" BOOLEAN DEFAULT TRUE\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "account_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "path": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "delimiter": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "/"
+          },
+          "special_use": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "message_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "unread_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "subscribed": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
+          }
+        },
+        "indexes": [
+          {
+            "name": "email_folders_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "email_folders_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "aad895b3"
+      }
+    },
+    "emailfoldercollection": {
+      "name": "emailfoldercollection",
+      "className": "EmailFolderCollection",
+      "collection": "emailfolders",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/messages/src/collections/EmailFolderCollection.ts",
+      "fields": {},
+      "methods": {
+        "getByPath": {
+          "name": "getByPath",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "path",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByAccount": {
+          "name": "getByAccount",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getInbox": {
+          "name": "getInbox",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSent": {
+          "name": "getSent",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getDrafts": {
+          "name": "getDrafts",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getTrash": {
+          "name": "getTrash",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSpam": {
+          "name": "getSpam",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSystemFolders": {
+          "name": "getSystemFolders",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getUserFolders": {
+          "name": "getUserFolders",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailFolder[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSubscribed": {
+          "name": "getSubscribed",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EmailFolder[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getWithUnread": {
+          "name": "getWithUnread",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EmailFolder[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "search": {
+          "name": "search",
+          "async": true,
+          "parameters": [
+            {
+              "name": "query",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "filters",
+              "type": "EmailFolderSearchFilters",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EmailFolder[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "refreshAllCounts": {
+          "name": "refreshAllCounts",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAccountStats": {
+          "name": "getAccountStats",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{\n    totalFolders: number;\n    totalMessages: number;\n    totalUnread: number;\n    systemFolders: number;\n    userFolders: number;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createSystemFolders": {
+          "name": "createSystemFolders",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "EmailFolder",
+      "exportName": "EmailFolderCollection",
+      "collectionExportName": "EmailFolderCollectionCollection",
+      "schema": {
+        "tableName": "email_folder_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_folder_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "email_folder_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "email_folder_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "e38e1675"
+      }
+    },
+    "emailattachment": {
+      "name": "emailattachment",
+      "className": "EmailAttachment",
+      "collection": "emailattachments",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/messages/src/models/EmailAttachment.ts",
+      "fields": {
+        "emailId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "filename": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "contentType": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "size": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "contentId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "contentDisposition": {
+          "type": "text",
+          "required": false,
+          "default": "attachment"
+        },
+        "filePath": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getEmail": {
+          "name": "getEmail",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isImage": {
+          "name": "isImage",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isPdf": {
+          "name": "isPdf",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isInline": {
+          "name": "isInline",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getExtension": {
+          "name": "getExtension",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFormattedSize": {
+          "name": "getFormattedSize",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasExternalFile": {
+          "name": "hasExternalFile",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "readContent": {
+          "name": "readContent",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Buffer | null>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "EmailAttachment",
+      "collectionExportName": "EmailAttachmentCollection",
+      "schema": {
+        "tableName": "email_attachments",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_attachments\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"email_id\" TEXT DEFAULT '',\n  \"filename\" TEXT DEFAULT '',\n  \"content_type\" TEXT DEFAULT '',\n  \"size\" INTEGER DEFAULT 0,\n  \"content_id\" TEXT DEFAULT '',\n  \"content_disposition\" TEXT DEFAULT 'attachment',\n  \"file_path\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "email_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "filename": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "content_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "size": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "content_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "content_disposition": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "attachment"
+          },
+          "file_path": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "email_attachments_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "email_attachments_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "f3729eeb"
+      }
+    },
+    "emailattachmentcollection": {
+      "name": "emailattachmentcollection",
+      "className": "EmailAttachmentCollection",
+      "collection": "emailattachments",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/messages/src/collections/EmailAttachmentCollection.ts",
+      "fields": {},
+      "methods": {
+        "getByEmail": {
+          "name": "getByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "emailId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByContentType": {
+          "name": "getByContentType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "contentType",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getImages": {
+          "name": "getImages",
+          "async": true,
+          "parameters": [
+            {
+              "name": "emailId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getPdfs": {
+          "name": "getPdfs",
+          "async": true,
+          "parameters": [
+            {
+              "name": "emailId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getInline": {
+          "name": "getInline",
+          "async": true,
+          "parameters": [
+            {
+              "name": "emailId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRegular": {
+          "name": "getRegular",
+          "async": true,
+          "parameters": [
+            {
+              "name": "emailId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getWithExternalFiles": {
+          "name": "getWithExternalFiles",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getTotalSize": {
+          "name": "getTotalSize",
+          "async": true,
+          "parameters": [
+            {
+              "name": "emailId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLargest": {
+          "name": "getLargest",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "any",
+              "optional": false,
+              "default": 10
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "searchByFilename": {
+          "name": "searchByFilename",
+          "async": true,
+          "parameters": [
+            {
+              "name": "query",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByExtension": {
+          "name": "getByExtension",
+          "async": true,
+          "parameters": [
+            {
+              "name": "extension",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailAttachment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getStats": {
+          "name": "getStats",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<{\n    total: number;\n    totalSize: number;\n    byType: Record<string, number>;\n    inline: number;\n    regular: number;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "deleteByEmail": {
+          "name": "deleteByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "emailId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "EmailAttachment",
+      "exportName": "EmailAttachmentCollection",
+      "collectionExportName": "EmailAttachmentCollectionCollection",
+      "schema": {
+        "tableName": "email_attachment_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_attachment_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "email_attachment_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "email_attachment_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "3cbd21e3"
+      }
+    },
+    "email": {
+      "name": "email",
+      "className": "Email",
+      "collection": "emails",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/messages/src/models/Email.ts",
+      "fields": {
+        "accountId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "messageId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "threadId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "inReplyTo": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "fromAddress": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "fromName": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "toAddresses": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "ccAddresses": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "bccAddresses": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "replyToAddress": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "replyToName": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "subject": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "date": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "textBody": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "htmlBody": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "folderId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "folderPath": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "labels": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "flags": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "isRead": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "isFlagged": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "isAnswered": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "isDraft": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "hasAttachments": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "size": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "rawMessage": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "headers": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getToAddresses": {
+          "name": "getToAddresses",
+          "async": false,
+          "parameters": [],
+          "returnType": "Array<{ address: string; name?: string }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setToAddresses": {
+          "name": "setToAddresses",
+          "async": false,
+          "parameters": [
+            {
+              "name": "addresses",
+              "type": "Array<{ address: string; name?: string }>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCcAddresses": {
+          "name": "getCcAddresses",
+          "async": false,
+          "parameters": [],
+          "returnType": "Array<{ address: string; name?: string }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getBccAddresses": {
+          "name": "getBccAddresses",
+          "async": false,
+          "parameters": [],
+          "returnType": "Array<{ address: string; name?: string }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLabels": {
+          "name": "getLabels",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setLabels": {
+          "name": "setLabels",
+          "async": false,
+          "parameters": [
+            {
+              "name": "labels",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFlags": {
+          "name": "getFlags",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setFlags": {
+          "name": "setFlags",
+          "async": false,
+          "parameters": [
+            {
+              "name": "flags",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getHeaders": {
+          "name": "getHeaders",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, string | string[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setHeaders": {
+          "name": "setHeaders",
+          "async": false,
+          "parameters": [
+            {
+              "name": "headers",
+              "type": "Record<string, string | string[]>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markRead": {
+          "name": "markRead",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markUnread": {
+          "name": "markUnread",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toggleFlagged": {
+          "name": "toggleFlagged",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAccount": {
+          "name": "getAccount",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFolder": {
+          "name": "getFolder",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAttachments": {
+          "name": "getAttachments",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getThreadEmails": {
+          "name": "getThreadEmails",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isUnread": {
+          "name": "isUnread",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getPreview": {
+          "name": "getPreview",
+          "async": false,
+          "parameters": [
+            {
+              "name": "maxLength",
+              "type": "any",
+              "optional": false,
+              "default": 200
+            }
+          ],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "Email",
+      "collectionExportName": "EmailCollection",
+      "schema": {
+        "tableName": "emails",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"emails\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"account_id\" TEXT DEFAULT '',\n  \"message_id\" TEXT DEFAULT '',\n  \"thread_id\" TEXT DEFAULT '',\n  \"in_reply_to\" TEXT DEFAULT '',\n  \"from_address\" TEXT DEFAULT '',\n  \"from_name\" TEXT DEFAULT '',\n  \"to_addresses\" TEXT DEFAULT '',\n  \"cc_addresses\" TEXT DEFAULT '',\n  \"bcc_addresses\" TEXT DEFAULT '',\n  \"reply_to_address\" TEXT DEFAULT '',\n  \"reply_to_name\" TEXT DEFAULT '',\n  \"subject\" TEXT DEFAULT '',\n  \"date\" TIMESTAMP DEFAULT current_timestamp,\n  \"text_body\" TEXT DEFAULT '',\n  \"html_body\" TEXT DEFAULT '',\n  \"folder_id\" TEXT DEFAULT '',\n  \"folder_path\" TEXT DEFAULT '',\n  \"labels\" TEXT DEFAULT '',\n  \"flags\" TEXT DEFAULT '',\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"raw_message\" TEXT DEFAULT '',\n  \"headers\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "account_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "message_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "thread_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "in_reply_to": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "from_address": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "from_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "to_addresses": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "cc_addresses": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "bcc_addresses": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "reply_to_address": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "reply_to_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "subject": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "text_body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "html_body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "folder_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "folder_path": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "labels": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "flags": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "is_read": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "is_flagged": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "is_answered": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "is_draft": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "has_attachments": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "size": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "raw_message": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "headers": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "emails_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "emails_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "901eefc8"
+      }
+    },
+    "emailcollection": {
+      "name": "emailcollection",
+      "className": "EmailCollection",
+      "collection": "emails",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/messages/src/collections/EmailCollection.ts",
+      "fields": {},
+      "methods": {
+        "getByMessageId": {
+          "name": "getByMessageId",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "messageId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Email | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByAccount": {
+          "name": "getByAccount",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByFolder": {
+          "name": "getByFolder",
+          "async": true,
+          "parameters": [
+            {
+              "name": "folderId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByThread": {
+          "name": "getByThread",
+          "async": true,
+          "parameters": [
+            {
+              "name": "threadId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getUnread": {
+          "name": "getUnread",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFlagged": {
+          "name": "getFlagged",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getWithAttachments": {
+          "name": "getWithAttachments",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRecent": {
+          "name": "getRecent",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "any",
+              "optional": false,
+              "default": 20
+            },
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countByFolder": {
+          "name": "countByFolder",
+          "async": true,
+          "parameters": [
+            {
+              "name": "folderId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countUnreadByFolder": {
+          "name": "countUnreadByFolder",
+          "async": true,
+          "parameters": [
+            {
+              "name": "folderId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countUnreadByAccount": {
+          "name": "countUnreadByAccount",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "search": {
+          "name": "search",
+          "async": true,
+          "parameters": [
+            {
+              "name": "query",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "filters",
+              "type": "EmailSearchFilters",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Email[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markAllRead": {
+          "name": "markAllRead",
+          "async": true,
+          "parameters": [
+            {
+              "name": "emailIds",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markFolderRead": {
+          "name": "markFolderRead",
+          "async": true,
+          "parameters": [
+            {
+              "name": "folderId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "deleteByFolder": {
+          "name": "deleteByFolder",
+          "async": true,
+          "parameters": [
+            {
+              "name": "folderId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAccountStats": {
+          "name": "getAccountStats",
+          "async": true,
+          "parameters": [
+            {
+              "name": "accountId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{\n    total: number;\n    unread: number;\n    flagged: number;\n    withAttachments: number;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Email",
+      "exportName": "EmailCollection",
+      "collectionExportName": "EmailCollectionCollection",
+      "schema": {
+        "tableName": "email_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "email_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "email_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "2a0a034a"
+      }
+    },
+    "emailaccount": {
+      "name": "emailaccount",
+      "className": "EmailAccount",
+      "collection": "emailaccounts",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/messages/src/models/EmailAccount.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "email": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "providerType": {
+          "type": "text",
+          "required": false,
+          "default": "imap"
+        },
+        "settings": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "lastSyncAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "isActive": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getSettings": {
+          "name": "getSettings",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setSettings": {
+          "name": "setSettings",
+          "async": false,
+          "parameters": [
+            {
+              "name": "settings",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createClient": {
+          "name": "createClient",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "syncFrom": {
+          "name": "syncFrom",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "SyncOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<SyncResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFolders": {
+          "name": "getFolders",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmails": {
+          "name": "getEmails",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": true
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getUnreadCount": {
+          "name": "getUnreadCount",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "activate": {
+          "name": "activate",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "deactivate": {
+          "name": "deactivate",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "EmailAccount",
+      "collectionExportName": "EmailAccountCollection",
+      "schema": {
+        "tableName": "email_accounts",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_accounts\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"provider_type\" TEXT DEFAULT 'imap',\n  \"settings\" TEXT DEFAULT '',\n  \"last_sync_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"is_active\" BOOLEAN DEFAULT TRUE\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "email": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "provider_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "imap"
+          },
+          "settings": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "last_sync_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "is_active": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
+          }
+        },
+        "indexes": [
+          {
+            "name": "email_accounts_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "email_accounts_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "3565da7e"
+      }
+    },
+    "emailaccountcollection": {
+      "name": "emailaccountcollection",
+      "className": "EmailAccountCollection",
+      "collection": "emailaccounts",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/messages/src/collections/EmailAccountCollection.ts",
+      "fields": {},
+      "methods": {
+        "getByEmail": {
+          "name": "getByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailAccount | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByProviderType": {
+          "name": "getByProviderType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "providerType",
+              "type": "ProviderType",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EmailAccount[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getActive": {
+          "name": "getActive",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<EmailAccount[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getInactive": {
+          "name": "getInactive",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<EmailAccount[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getNeedingSync": {
+          "name": "getNeedingSync",
+          "async": true,
+          "parameters": [
+            {
+              "name": "maxAgeMinutes",
+              "type": "any",
+              "optional": false,
+              "default": 60
+            }
+          ],
+          "returnType": "Promise<EmailAccount[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "search": {
+          "name": "search",
+          "async": true,
+          "parameters": [
+            {
+              "name": "query",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "filters",
+              "type": "EmailAccountSearchFilters",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EmailAccount[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "syncAll": {
+          "name": "syncAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "Record<string, any>",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Map<string, { success: boolean; error?: Error }>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getTotalUnreadCount": {
+          "name": "getTotalUnreadCount",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getStats": {
+          "name": "getStats",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<{\n    total: number;\n    active: number;\n    inactive: number;\n    byProvider: Record<ProviderType, number>;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "EmailAccount",
+      "exportName": "EmailAccountCollection",
+      "collectionExportName": "EmailAccountCollectionCollection",
+      "schema": {
+        "tableName": "email_account_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_account_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "email_account_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "email_account_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "bd13b311"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-messages"
+}

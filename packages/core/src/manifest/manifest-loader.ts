@@ -67,6 +67,13 @@ declare global {
         }>
       >
     | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtSTISiblingCache:
+    | Map<
+        string,
+        Array<{ className: string; entry: ManifestEntry; packageName?: string }>
+      >
+    | undefined;
 }
 
 // Use globalThis for cross-module state sharing
@@ -144,6 +151,20 @@ function getManifestCollisionsMap(): Map<
     globalThis.__smrtManifestCollisions = new Map();
   }
   return globalThis.__smrtManifestCollisions;
+}
+
+/**
+ * Get the STI sibling cache Map from globalThis
+ * Caches discoverSTISiblingsSync results per collection to avoid repeated scans
+ */
+function getSTISiblingCache(): Map<
+  string,
+  Array<{ className: string; entry: ManifestEntry; packageName?: string }>
+> {
+  if (!globalThis.__smrtSTISiblingCache) {
+    globalThis.__smrtSTISiblingCache = new Map();
+  }
+  return globalThis.__smrtSTISiblingCache;
 }
 
 // Create require function once for reuse
@@ -1065,6 +1086,7 @@ export function getManifestCollisions(): Map<
  */
 export function clearManifestCache(): void {
   getManifestCacheMap().clear();
+  getSTISiblingCache().clear();
 }
 
 /**
@@ -1098,6 +1120,13 @@ export function getLoadedManifests(): Array<[string, Manifest]> {
 export function discoverSTISiblingsSync(
   collection: string,
 ): Array<{ className: string; entry: ManifestEntry; packageName?: string }> {
+  // Check cache first to avoid repeated scans (fixes #644)
+  const cache = getSTISiblingCache();
+  const cached = cache.get(collection);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const siblings: Array<{
     className: string;
     entry: ManifestEntry;
@@ -1253,6 +1282,9 @@ export function discoverSTISiblingsSync(
   console.log(
     `[manifest-loader] discoverSTISiblingsSync found ${siblings.length} siblings for collection: ${collection}`,
   );
+
+  // Cache the results for future calls (fixes #644)
+  cache.set(collection, siblings);
 
   return siblings;
 }

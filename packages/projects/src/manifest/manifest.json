@@ -1,0 +1,2923 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322693449,
+  "objects": {
+    "comment": {
+      "name": "comment",
+      "className": "Comment",
+      "collection": "comments",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/models/Comment.ts",
+      "fields": {
+        "issueId": {
+          "type": "foreignKey",
+          "required": false,
+          "_meta": {},
+          "related": "Issue"
+        },
+        "commentId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "author": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "url": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "isQuestion": {
+          "name": "isQuestion",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isApproval": {
+          "name": "isApproval",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requestsChanges": {
+          "name": "requestsChanges",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "extractActionItems": {
+          "name": "extractActionItems",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarize": {
+          "name": "summarize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSentiment": {
+          "name": "getSentiment",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<'positive' | 'negative' | 'neutral'>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Comment",
+      "collectionExportName": "CommentCollection",
+      "schema": {
+        "tableName": "comments",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"comments\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"issue_id\" TEXT,\n  \"comment_id\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"author\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "issue_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "comment_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "author": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "comments_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "comments_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "94852faf"
+      }
+    },
+    "pullrequest": {
+      "name": "pullrequest",
+      "className": "PullRequest",
+      "collection": "issues",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/models/PullRequest.ts",
+      "fields": {
+        "repositoryId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Repository"
+        },
+        "number": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "nodeId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "state": {
+          "type": "text",
+          "required": false,
+          "default": "open"
+        },
+        "author": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "labels": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "assignees": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "commentsCount": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "lastSyncedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "originalBody": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "synthesisCount": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "headRef": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "baseRef": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "merged": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "mergedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "mergeable": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "draft": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "additions": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "deletions": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "changedFiles": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        }
+      },
+      "methods": {
+        "getRepository": {
+          "name": "getRepository",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Repository>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getClient": {
+          "name": "getClient",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<IRepository>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearCache": {
+          "name": "clearCache",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "sync": {
+          "name": "sync",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "SyncOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getComments": {
+          "name": "getComments",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Comment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addComment": {
+          "name": "addComment",
+          "async": true,
+          "parameters": [
+            {
+              "name": "body",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Comment>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "incorporateFeedback": {
+          "name": "incorporateFeedback",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "IncorporateFeedbackOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<IncorporateFeedbackResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "rollback": {
+          "name": "rollback",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<{ success: boolean; message: string }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "needsReview": {
+          "name": "needsReview",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isBugReport": {
+          "name": "isBugReport",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isFeatureRequest": {
+          "name": "isFeatureRequest",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "suggestLabels": {
+          "name": "suggestLabels",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "close": {
+          "name": "close",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addLabels": {
+          "name": "addLabels",
+          "async": true,
+          "parameters": [
+            {
+              "name": "labels",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeLabel": {
+          "name": "removeLabel",
+          "async": true,
+          "parameters": [
+            {
+              "name": "label",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "assign": {
+          "name": "assign",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assignees",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getUrl": {
+          "name": "getUrl",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarize": {
+          "name": "summarize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "merge": {
+          "name": "merge",
+          "async": true,
+          "parameters": [
+            {
+              "name": "method",
+              "type": "MergeMethod",
+              "optional": false,
+              "default": "squash"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markReady": {
+          "name": "markReady",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "convertToDraft": {
+          "name": "convertToDraft",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requestReviewers": {
+          "name": "requestReviewers",
+          "async": true,
+          "parameters": [
+            {
+              "name": "reviewers",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findLinkedIssue": {
+          "name": "findLinkedIssue",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Issue | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isReadyToMerge": {
+          "name": "isReadyToMerge",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "suggestReviewers": {
+          "name": "suggestReviewers",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getChangeSize": {
+          "name": "getChangeSize",
+          "async": false,
+          "parameters": [],
+          "returnType": "'xs' | 's' | 'm' | 'l' | 'xl'",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "sync",
+            "summarize",
+            "merge"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "sync",
+            "summarize",
+            "merge",
+            "markReady"
+          ]
+        },
+        "tableName": "issues",
+        "tableStrategy": "sti"
+      },
+      "extends": "Issue",
+      "exportName": "PullRequest",
+      "collectionExportName": "PullRequestCollection",
+      "schema": {
+        "tableName": "issues",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"repository_id\" TEXT,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSON DEFAULT '',\n  \"assignees\" JSON DEFAULT '',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "repository_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "number": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "node_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "state": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "open"
+          },
+          "author": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "labels": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "assignees": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "comments_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "last_synced_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "original_body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "synthesis_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "head_ref": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "base_ref": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "merged": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "merged_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "mergeable": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
+          },
+          "draft": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "additions": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "deletions": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "changed_files": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          }
+        },
+        "indexes": [
+          {
+            "name": "issues_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "issues_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "issues_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "05e3ff9f"
+      }
+    },
+    "pullrequestcollection": {
+      "name": "pullrequestcollection",
+      "className": "PullRequestCollection",
+      "collection": "issues",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/collections/PullRequests.ts",
+      "fields": {},
+      "methods": {
+        "discover": {
+          "name": "discover",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    repository: Repository;\n    filters?: SearchFilters;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByRepository": {
+          "name": "findByRepository",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findOpen": {
+          "name": "findOpen",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findDrafts": {
+          "name": "findDrafts",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findReadyToMerge": {
+          "name": "findReadyToMerge",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByBranch": {
+          "name": "findByBranch",
+          "async": true,
+          "parameters": [
+            {
+              "name": "branch",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByNumber": {
+          "name": "findByNumber",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "number",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<PullRequest | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findAIReadyToMerge": {
+          "name": "findAIReadyToMerge",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findBySize": {
+          "name": "findBySize",
+          "async": true,
+          "parameters": [
+            {
+              "name": "size",
+              "type": "'xs' | 's' | 'm' | 'l' | 'xl'",
+              "optional": false
+            },
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "batchSync": {
+          "name": "batchSync",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repository",
+              "type": "Repository",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "{ force?: boolean }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "issues"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "PullRequest",
+      "exportName": "PullRequestCollection",
+      "collectionExportName": "PullRequestCollectionCollection",
+      "schema": {
+        "tableName": "issues",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "issues_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "issues_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "0b44eaa3"
+      }
+    },
+    "repositorycollection": {
+      "name": "repositorycollection",
+      "className": "RepositoryCollection",
+      "collection": "repositories",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/collections/Repositories.ts",
+      "fields": {},
+      "methods": {
+        "findByFullName": {
+          "name": "findByFullName",
+          "async": true,
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Repository | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByOwner": {
+          "name": "findByOwner",
+          "async": true,
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Repository[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByProvider": {
+          "name": "findByProvider",
+          "async": true,
+          "parameters": [
+            {
+              "name": "providerType",
+              "type": "RepositoryProviderType",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Repository[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOrCreate": {
+          "name": "getOrCreate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "{\n      providerType?: RepositoryProviderType;\n      tokenConfigKey?: string;\n      baseUrl?: string;\n    }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Repository>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "syncAll": {
+          "name": "syncAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{ force?: boolean }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Repository[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findWithOpenIssues": {
+          "name": "findWithOpenIssues",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Repository[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Repository",
+      "exportName": "RepositoryCollection",
+      "collectionExportName": "RepositoryCollectionCollection",
+      "schema": {
+        "tableName": "repository_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"repository_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "repository_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "repository_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "bcd2ed8e"
+      }
+    },
+    "repository": {
+      "name": "repository",
+      "className": "Repository",
+      "collection": "repositories",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/models/Repository.ts",
+      "fields": {
+        "owner": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "fullName": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "defaultBranch": {
+          "type": "text",
+          "required": false,
+          "default": "main"
+        },
+        "isPrivate": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "providerType": {
+          "type": "text",
+          "required": false,
+          "default": "github"
+        },
+        "baseUrl": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "tokenConfigKey": {
+          "type": "text",
+          "required": false,
+          "default": "GITHUB_TOKEN"
+        },
+        "lastSyncedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "getClient": {
+          "name": "getClient",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<IRepository>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearClient": {
+          "name": "clearClient",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "sync": {
+          "name": "sync",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "SyncOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getIssues": {
+          "name": "getIssues",
+          "async": true,
+          "parameters": [
+            {
+              "name": "filters",
+              "type": "SearchFilters",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getPullRequests": {
+          "name": "getPullRequests",
+          "async": true,
+          "parameters": [
+            {
+              "name": "filters",
+              "type": "SearchFilters",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<PullRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createIssue": {
+          "name": "createIssue",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "CreateIssueInput",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Issue>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createPullRequest": {
+          "name": "createPullRequest",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "CreatePRInput",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<PullRequest>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasOpenIssuesMatching": {
+          "name": "hasOpenIssuesMatching",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarizeActivity": {
+          "name": "summarizeActivity",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByFullName": {
+          "name": "getByFullName",
+          "async": true,
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Repository | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "sync"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "sync",
+            "create"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Repository",
+      "collectionExportName": "RepositoryCollection",
+      "schema": {
+        "tableName": "repositorys",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"repositorys\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"owner\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"full_name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"default_branch\" TEXT DEFAULT 'main',\n  \"is_private\" BOOLEAN DEFAULT FALSE,\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"base_url\" TEXT DEFAULT '',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"last_synced_at\" TIMESTAMP DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "owner": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "full_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "default_branch": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "main"
+          },
+          "is_private": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "provider_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "github"
+          },
+          "base_url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "token_config_key": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "GITHUB_TOKEN"
+          },
+          "last_synced_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "repositorys_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "repositorys_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "bc666d05"
+      }
+    },
+    "issue": {
+      "name": "issue",
+      "className": "Issue",
+      "collection": "issues",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/models/Issue.ts",
+      "fields": {
+        "repositoryId": {
+          "type": "foreignKey",
+          "required": true,
+          "_meta": {},
+          "related": "Repository"
+        },
+        "number": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "nodeId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "state": {
+          "type": "text",
+          "required": false,
+          "default": "open"
+        },
+        "author": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "labels": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "assignees": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "commentsCount": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "lastSyncedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "originalBody": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "synthesisCount": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        }
+      },
+      "methods": {
+        "getRepository": {
+          "name": "getRepository",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Repository>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getClient": {
+          "name": "getClient",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<IRepository>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearCache": {
+          "name": "clearCache",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "sync": {
+          "name": "sync",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "SyncOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getComments": {
+          "name": "getComments",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Comment[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addComment": {
+          "name": "addComment",
+          "async": true,
+          "parameters": [
+            {
+              "name": "body",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Comment>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "incorporateFeedback": {
+          "name": "incorporateFeedback",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "IncorporateFeedbackOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<IncorporateFeedbackResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "rollback": {
+          "name": "rollback",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<{ success: boolean; message: string }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "needsReview": {
+          "name": "needsReview",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isBugReport": {
+          "name": "isBugReport",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isFeatureRequest": {
+          "name": "isFeatureRequest",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "suggestLabels": {
+          "name": "suggestLabels",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "close": {
+          "name": "close",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addLabels": {
+          "name": "addLabels",
+          "async": true,
+          "parameters": [
+            {
+              "name": "labels",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeLabel": {
+          "name": "removeLabel",
+          "async": true,
+          "parameters": [
+            {
+              "name": "label",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "assign": {
+          "name": "assign",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assignees",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getUrl": {
+          "name": "getUrl",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "sync",
+            "incorporateFeedback"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "sync",
+            "incorporateFeedback",
+            "rollback"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Issue",
+      "collectionExportName": "IssueCollection",
+      "schema": {
+        "tableName": "issues",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"repository_id\" TEXT,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSON DEFAULT '',\n  \"assignees\" JSON DEFAULT '',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "repository_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "number": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "node_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "state": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "open"
+          },
+          "author": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "labels": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "assignees": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "comments_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "last_synced_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "original_body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "synthesis_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "head_ref": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "base_ref": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "merged": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "merged_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "mergeable": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
+          },
+          "draft": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "additions": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "deletions": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "changed_files": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          }
+        },
+        "indexes": [
+          {
+            "name": "issues_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "issues_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "issues_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "003dd4e2"
+      }
+    },
+    "issuecollection": {
+      "name": "issuecollection",
+      "className": "IssueCollection",
+      "collection": "issues",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/collections/Issues.ts",
+      "fields": {},
+      "methods": {
+        "discover": {
+          "name": "discover",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    repository: Repository;\n    filters?: SearchFilters;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByRepository": {
+          "name": "findByRepository",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findOpen": {
+          "name": "findOpen",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByLabel": {
+          "name": "findByLabel",
+          "async": true,
+          "parameters": [
+            {
+              "name": "label",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByAssignee": {
+          "name": "findByAssignee",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assignee",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findNeedingReview": {
+          "name": "findNeedingReview",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByNumber": {
+          "name": "findByNumber",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "number",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Issue | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findWithUnincorporatedFeedback": {
+          "name": "findWithUnincorporatedFeedback",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repositoryId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "batchSync": {
+          "name": "batchSync",
+          "async": true,
+          "parameters": [
+            {
+              "name": "repository",
+              "type": "Repository",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "{ force?: boolean }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Issue[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Issue",
+      "exportName": "IssueCollection",
+      "collectionExportName": "IssueCollectionCollection",
+      "schema": {
+        "tableName": "issue_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issue_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "issue_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "issue_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "bbc4903d"
+      }
+    },
+    "project": {
+      "name": "project",
+      "className": "Project",
+      "collection": "projects",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/models/Project.ts",
+      "fields": {
+        "projectId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "projectNumber": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "owner": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "url": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "providerType": {
+          "type": "text",
+          "required": false,
+          "default": "github"
+        },
+        "tokenConfigKey": {
+          "type": "text",
+          "required": false,
+          "default": "GITHUB_TOKEN"
+        },
+        "statuses": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "fields": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "statusFieldId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "statusOptions": {
+          "type": "json",
+          "required": false,
+          "default": {}
+        },
+        "lastSyncedAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "getClient": {
+          "name": "getClient",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<IProject>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearClient": {
+          "name": "clearClient",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "sync": {
+          "name": "sync",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "SyncOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addItem": {
+          "name": "addItem",
+          "async": true,
+          "parameters": [
+            {
+              "name": "item",
+              "type": "Issue | PullRequest",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProjectItem>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeItem": {
+          "name": "removeItem",
+          "async": true,
+          "parameters": [
+            {
+              "name": "itemId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getItem": {
+          "name": "getItem",
+          "async": true,
+          "parameters": [
+            {
+              "name": "itemId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProjectItem | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listItems": {
+          "name": "listItems",
+          "async": true,
+          "parameters": [
+            {
+              "name": "filters",
+              "type": "ItemFilters",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ProjectItem[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateItemStatus": {
+          "name": "updateItemStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "itemId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "status",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateItemField": {
+          "name": "updateItemField",
+          "async": true,
+          "parameters": [
+            {
+              "name": "itemId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "fieldId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "unknown",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getStatuses": {
+          "name": "getStatuses",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProjectStatus[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFields": {
+          "name": "getFields",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProjectField[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getItemsByStatus": {
+          "name": "getItemsByStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "status",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProjectItem[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "moveItem": {
+          "name": "moveItem",
+          "async": true,
+          "parameters": [
+            {
+              "name": "item",
+              "type": "Issue | PullRequest",
+              "optional": false
+            },
+            {
+              "name": "status",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "analyzeHealth": {
+          "name": "analyzeHealth",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByTitle": {
+          "name": "getByTitle",
+          "async": true,
+          "parameters": [
+            {
+              "name": "title",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SmrtObjectOptions",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Project | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "sync",
+            "addItem",
+            "updateItemStatus"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "sync",
+            "addItem",
+            "updateItemStatus",
+            "listItems"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Project",
+      "collectionExportName": "ProjectCollection",
+      "schema": {
+        "tableName": "projects",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"projects\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"project_id\" TEXT DEFAULT '',\n  \"project_number\" INTEGER DEFAULT 0,\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"owner\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT '',\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"statuses\" JSON DEFAULT '',\n  \"fields\" JSON DEFAULT '',\n  \"status_field_id\" TEXT DEFAULT '',\n  \"status_options\" JSON DEFAULT '[object Object]',\n  \"last_synced_at\" TIMESTAMP DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "project_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "project_number": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "owner": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "provider_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "github"
+          },
+          "token_config_key": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "GITHUB_TOKEN"
+          },
+          "statuses": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "fields": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "status_field_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "status_options": {
+            "type": "JSON",
+            "notNull": false,
+            "default": {}
+          },
+          "last_synced_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "projects_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "projects_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "54280864"
+      }
+    },
+    "projectcollection": {
+      "name": "projectcollection",
+      "className": "ProjectCollection",
+      "collection": "projects",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/collections/Projects.ts",
+      "fields": {},
+      "methods": {
+        "findByTitle": {
+          "name": "findByTitle",
+          "async": true,
+          "parameters": [
+            {
+              "name": "title",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Project | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByOwner": {
+          "name": "findByOwner",
+          "async": true,
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Project[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByProvider": {
+          "name": "findByProvider",
+          "async": true,
+          "parameters": [
+            {
+              "name": "providerType",
+              "type": "ProjectProviderType",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Project[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOrCreate": {
+          "name": "getOrCreate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "projectId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "{\n      title?: string;\n      owner?: string;\n      providerType?: ProjectProviderType;\n      tokenConfigKey?: string;\n      statusFieldId?: string;\n      statusOptions?: Record<string, string>;\n    }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Project>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "syncAll": {
+          "name": "syncAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{ force?: boolean }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<Project[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findWithItemsInStatus": {
+          "name": "findWithItemsInStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "status",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Project[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getStatistics": {
+          "name": "getStatistics",
+          "async": true,
+          "parameters": [
+            {
+              "name": "projectId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{\n    totalItems: number;\n    itemsByStatus: Record<string, number>;\n    itemsByType: Record<string, number>;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Project",
+      "exportName": "ProjectCollection",
+      "collectionExportName": "ProjectCollectionCollection",
+      "schema": {
+        "tableName": "project_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"project_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "project_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "project_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "213b18c0"
+      }
+    },
+    "label": {
+      "name": "label",
+      "className": "Label",
+      "collection": "labels",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/projects/src/models/Label.ts",
+      "fields": {
+        "repositoryId": {
+          "type": "foreignKey",
+          "required": false,
+          "_meta": {},
+          "related": "Repository"
+        },
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "color": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "isTypeLabel": {
+          "name": "isTypeLabel",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isPriorityLabel": {
+          "name": "isPriorityLabel",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isStatusLabel": {
+          "name": "isStatusLabel",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCategory": {
+          "name": "getCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "'type' | 'priority' | 'status' | 'area' | 'other'",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getPriorityLevel": {
+          "name": "getPriorityLevel",
+          "async": false,
+          "parameters": [],
+          "returnType": "number | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getHexColor": {
+          "name": "getHexColor",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createInRepository": {
+          "name": "createInRepository",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateInRepository": {
+          "name": "updateInRepository",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "Label",
+      "collectionExportName": "LabelCollection",
+      "schema": {
+        "tableName": "labels",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"labels\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"repository_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"color\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "repository_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "color": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "labels_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "labels_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "5f873a63"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-projects"
+}

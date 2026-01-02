@@ -1,0 +1,1832 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322692093,
+  "objects": {
+    "addeliverytier": {
+      "name": "addeliverytier",
+      "className": "AdDeliveryTier",
+      "collection": "addeliverytiers",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/models/AdDeliveryTier.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "priority": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "pricingModel": {
+          "type": "text",
+          "required": false
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "isHigherPriorityThan": {
+          "name": "isHigherPriorityThan",
+          "async": false,
+          "parameters": [
+            {
+              "name": "other",
+              "type": "AdDeliveryTier",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isFixedPricing": {
+          "name": "isFixedPricing",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isPerformanceBased": {
+          "name": "isPerformanceBased",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AdDeliveryTier",
+      "collectionExportName": "AdDeliveryTierCollection",
+      "schema": {
+        "tableName": "ad_delivery_tiers",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_delivery_tiers\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"priority\" INTEGER DEFAULT 0,\n  \"pricing_model\" TEXT,\n  \"description\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "priority": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "pricing_model": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_delivery_tiers_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_delivery_tiers_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "b4e18e96"
+      }
+    },
+    "addeliverytiercollection": {
+      "name": "addeliverytiercollection",
+      "className": "AdDeliveryTierCollection",
+      "collection": "addeliverytiers",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/collections/AdDeliveryTierCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByPriority": {
+          "name": "findByPriority",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdDeliveryTier[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByPricingModel": {
+          "name": "findByPricingModel",
+          "async": true,
+          "parameters": [
+            {
+              "name": "pricingModel",
+              "type": "PricingModel",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdDeliveryTier[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getHighestPriority": {
+          "name": "getHighestPriority",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdDeliveryTier | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findFixedPricing": {
+          "name": "findFixedPricing",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdDeliveryTier[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findCPM": {
+          "name": "findCPM",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdDeliveryTier[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findPerformanceBased": {
+          "name": "findPerformanceBased",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdDeliveryTier[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AdDeliveryTier",
+      "exportName": "AdDeliveryTierCollection",
+      "collectionExportName": "AdDeliveryTierCollectionCollection",
+      "schema": {
+        "tableName": "ad_delivery_tier_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_delivery_tier_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_delivery_tier_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_delivery_tier_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "9efdebfd"
+      }
+    },
+    "adformat": {
+      "name": "adformat",
+      "className": "AdFormat",
+      "collection": "adformats",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/models/AdFormat.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "width": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "height": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "formatType": {
+          "type": "text",
+          "required": false
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "getDimensions": {
+          "name": "getDimensions",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "matchesDimensions": {
+          "name": "matchesDimensions",
+          "async": false,
+          "parameters": [
+            {
+              "name": "width",
+              "type": "number",
+              "optional": false
+            },
+            {
+              "name": "height",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AdFormat",
+      "collectionExportName": "AdFormatCollection",
+      "schema": {
+        "tableName": "ad_formats",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_formats\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"width\" INTEGER DEFAULT 0,\n  \"height\" INTEGER DEFAULT 0,\n  \"format_type\" TEXT,\n  \"description\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "width": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "height": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "format_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_formats_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_formats_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "ee6160ff"
+      }
+    },
+    "adgroup": {
+      "name": "adgroup",
+      "className": "AdGroup",
+      "collection": "adgroups",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/models/AdGroup.ts",
+      "fields": {
+        "contractId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "tierId": {
+          "type": "foreignKey",
+          "required": false
+        },
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "verticalSlug": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "targeting": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "zoneIds": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "startDate": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "endDate": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "dailyBudget": {
+          "type": "decimal",
+          "required": false,
+          "default": 0
+        },
+        "totalBudget": {
+          "type": "decimal",
+          "required": false,
+          "default": 0
+        },
+        "status": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {
+        "getZoneIds": {
+          "name": "getZoneIds",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setZoneIds": {
+          "name": "setZoneIds",
+          "async": false,
+          "parameters": [
+            {
+              "name": "ids",
+              "type": "string[]",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addZoneId": {
+          "name": "addZoneId",
+          "async": false,
+          "parameters": [
+            {
+              "name": "zoneId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeZoneId": {
+          "name": "removeZoneId",
+          "async": false,
+          "parameters": [
+            {
+              "name": "zoneId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasZoneId": {
+          "name": "hasZoneId",
+          "async": false,
+          "parameters": [
+            {
+              "name": "zoneId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getTargeting": {
+          "name": "getTargeting",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setTargeting": {
+          "name": "setTargeting",
+          "async": false,
+          "parameters": [
+            {
+              "name": "rules",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isDraft": {
+          "name": "isDraft",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isPaused": {
+          "name": "isPaused",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isCompleted": {
+          "name": "isCompleted",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasEnded": {
+          "name": "hasEnded",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasStarted": {
+          "name": "hasStarted",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AdGroup",
+      "collectionExportName": "AdGroupCollection",
+      "schema": {
+        "tableName": "ad_groups",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_groups\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contract_id\" TEXT DEFAULT '',\n  \"tier_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"vertical_slug\" TEXT DEFAULT '',\n  \"targeting\" TEXT DEFAULT '',\n  \"zone_ids\" TEXT DEFAULT '',\n  \"start_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"end_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"daily_budget\" REAL DEFAULT 0,\n  \"total_budget\" REAL DEFAULT 0,\n  \"status\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "contract_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "tier_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "vertical_slug": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "targeting": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "zone_ids": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "start_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "end_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "daily_budget": {
+            "type": "REAL",
+            "notNull": false,
+            "default": 0
+          },
+          "total_budget": {
+            "type": "REAL",
+            "notNull": false,
+            "default": 0
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_groups_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_groups_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "4f417b94"
+      }
+    },
+    "advariation": {
+      "name": "advariation",
+      "className": "AdVariation",
+      "collection": "advariations",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/models/AdVariation.ts",
+      "fields": {
+        "groupId": {
+          "type": "foreignKey",
+          "required": false
+        },
+        "formatId": {
+          "type": "foreignKey",
+          "required": false
+        },
+        "assetId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "clickUrl": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "altText": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "weight": {
+          "type": "integer",
+          "required": false,
+          "default": 1
+        },
+        "status": {
+          "type": "text",
+          "required": false
+        },
+        "impressions": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "clicks": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        }
+      },
+      "methods": {
+        "isActive": {
+          "name": "isActive",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isDraft": {
+          "name": "isDraft",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isPaused": {
+          "name": "isPaused",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCTR": {
+          "name": "getCTR",
+          "async": false,
+          "parameters": [],
+          "returnType": "number",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recordImpression": {
+          "name": "recordImpression",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recordClick": {
+          "name": "recordClick",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AdVariation",
+      "collectionExportName": "AdVariationCollection",
+      "schema": {
+        "tableName": "ad_variations",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_variations\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"group_id\" TEXT,\n  \"format_id\" TEXT,\n  \"asset_id\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"click_url\" TEXT DEFAULT '',\n  \"alt_text\" TEXT DEFAULT '',\n  \"weight\" INTEGER DEFAULT 1,\n  \"status\" TEXT,\n  \"impressions\" INTEGER DEFAULT 0,\n  \"clicks\" INTEGER DEFAULT 0\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "group_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "format_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "asset_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "click_url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "alt_text": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "weight": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 1
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "impressions": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "clicks": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_variations_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_variations_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "7f60948f"
+      }
+    },
+    "adevent": {
+      "name": "adevent",
+      "className": "AdEvent",
+      "collection": "adevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/models/AdEvent.ts",
+      "fields": {
+        "variationId": {
+          "type": "foreignKey",
+          "required": false
+        },
+        "zoneId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "siteId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "eventType": {
+          "type": "text",
+          "required": false
+        },
+        "timestamp": {
+          "type": "datetime",
+          "required": false
+        },
+        "metadata": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setMetadata": {
+          "name": "setMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isImpression": {
+          "name": "isImpression",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isClick": {
+          "name": "isClick",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isConversion": {
+          "name": "isConversion",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "create",
+            "list"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "create"
+          ]
+        },
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "AdEvent",
+      "collectionExportName": "AdEventCollection",
+      "schema": {
+        "tableName": "ad_events",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_events\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"variation_id\" TEXT,\n  \"zone_id\" TEXT DEFAULT '',\n  \"site_id\" TEXT DEFAULT '',\n  \"event_type\" TEXT,\n  \"timestamp\" TIMESTAMP,\n  \"metadata\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "variation_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "zone_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "site_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "event_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "timestamp": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "metadata": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_events_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_events_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "04ca2f13"
+      }
+    },
+    "adeventcollection": {
+      "name": "adeventcollection",
+      "className": "AdEventCollection",
+      "collection": "adevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/collections/AdEventCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByVariation": {
+          "name": "findByVariation",
+          "async": true,
+          "parameters": [
+            {
+              "name": "variationId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdEvent[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByZone": {
+          "name": "findByZone",
+          "async": true,
+          "parameters": [
+            {
+              "name": "zoneId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdEvent[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findBySite": {
+          "name": "findBySite",
+          "async": true,
+          "parameters": [
+            {
+              "name": "siteId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdEvent[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByDateRange": {
+          "name": "findByDateRange",
+          "async": true,
+          "parameters": [
+            {
+              "name": "start",
+              "type": "Date",
+              "optional": false
+            },
+            {
+              "name": "end",
+              "type": "Date",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdEvent[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByType": {
+          "name": "findByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "eventType",
+              "type": "AdEventType",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdEvent[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countByType": {
+          "name": "countByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "variationId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "eventType",
+              "type": "AdEventType",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countImpressions": {
+          "name": "countImpressions",
+          "async": true,
+          "parameters": [
+            {
+              "name": "variationId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countClicks": {
+          "name": "countClicks",
+          "async": true,
+          "parameters": [
+            {
+              "name": "variationId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "countConversions": {
+          "name": "countConversions",
+          "async": true,
+          "parameters": [
+            {
+              "name": "variationId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findImpressions": {
+          "name": "findImpressions",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdEvent[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findClicks": {
+          "name": "findClicks",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdEvent[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findConversions": {
+          "name": "findConversions",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdEvent[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getVariationStats": {
+          "name": "getVariationStats",
+          "async": true,
+          "parameters": [
+            {
+              "name": "variationId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{\n    impressions: number;\n    clicks: number;\n    conversions: number;\n    ctr: number;\n    conversionRate: number;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AdEvent",
+      "exportName": "AdEventCollection",
+      "collectionExportName": "AdEventCollectionCollection",
+      "schema": {
+        "tableName": "ad_event_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_event_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_event_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_event_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "ee9d6da6"
+      }
+    },
+    "adformatcollection": {
+      "name": "adformatcollection",
+      "className": "AdFormatCollection",
+      "collection": "adformats",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/collections/AdFormatCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByDimensions": {
+          "name": "findByDimensions",
+          "async": true,
+          "parameters": [
+            {
+              "name": "width",
+              "type": "number",
+              "optional": false
+            },
+            {
+              "name": "height",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdFormat | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByType": {
+          "name": "findByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "formatType",
+              "type": "AdFormatType",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdFormat[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findBanners": {
+          "name": "findBanners",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdFormat[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findNative": {
+          "name": "findNative",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdFormat[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findVideo": {
+          "name": "findVideo",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdFormat[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AdFormat",
+      "exportName": "AdFormatCollection",
+      "collectionExportName": "AdFormatCollectionCollection",
+      "schema": {
+        "tableName": "ad_format_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_format_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_format_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_format_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "70d685a1"
+      }
+    },
+    "adgroupcollection": {
+      "name": "adgroupcollection",
+      "className": "AdGroupCollection",
+      "collection": "adgroups",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/collections/AdGroupCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByContract": {
+          "name": "findByContract",
+          "async": true,
+          "parameters": [
+            {
+              "name": "contractId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByTier": {
+          "name": "findByTier",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tierId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByStatus": {
+          "name": "findByStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "status",
+              "type": "AdGroupStatus",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findActive": {
+          "name": "findActive",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByVertical": {
+          "name": "findByVertical",
+          "async": true,
+          "parameters": [
+            {
+              "name": "verticalSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByZone": {
+          "name": "findByZone",
+          "async": true,
+          "parameters": [
+            {
+              "name": "zoneId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findEligibleForZone": {
+          "name": "findEligibleForZone",
+          "async": true,
+          "parameters": [
+            {
+              "name": "zoneId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findDrafts": {
+          "name": "findDrafts",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findPaused": {
+          "name": "findPaused",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findCompleted": {
+          "name": "findCompleted",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdGroup[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AdGroup",
+      "exportName": "AdGroupCollection",
+      "collectionExportName": "AdGroupCollectionCollection",
+      "schema": {
+        "tableName": "ad_group_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_group_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_group_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_group_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "6d84a15a"
+      }
+    },
+    "advariationcollection": {
+      "name": "advariationcollection",
+      "className": "AdVariationCollection",
+      "collection": "advariations",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/ads/src/collections/AdVariationCollection.ts",
+      "fields": {},
+      "methods": {
+        "findByGroup": {
+          "name": "findByGroup",
+          "async": true,
+          "parameters": [
+            {
+              "name": "groupId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdVariation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByFormat": {
+          "name": "findByFormat",
+          "async": true,
+          "parameters": [
+            {
+              "name": "formatId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdVariation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findActiveByGroup": {
+          "name": "findActiveByGroup",
+          "async": true,
+          "parameters": [
+            {
+              "name": "groupId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdVariation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "selectByWeight": {
+          "name": "selectByWeight",
+          "async": true,
+          "parameters": [
+            {
+              "name": "groupId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdVariation | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByStatus": {
+          "name": "findByStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "status",
+              "type": "AdVariationStatus",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AdVariation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findActive": {
+          "name": "findActive",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdVariation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findDrafts": {
+          "name": "findDrafts",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdVariation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findPaused": {
+          "name": "findPaused",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AdVariation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findTopPerformers": {
+          "name": "findTopPerformers",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": false,
+              "default": 10
+            }
+          ],
+          "returnType": "Promise<AdVariation[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AdVariation",
+      "exportName": "AdVariationCollection",
+      "collectionExportName": "AdVariationCollectionCollection",
+      "schema": {
+        "tableName": "ad_variation_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_variation_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "ad_variation_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "ad_variation_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "4af1ef95"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-ads"
+}
