@@ -184,9 +184,19 @@ function parseSpokenMeasurement(text: string): MeasurementValue | null {
   cleanText = cleanText.trim();
 
   // Handle compound measurements like "twelve feet six inches"
-  const compoundMatch = normalized.match(
-    /(\d+(?:\.\d+)?|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b)\s*(?:feet|foot|ft)\s+(?:and\s+)?(\d+(?:\.\d+)?|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b)\s*(?:inch(?:es)?|in)/i,
+  // Build readable regex pattern from parts
+  const numberPattern = '\\d+(?:\\.\\d+)?';
+  const wordNumberPattern =
+    '\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\b';
+  const valuePattern = `(${numberPattern}|${wordNumberPattern})`;
+  const feetPattern = '(?:feet|foot|ft)';
+  const inchPattern = '(?:inch(?:es)?|in)';
+
+  const compoundRegex = new RegExp(
+    `${valuePattern}\\s*${feetPattern}\\s+(?:and\\s+)?${valuePattern}\\s*${inchPattern}`,
+    'i',
   );
+  const compoundMatch = normalized.match(compoundRegex);
 
   if (compoundMatch) {
     let feet =

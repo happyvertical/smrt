@@ -81,8 +81,8 @@ $effect(() => {
 
 let isFocused = $state(false);
 
-// Currency symbol
-const currencySymbol = $derived(currency === 'USD' ? '$' : '$');
+// Currency symbol - differentiate between USD and CAD
+const currencySymbol = $derived(currency === 'USD' ? 'US$' : 'CA$');
 
 // Validation
 const isInRange = $derived.by(() => {
@@ -198,9 +198,10 @@ function parseSpokenMoney(text: string): number | null {
 
   if (foundDecimalWord) {
     cents += current;
-    // Handle "twenty five fifty" where 50 means 50 cents
+    // Handle cents overflow (e.g., "one hundred fifty cents" = 150 cents = $1.50)
     if (cents > 99) {
-      cents = Math.round(cents / 10); // "fifty" = 5 -> 50 cents
+      dollars += Math.floor(cents / 100);
+      cents = cents % 100;
     }
   } else {
     dollars += current;

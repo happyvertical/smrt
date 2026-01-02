@@ -54,12 +54,12 @@ const defaultProvinces = [
   { value: 'QC', label: 'Quebec' },
   { value: 'SK', label: 'Saskatchewan' },
   { value: 'YT', label: 'Yukon' },
-  // US States (common ones)
-  { value: 'CA', label: 'California' },
-  { value: 'NY', label: 'New York' },
-  { value: 'TX', label: 'Texas' },
-  { value: 'FL', label: 'Florida' },
-  { value: 'WA', label: 'Washington' },
+  // US States (common ones) - prefixed with US- to avoid collision with country codes
+  { value: 'US-CA', label: 'California' },
+  { value: 'US-NY', label: 'New York' },
+  { value: 'US-TX', label: 'Texas' },
+  { value: 'US-FL', label: 'Florida' },
+  { value: 'US-WA', label: 'Washington' },
 ];
 
 let {
@@ -122,7 +122,7 @@ function parseSpokenAddress(text: string): Partial<AddressValue> {
     /([a-z]\d[a-z]\s?\d[a-z]\d)|(\d{5}(-\d{4})?)/i,
   );
   if (postalMatch) {
-    result.postalCode = postalMatch[0].toUpperCase().replace(/\s/g, ' ');
+    result.postalCode = postalMatch[0].toUpperCase().replace(/\s+/g, ' ');
   }
 
   // Try to extract province/state
