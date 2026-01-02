@@ -232,9 +232,12 @@ export class ManifestAdapter {
     }
 
     // 4. Default to text
+    // A field is only required if it has no default value AND is not optional (?)
+    // Fields with initializers (default values) should NOT be required
+    const hasDefaultValue = field.initializer !== null;
     return {
       type: 'text',
-      required: !field.optional,
+      required: !field.optional && !hasDefaultValue,
       source: 'default',
     };
   }
@@ -342,11 +345,17 @@ export class ManifestAdapter {
   private inferFromAnnotation(field: RawFieldDefinition): FieldTypeInference {
     const type = field.typeAnnotation;
 
+    // A field is only required if it has no default value AND is not optional (?)
+    // Fields with initializers (default values) should NOT be required
+    // This matches the behavior of the legacy TypeScript scanner
+    const hasDefaultValue = field.initializer !== null;
+    const isRequired = !field.optional && !hasDefaultValue;
+
     // String types
     if (type === 'string') {
       return {
         type: 'text',
-        required: !field.optional,
+        required: isRequired,
         defaultValue: this.parseDefaultValue(field.initializer, 'string'),
         source: 'annotation',
       };
@@ -360,7 +369,7 @@ export class ManifestAdapter {
 
       return {
         type: fieldType,
-        required: !field.optional,
+        required: isRequired,
         defaultValue: field.numericValue ?? undefined,
         source: 'heuristic',
       };
@@ -370,7 +379,7 @@ export class ManifestAdapter {
     if (type === 'boolean') {
       return {
         type: 'boolean',
-        required: !field.optional,
+        required: isRequired,
         defaultValue: this.parseDefaultValue(field.initializer, 'boolean'),
         source: 'annotation',
       };
@@ -380,7 +389,7 @@ export class ManifestAdapter {
     if (type === 'Date') {
       return {
         type: 'datetime',
-        required: !field.optional,
+        required: isRequired,
         source: 'annotation',
       };
     }
@@ -389,7 +398,7 @@ export class ManifestAdapter {
     if (type?.endsWith('[]')) {
       return {
         type: 'json',
-        required: !field.optional,
+        required: isRequired,
         defaultValue: [],
         source: 'annotation',
       };
@@ -399,7 +408,7 @@ export class ManifestAdapter {
     if (type?.startsWith('Record<') || type === 'object') {
       return {
         type: 'json',
-        required: !field.optional,
+        required: isRequired,
         defaultValue: {},
         source: 'annotation',
       };
@@ -419,7 +428,7 @@ export class ManifestAdapter {
     // Default to text for unknown types
     return {
       type: 'text',
-      required: !field.optional,
+      required: isRequired,
       source: 'default',
     };
   }
