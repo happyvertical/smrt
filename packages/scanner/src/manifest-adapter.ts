@@ -166,7 +166,7 @@ export class ManifestAdapter {
     const collection = this.pluralize(classDef.className);
 
     return {
-      name: classDef.className,
+      name: classDef.className.toLowerCase(),
       className: classDef.className,
       collection,
       filePath: classDef.filePath,
@@ -176,6 +176,8 @@ export class ManifestAdapter {
       decoratorConfig: (classDef.decoratorConfig || {}) as SmartObjectConfig,
       extends: classDef.extendsClause || undefined,
       extendsTypeArg: classDef.extendsTypeArg || undefined,
+      exportName: classDef.className,
+      collectionExportName: `${classDef.className}Collection`,
     };
   }
 
@@ -498,15 +500,17 @@ export class ManifestAdapter {
    * Simple pluralization for collection names
    */
   private pluralize(name: string): string {
-    if (name.endsWith('y')) {
-      return `${name.slice(0, -1)}ies`;
+    // Lowercase the name first for consistent collection/table names
+    const lower = name.toLowerCase();
+    if (lower.endsWith('y')) {
+      return `${lower.slice(0, -1)}ies`;
     }
-    if (name.endsWith('s') || name.endsWith('x') || name.endsWith('z')) {
-      return `${name}es`;
+    if (lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('z')) {
+      return `${lower}es`;
     }
-    if (name.endsWith('ch') || name.endsWith('sh')) {
-      return `${name}es`;
+    if (lower.endsWith('ch') || lower.endsWith('sh')) {
+      return `${lower}es`;
     }
-    return `${name}s`;
+    return `${lower}s`;
   }
 }

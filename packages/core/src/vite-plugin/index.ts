@@ -529,6 +529,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // Add moduleType identifier
       newManifest.moduleType = 'smrt';
 
+      // Generate pre-computed schemas for each object (same as TypeScript scanner path)
+      const { ManifestGenerator } = await import('../scanner/index.js');
+      const manifestGen = new ManifestGenerator();
+      manifestGen.generateSchemas(newManifest);
+
       const elapsed = performance.now() - startTime;
 
       // Log results

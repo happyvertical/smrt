@@ -71,19 +71,45 @@ export class InheritanceResolver {
 
   /**
    * Resolve all classes and return resolved definitions
+   *
+   * Includes classes that:
+   * 1. Have @smrt() decorator
+   * 2. Extend a framework base class (SmrtObject, SmrtClass, SmrtCollection)
+   *    even without @smrt() decorator - this is needed for collection classes
+   *    that extend SmrtCollection<T> without a decorator
    */
   resolveAll(): ResolvedClassDefinition[] {
     const resolved: ResolvedClassDefinition[] = [];
 
     for (const classDef of this.classMap.values()) {
-      // Only process @smrt() decorated classes
-      if (!classDef.hasSmartDecorator) continue;
+      // Include classes with @smrt() decorator
+      // OR classes that extend framework base classes
+      const extendsFrameworkBase = this.extendsFrameworkBase(classDef);
+      if (!classDef.hasSmartDecorator && !extendsFrameworkBase) continue;
 
       const resolvedClass = this.resolve(classDef);
       resolved.push(resolvedClass);
     }
 
     return resolved;
+  }
+
+  /**
+   * Check if a class extends a framework base class
+   * (SmrtObject, SmrtClass, or SmrtCollection)
+   */
+  private extendsFrameworkBase(classDef: RawClassDefinition): boolean {
+    // Direct extension of framework base
+    if (
+      classDef.extendsClause &&
+      this.knownBaseClasses.has(classDef.extendsClause)
+    ) {
+      return true;
+    }
+
+    // Walk inheritance chain to check indirect extension
+    const chain = this.resolveInheritanceChain(classDef.className);
+    return chain.some((className) => this.knownBaseClasses.has(className));
   }
 
   /**
