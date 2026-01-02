@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.91
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: Unify manifest generation logic (#632) (manifest)
+  - @happyvertical/smrt-config@0.17.91
+  - @happyvertical/smrt-types@0.17.91
+
 ## 0.17.90
 
 ### Patch Changes
