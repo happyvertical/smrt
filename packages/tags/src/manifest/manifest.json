@@ -1,0 +1,839 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322690629,
+  "objects": {
+    "tagalias": {
+      "name": "tagalias",
+      "className": "TagAlias",
+      "collection": "tagaliases",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/tags/src/tag-alias.ts",
+      "fields": {
+        "tagSlug": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "alias": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "language": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getTag": {
+          "name": "getTag",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Tag | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "searchByAlias": {
+          "name": "searchByAlias",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_alias",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_language",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "getAliasesForTag": {
+          "name": "getAliasesForTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_tagSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<TagAlias[]>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "TagAlias",
+      "collectionExportName": "TagAliasCollection",
+      "schema": {
+        "tableName": "tag_alias",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_alias\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tag_slug\" TEXT DEFAULT '',\n  \"alias\" TEXT DEFAULT '',\n  \"language\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tag_slug": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "alias": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "language": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "tag_alias_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "tag_alias_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "tag_alias_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "3bbbeee1"
+      }
+    },
+    "tagaliascollection": {
+      "name": "tagaliascollection",
+      "className": "TagAliasCollection",
+      "collection": "tagaliases",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/tags/src/tag-aliases.ts",
+      "fields": {},
+      "methods": {
+        "addAlias": {
+          "name": "addAlias",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "alias",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "language",
+              "type": "string",
+              "optional": true
+            },
+            {
+              "name": "context",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<TagAlias>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "searchByAlias": {
+          "name": "searchByAlias",
+          "async": true,
+          "parameters": [
+            {
+              "name": "alias",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "language",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAliasesForTag": {
+          "name": "getAliasesForTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "language",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<TagAlias[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeAlias": {
+          "name": "removeAlias",
+          "async": true,
+          "parameters": [
+            {
+              "name": "aliasId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "bulkAddAliases": {
+          "name": "bulkAddAliases",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "aliases",
+              "type": "Array<{\n      alias: string;\n      language?: string;\n      context?: string;\n    }>",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<TagAlias[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAliasesByLanguage": {
+          "name": "getAliasesByLanguage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tagSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Map<string, string[]>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findMatchingAliases": {
+          "name": "findMatchingAliases",
+          "async": true,
+          "parameters": [
+            {
+              "name": "query",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "language",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<TagAlias[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "TagAlias",
+      "exportName": "TagAliasCollection",
+      "collectionExportName": "TagAliasCollectionCollection",
+      "schema": {
+        "tableName": "tag_alias_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_alias_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "tag_alias_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "tag_alias_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "08747314"
+      }
+    },
+    "tagcollection": {
+      "name": "tagcollection",
+      "className": "TagCollection",
+      "collection": "tags",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/tags/src/tags.ts",
+      "fields": {},
+      "methods": {
+        "getOrCreate": {
+          "name": "getOrCreate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "context",
+              "type": "string",
+              "optional": false,
+              "default": "global"
+            }
+          ],
+          "returnType": "Promise<Tag>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listByContext": {
+          "name": "listByContext",
+          "async": true,
+          "parameters": [
+            {
+              "name": "context",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "parentSlug",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRootTags": {
+          "name": "getRootTags",
+          "async": true,
+          "parameters": [
+            {
+              "name": "context",
+              "type": "string",
+              "optional": false,
+              "default": "global"
+            }
+          ],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getChildren": {
+          "name": "getChildren",
+          "async": true,
+          "parameters": [
+            {
+              "name": "parentSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getHierarchy": {
+          "name": "getHierarchy",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<TagHierarchy>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "moveTag": {
+          "name": "moveTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "newParentSlug",
+              "type": "string | null",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "mergeTag": {
+          "name": "mergeTag",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fromSlug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "toSlug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "cleanupUnused": {
+          "name": "cleanupUnused",
+          "async": true,
+          "parameters": [
+            {
+              "name": "context",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "calculateLevel": {
+          "name": "calculateLevel",
+          "async": true,
+          "parameters": [
+            {
+              "name": "parentSlug",
+              "type": "string | null",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Tag",
+      "exportName": "TagCollection",
+      "collectionExportName": "TagCollectionCollection",
+      "schema": {
+        "tableName": "tag_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "tag_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "tag_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "5e1695ba"
+      }
+    },
+    "tag": {
+      "name": "tag",
+      "className": "Tag",
+      "collection": "tags",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/tags/src/tag.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "parentSlug": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "level": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "metadata": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": false,
+          "parameters": [],
+          "returnType": "TagMetadata",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setMetadata": {
+          "name": "setMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "TagMetadata",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateMetadata": {
+          "name": "updateMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "updates",
+              "type": "Partial<TagMetadata>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParent": {
+          "name": "getParent",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Tag | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getChildren": {
+          "name": "getChildren",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAncestors": {
+          "name": "getAncestors",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getDescendants": {
+          "name": "getDescendants",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "_context",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Tag | null>",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "getRootTags": {
+          "name": "getRootTags",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_context",
+              "type": "string",
+              "optional": false,
+              "default": "global"
+            }
+          ],
+          "returnType": "Promise<Tag[]>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "Tag",
+      "collectionExportName": "TagCollection",
+      "schema": {
+        "tableName": "tags",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tags\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"parent_slug\" TEXT DEFAULT '',\n  \"level\" INTEGER DEFAULT 0,\n  \"description\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "parent_slug": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "level": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "metadata": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "tags_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "tags_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "tags_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "08b141ec"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-tags"
+}

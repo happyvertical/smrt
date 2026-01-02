@@ -1,0 +1,2003 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322696491,
+  "objects": {
+    "content": {
+      "name": "content",
+      "className": "Content",
+      "collection": "contents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/content/src/content.ts",
+      "fields": {
+        "type": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "variant": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "fileKey": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "author": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "publish_date": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "url": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "source": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "original_url": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "language": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "tags": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "category": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "required": false,
+          "default": "draft"
+        },
+        "state": {
+          "type": "text",
+          "required": false,
+          "default": "active"
+        },
+        "metadata": {
+          "type": "json",
+          "required": false,
+          "default": {}
+        },
+        "thumbnailAssetId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadReferences": {
+          "name": "loadReferences",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addReference": {
+          "name": "addReference",
+          "async": true,
+          "parameters": [
+            {
+              "name": "content",
+              "type": "Content | string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReferences": {
+          "name": "getReferences",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCategorySegments": {
+          "name": "getCategorySegments",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParentCategory": {
+          "name": "getParentCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "string | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRootCategory": {
+          "name": "getRootCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "string | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAncestorPaths": {
+          "name": "getAncestorPaths",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isInCategory": {
+          "name": "isInCategory",
+          "async": false,
+          "parameters": [
+            {
+              "name": "categoryPath",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "includeChildren",
+              "type": "any",
+              "optional": false,
+              "default": true
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAssets": {
+          "name": "getAssets",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addAsset": {
+          "name": "addAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "asset",
+              "type": "Asset",
+              "optional": false
+            },
+            {
+              "name": "relationship",
+              "type": "any",
+              "optional": false,
+              "default": "attachment"
+            },
+            {
+              "name": "sortOrder",
+              "type": "any",
+              "optional": false,
+              "default": 0
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeAsset": {
+          "name": "removeAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getThumbnail": {
+          "name": "getThumbnail",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setThumbnail": {
+          "name": "setThumbnail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "image",
+              "type": "Image",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateThumbnail": {
+          "name": "generateThumbnail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "ThumbnailOptions",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Image>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "Content",
+      "collectionExportName": "ContentCollection",
+      "schema": {
+        "tableName": "contents",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"type\" TEXT DEFAULT 'null',\n  \"variant\" TEXT DEFAULT 'null',\n  \"file_key\" TEXT DEFAULT 'null',\n  \"author\" TEXT DEFAULT 'null',\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT 'null',\n  \"body\" TEXT DEFAULT '',\n  \"publish_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"url\" TEXT DEFAULT 'null',\n  \"source\" TEXT DEFAULT 'null',\n  \"original_url\" TEXT DEFAULT 'null',\n  \"language\" TEXT DEFAULT 'null',\n  \"tags\" JSON DEFAULT '',\n  \"category\" TEXT DEFAULT 'null',\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '[object Object]',\n  \"thumbnail_asset_id\" TEXT DEFAULT 'null'\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "variant": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "file_key": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "author": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "publish_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "original_url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "language": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "tags": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "category": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "draft"
+          },
+          "state": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "active"
+          },
+          "metadata": {
+            "type": "JSON",
+            "notNull": false,
+            "default": {}
+          },
+          "thumbnail_asset_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "contents_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "contents_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "contents_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "ef3122cf"
+      }
+    },
+    "article": {
+      "name": "article",
+      "className": "Article",
+      "collection": "contents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/content/src/content-types.ts",
+      "fields": {
+        "type": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "variant": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "fileKey": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "author": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "publish_date": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "url": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "source": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "original_url": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "language": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "tags": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "category": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "required": false,
+          "default": "draft"
+        },
+        "state": {
+          "type": "text",
+          "required": false,
+          "default": "active"
+        },
+        "metadata": {
+          "type": "json",
+          "required": false,
+          "default": {}
+        },
+        "thumbnailAssetId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadReferences": {
+          "name": "loadReferences",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addReference": {
+          "name": "addReference",
+          "async": true,
+          "parameters": [
+            {
+              "name": "content",
+              "type": "Content | string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReferences": {
+          "name": "getReferences",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCategorySegments": {
+          "name": "getCategorySegments",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParentCategory": {
+          "name": "getParentCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "string | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRootCategory": {
+          "name": "getRootCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "string | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAncestorPaths": {
+          "name": "getAncestorPaths",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isInCategory": {
+          "name": "isInCategory",
+          "async": false,
+          "parameters": [
+            {
+              "name": "categoryPath",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "includeChildren",
+              "type": "any",
+              "optional": false,
+              "default": true
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAssets": {
+          "name": "getAssets",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addAsset": {
+          "name": "addAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "asset",
+              "type": "Asset",
+              "optional": false
+            },
+            {
+              "name": "relationship",
+              "type": "any",
+              "optional": false,
+              "default": "attachment"
+            },
+            {
+              "name": "sortOrder",
+              "type": "any",
+              "optional": false,
+              "default": 0
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeAsset": {
+          "name": "removeAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getThumbnail": {
+          "name": "getThumbnail",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setThumbnail": {
+          "name": "setThumbnail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "image",
+              "type": "Image",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateThumbnail": {
+          "name": "generateThumbnail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "ThumbnailOptions",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Image>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "tableName": "contents"
+      },
+      "extends": "Content",
+      "exportName": "Article",
+      "collectionExportName": "ArticleCollection",
+      "schema": {
+        "tableName": "contents",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"type\" TEXT DEFAULT 'null',\n  \"variant\" TEXT DEFAULT 'null',\n  \"file_key\" TEXT DEFAULT 'null',\n  \"author\" TEXT DEFAULT 'null',\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT 'null',\n  \"body\" TEXT DEFAULT '',\n  \"publish_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"url\" TEXT DEFAULT 'null',\n  \"source\" TEXT DEFAULT 'null',\n  \"original_url\" TEXT DEFAULT 'null',\n  \"language\" TEXT DEFAULT 'null',\n  \"tags\" JSON DEFAULT '',\n  \"category\" TEXT DEFAULT 'null',\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '[object Object]',\n  \"thumbnail_asset_id\" TEXT DEFAULT 'null'\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "variant": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "file_key": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "author": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "publish_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "original_url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "language": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "tags": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "category": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "draft"
+          },
+          "state": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "active"
+          },
+          "metadata": {
+            "type": "JSON",
+            "notNull": false,
+            "default": {}
+          },
+          "thumbnail_asset_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "contents_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "contents_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "contents_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "24beae85"
+      }
+    },
+    "contentdocument": {
+      "name": "contentdocument",
+      "className": "ContentDocument",
+      "collection": "contents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/content/src/content-types.ts",
+      "fields": {
+        "type": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "variant": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "fileKey": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "author": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "publish_date": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "url": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "source": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "original_url": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "language": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "tags": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "category": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "required": false,
+          "default": "draft"
+        },
+        "state": {
+          "type": "text",
+          "required": false,
+          "default": "active"
+        },
+        "metadata": {
+          "type": "json",
+          "required": false,
+          "default": {}
+        },
+        "thumbnailAssetId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadReferences": {
+          "name": "loadReferences",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addReference": {
+          "name": "addReference",
+          "async": true,
+          "parameters": [
+            {
+              "name": "content",
+              "type": "Content | string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReferences": {
+          "name": "getReferences",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCategorySegments": {
+          "name": "getCategorySegments",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParentCategory": {
+          "name": "getParentCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "string | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRootCategory": {
+          "name": "getRootCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "string | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAncestorPaths": {
+          "name": "getAncestorPaths",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isInCategory": {
+          "name": "isInCategory",
+          "async": false,
+          "parameters": [
+            {
+              "name": "categoryPath",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "includeChildren",
+              "type": "any",
+              "optional": false,
+              "default": true
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAssets": {
+          "name": "getAssets",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addAsset": {
+          "name": "addAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "asset",
+              "type": "Asset",
+              "optional": false
+            },
+            {
+              "name": "relationship",
+              "type": "any",
+              "optional": false,
+              "default": "attachment"
+            },
+            {
+              "name": "sortOrder",
+              "type": "any",
+              "optional": false,
+              "default": 0
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeAsset": {
+          "name": "removeAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getThumbnail": {
+          "name": "getThumbnail",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setThumbnail": {
+          "name": "setThumbnail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "image",
+              "type": "Image",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateThumbnail": {
+          "name": "generateThumbnail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "ThumbnailOptions",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Image>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "tableName": "contents"
+      },
+      "extends": "Content",
+      "exportName": "ContentDocument",
+      "collectionExportName": "ContentDocumentCollection",
+      "schema": {
+        "tableName": "contents",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"type\" TEXT DEFAULT 'null',\n  \"variant\" TEXT DEFAULT 'null',\n  \"file_key\" TEXT DEFAULT 'null',\n  \"author\" TEXT DEFAULT 'null',\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT 'null',\n  \"body\" TEXT DEFAULT '',\n  \"publish_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"url\" TEXT DEFAULT 'null',\n  \"source\" TEXT DEFAULT 'null',\n  \"original_url\" TEXT DEFAULT 'null',\n  \"language\" TEXT DEFAULT 'null',\n  \"tags\" JSON DEFAULT '',\n  \"category\" TEXT DEFAULT 'null',\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '[object Object]',\n  \"thumbnail_asset_id\" TEXT DEFAULT 'null'\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "variant": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "file_key": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "author": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "publish_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "original_url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "language": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "tags": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "category": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "draft"
+          },
+          "state": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "active"
+          },
+          "metadata": {
+            "type": "JSON",
+            "notNull": false,
+            "default": {}
+          },
+          "thumbnail_asset_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "contents_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "contents_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "contents_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "de2c819b"
+      }
+    },
+    "mirror": {
+      "name": "mirror",
+      "className": "Mirror",
+      "collection": "contents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/content/src/content-types.ts",
+      "fields": {
+        "type": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "variant": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "fileKey": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "author": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "title": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "body": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "publish_date": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "url": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "source": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "original_url": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "language": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "tags": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "category": {
+          "type": "text",
+          "required": false,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "required": false,
+          "default": "draft"
+        },
+        "state": {
+          "type": "text",
+          "required": false,
+          "default": "active"
+        },
+        "metadata": {
+          "type": "json",
+          "required": false,
+          "default": {}
+        },
+        "thumbnailAssetId": {
+          "type": "text",
+          "required": false,
+          "default": null
+        }
+      },
+      "methods": {
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadReferences": {
+          "name": "loadReferences",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addReference": {
+          "name": "addReference",
+          "async": true,
+          "parameters": [
+            {
+              "name": "content",
+              "type": "Content | string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReferences": {
+          "name": "getReferences",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCategorySegments": {
+          "name": "getCategorySegments",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParentCategory": {
+          "name": "getParentCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "string | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRootCategory": {
+          "name": "getRootCategory",
+          "async": false,
+          "parameters": [],
+          "returnType": "string | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAncestorPaths": {
+          "name": "getAncestorPaths",
+          "async": false,
+          "parameters": [],
+          "returnType": "string[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isInCategory": {
+          "name": "isInCategory",
+          "async": false,
+          "parameters": [
+            {
+              "name": "categoryPath",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "includeChildren",
+              "type": "any",
+              "optional": false,
+              "default": true
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAssets": {
+          "name": "getAssets",
+          "async": true,
+          "parameters": [
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addAsset": {
+          "name": "addAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "asset",
+              "type": "Asset",
+              "optional": false
+            },
+            {
+              "name": "relationship",
+              "type": "any",
+              "optional": false,
+              "default": "attachment"
+            },
+            {
+              "name": "sortOrder",
+              "type": "any",
+              "optional": false,
+              "default": 0
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "removeAsset": {
+          "name": "removeAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "relationship",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getThumbnail": {
+          "name": "getThumbnail",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Image | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setThumbnail": {
+          "name": "setThumbnail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "image",
+              "type": "Image",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateThumbnail": {
+          "name": "generateThumbnail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "ThumbnailOptions",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Image>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "tableName": "contents"
+      },
+      "extends": "Content",
+      "exportName": "Mirror",
+      "collectionExportName": "MirrorCollection",
+      "schema": {
+        "tableName": "contents",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"type\" TEXT DEFAULT 'null',\n  \"variant\" TEXT DEFAULT 'null',\n  \"file_key\" TEXT DEFAULT 'null',\n  \"author\" TEXT DEFAULT 'null',\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT 'null',\n  \"body\" TEXT DEFAULT '',\n  \"publish_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"url\" TEXT DEFAULT 'null',\n  \"source\" TEXT DEFAULT 'null',\n  \"original_url\" TEXT DEFAULT 'null',\n  \"language\" TEXT DEFAULT 'null',\n  \"tags\" JSON DEFAULT '',\n  \"category\" TEXT DEFAULT 'null',\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '[object Object]',\n  \"thumbnail_asset_id\" TEXT DEFAULT 'null'\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "type": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "variant": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "file_key": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "author": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "publish_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "original_url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "language": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "tags": {
+            "type": "JSON",
+            "notNull": false,
+            "default": []
+          },
+          "category": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "draft"
+          },
+          "state": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "active"
+          },
+          "metadata": {
+            "type": "JSON",
+            "notNull": false,
+            "default": {}
+          },
+          "thumbnail_asset_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": null
+          }
+        },
+        "indexes": [
+          {
+            "name": "contents_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "contents_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "contents_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "d62a1d51"
+      }
+    },
+    "contents": {
+      "name": "contents",
+      "className": "Contents",
+      "collection": "contents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/content/src/contents.ts",
+      "fields": {
+        "options": {
+          "type": "json",
+          "required": false
+        },
+        "contentDir": {
+          "type": "text",
+          "required": false
+        },
+        "loaded": {
+          "type": "text",
+          "required": true
+        }
+      },
+      "methods": {
+        "getDb": {
+          "name": "getDb",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "mirror": {
+          "name": "mirror",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    url: string;\n    mirrorDir?: string;\n    context?: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "writeContentFile": {
+          "name": "writeContentFile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    content: Content;\n    contentDir: string;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "syncContentDir": {
+          "name": "syncContentDir",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{ contentDir?: string }",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateMissingThumbnails": {
+          "name": "generateMissingThumbnails",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{\n    /**\n     * Thumbnail generation strategy\n     */\n    strategy: ThumbnailStrategy;\n\n    /**\n     * Optional filter for content to process\n     */\n    where?: Record<string, any>;\n\n    /**\n     * Maximum number of thumbnails to generate\n     */\n    limit?: number;\n\n    // Headline card options\n    brandColor?: string;\n    backgroundColor?: string;\n    logoUrl?: string;\n    template?: 'default' | 'news' | 'minimal';\n\n    // Static map options\n    mapProvider?: 'mapbox' | 'google';\n    zoom?: number;\n\n    // AI options\n    style?: 'photorealistic' | 'illustration' | 'abstract' | 'minimal';\n\n    // Common options\n    width?: number;\n    height?: number;\n  }",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<{\n    images: Image[];\n    failed: Array<{ contentId: string; error: string }>;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Content",
+      "exportName": "Contents",
+      "collectionExportName": "ContentsCollection",
+      "schema": {
+        "tableName": "contents",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"options\" JSON,\n  \"content_dir\" TEXT,\n  \"loaded\" TEXT NOT NULL\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "options": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "content_dir": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "loaded": {
+            "type": "TEXT",
+            "notNull": true
+          }
+        },
+        "indexes": [
+          {
+            "name": "contents_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "contents_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "b902578a"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-content"
+}

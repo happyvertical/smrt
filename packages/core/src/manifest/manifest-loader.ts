@@ -1124,9 +1124,6 @@ export function discoverSTISiblingsSync(
   const cache = getSTISiblingCache();
   const cached = cache.get(collection);
   if (cached !== undefined) {
-    console.log(
-      `[manifest-loader] discoverSTISiblingsSync cache hit for collection: ${collection} (${cached.length} siblings)`,
-    );
     return cached;
   }
 

@@ -16,6 +16,17 @@ import { tableNameFromClass, toSnakeCase } from '../utils';
 import { SchemaManager } from './schema-manager';
 
 /**
+ * Framework base classes that are never registered in ObjectRegistry.
+ * These are known bases that don't need STI sibling discovery.
+ * Defined at module level to avoid recreating on every ensureSchema() call.
+ */
+const FRAMEWORK_BASE_CLASSES = new Set([
+  'SmrtObject',
+  'SmrtClass',
+  'SmrtCollection',
+]);
+
+/**
  * Get schema migration configuration from global config
  *
  * @returns Schema migration strategy ('warn' or 'auto-add')
@@ -373,14 +384,6 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
   // FIX #623: For STI child classes from external packages, ensure the parent class
   // is loaded before calling getSTIBase(). The parent might not be registered yet
   // if it's from an external package manifest.
-  // Framework base classes that are never registered in ObjectRegistry
-  // These are known bases that don't need STI sibling discovery
-  const FRAMEWORK_BASE_CLASSES = new Set([
-    'SmrtObject',
-    'SmrtClass',
-    'SmrtCollection',
-  ]);
-
   const registered = ObjectRegistry.getClass(className);
   if (registered?.extends) {
     // Skip STI discovery if parent is a framework base class (never registered)

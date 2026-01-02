@@ -1,0 +1,1791 @@
+{
+  "version": "1.0.0",
+  "timestamp": 1767322698151,
+  "objects": {
+    "eventtype": {
+      "name": "eventtype",
+      "className": "EventType",
+      "collection": "eventtypes",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/events/src/models/EventType.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {},
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "schema": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "participantSchema": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getSchema": {
+          "name": "getSchema",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setSchema": {
+          "name": "setSchema",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParticipantSchema": {
+          "name": "getParticipantSchema",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setParticipantSchema": {
+          "name": "setParticipantSchema",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventType | null>",
+          "isStatic": true,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "EventType",
+      "collectionExportName": "EventTypeCollection",
+      "schema": {
+        "tableName": "event_types",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_types\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"schema\" TEXT DEFAULT '',\n  \"participant_schema\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "schema": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "participant_schema": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "event_types_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "event_types_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "event_types_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "1208f39b"
+      }
+    },
+    "eventtypecollection": {
+      "name": "eventtypecollection",
+      "className": "EventTypeCollection",
+      "collection": "eventtypes",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/events/src/collections/EventTypeCollection.ts",
+      "fields": {},
+      "methods": {
+        "getOrCreate": {
+          "name": "getOrCreate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EventType>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getBySlug": {
+          "name": "getBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventType | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initializeDefaults": {
+          "name": "initializeDefaults",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<EventType[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "EventType",
+      "exportName": "EventTypeCollection",
+      "collectionExportName": "EventTypeCollectionCollection",
+      "schema": {
+        "tableName": "event_type_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_type_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "event_type_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "event_type_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "9d8686f6"
+      }
+    },
+    "eventseries": {
+      "name": "eventseries",
+      "className": "EventSeries",
+      "collection": "eventserieses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/events/src/models/EventSeries.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "typeId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "organizerId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "startDate": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "endDate": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "recurrence": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "metadata": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "externalId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "source": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getRecurrence": {
+          "name": "getRecurrence",
+          "async": false,
+          "parameters": [],
+          "returnType": "RecurrencePattern | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setRecurrence": {
+          "name": "setRecurrence",
+          "async": false,
+          "parameters": [
+            {
+              "name": "pattern",
+              "type": "RecurrencePattern",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setMetadata": {
+          "name": "setMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateMetadata": {
+          "name": "updateMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "updates",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getType": {
+          "name": "getType",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getOrganizer": {
+          "name": "getOrganizer",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEvents": {
+          "name": "getEvents",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "EventSeries",
+      "collectionExportName": "EventSeriesCollection",
+      "schema": {
+        "tableName": "event_series",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"type_id\" TEXT DEFAULT '',\n  \"organizer_id\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"start_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"end_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"recurrence\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT '',\n  \"external_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "type_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "organizer_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "start_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "end_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "recurrence": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "metadata": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "event_series_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "event_series_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "event_series_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "04c5089d"
+      }
+    },
+    "eventseriescollection": {
+      "name": "eventseriescollection",
+      "className": "EventSeriesCollection",
+      "collection": "eventserieses",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/events/src/collections/EventSeriesCollection.ts",
+      "fields": {},
+      "methods": {
+        "getByOrganizer": {
+          "name": "getByOrganizer",
+          "async": true,
+          "parameters": [
+            {
+              "name": "organizerId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventSeries[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getActive": {
+          "name": "getActive",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<EventSeries[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getUpcoming": {
+          "name": "getUpcoming",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EventSeries[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByType": {
+          "name": "getByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "typeId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventSeries[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "search": {
+          "name": "search",
+          "async": true,
+          "parameters": [
+            {
+              "name": "query",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "filters",
+              "type": "EventSeriesSearchFilters",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<EventSeries[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "EventSeries",
+      "exportName": "EventSeriesCollection",
+      "collectionExportName": "EventSeriesCollectionCollection",
+      "schema": {
+        "tableName": "event_series_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "event_series_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "event_series_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "a67c8f62"
+      }
+    },
+    "eventparticipant": {
+      "name": "eventparticipant",
+      "className": "EventParticipant",
+      "collection": "eventparticipants",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/events/src/models/EventParticipant.ts",
+      "fields": {
+        "eventId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "profileId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "role": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "placement": {
+          "type": "decimal",
+          "required": false,
+          "default": null
+        },
+        "groupId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "metadata": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "externalId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "source": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setMetadata": {
+          "name": "setMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateMetadata": {
+          "name": "updateMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "updates",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEvent": {
+          "name": "getEvent",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getProfile": {
+          "name": "getProfile",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getGroupParticipants": {
+          "name": "getGroupParticipants",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isHome": {
+          "name": "isHome",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isAway": {
+          "name": "isAway",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "EventParticipant",
+      "collectionExportName": "EventParticipantCollection",
+      "schema": {
+        "tableName": "event_participants",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participants\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"event_id\" TEXT DEFAULT '',\n  \"profile_id\" TEXT DEFAULT '',\n  \"role\" TEXT DEFAULT '',\n  \"placement\" REAL DEFAULT NULL,\n  \"group_id\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT '',\n  \"external_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "event_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "profile_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "role": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "placement": {
+            "type": "REAL",
+            "notNull": false,
+            "default": null
+          },
+          "group_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "metadata": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "event_participants_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "event_participants_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "event_participants_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "e28cbb28"
+      }
+    },
+    "eventparticipantcollection": {
+      "name": "eventparticipantcollection",
+      "className": "EventParticipantCollection",
+      "collection": "eventparticipants",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/events/src/collections/EventParticipantCollection.ts",
+      "fields": {},
+      "methods": {
+        "getByEvent": {
+          "name": "getByEvent",
+          "async": true,
+          "parameters": [
+            {
+              "name": "eventId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByProfile": {
+          "name": "getByProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByRole": {
+          "name": "getByRole",
+          "async": true,
+          "parameters": [
+            {
+              "name": "eventId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "role",
+              "type": "ParticipantRole | string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByPlacement": {
+          "name": "getByPlacement",
+          "async": true,
+          "parameters": [
+            {
+              "name": "eventId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByGroup": {
+          "name": "getByGroup",
+          "async": true,
+          "parameters": [
+            {
+              "name": "eventId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "groupId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getHome": {
+          "name": "getHome",
+          "async": true,
+          "parameters": [
+            {
+              "name": "eventId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAway": {
+          "name": "getAway",
+          "async": true,
+          "parameters": [
+            {
+              "name": "eventId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "search": {
+          "name": "search",
+          "async": true,
+          "parameters": [
+            {
+              "name": "filters",
+              "type": "ParticipantSearchFilters",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<EventParticipant[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParticipantStats": {
+          "name": "getParticipantStats",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "eventTypeId",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<{\n    totalEvents: number;\n    byRole: Record<string, number>;\n    byPlacement: Record<number, number>;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "EventParticipant",
+      "exportName": "EventParticipantCollection",
+      "collectionExportName": "EventParticipantCollectionCollection",
+      "schema": {
+        "tableName": "event_participant_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participant_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "event_participant_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "event_participant_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "f6e133f3"
+      }
+    },
+    "event": {
+      "name": "event",
+      "className": "Event",
+      "collection": "events",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/events/src/models/Event.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "seriesId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "parentEventId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "typeId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "placeId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "startDate": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "endDate": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "status": {
+          "type": "text",
+          "required": false,
+          "default": "scheduled"
+        },
+        "round": {
+          "type": "decimal",
+          "required": false,
+          "default": null
+        },
+        "metadata": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "externalId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "source": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "createdAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setMetadata": {
+          "name": "setMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateMetadata": {
+          "name": "updateMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "updates",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "updateStatus": {
+          "name": "updateStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "newStatus",
+              "type": "EventStatus",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSeries": {
+          "name": "getSeries",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getType": {
+          "name": "getType",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getPlace": {
+          "name": "getPlace",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParent": {
+          "name": "getParent",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Event | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getChildren": {
+          "name": "getChildren",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAncestors": {
+          "name": "getAncestors",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getDescendants": {
+          "name": "getDescendants",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRootEvent": {
+          "name": "getRootEvent",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Event>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getHierarchy": {
+          "name": "getHierarchy",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<{\n    ancestors: Event[];\n    current: Event;\n    descendants: Event[];\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getParticipants": {
+          "name": "getParticipants",
+          "async": true,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isInProgress": {
+          "name": "isInProgress",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRoot": {
+          "name": "isRoot",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "Event",
+      "collectionExportName": "EventCollection",
+      "schema": {
+        "tableName": "events",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"events\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"series_id\" TEXT DEFAULT '',\n  \"parent_event_id\" TEXT DEFAULT '',\n  \"type_id\" TEXT DEFAULT '',\n  \"place_id\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"start_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"end_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"status\" TEXT DEFAULT 'scheduled',\n  \"round\" REAL DEFAULT NULL,\n  \"metadata\" TEXT DEFAULT '',\n  \"external_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "series_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "parent_event_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "type_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "place_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "start_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "end_date": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "scheduled"
+          },
+          "round": {
+            "type": "REAL",
+            "notNull": false,
+            "default": null
+          },
+          "metadata": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "events_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "events_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "events_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "31a5eb8a"
+      }
+    },
+    "eventcollection": {
+      "name": "eventcollection",
+      "className": "EventCollection",
+      "collection": "events",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/events/src/collections/EventCollection.ts",
+      "fields": {},
+      "methods": {
+        "getBySeriesId": {
+          "name": "getBySeriesId",
+          "async": true,
+          "parameters": [
+            {
+              "name": "seriesId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByPlace": {
+          "name": "getByPlace",
+          "async": true,
+          "parameters": [
+            {
+              "name": "placeId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByDateRange": {
+          "name": "getByDateRange",
+          "async": true,
+          "parameters": [
+            {
+              "name": "startDate",
+              "type": "Date",
+              "optional": false
+            },
+            {
+              "name": "endDate",
+              "type": "Date",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getUpcoming": {
+          "name": "getUpcoming",
+          "async": true,
+          "parameters": [
+            {
+              "name": "limit",
+              "type": "number",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByStatus": {
+          "name": "getByStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "status",
+              "type": "EventStatus",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByType": {
+          "name": "getByType",
+          "async": true,
+          "parameters": [
+            {
+              "name": "typeId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRootEvents": {
+          "name": "getRootEvents",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByParent": {
+          "name": "getByParent",
+          "async": true,
+          "parameters": [
+            {
+              "name": "parentEventId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEventTree": {
+          "name": "getEventTree",
+          "async": true,
+          "parameters": [
+            {
+              "name": "eventId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Event | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "search": {
+          "name": "search",
+          "async": true,
+          "parameters": [
+            {
+              "name": "query",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "filters",
+              "type": "EventSearchFilters",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getInProgress": {
+          "name": "getInProgress",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Event[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "Event",
+      "exportName": "EventCollection",
+      "collectionExportName": "EventCollectionCollection",
+      "schema": {
+        "tableName": "event_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "event_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "event_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "548d1610"
+      }
+    }
+  },
+  "moduleType": "smrt",
+  "packageName": "@happyvertical/smrt-events"
+}
