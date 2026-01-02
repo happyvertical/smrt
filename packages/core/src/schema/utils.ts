@@ -373,27 +373,38 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
   // FIX #623: For STI child classes from external packages, ensure the parent class
   // is loaded before calling getSTIBase(). The parent might not be registered yet
   // if it's from an external package manifest.
+  // Framework base classes that are never registered in ObjectRegistry
+  // These are known bases that don't need STI sibling discovery
+  const FRAMEWORK_BASE_CLASSES = new Set([
+    'SmrtObject',
+    'SmrtClass',
+    'SmrtCollection',
+  ]);
+
   const registered = ObjectRegistry.getClass(className);
   if (registered?.extends) {
-    const parentClass = ObjectRegistry.getClass(registered.extends);
-    if (!parentClass) {
-      // Parent class not registered yet - discover and load STI siblings
-      // This will register the parent and any other siblings sharing the same table
-      const collection =
-        registered.schema?.tableName ||
-        ObjectRegistry.getSchema(className)?.tableName;
-      if (collection) {
-        console.log(
-          `[ensureSchema] Loading STI siblings for ${className} (parent ${registered.extends} not registered)`,
-        );
-        const siblings = discoverSTISiblingsSync(collection);
-        for (const sibling of siblings) {
-          if (!ObjectRegistry.hasClass(sibling.className)) {
-            ObjectRegistry.registerFromManifest(
-              sibling.className,
-              sibling.entry,
-              sibling.packageName,
-            );
+    // Skip STI discovery if parent is a framework base class (never registered)
+    if (!FRAMEWORK_BASE_CLASSES.has(registered.extends)) {
+      const parentClass = ObjectRegistry.getClass(registered.extends);
+      if (!parentClass) {
+        // Parent class not registered yet - discover and load STI siblings
+        // This will register the parent and any other siblings sharing the same table
+        const collection =
+          registered.schema?.tableName ||
+          ObjectRegistry.getSchema(className)?.tableName;
+        if (collection) {
+          console.log(
+            `[ensureSchema] Loading STI siblings for ${className} (parent ${registered.extends} not registered)`,
+          );
+          const siblings = discoverSTISiblingsSync(collection);
+          for (const sibling of siblings) {
+            if (!ObjectRegistry.hasClass(sibling.className)) {
+              ObjectRegistry.registerFromManifest(
+                sibling.className,
+                sibling.entry,
+                sibling.packageName,
+              );
+            }
           }
         }
       }
