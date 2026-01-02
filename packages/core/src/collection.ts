@@ -142,6 +142,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
+      // Reject empty arrays for IN operator (generates invalid SQL "IN ()")
+      if (
+        effectiveOperator === 'in' &&
+        Array.isArray(value) &&
+        value.length === 0
+      ) {
+        throw new Error(
+          `WHERE clause operator 'in' requires a non-empty array for field '${fieldName}'. ` +
+            `Use listByIds([]) for graceful empty array handling.`,
+        );
+      }
+
       if (effectiveOperator === 'like' && typeof value !== 'string') {
         throw new Error(
           `WHERE clause operator 'like' requires a string value for field '${fieldName}', ` +

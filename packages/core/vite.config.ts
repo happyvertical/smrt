@@ -162,6 +162,11 @@ export default defineConfig({
         'fill-range',
         'to-regex-range',
 
+        // OXC native bindings (Rust parser)
+        'oxc-parser',
+        'oxc-resolver',
+        /^@oxc-project\//,
+
         // Internal SMRT packages
         /^@smrt\//,
 

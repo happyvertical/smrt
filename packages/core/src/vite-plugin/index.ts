@@ -39,6 +39,13 @@ export interface SmrtPluginOptions {
   staticManifest?: SmartObjectManifest;
   /** Path to static manifest file for client mode */
   manifestPath?: string;
+  /**
+   * Use OXC-based scanner for faster manifest generation.
+   * 2-3x faster than TypeScript Compiler API based scanner.
+   *
+   * @default true
+   */
+  experimentalFastScanner?: boolean;
   /** SvelteKit route auto-generation options */
   svelteKit?: {
     /** Enable SvelteKit route generation (default: false) */
@@ -77,6 +84,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     typeDeclarationsPath = 'src/types',
     mode = 'auto',
     manifestPath,
+    experimentalFastScanner = true,
     svelteKit = {
       enabled: false,
       routesDir: 'src/routes/api',
@@ -390,6 +398,12 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
     // Always use dynamic scanning to respect project boundaries
     try {
+      // Use OXC-based scanner when experimentalFastScanner is enabled
+      if (experimentalFastScanner) {
+        return await scanWithOxc(rootDir);
+      }
+
+      // Default: Use TypeScript Compiler API based scanner
       // Conditionally import Node.js dependencies
       const [{ default: fg }, { ASTScanner, ManifestGenerator }] =
         await Promise.all([import('fast-glob'), import('../scanner/index.js')]);
@@ -451,6 +465,121 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     } catch (error) {
       console.error('[smrt] Error scanning files:', error);
       // Re-throw to fail the build - don't silently continue with empty manifest
+      throw error;
+    }
+  }
+
+  /**
+   * Scan files using OXC-based scanner (experimental fast path)
+   * Uses Rust-based oxc-parser for 2-3x faster parsing
+   */
+  async function scanWithOxc(rootDir: string): Promise<SmartObjectManifest> {
+    const startTime = performance.now();
+
+    try {
+      // Import the OXC scanner package
+      const { OxcScanner, ManifestAdapter } = await import(
+        '@happyvertical/smrt-scanner'
+      );
+
+      console.log(`[smrt] Using experimental OXC scanner for faster builds`);
+
+      // Create scanner with options
+      const scanner = new OxcScanner({
+        cwd: rootDir,
+        include,
+        exclude,
+      });
+
+      // Scan and resolve inheritance
+      const { results, resolved } = await scanner.scanAndResolve();
+
+      // Check for errors
+      if (results.errors.length > 0) {
+        console.error(
+          `\n[smrt] ❌ Build failed: ${results.errors.length} error(s) during scanning:\n`,
+        );
+        for (const error of results.errors) {
+          console.error(
+            `  ${error.filePath}:${error.line || '?'}: ${error.message}\n`,
+          );
+        }
+        throw new Error(
+          '[smrt] Build aborted due to scan errors. See above for details.',
+        );
+      }
+
+      // Convert to manifest format
+      const adapter = new ManifestAdapter();
+      const newManifest = adapter.toManifest(resolved);
+
+      // Read package.json for metadata
+      try {
+        const { readFileSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const pkgPath = join(rootDir, 'package.json');
+        const pkgContent = readFileSync(pkgPath, 'utf-8');
+        const packageJson = JSON.parse(pkgContent);
+        newManifest.packageName = packageJson.name || undefined;
+        newManifest.packageVersion = packageJson.version || undefined;
+      } catch {
+        // package.json not found or invalid - continue without packageName
+      }
+
+      // Add moduleType identifier
+      newManifest.moduleType = 'smrt';
+
+      // Generate pre-computed schemas for each object (same as TypeScript scanner path)
+      const { ManifestGenerator } = await import('../scanner/index.js');
+      const manifestGen = new ManifestGenerator();
+      manifestGen.generateSchemas(newManifest);
+
+      const elapsed = performance.now() - startTime;
+
+      // Log results
+      const objectCount = Object.keys(newManifest.objects).length;
+      if (objectCount > 0) {
+        const names = Object.keys(newManifest.objects).join(', ');
+        console.log(`[smrt] Found ${objectCount} SMRT objects: ${names}`);
+      } else {
+        console.log('[smrt] No SMRT objects found');
+      }
+      console.log(`[smrt] OXC scan completed in ${elapsed.toFixed(2)}ms`);
+
+      // Generate TypeScript declarations if enabled
+      if (generateTypes && server) {
+        await generateTypeDeclarationFile(
+          newManifest,
+          rootDir,
+          typeDeclarationsPath,
+        );
+      }
+
+      return newManifest;
+    } catch (error) {
+      // If OXC scanner fails to load, fall back to TS scanner
+      if (
+        error instanceof Error &&
+        error.message.includes('Cannot find package')
+      ) {
+        console.warn(
+          '[smrt] OXC scanner not available, falling back to TypeScript scanner',
+        );
+        console.warn(
+          '[smrt] Install @happyvertical/smrt-scanner for faster builds',
+        );
+
+        // Recursively call with experimentalFastScanner disabled
+        const originalValue = experimentalFastScanner;
+        (options as any).experimentalFastScanner = false;
+        try {
+          return await scanAndGenerateManifest(rootDir);
+        } finally {
+          (options as any).experimentalFastScanner = originalValue;
+        }
+      }
+
+      console.error('[smrt] Error in OXC scanner:', error);
       throw error;
     }
   }

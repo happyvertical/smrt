@@ -50,6 +50,7 @@
     // SMRT core framework
     { "path": "./packages/core" },
     { "path": "./packages/cli" },
+    { "path": "./packages/scanner" },
 
     // Domain modules
     { "path": "./packages/accounts" },
