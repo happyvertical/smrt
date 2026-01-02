@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.94
+
+### Patch Changes
+
+- ### Features
+
+  - add OXC-based scanner for faster manifest generation (#647) (scanner)
+  - @happyvertical/smrt-scanner@0.17.94
+  - @happyvertical/smrt-config@0.17.94
+  - @happyvertical/smrt-types@0.17.94
+
 ## 0.17.93
 
 ### Patch Changes
