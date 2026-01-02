@@ -254,7 +254,7 @@ export class InheritanceResolver {
   getDescendants(className: string): string[] {
     const descendants: string[] = [];
 
-    for (const [name, classDef] of this.classMap) {
+    for (const [name] of this.classMap) {
       if (name === className) continue;
 
       const chain = this.resolveInheritanceChain(name);

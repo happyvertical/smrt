@@ -18,8 +18,9 @@
  *   -v, --version         Show version
  */
 
-import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ManifestAdapter } from './manifest-adapter.js';
 import { OxcScanner } from './scanner.js';
 
@@ -128,9 +129,11 @@ Examples:
 }
 
 function showVersion(): void {
-  // Read version from package.json
+  // Read version from package.json using ESM-compatible approach
   try {
-    const pkg = require('../package.json');
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const pkgPath = resolve(__dirname, '../package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
     console.log(`smrt-scan v${pkg.version}`);
   } catch {
     console.log('smrt-scan v0.0.0');

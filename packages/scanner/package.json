@@ -43,8 +43,6 @@
     "build:watch": "vite build --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "benchmark": "tsx benchmarks/run.ts",
-    "benchmark:compare": "tsx benchmarks/compare.ts",
     "clean": "rm -rf dist"
   },
   "publishConfig": {
