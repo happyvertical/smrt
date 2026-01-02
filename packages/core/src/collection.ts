@@ -113,8 +113,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         ? `_${toSnakeCase(fieldName.slice(1))}`
         : toSnakeCase(fieldName);
 
+      // Auto-detect IN operator when value is an array without explicit operator
+      const effectiveOperator =
+        operator === '=' && Array.isArray(value) ? 'in' : operator;
+
       // Validate operator
-      if (!VALID_OPERATORS.includes(operator)) {
+      if (!VALID_OPERATORS.includes(effectiveOperator)) {
         throw new Error(
           `Invalid WHERE clause operator: '${operator}'. ` +
             `Valid operators: ${VALID_OPERATORS.join(', ')}`,
@@ -131,14 +135,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
 
       // Validate operator-specific value types
-      if (operator === 'in' && !Array.isArray(value)) {
+      if (effectiveOperator === 'in' && !Array.isArray(value)) {
         throw new Error(
           `WHERE clause operator 'in' requires an array value for field '${fieldName}', ` +
             `got ${typeof value}`,
         );
       }
 
-      if (operator === 'like' && typeof value !== 'string') {
+      if (effectiveOperator === 'like' && typeof value !== 'string') {
         throw new Error(
           `WHERE clause operator 'like' requires a string value for field '${fieldName}', ` +
             `got ${typeof value}`,
@@ -147,7 +151,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       // Reconstruct key with operator
       const newKey =
-        operator === '=' ? snakeFieldName : `${snakeFieldName} ${operator}`;
+        effectiveOperator === '='
+          ? snakeFieldName
+          : `${snakeFieldName} ${effectiveOperator}`;
 
       converted[newKey] = value;
     }
@@ -407,6 +413,25 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     } = {},
   ): Promise<ModelType[]> {
     return await this.list(options);
+  }
+
+  /**
+   * Find multiple objects by their IDs in a single query.
+   *
+   * This is a convenience method that avoids N+1 queries when you have
+   * a list of IDs and need to fetch the corresponding records.
+   *
+   * @param ids - Array of UUIDs to fetch
+   * @returns Promise resolving to array of objects (order not guaranteed)
+   *
+   * @example
+   * ```typescript
+   * const profiles = await profileCollection.listByIds(['id1', 'id2', 'id3']);
+   * ```
+   */
+  public async listByIds(ids: string[]): Promise<ModelType[]> {
+    if (ids.length === 0) return [];
+    return this.list({ where: { id: ids } });
   }
 
   /**
