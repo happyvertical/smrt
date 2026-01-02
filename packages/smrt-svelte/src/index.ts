@@ -15,11 +15,21 @@ export {
 export * from './components/ai/index.js';
 // Auth components
 export { default as UserMenu } from './components/auth/UserMenu.svelte';
+// Commerce components
+export * from './components/commerce/index.js';
+// Display components
+export * from './components/display/index.js';
+// Feedback components
+export * from './components/feedback/index.js';
 // Form components
 export * from './components/forms/index.js';
+// Layout components
+export * from './components/layout/index.js';
 // Membership components
 export { default as MembershipCard } from './components/memberships/MembershipCard.svelte';
 export { default as MembershipList } from './components/memberships/MembershipList.svelte';
+// Navigation components
+export * from './components/nav/index.js';
 // Permission components
 export { default as PermissionCheck } from './components/permissions/PermissionCheck.svelte';
 // Role components
