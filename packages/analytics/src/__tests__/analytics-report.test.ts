@@ -236,12 +236,14 @@ describe.skipIf(skipTests)(
 
     it('should find reports by status', async () => {
       const draft = await collection.create({
+        propertyId: 'prop-status',
         name: 'Draft Report',
         status: ReportStatus.DRAFT,
       });
       await draft.save();
 
       const scheduled = await collection.create({
+        propertyId: 'prop-status',
         name: 'Scheduled Report',
         status: ReportStatus.SCHEDULED,
       });
@@ -258,12 +260,14 @@ describe.skipIf(skipTests)(
 
     it('should find recurring reports', async () => {
       const oneTime = await collection.create({
+        propertyId: 'prop-recurring',
         name: 'One Time',
         frequency: ReportFrequency.ONCE,
       });
       await oneTime.save();
 
       const daily = await collection.create({
+        propertyId: 'prop-recurring',
         name: 'Daily Report',
         frequency: ReportFrequency.DAILY,
       });
