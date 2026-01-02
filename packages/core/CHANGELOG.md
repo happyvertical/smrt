@@ -1,5 +1,15 @@
 # @happyvertical/smrt-core
 
+## 0.17.93
+
+### Patch Changes
+
+- ### Other Changes
+
+  - perf: cache STI sibling discovery and skip for framework base classes (#646) (core)
+  - @happyvertical/smrt-config@0.17.93
+  - @happyvertical/smrt-types@0.17.93
+
 ## 0.17.92
 
 ### Patch Changes
