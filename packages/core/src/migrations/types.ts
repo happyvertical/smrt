@@ -4,6 +4,13 @@
  * Re-exports migration types from schema and adds migration-specific types.
  */
 
+// Re-export database types from @happyvertical/sql for compatibility
+export type {
+  ColumnDefinitionWithName as SqlColumnDefinitionWithName,
+  DatabaseInterface,
+  IndexDefinition as SqlIndexDefinition,
+  TableSchemaInfo as SqlTableSchemaInfo,
+} from '@happyvertical/sql';
 // Re-export schema migration types
 export type {
   DriftReport,
@@ -27,53 +34,6 @@ export interface MigrationTrackerOptions {
   statementTimeout?: number;
   /** Use CREATE INDEX CONCURRENTLY for indexes in PostgreSQL (default: true) */
   useConcurrentIndexes?: boolean;
-}
-
-/**
- * Query result type from database
- */
-export interface QueryResult<T = unknown> {
-  rows: T[];
-  rowCount?: number;
-}
-
-/**
- * Database interface type (imported from @happyvertical/sql)
- */
-export interface DatabaseInterface {
-  url?: string;
-  query: <T = unknown>(
-    sql: string,
-    params?: unknown[],
-  ) => Promise<QueryResult<T>>;
-  execute?: (sql: string, params?: unknown[]) => Promise<void>;
-  get?: (table: string, filter: Record<string, unknown>) => Promise<unknown>;
-  list?: (
-    table: string,
-    options?: {
-      where?: Record<string, unknown>;
-      orderBy?: string;
-      limit?: number;
-    },
-  ) => Promise<unknown[]>;
-  insert?: (table: string, data: Record<string, unknown>) => Promise<void>;
-  update?: (
-    table: string,
-    filter: Record<string, unknown>,
-    data: Record<string, unknown>,
-  ) => Promise<void>;
-  delete?: (table: string, filter: Record<string, unknown>) => Promise<void>;
-  transaction?: <T>(
-    callback: (tx: DatabaseInterface) => Promise<T>,
-  ) => Promise<T>;
-  getTableSchema?: (table: string) => Promise<TableSchemaInfo | null>;
-  alterTable?: {
-    addColumn: (
-      table: string,
-      column: ColumnDefinitionWithName,
-    ) => Promise<void>;
-    addIndex: (table: string, index: IndexDefinition) => Promise<void>;
-  };
 }
 
 /**
