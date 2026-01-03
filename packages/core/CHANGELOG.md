@@ -1,5 +1,14 @@
 # @happyvertical/smrt-core
 
+## 0.17.96
+
+### Patch Changes
+
+- 97f13ce: Add migrations export to smrt-core package.json exports
+  - @happyvertical/smrt-scanner@0.17.96
+  - @happyvertical/smrt-config@0.17.96
+  - @happyvertical/smrt-types@0.17.96
+
 ## 0.17.95
 
 ### Patch Changes
