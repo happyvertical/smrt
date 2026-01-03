@@ -4,13 +4,21 @@
  * Re-exports migration types from schema and adds migration-specific types.
  */
 
-// Re-export database types from @happyvertical/sql for compatibility
-export type {
-  ColumnDefinitionWithName as SqlColumnDefinitionWithName,
+// Import and re-export database types from @happyvertical/sql for compatibility
+import type {
   DatabaseInterface,
+  ColumnDefinitionWithName as SqlColumnDefinitionWithName,
   IndexDefinition as SqlIndexDefinition,
   TableSchemaInfo as SqlTableSchemaInfo,
 } from '@happyvertical/sql';
+
+export type {
+  SqlColumnDefinitionWithName,
+  DatabaseInterface,
+  SqlIndexDefinition,
+  SqlTableSchemaInfo,
+};
+
 // Re-export schema migration types
 export type {
   DriftReport,
