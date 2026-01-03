@@ -33,7 +33,8 @@
     "./scanner": "./dist/scanner.js",
     "./scanner/types": "./dist/scanner/types.js",
     "./manifest/discover-smrt-packages": "./dist/manifest/discover-smrt-packages.js",
-    "./manifest/discover-base-classes": "./dist/manifest/discover-base-classes.js"
+    "./manifest/discover-base-classes": "./dist/manifest/discover-base-classes.js",
+    "./migrations": "./dist/migrations/index.js"
   },
   "dependencies": {
     "@happyvertical/ai": "^0.60.9",

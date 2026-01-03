@@ -95,3 +95,163 @@ export interface SchemaMigration {
   dependencies: string[]; // Other migration IDs this depends on
   packageName: string;
 }
+
+/**
+ * Status of a schema migration in the tracking table
+ */
+export type MigrationStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'rolled_back';
+
+/**
+ * Record stored in _smrt_schema_migrations table
+ * Tracks applied migrations for idempotency and audit
+ */
+export interface SchemaMigrationRecord {
+  /** UUID primary key */
+  id: string;
+  /** Migration name, e.g., '0001_initial_schema' */
+  name: string;
+  /** SMRT version when migration was created */
+  version: string;
+  /** SHA-256 checksum of migration SQL for idempotency */
+  checksum: string;
+  /** SHA-256 of what was actually applied (for drift detection) */
+  applied_checksum: string | null;
+  /** When the migration was applied */
+  applied_at: Date;
+  /** Execution duration in milliseconds */
+  execution_time_ms: number | null;
+  /** Source SMRT package that defined this migration */
+  package_name: string | null;
+  /** Original migration file path */
+  source_file: string | null;
+  /** Current migration status */
+  status: MigrationStatus;
+  /** Error message if status is 'failed' */
+  error_message: string | null;
+  /** Number of application attempts */
+  attempts: number;
+  /** Whether this migration can be rolled back */
+  is_reversible: boolean;
+  /** When the migration was rolled back (if applicable) */
+  rolled_back_at: Date | null;
+  /** Hostname or identifier of who/what applied the migration */
+  applied_by: string | null;
+  /** Batch number for migrations applied together */
+  batch: number | null;
+}
+
+/**
+ * Definition for a migration to be applied
+ * Used by db:diff generation and file parsing
+ */
+export interface MigrationDefinition {
+  /** Unique migration identifier, e.g., '0001_add_users_table' */
+  id: string;
+  /** Human-readable description */
+  description: string;
+  /** SMRT version this migration was created for */
+  version: string;
+  /** SQL statements to apply the migration */
+  up: string[];
+  /** SQL statements to rollback the migration */
+  down: string[];
+  /** Other migration IDs this depends on */
+  dependencies?: string[];
+  /** Package that defines this migration */
+  package_name?: string;
+  /** Source file path */
+  source_file?: string;
+  /** Whether this migration can be rolled back */
+  is_reversible?: boolean;
+}
+
+/**
+ * Result of applying a single migration
+ */
+export interface MigrationResult {
+  /** Whether the migration was successful (no errors) */
+  success: boolean;
+  /** Migration name */
+  name: string;
+  /** SHA-256 checksum of the migration */
+  checksum: string;
+  /** Execution duration in milliseconds */
+  execution_time_ms: number;
+  /** Whether the migration was actually applied (false if already applied) */
+  applied?: boolean;
+  /** Whether the migration was skipped (already applied with same checksum) */
+  skipped?: boolean;
+  /** Error if migration failed */
+  error?: Error | string;
+  /** Whether this was a rollback operation */
+  rolled_back?: boolean;
+}
+
+/**
+ * Drift detection result for a single migration
+ */
+export interface DriftReport {
+  /** Migration name */
+  migration_name: string;
+  /** Expected checksum from migration definition */
+  expected_checksum: string;
+  /** Actual checksum found in database */
+  actual_checksum: string;
+  /** Type of drift detected */
+  drift_type:
+    | 'file_modified'
+    | 'db_modified'
+    | 'missing_in_db'
+    | 'unknown_in_db';
+  /** Suggested action to resolve the drift */
+  recommendation: string;
+}
+
+/**
+ * Schema difference for a single change
+ */
+export interface SchemaChange {
+  /** Type of change */
+  type:
+    | 'add_table'
+    | 'drop_table'
+    | 'add_column'
+    | 'drop_column'
+    | 'add_index'
+    | 'drop_index'
+    | 'type_mismatch';
+  /** Affected table name */
+  table: string;
+  /** Column or index name (if applicable) */
+  name?: string;
+  /** Column definition (for add_column) */
+  column?: ColumnDefinition;
+  /** Index definition (for add_index) */
+  index?: IndexDefinition;
+  /** For type mismatches: expected vs actual */
+  mismatch?: {
+    expected: string;
+    actual: string;
+  };
+  /** Generated SQL statement */
+  sql?: string;
+}
+
+/**
+ * Result of comparing manifest schema to database
+ */
+export interface SchemaDiff {
+  /** New tables to create */
+  added_tables: SchemaDefinition[];
+  /** Tables to drop (only if explicitly requested) */
+  dropped_tables: string[];
+  /** Changes to existing tables */
+  changes: SchemaChange[];
+  /** Whether any differences were found */
+  has_changes: boolean;
+}
