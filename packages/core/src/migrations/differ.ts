@@ -12,7 +12,7 @@ import type {
   SchemaDefinition,
   SchemaDiff,
 } from '../schema/types.js';
-import type { DatabaseInterface, TableSchemaInfo } from './types.js';
+import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 /**
  * Options for schema comparison
@@ -125,7 +125,7 @@ export class SchemaComparer {
   private compareColumns(
     tableName: string,
     manifest: SchemaDefinition,
-    dbSchema: TableSchemaInfo,
+    dbSchema: SqlTableSchemaInfo,
   ): SchemaChange[] {
     const changes: SchemaChange[] = [];
     const dbColumnNames = new Set(Object.keys(dbSchema.columns));
@@ -187,7 +187,7 @@ export class SchemaComparer {
   private compareIndexes(
     tableName: string,
     manifest: SchemaDefinition,
-    dbSchema: TableSchemaInfo,
+    dbSchema: SqlTableSchemaInfo,
   ): SchemaChange[] {
     const changes: SchemaChange[] = [];
     const dbIndexNames = new Set(dbSchema.indexes.map((idx) => idx.name));
@@ -223,10 +223,8 @@ export class SchemaComparer {
       query = `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`;
     }
 
-    const result = await this.db.query<{ name?: string; table_name?: string }>(
-      query,
-    );
-    const rows = result.rows || [];
+    const result = await this.db.query(query);
+    const rows = result.rows as { name?: string; table_name?: string }[];
     return new Set(
       rows.map((r) => r.name || r.table_name || '').filter(Boolean),
     );
