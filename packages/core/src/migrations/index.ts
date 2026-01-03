@@ -59,6 +59,7 @@ export type {
   MigrationTrackerOptions,
   ParsedMigrationFile,
   ParseMigrationOptions,
+  QueryResult,
   RollbackOptions,
   SchemaChange,
   SchemaDiff,

@@ -30,11 +30,22 @@ export interface MigrationTrackerOptions {
 }
 
 /**
+ * Query result type from database
+ */
+export interface QueryResult<T = unknown> {
+  rows: T[];
+  rowCount?: number;
+}
+
+/**
  * Database interface type (imported from @happyvertical/sql)
  */
 export interface DatabaseInterface {
   url?: string;
-  query: (sql: string, params?: unknown[]) => Promise<unknown[]>;
+  query: <T = unknown>(
+    sql: string,
+    params?: unknown[],
+  ) => Promise<QueryResult<T>>;
   execute?: (sql: string, params?: unknown[]) => Promise<void>;
   get?: (table: string, filter: Record<string, unknown>) => Promise<unknown>;
   list?: (
