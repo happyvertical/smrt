@@ -25,6 +25,28 @@ import type {
 } from './types.js';
 
 /**
+ * Row type for _smrt_schema_migrations table
+ */
+interface MigrationRow {
+  id: string;
+  name: string;
+  version: string;
+  checksum: string;
+  applied_checksum?: string | null;
+  applied_at: string;
+  execution_time_ms?: number | null;
+  package_name?: string | null;
+  source_file?: string | null;
+  status: string;
+  error_message?: string | null;
+  attempts: number;
+  is_reversible: number | boolean;
+  rolled_back_at?: string | null;
+  applied_by?: string | null;
+  batch: number;
+}
+
+/**
  * Default options for MigrationTracker
  */
 const DEFAULT_OPTIONS = {
@@ -107,16 +129,14 @@ export class MigrationTracker {
   async getAppliedMigrations(): Promise<SchemaMigrationRecord[]> {
     await this.initialize();
 
-    const result = await this.db.query(
+    const result = await this.db.query<MigrationRow>(
       `SELECT * FROM _smrt_schema_migrations WHERE status = 'completed' ORDER BY applied_at ASC`,
     );
 
     return result.rows.map((row) => ({
       ...row,
-      applied_at: new Date(row.applied_at as unknown as string),
-      rolled_back_at: row.rolled_back_at
-        ? new Date(row.rolled_back_at as unknown as string)
-        : null,
+      applied_at: new Date(row.applied_at),
+      rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
       is_reversible: Boolean(row.is_reversible),
     })) as SchemaMigrationRecord[];
   }
@@ -152,7 +172,7 @@ export class MigrationTracker {
   async getMigration(name: string): Promise<SchemaMigrationRecord | null> {
     await this.initialize();
 
-    const result = await this.db.query(
+    const result = await this.db.query<MigrationRow>(
       `SELECT * FROM _smrt_schema_migrations WHERE name = ? LIMIT 1`,
       [name],
     );
@@ -162,10 +182,8 @@ export class MigrationTracker {
     const row = result.rows[0];
     return {
       ...row,
-      applied_at: new Date(row.applied_at as unknown as string),
-      rolled_back_at: row.rolled_back_at
-        ? new Date(row.rolled_back_at as unknown as string)
-        : null,
+      applied_at: new Date(row.applied_at),
+      rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
       is_reversible: Boolean(row.is_reversible),
     } as SchemaMigrationRecord;
   }
@@ -176,11 +194,11 @@ export class MigrationTracker {
   async getNextBatch(): Promise<number> {
     await this.initialize();
 
-    const result = await this.db.query(
+    const result = await this.db.query<{ max_batch: number | null }>(
       `SELECT MAX(batch) as max_batch FROM _smrt_schema_migrations`,
     );
 
-    return ((result.rows[0]?.max_batch as number | null) ?? 0) + 1;
+    return (result.rows[0]?.max_batch ?? 0) + 1;
   }
 
   /**
@@ -566,14 +584,12 @@ export class MigrationTracker {
       params.push(options.limit);
     }
 
-    const result = await this.db.query(sql, params);
+    const result = await this.db.query<MigrationRow>(sql, params);
 
     return result.rows.map((row) => ({
       ...row,
-      applied_at: new Date(row.applied_at as unknown as string),
-      rolled_back_at: row.rolled_back_at
-        ? new Date(row.rolled_back_at as unknown as string)
-        : null,
+      applied_at: new Date(row.applied_at),
+      rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
       is_reversible: Boolean(row.is_reversible),
     })) as SchemaMigrationRecord[];
   }
