@@ -129,11 +129,11 @@ export class MigrationTracker {
   async getAppliedMigrations(): Promise<SchemaMigrationRecord[]> {
     await this.initialize();
 
-    const result = await this.db.query<MigrationRow>(
+    const result = await this.db.query(
       `SELECT * FROM _smrt_schema_migrations WHERE status = 'completed' ORDER BY applied_at ASC`,
     );
 
-    return result.rows.map((row) => ({
+    return (result.rows as MigrationRow[]).map((row) => ({
       ...row,
       applied_at: new Date(row.applied_at),
       rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
@@ -160,7 +160,7 @@ export class MigrationTracker {
 
     const result = await this.db.query(
       `SELECT 1 FROM _smrt_schema_migrations WHERE name = ? AND status = 'completed' LIMIT 1`,
-      [migrationId],
+      migrationId,
     );
 
     return result.rows.length > 0;
@@ -172,14 +172,14 @@ export class MigrationTracker {
   async getMigration(name: string): Promise<SchemaMigrationRecord | null> {
     await this.initialize();
 
-    const result = await this.db.query<MigrationRow>(
+    const result = await this.db.query(
       `SELECT * FROM _smrt_schema_migrations WHERE name = ? LIMIT 1`,
-      [name],
+      name,
     );
 
     if (result.rows.length === 0) return null;
 
-    const row = result.rows[0];
+    const row = result.rows[0] as MigrationRow;
     return {
       ...row,
       applied_at: new Date(row.applied_at),
@@ -194,11 +194,12 @@ export class MigrationTracker {
   async getNextBatch(): Promise<number> {
     await this.initialize();
 
-    const result = await this.db.query<{ max_batch: number | null }>(
+    const result = await this.db.query(
       `SELECT MAX(batch) as max_batch FROM _smrt_schema_migrations`,
     );
 
-    return (result.rows[0]?.max_batch ?? 0) + 1;
+    const row = result.rows[0] as { max_batch: number | null } | undefined;
+    return (row?.max_batch ?? 0) + 1;
   }
 
   /**
@@ -349,7 +350,11 @@ export class MigrationTracker {
         `UPDATE _smrt_schema_migrations
          SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?
          WHERE id = ?`,
-        [checksum, attempts, this.currentBatch, hostname(), id],
+        checksum,
+        attempts,
+        this.currentBatch,
+        hostname(),
+        id,
       );
     } else {
       // Insert new record
@@ -357,17 +362,15 @@ export class MigrationTracker {
         `INSERT INTO _smrt_schema_migrations
          (id, name, version, checksum, status, attempts, is_reversible, package_name, source_file, applied_by, batch)
          VALUES (?, ?, ?, ?, 'running', 1, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          definition.id,
-          definition.version,
-          checksum,
-          (definition.is_reversible ?? definition.down.length > 0) ? 1 : 0,
-          definition.package_name ?? null,
-          definition.source_file ?? null,
-          hostname(),
-          this.currentBatch,
-        ],
+        id,
+        definition.id,
+        definition.version,
+        checksum,
+        (definition.is_reversible ?? definition.down.length > 0) ? 1 : 0,
+        definition.package_name ?? null,
+        definition.source_file ?? null,
+        hostname(),
+        this.currentBatch,
       );
     }
 
@@ -378,19 +381,17 @@ export class MigrationTracker {
           `UPDATE _smrt_schema_migrations
            SET status = ?, checksum = ?, attempts = ?, error_message = ?
            WHERE id = ?`,
-          [
-            existing.status,
-            existing.checksum,
-            existing.attempts,
-            existing.error_message,
-            id,
-          ],
+          existing.status,
+          existing.checksum,
+          existing.attempts,
+          existing.error_message,
+          id,
         );
       } else {
         // Remove the newly inserted running record
         await this.db.query(
           `DELETE FROM _smrt_schema_migrations WHERE id = ?`,
-          [id],
+          id,
         );
       }
       return {
@@ -413,7 +414,9 @@ export class MigrationTracker {
         `UPDATE _smrt_schema_migrations
          SET status = 'completed', execution_time_ms = ?, applied_checksum = ?, applied_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
-        [executionTime, checksum, id],
+        executionTime,
+        checksum,
+        id,
       );
 
       return {
@@ -430,7 +433,8 @@ export class MigrationTracker {
         `UPDATE _smrt_schema_migrations
          SET status = 'failed', error_message = ?
          WHERE id = ?`,
-        [error instanceof Error ? error.message : String(error), id],
+        error instanceof Error ? error.message : String(error),
+        id,
       );
 
       return {
@@ -534,7 +538,7 @@ export class MigrationTracker {
         `UPDATE _smrt_schema_migrations
          SET status = 'rolled_back', rolled_back_at = CURRENT_TIMESTAMP
          WHERE name = ?`,
-        [name],
+        name,
       );
 
       return {
@@ -584,9 +588,9 @@ export class MigrationTracker {
       params.push(options.limit);
     }
 
-    const result = await this.db.query<MigrationRow>(sql, params);
+    const result = await this.db.query(sql, ...params);
 
-    return result.rows.map((row) => ({
+    return (result.rows as MigrationRow[]).map((row) => ({
       ...row,
       applied_at: new Date(row.applied_at),
       rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
