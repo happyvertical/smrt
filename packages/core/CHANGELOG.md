@@ -1,17 +1,5 @@
 # @happyvertical/smrt-core
 
-## 1.0.0
-
-### Minor Changes
-
-- 285d118: Add production-ready migration system with db:migrate command
-
-### Patch Changes
-
-- @happyvertical/smrt-scanner@1.0.0
-- @happyvertical/smrt-config@1.0.0
-- @happyvertical/smrt-types@1.0.0
-
 ## 0.17.95
 
 ### Patch Changes
