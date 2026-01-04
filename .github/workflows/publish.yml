@@ -122,6 +122,17 @@ jobs:
           AFTER_VERSION=$(node -p "require('./package.json').version")
           echo "Version after versioning: $AFTER_VERSION"
 
+          # Post-version safeguard: fail if changeset bumped to 1.0.0+
+          AFTER_MAJOR=$(echo "$AFTER_VERSION" | cut -d. -f1)
+          if [ "$AFTER_MAJOR" -ge 1 ]; then
+            echo "❌ CRITICAL: Changeset would bump to $AFTER_VERSION (1.0.0+)"
+            echo "This is likely caused by using 'minor' on a 0.x version."
+            echo "Use 'patch' instead of 'minor' for 0.x releases."
+            echo ""
+            echo "To fix: update .changeset/*.md files to use 'patch'"
+            exit 1
+          fi
+
           if [ "$BEFORE_VERSION" != "$AFTER_VERSION" ]; then
             echo "📦 Version changed from $BEFORE_VERSION to $AFTER_VERSION"
 
