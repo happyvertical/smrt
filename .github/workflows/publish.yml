@@ -70,24 +70,6 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Validate version constraints
-        run: |
-          echo "🔍 Checking version constraints..."
-
-          current_version=$(node -p "require('./package.json').version")
-          echo "Current version: $current_version"
-
-          major_version=$(echo "$current_version" | cut -d. -f1)
-
-          if [ "$major_version" -ge 1 ]; then
-            echo "❌ ERROR: Package is already at version 1.0.0 or" \
-              "higher ($current_version)"
-            echo "Manual review required for versions >= 1.0.0"
-            exit 1
-          fi
-
-          echo "✅ Version is 0.x.x - safe to proceed with automated releases"
-
       - name: Run Changesets release
         id: changesets_release
         env:
