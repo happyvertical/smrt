@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-products",
-  "version": "1.0.0",
+  "version": "0.17.95",
   "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
