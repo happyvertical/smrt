@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.98
+
+### Patch Changes
+
+- ### Features
+
+  - add invoice, time tracking, and M3 components (#661) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.17.98
+  - @happyvertical/smrt-config@0.17.98
+  - @happyvertical/smrt-types@0.17.98
+
 ## 0.17.97
 
 ### Patch Changes
