@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.100
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - cache fields for sync access during queries (#664) (core)
+  - @happyvertical/smrt-scanner@0.17.100
+  - @happyvertical/smrt-config@0.17.100
+  - @happyvertical/smrt-types@0.17.100
+
 ## 0.17.99
 
 ### Patch Changes
