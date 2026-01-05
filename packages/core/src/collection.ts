@@ -29,8 +29,17 @@ export interface SmrtCollectionOptions extends SmrtClassOptions {}
  */
 export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
+   * Cached fields for sync access during queries.
+   * Populated during create() to avoid async getFields() calls on every query.
+   * @private
+   */
+  private _cachedFields: Map<string, any> | null = null;
+
+  /**
    * Convert WHERE clause field names from camelCase to snake_case while preserving operators.
    * Validates operators and field names to prevent SQL injection and invalid queries.
+   *
+   * Uses cached fields for sync access (issue #663) to avoid async overhead on every query.
    *
    * @param where - WHERE clause object with camelCase field names
    * @returns WHERE clause object with snake_case field names
@@ -42,14 +51,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * // Output: { 'type_id': 'foo', 'category_id >': 100 }
    * ```
    */
-  private async convertWhereKeys(
-    where: Record<string, any>,
-  ): Promise<Record<string, any>> {
+  private convertWhereKeys(where: Record<string, any>): Record<string, any> {
     // Whitelist of allowed SQL operators
     const VALID_OPERATORS = ['=', '>', '<', '>=', '<=', '!=', 'in', 'like'];
 
-    // Get schema fields for validation
-    const fields = await this.getFields();
+    // Get schema fields for validation (sync from cache)
+    const fields = this.getFieldsSync();
     const validFieldNames = new Set(
       Object.keys(fields).map((f) => toSnakeCase(f)),
     );
@@ -346,6 +353,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       await ensureSchema(instance.db, className);
     }
 
+    // Cache fields for sync access during queries (issue #663)
+    // This eliminates async getFields() calls on every query
+    const fields = await instance.getFields();
+    instance._cachedFields = fields;
+
     // Return fully initialized instance
     return instance;
   }
@@ -482,8 +494,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
     }
 
-    // Fix for issue #384: Split await to ensure proper async resolution
-    const convertedWhere = await this.convertWhereKeys(where);
+    // convertWhereKeys is now sync (issue #663) - no await needed
+    const convertedWhere = this.convertWhereKeys(where);
     const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
     const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql}`;
@@ -587,8 +599,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
     }
 
-    // Fix for issue #384: Split await to ensure proper async resolution
-    const convertedWhere = await this.convertWhereKeys(where || {});
+    // convertWhereKeys is now sync (issue #663) - no await needed
+    const convertedWhere = this.convertWhereKeys(where || {});
     const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
     let orderBySql = '';
@@ -1029,6 +1041,28 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Gets field definitions synchronously from cache.
+   *
+   * This method provides sync access to fields for use in query methods,
+   * avoiding the async overhead of getFields() on every query.
+   * Fields are cached during create() initialization.
+   *
+   * @returns Map containing field definitions
+   * @private
+   */
+  getFieldsSync(): Record<string, any> {
+    if (this._cachedFields) {
+      return this._cachedFields;
+    }
+    // Fallback to ObjectRegistry sync method if cache not populated
+    // This handles edge cases where collection wasn't created via static create()
+    const className = this._itemClass.name;
+    const fields = ObjectRegistry.getFields(className);
+    // Convert Map to Record for consistency with getFields() return type
+    return Object.fromEntries(fields);
+  }
+
+  /**
    * Generates database schema for the collection's item class
    *
    * Leverages ObjectRegistry's cached schema for instant retrieval.
@@ -1127,8 +1161,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
     }
 
+    // convertWhereKeys is now sync (issue #663) - no await needed
     const { sql: whereSql, values: whereValues } = buildWhere(
-      await this.convertWhereKeys(where || {}),
+      this.convertWhereKeys(where || {}),
     );
 
     const result = await this.db.query(
