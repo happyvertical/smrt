@@ -282,9 +282,16 @@ export class ManifestBuilder {
 
     const exportName = isTestManifest ? 'testManifest' : 'staticManifest';
 
+    // Use relative import for core package (to avoid self-reference during build),
+    // package import for all other packages
+    const isCorePackage = manifest.packageName === '@happyvertical/smrt-core';
+    const importPath = isCorePackage
+      ? '../scanner/types.js'
+      : '@happyvertical/smrt-core/scanner/types';
+
     return `${comment}
 
-import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner/types';
+import type { SmartObjectManifest } from '${importPath}';
 
 export const ${exportName}: SmartObjectManifest = ${JSON.stringify(manifest, null, 2)} as const;
 

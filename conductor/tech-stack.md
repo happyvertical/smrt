@@ -14,4 +14,5 @@
 - **ORM & Persistence**: Custom TypeScript-first ORM with support for SQL (SQLite, PostgreSQL, DuckDB) via `@have/sql`.
 - **AI Integration**: Multi-provider client (OpenAI, Anthropic, Google, AWS) via `@have/ai`.
 - **Interfaces**: Automated generation for CLI, REST API (Express), and MCP servers.
+- **UI Components**: Zero-dependency Material 3 library for Svelte 5 (`@happyvertical/smrt-svelte`) with dynamic tonal palette generation.
 - **Workflow Tools**: Lefthook (git hooks), Changesets (versioning), Commitlint.

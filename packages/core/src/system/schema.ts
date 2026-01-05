@@ -57,6 +57,40 @@ CREATE TABLE IF NOT EXISTS _smrt_migrations (
 `;
 
 /**
+ * Schema migration tracking
+ * Tracks applied schema migrations for idempotency, audit, and rollback
+ */
+export const CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_schema_migrations (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  version TEXT NOT NULL,
+  checksum TEXT NOT NULL,
+  applied_checksum TEXT,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  execution_time_ms INTEGER,
+  package_name TEXT,
+  source_file TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  error_message TEXT,
+  attempts INTEGER DEFAULT 0,
+  is_reversible INTEGER DEFAULT 1,
+  rolled_back_at TIMESTAMP,
+  applied_by TEXT,
+  batch INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_schema_migrations_status
+  ON _smrt_schema_migrations(status);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_schema_migrations_applied_at
+  ON _smrt_schema_migrations(applied_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_schema_migrations_batch
+  ON _smrt_schema_migrations(batch);
+`;
+
+/**
  * Runtime object registry persistence
  * Stores metadata about registered SMRT objects for introspection
  */
@@ -197,6 +231,7 @@ CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_enabled
 export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_CONTEXTS_TABLE,
   CREATE_SMRT_MIGRATIONS_TABLE,
+  CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
   CREATE_SMRT_REGISTRY_TABLE,
   CREATE_SMRT_SIGNALS_TABLE,
   CREATE_SMRT_EMBEDDINGS_TABLE,

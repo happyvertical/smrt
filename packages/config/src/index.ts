@@ -9,7 +9,12 @@ import type { LoadConfigOptions, SmrtConfig } from './types.js';
 
 // Re-export types
 export type {
+  // CLI and migrations configuration types
+  CliConfig,
+  DatabaseConfig,
   LoadConfigOptions,
+  MigrationsConfig,
+  MigrationsPostgresConfig,
   // Site configuration types
   SiteConfig,
   SiteLocation,

@@ -163,6 +163,7 @@ describe.skipIf(skipTests)(
     it('should create and list streams', async () => {
       const stream = await collection.create({
         propertyId: 'prop-123',
+        externalId: 'stream-123',
         displayName: 'Web Stream',
         streamType: DataStreamType.WEB,
         measurementId: 'G-TEST123',
@@ -176,6 +177,8 @@ describe.skipIf(skipTests)(
 
     it('should find stream by measurement ID', async () => {
       const stream = await collection.create({
+        propertyId: 'prop-123',
+        externalId: 'stream-unique',
         displayName: 'Web Stream',
         streamType: DataStreamType.WEB,
         measurementId: 'G-UNIQUE123',
@@ -189,18 +192,24 @@ describe.skipIf(skipTests)(
 
     it('should find streams by type', async () => {
       const web = await collection.create({
+        propertyId: 'prop-types',
+        externalId: 'stream-web',
         displayName: 'Web',
         streamType: DataStreamType.WEB,
       });
       await web.save();
 
       const ios = await collection.create({
+        propertyId: 'prop-types',
+        externalId: 'stream-ios',
         displayName: 'iOS',
         streamType: DataStreamType.IOS,
       });
       await ios.save();
 
       const android = await collection.create({
+        propertyId: 'prop-types',
+        externalId: 'stream-android',
         displayName: 'Android',
         streamType: DataStreamType.ANDROID,
       });
@@ -221,18 +230,24 @@ describe.skipIf(skipTests)(
 
     it('should find mobile streams (iOS + Android)', async () => {
       const web = await collection.create({
+        propertyId: 'prop-mobile',
+        externalId: 'stream-web-mobile',
         displayName: 'Web',
         streamType: DataStreamType.WEB,
       });
       await web.save();
 
       const ios = await collection.create({
+        propertyId: 'prop-mobile',
+        externalId: 'stream-ios-mobile',
         displayName: 'iOS App',
         streamType: DataStreamType.IOS,
       });
       await ios.save();
 
       const android = await collection.create({
+        propertyId: 'prop-mobile',
+        externalId: 'stream-android-mobile',
         displayName: 'Android App',
         streamType: DataStreamType.ANDROID,
       });
@@ -248,12 +263,16 @@ describe.skipIf(skipTests)(
 
     it('should find active streams', async () => {
       const active = await collection.create({
+        propertyId: 'prop-active',
+        externalId: 'stream-active',
         displayName: 'Active Stream',
         status: DataStreamStatus.ACTIVE,
       });
       await active.save();
 
       const inactive = await collection.create({
+        propertyId: 'prop-active',
+        externalId: 'stream-inactive',
         displayName: 'Inactive Stream',
         status: DataStreamStatus.INACTIVE,
       });
@@ -267,18 +286,21 @@ describe.skipIf(skipTests)(
     it('should find streams by property', async () => {
       const stream1 = await collection.create({
         propertyId: 'prop-1',
+        externalId: 'stream-1',
         displayName: 'Stream 1',
       });
       await stream1.save();
 
       const stream2 = await collection.create({
         propertyId: 'prop-1',
+        externalId: 'stream-2',
         displayName: 'Stream 2',
       });
       await stream2.save();
 
       const stream3 = await collection.create({
         propertyId: 'prop-2',
+        externalId: 'stream-3',
         displayName: 'Stream 3',
       });
       await stream3.save();
@@ -292,6 +314,7 @@ describe.skipIf(skipTests)(
 
       const active = await collection.create({
         propertyId,
+        externalId: 'stream-prop-active',
         displayName: 'Active',
         status: DataStreamStatus.ACTIVE,
       });
@@ -299,6 +322,7 @@ describe.skipIf(skipTests)(
 
       const inactive = await collection.create({
         propertyId,
+        externalId: 'stream-prop-inactive',
         displayName: 'Inactive',
         status: DataStreamStatus.INACTIVE,
       });
@@ -311,6 +335,7 @@ describe.skipIf(skipTests)(
 
     it('should find stream by external ID', async () => {
       const stream = await collection.create({
+        propertyId: 'prop-external',
         displayName: 'External Stream',
         externalId: 'dataStreams/123456789',
       });

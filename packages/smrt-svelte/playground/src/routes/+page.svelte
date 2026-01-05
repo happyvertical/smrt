@@ -1,5 +1,5 @@
 <script>
-const _components = [
+const components = [
   {
     category: 'Users',
     items: [
@@ -15,6 +15,70 @@ const _components = [
   { category: 'Auth', items: ['UserMenu'] },
   { category: 'Memberships', items: ['MembershipCard', 'MembershipList'] },
   { category: 'Permissions', items: ['PermissionCheck'] },
+  {
+    category: 'Forms',
+    items: [
+      'SMRTForm',
+      'SMRTTextInput',
+      'SMRTTextarea',
+      'SMRTNumber',
+      'SMRTPhone',
+      'SMRTSelect',
+      'SMRTDateTime',
+      'SMRTDateRange',
+      'SMRTCheckbox',
+      'SMRTAddress',
+      'SMRTMoney',
+      'SMRTMeasurement',
+    ],
+  },
+  {
+    category: 'Foundation',
+    items: ['ThemeProvider', 'Ripple Action'],
+  },
+  {
+    category: 'Display',
+    items: [
+      'ConfidenceBadge',
+      'CurrencyDisplay',
+      'DateDisplay',
+      'StatusBadge',
+      'SMRTIcon',
+    ],
+  },
+  {
+    category: 'Layout',
+    items: ['EmptyState', 'PageHeader', 'SummaryCard'],
+  },
+  {
+    category: 'Navigation',
+    items: ['FilterChips', 'Tabs'],
+  },
+  {
+    category: 'Feedback',
+    items: ['ConfirmDialog', 'ProgressBar'],
+  },
+  {
+    category: 'Commerce',
+    items: [
+      'InvoiceCard',
+      'InvoiceHeader',
+      'InvoiceLineItems',
+      'InvoiceTotals',
+      'InvoiceActions',
+      'UnbilledItems',
+    ],
+  },
+  {
+    category: 'AI',
+    items: [
+      'SmrtProvider',
+      'AILoadingOverlay',
+      'CapabilityGate',
+      'DownloadProgress',
+      'VoiceInput',
+    ],
+  },
 ];
 </script>
 

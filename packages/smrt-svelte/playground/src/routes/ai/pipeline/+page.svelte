@@ -1,7 +1,13 @@
 <script lang="ts">
-import { useLLM, useSTT } from '@happyvertical/smrt-svelte';
+import {
+  CapabilityGate,
+  DownloadProgress,
+  useLLM,
+  useSTT,
+  VoiceInput,
+} from '@happyvertical/smrt-svelte';
 
-const _stt = useSTT();
+const stt = useSTT();
 const llm = useLLM({
   systemPrompt:
     'You are a helpful voice assistant. Keep responses concise and conversational.',
@@ -10,29 +16,29 @@ const llm = useLLM({
 let conversation = $state<
   Array<{ role: 'user' | 'assistant'; content: string }>
 >([]);
-let _streamingResponse = $state('');
+let streamingResponse = $state('');
 let isProcessing = $state(false);
 
-async function _handleTranscription(text: string) {
+async function handleTranscription(text: string) {
   if (!text.trim() || isProcessing) return;
 
   isProcessing = true;
 
   // Add user message
   conversation = [...conversation, { role: 'user', content: text }];
-  _streamingResponse = '';
+  streamingResponse = '';
 
   try {
     // Get LLM response
     const response = await llm.chat(text, {
       onToken: (token) => {
-        _streamingResponse += token;
+        streamingResponse += token;
       },
     });
 
     // Add assistant response
     conversation = [...conversation, { role: 'assistant', content: response }];
-    _streamingResponse = '';
+    streamingResponse = '';
   } catch (error) {
     console.error('Pipeline error:', error);
   } finally {
@@ -40,9 +46,9 @@ async function _handleTranscription(text: string) {
   }
 }
 
-function _clearConversation() {
+function clearConversation() {
   conversation = [];
-  _streamingResponse = '';
+  streamingResponse = '';
 }
 </script>
 

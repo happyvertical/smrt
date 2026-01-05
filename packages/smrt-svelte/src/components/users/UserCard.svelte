@@ -1,6 +1,11 @@
 <script lang="ts">
+/**
+ * UserCard - Compact user information display
+ * refactored for Material 3
+ */
 import type { Profile } from '@happyvertical/smrt-profiles';
 import type { User } from '@happyvertical/smrt-users';
+import { ripple } from '../../actions/ripple.js';
 import UserAvatar from './UserAvatar.svelte';
 
 interface Props {
@@ -21,20 +26,20 @@ const {
   selected = false,
 }: Props = $props();
 
-function getStatusColor(s: string): string {
-  switch (s) {
+const statusClass = $derived.by(() => {
+  switch (status) {
     case 'active':
       return 'status-active';
     case 'pending':
       return 'status-pending';
     case 'suspended':
-      return 'status-suspended';
+      return 'status-error';
     case 'deactivated':
-      return 'status-deactivated';
+      return 'status-disabled';
     default:
       return '';
   }
-}
+});
 </script>
 
 <button
@@ -44,6 +49,7 @@ function getStatusColor(s: string): string {
   class:clickable={!!onclick}
   onclick={onclick}
   disabled={!onclick}
+  use:ripple
 >
   <UserAvatar {profile} size="md" />
 
@@ -57,7 +63,7 @@ function getStatusColor(s: string): string {
       <span class="role">{role}</span>
     {/if}
     {#if status}
-      <span class="status {getStatusColor(status)}">{status}</span>
+      <span class="status {statusClass}">{status}</span>
     {/if}
   </div>
 </button>
@@ -66,14 +72,19 @@ function getStatusColor(s: string): string {
   .user-card {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
+    gap: 16px;
+    padding: 12px 16px;
+    background-color: var(--md-sys-color-surface-container-low);
+    border-radius: 12px;
     width: 100%;
     text-align: left;
     cursor: default;
+    border: none;
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    position: relative;
+    overflow: hidden;
+    color: var(--md-sys-color-on-surface);
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
   .user-card.clickable {
@@ -81,13 +92,13 @@ function getStatusColor(s: string): string {
   }
 
   .user-card.clickable:hover {
-    background: #f9fafb;
-    border-color: #d1d5db;
+    background-color: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level2);
   }
 
   .user-card.selected {
-    background: #eff6ff;
-    border-color: #3b82f6;
+    background-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
 
   .info {
@@ -96,61 +107,73 @@ function getStatusColor(s: string): string {
   }
 
   .name {
-    font-weight: 500;
-    color: #111827;
+    font: var(--md-sys-typescale-title-small-font);
+    font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .email {
-    font-size: 0.875rem;
-    color: #6b7280;
+    font: var(--md-sys-typescale-body-small-font);
+    color: var(--md-sys-color-on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
+  .selected .email {
+    color: var(--md-sys-color-on-secondary-container);
+    opacity: 0.8;
+  }
+
   .meta {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
     flex-shrink: 0;
   }
 
   .role {
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-    background: #f3f4f6;
-    color: #374151;
-    border-radius: 9999px;
+    font: var(--md-sys-typescale-label-small-font);
+    padding: 0 8px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    background-color: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface-variant);
+    border-radius: 10px;
     text-transform: capitalize;
   }
 
   .status {
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 9999px;
+    font: var(--md-sys-typescale-label-small-font);
+    padding: 0 8px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 10px;
     text-transform: capitalize;
+    font-weight: 600;
   }
 
   .status-active {
-    background: #dcfce7;
-    color: #166534;
+    background-color: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
   }
 
   .status-pending {
-    background: #fef3c7;
-    color: #92400e;
+    background-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
 
-  .status-suspended {
-    background: #fee2e2;
-    color: #991b1b;
+  .status-error {
+    background-color: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
   }
 
-  .status-deactivated {
-    background: #f3f4f6;
-    color: #6b7280;
+  .status-disabled {
+    background-color: var(--md-sys-color-surface-variant);
+    color: var(--md-sys-color-on-surface-variant);
   }
 </style>

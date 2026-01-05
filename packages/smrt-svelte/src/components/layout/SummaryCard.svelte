@@ -1,10 +1,12 @@
 <script lang="ts">
 /**
- * SummaryCard - Statistic/summary display card
+ * SummaryCard - Statistic/summary display card refactored for Material 3
  *
  * Shows a label with a prominent value, optionally with a count badge
  * and link functionality.
  */
+import { ripple } from '../../actions/ripple.js';
+import { SMRTIcon } from '../display/index.js';
 
 interface Props {
   /** Card label */
@@ -17,7 +19,7 @@ interface Props {
   highlight?: boolean;
   /** Make card clickable with href */
   href?: string;
-  /** Optional icon (SVG string or component) */
+  /** Optional icon (name for SMRTIcon or SVG string) */
   icon?: string;
   /** Value color variant */
   variant?: 'default' | 'success' | 'warning' | 'danger';
@@ -33,25 +35,39 @@ const {
   variant = 'default',
 }: Props = $props();
 
-// Value color based on variant
-const valueColor = $derived.by(() => {
+// Map variant to M3 color roles
+const valueColorClass = $derived.by(() => {
   switch (variant) {
     case 'success':
-      return '#16a34a';
+      return 'color-success';
     case 'warning':
-      return '#d97706';
+      return 'color-warning';
     case 'danger':
-      return '#dc2626';
+      return 'color-error';
     default:
-      return '#111827';
+      return 'color-default';
   }
 });
+
+const isSvg = $derived(icon?.startsWith('<svg'));
 </script>
 
 {#if href}
-  <a class="summary-card" class:highlight {href}>
+  <a 
+    class="summary-card" 
+    class:highlight 
+    class:clickable={true}
+    {href}
+    use:ripple
+  >
     {#if icon}
-      <span class="card-icon">{@html icon}</span>
+      <span class="card-icon">
+        {#if isSvg}
+          {@html icon}
+        {:else}
+          <SMRTIcon name={icon} size={24} />
+        {/if}
+      </span>
     {/if}
     <div class="card-content">
       <span class="card-label">
@@ -60,16 +76,22 @@ const valueColor = $derived.by(() => {
           <span class="card-count">{count}</span>
         {/if}
       </span>
-      <span class="card-value" style:color={valueColor}>{value}</span>
+      <span class="card-value {valueColorClass}">{value}</span>
     </div>
-    <svg class="chevron" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M8 4l6 6-6 6" />
-    </svg>
+    <div class="trailing">
+      <SMRTIcon name="chevron-right" size={20} />
+    </div>
   </a>
 {:else}
   <div class="summary-card" class:highlight>
     {#if icon}
-      <span class="card-icon">{@html icon}</span>
+      <span class="card-icon">
+        {#if isSvg}
+          {@html icon}
+        {:else}
+          <SMRTIcon name={icon} size={24} />
+        {/if}
+      </span>
     {/if}
     <div class="card-content">
       <span class="card-label">
@@ -78,7 +100,7 @@ const valueColor = $derived.by(() => {
           <span class="card-count">{count}</span>
         {/if}
       </span>
-      <span class="card-value" style:color={valueColor}>{value}</span>
+      <span class="card-value {valueColorClass}">{value}</span>
     </div>
   </div>
 {/if}
@@ -89,48 +111,61 @@ const valueColor = $derived.by(() => {
     align-items: center;
     gap: 1rem;
     padding: 1rem 1.25rem;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
+    background-color: var(--md-sys-color-surface-container-low);
+    border-radius: 12px;
     text-decoration: none;
-    color: inherit;
-    transition: all 0.15s;
+    color: var(--md-sys-color-on-surface);
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
-  a.summary-card:hover {
-    border-color: #3b82f6;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  .clickable:hover {
+    background-color: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level2);
   }
 
   .summary-card.highlight {
-    border-color: #3b82f6;
-    background: #eff6ff;
+    background-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
 
   .card-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 2.5rem;
-    height: 2.5rem;
-    background: #f3f4f6;
-    border-radius: 0.5rem;
-    color: #6b7280;
+    width: 3rem;
+    height: 3rem;
+    background-color: var(--md-sys-color-surface-container-high);
+    border-radius: 12px;
+    color: var(--md-sys-color-primary);
+    flex-shrink: 0;
+  }
+
+  .highlight .card-icon {
+    background-color: var(--md-sys-color-on-secondary-container);
+    color: var(--md-sys-color-secondary-container);
   }
 
   .card-content {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: 2px;
   }
 
   .card-label {
-    font-size: 0.875rem;
-    color: #6b7280;
+    font: var(--md-sys-typescale-label-large-font);
+    color: var(--md-sys-color-on-surface-variant);
     display: flex;
     align-items: center;
     gap: 0.5rem;
+  }
+
+  .highlight .card-label {
+    color: var(--md-sys-color-on-secondary-container);
+    opacity: 0.8;
   }
 
   .card-count {
@@ -140,24 +175,29 @@ const valueColor = $derived.by(() => {
     min-width: 1.25rem;
     height: 1.25rem;
     padding: 0 0.375rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    background: #3b82f6;
-    color: white;
+    font: var(--md-sys-typescale-label-small-font);
+    background-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
     border-radius: 9999px;
   }
 
   .card-value {
-    font-size: 1.5rem;
+    font: var(--md-sys-typescale-headline-small-font);
     font-weight: 600;
-    line-height: 1.2;
   }
 
-  .chevron {
-    color: #9ca3af;
+  .color-default { color: var(--md-sys-color-on-surface); }
+  .color-success { color: var(--md-sys-color-primary); }
+  .color-warning { color: var(--md-sys-color-error-container); } /* M3 Warning is often custom, using error container as proxy */
+  .color-error { color: var(--md-sys-color-error); }
+
+  .trailing {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.5;
   }
 
-  a.summary-card:hover .chevron {
-    color: #3b82f6;
+  .clickable:hover .trailing {
+    opacity: 1;
+    color: var(--md-sys-color-primary);
   }
 </style>

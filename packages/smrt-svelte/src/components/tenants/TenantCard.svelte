@@ -1,5 +1,11 @@
 <script lang="ts">
+/**
+ * TenantCard - Tenant information and management
+ * refactored for Material 3
+ */
 import type { Tenant } from '@happyvertical/smrt-users';
+import { ripple } from '../../actions/ripple.js';
+import { SMRTIcon } from '../display/index.js';
 
 interface Props {
   tenant: Tenant;
@@ -21,18 +27,18 @@ const {
   ondelete,
 }: Props = $props();
 
-function getStatusColor(status: string): string {
-  switch (status) {
+const statusClass = $derived.by(() => {
+  switch (tenant.status) {
     case 'active':
       return 'status-active';
     case 'suspended':
-      return 'status-suspended';
+      return 'status-error';
     case 'archived':
-      return 'status-archived';
+      return 'status-disabled';
     default:
       return '';
   }
-}
+});
 
 function getInitials(name: string): string {
   return name
@@ -62,6 +68,7 @@ function getColor(name: string): string {
 }
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="tenant-card"
   class:clickable={!!onclick}
@@ -70,6 +77,7 @@ function getColor(name: string): string {
   tabindex={onclick ? 0 : undefined}
   onclick={onclick}
   onkeydown={(e) => e.key === 'Enter' && onclick?.()}
+  use:ripple
 >
   <div class="avatar" style:background-color={getColor(tenant.name ?? '')}>
     {getInitials(tenant.name ?? 'T')}
@@ -78,7 +86,7 @@ function getColor(name: string): string {
   <div class="info">
     <div class="header">
       <span class="name">{tenant.name}</span>
-      <span class="status {getStatusColor(tenant.status)}">{tenant.status}</span>
+      <span class="status {statusClass}">{tenant.status}</span>
     </div>
 
     {#if tenant.slug}
@@ -95,23 +103,25 @@ function getColor(name: string): string {
   {#if actions && (onedit || ondelete)}
     <div class="actions">
       {#if onedit}
-        <button type="button" class="action-btn" onclick={(e) => { e.stopPropagation(); onedit?.(); }}>
-          <svg viewBox="0 0 20 20" fill="currentColor">
-            <path
-              d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z"
-            />
-          </svg>
+        <button 
+          type="button" 
+          class="action-btn" 
+          onclick={(e) => { e.stopPropagation(); onedit?.(); }}
+          use:ripple
+          aria-label="Edit"
+        >
+          <SMRTIcon name="menu" size={18} />
         </button>
       {/if}
       {#if ondelete}
-        <button type="button" class="action-btn danger" onclick={(e) => { e.stopPropagation(); ondelete?.(); }}>
-          <svg viewBox="0 0 20 20" fill="currentColor">
-            <path
-              fill-rule="evenodd"
-              d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z"
-              clip-rule="evenodd"
-            />
-          </svg>
+        <button 
+          type="button" 
+          class="action-btn danger" 
+          onclick={(e) => { e.stopPropagation(); ondelete?.(); }}
+          use:ripple
+          aria-label="Delete"
+        >
+          <SMRTIcon name="close" size={18} />
         </button>
       {/if}
     </div>
@@ -122,11 +132,15 @@ function getColor(name: string): string {
   .tenant-card {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
+    gap: 16px;
+    padding: 16px;
+    background-color: var(--md-sys-color-surface-container-low);
+    border-radius: 12px;
+    color: var(--md-sys-color-on-surface);
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
   .tenant-card.clickable {
@@ -134,24 +148,24 @@ function getColor(name: string): string {
   }
 
   .tenant-card.clickable:hover {
-    background: #f9fafb;
-    border-color: #d1d5db;
+    background-color: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level2);
   }
 
   .tenant-card.selected {
-    background: #eff6ff;
-    border-color: #3b82f6;
+    background-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
 
   .avatar {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 3rem;
-    height: 3rem;
-    border-radius: 0.5rem;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
     color: white;
-    font-size: 1rem;
+    font: var(--md-sys-typescale-title-medium-font);
     font-weight: 600;
     flex-shrink: 0;
   }
@@ -164,59 +178,67 @@ function getColor(name: string): string {
   .header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
   }
 
   .name {
-    font-weight: 500;
-    color: #111827;
+    font: var(--md-sys-typescale-title-small-font);
+    font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .status {
-    font-size: 0.625rem;
-    padding: 0.125rem 0.375rem;
-    border-radius: 9999px;
+    font: var(--md-sys-typescale-label-small-font);
+    padding: 0 6px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9px;
     text-transform: uppercase;
     font-weight: 600;
     flex-shrink: 0;
   }
 
   .status-active {
-    background: #dcfce7;
-    color: #166534;
+    background-color: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
   }
 
-  .status-suspended {
-    background: #fee2e2;
-    color: #991b1b;
+  .status-error {
+    background-color: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
   }
 
-  .status-archived {
-    background: #f3f4f6;
-    color: #6b7280;
+  .status-disabled {
+    background-color: var(--md-sys-color-surface-variant);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .slug {
-    font-size: 0.75rem;
-    color: #6b7280;
-    margin-top: 0.125rem;
+    font: var(--md-sys-typescale-body-small-font);
+    color: var(--md-sys-color-on-surface-variant);
+    margin-top: 2px;
+  }
+
+  .selected .slug {
+    color: var(--md-sys-color-on-secondary-container);
+    opacity: 0.8;
   }
 
   .meta {
-    margin-top: 0.25rem;
+    margin-top: 4px;
   }
 
   .members {
-    font-size: 0.75rem;
-    color: #6b7280;
+    font: var(--md-sys-typescale-label-small-font);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .actions {
     display: flex;
-    gap: 0.25rem;
+    gap: 4px;
     flex-shrink: 0;
   }
 
@@ -224,28 +246,23 @@ function getColor(name: string): string {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    background: none;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.375rem;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
     cursor: pointer;
-    color: #6b7280;
+    color: var(--md-sys-color-on-surface-variant);
+    position: relative;
+    overflow: hidden;
   }
 
   .action-btn:hover {
-    background: #f3f4f6;
-    color: #111827;
+    background-color: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface);
   }
 
   .action-btn.danger:hover {
-    background: #fef2f2;
-    color: #dc2626;
-    border-color: #fecaca;
-  }
-
-  .action-btn svg {
-    width: 1rem;
-    height: 1rem;
+    color: var(--md-sys-color-error);
   }
 </style>

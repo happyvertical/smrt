@@ -7,23 +7,7 @@
  */
 
 import type { Snippet } from 'svelte';
-
-export interface LineItem {
-  /** Unique identifier */
-  id: string;
-  /** Item description */
-  description: string;
-  /** Quantity */
-  quantity: number;
-  /** Unit price in cents */
-  unitPrice: number;
-  /** Total amount in cents (quantity * unitPrice) */
-  amount: number;
-  /** Optional category */
-  category?: string;
-  /** Source type (expense, time, manual) */
-  sourceType?: 'expense' | 'time' | 'manual';
-}
+import type { LineItem } from './types.js';
 
 interface Props {
   /** Line items to display */

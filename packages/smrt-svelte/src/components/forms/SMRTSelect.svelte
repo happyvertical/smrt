@@ -5,6 +5,8 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { matchOption } from '../../utils/forms/formatters.js';
+import { SMRTIcon } from '../display/index.js';
 import type { SelectOption } from './types.js';
 
 interface Props {
@@ -43,6 +45,7 @@ let {
 const app = useAppState();
 const formContext = tryGetFormContext();
 
+let isFocused = $state(false);
 const isSmrt = $derived(app.state.mode === 'smrt');
 
 // Helper to update value
@@ -51,37 +54,9 @@ function updateValue(newValue: string) {
   onchange?.(value);
 }
 
-// Find option by fuzzy matching spoken text
-function matchOption(spokenText: string): string | null {
-  const normalized = spokenText.toLowerCase().trim();
-
-  // Try exact match first
-  for (const opt of options) {
-    if (
-      opt.value.toLowerCase() === normalized ||
-      opt.label.toLowerCase() === normalized
-    ) {
-      return opt.value;
-    }
-  }
-
-  // Try partial match
-  for (const opt of options) {
-    if (
-      opt.label.toLowerCase().includes(normalized) ||
-      normalized.includes(opt.label.toLowerCase())
-    ) {
-      return opt.value;
-    }
-  }
-
-  return null;
-}
-
 // Register with form context
 onMount(() => {
   if (formContext) {
-    // Build description with options for better voice extraction
     const optionsDesc = options.map((o) => o.label).join(', ');
     const fullDescription = description
       ? `${description}. Options: ${optionsDesc}`
@@ -94,12 +69,10 @@ onMount(() => {
       description: fullDescription,
       setValue: (v: unknown) => {
         const strVal = String(v ?? '');
-        // Try to match the spoken value to an option
-        const matched = matchOption(strVal);
+        const matched = matchOption(strVal, options);
         if (matched) {
           updateValue(matched);
         } else if (options.some((o) => o.value === strVal)) {
-          // Direct value match
           updateValue(strVal);
         }
       },
@@ -121,93 +94,160 @@ function handleChange(e: Event) {
 }
 </script>
 
-<div class="smrt-select">
-  {#if label}
-    <label for={name} class="smrt-label">
-      {label}
-      {#if required}<span class="required">*</span>{/if}
-    </label>
-  {/if}
+<div 
+  class="smrt-select-field" 
+  class:smrt-mode={isSmrt} 
+  class:focused={isFocused} 
+  class:disabled
+  class:has-value={!!value}
+>
+  <div class="container">
+    <div class="content">
+      {#if label}
+        <label for={name} class="label">
+          {label}{#if required}*{/if}
+        </label>
+      {/if}
+      <select
+        id={name}
+        {name}
+        {value}
+        {disabled}
+        {required}
+        class="input"
+        onchange={handleChange}
+        onfocus={() => isFocused = true}
+        onblur={() => isFocused = false}
+      >
+        <option value="" disabled selected={!value}>{placeholder}</option>
+        {#each options as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </div>
 
-  <div class="select-wrapper">
-    <select
-      id={name}
-      {name}
-      {value}
-      {disabled}
-      {required}
-      class="smrt-select-input"
-      class:smrt-mode={isSmrt}
-      onchange={handleChange}
-    >
-      <option value="" disabled>{placeholder}</option>
-      {#each options as option (option.value)}
-        <option value={option.value}>{option.label}</option>
-      {/each}
-    </select>
+    <div class="trailing-icon">
+      <SMRTIcon name="chevron-down" size={24} />
+    </div>
 
-    <svg class="select-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M6 9l6 6 6-6"/>
-    </svg>
+    <div class="active-indicator"></div>
   </div>
+
+  {#if description && isFocused}
+    <div class="supporting-text">
+      <span class="info">{description}</span>
+    </div>
+  {/if}
 </div>
 
 <style>
-  .smrt-select {
+  .smrt-select-field {
+    --field-color: var(--md-sys-color-on-surface-variant);
+    --field-bg: var(--md-sys-color-surface-container-highest);
+    --field-active: var(--md-sys-color-primary);
+    
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    width: 100%;
+    min-width: 240px;
   }
 
-  .smrt-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #374151;
-  }
-
-  .smrt-label .required {
-    color: #ef4444;
-    margin-left: 2px;
-  }
-
-  .select-wrapper {
+  .container {
     position: relative;
     display: flex;
+    align-items: center;
+    background-color: var(--field-bg);
+    border-radius: 4px 4px 0 0;
+    min-height: 56px;
+    padding: 0 16px;
+    transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1);
   }
 
-  .smrt-select-input {
+  .container:hover {
+    background-color: var(--md-sys-color-surface-container-high);
+  }
+
+  .content {
     flex: 1;
-    padding: 8px 36px 8px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+    padding-top: 8px;
+  }
+
+  .label {
     font-size: 1rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
+    line-height: 1.5;
+    letter-spacing: 0.5px;
+    color: var(--field-color);
+    pointer-events: none;
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transform-origin: top left;
+  }
+
+  .focused .label, .has-value .label {
+    transform: translateY(-8px) scale(0.75);
+    color: var(--field-active);
+  }
+
+  .input {
+    border: none;
+    background: transparent;
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: 0.5px;
+    color: var(--md-sys-color-on-surface);
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    height: 24px;
     appearance: none;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
-  .smrt-select-input:focus {
+  .input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
 
-  .smrt-select-input:disabled {
-    background: #f3f4f6;
-    cursor: not-allowed;
-  }
-
-  .smrt-select-input.smrt-mode {
-    border-color: #a855f7;
-  }
-
-  .select-arrow {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #6b7280;
+  .trailing-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--field-color);
     pointer-events: none;
+    margin-right: -4px;
+  }
+
+  .active-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-color: var(--field-color);
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .focused .active-indicator {
+    height: 2px;
+    background-color: var(--field-active);
+  }
+
+  .supporting-text {
+    padding: 4px 16px 0;
+    font-size: 0.75rem;
+  }
+
+  .info { color: var(--md-sys-color-on-surface-variant); }
+
+  .disabled {
+    opacity: 0.38;
+    pointer-events: none;
+  }
+
+  /* Smrt mode overrides */
+  .smrt-mode {
+    --field-active: var(--md-sys-color-tertiary);
   }
 </style>

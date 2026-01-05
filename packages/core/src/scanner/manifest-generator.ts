@@ -115,7 +115,7 @@ export class ManifestGenerator {
   }
 
   /**
-   * Generate pre-computed schemas for all objects in the manifest
+   * Generate pre-computed schemas for all objects in the manifest.
    *
    * This enables external package consumers to use pre-generated schemas
    * without calling generateSchema() at runtime, eliminating latency.
@@ -123,9 +123,11 @@ export class ManifestGenerator {
    * IMPORTANT: For STI classes, we aggregate ALL descendants from both local
    * and external packages to ensure complete schemas are generated.
    *
+   * This method is public to allow external callers (like OXC scanner) to use it.
+   *
    * @param manifest - The manifest to process in-place
    */
-  private generateSchemas(manifest: SmartObjectManifest): void {
+  generateSchemas(manifest: SmartObjectManifest): void {
     // Import SchemaGenerator synchronously (using createRequire for ESM compatibility)
     // Try .js first (built output), fall back to .ts (source for tests)
     let SchemaGenerator: any;

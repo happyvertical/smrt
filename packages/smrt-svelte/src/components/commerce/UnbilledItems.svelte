@@ -5,22 +5,7 @@
  * Shows unbilled items with checkbox selection for invoice creation.
  */
 
-export interface UnbilledItem {
-  /** Unique identifier */
-  id: string;
-  /** Item type */
-  type: 'expense' | 'time';
-  /** Description */
-  description: string;
-  /** Date of item */
-  date: Date | string;
-  /** Amount in cents */
-  amount: number;
-  /** Category */
-  category?: string;
-  /** Selected state */
-  selected?: boolean;
-}
+import type { UnbilledItem } from './types.js';
 
 interface Props {
   /** Unbilled items */

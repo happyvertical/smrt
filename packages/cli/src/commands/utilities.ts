@@ -9,6 +9,11 @@ import { resolve } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { dbDiffCommand } from './db-diff.js';
+import { dbGenerateCommand } from './db-generate.js';
+import { dbHistoryCommand } from './db-history.js';
+import { dbRollbackCommand } from './db-rollback.js';
+import { dbStatusCommand } from './db-status.js';
 
 /**
  * Column definition type for migration comparison
@@ -1032,6 +1037,18 @@ export default testManifest;
         description: 'Show SQL changes without executing',
         default: false,
       },
+      'postgres-safe': {
+        type: 'boolean',
+        description:
+          'Use PostgreSQL-safe operations (CONCURRENTLY for indexes, lock_timeout)',
+        default: false,
+      },
+      force: {
+        type: 'boolean',
+        description:
+          'Force re-apply even if already applied (skip checksum validation)',
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show detailed output',
@@ -1146,6 +1163,28 @@ export default testManifest;
         }
 
         console.log(`✓ Connected to ${dbType}://${dbUrl}\n`);
+
+        // 7.5. Initialize MigrationTracker for tracking applied migrations
+        const { MigrationTracker, shortChecksum } = await import(
+          '@happyvertical/smrt-core/migrations'
+        );
+
+        const tracker = new MigrationTracker({
+          db,
+          useConcurrentIndexes: options.postgresSafe ?? false,
+        });
+        await tracker.initialize();
+
+        if (options.verbose) {
+          const engine = tracker.getEngine();
+          console.log(`Migration tracker initialized (engine: ${engine})`);
+          if (options.postgresSafe && engine === 'postgres') {
+            console.log(
+              'PostgreSQL-safe mode enabled (CONCURRENTLY, lock_timeout)',
+            );
+          }
+          console.log();
+        }
 
         // 8. Compare schemas and collect migrations
         type MigrationAction = {
@@ -1382,35 +1421,67 @@ export default testManifest;
           return;
         }
 
-        // 13. Execute migrations
+        // 13. Execute migrations with tracking
         console.log(`🔨 Applying ${migrations.length} migration(s)...\n`);
 
         let successCount = 0;
+        let skippedCount = 0;
         let errorCount = 0;
 
         for (const migration of migrations) {
           try {
+            // Generate a unique migration name based on the action
+            let migrationName: string;
+            let migrationSql: string;
+            let actionDesc: string;
+
             if (migration.type === 'add_column' && migration.column) {
-              await db.alterTable.addColumn(migration.tableName, {
-                name: migration.column.name,
-                type: migration.column.type,
-                notNull: migration.column.notNull,
-                defaultValue: migration.column.defaultValue,
-                unique: migration.column.unique,
-              });
-              console.log(
-                `  ✓ Added column ${migration.tableName}.${migration.column.name}`,
-              );
-              successCount++;
+              migrationName = `add_column_${migration.tableName}_${migration.column.name}`;
+              migrationSql = migration.sql || '';
+              actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
             } else if (migration.type === 'add_index' && migration.index) {
-              await db.alterTable.addIndex(
-                migration.tableName,
-                migration.index,
-              );
-              console.log(
-                `  ✓ Created index ${migration.index.name} on ${migration.tableName}`,
-              );
-              successCount++;
+              migrationName = `add_index_${migration.index.name}`;
+              migrationSql = migration.sql || '';
+              actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
+            } else {
+              continue;
+            }
+
+            // Create migration definition - tracker handles idempotency
+            const migrationDef = {
+              id: migrationName,
+              description:
+                migration.type === 'add_column'
+                  ? `Add column ${migration.column?.name} to ${migration.tableName}`
+                  : `Add index ${migration.index?.name} on ${migration.tableName}`,
+              version: '1.0.0',
+              up: [migrationSql],
+              down: [], // Auto-migrations don't have rollback by default
+            };
+
+            // Apply migration - tracker handles checksum validation and idempotency
+            const result = await tracker.apply(migrationDef, {
+              postgresSafe: options.postgresSafe ?? false,
+              force: options.force ?? false,
+            });
+
+            if (result.success) {
+              // Check if this was already applied (execution_time_ms = 0 means skipped)
+              if (result.execution_time_ms === 0) {
+                if (options.verbose) {
+                  console.log(
+                    `  ⊙ ${migrationName} already applied (${shortChecksum(result.checksum)})`,
+                  );
+                }
+                skippedCount++;
+              } else {
+                console.log(
+                  `  ✓ ${actionDesc} (${shortChecksum(result.checksum)})`,
+                );
+                successCount++;
+              }
+            } else if (result.error) {
+              throw result.error;
             }
           } catch (error) {
             errorCount++;
@@ -1427,15 +1498,26 @@ export default testManifest;
         console.log();
         if (errorCount > 0) {
           console.log(
-            `⚠️  Migration completed with errors: ${successCount} succeeded, ${errorCount} failed\n`,
+            `⚠️  Migration completed with errors: ${successCount} succeeded, ${errorCount} failed`,
           );
+          if (skippedCount > 0) {
+            console.log(`   (${skippedCount} already applied, skipped)`);
+          }
+          console.log();
+        } else if (successCount === 0 && skippedCount > 0) {
+          console.log(`✅ All ${skippedCount} migration(s) already applied\n`);
         } else {
-          console.log(`✅ Successfully applied ${successCount} migration(s)\n`);
+          console.log(`✅ Successfully applied ${successCount} migration(s)`);
+          if (skippedCount > 0) {
+            console.log(`   (${skippedCount} already applied, skipped)`);
+          }
+          console.log();
         }
 
         console.log('💡 Next steps:');
+        console.log('  - Run: smrt db:status (view migration status)');
+        console.log('  - Run: smrt db:history (view migration history)');
         console.log('  - Run: smrt db:validate (verify database integrity)');
-        console.log('  - Run: smrt introspect (view discovered objects)');
         console.log();
       } catch (error) {
         console.error('\n❌ Migration failed:');
@@ -1766,4 +1848,11 @@ export default testManifest;
       }
     },
   },
+
+  // Migration status and history commands (from separate modules)
+  'db:status': dbStatusCommand,
+  'db:history': dbHistoryCommand,
+  'db:diff': dbDiffCommand,
+  'db:rollback': dbRollbackCommand,
+  'db:generate': dbGenerateCommand,
 };

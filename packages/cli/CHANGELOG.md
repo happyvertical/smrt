@@ -1,5 +1,42 @@
 # @happyvertical/smrt-cli
 
+## 0.17.97
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.17.97
+  - @happyvertical/smrt-config@0.17.97
+  - @happyvertical/smrt-types@0.17.97
+
+## 0.17.96
+
+### Patch Changes
+
+- 2eac718: Add production-ready migration system with db:migrate command
+- Updated dependencies [2eac718]
+  - @happyvertical/smrt-core@0.17.96
+  - @happyvertical/smrt-config@0.17.96
+  - @happyvertical/smrt-types@0.17.96
+
+## 0.17.95
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.17.95
+  - @happyvertical/smrt-config@0.17.95
+  - @happyvertical/smrt-types@0.17.95
+
+## 0.17.94
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.17.94
+  - @happyvertical/smrt-config@0.17.94
+  - @happyvertical/smrt-types@0.17.94
+
 ## 0.17.93
 
 ### Patch Changes

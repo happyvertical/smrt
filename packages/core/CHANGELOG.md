@@ -1,5 +1,51 @@
 # @happyvertical/smrt-core
 
+## 0.17.97
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: migrate component library to Material Design 3 (#660) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.17.97
+  - @happyvertical/smrt-config@0.17.97
+  - @happyvertical/smrt-types@0.17.97
+
+## 0.17.96
+
+### Patch Changes
+
+- 2eac718: Add production-ready migration system with db:migrate command
+  - @happyvertical/smrt-scanner@0.17.96
+  - @happyvertical/smrt-config@0.17.96
+  - @happyvertical/smrt-types@0.17.96
+
+## 0.17.95
+
+### Patch Changes
+
+- ### Features
+
+  - add invoice and UI components (#650) (smrt-svelte)
+
+  ### Bug Fixes
+
+  - add missing required fields to tests (#649) (analytics)
+  - @happyvertical/smrt-scanner@0.17.95
+  - @happyvertical/smrt-config@0.17.95
+  - @happyvertical/smrt-types@0.17.95
+
+## 0.17.94
+
+### Patch Changes
+
+- ### Features
+
+  - add OXC-based scanner for faster manifest generation (#647) (scanner)
+  - @happyvertical/smrt-scanner@0.17.94
+  - @happyvertical/smrt-config@0.17.94
+  - @happyvertical/smrt-types@0.17.94
+
 ## 0.17.93
 
 ### Patch Changes
