@@ -104,7 +104,7 @@ $effect(() => {
         </button>
         <button
           type="button"
-          class="btn btn-danger"
+          class="btn btn-error"
           onclick={handleConfirm}
           disabled={!canConfirm || loading}
         >
@@ -119,7 +119,7 @@ $effect(() => {
   .dialog-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.32);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -128,9 +128,9 @@ $effect(() => {
   }
 
   .dialog {
-    background: var(--color-surface, #fff);
-    border-radius: var(--radius-lg, 12px);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    background: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-extra-large, 28px);
+    box-shadow: var(--md-sys-elevation-level3);
     width: 100%;
     max-width: 28rem;
     padding: 1.5rem;
@@ -138,49 +138,55 @@ $effect(() => {
 
   .dialog-title {
     margin: 0 0 0.5rem;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--color-text, #1f2937);
+    font-size: var(--md-sys-typescale-headline-small-size, 1.5rem);
+    font-weight: var(--md-sys-typescale-headline-small-weight, 400);
+    color: var(--md-sys-color-on-surface);
+    line-height: var(--md-sys-typescale-headline-small-line-height, 2rem);
   }
 
   .dialog-message {
     margin: 0 0 1rem;
-    font-size: 0.9375rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: var(--md-sys-typescale-body-medium-line-height, 1.25rem);
   }
 
   .reason-input {
     width: 100%;
     padding: 0.75rem;
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-body-large-size, 1rem);
     font-family: inherit;
-    border: 1px solid var(--color-border, #e5e7eb);
-    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-small, 8px);
     resize: vertical;
     min-height: 80px;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
   }
 
   .reason-input:focus {
     outline: none;
-    border-color: var(--color-primary, #3b82f6);
-    box-shadow: 0 0 0 3px var(--color-primary-bg, #eff6ff);
+    border-color: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 1px var(--md-sys-color-primary);
   }
 
   .reason-input:disabled {
-    background: var(--color-surface-disabled, #f9fafb);
+    background: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface);
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
   .hint {
     margin: 0.5rem 0 0;
-    font-size: 0.75rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .dialog-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: 0.5rem;
     margin-top: 1.5rem;
   }
 
@@ -188,36 +194,37 @@ $effect(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: var(--radius-md, 8px);
-    border: 2px solid transparent;
+    padding: 0.625rem 1.5rem;
+    font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
+    font-weight: var(--md-sys-typescale-label-large-weight, 500);
+    letter-spacing: var(--md-sys-typescale-label-large-tracking, 0.1px);
+    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    border: none;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s var(--md-sys-motion-easing-standard);
   }
 
   .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
   .btn-secondary {
-    background: var(--color-surface, #fff);
-    border-color: var(--color-border, #e5e7eb);
-    color: var(--color-text, #1f2937);
+    background: transparent;
+    color: var(--md-sys-color-primary);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--color-surface-hover, #f9fafb);
+    background: var(--md-sys-color-primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
   }
 
-  .btn-danger {
-    background: var(--color-error, #ef4444);
-    color: white;
+  .btn-error {
+    background: var(--md-sys-color-error);
+    color: var(--md-sys-color-on-error);
   }
 
-  .btn-danger:hover:not(:disabled) {
-    background: var(--color-error-dark, #dc2626);
+  .btn-error:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-level1);
   }
 </style>

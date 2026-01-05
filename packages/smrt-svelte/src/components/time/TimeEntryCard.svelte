@@ -5,13 +5,21 @@
  */
 
 import type { Snippet } from 'svelte';
+import {
+  type Currency,
+  formatCurrency,
+  formatDate,
+  formatHours,
+  statusColors,
+  type TimeEntryStatus,
+} from './utils.js';
 
 export interface TimeEntry {
   id: string;
   date: Date | string;
   hours: number;
   description: string;
-  status: 'draft' | 'submitted' | 'approved' | 'rejected';
+  status: TimeEntryStatus;
   amount?: number;
   workerName?: string;
   mileage?: number;
@@ -25,7 +33,7 @@ interface Props {
   selectable?: boolean;
   selected?: boolean;
   onselect?: (id: string, selected: boolean) => void;
-  currency?: 'CAD' | 'USD';
+  currency?: Currency;
   actions?: Snippet;
 }
 
@@ -40,47 +48,27 @@ let {
   actions,
 }: Props = $props();
 
-const statusColors: Record<string, string> = {
-  draft: 'var(--color-status-draft, #6b7280)',
-  submitted: 'var(--color-status-pending, #f59e0b)',
-  approved: 'var(--color-status-success, #10b981)',
-  rejected: 'var(--color-status-error, #ef4444)',
-};
-
-function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
-function formatHours(hours: number): string {
-  return `${hours.toFixed(1)}h`;
-}
-
 function handleCheckboxChange(event: Event) {
   const target = event.target as HTMLInputElement;
   onselect?.(entry.id, target.checked);
 }
 
-function handleClick() {
+function handleCardClick(event: MouseEvent) {
+  // If there's an onclick handler, use it
   if (onclick) {
+    event.preventDefault();
     onclick();
-  } else if (href) {
-    window.location.href = href;
   }
+  // If href is provided, let the anchor handle navigation naturally
 }
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    handleClick();
+    if (onclick) {
+      event.preventDefault();
+      onclick();
+    }
+    // For href, let the anchor handle it naturally
   }
 }
 </script>
@@ -97,50 +85,33 @@ function handleKeydown(event: KeyboardEvent) {
         type="checkbox"
         checked={selected}
         onchange={handleCheckboxChange}
-        aria-label="Select entry"
+        aria-label="Select time entry for {entry.description}"
       />
     </div>
   {/if}
 
-  <div
-    class="card-content"
-    role={href || onclick ? 'button' : undefined}
-    tabindex={href || onclick ? 0 : undefined}
-    onclick={handleClick}
-    onkeydown={handleKeydown}
-  >
-    <div class="entry-header">
-      <span class="date">{formatDate(entry.date)}</span>
-      <span class="status-badge" style="--status-color: {statusColors[entry.status]}">
-        {entry.status.toUpperCase()}
-      </span>
+  {#if href}
+    <a
+      {href}
+      class="card-content"
+      onclick={handleCardClick}
+      onkeydown={handleKeydown}
+    >
+      {@render cardBody()}
+    </a>
+  {:else if onclick}
+    <button
+      type="button"
+      class="card-content"
+      onclick={() => onclick?.()}
+    >
+      {@render cardBody()}
+    </button>
+  {:else}
+    <div class="card-content">
+      {@render cardBody()}
     </div>
-
-    <div class="entry-body">
-      <p class="description">{entry.description}</p>
-      {#if entry.workerName}
-        <p class="worker">{entry.workerName}</p>
-      {/if}
-    </div>
-
-    <div class="entry-footer">
-      <div class="hours">
-        <span class="hours-value">{formatHours(entry.hours)}</span>
-        {#if entry.hourlyRate}
-          <span class="rate">@ {formatCurrency(entry.hourlyRate)}/hr</span>
-        {/if}
-      </div>
-      {#if entry.amount !== undefined}
-        <span class="amount">{formatCurrency(entry.amount)}</span>
-      {/if}
-    </div>
-
-    {#if entry.mileage && entry.mileage > 0}
-      <div class="mileage">
-        + {entry.mileage} km mileage
-      </div>
-    {/if}
-  </div>
+  {/if}
 
   {#if actions}
     <div class="card-actions">
@@ -149,24 +120,58 @@ function handleKeydown(event: KeyboardEvent) {
   {/if}
 </div>
 
+{#snippet cardBody()}
+  <div class="entry-header">
+    <span class="date">{formatDate(entry.date)}</span>
+    <span class="status-badge" style="--status-color: {statusColors[entry.status]}">
+      {entry.status.toUpperCase()}
+    </span>
+  </div>
+
+  <div class="entry-body">
+    <p class="description">{entry.description}</p>
+    {#if entry.workerName}
+      <p class="worker">{entry.workerName}</p>
+    {/if}
+  </div>
+
+  <div class="entry-footer">
+    <div class="hours">
+      <span class="hours-value">{formatHours(entry.hours)}</span>
+      {#if entry.hourlyRate}
+        <span class="rate">@ {formatCurrency(entry.hourlyRate, currency)}/hr</span>
+      {/if}
+    </div>
+    {#if entry.amount !== undefined}
+      <span class="amount">{formatCurrency(entry.amount, currency)}</span>
+    {/if}
+  </div>
+
+  {#if entry.mileage && entry.mileage > 0}
+    <div class="mileage">
+      + {entry.mileage} km mileage
+    </div>
+  {/if}
+{/snippet}
+
 <style>
   .time-entry-card {
     display: flex;
     align-items: stretch;
-    background: var(--color-surface, #fff);
-    border: 1px solid var(--color-border, #e5e7eb);
-    border-radius: var(--radius-md, 8px);
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium, 12px);
     overflow: hidden;
-    transition: all 0.2s;
+    transition: all 0.2s var(--md-sys-motion-easing-standard);
   }
 
   .time-entry-card:hover {
-    border-color: var(--color-border-hover, #d1d5db);
+    border-color: var(--md-sys-color-outline);
   }
 
   .time-entry-card.selected {
-    border-color: var(--color-primary, #3b82f6);
-    background: var(--color-primary-bg, #eff6ff);
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
   }
 
   .time-entry-card.clickable .card-content {
@@ -174,32 +179,43 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   .time-entry-card.clickable:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
   .checkbox-wrapper {
     display: flex;
     align-items: center;
     padding: 1rem;
-    background: var(--color-surface-elevated, #f9fafb);
-    border-right: 1px solid var(--color-border, #e5e7eb);
+    background: var(--md-sys-color-surface-container-low);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
   }
 
   .checkbox-wrapper input[type='checkbox'] {
     width: 1.25rem;
     height: 1.25rem;
     cursor: pointer;
+    accent-color: var(--md-sys-color-primary);
   }
 
   .card-content {
     flex: 1;
     padding: 1rem;
     min-width: 0;
+    text-decoration: none;
+    color: inherit;
+    background: transparent;
+    border: none;
+    text-align: left;
+    font: inherit;
+    display: block;
+    width: 100%;
   }
 
-  .card-content:focus {
-    outline: 2px solid var(--color-primary, #3b82f6);
+  a.card-content:focus,
+  button.card-content:focus {
+    outline: 2px solid var(--md-sys-color-primary);
     outline-offset: -2px;
+    border-radius: var(--md-sys-shape-corner-small, 8px);
   }
 
   .entry-header {
@@ -210,18 +226,18 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   .date {
-    font-size: 0.875rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .status-badge {
-    font-size: 0.625rem;
-    font-weight: 600;
+    font-size: var(--md-sys-typescale-label-small-size, 0.625rem);
+    font-weight: var(--md-sys-typescale-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--md-sys-shape-corner-small, 8px);
     background: var(--status-color);
-    color: white;
-    letter-spacing: 0.05em;
+    color: var(--md-sys-color-on-primary);
+    letter-spacing: var(--md-sys-typescale-label-small-tracking, 0.5px);
   }
 
   .entry-body {
@@ -230,15 +246,15 @@ function handleKeydown(event: KeyboardEvent) {
 
   .description {
     margin: 0;
-    font-size: 0.9375rem;
-    color: var(--color-text, #1f2937);
-    line-height: 1.4;
+    font-size: var(--md-sys-typescale-body-large-size, 0.9375rem);
+    color: var(--md-sys-color-on-surface);
+    line-height: var(--md-sys-typescale-body-large-line-height, 1.5);
   }
 
   .worker {
     margin: 0.25rem 0 0;
-    font-size: 0.8125rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-small-size, 0.8125rem);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .entry-footer {
@@ -254,32 +270,32 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   .hours-value {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--color-primary, #3b82f6);
+    font-size: var(--md-sys-typescale-body-large-size, 1rem);
+    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
+    color: var(--md-sys-color-primary);
   }
 
   .rate {
-    font-size: 0.75rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .amount {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--color-text, #1f2937);
+    font-size: var(--md-sys-typescale-body-large-size, 1rem);
+    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
+    color: var(--md-sys-color-on-surface);
   }
 
   .mileage {
     margin-top: 0.5rem;
-    font-size: 0.75rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .card-actions {
     display: flex;
     align-items: center;
     padding: 0.5rem;
-    border-left: 1px solid var(--color-border, #e5e7eb);
+    border-left: 1px solid var(--md-sys-color-outline-variant);
   }
 </style>

@@ -4,6 +4,8 @@
  * Supports decimal (8.5) or HH:MM (8:30) formats
  */
 
+import { formatHoursHHMM } from './utils.js';
+
 interface Props {
   hours: number;
   format?: 'decimal' | 'hhmm';
@@ -18,18 +20,14 @@ let {
   showLabel = false,
 }: Props = $props();
 
-const formattedValue = $derived(() => {
-  if (format === 'hhmm') {
-    const h = Math.floor(hours);
-    const m = Math.round((hours - h) * 60);
-    return `${h}:${m.toString().padStart(2, '0')}`;
-  }
-  return hours.toFixed(1);
-});
+// $derived creates a reactive value, not a function - no wrapper or parentheses needed
+const formattedValue = $derived(
+  format === 'hhmm' ? formatHoursHHMM(hours) : hours.toFixed(1),
+);
 </script>
 
 <span class="duration" class:sm={size === 'sm'} class:lg={size === 'lg'}>
-  <span class="value">{formattedValue()}</span>
+  <span class="value">{formattedValue}</span>
   {#if showLabel || format === 'decimal'}
     <span class="unit">{format === 'hhmm' ? '' : 'h'}</span>
   {/if}
@@ -41,32 +39,29 @@ const formattedValue = $derived(() => {
     align-items: baseline;
     gap: 0.125rem;
     font-variant-numeric: tabular-nums;
+    font-size: var(--md-sys-typescale-body-large-size, 1rem);
   }
 
   .value {
-    font-weight: 600;
-    color: var(--color-text, #1f2937);
+    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
+    color: var(--md-sys-color-on-surface);
   }
 
   .unit {
-    font-weight: 400;
-    color: var(--color-text-muted, #6b7280);
+    font-weight: var(--md-sys-typescale-body-medium-weight, 400);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   /* Size variants */
-  .duration {
-    font-size: 1rem;
-  }
-
   .duration.sm {
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
   }
 
   .duration.sm .value {
-    font-weight: 500;
+    font-weight: var(--md-sys-typescale-body-medium-weight, 400);
   }
 
   .duration.lg {
-    font-size: 1.5rem;
+    font-size: var(--md-sys-typescale-headline-small-size, 1.5rem);
   }
 </style>

@@ -44,7 +44,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
   {#if canSubmit}
     <button
       type="button"
-      class="btn btn-primary"
+      class="btn btn-filled"
       onclick={onsubmit}
       disabled={disabled || loading}
     >
@@ -55,7 +55,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
   {#if canApprove}
     <button
       type="button"
-      class="btn btn-success"
+      class="btn btn-filled-tonal"
       onclick={onapprove}
       disabled={disabled || loading}
     >
@@ -66,7 +66,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
   {#if canReject}
     <button
       type="button"
-      class="btn btn-danger"
+      class="btn btn-error"
       onclick={onreject}
       disabled={disabled || loading}
     >
@@ -77,7 +77,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
   {#if canEdit}
     <button
       type="button"
-      class="btn btn-secondary"
+      class="btn btn-outlined"
       onclick={onedit}
       disabled={disabled || loading}
     >
@@ -88,7 +88,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
   {#if canDelete}
     <button
       type="button"
-      class="btn btn-danger-outline"
+      class="btn btn-error-outlined"
       onclick={ondelete}
       disabled={disabled || loading}
     >
@@ -127,83 +127,82 @@ const canDelete = $derived(status === 'draft' && ondelete);
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: var(--radius-md, 8px);
-    border: 2px solid transparent;
+    padding: 0.625rem 1.5rem;
+    font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
+    font-weight: var(--md-sys-typescale-label-large-weight, 500);
+    letter-spacing: var(--md-sys-typescale-label-large-tracking, 0.1px);
+    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    border: none;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s var(--md-sys-motion-easing-standard);
   }
 
   .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
-  .btn-primary {
-    background: var(--color-primary, #3b82f6);
-    color: white;
+  .btn-filled {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
   }
 
-  .btn-primary:hover:not(:disabled) {
-    background: var(--color-primary-dark, #2563eb);
+  .btn-filled:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
-  .btn-success {
-    background: var(--color-success, #10b981);
-    color: white;
+  .btn-filled-tonal {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
 
-  .btn-success:hover:not(:disabled) {
-    background: var(--color-success-dark, #059669);
+  .btn-filled-tonal:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
-  .btn-danger {
-    background: var(--color-error, #ef4444);
-    color: white;
+  .btn-error {
+    background: var(--md-sys-color-error);
+    color: var(--md-sys-color-on-error);
   }
 
-  .btn-danger:hover:not(:disabled) {
-    background: var(--color-error-dark, #dc2626);
+  .btn-error:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
-  .btn-danger-outline {
+  .btn-error-outlined {
     background: transparent;
-    border-color: var(--color-error, #ef4444);
-    color: var(--color-error, #ef4444);
+    border: 1px solid var(--md-sys-color-error);
+    color: var(--md-sys-color-error);
   }
 
-  .btn-danger-outline:hover:not(:disabled) {
-    background: var(--color-error, #ef4444);
-    color: white;
+  .btn-error-outlined:hover:not(:disabled) {
+    background: var(--md-sys-color-error-container);
   }
 
-  .btn-secondary {
-    background: var(--color-surface, #fff);
-    border-color: var(--color-border, #e5e7eb);
-    color: var(--color-text, #1f2937);
+  .btn-outlined {
+    background: transparent;
+    border: 1px solid var(--md-sys-color-outline);
+    color: var(--md-sys-color-on-surface);
   }
 
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--color-surface-hover, #f9fafb);
-    border-color: var(--color-border-hover, #d1d5db);
+  .btn-outlined:hover:not(:disabled) {
+    background: var(--md-sys-color-surface-container-highest);
   }
 
   .status-message {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    font-weight: var(--md-sys-typescale-label-large-weight, 500);
     padding: 0.5rem 1rem;
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--md-sys-shape-corner-small, 8px);
   }
 
   .status-message.success {
-    background: var(--color-success-bg, #ecfdf5);
-    color: var(--color-success, #10b981);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
   }
 
   .status-message.error {
-    background: var(--color-error-bg, #fef2f2);
-    color: var(--color-error, #ef4444);
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
   }
 </style>

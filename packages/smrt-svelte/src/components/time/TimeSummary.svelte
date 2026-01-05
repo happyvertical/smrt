@@ -4,6 +4,8 @@
  * Shows total hours, amounts, and pending items
  */
 
+import { type Currency, formatCurrency, formatHours } from './utils.js';
+
 interface Props {
   totalHours: number;
   totalAmount: number;
@@ -12,7 +14,7 @@ interface Props {
   approvedHours?: number;
   approvedAmount?: number;
   entryCount?: number;
-  currency?: 'CAD' | 'USD';
+  currency?: Currency;
   showPending?: boolean;
   showApproved?: boolean;
   layout?: 'horizontal' | 'grid';
@@ -31,18 +33,6 @@ let {
   showApproved = false,
   layout = 'grid',
 }: Props = $props();
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
-function formatHours(hours: number): string {
-  return `${hours.toFixed(1)}h`;
-}
 </script>
 
 <div class="time-summary" class:horizontal={layout === 'horizontal'}>
@@ -56,14 +46,14 @@ function formatHours(hours: number): string {
 
   <div class="summary-card">
     <span class="label">Total Value</span>
-    <span class="value">{formatCurrency(totalAmount)}</span>
+    <span class="value">{formatCurrency(totalAmount, currency)}</span>
   </div>
 
   {#if showPending && (pendingHours > 0 || pendingAmount > 0)}
     <div class="summary-card highlight">
       <span class="label">Pending Approval</span>
       <span class="value">{formatHours(pendingHours)}</span>
-      <span class="sub-value">{formatCurrency(pendingAmount)}</span>
+      <span class="sub-value">{formatCurrency(pendingAmount, currency)}</span>
     </div>
   {/if}
 
@@ -71,7 +61,7 @@ function formatHours(hours: number): string {
     <div class="summary-card success">
       <span class="label">Approved</span>
       <span class="value">{formatHours(approvedHours)}</span>
-      <span class="sub-value">{formatCurrency(approvedAmount)}</span>
+      <span class="sub-value">{formatCurrency(approvedAmount, currency)}</span>
     </div>
   {/if}
 </div>
@@ -95,9 +85,9 @@ function formatHours(hours: number): string {
   }
 
   .summary-card {
-    background: var(--color-surface, #fff);
-    border: 1px solid var(--color-border, #e5e7eb);
-    border-radius: var(--radius-md, 8px);
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium, 12px);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -105,45 +95,61 @@ function formatHours(hours: number): string {
   }
 
   .summary-card.highlight {
-    background: var(--color-warning-bg, #fffbeb);
-    border-color: var(--color-warning-border, #fcd34d);
+    background: var(--md-sys-color-tertiary-container);
+    border-color: var(--md-sys-color-tertiary);
   }
 
   .summary-card.success {
-    background: var(--color-success-bg, #ecfdf5);
-    border-color: var(--color-success-border, #6ee7b7);
+    background: var(--md-sys-color-primary-container);
+    border-color: var(--md-sys-color-primary);
   }
 
   .label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-label-small-size, 0.75rem);
+    font-weight: var(--md-sys-typescale-label-small-weight, 500);
+    color: var(--md-sys-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--md-sys-typescale-label-small-tracking, 0.5px);
   }
 
   .value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--color-text, #1f2937);
+    font-size: var(--md-sys-typescale-headline-small-size, 1.5rem);
+    font-weight: var(--md-sys-typescale-headline-small-weight, 400);
+    color: var(--md-sys-color-on-surface);
   }
 
   .sub-value {
-    font-size: 0.875rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .count {
-    font-size: 0.75rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .highlight .label {
+    color: var(--md-sys-color-on-tertiary-container);
   }
 
   .highlight .value {
-    color: var(--color-warning, #f59e0b);
+    color: var(--md-sys-color-tertiary);
+  }
+
+  .highlight .sub-value {
+    color: var(--md-sys-color-on-tertiary-container);
+  }
+
+  .success .label {
+    color: var(--md-sys-color-on-primary-container);
   }
 
   .success .value {
-    color: var(--color-success, #10b981);
+    color: var(--md-sys-color-primary);
+  }
+
+  .success .sub-value {
+    color: var(--md-sys-color-on-primary-container);
   }
 
   @media (max-width: 480px) {

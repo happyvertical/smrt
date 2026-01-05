@@ -43,7 +43,7 @@ const visible = $derived(selectedCount > 0);
       {#if onapprove}
         <button
           type="button"
-          class="btn btn-success"
+          class="btn btn-filled"
           onclick={onapprove}
           disabled={loading}
         >
@@ -54,7 +54,7 @@ const visible = $derived(selectedCount > 0);
       {#if onreject}
         <button
           type="button"
-          class="btn btn-danger"
+          class="btn btn-error"
           onclick={onreject}
           disabled={loading}
         >
@@ -65,7 +65,7 @@ const visible = $derived(selectedCount > 0);
       {#if onexport}
         <button
           type="button"
-          class="btn btn-secondary"
+          class="btn btn-outlined"
           onclick={onexport}
           disabled={loading}
         >
@@ -76,7 +76,7 @@ const visible = $derived(selectedCount > 0);
       {#if ondelete}
         <button
           type="button"
-          class="btn btn-danger-outline"
+          class="btn btn-error-outlined"
           onclick={ondelete}
           disabled={loading}
         >
@@ -93,9 +93,9 @@ const visible = $derived(selectedCount > 0);
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    background: var(--color-primary-bg, #eff6ff);
-    border: 1px solid var(--color-primary-border, #bfdbfe);
-    border-radius: var(--radius-md, 8px);
+    background: var(--md-sys-color-secondary-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium, 12px);
     margin-bottom: 1rem;
   }
 
@@ -106,32 +106,33 @@ const visible = $derived(selectedCount > 0);
   }
 
   .count {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--color-primary, #3b82f6);
+    font-size: var(--md-sys-typescale-title-medium-size, 1rem);
+    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
+    color: var(--md-sys-color-on-secondary-container);
   }
 
   .label {
-    font-size: 0.875rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    color: var(--md-sys-color-on-secondary-container);
   }
 
   .clear-btn {
     background: none;
     border: none;
     padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    color: var(--color-primary, #3b82f6);
+    font-size: var(--md-sys-typescale-label-medium-size, 0.75rem);
+    color: var(--md-sys-color-primary);
     cursor: pointer;
     text-decoration: underline;
   }
 
   .clear-btn:hover:not(:disabled) {
-    color: var(--color-primary-dark, #2563eb);
+    color: var(--md-sys-color-primary);
+    opacity: 0.8;
   }
 
   .clear-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
@@ -146,56 +147,56 @@ const visible = $derived(selectedCount > 0);
     justify-content: center;
     gap: 0.5rem;
     padding: 0.5rem 1rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    border-radius: var(--radius-md, 8px);
-    border: 2px solid transparent;
+    font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
+    font-weight: var(--md-sys-typescale-label-large-weight, 500);
+    letter-spacing: var(--md-sys-typescale-label-large-tracking, 0.1px);
+    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    border: none;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s var(--md-sys-motion-easing-standard);
   }
 
   .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
-  .btn-success {
-    background: var(--color-success, #10b981);
-    color: white;
+  .btn-filled {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
   }
 
-  .btn-success:hover:not(:disabled) {
-    background: var(--color-success-dark, #059669);
+  .btn-filled:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
-  .btn-danger {
-    background: var(--color-error, #ef4444);
-    color: white;
+  .btn-error {
+    background: var(--md-sys-color-error);
+    color: var(--md-sys-color-on-error);
   }
 
-  .btn-danger:hover:not(:disabled) {
-    background: var(--color-error-dark, #dc2626);
+  .btn-error:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
-  .btn-danger-outline {
+  .btn-error-outlined {
     background: transparent;
-    border-color: var(--color-error, #ef4444);
-    color: var(--color-error, #ef4444);
+    border: 1px solid var(--md-sys-color-error);
+    color: var(--md-sys-color-error);
   }
 
-  .btn-danger-outline:hover:not(:disabled) {
-    background: var(--color-error, #ef4444);
-    color: white;
+  .btn-error-outlined:hover:not(:disabled) {
+    background: var(--md-sys-color-error-container);
   }
 
-  .btn-secondary {
-    background: white;
-    border-color: var(--color-border, #e5e7eb);
-    color: var(--color-text, #1f2937);
+  .btn-outlined {
+    background: transparent;
+    border: 1px solid var(--md-sys-color-outline);
+    color: var(--md-sys-color-on-surface);
   }
 
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--color-surface-hover, #f9fafb);
+  .btn-outlined:hover:not(:disabled) {
+    background: var(--md-sys-color-surface-container-highest);
   }
 
   @media (max-width: 640px) {

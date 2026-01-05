@@ -5,6 +5,13 @@
  */
 
 import type { TimeEntry } from './TimeEntryCard.svelte';
+import {
+  type Currency,
+  formatCurrency,
+  formatDate,
+  formatHours,
+  statusColors,
+} from './utils.js';
 
 interface Props {
   entries: TimeEntry[];
@@ -13,7 +20,7 @@ interface Props {
   onselectionchange?: (ids: string[]) => void;
   emptyMessage?: string;
   baseHref?: string;
-  currency?: 'CAD' | 'USD';
+  currency?: Currency;
   /** Filter function to determine which entries can be selected */
   canSelect?: (entry: TimeEntry) => boolean;
 }
@@ -48,7 +55,9 @@ function handleSelectAll(event: Event) {
   }
 }
 
-function handleSelect(id: string, selected: boolean) {
+function handleSelect(id: string, selected: boolean, event: Event) {
+  event.preventDefault();
+  event.stopPropagation();
   if (selected) {
     onselectionchange?.([...selectedIds, id]);
   } else {
@@ -59,30 +68,6 @@ function handleSelect(id: string, selected: boolean) {
 function getEntryHref(entry: TimeEntry): string | undefined {
   if (!baseHref) return undefined;
   return `${baseHref}/${entry.id}`;
-}
-
-const statusColors: Record<string, string> = {
-  draft: 'var(--color-status-draft, #6b7280)',
-  submitted: 'var(--color-status-pending, #f59e0b)',
-  approved: 'var(--color-status-success, #10b981)',
-  rejected: 'var(--color-status-error, #ef4444)',
-};
-
-function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
-function formatHours(hours: number): string {
-  return `${hours.toFixed(1)}h`;
 }
 </script>
 
@@ -100,6 +85,7 @@ function formatHours(hours: number): string {
             checked={allSelected}
             indeterminate={someSelected}
             onchange={handleSelectAll}
+            aria-label="Select all time entries"
           />
           <span>Select All</span>
         </label>
@@ -113,8 +99,8 @@ function formatHours(hours: number): string {
       {#each entries as entry (entry.id)}
         {@const isSelected = selectedIds.includes(entry.id)}
         {@const isSelectable = selectable && canSelect(entry)}
-        <a
-          href={getEntryHref(entry)}
+        {@const entryHref = getEntryHref(entry)}
+        <div
           class="entry-row"
           class:selected={isSelected}
           class:selectable={isSelectable}
@@ -126,58 +112,69 @@ function formatHours(hours: number): string {
                 <input
                   type="checkbox"
                   checked={isSelected}
-                  onclick={(e) => e.stopPropagation()}
-                  onchange={(e) => handleSelect(entry.id, (e.target as HTMLInputElement).checked)}
-                  aria-label="Select entry"
+                  onchange={(e) => handleSelect(entry.id, (e.target as HTMLInputElement).checked, e)}
+                  aria-label="Select entry: {entry.description}"
                 />
               {/if}
             </div>
           {/if}
 
-          <div class="date-cell">
-            {formatDate(entry.date)}
-          </div>
-
-          <div class="description-cell">
-            <span class="description">{entry.description}</span>
-            {#if entry.workerName}
-              <span class="worker">{entry.workerName}</span>
-            {/if}
-          </div>
-
-          <div class="hours-cell">
-            {formatHours(entry.hours)}
-          </div>
-
-          <div class="status-cell">
-            <span class="status-badge" style="--status-color: {statusColors[entry.status]}">
-              {entry.status}
-            </span>
-          </div>
-
-          {#if entry.amount !== undefined}
-            <div class="amount-cell">
-              {formatCurrency(entry.amount)}
+          {#if entryHref}
+            <a href={entryHref} class="entry-content">
+              {@render entryDetails(entry)}
+            </a>
+          {:else}
+            <div class="entry-content">
+              {@render entryDetails(entry)}
             </div>
           {/if}
-        </a>
+        </div>
       {/each}
     </div>
   </div>
 {/if}
 
+{#snippet entryDetails(entry: TimeEntry)}
+  <div class="date-cell">
+    {formatDate(entry.date)}
+  </div>
+
+  <div class="description-cell">
+    <span class="description">{entry.description}</span>
+    {#if entry.workerName}
+      <span class="worker">{entry.workerName}</span>
+    {/if}
+  </div>
+
+  <div class="hours-cell">
+    {formatHours(entry.hours)}
+  </div>
+
+  <div class="status-cell">
+    <span class="status-badge" style="--status-color: {statusColors[entry.status]}">
+      {entry.status}
+    </span>
+  </div>
+
+  {#if entry.amount !== undefined}
+    <div class="amount-cell">
+      {formatCurrency(entry.amount, currency)}
+    </div>
+  {/if}
+{/snippet}
+
 <style>
   .empty-state {
     padding: 3rem 1rem;
     text-align: center;
-    color: var(--color-text-muted, #6b7280);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .time-entry-list {
-    background: var(--color-surface, #fff);
-    border-radius: var(--radius-lg, 12px);
+    background: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-large, 16px);
     overflow: hidden;
-    border: 1px solid var(--color-border, #e5e7eb);
+    border: 1px solid var(--md-sys-color-outline-variant);
   }
 
   .list-header {
@@ -185,8 +182,8 @@ function formatHours(hours: number): string {
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    background: var(--color-surface-elevated, #f9fafb);
-    border-bottom: 1px solid var(--color-border, #e5e7eb);
+    background: var(--md-sys-color-surface-container-low);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
   }
 
   .select-all {
@@ -194,19 +191,20 @@ function formatHours(hours: number): string {
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    font-weight: var(--md-sys-typescale-label-large-weight, 500);
   }
 
   .select-all input[type='checkbox'] {
     width: 1rem;
     height: 1rem;
     cursor: pointer;
+    accent-color: var(--md-sys-color-primary);
   }
 
   .selection-count {
-    font-size: 0.875rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .entries {
@@ -217,11 +215,8 @@ function formatHours(hours: number): string {
   .entry-row {
     display: flex;
     align-items: center;
-    padding: 0.875rem 1rem;
-    border-bottom: 1px solid var(--color-border, #e5e7eb);
-    text-decoration: none;
-    color: inherit;
-    transition: background 0.15s;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    transition: background 0.15s var(--md-sys-motion-easing-standard);
   }
 
   .entry-row:last-child {
@@ -229,29 +224,46 @@ function formatHours(hours: number): string {
   }
 
   .entry-row:hover {
-    background: var(--color-surface-hover, #f9fafb);
+    background: var(--md-sys-color-surface-container-lowest);
   }
 
   .entry-row.selected {
-    background: var(--color-primary-bg, #eff6ff);
+    background: var(--md-sys-color-primary-container);
   }
 
   .checkbox-cell {
     width: 2rem;
     flex-shrink: 0;
+    padding-left: 1rem;
   }
 
   .checkbox-cell input[type='checkbox'] {
     width: 1rem;
     height: 1rem;
     cursor: pointer;
+    accent-color: var(--md-sys-color-primary);
+  }
+
+  .entry-content {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    padding: 0.875rem 1rem;
+    text-decoration: none;
+    color: inherit;
+    min-width: 0;
+  }
+
+  a.entry-content:focus {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
   }
 
   .date-cell {
     width: 4.5rem;
     flex-shrink: 0;
-    font-size: 0.875rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .description-cell {
@@ -262,8 +274,8 @@ function formatHours(hours: number): string {
 
   .description {
     display: block;
-    font-size: 0.9375rem;
-    color: var(--color-text, #1f2937);
+    font-size: var(--md-sys-typescale-body-large-size, 0.9375rem);
+    color: var(--md-sys-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -271,17 +283,17 @@ function formatHours(hours: number): string {
 
   .worker {
     display: block;
-    font-size: 0.75rem;
-    color: var(--color-text-muted, #6b7280);
+    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
+    color: var(--md-sys-color-on-surface-variant);
     margin-top: 0.125rem;
   }
 
   .hours-cell {
     width: 4rem;
     flex-shrink: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--color-primary, #3b82f6);
+    font-size: var(--md-sys-typescale-body-large-size, 0.9375rem);
+    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
+    color: var(--md-sys-color-primary);
     text-align: right;
     padding-right: 1rem;
   }
@@ -294,26 +306,26 @@ function formatHours(hours: number): string {
 
   .status-badge {
     display: inline-block;
-    font-size: 0.625rem;
-    font-weight: 600;
+    font-size: var(--md-sys-typescale-label-small-size, 0.625rem);
+    font-weight: var(--md-sys-typescale-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--md-sys-shape-corner-small, 8px);
     background: var(--status-color);
-    color: white;
+    color: var(--md-sys-color-on-primary);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--md-sys-typescale-label-small-tracking, 0.5px);
   }
 
   .amount-cell {
     width: 6rem;
     flex-shrink: 0;
-    font-size: 0.9375rem;
-    font-weight: 500;
+    font-size: var(--md-sys-typescale-body-large-size, 0.9375rem);
+    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
     text-align: right;
   }
 
   @media (max-width: 640px) {
-    .entry-row {
+    .entry-content {
       flex-wrap: wrap;
       gap: 0.5rem;
     }
