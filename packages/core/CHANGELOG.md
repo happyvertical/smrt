@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.99
+
+### Patch Changes
+
+- ### Features
+
+  - make smrt-scanner a direct dependency (#662) (core)
+  - @happyvertical/smrt-scanner@0.17.99
+  - @happyvertical/smrt-config@0.17.99
+  - @happyvertical/smrt-types@0.17.99
+
 ## 0.17.98
 
 ### Patch Changes
