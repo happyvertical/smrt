@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.17.97
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: migrate component library to Material Design 3 (#660) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.17.97
+  - @happyvertical/smrt-config@0.17.97
+  - @happyvertical/smrt-types@0.17.97
+
 ## 0.17.96
 
 ### Patch Changes
