@@ -1,10 +1,12 @@
 <script lang="ts">
 /**
  * InvoiceCard - Invoice list/grid card
+ * refactored for Material 3
  *
  * Compact card view for displaying invoices in lists.
  */
 
+import { ripple } from '../../actions/ripple.js';
 import type { InvoiceData, InvoiceStatus } from './types.js';
 
 interface Props {
@@ -39,20 +41,23 @@ function formatDate(date: Date | string | null | undefined): string {
   }).format(d);
 }
 
-// Status display config
-const statusConfig: Record<
-  InvoiceStatus,
-  { label: string; bg: string; text: string }
-> = {
-  draft: { label: 'Draft', bg: '#f3f4f6', text: '#6b7280' },
-  sent: { label: 'Sent', bg: '#dbeafe', text: '#1e40af' },
-  viewed: { label: 'Viewed', bg: '#e0e7ff', text: '#4338ca' },
-  paid: { label: 'Paid', bg: '#dcfce7', text: '#166534' },
-  overdue: { label: 'Overdue', bg: '#fee2e2', text: '#dc2626' },
-  cancelled: { label: 'Cancelled', bg: '#fecaca', text: '#991b1b' },
-};
-
-const statusInfo = $derived(statusConfig[invoice.status] ?? statusConfig.draft);
+// Map status to M3 classes
+const statusClass = $derived.by(() => {
+  switch (invoice.status) {
+    case 'paid':
+      return 'status-paid';
+    case 'overdue':
+      return 'status-error';
+    case 'sent':
+      return 'status-info';
+    case 'viewed':
+      return 'status-info';
+    case 'cancelled':
+      return 'status-error';
+    default:
+      return 'status-default';
+  }
+});
 
 // Check if overdue
 const isOverdue = $derived.by(() => {
@@ -67,15 +72,11 @@ const isOverdue = $derived.by(() => {
 </script>
 
 {#if href}
-  <a class="invoice-card" {href}>
+  <a class="invoice-card" {href} use:ripple>
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
-      <span
-        class="status-badge"
-        style:background-color={isOverdue ? statusConfig.overdue.bg : statusInfo.bg}
-        style:color={isOverdue ? statusConfig.overdue.text : statusInfo.text}
-      >
-        {isOverdue ? 'Overdue' : statusInfo.label}
+      <span class="status-badge {isOverdue ? 'status-error' : statusClass}">
+        {isOverdue ? 'Overdue' : invoice.status}
       </span>
     </div>
 
@@ -96,15 +97,11 @@ const isOverdue = $derived.by(() => {
     </div>
   </a>
 {:else}
-  <button type="button" class="invoice-card" onclick={onclick}>
+  <button type="button" class="invoice-card" onclick={onclick} use:ripple>
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
-      <span
-        class="status-badge"
-        style:background-color={isOverdue ? statusConfig.overdue.bg : statusInfo.bg}
-        style:color={isOverdue ? statusConfig.overdue.text : statusInfo.text}
-      >
-        {isOverdue ? 'Overdue' : statusInfo.label}
+      <span class="status-badge {isOverdue ? 'status-error' : statusClass}">
+        {isOverdue ? 'Overdue' : invoice.status}
       </span>
     </div>
 
@@ -130,22 +127,25 @@ const isOverdue = $derived.by(() => {
   .invoice-card {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
+    gap: 12px;
+    padding: 16px;
+    background-color: var(--md-sys-color-surface-container-low);
+    border-radius: 12px;
     text-decoration: none;
-    color: inherit;
+    color: var(--md-sys-color-on-surface);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     text-align: left;
     width: 100%;
+    border: none;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
   .invoice-card:hover {
-    border-color: #3b82f6;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background-color: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level2);
   }
 
   .card-header {
@@ -155,36 +155,56 @@ const isOverdue = $derived.by(() => {
   }
 
   .invoice-number {
-    font-size: 0.875rem;
+    font: var(--md-sys-typescale-label-large-font);
     font-weight: 600;
-    color: #111827;
+    color: var(--md-sys-color-on-surface);
   }
 
   .status-badge {
     display: inline-flex;
-    padding: 0.125rem 0.5rem;
-    font-size: 0.625rem;
-    font-weight: 500;
-    border-radius: 9999px;
+    padding: 0 8px;
+    height: 20px;
+    align-items: center;
+    font: var(--md-sys-typescale-label-small-font);
+    font-weight: 600;
+    border-radius: 10px;
     text-transform: uppercase;
-    letter-spacing: 0.025em;
+    letter-spacing: 0.5px;
+  }
+
+  /* Status Badge Colors */
+  .status-default { 
+    background-color: var(--md-sys-color-surface-variant);
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .status-paid {
+    background-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  .status-info {
+    background-color: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+  .status-error {
+    background-color: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
   }
 
   .card-body {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 4px;
   }
 
   .customer-name {
-    font-size: 0.875rem;
-    color: #6b7280;
+    font: var(--md-sys-typescale-body-small-font);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .invoice-amount {
-    font-size: 1.25rem;
+    font: var(--md-sys-typescale-headline-small-font);
     font-weight: 600;
-    color: #111827;
+    color: var(--md-sys-color-on-surface);
     font-variant-numeric: tabular-nums;
   }
 
@@ -192,12 +212,13 @@ const isOverdue = $derived.by(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.75rem;
-    color: #9ca3af;
+    font: var(--md-sys-typescale-body-small-font);
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.8;
   }
 
   .due-date.overdue {
-    color: #dc2626;
-    font-weight: 500;
+    color: var(--md-sys-color-error);
+    font-weight: 600;
   }
 </style>

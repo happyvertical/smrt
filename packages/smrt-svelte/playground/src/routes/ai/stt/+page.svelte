@@ -1,17 +1,22 @@
 <script lang="ts">
-import { useSTT } from '@happyvertical/smrt-svelte';
+import {
+  CapabilityGate,
+  STTTest,
+  useSTT,
+  VoiceInput,
+} from '@happyvertical/smrt-svelte';
 
-const _stt = useSTT();
+const stt = useSTT();
 
 let transcriptions = $state<string[]>([]);
 
-function _handleTranscription(text: string) {
+function handleTranscription(text: string) {
   if (text.trim()) {
     transcriptions = [...transcriptions, text];
   }
 }
 
-function _clearTranscriptions() {
+function clearTranscriptions() {
   transcriptions = [];
 }
 </script>

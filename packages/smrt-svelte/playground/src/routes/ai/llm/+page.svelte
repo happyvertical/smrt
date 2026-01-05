@@ -1,5 +1,9 @@
 <script lang="ts">
-import { useLLM } from '@happyvertical/smrt-svelte';
+import {
+  CapabilityGate,
+  DownloadProgress,
+  useLLM,
+} from '@happyvertical/smrt-svelte';
 
 const llm = useLLM({
   systemPrompt: 'You are a helpful assistant. Keep responses concise.',
@@ -9,9 +13,9 @@ let input = $state('');
 let messages = $state<Array<{ role: 'user' | 'assistant'; content: string }>>(
   [],
 );
-let _streamingResponse = $state('');
+let streamingResponse = $state('');
 
-async function _handleSubmit(e: Event) {
+async function handleSubmit(e: Event) {
   e.preventDefault();
   if (!input.trim() || llm.isGenerating) return;
 
@@ -19,25 +23,25 @@ async function _handleSubmit(e: Event) {
   input = '';
 
   messages = [...messages, { role: 'user', content: userMessage }];
-  _streamingResponse = '';
+  streamingResponse = '';
 
   try {
     const response = await llm.chat(userMessage, {
       onToken: (token) => {
-        _streamingResponse += token;
+        streamingResponse += token;
       },
     });
 
     messages = [...messages, { role: 'assistant', content: response }];
-    _streamingResponse = '';
+    streamingResponse = '';
   } catch (error) {
     console.error('Chat error:', error);
   }
 }
 
-function _clearChat() {
+function clearChat() {
   messages = [];
-  _streamingResponse = '';
+  streamingResponse = '';
 }
 </script>
 

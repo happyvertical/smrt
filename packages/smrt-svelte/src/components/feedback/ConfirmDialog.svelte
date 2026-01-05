@@ -1,10 +1,12 @@
 <script lang="ts">
 /**
  * ConfirmDialog - Modal confirmation dialog
+ * refactored for Material 3
  *
  * Provides a consistent confirmation dialog for destructive actions
  * or important decisions.
  */
+import { ripple } from '../../actions/ripple.js';
 
 interface Props {
   /** Whether the dialog is open */
@@ -53,11 +55,13 @@ function handleKeydown(e: KeyboardEvent) {
 </script>
 
 {#if open}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="dialog-backdrop"
     role="dialog"
     aria-modal="true"
     aria-labelledby="dialog-title"
+    tabindex="-1"
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >
@@ -68,18 +72,20 @@ function handleKeydown(e: KeyboardEvent) {
       <div class="dialog-actions">
         <button
           type="button"
-          class="btn btn-cancel"
+          class="btn btn-text"
           onclick={oncancel}
           disabled={loading}
+          use:ripple
         >
           {cancelLabel}
         </button>
         <button
           type="button"
-          class="btn btn-confirm"
+          class="btn btn-filled"
           class:destructive
           onclick={onconfirm}
           disabled={loading}
+          use:ripple
         >
           {#if loading}
             <span class="spinner"></span>
@@ -98,104 +104,108 @@ function handleKeydown(e: KeyboardEvent) {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 50;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: var(--smrt-dialog-z-index, 1000);
     padding: 1rem;
+    backdrop-filter: blur(2px);
   }
 
   .dialog-content {
-    background: white;
-    border-radius: 0.75rem;
-    padding: 1.5rem;
+    background-color: var(--md-sys-color-surface-container-high);
+    border-radius: 28px;
+    padding: 24px;
     max-width: 400px;
     width: 100%;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-    animation: dialogEnter 0.2s ease-out;
+    box-shadow: var(--md-sys-elevation-level3);
+    animation: dialogEnter 300ms cubic-bezier(0.2, 0, 0, 1);
+    display: flex;
+    flex-direction: column;
   }
 
   @keyframes dialogEnter {
     from {
       opacity: 0;
-      transform: scale(0.95);
+      transform: translateY(20px) scale(0.9);
     }
     to {
       opacity: 1;
-      transform: scale(1);
+      transform: translateY(0) scale(1);
     }
   }
 
   .dialog-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #111827;
-    margin: 0 0 0.5rem;
+    font: var(--md-sys-typescale-headline-small-font);
+    color: var(--md-sys-color-on-surface);
+    margin: 0 0 16px;
   }
 
   .dialog-message {
-    font-size: 0.875rem;
-    color: #6b7280;
-    margin: 0 0 1.5rem;
+    font: var(--md-sys-typescale-body-medium-font);
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 0 0 24px;
     line-height: 1.5;
   }
 
   .dialog-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: 8px;
   }
 
   .btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
+    justify-content: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 24px;
+    font: var(--md-sys-typescale-label-large-font);
     font-weight: 500;
-    border-radius: 0.375rem;
+    border-radius: 20px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 200ms;
     border: none;
+    position: relative;
+    overflow: hidden;
   }
 
   .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
-  .btn-cancel {
-    background: white;
-    color: #374151;
-    border: 1px solid #d1d5db;
+  .btn-text {
+    background: transparent;
+    color: var(--md-sys-color-primary);
+    padding: 0 12px;
   }
 
-  .btn-cancel:hover:not(:disabled) {
-    background: #f9fafb;
+  .btn-text:hover:not(:disabled) {
+    background-color: var(--md-sys-color-surface-container-highest);
   }
 
-  .btn-confirm {
-    background: #3b82f6;
-    color: white;
+  .btn-filled {
+    background-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
-  .btn-confirm:hover:not(:disabled) {
-    background: #2563eb;
+  .btn-filled:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-level2);
   }
 
-  .btn-confirm.destructive {
-    background: #dc2626;
-  }
-
-  .btn-confirm.destructive:hover:not(:disabled) {
-    background: #b91c1c;
+  .btn-filled.destructive {
+    background-color: var(--md-sys-color-error);
+    color: var(--md-sys-color-on-error);
   }
 
   .spinner {
-    width: 1rem;
-    height: 1rem;
+    width: 18px;
+    height: 18px;
     border: 2px solid transparent;
     border-top-color: currentColor;
     border-radius: 50%;
-    animation: spin 0.6s linear infinite;
+    animation: spin 0.8s linear infinite;
   }
 
   @keyframes spin {

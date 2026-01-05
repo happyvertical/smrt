@@ -11,6 +11,7 @@ The SMRT Framework is a TypeScript-first platform designed to streamline the cre
 - **AI Engineers & Developers**: Specialists building vertical agents who need a robust foundation for integrating LLM capabilities directly into their business logic.
 
 ## Core Features
+- **Material 3 Component Library**: A zero-dependency Svelte 5 implementation of Material Design 3, featuring dynamic color generation and AI-enhanced input interactions.
 - **Automatic ORM**: Seamlessly generates database schemas directly from TypeScript classes, using a "0 vs 0.0" heuristic for type inference.
 - **Multi-Interface Code Generation**: Automatically produces CLI tools, REST APIs (with OpenAPI/Swagger), and MCP (Model Context Protocol) servers from domain models.
 - **Module Business Logic**: A modular architecture that encapsulates domain-specific logic into reusable, self-contained packages.
