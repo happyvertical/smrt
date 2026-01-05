@@ -41,6 +41,8 @@ export { default as TenantCard } from './components/tenants/TenantCard.svelte';
 export { default as TenantSwitcher } from './components/tenants/TenantSwitcher.svelte';
 // Theme components
 export * from './components/theme/index.js';
+// Time tracking components
+export * from './components/time/index.js';
 export { default as InviteUserModal } from './components/users/InviteUserModal.svelte';
 // User components
 export { default as UserAvatar } from './components/users/UserAvatar.svelte';
