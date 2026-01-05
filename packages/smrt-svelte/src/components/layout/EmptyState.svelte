@@ -1,12 +1,13 @@
 <script lang="ts">
 /**
  * EmptyState - Placeholder for empty lists/content
+ * refactored for Material 3
  *
  * Provides a consistent empty state display with optional icon,
  * description, and call-to-action button.
  */
-
 import type { Snippet } from 'svelte';
+import { ripple } from '../../actions/ripple.js';
 
 interface Props {
   /** Main title text */
@@ -37,27 +38,25 @@ const {
 
 // Default SVG icons
 const icons = {
-  document: `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
-    <path d="M14 6h14l10 10v26a2 2 0 01-2 2H14a2 2 0 01-2-2V8a2 2 0 012-2z"/>
-    <path d="M28 6v10h10"/>
-    <path d="M18 26h12M18 34h8"/>
+  document: `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/>
+    <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
   </svg>`,
-  folder: `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
-    <path d="M6 14a2 2 0 012-2h10l4 4h18a2 2 0 012 2v18a2 2 0 01-2 2H8a2 2 0 01-2-2V14z"/>
+  folder: `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
   </svg>`,
-  users: `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
-    <circle cx="20" cy="18" r="6"/>
-    <path d="M8 38v-2a8 8 0 018-8h8a8 8 0 018 8v2"/>
-    <circle cx="34" cy="16" r="4"/>
-    <path d="M40 38v-2a6 6 0 00-4-5.65"/>
+  users: `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
   </svg>`,
-  search: `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
-    <circle cx="20" cy="20" r="12"/>
-    <path d="M30 30l10 10"/>
+  search: `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <circle cx="11" cy="11" r="8"/>
+    <path d="M21 21l-4.35-4.35"/>
   </svg>`,
-  inbox: `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
-    <path d="M8 24h10l4 6h4l4-6h10"/>
-    <path d="M10 12h28a2 2 0 012 2v22a2 2 0 01-2 2H10a2 2 0 01-2-2V14a2 2 0 012-2z"/>
+  inbox: `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+    <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/>
   </svg>`,
 };
 </script>
@@ -79,11 +78,11 @@ const icons = {
 
   {#if actionLabel}
     {#if actionHref}
-      <a href={actionHref} class="action-button">
+      <a href={actionHref} class="action-button" use:ripple>
         {actionLabel}
       </a>
     {:else if onaction}
-      <button type="button" class="action-button" onclick={onaction}>
+      <button type="button" class="action-button" onclick={onaction} use:ripple>
         {actionLabel}
       </button>
     {/if}
@@ -96,91 +95,93 @@ const icons = {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 3rem 1.5rem;
+    padding: 4rem 2rem;
     text-align: center;
   }
 
   .empty-state.sm {
-    padding: 1.5rem 1rem;
+    padding: 2rem 1.5rem;
   }
 
   .empty-state.lg {
-    padding: 4rem 2rem;
+    padding: 6rem 3rem;
   }
 
   .icon-container {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 80px;
-    height: 80px;
-    margin-bottom: 1.5rem;
-    background: #f3f4f6;
-    border-radius: 50%;
-    color: #9ca3af;
-  }
-
-  .sm .icon-container {
-    width: 56px;
-    height: 56px;
-    margin-bottom: 1rem;
-  }
-
-  .sm .icon-container :global(svg) {
-    width: 32px;
-    height: 32px;
-  }
-
-  .lg .icon-container {
     width: 96px;
     height: 96px;
     margin-bottom: 2rem;
+    background-color: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    border-radius: 28px; /* M3 extra large shape */
+    padding: 24px;
   }
 
-  .lg .icon-container :global(svg) {
-    width: 56px;
-    height: 56px;
+  .sm .icon-container {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 1.5rem;
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .lg .icon-container {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 2.5rem;
+    border-radius: 32px;
+    padding: 32px;
   }
 
   .empty-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #374151;
-    margin: 0 0 0.5rem;
+    font: var(--md-sys-typescale-title-large-font);
+    color: var(--md-sys-color-on-surface);
+    margin: 0 0 0.75rem;
+    font-weight: 500;
   }
 
   .sm .empty-title {
-    font-size: 1rem;
+    font: var(--md-sys-typescale-title-medium-font);
   }
 
   .lg .empty-title {
-    font-size: 1.25rem;
+    font: var(--md-sys-typescale-headline-small-font);
   }
 
   .empty-description {
-    font-size: 0.875rem;
-    color: #6b7280;
-    margin: 0 0 1.5rem;
-    max-width: 400px;
+    font: var(--md-sys-typescale-body-medium-font);
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 0 0 2rem;
+    max-width: 440px;
+    line-height: 1.5;
   }
 
   .action-button {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 24px;
+    height: 40px;
+    font: var(--md-sys-typescale-label-large-font);
     font-weight: 500;
-    color: white;
-    background: #3b82f6;
+    color: var(--md-sys-color-on-primary);
+    background-color: var(--md-sys-color-primary);
     border: none;
-    border-radius: 0.375rem;
+    border-radius: 20px;
     text-decoration: none;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: box-shadow 200ms, background-color 200ms;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
   .action-button:hover {
-    background: #2563eb;
+    background-color: var(--md-sys-color-primary);
+    box-shadow: var(--md-sys-elevation-level2);
   }
 </style>

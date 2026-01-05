@@ -1,10 +1,12 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
+import { ripple } from '../../actions/ripple.js';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { parseSpokenBoolean } from '../../utils/forms/formatters.js';
 
 interface Props {
   /** Field name */
@@ -43,47 +45,6 @@ function updateValue(newValue: boolean) {
   onchange?.(checked);
 }
 
-// Parse spoken boolean value
-function parseSpokenBoolean(text: string): boolean | null {
-  const normalized = text.toLowerCase().trim();
-
-  const trueWords = [
-    'yes',
-    'yeah',
-    'yep',
-    'true',
-    'correct',
-    'affirmative',
-    'check',
-    'checked',
-    'on',
-    'enable',
-    'enabled',
-  ];
-  const falseWords = [
-    'no',
-    'nope',
-    'false',
-    'incorrect',
-    'negative',
-    'uncheck',
-    'unchecked',
-    'off',
-    'disable',
-    'disabled',
-  ];
-
-  for (const word of trueWords) {
-    if (normalized.includes(word)) return true;
-  }
-
-  for (const word of falseWords) {
-    if (normalized.includes(word)) return false;
-  }
-
-  return null;
-}
-
 // Register with form context
 onMount(() => {
   if (formContext) {
@@ -120,8 +81,8 @@ function handleChange(e: Event) {
 }
 </script>
 
-<div class="smrt-checkbox">
-  <label class="checkbox-label" class:disabled>
+<div class="smrt-checkbox-field" class:disabled class:smrt-mode={isSmrt}>
+  <div class="container" use:ripple>
     <input
       type="checkbox"
       id={name}
@@ -129,96 +90,119 @@ function handleChange(e: Event) {
       {checked}
       {disabled}
       {required}
-      class="checkbox-input"
-      class:smrt-mode={isSmrt}
+      class="input"
       onchange={handleChange}
     />
-    <span class="checkbox-custom" class:checked class:smrt-mode={isSmrt}>
+    <div class="checkbox" class:checked>
       {#if checked}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"/>
+        <svg viewBox="0 0 24 24" class="icon">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
         </svg>
       {/if}
-    </span>
-    {#if label}
-      <span class="label-text">
-        {label}
-        {#if required}<span class="required">*</span>{/if}
-      </span>
-    {/if}
-  </label>
+    </div>
+    <div class="state-layer"></div>
+  </div>
+  
+  {#if label}
+    <label for={name} class="label">
+      {label}{#if required}*{/if}
+    </label>
+  {/if}
 </div>
 
 <style>
-  .smrt-checkbox {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .checkbox-label {
-    display: flex;
+  .smrt-checkbox-field {
+    display: inline-flex;
     align-items: center;
     gap: 8px;
     cursor: pointer;
+    vertical-align: middle;
     user-select: none;
   }
 
-  .checkbox-label.disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
-
-  .checkbox-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .checkbox-custom {
-    width: 20px;
-    height: 20px;
-    border: 2px solid #d1d5db;
-    border-radius: 4px;
-    background: #fff;
+  .container {
+    position: relative;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
-    flex-shrink: 0;
+    border-radius: 50%;
+    margin: -10px; /* Offset the 40x40 container to align 18x18 checkbox */
   }
 
-  .checkbox-custom.checked {
-    background: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
+  .input {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: inherit;
+    z-index: 1;
+    margin: 0;
   }
 
-  .checkbox-custom.smrt-mode {
-    border-color: #a855f7;
+  .checkbox {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--md-sys-color-on-surface-variant);
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    background-color: transparent;
   }
 
-  .checkbox-custom.smrt-mode.checked {
-    background: #a855f7;
-    border-color: #a855f7;
+  .checkbox.checked {
+    background-color: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-primary);
   }
 
-  .checkbox-input:focus + .checkbox-custom {
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  /* Smrt mode styling */
+  .smrt-mode .checkbox.checked {
+    background-color: var(--md-sys-color-tertiary);
+    border-color: var(--md-sys-color-tertiary);
   }
 
-  .checkbox-input:focus + .checkbox-custom.smrt-mode {
-    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1);
+  .icon {
+    width: 14px;
+    height: 14px;
+    fill: var(--md-sys-color-on-primary);
   }
 
-  .label-text {
+  .smrt-mode .icon {
+    fill: var(--md-sys-color-on-tertiary);
+  }
+
+  .label {
     font-size: 0.875rem;
-    color: #374151;
+    color: var(--md-sys-color-on-surface);
+    cursor: inherit;
   }
 
-  .label-text .required {
-    color: #ef4444;
-    margin-left: 2px;
+  .disabled {
+    opacity: 0.38;
+    pointer-events: none;
+  }
+
+  .input:focus-visible ~ .state-layer {
+    background-color: var(--md-sys-color-on-surface);
+    opacity: 0.12;
+  }
+
+  .state-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    transition: opacity 200ms;
+  }
+
+  .container:hover .state-layer {
+    background-color: var(--md-sys-color-on-surface);
+    opacity: 0.08;
   }
 </style>

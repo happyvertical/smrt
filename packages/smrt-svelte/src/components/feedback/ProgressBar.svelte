@@ -1,6 +1,7 @@
 <script lang="ts">
 /**
  * ProgressBar - Visual progress indicator
+ * refactored for Material 3
  *
  * Shows progress with optional status-based coloring.
  * Useful for budget tracking, task completion, etc.
@@ -46,34 +47,18 @@ const autoStatus = $derived.by(() => {
   return 'healthy';
 });
 
-// Color based on status
-const barColor = $derived.by(() => {
+// Map status to M3 colors
+const barColorClass = $derived.by(() => {
   switch (autoStatus) {
     case 'healthy':
-      return '#22c55e';
+      return 'color-primary';
     case 'warning':
-      return '#f59e0b';
-    case 'critical':
-      return '#ef4444';
-    case 'over':
-      return '#dc2626';
-    default:
-      return '#3b82f6';
-  }
-});
-
-// Background color
-const bgColor = $derived.by(() => {
-  switch (autoStatus) {
-    case 'healthy':
-      return '#dcfce7';
-    case 'warning':
-      return '#fef3c7';
+      return 'color-tertiary';
     case 'critical':
     case 'over':
-      return '#fee2e2';
+      return 'color-error';
     default:
-      return '#e5e7eb';
+      return 'color-primary';
   }
 });
 
@@ -97,16 +82,14 @@ const displayLabel = $derived.by(() => {
 
   <div
     class="progress-track"
-    style:background-color={bgColor}
     role="progressbar"
     aria-valuenow={value}
     aria-valuemin={0}
     aria-valuemax={max}
   >
     <div
-      class="progress-bar"
+      class="progress-bar {barColorClass}"
       style:width="{percentage}%"
-      style:background-color={barColor}
     ></div>
   </div>
 </div>
@@ -120,43 +103,47 @@ const displayLabel = $derived.by(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.25rem;
+    margin-bottom: 8px;
   }
 
   .progress-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #374151;
+    font: var(--md-sys-typescale-label-large-font);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   .sm .progress-label {
-    font-size: 0.75rem;
+    font: var(--md-sys-typescale-label-medium-font);
   }
 
   .over-badge {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #dc2626;
+    font: var(--md-sys-typescale-label-small-font);
+    font-weight: 600;
+    color: var(--md-sys-color-error);
   }
 
   .progress-track {
     width: 100%;
-    height: 0.5rem;
-    border-radius: 9999px;
+    height: 4px;
+    background-color: var(--md-sys-color-surface-container-highest);
+    border-radius: 2px;
     overflow: hidden;
   }
 
   .sm .progress-track {
-    height: 0.375rem;
+    height: 2px;
   }
 
   .lg .progress-track {
-    height: 0.75rem;
+    height: 8px;
+    border-radius: 4px;
   }
 
   .progress-bar {
     height: 100%;
-    border-radius: 9999px;
-    transition: width 0.3s ease;
+    transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
   }
+
+  .color-primary { background-color: var(--md-sys-color-primary); }
+  .color-tertiary { background-color: var(--md-sys-color-tertiary); }
+  .color-error { background-color: var(--md-sys-color-error); }
 </style>

@@ -270,8 +270,10 @@ export class SmrtAppStateManager {
         } else if (category === 'tts') {
           await this.initializeTTS({ type: type as TTSType });
         } else if (category === 'llm') {
-          const llmConfig = this._aiConfig.llm!;
-          await this.initializeLLM(llmConfig.model, { type: llmConfig.type });
+          const llmConfig = this._aiConfig.llm;
+          if (llmConfig) {
+            await this.initializeLLM(llmConfig.model, { type: llmConfig.type });
+          }
         }
 
         this.updateLoadingState({

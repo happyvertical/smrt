@@ -1,11 +1,13 @@
 <script lang="ts">
 /**
  * FilterChips - Horizontal filter navigation
+ * refactored for Material 3
  *
  * Provides a row of selectable filter chips for filtering lists.
  * Supports optional counts and "all" option.
  */
-
+import { ripple } from '../../actions/ripple.js';
+import { SMRTIcon } from '../display/index.js';
 import type { FilterOption } from './types.js';
 
 interface Props {
@@ -54,15 +56,22 @@ function handleClick(value: string) {
 
 <div class="filter-chips" class:sm={size === 'sm'} role="radiogroup">
   {#each allOptions as option (option.value)}
+    {@const isActive = option.value === selected}
     <button
       type="button"
       class="filter-chip"
-      class:active={option.value === selected}
+      class:active={isActive}
       disabled={option.disabled}
       role="radio"
-      aria-checked={option.value === selected}
+      aria-checked={isActive}
       onclick={() => handleClick(option.value)}
+      use:ripple
     >
+      {#if isActive}
+        <span class="chip-icon">
+          <SMRTIcon name="check" size={18} />
+        </span>
+      {/if}
       <span class="chip-label">{option.label}</span>
       {#if option.count !== undefined}
         <span class="chip-count">{option.count}</span>
@@ -74,63 +83,70 @@ function handleClick(value: string) {
 <style>
   .filter-chips {
     display: flex;
-    gap: 0.5rem;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
   .filter-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
+    gap: 8px;
+    height: 32px;
+    padding: 0 16px;
+    font: var(--md-sys-typescale-label-large-font);
     font-weight: 500;
-    color: #6b7280;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 9999px;
+    color: var(--md-sys-color-on-surface-variant);
+    background-color: transparent;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     white-space: nowrap;
+    position: relative;
+    overflow: hidden;
   }
 
   .sm .filter-chip {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
+    height: 28px;
+    padding: 0 12px;
+    font: var(--md-sys-typescale-label-medium-font);
+    gap: 6px;
   }
 
   .filter-chip:hover:not(:disabled) {
-    border-color: #3b82f6;
-    color: #3b82f6;
+    background-color: var(--md-sys-color-surface-container-high);
   }
 
   .filter-chip.active {
-    background: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
+    background-color: var(--md-sys-color-secondary-container);
+    border-color: transparent;
+    color: var(--md-sys-color-on-secondary-container);
+    padding-left: 12px;
+  }
+
+  .sm .filter-chip.active {
+    padding-left: 8px;
   }
 
   .filter-chip:disabled {
-    opacity: 0.5;
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
-  .chip-count {
-    display: inline-flex;
+  .chip-icon {
+    display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.25rem;
-    height: 1.25rem;
-    padding: 0 0.375rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    background: #e5e7eb;
-    color: #374151;
-    border-radius: 9999px;
+    color: var(--md-sys-color-on-secondary-container);
   }
 
-  .filter-chip.active .chip-count {
-    background: rgba(255, 255, 255, 0.2);
-    color: white;
+  .chip-count {
+    font: var(--md-sys-typescale-label-small-font);
+    opacity: 0.7;
+    margin-left: -2px;
+  }
+
+  .active .chip-count {
+    color: var(--md-sys-color-on-secondary-container);
   }
 </style>

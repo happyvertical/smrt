@@ -3,7 +3,7 @@ import { useAppState } from '@happyvertical/smrt-svelte';
 
 const app = useAppState();
 
-const _caps = $derived(app.state.capabilities);
+const caps = $derived(app.state.capabilities);
 </script>
 
 <h1>AI Features</h1>

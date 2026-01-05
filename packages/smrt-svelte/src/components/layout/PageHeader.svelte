@@ -1,12 +1,14 @@
 <script lang="ts">
 /**
  * PageHeader - Standard page header with optional back navigation
+ * refactored for Material 3
  *
  * Provides consistent page header layout with title, optional back link,
  * and slot for action buttons.
  */
-
 import type { Snippet } from 'svelte';
+import { ripple } from '../../actions/ripple.js';
+import { SMRTIcon } from '../display/index.js';
 
 interface Props {
   /** Page title */
@@ -37,17 +39,8 @@ const {
   <div class="header-main">
     <div class="header-content">
       {#if backHref}
-        <a href={backHref} class="back-link">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M12 4l-6 6 6 6" />
-          </svg>
+        <a href={backHref} class="back-link" use:ripple>
+          <SMRTIcon name="chevron-left" size={20} />
           <span>{backLabel}</span>
         </a>
       {/if}
@@ -73,60 +66,66 @@ const {
 
 <style>
   .page-header {
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
+    padding-top: 1rem;
   }
 
   .header-main {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
+    gap: 1.5rem;
     flex-wrap: wrap;
   }
 
   .header-content {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 4px;
+    flex: 1;
+    min-width: 200px;
   }
 
   .back-link {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    color: #6b7280;
-    font-size: 0.875rem;
+    gap: 4px;
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-label-large-font);
     text-decoration: none;
-    margin-bottom: 0.5rem;
-    transition: color 0.15s;
+    margin-bottom: 0.75rem;
+    padding: 4px 8px 4px 4px;
+    border-radius: 8px;
+    margin-left: -4px; /* Align icon with text below */
+    transition: background-color 200ms;
   }
 
   .back-link:hover {
-    color: #3b82f6;
+    background-color: var(--md-sys-color-surface-container-high);
   }
 
   .page-title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: #111827;
+    font: var(--md-sys-typescale-headline-medium-font);
+    color: var(--md-sys-color-on-surface);
     margin: 0;
-    line-height: 1.2;
+    letter-spacing: -0.5px;
   }
 
   .page-subtitle {
-    font-size: 0.875rem;
-    color: #6b7280;
+    font: var(--md-sys-typescale-body-medium-font);
+    color: var(--md-sys-color-on-surface-variant);
     margin: 0;
-    margin-top: 0.25rem;
+    margin-top: 4px;
   }
 
   .header-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    align-items: center;
     flex-wrap: wrap;
   }
 
   .header-extra {
-    margin-top: 1rem;
+    margin-top: 1.5rem;
   }
 </style>

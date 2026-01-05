@@ -11,6 +11,7 @@ export {
   hasPermission,
   permission,
 } from './actions/permission.js';
+export { ripple } from './actions/ripple.js';
 // AI Components
 export * from './components/ai/index.js';
 // Auth components
@@ -38,6 +39,8 @@ export { default as RoleSelector } from './components/roles/RoleSelector.svelte'
 export { default as TenantCard } from './components/tenants/TenantCard.svelte';
 // Tenant components
 export { default as TenantSwitcher } from './components/tenants/TenantSwitcher.svelte';
+// Theme components
+export * from './components/theme/index.js';
 export { default as InviteUserModal } from './components/users/InviteUserModal.svelte';
 // User components
 export { default as UserAvatar } from './components/users/UserAvatar.svelte';

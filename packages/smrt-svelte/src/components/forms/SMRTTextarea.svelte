@@ -1,11 +1,14 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
+import { ripple } from '../../actions/ripple.js';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { formatText } from '../../utils/forms/formatters.js';
+import { SMRTIcon } from '../display/index.js';
 
 interface Props {
   /** Field name */
@@ -50,6 +53,7 @@ const formContext = tryGetFormContext();
 let textareaEl: HTMLTextAreaElement | null = $state(null);
 let isHolding = $state(false);
 let isProcessing = $state(false);
+let isFocused = $state(false);
 let valueBeforeRecording = '';
 let processError = $state<string | null>(null);
 let recordingStartTime = 0;
@@ -93,10 +97,6 @@ onDestroy(() => {
   }
 });
 
-function formatValue(transcript: string): string {
-  return transcript.replace(/^(um|uh|like|so|well)\s*/gi, '').trim();
-}
-
 async function startHoldRecording() {
   if (!isSmrt || disabled || isProcessing) return;
 
@@ -119,9 +119,7 @@ async function stopHoldRecording() {
   isHolding = false;
   await stt.stop();
 
-  if (holdDuration < MIN_HOLD_TIME) {
-    return;
-  }
+  if (holdDuration < MIN_HOLD_TIME) return;
 
   const maxWait = 3000;
   const startWait = Date.now();
@@ -141,7 +139,7 @@ async function stopHoldRecording() {
   processError = null;
 
   try {
-    const formattedValue = formatValue(finalTranscript);
+    const formattedValue = formatText(finalTranscript);
 
     if (appendMode && valueBeforeRecording) {
       updateValue(`${valueBeforeRecording}\n${formattedValue}`);
@@ -184,34 +182,39 @@ function handleInput(e: Event) {
 }
 </script>
 
-<div class="smrt-textarea" class:listening={isHolding}>
-  {#if label}
-    <label for={name} class="smrt-label">
-      {label}
-      {#if required}<span class="required">*</span>{/if}
-    </label>
-  {/if}
-
-  <div class="textarea-wrapper">
-    <textarea
-      bind:this={textareaEl}
-      id={name}
-      {name}
-      {placeholder}
-      {value}
-      {rows}
-      disabled={disabled || isProcessing}
-      {required}
-      class="smrt-textarea-input"
-      class:smrt-mode={isSmrt}
-      class:processing={isProcessing}
-      oninput={handleInput}
-      onmousedown={isSmrt ? handleMouseDown : undefined}
-      onmouseup={isSmrt ? handleMouseUp : undefined}
-      onmouseleave={isSmrt ? handleMouseLeave : undefined}
-      ontouchstart={isSmrt ? handleTouchStart : undefined}
-      ontouchend={isSmrt ? handleTouchEnd : undefined}
-    ></textarea>
+<div 
+  class="smrt-text-field multiline" 
+  class:smrt-mode={isSmrt} 
+  class:focused={isFocused} 
+  class:disabled
+  class:has-value={!!value}
+  class:listening={isHolding}
+>
+  <div class="container">
+    <div class="content">
+      {#if label}
+        <label for={name} class="label">{label}{#if required}*{/if}</label>
+      {/if}
+      <textarea
+        bind:this={textareaEl}
+        id={name}
+        {name}
+        placeholder={isFocused ? placeholder : ''}
+        {value}
+        {rows}
+        disabled={disabled || isProcessing}
+        {required}
+        class="input"
+        oninput={handleInput}
+        onfocus={() => isFocused = true}
+        onblur={() => isFocused = false}
+        onmousedown={isSmrt ? handleMouseDown : undefined}
+        onmouseup={isSmrt ? handleMouseUp : undefined}
+        onmouseleave={isSmrt ? handleMouseLeave : undefined}
+        ontouchstart={isSmrt ? handleTouchStart : undefined}
+        ontouchend={isSmrt ? handleTouchEnd : undefined}
+      ></textarea>
+    </div>
 
     {#if isSmrt}
       <button
@@ -219,220 +222,160 @@ function handleInput(e: Event) {
         class="mic-btn"
         class:active={isHolding}
         {disabled}
-        onmousedown={handleMouseDown}
+        use:ripple
+        onmousedown={(e) => { e.stopPropagation(); if (e.button === 0) startHoldRecording(); }}
         onmouseup={handleMouseUp}
         onmouseleave={handleMouseLeave}
-        ontouchstart={handleTouchStart}
+        ontouchstart={(e) => { e.stopPropagation(); e.preventDefault(); startHoldRecording(); }}
         ontouchend={handleTouchEnd}
         aria-label="Hold to speak"
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          <line x1="12" x2="12" y1="19" y2="22"/>
-        </svg>
+        <SMRTIcon name="mic" size={20} />
       </button>
     {/if}
+
+    <div class="active-indicator"></div>
   </div>
 
-  {#if isInitializing}
-    <div class="downloading-indicator">
-      <span class="processing-spinner"></span>
-      <span>Downloading Whisper model... {downloadProgress}%</span>
-    </div>
-  {:else if isHolding}
-    <div class="listening-indicator">
-      <span class="listening-dot"></span>
-      <span>Recording...</span>
-    </div>
-  {:else if isProcessing}
-    <div class="processing-indicator">
-      <span class="processing-spinner"></span>
-      <span>Processing...</span>
-    </div>
-  {/if}
-
-  {#if processError}
-    <div class="error-message">{processError}</div>
-  {/if}
+  <div class="supporting-text">
+    {#if isInitializing}
+      <span class="info">Downloading Whisper model... {downloadProgress}%</span>
+    {:else if isHolding}
+      <span class="success">Recording...</span>
+    {:else if isProcessing}
+      <span class="info">Processing...</span>
+    {:else if processError}
+      <span class="error">{processError}</span>
+    {:else if description && isFocused}
+      <span class="info">{description}</span>
+    {/if}
+  </div>
 </div>
 
 <style>
-  .smrt-textarea {
+  .smrt-text-field {
+    --field-color: var(--md-sys-color-on-surface-variant);
+    --field-bg: var(--md-sys-color-surface-container-highest);
+    --field-active: var(--md-sys-color-primary);
+    
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    width: 100%;
+  }
+
+  .container {
     position: relative;
-  }
-
-  .smrt-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #374151;
-  }
-
-  .smrt-label .required {
-    color: #ef4444;
-    margin-left: 2px;
-  }
-
-  .textarea-wrapper {
     display: flex;
-    position: relative;
+    align-items: flex-start;
+    background-color: var(--field-bg);
+    border-radius: 4px 4px 0 0;
+    min-height: 56px;
+    padding: 0 16px;
+    transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1);
   }
 
-  .smrt-textarea-input {
+  .container:hover {
+    background-color: var(--md-sys-color-surface-container-high);
+  }
+
+  .content {
     flex: 1;
-    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .label {
     font-size: 1rem;
-    font-family: inherit;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
+    line-height: 1.5;
+    letter-spacing: 0.5px;
+    color: var(--field-color);
+    pointer-events: none;
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transform-origin: top left;
+    margin-bottom: 4px;
+  }
+
+  .focused .label, .has-value .label, .listening .label {
+    transform: translateY(-4px) scale(0.75);
+    color: var(--field-active);
+  }
+
+  .input {
+    border: none;
+    background: transparent;
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: 0.5px;
+    color: var(--md-sys-color-on-surface);
+    width: 100%;
+    padding: 0;
+    margin: 0;
     resize: vertical;
-    min-height: 80px;
-    transition: all 0.2s;
+    font-family: inherit;
   }
 
-  .smrt-textarea-input:focus {
+  .input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
 
-  .smrt-textarea-input.smrt-mode {
-    padding-right: 44px;
+  .active-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-color: var(--field-color);
+    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
   }
 
-  .smrt-textarea-input:disabled {
-    background: #f3f4f6;
-    cursor: not-allowed;
-  }
-
-  .smrt-textarea.listening .smrt-textarea-input {
-    border-color: #22c55e;
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
-    animation: pulse-green 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse-green {
-    0%, 100% {
-      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
-    }
-    50% {
-      box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15);
-    }
+  .focused .active-indicator {
+    height: 2px;
+    background-color: var(--field-active);
   }
 
   .mic-btn {
-    position: absolute;
-    right: 4px;
-    top: 8px;
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: transparent;
     border: none;
-    border-radius: 4px;
-    color: #6b7280;
+    background: transparent;
+    color: var(--field-color);
+    border-radius: 50%;
     cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .mic-btn:hover {
-    background: #f3f4f6;
-    color: #374151;
+    margin-right: -8px;
+    margin-top: 8px;
+    transition: all 200ms;
   }
 
   .mic-btn.active {
-    background: #22c55e;
-    color: white;
+    color: var(--md-sys-color-primary);
+    background-color: var(--md-sys-color-primary-container);
   }
 
-  .mic-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .smrt-textarea-input.processing {
-    opacity: 0.7;
-  }
-
-  .listening-indicator {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  .supporting-text {
+    padding: 4px 16px 0;
     font-size: 0.75rem;
-    color: #22c55e;
-    margin-top: 4px;
+    min-height: 16px;
   }
 
-  .listening-dot {
-    width: 8px;
-    height: 8px;
-    background: #22c55e;
-    border-radius: 50%;
-    animation: pulse-dot 1s ease-in-out infinite;
+  .info { color: var(--md-sys-color-on-surface-variant); }
+  .error { color: var(--md-sys-color-error); }
+  .success { color: var(--md-sys-color-primary); }
+
+  .listening {
+    background-color: var(--md-sys-color-primary-container);
   }
 
-  @keyframes pulse-dot {
-    0%, 100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.5;
-      transform: scale(0.8);
-    }
+  .disabled {
+    opacity: 0.38;
+    pointer-events: none;
   }
 
-  .processing-indicator {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.75rem;
-    color: #6b7280;
-    margin-top: 4px;
-  }
-
-  .downloading-indicator {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.75rem;
-    color: #8b5cf6;
-    margin-top: 4px;
-  }
-
-  .processing-spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid #e5e7eb;
-    border-top-color: #3b82f6;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .error-message {
-    font-size: 0.75rem;
-    color: #f97316;
-    margin-top: 4px;
+  .smrt-mode {
+    --field-active: var(--md-sys-color-tertiary);
   }
 </style>
