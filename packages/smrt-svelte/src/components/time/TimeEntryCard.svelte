@@ -11,20 +11,8 @@ import {
   formatDate,
   formatHours,
   statusColors,
-  type TimeEntryStatus,
+  type TimeEntry,
 } from './utils.js';
-
-export interface TimeEntry {
-  id: string;
-  date: Date | string;
-  hours: number;
-  description: string;
-  status: TimeEntryStatus;
-  amount?: number;
-  workerName?: string;
-  mileage?: number;
-  hourlyRate?: number;
-}
 
 interface Props {
   entry: TimeEntry;

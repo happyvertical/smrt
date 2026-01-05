@@ -4,13 +4,13 @@
  * Supports bulk selection and grouping
  */
 
-import type { TimeEntry } from './TimeEntryCard.svelte';
 import {
   type Currency,
   formatCurrency,
   formatDate,
   formatHours,
   statusColors,
+  type TimeEntry,
 } from './utils.js';
 
 interface Props {

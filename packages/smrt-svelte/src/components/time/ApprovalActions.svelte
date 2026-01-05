@@ -4,7 +4,7 @@
  * Shows appropriate buttons based on current status
  */
 
-export type ApprovalStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
+import type { ApprovalStatus } from './utils.js';
 
 interface Props {
   status: ApprovalStatus;

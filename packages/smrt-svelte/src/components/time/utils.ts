@@ -6,6 +6,24 @@ export type Currency = 'CAD' | 'USD';
 
 export type TimeEntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
 
+/** Alias for TimeEntryStatus for approval workflows */
+export type ApprovalStatus = TimeEntryStatus;
+
+/**
+ * Time entry data structure
+ */
+export interface TimeEntry {
+  id: string;
+  date: Date | string;
+  hours: number;
+  description: string;
+  status: TimeEntryStatus;
+  amount?: number;
+  workerName?: string;
+  mileage?: number;
+  hourlyRate?: number;
+}
+
 /**
  * Status color mapping using M3 design tokens
  */
