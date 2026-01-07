@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.18.1
+
+### Patch Changes
+
+- ### Features
+
+  - add database-backed agent configuration system (#671) (agents)
+  - @happyvertical/smrt-scanner@0.18.1
+  - @happyvertical/smrt-config@0.18.1
+  - @happyvertical/smrt-types@0.18.1
+
 ## 1.0.0
 
 ### Minor Changes
