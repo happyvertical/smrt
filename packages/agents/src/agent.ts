@@ -208,6 +208,9 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   async loadConfigs(): Promise<Map<string, any>> {
+    if (!this.id) {
+      throw new Error('Agent must be saved before loading configs');
+    }
     return AgentConfig.forAgent(this.id, this.options);
   }
 
@@ -232,6 +235,9 @@ export abstract class Agent extends SmrtObject {
     slotId: string,
     data: Record<string, any>,
   ): Promise<void> {
+    if (!this.id) {
+      throw new Error('Agent must be saved before saving slot config');
+    }
     await AgentConfig.saveSlot(
       {
         agentId: this.id,

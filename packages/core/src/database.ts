@@ -138,11 +138,14 @@ export async function resolveDatabase(
   }
 
   // Config object
-  const dbUrl = config.url || ':memory:';
+  // Only default to :memory: for SQLite (or unspecified type which defaults to SQLite)
+  // Other adapters (json, postgres, duckdb) require explicit URLs
+  const canUseMemory = !config.type || config.type === 'sqlite';
+  const dbUrl = config.url || (canUseMemory ? ':memory:' : '');
   const isMemoryDb = dbUrl === ':memory:';
   return getDatabase({
     ...config,
-    url: dbUrl, // Ensure url is always set (defaults to :memory: if not provided)
+    url: dbUrl,
     schemas,
     ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${dbUrl}` }),
   } as any);
