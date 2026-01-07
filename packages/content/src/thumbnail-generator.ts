@@ -15,6 +15,7 @@ import {
 } from '@happyvertical/images';
 import type { Image } from '@happyvertical/smrt-assets';
 import { ImageCollection } from '@happyvertical/smrt-assets';
+import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import type { Content } from './content';
 
 // ============================================================================
@@ -155,12 +156,27 @@ export type ThumbnailOptions =
 // ============================================================================
 
 /**
+ * Options for ThumbnailGenerator
+ */
+export interface ThumbnailGeneratorOptions {
+  /**
+   * Database configuration for storing generated images
+   */
+  db?: DatabaseConfig;
+
+  /**
+   * AI client configuration for AI-generated thumbnails
+   */
+  ai?: AIClientOptions;
+}
+
+/**
  * ThumbnailGenerator creates thumbnails for content using various strategies
  */
 export class ThumbnailGenerator {
   constructor(
     private content: Content,
-    private options: { db?: any; ai?: AIClientOptions } = {},
+    private options: ThumbnailGeneratorOptions = {},
   ) {}
 
   /**

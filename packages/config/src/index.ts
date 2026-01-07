@@ -7,6 +7,15 @@ import {
 } from './merge.js';
 import type { LoadConfigOptions, SmrtConfig } from './types.js';
 
+// Re-export config export utilities
+export {
+  type ExportConfigOptions,
+  exportConfig,
+  mergeExportedConfig,
+  parseExportedConfig,
+  sanitizeConfig,
+} from './export.js';
+
 // Re-export types
 export type {
   // CLI and migrations configuration types

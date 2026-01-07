@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { configExportCommand } from './config-export.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
@@ -1855,4 +1856,7 @@ export default testManifest;
   'db:diff': dbDiffCommand,
   'db:rollback': dbRollbackCommand,
   'db:generate': dbGenerateCommand,
+
+  // Configuration commands
+  'config:export': configExportCommand,
 };

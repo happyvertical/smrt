@@ -28,6 +28,13 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Database utilities
+export {
+  type DatabaseConfig,
+  isDatabaseInterface,
+  type ResolveDatabaseOptions,
+  resolveDatabase,
+} from './database';
 // Property decorators for field definition
 // Re-export decorator versions with priority over field helpers
 export {

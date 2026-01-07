@@ -9,6 +9,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { AgentConfig } from './config.js';
 import type {
   AgentWithInterestsOptions,
   InterestFilter,
@@ -18,6 +19,7 @@ import type {
 } from './interests.js';
 import { mergeFilters, normalizeSort } from './interests.js';
 import type { AgentStatusType } from './types.js';
+import type { AgentUISlots } from './ui.js';
 
 /**
  * Agent constructor options
@@ -88,6 +90,34 @@ export interface AgentOptions
 })
 export abstract class Agent extends SmrtObject {
   /**
+   * UI slots this agent supports for admin panels
+   *
+   * Subclasses override this to declare their admin UI slots.
+   * Each slot can be implemented by a Svelte component.
+   *
+   * @example
+   * ```typescript
+   * static override uiSlots: AgentUISlots = {
+   *   sources: {
+   *     id: 'sources',
+   *     label: 'News Sources',
+   *     description: 'Configure scrapers and data sources',
+   *     icon: 'database',
+   *     order: 1,
+   *   },
+   *   settings: {
+   *     id: 'settings',
+   *     label: 'Agent Settings',
+   *     description: 'Configure agent behavior',
+   *     icon: 'settings',
+   *     order: 2,
+   *   },
+   * };
+   * ```
+   */
+  static uiSlots: AgentUISlots = {};
+
+  /**
    * Current agent status
    */
   status: AgentStatusType = 'idle';
@@ -138,6 +168,189 @@ export abstract class Agent extends SmrtObject {
    */
   protected get interests(): InterestOptions | undefined {
     return (this.options as AgentOptions).interests;
+  }
+
+  /**
+   * Get UI slot definitions for this agent instance
+   *
+   * Returns the static uiSlots defined on the agent's class.
+   * Used by host applications to discover available admin panels.
+   *
+   * @example
+   * ```typescript
+   * const slots = agent.getUISlots();
+   * for (const [slotId, slot] of Object.entries(slots)) {
+   *   console.log(`${slot.label}: ${slot.description}`);
+   * }
+   * ```
+   */
+  getUISlots(): AgentUISlots {
+    return (this.constructor as typeof Agent).uiSlots;
+  }
+
+  // ============================================================================
+  // Configuration Management
+  // ============================================================================
+
+  /**
+   * Load all database-persisted configs for this agent
+   *
+   * Returns a Map of slotId → configData for all saved configurations.
+   * Use getMergedConfig() to get file + db merged config for a slot.
+   *
+   * @returns Map of slotId to config data
+   *
+   * @example
+   * ```typescript
+   * const configs = await agent.loadConfigs();
+   * const sources = configs.get('sources');
+   * ```
+   */
+  async loadConfigs(): Promise<Map<string, any>> {
+    return AgentConfig.forAgent(this.id, this.options);
+  }
+
+  /**
+   * Save config for a specific UI slot to the database
+   *
+   * Persists configuration data that can be modified by admin panels.
+   * Use this when the user saves changes in an admin UI.
+   *
+   * @param slotId - The UI slot ID (e.g., 'sources', 'settings')
+   * @param data - Configuration data to save
+   *
+   * @example
+   * ```typescript
+   * await agent.saveSlotConfig('sources', {
+   *   scrapers: ['civicweb', 'govstack'],
+   *   refreshInterval: 3600
+   * });
+   * ```
+   */
+  async saveSlotConfig(
+    slotId: string,
+    data: Record<string, any>,
+  ): Promise<void> {
+    await AgentConfig.saveSlot(
+      {
+        agentId: this.id,
+        agentClass: this.constructor.name,
+        slotId,
+        configData: data,
+      },
+      this.options,
+    );
+  }
+
+  /**
+   * Get merged config for a slot (file-based + database)
+   *
+   * Priority order (highest to lowest):
+   * 1. Database-persisted config (from saveSlotConfig)
+   * 2. File-based config (from getModuleConfig)
+   * 3. Agent class defaults
+   *
+   * @param slotId - The UI slot ID
+   * @returns Merged configuration object
+   *
+   * @example
+   * ```typescript
+   * const sourcesConfig = await agent.getMergedConfig('sources');
+   * // Returns file config merged with any db overrides
+   * ```
+   */
+  async getMergedConfig(slotId: string): Promise<any> {
+    // Get file-based config from module config
+    const fileConfig = (this.config as Record<string, any>)?.[slotId] ?? {};
+
+    // Get db-persisted config
+    const dbConfig = await AgentConfig.forSlot(this.id, slotId, this.options);
+
+    // Merge: db overrides file
+    return { ...fileConfig, ...(dbConfig ?? {}) };
+  }
+
+  /**
+   * Export all config for this agent (for static site generation)
+   *
+   * Merges file-based and database configs, then optionally sanitizes
+   * to remove secrets. Use this before building a static site.
+   *
+   * @param options - Export options
+   * @param options.includeSecrets - If true, includes API keys and secrets (default: false)
+   * @returns Merged configuration object
+   *
+   * @example
+   * ```typescript
+   * // Export for static build (secrets filtered)
+   * const config = await agent.exportConfig();
+   *
+   * // Export with secrets (for secure environments)
+   * const fullConfig = await agent.exportConfig({ includeSecrets: true });
+   * ```
+   */
+  async exportConfig(options?: { includeSecrets?: boolean }): Promise<any> {
+    const dbConfigs = await this.loadConfigs();
+    const fileConfig = (this.config as Record<string, any>) ?? {};
+
+    // Merge all configs
+    const merged = { ...fileConfig };
+    for (const [slotId, data] of dbConfigs) {
+      merged[slotId] = { ...merged[slotId], ...data };
+    }
+
+    // Sanitize if secrets not included
+    if (!options?.includeSecrets) {
+      return this.sanitizeConfig(merged);
+    }
+
+    return merged;
+  }
+
+  /**
+   * Sanitize config by removing secrets
+   *
+   * Removes values with keys matching secret patterns:
+   * - apiKey, apikey, api_key
+   * - password, secret, token
+   * - credential, private, auth
+   *
+   * @param config - Configuration object to sanitize
+   * @returns Sanitized configuration
+   */
+  private sanitizeConfig(config: any): any {
+    const SECRET_PATTERNS = [
+      /apiKey/i,
+      /password/i,
+      /secret/i,
+      /token/i,
+      /credential/i,
+      /private/i,
+      /\bauth\b/i,
+    ];
+
+    const isSecret = (key: string): boolean =>
+      SECRET_PATTERNS.some((pattern) => pattern.test(key));
+
+    const sanitize = (obj: any): any => {
+      if (obj === null || obj === undefined) return obj;
+      if (typeof obj !== 'object') return obj;
+      if (Array.isArray(obj)) return obj.map(sanitize);
+
+      const result: Record<string, any> = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (isSecret(key)) {
+          result[key] = '[REDACTED]';
+        } else if (typeof value === 'object') {
+          result[key] = sanitize(value);
+        } else {
+          result[key] = value;
+        }
+      }
+      return result;
+    };
+
+    return sanitize(config);
   }
 
   /**

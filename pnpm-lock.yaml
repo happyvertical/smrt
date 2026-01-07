@@ -153,6 +153,9 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.60.9
         version: 0.60.9
+      svelte:
+        specifier: ^5.0.0
+        version: 5.45.5
     devDependencies:
       '@happyvertical/logger':
         specifier: ^0.60.9
@@ -280,6 +283,9 @@ importers:
       '@happyvertical/logger':
         specifier: ^0.60.9
         version: 0.60.9
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config

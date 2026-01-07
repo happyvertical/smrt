@@ -94,7 +94,12 @@ export const dbHistoryCommand: CLICommand = {
       }
 
       if (options.status) {
-        queryOptions.status = options.status;
+        queryOptions.status = options.status as
+          | 'pending'
+          | 'running'
+          | 'completed'
+          | 'failed'
+          | 'rolled_back';
       }
 
       // 6. Get history

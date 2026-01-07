@@ -66,6 +66,7 @@
  */
 
 export { Agent, type AgentOptions } from './agent.js';
+export { AgentConfig, AgentConfigCollection } from './config.js';
 export type {
   AgentWithInterestsOptions,
   AsyncQualifierFn,
@@ -79,3 +80,14 @@ export type {
 } from './interests.js';
 export { mergeFilters, normalizeSort } from './interests.js';
 export type { AgentStatusType } from './types.js';
+
+// UI types and registry for admin panels
+export {
+  type AdminPanelBaseProps,
+  type AgentUIComponentRegistry,
+  AgentUIRegistry,
+  type AgentUISlot,
+  type AgentUISlots,
+  type ComponentType,
+  createUIRegistry,
+} from './ui.js';
