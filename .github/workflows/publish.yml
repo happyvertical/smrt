@@ -104,19 +104,19 @@ jobs:
             echo "📝 Correcting version to: $CORRECTED_VERSION"
 
             # Update all package.json files with corrected version
-            # Using find instead of fast-glob (not available in CI)
-            for pkgfile in package.json packages/*/package.json; do
+            # Using find command instead of fast-glob (not available in CI)
+            for pkgfile in package.json $(find packages -name package.json); do
               if [ -f "$pkgfile" ]; then
                 current=$(node -p "require('./$pkgfile').version" 2>/dev/null || echo "")
                 major=$(echo "$current" | cut -d. -f1)
-                if [ "$major" -ge 1 ] 2>/dev/null; then
+                # Only fix packages bumped to 1.x by changesets
+                if [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -ge 1 ]; then
                   echo "  Fixing: $pkgfile ($current -> $CORRECTED_VERSION)"
-                  node -e "
-                    const fs = require('fs');
-                    const pkg = JSON.parse(fs.readFileSync('$pkgfile', 'utf-8'));
-                    pkg.version = '$CORRECTED_VERSION';
-                    fs.writeFileSync('$pkgfile', JSON.stringify(pkg, null, 2) + '\n');
-                  "
+                  export PKGFILE="$pkgfile" NEW_VERSION="$CORRECTED_VERSION"
+                  node -e 'const fs=require("fs"), f=process.env.PKGFILE;
+                    const p=JSON.parse(fs.readFileSync(f));
+                    p.version=process.env.NEW_VERSION;
+                    fs.writeFileSync(f,JSON.stringify(p,null,2)+"\n")'
                 fi
               fi
             done
@@ -130,10 +130,11 @@ jobs:
           ROOT_VERSION=$(node -p "require('./package.json').version")
           if [ "$AFTER_VERSION" != "$ROOT_VERSION" ]; then
             echo "📝 Syncing root package version: $AFTER_VERSION"
-            node -e "const pkg = require('./package.json'); \
-              pkg.version = '$AFTER_VERSION'; \
-              require('fs').writeFileSync('./package.json', \
-              JSON.stringify(pkg, null, 2) + '\n');"
+            export NEW_VERSION="$AFTER_VERSION"
+            node -e 'const fs=require("fs");
+              const p=JSON.parse(fs.readFileSync("./package.json"));
+              p.version=process.env.NEW_VERSION;
+              fs.writeFileSync("./package.json",JSON.stringify(p,null,2)+"\n")'
           fi
 
           echo "Version after versioning: $AFTER_VERSION"
