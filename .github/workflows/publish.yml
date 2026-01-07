@@ -84,6 +84,19 @@ jobs:
           echo "Version before release: $BEFORE_VERSION"
 
           pnpm run changeset:auto
+
+          # Downgrade any 'major' bumps to 'minor' (prevent 1.0.0 releases)
+          # This ensures we stay on 0.x versions until ready for 1.0
+          echo "🔒 Checking for major bumps to downgrade..."
+          for file in .changeset/*.md; do
+            if [ -f "$file" ] && [ "$(basename "$file")" != "README.md" ]; then
+              if grep -q ": major" "$file"; then
+                echo "  ⚠️  Downgrading major to minor in: $file"
+                sed -i 's/: major/: minor/g' "$file"
+              fi
+            fi
+          done
+
           pnpm run changeset:version
 
           # Sync root package.json version with workspace packages
@@ -108,10 +121,10 @@ jobs:
           AFTER_MAJOR=$(echo "$AFTER_VERSION" | cut -d. -f1)
           if [ "$AFTER_MAJOR" -ge 1 ]; then
             echo "❌ CRITICAL: Changeset would bump to $AFTER_VERSION (1.0.0+)"
-            echo "This is likely caused by using 'minor' on a 0.x version."
-            echo "Use 'patch' instead of 'minor' for 0.x releases."
+            echo "This is caused by a 'major' bump in a changeset file."
+            echo "The workflow should have downgraded it to 'minor'."
             echo ""
-            echo "To fix: update .changeset/*.md files to use 'patch'"
+            echo "To fix: check .changeset/*.md files for 'major' entries"
             exit 1
           fi
 
