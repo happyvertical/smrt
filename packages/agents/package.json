@@ -12,8 +12,20 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./ui": {
+      "import": "./dist/ui.js",
+      "types": "./dist/ui.d.ts"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   },
   "files": [
     "dist"
@@ -28,6 +40,7 @@
   "dependencies": {
     "@happyvertical/ai": "^0.60.9",
     "@happyvertical/files": "^0.60.9",
+    "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/utils": "^0.60.9"
   },

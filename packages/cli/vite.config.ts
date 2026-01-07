@@ -43,6 +43,7 @@ export default defineConfig({
         'worker_threads',
 
         // Internal SMRT packages
+        '@happyvertical/smrt-agents',
         '@happyvertical/smrt-config',
         '@happyvertical/smrt-core',
         /^@happyvertical\/smrt-core\//,

@@ -5,13 +5,13 @@ import { FilesystemAdapter } from '@happyvertical/files';
 import type { LoggerConfig } from '@happyvertical/logger';
 import type { SignalAdapter } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import type {
   GlobalSignalConfig,
   MetricsConfig,
   PubSubConfig,
 } from './config.js';
 import { config } from './config.js';
+import { type DatabaseConfig, resolveDatabase } from './database.js';
 import { SignalBus } from './signals/bus.js';
 import { ALL_SYSTEM_TABLES, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
@@ -31,31 +31,17 @@ export interface SmrtClassOptions {
    * - String shortcut: 'products.db' (auto-detects database type)
    * - Config object: { type: 'sqlite', url: 'products.db' }
    * - DatabaseInterface instance: await getDatabase(...)
+   *
+   * @see DatabaseConfig for type definition
    */
-  db?:
-    | string
-    | {
-        url?: string;
-        type?: 'sqlite' | 'postgres' | 'duckdb' | 'json';
-        authToken?: string;
-        [key: string]: any;
-      }
-    | DatabaseInterface;
+  db?: DatabaseConfig;
 
   /**
    * Alias for db option - for backward compatibility with documentation
    *
    * @deprecated Use 'db' instead. This alias exists for backward compatibility.
    */
-  persistence?:
-    | string
-    | {
-        url?: string;
-        type?: 'sqlite' | 'postgres' | 'duckdb' | 'json';
-        authToken?: string;
-        [key: string]: any;
-      }
-    | DatabaseInterface;
+  persistence?: DatabaseConfig;
 
   /**
    * Filesystem adapter configuration options
@@ -209,42 +195,22 @@ export class SmrtClass {
       const { ObjectRegistry } = await import('./registry.js');
       const schemas = ObjectRegistry.getAllSchemas();
 
-      // Handle three db config formats:
-      // 1. String: 'products.db' (shortcut)
-      // 2. Config object: { type: 'sqlite', url: 'products.db' }
-      // 3. DatabaseInterface instance: await getDatabase(...)
-      if (typeof this.options.db === 'string') {
-        // String shortcut - let getDatabase auto-detect type from URL
-        // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
-        // EXCEPT for :memory: databases which should NOT be cached across instances
-        const isMemoryDb = this.options.db === ':memory:';
-        this._db = await getDatabase({
-          url: this.options.db,
-          schemas,
-          ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
-        });
-      } else if ('query' in this.options.db) {
-        // Already a DatabaseInterface instance
-        this._db = this.options.db as DatabaseInterface;
-      } else {
-        // Config object - pass to getDatabase (handles all types uniformly)
-        // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
-        // EXCEPT for :memory: databases which should NOT be cached across instances
-        const dbConfig = this.options.db as { url?: string; type?: string };
-        const dbUrl = dbConfig.url || 'memory';
-        const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
-        this._db = await getDatabase({
-          ...this.options.db,
-          schemas,
-          ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
-        } as any);
-      }
+      // Resolve database config to a DatabaseInterface instance
+      // Handles all three formats: string URL, config object, or existing instance
+      this._db = await resolveDatabase(this.options.db, { schemas });
 
-      // CRITICAL FIX for issue #567: Update options.db to the actual db instance
-      // This ensures that when this.options is passed to ObjectRegistry.getCollection(),
-      // the collection will use the SAME db instance instead of creating a new one.
-      // Without this, passing this.options to getCollection() would use the config object
-      // which causes a NEW db instance to be created, losing data isolation.
+      /**
+       * INTENTIONAL MUTATION: After resolving the database config,
+       * we replace options.db with the actual DatabaseInterface instance.
+       * This enables child objects to share the same connection via:
+       *
+       *   const child = new ChildObject({ db: parent.options.db });
+       *
+       * Without this, passing this.options to getCollection() would use the config object
+       * which causes a NEW db instance to be created, losing data isolation.
+       *
+       * See issue #567 for context on why this pattern is necessary.
+       */
       this.options.db = this._db;
 
       // CRITICAL FIX for issue #603: For JSON adapter, ensure ALL tables exist upfront
