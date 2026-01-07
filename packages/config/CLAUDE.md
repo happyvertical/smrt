@@ -235,15 +235,61 @@ smrt config:export --agent <agent-id> --json
 
 ### Import Pattern in smrt.config.js
 
+**Option 1: Export as JS module (Recommended)**
+
+Export as JS for maximum compatibility across all JavaScript environments:
+
+```bash
+smrt config:export --agent praeco-main --format js --output smrt.exported.js
+```
+
 ```javascript
-// smrt.config.js - Import exported config for static site
+// smrt.config.js
+import exported from './smrt.exported.js';
+
+export default {
+  modules: {
+    praeco: {
+      ...exported,
+      apiEndpoint: process.env.API_URL,
+    }
+  }
+};
+```
+
+**Option 2: JSON with import assertion (Node.js 18.20+, modern bundlers)**
+
+```javascript
+// smrt.config.js - requires Node.js 18.20+ or bundler support
 import exported from './smrt.exported.json' with { type: 'json' };
 
 export default {
   modules: {
     praeco: {
       ...exported,
-      // Environment-specific overrides
+      apiEndpoint: process.env.API_URL,
+    }
+  }
+};
+```
+
+**Option 3: Dynamic import for JSON (universal)**
+
+```javascript
+// smrt.config.js - works in all environments
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const exported = JSON.parse(
+  readFileSync(join(__dirname, 'smrt.exported.json'), 'utf-8')
+);
+
+export default {
+  modules: {
+    praeco: {
+      ...exported,
       apiEndpoint: process.env.API_URL,
     }
   }

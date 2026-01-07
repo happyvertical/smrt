@@ -138,10 +138,11 @@ export async function resolveDatabase(
   }
 
   // Config object
-  const dbUrl = config.url || 'memory';
-  const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
+  const dbUrl = config.url || ':memory:';
+  const isMemoryDb = dbUrl === ':memory:';
   return getDatabase({
     ...config,
+    url: dbUrl, // Ensure url is always set (defaults to :memory: if not provided)
     schemas,
     ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${dbUrl}` }),
   } as any);

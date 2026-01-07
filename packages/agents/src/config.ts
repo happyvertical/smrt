@@ -102,8 +102,11 @@ export class AgentConfig extends SmrtObject {
     options: SmrtClassOptions,
   ): Promise<any | undefined> {
     const collection = await AgentConfigCollection.create(options);
-    const config = await collection.get({ agentId, slotId });
-    return config?.configData;
+    const configs = await collection.list({
+      where: { agentId, slotId },
+      limit: 1,
+    });
+    return configs[0]?.configData;
   }
 
   /**
@@ -124,14 +127,15 @@ export class AgentConfig extends SmrtObject {
   ): Promise<AgentConfig> {
     const collection = await AgentConfigCollection.create(options);
 
-    // Check for existing config
-    const existing = await collection.get({
-      agentId: data.agentId,
-      slotId: data.slotId,
+    // Check for existing config using list with where clause
+    const existingConfigs = await collection.list({
+      where: { agentId: data.agentId, slotId: data.slotId },
+      limit: 1,
     });
 
-    if (existing) {
+    if (existingConfigs.length > 0) {
       // Update existing
+      const existing = existingConfigs[0];
       existing.configData = data.configData;
       existing.agentClass = data.agentClass;
       await existing.save();

@@ -40,6 +40,7 @@
   "dependencies": {
     "@happyvertical/ai": "^0.60.9",
     "@happyvertical/files": "^0.60.9",
+    "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/utils": "^0.60.9"
   },

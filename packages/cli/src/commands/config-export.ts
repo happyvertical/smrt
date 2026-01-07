@@ -123,22 +123,27 @@ export const configExportCommand: CLICommand = {
       }
 
       // 7. Sanitize if needed
-      const { exportConfig } = await import('@happyvertical/smrt-config');
+      const { exportConfig, sanitizeConfig } = await import(
+        '@happyvertical/smrt-config'
+      );
 
       const outputFormat = options.format === 'js' ? 'js' : 'json';
       const includeSecrets = options['include-secrets'] === true;
+
+      // 8. Output
+      if (options.json) {
+        // Output JSON to stdout - respect includeSecrets flag
+        const outputData = includeSecrets
+          ? exportData
+          : sanitizeConfig(exportData);
+        console.log(JSON.stringify({ agentId, configs: outputData }, null, 2));
+        return;
+      }
 
       const exported = exportConfig(exportData, {
         format: outputFormat,
         includeSecrets,
       });
-
-      // 8. Output
-      if (options.json) {
-        // Output raw JSON to stdout
-        console.log(JSON.stringify({ agentId, configs: exportData }, null, 2));
-        return;
-      }
 
       // Write to file
       const outputPath = path.resolve(process.cwd(), options.output);

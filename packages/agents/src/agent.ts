@@ -1,4 +1,5 @@
 import { createLogger, type Logger } from '@happyvertical/logger';
+import { sanitizeConfig } from '@happyvertical/smrt-config';
 import {
   createDispatchBus,
   type DispatchBus,
@@ -299,58 +300,12 @@ export abstract class Agent extends SmrtObject {
       merged[slotId] = { ...merged[slotId], ...data };
     }
 
-    // Sanitize if secrets not included
+    // Sanitize if secrets not included (uses centralized sanitizeConfig from smrt-config)
     if (!options?.includeSecrets) {
-      return this.sanitizeConfig(merged);
+      return sanitizeConfig(merged);
     }
 
     return merged;
-  }
-
-  /**
-   * Sanitize config by removing secrets
-   *
-   * Removes values with keys matching secret patterns:
-   * - apiKey, apikey, api_key
-   * - password, secret, token
-   * - credential, private, auth
-   *
-   * @param config - Configuration object to sanitize
-   * @returns Sanitized configuration
-   */
-  private sanitizeConfig(config: any): any {
-    const SECRET_PATTERNS = [
-      /apiKey/i,
-      /password/i,
-      /secret/i,
-      /token/i,
-      /credential/i,
-      /private/i,
-      /\bauth\b/i,
-    ];
-
-    const isSecret = (key: string): boolean =>
-      SECRET_PATTERNS.some((pattern) => pattern.test(key));
-
-    const sanitize = (obj: any): any => {
-      if (obj === null || obj === undefined) return obj;
-      if (typeof obj !== 'object') return obj;
-      if (Array.isArray(obj)) return obj.map(sanitize);
-
-      const result: Record<string, any> = {};
-      for (const [key, value] of Object.entries(obj)) {
-        if (isSecret(key)) {
-          result[key] = '[REDACTED]';
-        } else if (typeof value === 'object') {
-          result[key] = sanitize(value);
-        } else {
-          result[key] = value;
-        }
-      }
-      return result;
-    };
-
-    return sanitize(config);
   }
 
   /**

@@ -680,16 +680,16 @@ export const actions: Actions = {
 ### Static Site Export
 
 ```bash
-# Export agent config before static build
-smrt config:export --agent praeco-main --output smrt.exported.json
+# Export agent config before static build (JS format for compatibility)
+smrt config:export --agent praeco-main --format js --output smrt.exported.js
 
 # Build static site
 npm run build
 ```
 
 ```javascript
-// smrt.config.js
-import exported from './smrt.exported.json' with { type: 'json' };
+// smrt.config.js - use JS export for maximum compatibility
+import exported from './smrt.exported.js';
 
 export default {
   modules: {
