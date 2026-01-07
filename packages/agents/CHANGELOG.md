@@ -1,5 +1,12 @@
 # @happyvertical/smrt-agents
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@1.0.0
+
 ## 0.17.100
 
 ### Patch Changes

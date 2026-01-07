@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - remove automatic table creation from production code paths (#667) (core)
+
+  ### Bug Fixes
+
+  - address Copilot review comments for version safeguard (#670) (ci)
+  - downgrade version after changeset runs, add PR preview (#669) (ci)
+  - downgrade major changesets to minor to prevent 1.0.0 releases (#668) (ci)
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@1.0.0
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+
 ## 0.17.100
 
 ### Patch Changes
