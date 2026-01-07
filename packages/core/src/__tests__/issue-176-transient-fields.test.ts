@@ -9,13 +9,13 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { generateSchema } from '../schema/utils';
+import { getTestDatabase } from '../testing/database';
 
 // Test class with various transient field patterns
 @smrt({ tableName: 'transient_test' })
@@ -58,7 +58,7 @@ describe('Issue #176: Transient fields', () => {
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `test-transient-${randomUUID().slice(0, 8)}.db`);
-    db = await getDatabase({ type: 'sqlite', url: dbPath });
+    db = await getTestDatabase({ type: 'sqlite', url: dbPath });
   });
 
   afterEach(async () => {

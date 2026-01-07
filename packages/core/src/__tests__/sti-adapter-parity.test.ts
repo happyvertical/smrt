@@ -32,6 +32,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
+import { getTestDatabase } from '../testing/database';
 
 // ============================================================================
 // Test Classes (STI Hierarchy)
@@ -587,7 +588,11 @@ describe('STI Adapter Parity', () => {
 
       beforeEach(async () => {
         dbConfig = adapterConfig.getConfig();
-        db = await getDatabase(dbConfig);
+        // Use getTestDatabase to initialize schemas for test classes
+        db = await getTestDatabase({
+          type: dbConfig.type,
+          url: dbConfig.url,
+        });
         events = await Issue396EventCollection.create({ db });
       });
 

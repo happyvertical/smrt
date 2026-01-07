@@ -11,11 +11,11 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
+import { getTestDatabase } from '../testing/database';
 
 // Simulate multi-level inheritance like Council → Organization → Profile → SmrtObject
 // Using unique class names to avoid collisions with @happyvertical/smrt-profiles (see issue #543)
@@ -55,7 +55,7 @@ describe('Multi-Level STI Save Operations', () => {
       tmpdir(),
       `test-sti-multilevel-${randomUUID().slice(0, 8)}.db`,
     );
-    db = await getDatabase({ type: 'sqlite', url: dbPath });
+    db = await getTestDatabase({ type: 'sqlite', url: dbPath });
     profiles = await STITestProfileCollection.create({ db });
   });
 

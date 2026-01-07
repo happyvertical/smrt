@@ -9,12 +9,12 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
+import { getTestDatabase } from '../testing/database';
 
 // Define test classes at module level so AST scanner can pick them up
 @smrt({ tableName: 'councils_ts_optional' })
@@ -71,7 +71,7 @@ describe('Issue #205: Optional fields with undefined values', () => {
 
   beforeEach(async () => {
     // Create unique in-memory database for each test
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
   });
 
   describe('TypeScript optional fields (field?: type)', () => {

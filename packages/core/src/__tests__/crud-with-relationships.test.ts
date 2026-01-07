@@ -9,12 +9,12 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { oneToMany } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
+import { getTestDatabase } from '../testing/database';
 
 // Parent model with @oneToMany relationships
 @smrt()
@@ -50,7 +50,7 @@ describe('CRUD Operations with @oneToMany Relationships', () => {
       tmpdir(),
       `test-crud-relationships-${randomUUID().slice(0, 8)}.db`,
     );
-    db = await getDatabase({ type: 'sqlite', url: dbPath });
+    db = await getTestDatabase({ type: 'sqlite', url: dbPath });
     parents = await ParentCollection.create({ db });
   });
 

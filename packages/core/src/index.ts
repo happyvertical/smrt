@@ -70,6 +70,11 @@ export type {
   RecallOptions,
   SystemTableConfig,
 } from './system/types';
+// Testing utilities (for test setup only)
+export {
+  getTestDatabase,
+  type TestDatabaseOptions,
+} from './testing/database';
 // AI function calling tools
 export * from './tools/index';
 // Vite plugin for auto-service generation

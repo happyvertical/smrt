@@ -1,10 +1,10 @@
 import {
+  getTestDatabase,
   ObjectRegistry,
   SmrtCollection,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { getDatabase } from '@happyvertical/sql';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Agent, type AgentOptions } from './agent.js';
 import { mergeFilters, normalizeSort } from './interests.js';
@@ -61,7 +61,8 @@ describe('Agent Interests', () => {
   let testCounter = 0;
 
   beforeAll(async () => {
-    sharedDb = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    // Use getTestDatabase() to create in-memory database with schemas pre-created
+    sharedDb = await getTestDatabase();
     meetingCollection = await MeetingCollection.create({ db: sharedDb });
     documentCollection = await DocumentCollection.create({ db: sharedDb });
   });

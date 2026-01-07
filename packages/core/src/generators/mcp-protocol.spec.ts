@@ -3,12 +3,12 @@
  * Verifies generated servers conform to Model Context Protocol specification
  */
 
-import { getDatabase } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
 
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { getTestDatabase } from '../testing/database';
 import { MCPGenerator } from './mcp.js';
 
 // Test object for protocol testing
@@ -41,7 +41,7 @@ describe('MCP Protocol Compliance', () => {
     );
 
     // Create in-memory database for testing
-    const db = await getDatabase({ url: ':memory:' });
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
 
     // Create collection to initialize schema
     collection = await ProtocolTestObjectCollection.create({ db });

@@ -867,11 +867,14 @@ export class SmrtObject extends SmrtClass {
         this.created_at = new Date();
       }
 
-      // Ensure database schema exists (lazy initialization for standalone objects)
-      // Collection-based workflows skip this via caching (schema already created in Collection.create())
+      // Verify table exists (tables must be created via smrt db:setup or smrt db:migrate)
+      // This replaces automatic schema creation which caused race conditions (issue #665)
       if (this.db) {
-        const { ensureSchema } = await import('./schema/utils.js');
-        await ensureSchema(this.db, this.constructor.name);
+        const tableName = this.tableName;
+        const tableExists = await this.db.tableExists(tableName);
+        if (!tableExists) {
+          throw DatabaseError.schemaMissing(tableName, this.constructor.name);
+        }
       }
 
       // Execute save operation with retry logic for transient failures
