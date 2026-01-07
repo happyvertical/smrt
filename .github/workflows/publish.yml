@@ -80,7 +80,8 @@ jobs:
         run: |
           echo "🚀 Running Changesets release..."
 
-          BEFORE_VERSION=$(node -p "require('./package.json').version")
+          # Use packages/core as source of truth for version
+          BEFORE_VERSION=$(node -p "require('./packages/core/package.json').version")
           echo "Version before release: $BEFORE_VERSION"
 
           pnpm run changeset:auto
@@ -103,22 +104,22 @@ jobs:
             echo "📝 Correcting version to: $CORRECTED_VERSION"
 
             # Update all package.json files with corrected version
-            node -e "
-              const fs = require('fs');
-              const glob = require('fast-glob');
-
-              const version = '$CORRECTED_VERSION';
-              const pkgFiles = glob.sync(['package.json', 'packages/*/package.json']);
-
-              for (const file of pkgFiles) {
-                const pkg = JSON.parse(fs.readFileSync(file, 'utf-8'));
-                if (pkg.version && pkg.version.startsWith('1.')) {
-                  console.log('  Fixing: ' + file + ' (' + pkg.version + ' -> ' + version + ')');
-                  pkg.version = version;
-                  fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\\n');
-                }
-              }
-            "
+            # Using find instead of fast-glob (not available in CI)
+            for pkgfile in package.json packages/*/package.json; do
+              if [ -f "$pkgfile" ]; then
+                current=$(node -p "require('./$pkgfile').version" 2>/dev/null || echo "")
+                major=$(echo "$current" | cut -d. -f1)
+                if [ "$major" -ge 1 ] 2>/dev/null; then
+                  echo "  Fixing: $pkgfile ($current -> $CORRECTED_VERSION)"
+                  node -e "
+                    const fs = require('fs');
+                    const pkg = JSON.parse(fs.readFileSync('$pkgfile', 'utf-8'));
+                    pkg.version = '$CORRECTED_VERSION';
+                    fs.writeFileSync('$pkgfile', JSON.stringify(pkg, null, 2) + '\n');
+                  "
+                fi
+              fi
+            done
 
             AFTER_VERSION="$CORRECTED_VERSION"
           else
