@@ -7,22 +7,17 @@
  * Related to issue #377
  */
 
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Content } from './content';
 import { Article, ContentDocument } from './content-types';
 
 describe('Content STI Support', () => {
   let db: DatabaseInterface;
-  let dbPath: string;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `test-content-sti-${Date.now()}.db`);
-    db = await getDatabase({ type: 'sqlite', url: dbPath });
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
   });
 
   afterEach(async () => {

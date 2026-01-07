@@ -128,35 +128,34 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
     });
   });
 
-  describe('with DuckDB database', () => {
+  describe('with SQLite file database', () => {
     let db: DatabaseInterface;
     let dbPath: string;
 
     beforeEach(async () => {
       dbPath = join(
         tmpdir(),
-        `test-issue-208-duckdb-${randomUUID().slice(0, 8)}.db`,
+        `test-issue-208-sqlite-file-${randomUUID().slice(0, 8)}.db`,
       );
-      // Note: DuckDB tests are skipped as getTestDatabase doesn't support 'duckdb' adapter directly
-      // (it only supports 'sqlite' and 'json'). These tests would need to use type: 'json' instead
+      // Note: This tests SQLite with a file path (vs in-memory) to catch file I/O issues
       db = await getTestDatabase({ type: 'sqlite', url: dbPath });
     });
 
-    it('should handle field helper with optional ? syntax when undefined (DuckDB)', async () => {
+    it('should handle field helper with optional ? syntax when undefined (SQLite file)', async () => {
       const collection = await CouncilIssue208Collection.create({ db });
 
       const council = await collection.create({
         name: 'Test Council',
       });
 
-      // This is where the issue #208 error occurs with DuckDB
+      // This is where the issue #208 error would occur with undefined fields
       await council.save();
 
       expect(council.id).toBeDefined();
       expect(council.name).toBe('Test Council');
     });
 
-    it('should handle getOrUpsert with DuckDB', async () => {
+    it('should handle getOrUpsert with SQLite file', async () => {
       const collection = await CouncilIssue208Collection.create({ db });
 
       const council = await collection.getOrUpsert({ name: 'test-council' });

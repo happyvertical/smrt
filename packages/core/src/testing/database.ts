@@ -29,7 +29,7 @@ export interface TestDatabaseOptions {
   /**
    * Database type (default: 'sqlite')
    * - 'sqlite': SQLite database
-   * - 'json': JSON adapter (DuckDB backend)
+   * - 'json': JSON adapter (stores data as JSON files with DuckDB for querying)
    */
   type?: 'sqlite' | 'json';
 
