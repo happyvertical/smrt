@@ -137,15 +137,14 @@ jobs:
           AFTER_MAJOR=$(echo "$AFTER_VERSION" | cut -d. -f1)
           if [ "$AFTER_MAJOR" -ge 1 ]; then
             echo ""
-            echo "❌ ERROR: This PR would bump version to $AFTER_VERSION (1.0.0+)"
+            echo "⚠️  WARNING: Changesets would bump version to $AFTER_VERSION (1.0.0+)"
             echo ""
             echo "This is caused by changesets interpreting peer dependency"
-            echo "changes as breaking. The publish workflow will reject this."
-            echo ""
-            echo "The version will be automatically downgraded to 0.x on merge."
+            echo "changes as breaking. The publish workflow will automatically"
+            echo "downgrade this to a minor bump (0.x) on merge."
             echo ""
             # Don't fail - just warn. The publish workflow will handle it.
-            echo "⚠️  WARNING: Version will be downgraded on merge"
+            echo "⚠️  Version will be automatically downgraded to 0.x on merge"
           else
             echo "✅ Version bump is acceptable: $BEFORE_VERSION → $AFTER_VERSION"
           fi
