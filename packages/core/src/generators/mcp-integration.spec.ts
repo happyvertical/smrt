@@ -12,6 +12,7 @@ import {
   McpIntegrationTestProductCollection,
 } from '../__tests__/fixtures/mcp-integration-test-classes.js';
 import { ObjectRegistry } from '../registry.js';
+import { getTestDatabase } from '../testing/database';
 import { MCPGenerator } from './mcp.js';
 
 describe('MCPGenerator - Integration Tests', () => {
@@ -37,12 +38,8 @@ describe('MCPGenerator - Integration Tests', () => {
     });
 
     // Create collection with in-memory database
-    collection = await McpIntegrationTestProductCollection.create({
-      db: {
-        type: 'sqlite',
-        url: ':memory:',
-      },
-    });
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    collection = await McpIntegrationTestProductCollection.create({ db });
   });
 
   afterEach(async () => {

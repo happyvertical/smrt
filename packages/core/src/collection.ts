@@ -345,12 +345,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Perform async initialization
     await instance.initialize();
 
-    // Initialize schema once at collection creation (replaces lazy initialization)
-    // This ensures tables exist before any objects are created/saved
+    // Verify table exists (tables must be created via smrt db:setup or smrt db:migrate)
+    // This replaces automatic schema creation which caused race conditions (issue #665)
     if (instance.db && (this as any)._itemClass) {
       const className = (this as any)._itemClass.name;
-      const { ensureSchema } = await import('./schema/utils.js');
-      await ensureSchema(instance.db, className);
+      const tableName = ObjectRegistry.getTableName(className);
+      if (tableName) {
+        const tableExists = await instance.db.tableExists(tableName);
+        if (!tableExists) {
+          const { DatabaseError } = await import('./errors.js');
+          throw DatabaseError.schemaMissing(tableName, className);
+        }
+      }
     }
 
     // Cache fields for sync access during queries (issue #663)

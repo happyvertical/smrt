@@ -20,11 +20,11 @@ import { existsSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
+import { getTestDatabase } from '../testing/database';
 
 // ============================================================================
 // Test Classes
@@ -528,7 +528,10 @@ describe('collection.query()', () => {
 
       beforeEach(async () => {
         dbConfig = adapterConfig.getConfig();
-        db = await getDatabase(dbConfig);
+        db = await getTestDatabase({
+          type: dbConfig.type,
+          url: dbConfig.url,
+        });
         products = await QueryTestProductCollection.create({ db });
         events = await QueryTestEventCollection.create({ db });
         recaps = await QueryTestRecapCollection.create({ db });

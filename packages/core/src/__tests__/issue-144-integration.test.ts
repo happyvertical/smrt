@@ -5,12 +5,13 @@
  * that collections can be created without duplicate column errors.
  */
 
-import { unlinkSync } from 'node:fs';
-import { afterAll, describe, expect, it } from 'vitest';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 import { generateSchema } from '../schema/utils';
+import { getTestDatabase } from '../testing/database';
 
 // Test classes that mimic Event and Profile from their respective packages
 @smrt()
@@ -38,37 +39,23 @@ class Issue144TestProfileCollection extends SmrtCollection<Issue144TestProfile> 
 }
 
 describe('Issue #144: Integration Test with Real Collections', () => {
-  const testDbPath = '/tmp/test-issue-144.db';
+  let db: DatabaseInterface;
 
-  afterAll(() => {
-    // Cleanup test database
-    try {
-      unlinkSync(testDbPath);
-    } catch (err) {
-      // Ignore if file doesn't exist
-    }
+  beforeAll(async () => {
+    // Create in-memory database with schemas pre-created
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
   });
 
   it('should create EventCollection without duplicate column errors', async () => {
     // This should not throw "duplicate column name: created_at" error
-    const events = await (TestEventCollection as any).create({
-      db: {
-        type: 'sqlite',
-        url: `file:${testDbPath}`,
-      },
-    });
+    const events = await TestEventCollection.create({ db });
 
     expect(events).toBeDefined();
   });
 
   it('should create ProfileCollection without duplicate column errors', async () => {
     // This should not throw duplicate column errors
-    const profiles = await (Issue144TestProfileCollection as any).create({
-      db: {
-        type: 'sqlite',
-        url: `file:${testDbPath}`,
-      },
-    });
+    const profiles = await Issue144TestProfileCollection.create({ db });
 
     expect(profiles).toBeDefined();
   });

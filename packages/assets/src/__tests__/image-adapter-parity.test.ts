@@ -16,8 +16,8 @@
 import { existsSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AssetCollection } from '../assets';
 import { Image } from '../image';
@@ -251,9 +251,10 @@ describe('Image Adapter Parity', () => {
 
       beforeEach(async () => {
         dbConfig = adapterConfig.getConfig();
-        db = await getDatabase(dbConfig);
-        images = await ImageCollection.create({ db: dbConfig });
-        assets = await AssetCollection.create({ db: dbConfig });
+        // Use getTestDatabase to create schemas automatically
+        db = await getTestDatabase(dbConfig);
+        images = await ImageCollection.create({ db });
+        assets = await AssetCollection.create({ db });
       });
 
       afterEach(async () => {

@@ -13,12 +13,12 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
+import { getTestDatabase } from '../testing/database';
 
 // Define test class at module level for AST scanner
 @smrt({ tableName: 'councils_issue_208' })
@@ -44,11 +44,9 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
         tmpdir(),
         `test-issue-208-${randomUUID().slice(0, 8)}-${Math.random().toString(36).slice(2)}`,
       );
-      db = await getDatabase({
+      db = await getTestDatabase({
         type: 'json',
         url: dataDir,
-        dataDir: dataDir,
-        writeStrategy: 'immediate',
       });
     });
 
@@ -99,7 +97,7 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
     let db: DatabaseInterface;
 
     beforeEach(async () => {
-      db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+      db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     });
 
     it('should handle field helper with optional ? syntax when undefined', async () => {
@@ -130,33 +128,34 @@ describe('Issue #208: Optional TEXT field helpers with undefined values', () => 
     });
   });
 
-  describe('with DuckDB database', () => {
+  describe('with SQLite file database', () => {
     let db: DatabaseInterface;
     let dbPath: string;
 
     beforeEach(async () => {
       dbPath = join(
         tmpdir(),
-        `test-issue-208-duckdb-${randomUUID().slice(0, 8)}.db`,
+        `test-issue-208-sqlite-file-${randomUUID().slice(0, 8)}.db`,
       );
-      db = await getDatabase({ type: 'duckdb', url: dbPath });
+      // Note: This tests SQLite with a file path (vs in-memory) to catch file I/O issues
+      db = await getTestDatabase({ type: 'sqlite', url: dbPath });
     });
 
-    it('should handle field helper with optional ? syntax when undefined (DuckDB)', async () => {
+    it('should handle field helper with optional ? syntax when undefined (SQLite file)', async () => {
       const collection = await CouncilIssue208Collection.create({ db });
 
       const council = await collection.create({
         name: 'Test Council',
       });
 
-      // This is where the issue #208 error occurs with DuckDB
+      // This is where the issue #208 error would occur with undefined fields
       await council.save();
 
       expect(council.id).toBeDefined();
       expect(council.name).toBe('Test Council');
     });
 
-    it('should handle getOrUpsert with DuckDB', async () => {
+    it('should handle getOrUpsert with SQLite file', async () => {
       const collection = await CouncilIssue208Collection.create({ db });
 
       const council = await collection.getOrUpsert({ name: 'test-council' });

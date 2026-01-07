@@ -1502,26 +1502,25 @@ export class ObjectRegistry {
   /**
    * Ensure all registered SMRT classes have their database tables created.
    *
-   * This is critical for JSON adapter to ensure cross-table queries work.
+   * @deprecated Use `getTestDatabase()` from `@happyvertical/smrt-core/testing` for tests,
+   * or run `smrt db:setup` / `smrt db:migrate` for production databases.
+   * This method will be removed in a future version. See issue #665.
+   *
+   * This method was originally for JSON adapter to ensure cross-table queries work.
    * Unlike SQLite/Postgres where all tables exist in the database file,
    * JSON adapter loads tables on-demand which causes issues with subqueries
    * and JOINs that reference tables not yet loaded.
    *
    * @param db - Database interface to create tables in
-   *
-   * @example
-   * ```typescript
-   * // Ensure all tables exist before running complex queries
-   * await ObjectRegistry.ensureAllSchemas(db);
-   *
-   * // Now cross-table queries work correctly
-   * const results = await collection.query(`
-   *   SELECT * FROM events
-   *   WHERE NOT EXISTS (SELECT 1 FROM contents WHERE ...)
-   * `);
-   * ```
    */
   static async ensureAllSchemas(db: DatabaseInterface): Promise<void> {
+    console.warn(
+      '[DEPRECATED] ObjectRegistry.ensureAllSchemas() is deprecated. ' +
+        'Use getTestDatabase() from @happyvertical/smrt-core/testing for tests, ' +
+        'or run "smrt db:setup" / "smrt db:migrate" for production databases. ' +
+        'See issue #665.',
+    );
+
     const { ensureSchema } = await import('./schema/utils.js');
     const classNames = this.getClassNames();
 

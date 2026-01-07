@@ -6,10 +6,10 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { foreignKey, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry';
+import { getTestDatabase } from '../testing/database';
 
 @smrt({ tableStrategy: 'sti' })
 class RaceTestParent extends SmrtObject {
@@ -45,7 +45,7 @@ describe('Race Condition Debug', () => {
 
   beforeEach(async () => {
     const dbPath = join(tmpdir(), `race-debug-${randomUUID().slice(0, 8)}.db`);
-    db = await getDatabase({ type: 'sqlite', url: dbPath });
+    db = await getTestDatabase({ type: 'sqlite', url: dbPath });
   });
 
   afterEach(async () => {
