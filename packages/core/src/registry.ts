@@ -84,6 +84,8 @@ declare global {
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryClassNameMap: Map<string, string> | undefined;
 }
 
 /**
@@ -557,6 +559,33 @@ export class ObjectRegistry {
   }
 
   /**
+   * Map lowercase class names to their canonical (registered) names
+   * Used for case-insensitive duplicate detection to prevent
+   * both 'praeco' and 'Praeco' from being registered separately
+   */
+  private static get classNameMap(): Map<string, string> {
+    if (!globalThis.__smrtRegistryClassNameMap) {
+      globalThis.__smrtRegistryClassNameMap = new Map<string, string>();
+    }
+    return globalThis.__smrtRegistryClassNameMap;
+  }
+
+  /**
+   * Check if a class is already registered (case-insensitive)
+   * Returns the canonical name if found, undefined otherwise
+   */
+  static getCanonicalClassName(name: string): string | undefined {
+    return ObjectRegistry.classNameMap.get(name.toLowerCase());
+  }
+
+  /**
+   * Check if a class exists by name (case-insensitive)
+   */
+  static hasClassCaseInsensitive(name: string): boolean {
+    return ObjectRegistry.classNameMap.has(name.toLowerCase());
+  }
+
+  /**
    * Global cache for inheritance chains (shared across all instances)
    * Maps className → full inheritance chain (base to child)
    * Performance optimization: ~100x faster than re-walking prototype chain
@@ -791,6 +820,8 @@ export class ObjectRegistry {
           // Merge config from decorator (new) with manifest config (existing)
           existing.config = { ...existing.config, ...config };
           ObjectRegistry.classes.set(name, existing);
+          // Update classNameMap to point to the new canonical name
+          ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
           console.log(
             `[registry] Replaced manifest stub '${existingKey}' with real class '${name}'`,
           );
@@ -823,6 +854,8 @@ export class ObjectRegistry {
           existing.name = name;
           existing.config = { ...existing.config, ...config };
           ObjectRegistry.classes.set(name, existing);
+          // Update classNameMap to point to the new canonical name
+          ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
           return;
         }
 
@@ -1176,6 +1209,9 @@ export class ObjectRegistry {
       // decorator-registered and manifest-loaded classes.
     });
 
+    // Track this class name for case-insensitive duplicate detection
+    ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+
     console.log(
       `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${validators.length} validators`,
     );
@@ -1203,7 +1239,8 @@ export class ObjectRegistry {
       // Register any siblings that aren't already registered
       // Only load siblings from DIFFERENT packages to avoid collisions with local classes
       for (const sibling of siblings) {
-        if (!ObjectRegistry.classes.has(sibling.className)) {
+        // Use case-insensitive check to prevent registering 'Praeco' when 'praeco' exists
+        if (!ObjectRegistry.hasClassCaseInsensitive(sibling.className)) {
           // Skip siblings from the same package - they will be registered by their own decorators
           if (
             sibling.packageName &&
@@ -1274,10 +1311,20 @@ export class ObjectRegistry {
     objectDef: any,
     packageName?: string,
   ): void {
-    // Prevent duplicate registrations
+    // Prevent duplicate registrations (case-insensitive)
+    // This prevents both 'praeco' and 'Praeco' from being registered separately
+    // which caused race conditions in PostgreSQL due to duplicate command execution
+    const existingCanonical = ObjectRegistry.getCanonicalClassName(name);
+    if (existingCanonical) {
+      // Already registered under a different case variant
+      return;
+    }
     if (ObjectRegistry.classes.has(name)) {
       return;
     }
+
+    // Track this class name for case-insensitive lookups
+    ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
 
     // Create stub constructor - not needed for CLI command generation
     // The CLI only needs metadata (fields, methods, config)
@@ -1406,7 +1453,8 @@ export class ObjectRegistry {
       // Register any siblings that aren't already registered
       // Only load siblings from DIFFERENT packages to avoid collisions with local classes
       for (const sibling of siblings) {
-        if (!ObjectRegistry.classes.has(sibling.className)) {
+        // Use case-insensitive check to prevent registering 'Praeco' when 'praeco' exists
+        if (!ObjectRegistry.hasClassCaseInsensitive(sibling.className)) {
           // Skip siblings from the same package - they will be registered by their own decorators
           if (
             sibling.packageName &&

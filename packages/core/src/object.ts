@@ -755,6 +755,30 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Converts this object to a plain JavaScript object (POJO)
+   *
+   * Unlike toJSON() which returns an object that can still be a class instance,
+   * this method returns a true plain object suitable for:
+   * - SvelteKit's load function returns (requires serializable data)
+   * - Passing data through web workers
+   * - Any context requiring non-class objects
+   *
+   * @returns Plain JavaScript object with all field values
+   *
+   * @example
+   * ```typescript
+   * // In a SvelteKit +page.server.ts load function:
+   * const users = await userCollection.list();
+   * return {
+   *   users: users.map(u => u.toPlainObject())
+   * };
+   * ```
+   */
+  toPlainObject(): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(this));
+  }
+
+  /**
    * Gets or generates a unique ID for this object
    *
    * @returns Promise resolving to the object's ID

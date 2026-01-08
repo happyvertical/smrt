@@ -1133,7 +1133,8 @@ export function discoverSTISiblingsSync(
     packageName?: string;
   }> = [];
 
-  // Track already-found class names to avoid duplicates
+  // Track already-found class names to avoid duplicates (case-insensitive)
+  // Use lowercase keys to prevent both 'praeco' and 'Praeco' from being added
   const foundClasses = new Set<string>();
 
   console.log(
@@ -1154,8 +1155,10 @@ export function discoverSTISiblingsSync(
       // Check if this entry uses the same collection (table)
       if (entry.collection === collection) {
         const className = entry.className || key;
-        if (!foundClasses.has(className)) {
-          foundClasses.add(className);
+        // Use case-insensitive check to prevent registering both 'praeco' and 'Praeco'
+        const lowerClassName = className.toLowerCase();
+        if (!foundClasses.has(lowerClassName)) {
+          foundClasses.add(lowerClassName);
           siblings.push({
             className,
             entry,

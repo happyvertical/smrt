@@ -17,6 +17,8 @@ export * from './components/ai/index.js';
 export { default as UserMenu } from './components/auth/UserMenu.svelte';
 // Commerce components
 export * from './components/commerce/index.js';
+// Data Components
+export * from './components/data/index.js';
 // Display components
 export * from './components/display/index.js';
 // Feedback components
@@ -48,3 +50,5 @@ export { default as UserList } from './components/users/UserList.svelte';
 export * from './hooks/index.js';
 // State management
 export * from './state/index.js';
+// Theme system
+export * from './theme/index.js';

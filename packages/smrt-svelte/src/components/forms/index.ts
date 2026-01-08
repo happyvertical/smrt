@@ -12,9 +12,11 @@ export { default as SMRTMeasurement } from './SMRTMeasurement.svelte';
 export { default as SMRTMoney } from './SMRTMoney.svelte';
 export { default as SMRTNumber } from './SMRTNumber.svelte';
 export { default as SMRTPhone } from './SMRTPhone.svelte';
+export { default as SMRTSearchInput } from './SMRTSearchInput.svelte';
 export { default as SMRTSelect } from './SMRTSelect.svelte';
 export { default as SMRTTextarea } from './SMRTTextarea.svelte';
 export { default as SMRTTextInput } from './SMRTTextInput.svelte';
+export { default as SMRTToggle } from './SMRTToggle.svelte';
 
 // Types
 export type {

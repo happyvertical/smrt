@@ -209,10 +209,11 @@ export class SmrtClass {
       const { ObjectRegistry } = await import('./registry.js');
       const schemas = ObjectRegistry.getAllSchemas();
 
-      // Handle three db config formats:
+      // Handle four db config formats:
       // 1. String: 'products.db' (shortcut)
       // 2. Config object: { type: 'sqlite', url: 'products.db' }
-      // 3. DatabaseInterface instance: await getDatabase(...)
+      // 3. Config with client: { type: 'postgres', client: pgPool } (SvelteKit pattern)
+      // 4. DatabaseInterface instance: await getDatabase(...)
       if (typeof this.options.db === 'string') {
         // String shortcut - let getDatabase auto-detect type from URL
         // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
@@ -226,6 +227,20 @@ export class SmrtClass {
       } else if ('query' in this.options.db) {
         // Already a DatabaseInterface instance
         this._db = this.options.db as DatabaseInterface;
+      } else if ('client' in this.options.db && this.options.db.client) {
+        // Config with pre-created client (e.g., from SvelteKit's $env-based connection)
+        // Pass the client to getDatabase which will use it instead of creating a new connection
+        const dbConfig = this.options.db as {
+          type?: string;
+          client: unknown;
+          url?: string;
+        };
+        this._db = await getDatabase({
+          type: dbConfig.type || 'postgres',
+          client: dbConfig.client,
+          url: dbConfig.url,
+          schemas,
+        } as any);
       } else {
         // Config object - pass to getDatabase (handles all types uniformly)
         // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
