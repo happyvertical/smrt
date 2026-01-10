@@ -48,7 +48,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@happyvertical/smrt-core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*"
   },
   "peerDependencies": {
     "@happyvertical/smrt-profiles": "workspace:*"

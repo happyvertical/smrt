@@ -14,3 +14,12 @@ export type {
   SmrtModuleMeta,
 } from './module.js';
 export type { Signal, SignalAdapter, SignalType } from './signals.js';
+
+// User status enums (browser-safe, no server dependencies)
+export {
+  MembershipStatus,
+  OverrideEffect,
+  SessionStatus,
+  TenantStatus,
+  UserStatus,
+} from './user.js';

@@ -100,14 +100,19 @@
   },
   "dependencies": {
     "@happyvertical/browser-ai": "workspace:*",
-    "@happyvertical/smrt-agents": "workspace:*",
-    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/smrt-users": "workspace:*",
     "chrono-node": "^2.9.0"
   },
   "peerDependencies": {
-    "svelte": "^5.18.2"
+    "svelte": "^5.18.2",
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-agents": { "optional": true },
+    "@happyvertical/smrt-profiles": { "optional": true },
+    "@happyvertical/smrt-users": { "optional": true }
   },
   "devDependencies": {
     "@sveltejs/package": "^2.5.7",
