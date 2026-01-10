@@ -50,8 +50,8 @@ export { default as RoleSelector } from './components/roles/RoleSelector.svelte'
 export { default as TenantCard } from './components/tenants/TenantCard.svelte';
 // Tenant components
 export { default as TenantSwitcher } from './components/tenants/TenantSwitcher.svelte';
-// Theme components
-export * from './components/theme/index.js';
+// Theme components (selective - avoiding duplicate ThemeProvider export)
+export type { ThemeMode } from './components/theme/index.js';
 // Time tracking components
 export * from './components/time/index.js';
 // Town/municipal components

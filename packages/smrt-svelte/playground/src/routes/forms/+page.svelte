@@ -359,15 +359,15 @@ function handleSearch(value: string) {
     <h3>Size Variants</h3>
     <div class="input-demo-grid">
       <div>
-        <label class="size-label">Small</label>
+        <span class="size-label">Small</span>
         <SMRTSearchInput size="sm" placeholder="Small search..." />
       </div>
       <div>
-        <label class="size-label">Medium</label>
+        <span class="size-label">Medium</span>
         <SMRTSearchInput size="md" placeholder="Medium search..." />
       </div>
       <div>
-        <label class="size-label">Large</label>
+        <span class="size-label">Large</span>
         <SMRTSearchInput size="lg" placeholder="Large search..." />
       </div>
     </div>
