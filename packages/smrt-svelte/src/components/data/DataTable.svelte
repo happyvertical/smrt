@@ -111,6 +111,16 @@ function handleRowClick(row: T, index: number) {
   onRowClick?.(row, index);
 }
 
+// Action to set indeterminate state (can't be set via HTML attribute)
+function setIndeterminate(node: HTMLInputElement, value: boolean) {
+  node.indeterminate = value;
+  return {
+    update(newValue: boolean) {
+      node.indeterminate = newValue;
+    },
+  };
+}
+
 // Get visible columns
 const visibleColumns = $derived(columns.filter((col) => !col.hidden));
 
@@ -175,7 +185,7 @@ const sizeClasses = {
             <input
               type="checkbox"
               checked={allSelected}
-              indeterminate={someSelected}
+              use:setIndeterminate={someSelected}
               onchange={handleSelectAll}
               aria-label="Select all rows"
               class="data-table__checkbox"

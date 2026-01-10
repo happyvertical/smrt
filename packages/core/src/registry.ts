@@ -1316,14 +1316,17 @@ export class ObjectRegistry {
     // which caused race conditions in PostgreSQL due to duplicate command execution
     const existingCanonical = ObjectRegistry.getCanonicalClassName(name);
     if (existingCanonical) {
-      // Already registered under a different case variant
+      // Case-insensitive match found (e.g., 'praeco' exists, trying to register 'Praeco')
+      // Early return prevents adding a duplicate entry to classNameMap
       return;
     }
     if (ObjectRegistry.classes.has(name)) {
+      // Exact match found - already registered with same casing
       return;
     }
 
     // Track this class name for case-insensitive lookups
+    // Only reached if no case-insensitive match exists
     ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
 
     // Create stub constructor - not needed for CLI command generation

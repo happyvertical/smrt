@@ -75,7 +75,7 @@ const sizeClasses = {
       {disabled}
       {checked}
       onchange={handleChange}
-      aria-label={ariaLabel ?? label}
+      aria-label={ariaLabel ?? label ?? ''}
     />
     <span class="toggle__thumb"></span>
   </span>
