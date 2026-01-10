@@ -16,7 +16,7 @@
  * ```
  */
 
-import { type TenantContextData, withTenant } from '../context.js';
+import { enterTenantContext, type TenantContextData } from '../context.js';
 
 /**
  * Express Request interface (minimal to avoid direct dependency)
@@ -164,10 +164,11 @@ export function createExpressMiddleware(options: ExpressMiddlewareOptions) {
       (req as any).tenantContext = context;
       (req as any).tenantId = tenantId;
 
-      // Run in tenant context
-      await withTenant(context, async () => {
-        next();
-      });
+      // Use enterWith() to establish context that persists for the entire
+      // request lifecycle. This ensures route handlers have access to
+      // tenant context via AsyncLocalStorage.
+      enterTenantContext(context);
+      next();
     } catch (error) {
       next(error);
     }

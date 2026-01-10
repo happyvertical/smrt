@@ -172,6 +172,34 @@ export function withTenantSync<T>(
 }
 
 /**
+ * Enter tenant context for the remainder of the current async execution
+ *
+ * This uses AsyncLocalStorage.enterWith() to establish context that persists
+ * until the async resource completes. Useful for Express middleware where
+ * the route handler executes after the middleware returns.
+ *
+ * @param context - Tenant context data
+ *
+ * @example Express middleware
+ * ```typescript
+ * app.use((req, res, next) => {
+ *   const tenantId = req.headers['x-tenant-id'] as string;
+ *   enterTenantContext({ tenantId });
+ *   next();  // Route handlers now have tenant context
+ * });
+ * ```
+ */
+export function enterTenantContext(
+  context: TenantContextData | MinimalTenantContext,
+): void {
+  const fullContext: TenantContextData = {
+    permissions: new Set(),
+    ...context,
+  };
+  tenantStorage.enterWith(fullContext);
+}
+
+/**
  * Run code in system context (bypasses tenant checks)
  *
  * Use this for:
@@ -191,7 +219,10 @@ export function withTenantSync<T>(
  */
 export async function withSystemContext<T>(fn: () => Promise<T>): Promise<T> {
   // Run without any tenant context (undefined store)
-  return tenantStorage.run(undefined as any, fn);
+  // Cast storage to allow undefined to avoid unsafe 'as any'
+  return (
+    tenantStorage as AsyncLocalStorage<TenantContextData | undefined>
+  ).run(undefined, fn);
 }
 
 /**

@@ -48,6 +48,7 @@ export {
 // Context Management
 // ─────────────────────────────────────────────────────────────────────────────
 export {
+  enterTenantContext,
   // Context access
   getCurrentTenant,
   getTenantId,
