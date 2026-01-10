@@ -25,6 +25,8 @@ export * from './components/calendar/index.js';
 export * from './components/commerce/index.js';
 // Content components
 export * from './components/content/index.js';
+// Data Components
+export * from './components/data/index.js';
 // Display components
 export * from './components/display/index.js';
 // Feedback components
@@ -68,5 +70,7 @@ export * from './components/weather/index.js';
 export * from './hooks/index.js';
 // State management
 export * from './state/index.js';
+// Theme system
+export * from './theme/index.js';
 // Generic types (migrated from @happyvertical/svelte)
 export type * from './types-generic.js';
