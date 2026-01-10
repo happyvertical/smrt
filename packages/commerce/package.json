@@ -21,7 +21,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm run generate:test && tsc && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json --preserve-output && cp src/manifest/test-manifest.json dist/manifest.json",
+    "build": "pnpm run generate:test && tsc && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && cp src/manifest/test-manifest.json dist/manifest.json",
     "dev": "tsc --watch",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "pnpm run generate:test && npx vitest run",
@@ -56,7 +56,7 @@
     "@happyvertical/smrt-ledgers": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
-    "svelte": "^5.0.0"
+    "svelte": "^5.18.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/smrt-svelte": {

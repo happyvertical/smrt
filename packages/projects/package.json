@@ -19,7 +19,7 @@
     }
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json --preserve-output && node ../../scripts/generate-stub-from-manifest.js && [ -f test-manifest.json ] && cp test-manifest.json dist/manifest.json || true",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/generate-stub-from-manifest.js && [ -f test-manifest.json ] && cp test-manifest.json dist/manifest.json || true",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
@@ -39,7 +39,7 @@
   },
   "peerDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
-    "svelte": "^5.0.0"
+    "svelte": "^5.18.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/smrt-svelte": {

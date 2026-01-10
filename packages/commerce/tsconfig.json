@@ -5,8 +5,8 @@
     "rootDir": "./src",
     "composite": true,
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["svelte"]
+    "lib": ["ES2023"],
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "src/svelte/**/*"]
