@@ -56,6 +56,8 @@ export * from './embeddings/index';
 export * from './errors';
 // Code generators (tree-shakeable)
 export * from './generators/index';
+// Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
+export * from './interceptors';
 // Static manifest (generated at build time)
 export * from './manifest/index';
 export * from './object';

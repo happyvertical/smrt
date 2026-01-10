@@ -64,6 +64,7 @@
     { "path": "./packages/products" },
     { "path": "./packages/profiles" },
     { "path": "./packages/tags" },
+    { "path": "./packages/tenancy" },
     { "path": "./packages/users" },
     { "path": "./packages/smrt-svelte" },
 

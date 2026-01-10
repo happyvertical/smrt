@@ -4,6 +4,11 @@ import { SmrtClass } from './class';
 import { EmbeddingProvider } from './embeddings/provider';
 import { CosineSimilarity } from './embeddings/similarity';
 import { EmbeddingStorage } from './embeddings/storage';
+import {
+  createInterceptorContext,
+  GlobalInterceptors,
+  type ListOptions as InterceptorListOptions,
+} from './interceptors';
 import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
 import { generateSchema } from './schema/utils';
@@ -476,14 +481,26 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
+    // Execute beforeGet interceptors (e.g., tenancy validation)
+    const interceptorContext = createInterceptorContext(
+      this._itemClass.name,
+      'get',
+      this.constructor.name,
+    );
+    const interceptedFilter = await GlobalInterceptors.executeBeforeGet(
+      this._itemClass.name,
+      filter,
+      interceptorContext,
+    );
+
     let where =
-      typeof filter === 'string'
+      typeof interceptedFilter === 'string'
         ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            filter,
+            interceptedFilter,
           )
-          ? { id: filter }
-          : { slug: filter, context: '' }
-        : filter;
+          ? { id: interceptedFilter }
+          : { slug: interceptedFilter, context: '' }
+        : interceptedFilter;
 
     // Fix for issue #386: Add _meta_type filter for STI child collections
     const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
@@ -508,21 +525,34 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const { rows } = await this.db.query(fullSQL, ...whereValues);
 
     if (!rows?.[0]) {
-      return null;
+      // Execute afterGet with null result
+      return await GlobalInterceptors.executeAfterGet(
+        this._itemClass.name,
+        null,
+        interceptorContext,
+      );
     }
 
     const fields = await this.getFields();
     const formattedData = formatDataJs(rows[0], fields);
 
+    let instance: T;
     if (isSTI && formattedData._meta_type) {
-      return await this.createPolymorphic(
+      instance = await this.createPolymorphic(
         formattedData._meta_type,
         formattedData,
       );
+    } else {
+      // CTI: Use collection's item class
+      instance = this.create(formattedData);
     }
 
-    // CTI: Use collection's item class
-    return this.create(formattedData);
+    // Execute afterGet interceptors (e.g., tenant validation)
+    return await GlobalInterceptors.executeAfterGet(
+      this._itemClass.name,
+      instance,
+      interceptorContext,
+    );
   }
 
   /**
@@ -588,7 +618,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Ensure manifest is loaded for external packages before validating WHERE clause
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
-    let { where, offset, limit, orderBy } = options;
+    // Execute beforeList interceptors (e.g., tenancy filtering)
+    const interceptorContext = createInterceptorContext(
+      this._itemClass.name,
+      'list',
+      this.constructor.name,
+    );
+    const interceptedOptions = await GlobalInterceptors.executeBeforeList(
+      this._itemClass.name,
+      options as InterceptorListOptions,
+      interceptorContext,
+    );
+
+    let { where, offset, limit, orderBy } = interceptedOptions;
 
     // STI: Child collections should automatically filter by _meta_type
     const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
@@ -678,16 +720,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
 
     // Eager load specified relationships
-    if (options.include && options.include.length > 0) {
+    if (interceptedOptions.include && interceptedOptions.include.length > 0) {
       // Cast to ModelType[] - instances are guaranteed to be subtypes of ModelType
       // even in STI mode where they may be different subclasses
       await this.eagerLoadRelationships(
         instances as ModelType[],
-        options.include,
+        interceptedOptions.include,
       );
     }
 
-    return instances;
+    // Execute afterList interceptors (e.g., tenant validation)
+    const finalInstances = await GlobalInterceptors.executeAfterList(
+      this._itemClass.name,
+      instances,
+      interceptorContext,
+    );
+
+    return finalInstances;
   }
 
   /**
@@ -1214,20 +1263,39 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * `, ['Electronics', 100]);
    * ```
    */
-  public async query(sql: string, params: any[] = []): Promise<ModelType[]> {
+  public async query(
+    sql: string,
+    params: any[] = [],
+    options: { allowRawOnTenantScoped?: boolean } = {},
+  ): Promise<ModelType[]> {
     // Schema already initialized in Collection.create() static factory
 
     // Ensure manifest is loaded for external packages
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
-    const result = await this.db.query(sql, ...params);
+    // Execute beforeQuery interceptors (e.g., tenant raw SQL policy)
+    const interceptorContext = createInterceptorContext(
+      this._itemClass.name,
+      'query',
+      this.constructor.name,
+    );
+    const interceptedQuery = await GlobalInterceptors.executeBeforeQuery(
+      this._itemClass.name,
+      { sql, params, allowRawOnTenantScoped: options.allowRawOnTenantScoped },
+      interceptorContext,
+    );
+
+    const result = await this.db.query(
+      interceptedQuery.sql,
+      ...interceptedQuery.params,
+    );
     const fields = await this.getFields();
 
     // STI: Check if we need polymorphic hydration
     const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
     const isSTI = tableStrategy === 'sti';
 
-    return Promise.all(
+    const instances = await Promise.all(
       result.rows.map(async (row: any) => {
         const formattedData = formatDataJs(row, fields);
 
@@ -1240,14 +1308,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         }
 
         // CTI or STI base: Use collection's item class
-        const params = {
+        const instanceParams = {
           ai: this.options.ai,
           db: this.db,
           _skipLoad: true,
           ...formattedData,
         };
 
-        const instance = new this._itemClass(params);
+        const instance = new this._itemClass(instanceParams);
         await instance.initialize();
 
         // For STI collections, set _meta_type to the class name
@@ -1257,6 +1325,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
         return instance;
       }),
+    );
+
+    // Execute afterQuery interceptors
+    return await GlobalInterceptors.executeAfterQuery(
+      this._itemClass.name,
+      instances,
+      interceptorContext,
     );
   }
 

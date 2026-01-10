@@ -1,0 +1,63 @@
+{
+  "name": "@happyvertical/smrt-tenancy",
+  "version": "0.18.1",
+  "description": "Production-ready multi-tenancy framework for SMRT with automatic tenant isolation and enforcement",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./adapters": {
+      "import": "./dist/adapters/index.js",
+      "types": "./dist/adapters/index.d.ts"
+    },
+    "./testing": {
+      "import": "./dist/testing.js",
+      "types": "./dist/testing.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "vite build --mode library",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "test": "npx vitest run",
+    "test:watch": "npx vitest"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/sql": "^0.60.9",
+    "@happyvertical/utils": "^0.60.9"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.3",
+    "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-users": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-users": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-tenancy",
+    "tenancy",
+    "isolation",
+    "smrt"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
