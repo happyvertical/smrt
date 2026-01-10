@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.18.2
+
+### Patch Changes
+
+- ### Features
+
+  - case-insensitive registry and new UI components (#672) (core,smrt-svelte)
+  - migrate components from @happyvertical/svelte (#674) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.18.2
+  - @happyvertical/smrt-config@0.18.2
+  - @happyvertical/smrt-types@0.18.2
+
 ## 0.18.1
 
 ### Patch Changes
