@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.18.3
+
+### Patch Changes
+
+- ### Features
+
+  - add production-ready multi-tenancy framework (#676) (core,tenancy)
+  - @happyvertical/smrt-scanner@0.18.3
+  - @happyvertical/smrt-config@0.18.3
+  - @happyvertical/smrt-types@0.18.3
+
 ## 0.18.2
 
 ### Patch Changes
