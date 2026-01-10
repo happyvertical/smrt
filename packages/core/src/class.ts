@@ -4,14 +4,14 @@ import type { FilesystemAdapterOptions } from '@happyvertical/files';
 import { FilesystemAdapter } from '@happyvertical/files';
 import type { LoggerConfig } from '@happyvertical/logger';
 import type { SignalAdapter } from '@happyvertical/smrt-types';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import type {
   GlobalSignalConfig,
   MetricsConfig,
   PubSubConfig,
 } from './config.js';
 import { config } from './config.js';
-import { type DatabaseConfig, resolveDatabase } from './database.js';
+import type { DatabaseConfig } from './database.js';
 import { SignalBus } from './signals/bus.js';
 import { ALL_SYSTEM_TABLES, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
@@ -195,9 +195,51 @@ export class SmrtClass {
       const { ObjectRegistry } = await import('./registry.js');
       const schemas = ObjectRegistry.getAllSchemas();
 
-      // Resolve database config to a DatabaseInterface instance
-      // Handles all three formats: string URL, config object, or existing instance
-      this._db = await resolveDatabase(this.options.db, { schemas });
+      // Handle four db config formats (in implementation order):
+      // 1. String URL: 'products.db' (shortcut)
+      // 2. DatabaseInterface instance: already initialized db (has 'query' method)
+      // 3. Config with client: { type: 'postgres', client: pgPool } (SvelteKit pattern)
+      // 4. Config object: { type: 'sqlite', url: 'products.db' }
+      if (typeof this.options.db === 'string') {
+        // Format 1: String shortcut - let getDatabase auto-detect type from URL
+        // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
+        // EXCEPT for :memory: databases which should NOT be cached across instances
+        const isMemoryDb = this.options.db === ':memory:';
+        this._db = await getDatabase({
+          url: this.options.db,
+          schemas,
+          ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
+        });
+      } else if ('query' in this.options.db) {
+        // Format 2: Already a DatabaseInterface instance - return as-is
+        this._db = this.options.db as DatabaseInterface;
+      } else if ('client' in this.options.db && this.options.db.client) {
+        // Format 3: Config with pre-created client (e.g., from SvelteKit's $env-based connection)
+        // Pass the client to getDatabase which will use it instead of creating a new connection
+        const dbConfig = this.options.db as {
+          type?: string;
+          client: unknown;
+          url?: string;
+        };
+        this._db = await getDatabase({
+          type: dbConfig.type || 'postgres',
+          client: dbConfig.client,
+          url: dbConfig.url,
+          schemas,
+        } as any);
+      } else {
+        // Format 4: Config object - pass to getDatabase (handles all types uniformly)
+        // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
+        // EXCEPT for :memory: databases which should NOT be cached across instances
+        const dbConfig = this.options.db as { url?: string; type?: string };
+        const dbUrl = dbConfig.url || 'memory';
+        const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
+        this._db = await getDatabase({
+          ...this.options.db,
+          schemas,
+          ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
+        } as any);
+      }
 
       /**
        * INTENTIONAL MUTATION: After resolving the database config,

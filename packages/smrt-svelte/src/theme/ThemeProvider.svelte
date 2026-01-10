@@ -98,7 +98,11 @@ const themeState = $derived<ThemeState>({
 function setColorScheme(scheme: ColorScheme): void {
   config.colorScheme = scheme;
   if (persist && typeof localStorage !== 'undefined') {
-    localStorage.setItem(storageKey, scheme);
+    try {
+      localStorage.setItem(storageKey, scheme);
+    } catch {
+      // Ignore storage errors (e.g. quota exceeded, access denied in private browsing)
+    }
   }
 }
 
@@ -137,9 +141,13 @@ onMount(() => {
 
     // Load persisted preference
     if (persist) {
-      const stored = localStorage.getItem(storageKey);
-      if (stored && ['light', 'dark', 'system'].includes(stored)) {
-        config.colorScheme = stored as ColorScheme;
+      try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored && ['light', 'dark', 'system'].includes(stored)) {
+          config.colorScheme = stored as ColorScheme;
+        }
+      } catch {
+        // Ignore storage errors (e.g. access denied in private browsing)
       }
     }
 

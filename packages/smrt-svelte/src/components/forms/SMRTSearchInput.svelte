@@ -56,6 +56,15 @@ let {
 let inputEl: HTMLInputElement | null = $state(null);
 let debounceTimer: ReturnType<typeof setTimeout> | null = $state(null);
 
+// Cleanup debounce timer on component destroy
+$effect(() => {
+  return () => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+  };
+});
+
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement;
   value = target.value;
