@@ -1,11 +1,16 @@
 <script lang="ts">
-import { ConfirmDialog, ProgressBar } from '@happyvertical/smrt-svelte';
+import { ConfirmDialog, Modal, ProgressBar } from '@happyvertical/smrt-svelte';
 
 // Dialog state
 let showBasicDialog = $state(false);
 let showDestructiveDialog = $state(false);
 let showLoadingDialog = $state(false);
 let isLoading = $state(false);
+
+// Modal state
+let showBasicModal = $state(false);
+let showLargeModal = $state(false);
+let showFooterModal = $state(false);
 
 function handleConfirm() {
   showBasicDialog = false;
@@ -172,6 +177,60 @@ async function handleLoadingConfirm() {
 </section>
 
 <section>
+  <h2>Modal</h2>
+  <p class="section-desc">Accessible dialog component using native dialog element.</p>
+
+  <h3>Basic Modal</h3>
+  <div class="demo-box">
+    <button class="btn-primary" onclick={() => showBasicModal = true}>
+      Open Modal
+    </button>
+  </div>
+
+  <Modal
+    bind:open={showBasicModal}
+    title="Basic Modal"
+  >
+    {#snippet children()}
+      <p>This is a basic modal with a title and close button.</p>
+      <p>Click outside or press Escape to close.</p>
+    {/snippet}
+  </Modal>
+
+  <h3>Large Modal with Footer</h3>
+  <div class="demo-box">
+    <button class="btn-primary" onclick={() => showLargeModal = true}>
+      Open Large Modal
+    </button>
+  </div>
+
+  <Modal
+    bind:open={showLargeModal}
+    title="Large Modal"
+    size="lg"
+  >
+    {#snippet children()}
+      <p>This is a larger modal with more content space.</p>
+      <p>It's great for forms, detailed information, or complex interactions.</p>
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+    {/snippet}
+    {#snippet footer()}
+      <button class="btn-secondary" onclick={() => showLargeModal = false}>Cancel</button>
+      <button class="btn-primary" onclick={() => showLargeModal = false}>Save Changes</button>
+    {/snippet}
+  </Modal>
+
+  <h3>Size Variants</h3>
+  <div class="demo-box size-demos">
+    <button class="btn-secondary" onclick={() => {}}>SM (24rem)</button>
+    <button class="btn-secondary" onclick={() => {}}>MD (32rem)</button>
+    <button class="btn-secondary" onclick={() => {}}>LG (48rem)</button>
+    <button class="btn-secondary" onclick={() => {}}>XL (64rem)</button>
+    <button class="btn-secondary" onclick={() => {}}>Full</button>
+  </div>
+</section>
+
+<section>
   <h2>Props Reference</h2>
 
   <h3>ProgressBar</h3>
@@ -205,6 +264,25 @@ async function handleLoadingConfirm() {
       <tr><td><code>loading</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Loading state</td></tr>
       <tr><td><code>onconfirm</code></td><td><code>() => void</code></td><td>-</td><td>Confirm handler</td></tr>
       <tr><td><code>oncancel</code></td><td><code>() => void</code></td><td>-</td><td>Cancel handler</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Modal</h3>
+  <table class="props-table">
+    <thead>
+      <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>open</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Dialog visibility (bindable)</td></tr>
+      <tr><td><code>title</code></td><td><code>string</code></td><td>-</td><td>Modal title</td></tr>
+      <tr><td><code>size</code></td><td><code>'sm' | 'md' | 'lg' | 'xl' | 'full'</code></td><td><code>'md'</code></td><td>Size variant</td></tr>
+      <tr><td><code>closeOnBackdrop</code></td><td><code>boolean</code></td><td><code>true</code></td><td>Close on backdrop click</td></tr>
+      <tr><td><code>closeOnEscape</code></td><td><code>boolean</code></td><td><code>true</code></td><td>Close on Escape key</td></tr>
+      <tr><td><code>showClose</code></td><td><code>boolean</code></td><td><code>true</code></td><td>Show close button</td></tr>
+      <tr><td><code>onClose</code></td><td><code>() => void</code></td><td>-</td><td>Close callback</td></tr>
+      <tr><td><code>header</code></td><td><code>Snippet</code></td><td>-</td><td>Custom header</td></tr>
+      <tr><td><code>footer</code></td><td><code>Snippet</code></td><td>-</td><td>Custom footer</td></tr>
+      <tr><td><code>children</code></td><td><code>Snippet</code></td><td>-</td><td>Modal content</td></tr>
     </tbody>
   </table>
 </section>
@@ -310,6 +388,27 @@ async function handleLoadingConfirm() {
 
   .btn-danger:hover {
     background: #b91c1c;
+  }
+
+  .btn-secondary {
+    padding: 8px 16px;
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .btn-secondary:hover {
+    background: #e5e7eb;
+  }
+
+  .size-demos {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .props-table {
