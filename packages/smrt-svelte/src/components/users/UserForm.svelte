@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { Profile } from '@happyvertical/smrt-profiles';
-import { type User, UserStatus } from '@happyvertical/smrt-users';
+import { UserStatus } from '@happyvertical/smrt-types';
+import type { User } from '@happyvertical/smrt-users';
 
 interface Props {
   user?: User | null;
