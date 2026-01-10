@@ -31,6 +31,8 @@ export enum TenantStatus {
   INACTIVE = 'inactive',
   /** Suspended tenant */
   SUSPENDED = 'suspended',
+  /** Archived tenant (soft-deleted) */
+  ARCHIVED = 'archived',
 }
 
 // ============= Membership Status =============

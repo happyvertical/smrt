@@ -962,6 +962,9 @@ importers:
       '@happyvertical/browser-ai':
         specifier: workspace:*
         version: link:../browser-ai
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles

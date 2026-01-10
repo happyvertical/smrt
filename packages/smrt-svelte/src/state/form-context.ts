@@ -7,11 +7,26 @@ import { getContext, setContext } from 'svelte';
 /**
  * Field definition for form registration
  */
+/** All supported form field types */
+export type FormFieldType =
+  | 'text'
+  | 'email'
+  | 'datetime'
+  | 'number'
+  | 'address'
+  | 'checkbox'
+  | 'daterange'
+  | 'measurement'
+  | 'money'
+  | 'phone'
+  | 'select'
+  | 'textarea';
+
 export interface FieldDefinition {
   /** Field name (used as key for LLM extraction) */
   name: string;
   /** Field type */
-  type: 'text' | 'email' | 'datetime' | 'number';
+  type: FormFieldType;
   /** Human-readable label */
   label?: string;
   /** Description to help LLM understand field purpose */

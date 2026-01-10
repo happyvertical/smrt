@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Profile } from '@happyvertical/smrt-profiles';
-import type { User, UserStatus } from '@happyvertical/smrt-users';
+import { type User, UserStatus } from '@happyvertical/smrt-users';
 
 interface Props {
   user?: User | null;
@@ -20,7 +20,7 @@ const {
 
 let name = $state(profile?.name ?? '');
 let email = $state(user?.email ?? '');
-let status: UserStatus = $state(user?.status ?? 'active');
+let status: UserStatus = $state(user?.status ?? UserStatus.ACTIVE);
 
 function handleSubmit(e: Event) {
   e.preventDefault();

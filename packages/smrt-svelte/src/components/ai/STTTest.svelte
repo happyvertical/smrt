@@ -3,7 +3,7 @@ import type { GetSTTOptions } from '@happyvertical/browser-ai';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import DownloadProgress from './DownloadProgress.svelte';
 
-type AdapterType = 'browser' | 'whisper-wasm' | 'whisper-cpp';
+type AdapterType = 'browser-speech' | 'whisper-wasm' | 'whisper-cpp';
 
 const app = useAppState();
 
@@ -100,7 +100,7 @@ function clearLogs() {
     <div class="adapter-select">
       <label for="adapter">Adapter:</label>
       <select id="adapter" bind:value={selectedAdapter} disabled={isRecording}>
-        <option value="browser">Browser (Web Speech API)</option>
+        <option value="browser-speech">Browser (Web Speech API)</option>
         <option value="whisper-wasm">Whisper WASM (v2)</option>
         <option value="whisper-cpp">Whisper CPP</option>
       </select>

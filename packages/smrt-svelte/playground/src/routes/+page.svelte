@@ -30,11 +30,17 @@ const components = [
       'SMRTAddress',
       'SMRTMoney',
       'SMRTMeasurement',
+      'SMRTSearchInput',
+      'SMRTToggle',
     ],
   },
   {
+    category: 'Data',
+    items: ['DataTable'],
+  },
+  {
     category: 'Foundation',
-    items: ['ThemeProvider', 'Ripple Action'],
+    items: ['ThemeProvider', 'useTheme', 'Ripple Action'],
   },
   {
     category: 'Display',
@@ -56,7 +62,7 @@ const components = [
   },
   {
     category: 'Feedback',
-    items: ['ConfirmDialog', 'ProgressBar'],
+    items: ['ConfirmDialog', 'ProgressBar', 'Modal'],
   },
   {
     category: 'Commerce',

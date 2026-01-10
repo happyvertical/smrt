@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PageData } from './$types';
-  import { Pagination } from '@happyvertical/svelte';
+  import { Pagination } from '@happyvertical/smrt-svelte';
 
   let { data }: { data: PageData } = $props();
   const { articles, pagination, siteConfig } = data;

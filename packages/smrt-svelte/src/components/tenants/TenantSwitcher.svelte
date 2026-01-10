@@ -24,10 +24,12 @@ function handleChange(event: Event) {
   {:else}
     <select value={currentTenantId} onchange={handleChange} class="tenant-select">
       {#each memberships as membership}
-        {@const tenant = tenants.get(membership.tenantId)}
-        <option value={membership.tenantId}>
-          {tenant?.name ?? 'Unknown'}
-        </option>
+        {#if membership.tenantId}
+          {@const tenant = tenants.get(membership.tenantId)}
+          <option value={membership.tenantId}>
+            {tenant?.name ?? 'Unknown'}
+          </option>
+        {/if}
       {/each}
     </select>
   {/if}

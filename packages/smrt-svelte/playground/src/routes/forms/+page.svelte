@@ -10,9 +10,11 @@ import {
   SMRTForm,
   SMRTNumber,
   SMRTPhone,
+  SMRTSearchInput,
   SMRTSelect,
   SMRTTextarea,
   SMRTTextInput,
+  SMRTToggle,
 } from '@happyvertical/smrt-svelte';
 
 let name = $state('');
@@ -25,6 +27,16 @@ let notes = $state('');
 let newsletter = $state(false);
 let appendMode = $state(false);
 let submittedData = $state<Record<string, unknown> | null>(null);
+
+// Search state
+let searchValue = $state('');
+let searchLoading = $state(false);
+let searchResults = $state<string[]>([]);
+
+// Toggle state
+let darkMode = $state(false);
+let notifications = $state(true);
+let autoSave = $state(false);
 
 const departmentOptions: SelectOption[] = [
   { value: 'engineering', label: 'Engineering' },
@@ -78,6 +90,21 @@ function clearForm() {
   notes = '';
   newsletter = false;
   submittedData = null;
+}
+
+function handleSearch(value: string) {
+  searchLoading = true;
+  // Simulate search
+  setTimeout(() => {
+    searchResults = value
+      ? [
+          `Result 1 for ${value}`,
+          `Result 2 for ${value}`,
+          `Result 3 for ${value}`,
+        ]
+      : [];
+    searchLoading = false;
+  }, 500);
 }
 </script>
 
@@ -304,6 +331,94 @@ function clearForm() {
       <ul>
         <li>"name Will Griffin email will@gmail.com phone 555 123 4567 age 46 department sales done"</li>
       </ul>
+    </div>
+  </div>
+
+  <div class="demo-section">
+    <h2>SMRTSearchInput</h2>
+    <p class="hint">Search input with debounce, loading state, and clear button.</p>
+
+    <h3>Basic Search</h3>
+    <div class="input-demo">
+      <SMRTSearchInput
+        bind:value={searchValue}
+        placeholder="Search users..."
+        loading={searchLoading}
+        onsearch={handleSearch}
+      />
+    </div>
+    <p class="search-state">Search: "{searchValue}" | Loading: {searchLoading}</p>
+    {#if searchResults.length > 0}
+      <ul class="search-results">
+        {#each searchResults as result}
+          <li>{result}</li>
+        {/each}
+      </ul>
+    {/if}
+
+    <h3>Size Variants</h3>
+    <div class="input-demo-grid">
+      <div>
+        <span class="size-label">Small</span>
+        <SMRTSearchInput size="sm" placeholder="Small search..." />
+      </div>
+      <div>
+        <span class="size-label">Medium</span>
+        <SMRTSearchInput size="md" placeholder="Medium search..." />
+      </div>
+      <div>
+        <span class="size-label">Large</span>
+        <SMRTSearchInput size="lg" placeholder="Large search..." />
+      </div>
+    </div>
+  </div>
+
+  <div class="demo-section">
+    <h2>SMRTToggle</h2>
+    <p class="hint">Accessible toggle switch with label positioning.</p>
+
+    <h3>Basic Toggles</h3>
+    <div class="toggle-demos">
+      <SMRTToggle
+        label="Dark Mode"
+        bind:checked={darkMode}
+      />
+      <SMRTToggle
+        label="Notifications"
+        bind:checked={notifications}
+      />
+      <SMRTToggle
+        label="Auto-save"
+        bind:checked={autoSave}
+      />
+    </div>
+    <p class="toggle-state">Dark: {darkMode} | Notifications: {notifications} | Auto-save: {autoSave}</p>
+
+    <h3>Label Positions</h3>
+    <div class="toggle-demos">
+      <SMRTToggle
+        label="Label on right"
+        labelPosition="right"
+        checked={true}
+      />
+      <SMRTToggle
+        label="Label on left"
+        labelPosition="left"
+        checked={true}
+      />
+    </div>
+
+    <h3>Size Variants</h3>
+    <div class="toggle-demos">
+      <SMRTToggle label="Small" size="sm" checked={true} />
+      <SMRTToggle label="Medium" size="md" checked={true} />
+      <SMRTToggle label="Large" size="lg" checked={true} />
+    </div>
+
+    <h3>Disabled State</h3>
+    <div class="toggle-demos">
+      <SMRTToggle label="Disabled off" disabled />
+      <SMRTToggle label="Disabled on" disabled checked={true} />
     </div>
   </div>
 </div>
@@ -572,5 +687,65 @@ function clearForm() {
     width: 18px;
     height: 18px;
     cursor: pointer;
+  }
+
+  .input-demo {
+    max-width: 400px;
+  }
+
+  .input-demo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  @media (max-width: 600px) {
+    .input-demo-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .size-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-bottom: 4px;
+  }
+
+  .search-state {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-top: 8px;
+    font-family: monospace;
+  }
+
+  .search-results {
+    margin-top: 12px;
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 8px;
+    list-style: none;
+  }
+
+  .search-results li {
+    padding: 8px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .search-results li:last-child {
+    border-bottom: none;
+  }
+
+  .toggle-demos {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .toggle-state {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-family: monospace;
   }
 </style>
