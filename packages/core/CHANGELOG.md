@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.18.6
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - make package browser-compatible (#684) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.18.6
+  - @happyvertical/smrt-config@0.18.6
+  - @happyvertical/smrt-types@0.18.6
+
 ## 0.18.5
 
 ### Patch Changes
