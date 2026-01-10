@@ -11,10 +11,15 @@
       "types": "./dist/index.d.ts"
     },
     "./manifest": "./dist/manifest.json",
-    "./manifest.json": "./dist/manifest.json"
+    "./manifest.json": "./dist/manifest.json",
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js"
+    }
   },
   "scripts": {
-    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js && [ -f test-manifest.json ] && cp test-manifest.json dist/manifest.json || true",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/generate-stub-from-manifest.js && [ -f test-manifest.json ] && cp test-manifest.json dist/manifest.json || true",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
@@ -28,14 +33,32 @@
     "@happyvertical/repos": "^0.60.5",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "^0.60.9",
     "@happyvertical/utils": "^0.60.9"
   },
+  "peerDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "svelte": "^5.18.0"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@happyvertical/smrt-cli": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/package": "^2.5.7",
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@types/node": "^24.0.0",
     "fast-glob": "3.3.3",
+    "svelte": "^5.18.2",
+    "svelte-check": "^4.0.0",
     "typescript": "^5.7.2",
     "vite": "^7.1.3",
     "vitest": "^4.0.8"

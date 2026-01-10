@@ -107,3 +107,6 @@ export {
   type RecordPaymentOptions,
   VendorStatus,
 } from './types/index.js';
+
+// UI metadata (no Svelte dependency - import ./svelte for components)
+export { COMMERCE_MODULE_META, COMMERCE_UI_SLOTS } from './ui.js';

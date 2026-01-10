@@ -59,6 +59,11 @@
     },
     "./styles/tokens.css": {
       "default": "./dist/styles/tokens.css"
+    },
+    "./registry": {
+      "types": "./dist/registry/index.d.ts",
+      "svelte": "./dist/registry/index.js",
+      "default": "./dist/registry/index.js"
     }
   },
   "files": [
@@ -97,6 +102,7 @@
     "@happyvertical/browser-ai": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "chrono-node": "^2.9.0"
   },
