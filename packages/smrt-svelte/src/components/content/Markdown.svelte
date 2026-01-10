@@ -5,11 +5,29 @@ interface Props {
 
 const { content }: Props = $props();
 
-// Simple markdown renderer
+// Simple markdown renderer with XSS protection
 const rendered = $derived(renderMarkdown(content));
 
+/**
+ * Escape HTML special characters to prevent XSS attacks.
+ * This must be called before any markdown transformations.
+ */
+function escapeHtml(text: string): string {
+  const htmlEntities: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return text.replace(/[&<>"']/g, (char) => htmlEntities[char]);
+}
+
 function renderMarkdown(markdown: string): string {
-  return markdown
+  // First escape HTML to prevent XSS, then apply markdown transformations
+  const escaped = escapeHtml(markdown);
+
+  return escaped
     .replace(/^### (.*$)/gim, '<h3>$1</h3>')
     .replace(/^## (.*$)/gim, '<h2>$1</h2>')
     .replace(/^# (.*$)/gim, '<h1>$1</h1>')
