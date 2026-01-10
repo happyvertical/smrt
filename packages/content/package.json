@@ -21,19 +21,19 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.61.2",
-    "@happyvertical/documents": "^0.61.2",
-    "@happyvertical/files": "^0.61.2",
-    "@happyvertical/geo": "^0.61.2",
-    "@happyvertical/images": "^0.61.4",
-    "@happyvertical/logger": "^0.61.2",
-    "@happyvertical/ocr": "^0.60.6",
+    "@happyvertical/ai": "^0.66.0",
+    "@happyvertical/documents": "^0.66.0",
+    "@happyvertical/files": "^0.66.0",
+    "@happyvertical/geo": "^0.66.0",
+    "@happyvertical/images": "^0.66.0",
+    "@happyvertical/logger": "^0.66.0",
+    "@happyvertical/ocr": "^0.60.5",
     "@happyvertical/pdf": "^0.60.4",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/spider": "^0.60.6",
-    "@happyvertical/sql": "^0.61.2",
-    "@happyvertical/utils": "^0.61.2",
+    "@happyvertical/sql": "^0.66.0",
+    "@happyvertical/utils": "^0.66.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
