@@ -38,16 +38,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.60.9",
-    "@happyvertical/files": "^0.60.9",
+    "@happyvertical/ai": "^0.66.0",
+    "@happyvertical/files": "^0.66.0",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/utils": "^0.60.9"
+    "@happyvertical/utils": "^0.66.0"
   },
   "devDependencies": {
-    "@happyvertical/logger": "^0.60.9",
+    "@happyvertical/logger": "^0.66.0",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@happyvertical/sql": "^0.60.9",
+    "@happyvertical/sql": "^0.66.0",
     "@types/node": "^24.0.0",
     "fast-glob": "3.3.3",
     "typescript": "^5.7.3",
