@@ -25,7 +25,7 @@ function getStatusColor(status: string): string {
   }
 }
 
-function formatDate(date: Date | string | null): string {
+function formatDate(date: Date | string | null | undefined): string {
   if (!date) return 'N/A';
   return new Date(date).toLocaleDateString(undefined, {
     year: 'numeric',
@@ -48,7 +48,7 @@ function formatDate(date: Date | string | null): string {
   </div>
 
   <div class="meta">
-    <span class="date">Joined {formatDate(membership.createdAt)}</span>
+    <span class="date">Joined {formatDate(membership.created_at)}</span>
 
     {#if onchangerole || onremove}
       <div class="actions">

@@ -3,7 +3,7 @@
  */
 
 /** Speech-to-text adapter type */
-export type STTAdapterType = 'browser' | 'whisper-wasm';
+export type STTAdapterType = 'browser-speech' | 'whisper-wasm' | 'whisper-cpp';
 
 /** LLM model ID for field extraction */
 export type LLMModelId =

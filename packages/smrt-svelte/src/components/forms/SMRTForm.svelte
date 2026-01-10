@@ -336,7 +336,7 @@ $effect(() => {
     spokenText = newText;
 
     // Reset silence timer on new speech (for browser STT with interim results)
-    if (sttAdapter === 'browser') {
+    if (sttAdapter === 'browser-speech') {
       resetSilenceTimer();
     }
 

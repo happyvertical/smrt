@@ -11,6 +11,54 @@
       "types": "./dist/index.d.ts",
       "svelte": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./admin": {
+      "types": "./dist/components/admin/index.d.ts",
+      "svelte": "./dist/components/admin/index.js",
+      "default": "./dist/components/admin/index.js"
+    },
+    "./calendar": {
+      "types": "./dist/components/calendar/index.d.ts",
+      "svelte": "./dist/components/calendar/index.js",
+      "default": "./dist/components/calendar/index.js"
+    },
+    "./content": {
+      "types": "./dist/components/content/index.d.ts",
+      "svelte": "./dist/components/content/index.js",
+      "default": "./dist/components/content/index.js"
+    },
+    "./forms": {
+      "types": "./dist/components/forms/index.d.ts",
+      "svelte": "./dist/components/forms/index.js",
+      "default": "./dist/components/forms/index.js"
+    },
+    "./layout": {
+      "types": "./dist/components/layout/index.d.ts",
+      "svelte": "./dist/components/layout/index.js",
+      "default": "./dist/components/layout/index.js"
+    },
+    "./meetings": {
+      "types": "./dist/components/meetings/index.d.ts",
+      "svelte": "./dist/components/meetings/index.js",
+      "default": "./dist/components/meetings/index.js"
+    },
+    "./town": {
+      "types": "./dist/components/town/index.d.ts",
+      "svelte": "./dist/components/town/index.js",
+      "default": "./dist/components/town/index.js"
+    },
+    "./ui": {
+      "types": "./dist/components/ui/index.d.ts",
+      "svelte": "./dist/components/ui/index.js",
+      "default": "./dist/components/ui/index.js"
+    },
+    "./weather": {
+      "types": "./dist/components/weather/index.d.ts",
+      "svelte": "./dist/components/weather/index.js",
+      "default": "./dist/components/weather/index.js"
+    },
+    "./styles/tokens.css": {
+      "default": "./dist/styles/tokens.css"
     }
   },
   "files": [
@@ -47,6 +95,7 @@
   },
   "dependencies": {
     "@happyvertical/browser-ai": "workspace:*",
+    "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "chrono-node": "^2.9.0"

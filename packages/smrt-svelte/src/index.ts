@@ -12,12 +12,19 @@ export {
   permission,
 } from './actions/permission.js';
 export { ripple } from './actions/ripple.js';
+
+// Admin components
+export * from './components/admin/index.js';
 // AI Components
 export * from './components/ai/index.js';
 // Auth components
 export { default as UserMenu } from './components/auth/UserMenu.svelte';
+// Calendar components
+export * from './components/calendar/index.js';
 // Commerce components
 export * from './components/commerce/index.js';
+// Content components
+export * from './components/content/index.js';
 // Display components
 export * from './components/display/index.js';
 // Feedback components
@@ -26,6 +33,8 @@ export * from './components/feedback/index.js';
 export * from './components/forms/index.js';
 // Layout components
 export * from './components/layout/index.js';
+// Meeting components
+export * from './components/meetings/index.js';
 // Membership components
 export { default as MembershipCard } from './components/memberships/MembershipCard.svelte';
 export { default as MembershipList } from './components/memberships/MembershipList.svelte';
@@ -43,13 +52,21 @@ export { default as TenantSwitcher } from './components/tenants/TenantSwitcher.s
 export * from './components/theme/index.js';
 // Time tracking components
 export * from './components/time/index.js';
+// Town/municipal components
+export * from './components/town/index.js';
+// UI components
+export * from './components/ui/index.js';
 export { default as InviteUserModal } from './components/users/InviteUserModal.svelte';
 // User components
 export { default as UserAvatar } from './components/users/UserAvatar.svelte';
 export { default as UserCard } from './components/users/UserCard.svelte';
 export { default as UserForm } from './components/users/UserForm.svelte';
 export { default as UserList } from './components/users/UserList.svelte';
+// Weather components
+export * from './components/weather/index.js';
 // Hooks
 export * from './hooks/index.js';
 // State management
 export * from './state/index.js';
+// Generic types (migrated from @happyvertical/svelte)
+export type * from './types-generic.js';
