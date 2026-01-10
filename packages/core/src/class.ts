@@ -4,7 +4,7 @@ import type { FilesystemAdapterOptions } from '@happyvertical/files';
 import { FilesystemAdapter } from '@happyvertical/files';
 import type { LoggerConfig } from '@happyvertical/logger';
 import type { SignalAdapter } from '@happyvertical/smrt-types';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import type {
   GlobalSignalConfig,
   MetricsConfig,
