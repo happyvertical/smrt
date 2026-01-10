@@ -31,7 +31,8 @@ export type {
   RecurrenceFrequency,
   RecurrencePattern,
 } from './types';
-
+// Export UI metadata
+export { EVENTS_MODULE_META, EVENTS_UI_SLOTS } from './ui';
 // Export utilities
 export {
   calculateDuration,

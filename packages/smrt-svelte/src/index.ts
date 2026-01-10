@@ -40,6 +40,8 @@ export * from './components/meetings/index.js';
 // Membership components
 export { default as MembershipCard } from './components/memberships/MembershipCard.svelte';
 export { default as MembershipList } from './components/memberships/MembershipList.svelte';
+// Module components (for dynamic module UI rendering)
+export * from './components/module/index.js';
 // Navigation components
 export * from './components/nav/index.js';
 // Permission components
@@ -68,6 +70,8 @@ export { default as UserList } from './components/users/UserList.svelte';
 export * from './components/weather/index.js';
 // Hooks
 export * from './hooks/index.js';
+// Module UI registry
+export * from './registry/index.js';
 // State management
 export * from './state/index.js';
 // Theme system

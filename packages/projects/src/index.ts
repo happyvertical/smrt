@@ -91,3 +91,6 @@ export type {
   UpdateIssueInput,
   User,
 } from './types';
+
+// Export UI metadata
+export { PROJECTS_MODULE_META, PROJECTS_UI_SLOTS } from './ui';
