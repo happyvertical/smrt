@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.18.4
+
+### Patch Changes
+
+- ### Features
+
+  - standardize module exports with optional Svelte UI (#678) (types,smrt-svelte,modules)
+  - @happyvertical/smrt-scanner@0.18.4
+  - @happyvertical/smrt-config@0.18.4
+  - @happyvertical/smrt-types@0.18.4
+
 ## 0.18.3
 
 ### Patch Changes
