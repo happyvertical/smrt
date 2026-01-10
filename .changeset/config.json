@@ -24,6 +24,7 @@
       "@happyvertical/smrt-projects",
       "@happyvertical/smrt-properties",
       "@happyvertical/smrt-tags",
+      "@happyvertical/smrt-tenancy",
       "@happyvertical/smrt-template-site-static-json",
       "@happyvertical/smrt-template-sveltekit",
       "@happyvertical/smrt-types",

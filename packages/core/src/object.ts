@@ -13,6 +13,7 @@ import {
   RuntimeError,
   ValidationError,
 } from './errors';
+import { createInterceptorContext, GlobalInterceptors } from './interceptors';
 import { ObjectRegistry } from './registry';
 import {
   executeToolCall as executeToolCallInternal,
@@ -876,6 +877,13 @@ export class SmrtObject extends SmrtClass {
       // Validate object state before saving
       await this.validateBeforeSave();
 
+      // Execute beforeSave interceptors (e.g., tenancy validation)
+      const interceptorContext = createInterceptorContext(
+        this.constructor.name,
+        'save',
+      );
+      await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
+
       if (!this.id) {
         this.id = crypto.randomUUID();
       }
@@ -995,6 +1003,9 @@ export class SmrtObject extends SmrtClass {
         3,
         500,
       );
+
+      // Execute afterSave interceptors (e.g., tenant audit logging)
+      await GlobalInterceptors.executeAfterSave(this, interceptorContext);
 
       // Auto-generate embeddings if configured
       const embeddingConfig = ObjectRegistry.getEmbeddingConfig(
@@ -1306,11 +1317,21 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise that resolves when deletion is complete
    */
   public async delete(): Promise<void> {
+    // Execute beforeDelete interceptors (e.g., tenant validation)
+    const interceptorContext = createInterceptorContext(
+      this.constructor.name,
+      'delete',
+    );
+    await GlobalInterceptors.executeBeforeDelete(this, interceptorContext);
+
     await this.runHook('beforeDelete');
 
     await this.db.delete(this.tableName, { id: this.id });
 
     await this.runHook('afterDelete');
+
+    // Execute afterDelete interceptors (e.g., tenant audit logging)
+    await GlobalInterceptors.executeAfterDelete(this, interceptorContext);
   }
 
   /**
