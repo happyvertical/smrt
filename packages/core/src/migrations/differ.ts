@@ -5,14 +5,37 @@
  * a SchemaDiff with the differences.
  */
 
+import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
+import type { DatabaseEngine } from '../schema/ddl/types.js';
 import type {
   ColumnDefinition,
   IndexDefinition,
   SchemaChange,
   SchemaDefinition,
   SchemaDiff,
+  SQLDataType,
 } from '../schema/types.js';
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
+
+/**
+ * Valid SQLDataType values for validation
+ */
+const VALID_SQL_DATA_TYPES: Set<SQLDataType> = new Set([
+  'TEXT',
+  'INTEGER',
+  'REAL',
+  'BLOB',
+  'BOOLEAN',
+  'JSON',
+  'TIMESTAMP',
+]);
+
+/**
+ * Check if a string is a valid SQLDataType
+ */
+function isValidSQLDataType(type: string): type is SQLDataType {
+  return VALID_SQL_DATA_TYPES.has(type as SQLDataType);
+}
 
 /**
  * Options for schema comparison
@@ -32,6 +55,8 @@ export interface DiffOptions {
 export class SchemaComparer {
   private db: DatabaseInterface;
   private options: DiffOptions;
+  private engine: DatabaseEngine;
+  private ddlStrategy: ReturnType<typeof getDDLStrategy>;
 
   constructor(db: DatabaseInterface, options: DiffOptions = {}) {
     this.db = db;
@@ -41,6 +66,10 @@ export class SchemaComparer {
       ignoreTypeMismatches: false,
       ...options,
     };
+    // Use the shared detectEngine utility for consistent detection
+    // Handles :memory:, .json, and other edge cases
+    this.engine = detectEngine(this.db.url || '');
+    this.ddlStrategy = getDDLStrategy(this.engine);
   }
 
   /**
@@ -144,11 +173,47 @@ export class SchemaComparer {
       } else {
         // Column exists - check for type mismatch
         const dbCol = dbSchema.columns[colName];
-        const normalizedExpected = this.normalizeType(colDef.type);
+
+        // Map manifest's abstract type to engine-specific type
+        // e.g., JSON → TEXT for SQLite, JSON → JSONB for PostgreSQL
+        // Validate the manifest type before mapping
+        const manifestType = colDef.type;
+        if (!isValidSQLDataType(manifestType)) {
+          // Invalid manifest type - treat as TEXT (safest fallback)
+          console.warn(
+            `[SchemaComparer] Invalid manifest type "${manifestType}" for ${tableName}.${colName}, treating as TEXT`,
+          );
+        }
+        const validatedType: SQLDataType = isValidSQLDataType(manifestType)
+          ? manifestType
+          : 'TEXT';
+        const expectedEngineType = this.ddlStrategy.mapType(validatedType);
+        const normalizedExpected = this.normalizeType(expectedEngineType);
         const normalizedActual = this.normalizeType(dbCol.type);
 
         if (normalizedExpected !== normalizedActual) {
-          if (!this.options.ignoreTypeMismatches) {
+          // Check if this is a safe type upgrade that SMRT can handle
+          // Since SMRT owns the data lifecycle, we know the intent from the manifest
+          if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
+            // Generate type upgrade SQL
+            const sql = this.generateTypeUpgradeSQL(
+              tableName,
+              colName,
+              colDef.type,
+              dbCol.type,
+            );
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: {
+                expected: colDef.type,
+                actual: dbCol.type,
+              },
+              sql,
+            });
+          } else if (!this.options.ignoreTypeMismatches) {
             changes.push({
               type: 'type_mismatch',
               table: tableName,
@@ -272,6 +337,117 @@ export class SchemaComparer {
     }
 
     return upper;
+  }
+
+  /**
+   * Check if a type change is a safe upgrade that can be auto-migrated.
+   *
+   * SMRT controls the data lifecycle for these columns, so we know:
+   * - TEXT→JSON: The column stores JSON data serialized as text (arrays, objects)
+   * - INTEGER→REAL: Safe widening of integer to floating point
+   *
+   * @param manifestType - The abstract type from the manifest (e.g., 'JSON')
+   * @param dbType - The actual type in the database (e.g., 'TEXT')
+   * @returns true if the change from dbType to manifestType is a safe upgrade
+   */
+  private isCompatibleTypeUpgrade(
+    manifestType: string,
+    dbType: string,
+  ): boolean {
+    const manifest = this.normalizeType(manifestType);
+    const db = this.normalizeType(dbType);
+
+    // TEXT → JSON is safe: SMRT serializes arrays/objects as JSON text
+    // When the manifest says JSON, the data is already valid JSON in TEXT column
+    if (manifest === 'JSON' && db === 'TEXT') {
+      return true;
+    }
+
+    // JSON → TEXT is also safe (downgrade, but data is preserved as-is)
+    if (manifest === 'TEXT' && db === 'JSON') {
+      return true;
+    }
+
+    // INTEGER → REAL is safe (widening)
+    if (manifest === 'REAL' && db === 'INTEGER') {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Generate SQL for a type upgrade migration.
+   *
+   * Engine-specific SQL:
+   * - SQLite: TEXT and JSON are equivalent, no-op or comment
+   * - DuckDB: ALTER COLUMN TYPE (native type conversion)
+   * - PostgreSQL: ALTER COLUMN TYPE with USING clause
+   */
+  private generateTypeUpgradeSQL(
+    tableName: string,
+    colName: string,
+    manifestType: string,
+    dbType: string,
+  ): string {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+
+    // Validate manifestType before mapping
+    const validatedType: SQLDataType = isValidSQLDataType(manifestType)
+      ? manifestType
+      : 'TEXT';
+    const targetType = this.ddlStrategy.mapType(validatedType);
+
+    switch (this.engine) {
+      case 'sqlite':
+        // SQLite has dynamic typing - TEXT and JSON are functionally equivalent
+        // For SQLite, we just return a comment since no actual change is needed
+        if (
+          this.normalizeType(manifestType) === 'JSON' &&
+          this.normalizeType(dbType) === 'TEXT'
+        ) {
+          return `-- SQLite: ${quotedCol} already stores JSON as TEXT (no change needed)`;
+        }
+        // For other type upgrades, SQLite requires recreating the table
+        return `-- SQLite: Type upgrade for ${quotedCol} requires table recreation`;
+
+      case 'postgres':
+        // PostgreSQL requires explicit ALTER COLUMN with USING clause
+        if (
+          this.normalizeType(manifestType) === 'JSON' &&
+          this.normalizeType(dbType) === 'TEXT'
+        ) {
+          // TEXT → JSONB: cast text to jsonb
+          return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType} USING ${quotedCol}::${targetType.toLowerCase()}`;
+        }
+        if (
+          this.normalizeType(manifestType) === 'TEXT' &&
+          this.normalizeType(dbType) === 'JSON'
+        ) {
+          // JSONB → TEXT: cast jsonb to text
+          return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE TEXT USING ${quotedCol}::text`;
+        }
+        if (
+          this.normalizeType(manifestType) === 'REAL' &&
+          this.normalizeType(dbType) === 'INTEGER'
+        ) {
+          // INTEGER → DOUBLE PRECISION
+          return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
+        }
+        return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
+
+      case 'duckdb':
+        // DuckDB supports ALTER COLUMN TYPE for type conversions
+        return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
+
+      default: {
+        // Escape special characters in type names for safe comment generation
+        const safeDbType = dbType.replace(/[^\w]/g, '_');
+        const safeManifestType = manifestType.replace(/[^\w]/g, '_');
+        return `-- Type upgrade for ${quotedCol}: ${safeDbType} → ${safeManifestType}`;
+      }
+    }
   }
 
   /**

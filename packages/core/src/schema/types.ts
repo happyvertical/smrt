@@ -224,7 +224,8 @@ export interface SchemaChange {
     | 'drop_column'
     | 'add_index'
     | 'drop_index'
-    | 'type_mismatch';
+    | 'type_mismatch'
+    | 'type_upgrade';
   /** Affected table name */
   table: string;
   /** Column or index name (if applicable) */
@@ -233,7 +234,7 @@ export interface SchemaChange {
   column?: ColumnDefinition;
   /** Index definition (for add_index) */
   index?: IndexDefinition;
-  /** For type mismatches: expected vs actual */
+  /** For type mismatches and upgrades: expected vs actual */
   mismatch?: {
     expected: string;
     actual: string;

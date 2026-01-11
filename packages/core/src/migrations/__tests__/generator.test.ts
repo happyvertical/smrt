@@ -265,6 +265,103 @@ describe('MigrationGenerator', () => {
     });
   });
 
+  describe('type_upgrade handling', () => {
+    it('should include executable SQL for type upgrades', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [],
+        dropped_tables: [],
+        changes: [
+          {
+            type: 'type_upgrade',
+            table: 'documents',
+            name: 'tags',
+            mismatch: { expected: 'JSON', actual: 'TEXT' },
+            sql: 'ALTER TABLE "documents" ALTER COLUMN "tags" TYPE JSONB USING "tags"::jsonb',
+          },
+        ],
+      };
+
+      const generator = new MigrationGenerator({
+        engine: 'postgres',
+        format: 'sql',
+        includeDown: true,
+      });
+
+      const migration = generator.generateFromDiff(diff, {
+        name: '0001_upgrade_types',
+        description: 'Upgrade TEXT to JSON types',
+      });
+
+      expect(migration.up).toHaveLength(1);
+      expect(migration.up[0]).toContain('ALTER TABLE');
+      expect(migration.up[0]).toContain('TYPE JSONB');
+    });
+
+    it('should skip comment-only SQL for no-op type upgrades', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [],
+        dropped_tables: [],
+        changes: [
+          {
+            type: 'type_upgrade',
+            table: 'items',
+            name: 'data',
+            mismatch: { expected: 'JSON', actual: 'TEXT' },
+            // SQLite returns a comment since TEXT and JSON are equivalent
+            sql: '-- SQLite: "data" already stores JSON as TEXT (no change needed)',
+          },
+        ],
+      };
+
+      const generator = new MigrationGenerator({
+        engine: 'sqlite',
+        format: 'sql',
+        includeDown: true,
+      });
+
+      const migration = generator.generateFromDiff(diff, {
+        name: '0001_no_op',
+        description: 'No-op migration for SQLite',
+      });
+
+      // Comment-only SQL should be skipped
+      expect(migration.up).toHaveLength(0);
+    });
+
+    it('should not generate DOWN for type upgrades', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [],
+        dropped_tables: [],
+        changes: [
+          {
+            type: 'type_upgrade',
+            table: 'records',
+            name: 'metadata',
+            mismatch: { expected: 'JSON', actual: 'TEXT' },
+            sql: 'ALTER TABLE "records" ALTER COLUMN "metadata" TYPE JSON',
+          },
+        ],
+      };
+
+      const generator = new MigrationGenerator({
+        engine: 'duckdb',
+        format: 'sql',
+        includeDown: true,
+      });
+
+      const migration = generator.generateFromDiff(diff, {
+        name: '0001_type_upgrade',
+        description: 'Upgrade to JSON type',
+      });
+
+      // No DOWN generated for type changes (could lose data)
+      expect(migration.down).toHaveLength(0);
+    });
+  });
+
   describe('PostgreSQL engine', () => {
     it('should use CONCURRENTLY for indexes', () => {
       const diff: SchemaDiff = {

@@ -13,6 +13,7 @@
  * in @happyvertical/smrt-core via @smrt({ embeddings: { fields: ['alt', 'description'] } })
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -73,7 +74,9 @@ const adapterConfigs = [
     name: 'SQLite (file)',
     getConfig: () => ({
       type: 'sqlite' as const,
-      url: join(tmpdir(), `test-image-sqlite-${Date.now()}.db`),
+      // Use randomUUID instead of Date.now() to ensure unique paths
+      // when tests run in parallel (Date.now() can return same value)
+      url: join(tmpdir(), `test-image-sqlite-${randomUUID()}.db`),
     }),
     cleanup: async (config: any) => {
       if (config?.url && config.url !== ':memory:' && existsSync(config.url)) {
@@ -85,7 +88,9 @@ const adapterConfigs = [
     name: 'JSON (DuckDB)',
     getConfig: () => ({
       type: 'json' as const,
-      url: join(tmpdir(), `test-image-json-${Date.now()}`),
+      // Use randomUUID instead of Date.now() to ensure unique paths
+      // when tests run in parallel (Date.now() can return same value)
+      url: join(tmpdir(), `test-image-json-${randomUUID()}`),
     }),
     cleanup: async (config: any) => {
       if (config?.url && existsSync(config.url)) {

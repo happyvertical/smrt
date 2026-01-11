@@ -11,6 +11,7 @@
  * in @happyvertical/smrt-core via @smrt({ embeddings: { fields: ['alt', 'description'] } })
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,7 +25,9 @@ describe('Image', () => {
   let dbPath: string;
 
   beforeEach(() => {
-    dbPath = join(tmpdir(), `smrt-image-test-${Date.now()}.db`);
+    // Use randomUUID instead of Date.now() to ensure unique db paths
+    // when tests run in parallel (Date.now() can return same value)
+    dbPath = join(tmpdir(), `smrt-image-test-${randomUUID()}.db`);
   });
 
   afterEach(() => {
