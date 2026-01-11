@@ -56,8 +56,6 @@ export { default as TenantSwitcher } from './components/tenants/TenantSwitcher.s
 export type { ThemeMode } from './components/theme/index.js';
 // Time tracking components
 export * from './components/time/index.js';
-// Town/municipal components
-export * from './components/town/index.js';
 // UI components
 export * from './components/ui/index.js';
 export { default as InviteUserModal } from './components/users/InviteUserModal.svelte';
@@ -66,8 +64,6 @@ export { default as UserAvatar } from './components/users/UserAvatar.svelte';
 export { default as UserCard } from './components/users/UserCard.svelte';
 export { default as UserForm } from './components/users/UserForm.svelte';
 export { default as UserList } from './components/users/UserList.svelte';
-// Weather components
-export * from './components/weather/index.js';
 // Hooks
 export * from './hooks/index.js';
 // Module UI registry
