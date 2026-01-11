@@ -5,6 +5,8 @@
  * a SchemaDiff with the differences.
  */
 
+import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
+import type { DatabaseEngine } from '../schema/ddl/types.js';
 import type {
   ColumnDefinition,
   IndexDefinition,
@@ -13,11 +15,6 @@ import type {
   SchemaDiff,
   SQLDataType,
 } from '../schema/types.js';
-import type { DatabaseEngine } from '../schema/ddl/types.js';
-import {
-  detectEngine,
-  getDDLStrategy,
-} from '../schema/ddl/index.js';
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 /**
