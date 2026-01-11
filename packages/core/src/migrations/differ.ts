@@ -13,11 +13,32 @@ import type {
   SchemaDiff,
   SQLDataType,
 } from '../schema/types.js';
-import type { DDLStrategy, DatabaseEngine } from '../schema/ddl/types.js';
-import { SQLiteStrategy } from '../schema/ddl/sqlite-strategy.js';
-import { DuckDBStrategy } from '../schema/ddl/duckdb-strategy.js';
-import { PostgresStrategy } from '../schema/ddl/postgres-strategy.js';
+import type { DatabaseEngine } from '../schema/ddl/types.js';
+import {
+  detectEngine,
+  getDDLStrategy,
+} from '../schema/ddl/index.js';
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
+
+/**
+ * Valid SQLDataType values for validation
+ */
+const VALID_SQL_DATA_TYPES: Set<SQLDataType> = new Set([
+  'TEXT',
+  'INTEGER',
+  'REAL',
+  'BLOB',
+  'BOOLEAN',
+  'JSON',
+  'TIMESTAMP',
+]);
+
+/**
+ * Check if a string is a valid SQLDataType
+ */
+function isValidSQLDataType(type: string): type is SQLDataType {
+  return VALID_SQL_DATA_TYPES.has(type as SQLDataType);
+}
 
 /**
  * Options for schema comparison
@@ -32,27 +53,13 @@ export interface DiffOptions {
 }
 
 /**
- * Get the DDL strategy for a database engine
- */
-function getDDLStrategy(engine: DatabaseEngine): DDLStrategy {
-  switch (engine) {
-    case 'postgres':
-      return new PostgresStrategy();
-    case 'duckdb':
-      return new DuckDBStrategy();
-    default:
-      return new SQLiteStrategy();
-  }
-}
-
-/**
  * SchemaComparer class for comparing manifest schemas to database
  */
 export class SchemaComparer {
   private db: DatabaseInterface;
   private options: DiffOptions;
   private engine: DatabaseEngine;
-  private ddlStrategy: DDLStrategy;
+  private ddlStrategy: ReturnType<typeof getDDLStrategy>;
 
   constructor(db: DatabaseInterface, options: DiffOptions = {}) {
     this.db = db;
@@ -62,22 +69,10 @@ export class SchemaComparer {
       ignoreTypeMismatches: false,
       ...options,
     };
-    this.engine = this.detectEngine();
+    // Use the shared detectEngine utility for consistent detection
+    // Handles :memory:, .json, and other edge cases
+    this.engine = detectEngine(this.db.url || '');
     this.ddlStrategy = getDDLStrategy(this.engine);
-  }
-
-  /**
-   * Detect database engine from connection URL
-   */
-  private detectEngine(): DatabaseEngine {
-    const url = this.db.url || '';
-    if (url.startsWith('postgres://') || url.startsWith('postgresql://')) {
-      return 'postgres';
-    }
-    if (url.endsWith('.duckdb') || url.includes('duckdb')) {
-      return 'duckdb';
-    }
-    return 'sqlite';
   }
 
   /**
@@ -184,9 +179,18 @@ export class SchemaComparer {
 
         // Map manifest's abstract type to engine-specific type
         // e.g., JSON → TEXT for SQLite, JSON → JSONB for PostgreSQL
-        const expectedEngineType = this.ddlStrategy.mapType(
-          colDef.type as SQLDataType,
-        );
+        // Validate the manifest type before mapping
+        const manifestType = colDef.type;
+        if (!isValidSQLDataType(manifestType)) {
+          // Invalid manifest type - treat as TEXT (safest fallback)
+          console.warn(
+            `[SchemaComparer] Invalid manifest type "${manifestType}" for ${tableName}.${colName}, treating as TEXT`,
+          );
+        }
+        const validatedType: SQLDataType = isValidSQLDataType(manifestType)
+          ? manifestType
+          : 'TEXT';
+        const expectedEngineType = this.ddlStrategy.mapType(validatedType);
         const normalizedExpected = this.normalizeType(expectedEngineType);
         const normalizedActual = this.normalizeType(dbCol.type);
 
@@ -343,7 +347,7 @@ export class SchemaComparer {
    *
    * SMRT controls the data lifecycle for these columns, so we know:
    * - TEXT→JSON: The column stores JSON data serialized as text (arrays, objects)
-   * - INTEGER→BIGINT: Safe widening of integer range
+   * - INTEGER→REAL: Safe widening of integer to floating point
    *
    * @param manifestType - The abstract type from the manifest (e.g., 'JSON')
    * @param dbType - The actual type in the database (e.g., 'TEXT')
@@ -380,7 +384,7 @@ export class SchemaComparer {
    *
    * Engine-specific SQL:
    * - SQLite: TEXT and JSON are equivalent, no-op or comment
-   * - DuckDB: Uses CAST expression
+   * - DuckDB: ALTER COLUMN TYPE (native type conversion)
    * - PostgreSQL: ALTER COLUMN TYPE with USING clause
    */
   private generateTypeUpgradeSQL(
@@ -391,7 +395,12 @@ export class SchemaComparer {
   ): string {
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
-    const targetType = this.ddlStrategy.mapType(manifestType as SQLDataType);
+
+    // Validate manifestType before mapping
+    const validatedType: SQLDataType = isValidSQLDataType(manifestType)
+      ? manifestType
+      : 'TEXT';
+    const targetType = this.ddlStrategy.mapType(validatedType);
 
     switch (this.engine) {
       case 'sqlite':
@@ -432,17 +441,15 @@ export class SchemaComparer {
         return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
 
       case 'duckdb':
-        // DuckDB supports ALTER COLUMN TYPE
-        if (
-          this.normalizeType(manifestType) === 'JSON' &&
-          this.normalizeType(dbType) === 'TEXT'
-        ) {
-          return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
-        }
+        // DuckDB supports ALTER COLUMN TYPE for type conversions
         return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
 
-      default:
-        return `-- Type upgrade for ${quotedCol}: ${dbType} → ${manifestType}`;
+      default: {
+        // Escape special characters in type names for safe comment generation
+        const safeDbType = dbType.replace(/[^\w]/g, '_');
+        const safeManifestType = manifestType.replace(/[^\w]/g, '_');
+        return `-- Type upgrade for ${quotedCol}: ${safeDbType} → ${safeManifestType}`;
+      }
     }
   }
 

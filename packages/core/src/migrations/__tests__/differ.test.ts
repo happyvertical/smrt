@@ -325,6 +325,137 @@ describe('SchemaComparer', () => {
   });
 });
 
+describe('SchemaComparer engine-specific SQL generation', () => {
+  it('should generate PostgreSQL ALTER COLUMN TYPE with USING clause for TEXT→JSON', async () => {
+    // Create a mock database interface that identifies as PostgreSQL
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          tags: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      documents: {
+        tableName: 'documents',
+        ddl: 'CREATE TABLE documents (id TEXT PRIMARY KEY, tags JSON);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          tags: { type: 'JSON' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
+    expect(typeUpgrades[0].sql).toContain('TYPE JSONB');
+    expect(typeUpgrades[0].sql).toContain('USING');
+    expect(typeUpgrades[0].sql).toContain('::jsonb');
+  });
+
+  it('should generate DuckDB ALTER COLUMN TYPE for TEXT→JSON', async () => {
+    // Create a mock database interface that identifies as DuckDB
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          metadata: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const duckComparer = new SchemaComparer(mockDuckDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      records: {
+        tableName: 'records',
+        ddl: 'CREATE TABLE records (id TEXT PRIMARY KEY, metadata JSON);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          metadata: { type: 'JSON' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await duckComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
+    expect(typeUpgrades[0].sql).toContain('TYPE JSON');
+    // DuckDB doesn't need USING clause
+    expect(typeUpgrades[0].sql).not.toContain('USING');
+  });
+
+  it('should generate SQLite no-op comment for TEXT→JSON', async () => {
+    // Create a mock database interface that identifies as SQLite
+    const mockSqliteDb = {
+      url: ':memory:',
+      query: async () => ({ rows: [] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          data: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const sqliteComparer = new SchemaComparer(mockSqliteDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      items: {
+        tableName: 'items',
+        ddl: 'CREATE TABLE items (id TEXT PRIMARY KEY, data JSON);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          data: { type: 'JSON' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await sqliteComparer.compare(manifest);
+
+    // SQLite maps JSON to TEXT, so there should be no changes
+    // (the types match after engine-specific mapping)
+    expect(diff.has_changes).toBe(false);
+  });
+});
+
 describe('hasActionableChanges', () => {
   it('should return true when there are added tables', () => {
     const diff: SchemaDiff = {
