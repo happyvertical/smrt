@@ -330,7 +330,8 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     // Create a mock database interface that identifies as PostgreSQL
     const mockPostgresDb = {
       url: 'postgresql://localhost/test',
-      query: async () => ({ rows: [] }),
+      // Return table name from query so getExistingTables() knows it exists
+      query: async () => ({ rows: [{ table_name: 'documents' }] }),
       getTableSchema: async () => ({
         columns: {
           id: { type: 'TEXT', notnull: true },
@@ -374,7 +375,8 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     // Create a mock database interface that identifies as DuckDB
     const mockDuckDb = {
       url: '/path/to/test.duckdb',
-      query: async () => ({ rows: [] }),
+      // Return table name from query so getExistingTables() knows it exists
+      query: async () => ({ rows: [{ name: 'records' }] }),
       getTableSchema: async () => ({
         columns: {
           id: { type: 'TEXT', notnull: true },
@@ -418,7 +420,8 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     // Create a mock database interface that identifies as SQLite
     const mockSqliteDb = {
       url: ':memory:',
-      query: async () => ({ rows: [] }),
+      // Return table name from query so getExistingTables() knows it exists
+      query: async () => ({ rows: [{ name: 'items' }] }),
       getTableSchema: async () => ({
         columns: {
           id: { type: 'TEXT', notnull: true },
