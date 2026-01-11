@@ -316,15 +316,29 @@ export function formatDataJs(
           // Keep as string if parsing fails
           normalizedData[camelKey] = value;
         }
+      } else if (fieldType === 'integer') {
+        // Convert string numbers to integers for INTEGER fields
+        // SQLite may return "2.0" as a string in some cases
+        const parsed = Number.parseInt(value, 10);
+        normalizedData[camelKey] = Number.isNaN(parsed) ? value : parsed;
+      } else if (fieldType === 'real' || fieldType === 'decimal') {
+        // Convert string numbers to floats for REAL/DECIMAL fields
+        const parsed = Number.parseFloat(value);
+        normalizedData[camelKey] = Number.isNaN(parsed) ? value : parsed;
       } else {
         normalizedData[camelKey] = value;
       }
-    } else if (
-      typeof value === 'number' &&
-      fields?.[camelKey]?.type?.toLowerCase() === 'boolean'
-    ) {
-      // Convert SQLite integers (0/1) to booleans for boolean fields
-      normalizedData[camelKey] = value === 1;
+    } else if (typeof value === 'number') {
+      const fieldType = fields?.[camelKey]?.type?.toLowerCase();
+      if (fieldType === 'boolean') {
+        // Convert SQLite integers (0/1) to booleans for boolean fields
+        normalizedData[camelKey] = value === 1;
+      } else {
+        // Pass through numeric values as-is
+        // Note: In JavaScript, 2.0 === 2 so no conversion needed
+        // Non-integers in INTEGER fields (e.g., 2.9) are kept to surface data issues
+        normalizedData[camelKey] = value;
+      }
     } else {
       normalizedData[camelKey] = value;
     }
