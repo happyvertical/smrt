@@ -164,9 +164,7 @@ export class TenantPermissionOverrideCollection extends SmrtCollection<TenantPer
    */
   async removeAllOverrides(tenantId: string): Promise<number> {
     const overrides = await this.findByTenant(tenantId);
-    for (const override of overrides) {
-      await override.delete();
-    }
+    await Promise.all(overrides.map((override) => override.delete()));
     return overrides.length;
   }
 

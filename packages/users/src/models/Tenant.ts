@@ -99,7 +99,7 @@ export class Tenant extends SmrtObject {
 
   /**
    * Materialized path for efficient tree traversal.
-   * Format: "ancestor-id/parent-id/self-id"
+   * Format: "ancestor-id/parent-id" (path to parent; does not include this tenant's id)
    * Empty string for root tenants.
    * Automatically managed by TenantCollection methods.
    */
@@ -161,12 +161,12 @@ export class Tenant extends SmrtObject {
   }
 
   /**
-   * Check if this tenant has children
-   * Note: This is a hint based on cascadePermissions being true.
-   * Use TenantCollection.getChildren() for accurate child lookup.
+   * Check if this tenant is configured to cascade permissions to children.
+   *
+   * Note: This does NOT indicate whether any child tenants actually exist.
+   * Use TenantCollection.findChildren() for accurate child lookup.
    */
-  hasChildren(): boolean {
-    // This is set by the collection when children exist
+  canCascadeToChildren(): boolean {
     return this.cascadePermissions;
   }
 

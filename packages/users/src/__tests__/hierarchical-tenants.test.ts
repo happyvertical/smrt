@@ -22,7 +22,6 @@ import {
 import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import { MAX_TENANT_HIERARCHY_DEPTH } from '../models/Tenant.js';
 import { PermissionResolver } from '../services/PermissionResolver.js';
-import { TenantPermissionEffect } from '../types/index.js';
 
 describe('Tenant Hierarchy', () => {
   let dbPath: string;
@@ -360,7 +359,7 @@ describe('Tenant Hierarchy', () => {
       await root.save();
 
       const child1 = await tenants.createChild(root.id!, { name: 'Child 1' });
-      const child2 = await tenants.createChild(root.id!, { name: 'Child 2' });
+      await tenants.createChild(root.id!, { name: 'Child 2' });
       await tenants.createChild(child1.id!, { name: 'Grandchild' });
 
       const tree = await tenants.getTree();

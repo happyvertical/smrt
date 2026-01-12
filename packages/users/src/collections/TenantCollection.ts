@@ -169,10 +169,17 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       : tenant.id;
 
     // Find all tenants whose hierarchyPath starts with this prefix
-    // Note: This uses a raw query for LIKE pattern matching
+    // Note: This loads all tenants and filters in memory. For large hierarchies,
+    // consider implementing database-level LIKE query.
     const allTenants = await this.list({});
 
-    return allTenants.filter((t) => t.hierarchyPath?.startsWith(pathPrefix));
+    // Use exact match OR prefix + '/' to ensure proper boundary detection.
+    // Without the '/' check, "ancestor/tenant1" would incorrectly match "ancestor/tenant123".
+    return allTenants.filter(
+      (t) =>
+        t.hierarchyPath === pathPrefix ||
+        t.hierarchyPath?.startsWith(`${pathPrefix}/`),
+    );
   }
 
   /**
@@ -359,10 +366,12 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     // Update all descendants (using the list fetched before changes)
     for (const descendant of descendants) {
       // Update path by replacing old prefix with new prefix
-      descendant.hierarchyPath = descendant.hierarchyPath?.replace(
-        oldPath,
-        newPathForDescendants,
-      );
+      // Use substring for explicit control rather than replace()
+      if (descendant.hierarchyPath?.startsWith(oldPath)) {
+        descendant.hierarchyPath =
+          newPathForDescendants +
+          descendant.hierarchyPath.substring(oldPath.length);
+      }
       // Adjust level by the same delta
       descendant.hierarchyLevel += levelDelta;
       await descendant.save();

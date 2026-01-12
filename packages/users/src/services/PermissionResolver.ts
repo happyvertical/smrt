@@ -13,7 +13,6 @@ import { RolePermissionCollection } from '../collections/RolePermissionCollectio
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import type { Tenant } from '../models/Tenant.js';
-import { TenantPermissionEffect } from '../types/index.js';
 
 /**
  * Permission resolution result
@@ -169,12 +168,8 @@ export class PermissionResolver {
       await this.tenantCollection.getAncestorsFromRoot(tenantId);
     const chain: Tenant[] = [...ancestors, tenant];
 
-    // Build a map of permission IDs to slugs for the final result
+    // Build a set of permission IDs for batch lookup
     const allPermissionIds = new Set<string>();
-    const permissionEffects = new Map<
-      string,
-      { effect: TenantPermissionEffect; tenantId: string }
-    >();
 
     // Process each tenant in the chain
     let inheritedPermissions = new Set<string>();
@@ -201,20 +196,6 @@ export class PermissionResolver {
       // Collect all permission IDs we need to look up
       for (const id of overrides.grantedPermissionIds) allPermissionIds.add(id);
       for (const id of overrides.deniedPermissionIds) allPermissionIds.add(id);
-
-      // Track explicit effects
-      for (const permId of overrides.grantedPermissionIds) {
-        permissionEffects.set(permId, {
-          effect: TenantPermissionEffect.GRANT,
-          tenantId: current.id!,
-        });
-      }
-      for (const permId of overrides.deniedPermissionIds) {
-        permissionEffects.set(permId, {
-          effect: TenantPermissionEffect.DENY,
-          tenantId: current.id!,
-        });
-      }
 
       // Build this tenant's effective permissions
       const currentPermissions = new Set<string>();
