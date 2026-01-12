@@ -10,6 +10,9 @@ import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { MembershipOverrideCollection } from '../collections/MembershipOverrideCollection.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
+import { TenantCollection } from '../collections/TenantCollection.js';
+import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
+import type { Tenant } from '../models/Tenant.js';
 
 /**
  * Permission resolution result
@@ -28,16 +31,41 @@ export interface PermissionResolutionResult {
 }
 
 /**
+ * Tenant permission inheritance chain result
+ */
+export interface TenantPermissionInheritanceResult {
+  /** Effective tenant permissions (slugs) after inheritance resolution */
+  permissions: Set<string>;
+  /** Tenant IDs that contributed to the inheritance chain */
+  contributingTenantIds: string[];
+  /** Whether inheritance was active (at least one tenant in chain had inheritPermissions: true) */
+  inheritanceActive: boolean;
+}
+
+/**
  * PermissionResolver resolves the effective permissions for a user in a tenant.
  *
  * Resolution algorithm:
- * 1. Get user's membership in the tenant
- * 2. Get base permissions from membership's role
- * 3. Get user's groups in the tenant
- * 4. Add permissions from group roles
- * 5. Apply membership overrides (grant/deny)
+ * 1. Resolve tenant hierarchy permissions (if hierarchical tenants are used)
+ * 2. Get user's membership in the tenant
+ * 3. Get base permissions from membership's role
+ * 4. Get user's groups in the tenant
+ * 5. Add permissions from group roles
+ * 6. Apply membership overrides (grant/deny)
  *
- * DENY overrides take precedence over GRANT overrides.
+ * DENY overrides take precedence over GRANT overrides at every level.
+ *
+ * ## Hierarchical Tenant Permissions
+ *
+ * When tenants are organized hierarchically, permissions can cascade from
+ * parent tenants to child tenants. The cascade is controlled by:
+ * - Parent's `cascadePermissions`: If true, parent pushes permissions down
+ * - Child's `inheritPermissions`: If true, child accepts parent's permissions
+ *
+ * Child tenants can override inherited permissions using TenantPermissionOverride:
+ * - INHERIT: Use parent's value (default)
+ * - GRANT: Explicitly grant at this level
+ * - DENY: Explicitly block (even if parent grants)
  *
  * @example
  * ```typescript
@@ -50,6 +78,9 @@ export interface PermissionResolutionResult {
  * // Get all permissions
  * const result = await resolver.resolvePermissions(userId, tenantId);
  * console.log(result.permissions); // Set<string>
+ *
+ * // Resolve tenant-level permissions only (without user context)
+ * const tenantPerms = await resolver.resolveTenantPermissions(tenantId);
  * ```
  */
 export class PermissionResolver {
@@ -60,6 +91,8 @@ export class PermissionResolver {
   private groupMemberCollection!: GroupMemberCollection;
   private groupRoleCollection!: GroupRoleCollection;
   private permissionCollection!: PermissionCollection;
+  private tenantCollection!: TenantCollection;
+  private tenantPermissionOverrideCollection!: TenantPermissionOverrideCollection;
 
   constructor(options: SmrtClassOptions) {
     this.options = options;
@@ -94,6 +127,160 @@ export class PermissionResolver {
     this.permissionCollection = await (PermissionCollection as any).create(
       this.options,
     );
+    this.tenantCollection = await (TenantCollection as any).create(
+      this.options,
+    );
+    this.tenantPermissionOverrideCollection = await (
+      TenantPermissionOverrideCollection as any
+    ).create(this.options);
+  }
+
+  // ============= Tenant Hierarchy Permission Resolution =============
+
+  /**
+   * Resolve effective permissions for a tenant, considering hierarchy inheritance.
+   *
+   * Algorithm:
+   * 1. Get the tenant and its ancestors (from root to immediate parent)
+   * 2. Walk down the chain, building up permissions:
+   *    - Start with root tenant's permissions
+   *    - For each child: if parent.cascadePermissions && child.inheritPermissions:
+   *      - Merge parent's permissions
+   *      - Apply child's overrides (GRANT adds, DENY removes)
+   * 3. Return the final effective permission set
+   */
+  async resolveTenantPermissions(
+    tenantId: string,
+  ): Promise<TenantPermissionInheritanceResult> {
+    const result: TenantPermissionInheritanceResult = {
+      permissions: new Set<string>(),
+      contributingTenantIds: [],
+      inheritanceActive: false,
+    };
+
+    const tenant = await this.tenantCollection.get({ id: tenantId });
+    if (!tenant) {
+      return result;
+    }
+
+    // Get the inheritance chain from root to this tenant
+    const ancestors =
+      await this.tenantCollection.getAncestorsFromRoot(tenantId);
+    const chain: Tenant[] = [...ancestors, tenant];
+
+    // Build a set of permission IDs for batch lookup
+    const allPermissionIds = new Set<string>();
+
+    // Process each tenant in the chain
+    let inheritedPermissions = new Set<string>();
+
+    for (let i = 0; i < chain.length; i++) {
+      const current = chain[i];
+      const isFirst = i === 0;
+      const previous = isFirst ? null : chain[i - 1];
+
+      // Check if inheritance is active for this tenant
+      const shouldInherit =
+        !isFirst && previous?.cascadePermissions && current.inheritPermissions;
+
+      if (shouldInherit) {
+        result.inheritanceActive = true;
+      }
+
+      // Get this tenant's permission overrides
+      const overrides =
+        await this.tenantPermissionOverrideCollection.getOverridesByEffect(
+          current.id!,
+        );
+
+      // Collect all permission IDs we need to look up
+      for (const id of overrides.grantedPermissionIds) allPermissionIds.add(id);
+      for (const id of overrides.deniedPermissionIds) allPermissionIds.add(id);
+
+      // Build this tenant's effective permissions
+      const currentPermissions = new Set<string>();
+
+      // Start with inherited permissions if applicable
+      if (shouldInherit) {
+        for (const permId of inheritedPermissions) {
+          currentPermissions.add(permId);
+        }
+        result.contributingTenantIds.push(current.id!);
+      }
+
+      // Apply grants
+      for (const permId of overrides.grantedPermissionIds) {
+        currentPermissions.add(permId);
+        if (!result.contributingTenantIds.includes(current.id!)) {
+          result.contributingTenantIds.push(current.id!);
+        }
+      }
+
+      // Apply denies (remove)
+      for (const permId of overrides.deniedPermissionIds) {
+        currentPermissions.delete(permId);
+      }
+
+      // This becomes the inherited set for the next iteration
+      inheritedPermissions = currentPermissions;
+    }
+
+    // Batch fetch all permissions to get slugs
+    if (allPermissionIds.size > 0) {
+      const permissionsMap = await this.permissionCollection.findByIds(
+        Array.from(allPermissionIds),
+      );
+
+      // Convert IDs to slugs in the result
+      for (const permId of inheritedPermissions) {
+        const perm = permissionsMap.get(permId);
+        if (perm?.slug) {
+          result.permissions.add(perm.slug);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get the inheritance chain for a tenant (for debugging/display purposes)
+   */
+  async getTenantInheritanceChain(
+    tenantId: string,
+  ): Promise<Array<{ tenant: Tenant; inherits: boolean; cascades: boolean }>> {
+    const tenant = await this.tenantCollection.get({ id: tenantId });
+    if (!tenant) {
+      return [];
+    }
+
+    const ancestors =
+      await this.tenantCollection.getAncestorsFromRoot(tenantId);
+    const chain: Array<{
+      tenant: Tenant;
+      inherits: boolean;
+      cascades: boolean;
+    }> = [];
+
+    for (let i = 0; i < ancestors.length; i++) {
+      const current = ancestors[i];
+      const next = i + 1 < ancestors.length ? ancestors[i + 1] : tenant;
+
+      chain.push({
+        tenant: current,
+        inherits: false, // Root or ancestor doesn't inherit in this context
+        cascades: current.cascadePermissions && next.inheritPermissions,
+      });
+    }
+
+    // Add the target tenant
+    chain.push({
+      tenant: tenant,
+      inherits: tenant.inheritPermissions && ancestors.length > 0,
+      cascades: tenant.cascadePermissions,
+    });
+
+    return chain;
   }
 
   /**

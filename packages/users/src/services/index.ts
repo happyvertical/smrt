@@ -6,6 +6,7 @@
 export {
   type PermissionResolutionResult,
   PermissionResolver,
+  type TenantPermissionInheritanceResult,
 } from './PermissionResolver.js';
 
 export {

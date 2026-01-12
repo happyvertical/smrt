@@ -9,6 +9,7 @@ export {
   MembershipStatus,
   OverrideEffect,
   SessionStatus,
+  TenantPermissionEffect,
   TenantStatus,
   UserStatus,
 } from '@happyvertical/smrt-types';

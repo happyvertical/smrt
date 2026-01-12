@@ -19,7 +19,15 @@ export {
   type CreateSessionOptions,
   SessionCollection,
 } from './SessionCollection.js';
-export { TenantCollection } from './TenantCollection.js';
+export {
+  type CreateChildTenantOptions,
+  TenantCollection,
+  TenantHierarchyError,
+} from './TenantCollection.js';
+export {
+  TenantPermissionOverrideCollection,
+  type TenantPermissionOverrideResult,
+} from './TenantPermissionOverrideCollection.js';
 // Core collections
 export {
   type GetOrCreateFromOidcOptions,

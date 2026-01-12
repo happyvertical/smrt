@@ -41,6 +41,7 @@
 
 // Collections
 export {
+  type CreateChildTenantOptions,
   type CreateSessionOptions,
   type GetOrCreateFromOidcOptions,
   GroupCollection,
@@ -55,6 +56,9 @@ export {
   RolePermissionCollection,
   SessionCollection,
   TenantCollection,
+  TenantHierarchyError,
+  TenantPermissionOverrideCollection,
+  type TenantPermissionOverrideResult,
   UserCollection,
 } from './collections/index.js';
 // Models
@@ -64,6 +68,7 @@ export {
   GroupMember,
   GroupRole,
   generateSessionId,
+  MAX_TENANT_HIERARCHY_DEPTH,
   Membership,
   MembershipOverride,
   Permission,
@@ -71,6 +76,7 @@ export {
   RolePermission,
   Session,
   Tenant,
+  TenantPermissionOverride,
   User,
 } from './models/index.js';
 
@@ -82,6 +88,7 @@ export {
   type SessionContext,
   SessionService,
   type SessionServiceOptions,
+  type TenantPermissionInheritanceResult,
   TenantService,
   type TenantWithOwnershipResult,
 } from './services/index.js';
@@ -95,6 +102,7 @@ export {
   MembershipStatus,
   OverrideEffect,
   SessionStatus,
+  TenantPermissionEffect,
   type TenantPolicy,
   type TenantPolicyMode,
   TenantStatus,
