@@ -57,6 +57,16 @@
       "svelte": "./dist/components/weather/index.js",
       "default": "./dist/components/weather/index.js"
     },
+    "./jobs": {
+      "types": "./dist/components/jobs/index.d.ts",
+      "svelte": "./dist/components/jobs/index.js",
+      "default": "./dist/components/jobs/index.js"
+    },
+    "./agents": {
+      "types": "./dist/components/agents/index.d.ts",
+      "svelte": "./dist/components/agents/index.js",
+      "default": "./dist/components/agents/index.js"
+    },
     "./styles/tokens.css": {
       "default": "./dist/styles/tokens.css"
     },
@@ -106,11 +116,15 @@
   "peerDependencies": {
     "svelte": "^5.18.2",
     "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@happyvertical/smrt-agents": {
+      "optional": true
+    },
+    "@happyvertical/smrt-jobs": {
       "optional": true
     },
     "@happyvertical/smrt-profiles": {
