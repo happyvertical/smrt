@@ -363,6 +363,74 @@ export interface SmartObjectConfig {
   };
 
   /**
+   * Multi-tenancy configuration
+   *
+   * Enable automatic tenant isolation for this class.
+   * When enabled, a `tenantId` field is auto-injected and queries are
+   * automatically filtered by tenant context.
+   *
+   * Requires `@happyvertical/smrt-tenancy` package to be installed
+   * and `enableTenancy()` to be called at app startup.
+   *
+   * @example Simple boolean flag (uses defaults)
+   * ```typescript
+   * @smrt({ tenantScoped: true })
+   * class Account extends SmrtObject {
+   *   // tenantId field auto-injected
+   *   name: string = '';
+   * }
+   * ```
+   *
+   * @example With custom options
+   * ```typescript
+   * @smrt({
+   *   tenantScoped: {
+   *     mode: 'optional',  // Works with or without tenant context
+   *     allowSuperAdminBypass: true
+   *   }
+   * })
+   * class AuditLog extends SmrtObject { }
+   * ```
+   *
+   * @see https://github.com/happyvertical/smrt/issues/688
+   */
+  tenantScoped?:
+    | boolean
+    | {
+        /**
+         * Tenancy mode for this class
+         * - 'required': Must have tenant context for all operations (default)
+         * - 'optional': Works with or without tenant context
+         * @default 'required'
+         */
+        mode?: 'required' | 'optional';
+
+        /**
+         * Field name for the tenant ID
+         * @default 'tenantId'
+         */
+        field?: string;
+
+        /**
+         * Auto-filter all queries by tenant
+         * @default true
+         */
+        autoFilter?: boolean;
+
+        /**
+         * Auto-populate tenant ID from context on create
+         * @default true
+         */
+        autoPopulate?: boolean;
+
+        /**
+         * Allow super admin bypass for this class
+         * @default false
+         */
+        allowSuperAdminBypass?: boolean;
+      };
+
+  /**
    * Synchronous manifest for build-time imports (Issue #270 Phase 1)
    * Allows passing manifest directly instead of async loading
    * @internal Advanced usage - typically set by build tools
@@ -440,6 +508,14 @@ interface RegisteredClass {
   inheritedFields?: Map<string, any>;
   /** Merged methods from entire inheritance chain (cached, includes parent methods) */
   inheritedMethods?: Map<string, any>;
+  /** Normalized tenant scoping configuration (Issue #688) */
+  tenantScopedConfig?: {
+    mode: 'required' | 'optional';
+    field: string;
+    autoFilter: boolean;
+    autoPopulate: boolean;
+    allowSuperAdminBypass: boolean;
+  };
 }
 
 /**
@@ -1060,6 +1136,43 @@ export class ObjectRegistry {
       }
     }
 
+    // Handle tenantScoped configuration (Issue #688)
+    // Normalize config and inject tenantId field if enabled
+    let tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined;
+    if (config.tenantScoped) {
+      // Normalize boolean or object config into full options
+      const tenantOpts =
+        typeof config.tenantScoped === 'boolean' ? {} : config.tenantScoped;
+      tenantScopedConfig = {
+        mode: tenantOpts.mode ?? 'required',
+        field: tenantOpts.field ?? 'tenantId',
+        autoFilter: tenantOpts.autoFilter ?? true,
+        autoPopulate: tenantOpts.autoPopulate ?? true,
+        allowSuperAdminBypass: tenantOpts.allowSuperAdminBypass ?? false,
+      };
+
+      // Inject tenantId field if not already defined
+      const fieldName = tenantScopedConfig.field;
+      if (!fields.has(fieldName)) {
+        fields.set(fieldName, {
+          type: 'foreignKey',
+          related: 'Tenant',
+          required: tenantScopedConfig.mode === 'required',
+          _meta: {
+            reference: 'Tenant',
+            sqlType: 'TEXT',
+            __tenancy: {
+              isTenantIdField: true,
+              ...tenantScopedConfig,
+            },
+          },
+        });
+        console.log(
+          `[registry] ✅ Injected ${fieldName} field for tenant-scoped class ${name}`,
+        );
+      }
+    }
+
     if (manifestEntry?.methods) {
       // Load method definitions from manifest (for custom CLI/API/MCP generation)
       for (const [methodName, methodDef] of Object.entries(
@@ -1204,6 +1317,7 @@ export class ObjectRegistry {
       packageName, // Store package name from manifest for getPackageName() lookup
       sourceFilePath, // Store source file for collision detection (Issue #555)
       extends: extendsClass, // Capture parent class name from manifest OR prototype chain
+      tenantScopedConfig, // Multi-tenancy config (Issue #688)
       // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
       // it lazily using the `extends` field. This ensures correct chain for both
       // decorator-registered and manifest-loaded classes.
@@ -3385,6 +3499,41 @@ export class ObjectRegistry {
     }
 
     return 'cti'; // Default strategy
+  }
+
+  /**
+   * Get the tenant scoping configuration for a class (Issue #688)
+   *
+   * Returns the normalized tenant scoping configuration if the class
+   * was registered with `tenantScoped: true` or a tenantScoped config object.
+   *
+   * @param className - Name of the class to check
+   * @returns Tenant scoping config or undefined if not tenant-scoped
+   *
+   * @example
+   * ```typescript
+   * @smrt({ tenantScoped: true })
+   * class Document extends SmrtObject { }
+   *
+   * const config = ObjectRegistry.getTenantScopedConfig('Document');
+   * // { mode: 'required', field: 'tenantId', autoFilter: true, autoPopulate: true, allowSuperAdminBypass: false }
+   * ```
+   */
+  static getTenantScopedConfig(
+    className: string,
+  ): RegisteredClass['tenantScopedConfig'] | undefined {
+    const registered = ObjectRegistry.findClass(className);
+    return registered?.tenantScopedConfig;
+  }
+
+  /**
+   * Check if a class is tenant-scoped (Issue #688)
+   *
+   * @param className - Name of the class to check
+   * @returns true if the class has tenantScoped configuration
+   */
+  static isTenantScoped(className: string): boolean {
+    return ObjectRegistry.getTenantScopedConfig(className) !== undefined;
   }
 
   /**
