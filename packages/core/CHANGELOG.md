@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.2
+
+### Patch Changes
+
+- ### Features
+
+  - add @smrt({ tenantScoped }) configuration option (#692) (core)
+  - @happyvertical/smrt-scanner@0.19.2
+  - @happyvertical/smrt-config@0.19.2
+  - @happyvertical/smrt-types@0.19.2
+
 ## 0.19.1
 
 ### Patch Changes
