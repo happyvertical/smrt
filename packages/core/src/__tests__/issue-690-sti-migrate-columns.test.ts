@@ -25,7 +25,6 @@ import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
-import type { Meta } from '../types';
 
 /**
  * STI base class - Event
@@ -36,10 +35,6 @@ class Issue690Event extends SmrtObject {
   startDate: Date = new Date();
   endDate: Date = new Date();
   location: string = '';
-}
-
-class Issue690EventCollection extends SmrtCollection<Issue690Event> {
-  static readonly _itemClass = Issue690Event;
 }
 
 /**
