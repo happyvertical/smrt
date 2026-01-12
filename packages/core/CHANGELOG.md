@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.3
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve STI base tableName in getAllSchemas for subclasses (#693) (#694) (core)
+  - @happyvertical/smrt-scanner@0.19.3
+  - @happyvertical/smrt-config@0.19.3
+  - @happyvertical/smrt-types@0.19.3
+
 ## 0.19.2
 
 ### Patch Changes
