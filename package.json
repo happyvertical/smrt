@@ -76,7 +76,8 @@
     "overrides": {
       "@happyvertical/smrt-types": "workspace:*",
       "@happyvertical/smrt-config": "workspace:*",
-      "@happyvertical/smrt-core": "workspace:*"
+      "@happyvertical/smrt-core": "workspace:*",
+      "@happyvertical/jobs": "link:../sdk/packages/jobs"
     }
   }
 }

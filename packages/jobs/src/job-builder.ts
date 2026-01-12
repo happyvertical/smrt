@@ -14,7 +14,7 @@ export type Priority = 'critical' | 'high' | 'normal' | 'low' | number;
 /**
  * Convert priority to numeric value
  */
-function priorityToNumber(priority: Priority): number {
+export function priorityToNumber(priority: Priority): number {
   if (typeof priority === 'number') return priority;
   switch (priority) {
     case 'critical':
@@ -33,7 +33,7 @@ function priorityToNumber(priority: Priority): number {
 /**
  * Parse delay string to milliseconds
  */
-function parseDelay(delay: string | number): number {
+export function parseDelay(delay: string | number): number {
   if (typeof delay === 'number') return delay;
 
   const match = delay.match(/^(\d+)(ms|s|m|h|d)?$/);

@@ -32,10 +32,12 @@
  * ```
  */
 
-// Fluent job builder
+// Fluent job builder and utilities
 export {
   JobBuilder,
   type Priority,
+  parseDelay,
+  priorityToNumber,
 } from './job-builder.js';
 
 // Job handle for tracking
@@ -62,6 +64,15 @@ export {
   type TaskRunnerConfig,
   type TaskRunnerEvents,
 } from './runner.js';
+
+// Schedule runner (for cron-based agent scheduling)
+export {
+  createScheduleRunner,
+  type ScheduleInfo,
+  ScheduleRunner,
+  type ScheduleRunnerConfig,
+  type ScheduleRunnerEvents,
+} from './schedule-runner.js';
 // Core job model
 export {
   type JobStatus,

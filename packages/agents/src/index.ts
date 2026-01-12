@@ -79,6 +79,11 @@ export type {
   QueryFn,
 } from './interests.js';
 export { mergeFilters, normalizeSort } from './interests.js';
+export {
+  AgentSchedule,
+  AgentScheduleCollection,
+  type ScheduleStatus,
+} from './schedule.js';
 export type { AgentStatusType } from './types.js';
 
 // UI types and registry for admin panels

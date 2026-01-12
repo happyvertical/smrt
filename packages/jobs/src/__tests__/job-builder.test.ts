@@ -1,24 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { JobBuilder, type Priority } from '../job-builder.js';
+import { type Priority, parseDelay, priorityToNumber } from '../job-builder.js';
 
-describe('JobBuilder', () => {
-  describe('priority conversion', () => {
-    it('converts string priorities to numbers', () => {
-      // Test the priority conversion logic (exposed indirectly through builder)
-      const priorities: Record<Priority, number> = {
-        critical: 100,
-        high: 75,
-        normal: 50,
-        low: 25,
-      };
+describe('JobBuilder utilities', () => {
+  describe('priorityToNumber', () => {
+    it('converts string priorities to correct numbers', () => {
+      expect(priorityToNumber('critical')).toBe(100);
+      expect(priorityToNumber('high')).toBe(75);
+      expect(priorityToNumber('normal')).toBe(50);
+      expect(priorityToNumber('low')).toBe(25);
+    });
 
-      for (const [name, expected] of Object.entries(priorities)) {
-        expect(expected).toBeGreaterThan(0);
-      }
+    it('passes through numeric priorities', () => {
+      expect(priorityToNumber(10)).toBe(10);
+      expect(priorityToNumber(99)).toBe(99);
     });
   });
 
-  describe('delay parsing', () => {
+  describe('parseDelay', () => {
     it('parses milliseconds', () => {
       expect(parseDelay('100ms')).toBe(100);
       expect(parseDelay('1000ms')).toBe(1000);
@@ -47,34 +45,13 @@ describe('JobBuilder', () => {
       expect(parseDelay(5000)).toBe(5000);
     });
 
-    it('returns 0 for invalid format', () => {
-      expect(parseDelay('invalid')).toBe(0);
+    it('throws error for invalid format', () => {
+      expect(() => parseDelay('invalid')).toThrow('Invalid delay format');
+      expect(() => parseDelay('abc123')).toThrow('Invalid delay format');
+    });
+
+    it('defaults to milliseconds when no unit provided', () => {
+      expect(parseDelay('500')).toBe(500);
     });
   });
 });
-
-// Helper to test delay parsing (mirrors the internal function)
-function parseDelay(delay: string | number): number {
-  if (typeof delay === 'number') return delay;
-
-  const match = delay.match(/^(\d+)(ms|s|m|h|d)?$/);
-  if (!match) return 0;
-
-  const value = parseInt(match[1], 10);
-  const unit = match[2] || 'ms';
-
-  switch (unit) {
-    case 'ms':
-      return value;
-    case 's':
-      return value * 1000;
-    case 'm':
-      return value * 60 * 1000;
-    case 'h':
-      return value * 60 * 60 * 1000;
-    case 'd':
-      return value * 24 * 60 * 60 * 1000;
-    default:
-      return value;
-  }
-}

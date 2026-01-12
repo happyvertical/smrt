@@ -1,6 +1,11 @@
 import type { SmrtObject } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { JobBuilder } from './job-builder.js';
+import {
+  JobBuilder,
+  type Priority,
+  parseDelay,
+  priorityToNumber,
+} from './job-builder.js';
 import type { JobHandle } from './job-handle.js';
 import { SmrtJobCollection } from './smrt-job.js';
 
@@ -82,36 +87,6 @@ async function getJobCollection(
   return collection;
 }
 
-const priorityMap: Record<string, number> = {
-  critical: 100,
-  high: 75,
-  normal: 50,
-  low: 25,
-};
-
-function parseDelayStr(delay: string): number {
-  const match = delay.match(/^(\d+)(ms|s|m|h|d)?$/);
-  if (!match) return 0;
-
-  const value = parseInt(match[1], 10);
-  const unit = match[2] || 'ms';
-
-  switch (unit) {
-    case 'ms':
-      return value;
-    case 's':
-      return value * 1000;
-    case 'm':
-      return value * 60 * 1000;
-    case 'h':
-      return value * 60 * 60 * 1000;
-    case 'd':
-      return value * 24 * 60 * 60 * 1000;
-    default:
-      return value;
-  }
-}
-
 // Type for a SmrtObject constructor
 type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
 
@@ -186,7 +161,7 @@ export function withBackgroundJobs<T extends SmrtObjectConstructor>(
           return this;
         },
         delay(d: string | number) {
-          this._delay = typeof d === 'number' ? d : parseDelayStr(d);
+          this._delay = parseDelay(d);
           return this;
         },
         runAt(date: Date) {
@@ -201,9 +176,8 @@ export function withBackgroundJobs<T extends SmrtObjectConstructor>(
           this._retryStrategy = strategy;
           return this;
         },
-        priority(level: string | number) {
-          this._priority =
-            typeof level === 'number' ? level : (priorityMap[level] ?? 50);
+        priority(level: Priority) {
+          this._priority = priorityToNumber(level);
           return this;
         },
         timeout(ms: number) {

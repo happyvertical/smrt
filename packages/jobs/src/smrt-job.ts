@@ -193,19 +193,20 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     options: { limit?: number; queues?: string[] } = {},
   ): Promise<SmrtJob[]> {
     const now = new Date().toISOString();
-    const whereConditions: string[] = [
-      "status = 'pending'",
-      `run_at <= '${now}'`,
-    ];
+    const whereConditions: string[] = ["status = 'pending'", 'run_at <= ?'];
+    const params: unknown[] = [now];
 
     if (options.queues?.length) {
-      const queueList = options.queues.map((q) => `'${q}'`).join(', ');
-      whereConditions.push(`queue IN (${queueList})`);
+      const placeholders = options.queues.map(() => '?').join(', ');
+      whereConditions.push(`queue IN (${placeholders})`);
+      params.push(...options.queues);
     }
+
+    params.push(options.limit || 100);
 
     return this.query(
       `SELECT * FROM _smrt_jobs WHERE ${whereConditions.join(' AND ')} ORDER BY priority DESC, run_at ASC LIMIT ?`,
-      [options.limit || 100],
+      params,
     );
   }
 
@@ -219,11 +220,12 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     failed: number;
     cancelled: number;
   }> {
-    const queueFilter = queue ? `WHERE queue = '${queue}'` : '';
+    const query = queue
+      ? 'SELECT status, COUNT(*) as count FROM _smrt_jobs WHERE queue = ? GROUP BY status'
+      : 'SELECT status, COUNT(*) as count FROM _smrt_jobs GROUP BY status';
+    const params = queue ? [queue] : [];
 
-    const result = await this._db.query(
-      `SELECT status, COUNT(*) as count FROM _smrt_jobs ${queueFilter} GROUP BY status`,
-    );
+    const result = await this._db.query(query, params);
 
     const counts: Record<string, number> = {};
     for (const row of result.rows) {
