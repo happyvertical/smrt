@@ -25,6 +25,7 @@ export {
   generateSessionId,
   Session,
 } from './Session.js';
-export { Tenant } from './Tenant.js';
+export { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from './Tenant.js';
+export { TenantPermissionOverride } from './TenantPermissionOverride.js';
 // Core entities
 export { isValidEmail, normalizeEmail, User } from './User.js';

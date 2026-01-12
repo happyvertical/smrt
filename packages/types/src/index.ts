@@ -20,6 +20,7 @@ export {
   MembershipStatus,
   OverrideEffect,
   SessionStatus,
+  TenantPermissionEffect,
   TenantStatus,
   UserStatus,
 } from './user.js';

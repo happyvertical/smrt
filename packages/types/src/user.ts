@@ -77,3 +77,20 @@ export enum OverrideEffect {
   /** Deny the permission */
   DENY = 'deny',
 }
+
+// ============= Tenant Permission Override =============
+
+/**
+ * Effect of a tenant-level permission override
+ *
+ * Used for hierarchical tenant permission inheritance.
+ * INHERIT uses the parent tenant's value, GRANT/DENY explicitly set the permission.
+ */
+export enum TenantPermissionEffect {
+  /** Inherit from parent tenant (default behavior) */
+  INHERIT = 'inherit',
+  /** Explicitly grant at this tenant level */
+  GRANT = 'grant',
+  /** Explicitly deny at this tenant level (blocks inheritance) */
+  DENY = 'deny',
+}
