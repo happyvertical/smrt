@@ -44,9 +44,9 @@ import {
   getPackageName,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
-import type { SmartObjectManifest } from './scanner/types.js';
+import type { FieldDefinition, SmartObjectManifest } from './scanner/types.js';
 import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
-import { classnameToTablename, tableNameFromClass } from './utils';
+import { classnameToTablename, tableNameFromClass, toSnakeCase } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
 /**
@@ -2328,25 +2328,32 @@ export class ObjectRegistry {
       if (registered.schema?.tableName) {
         const tableName = registered.schema.tableName;
 
+        // Get columns from schema, or generate from fields if schema.columns is empty
+        // This handles STI subclasses that have fields but no pre-generated schema
+        // (Issue #690: db:migrate doesn't detect STI subclass columns)
+        let columnsToUse = registered.schema.columns || {};
+        if (
+          Object.keys(columnsToUse).length === 0 &&
+          registered.fields.size > 0
+        ) {
+          columnsToUse = ObjectRegistry.fieldsToColumns(registered.fields);
+        }
+
         if (!tableSchemas[tableName]) {
           // First class for this table - initialize
           tableSchemas[tableName] = {
             tableName,
-            columns: { ...(registered.schema.columns || {}) },
+            columns: { ...columnsToUse },
             indexes: [],
             ddl: registered.schema.ddl || '',
           };
         } else {
           // Additional class sharing this table (STI scenario)
           // Merge columns from this class into the existing schema
-          if (registered.schema.columns) {
-            for (const [colName, colDef] of Object.entries(
-              registered.schema.columns,
-            )) {
-              if (!tableSchemas[tableName].columns[colName]) {
-                // New column from this subtype - add it
-                tableSchemas[tableName].columns[colName] = colDef;
-              }
+          for (const [colName, colDef] of Object.entries(columnsToUse)) {
+            if (!tableSchemas[tableName].columns[colName]) {
+              // New column from this subtype - add it
+              tableSchemas[tableName].columns[colName] = colDef;
             }
           }
         }
@@ -2512,6 +2519,106 @@ export class ObjectRegistry {
 
     // Fallback: quote as string
     return `'${String(value).replace(/'/g, "''")}'`;
+  }
+
+  /**
+   * Convert a Map of field definitions to column definitions
+   *
+   * Used by getAllSchemas() to generate columns from fields when a class
+   * has no pre-generated schema (e.g., STI subclasses registered from manifest).
+   *
+   * @param fields - Map of field name to field definition
+   * @returns Record of column name to column definition
+   * @private
+   */
+  private static fieldsToColumns(
+    fields: Map<string, FieldDefinition>,
+  ): Record<string, ColumnDefinition> {
+    const columns: Record<string, ColumnDefinition> = {};
+
+    for (const [fieldName, fieldDef] of fields) {
+      // Skip id, timestamps - they're on the base table
+      if (
+        fieldName === 'id' ||
+        fieldName === 'created_at' ||
+        fieldName === 'updated_at' ||
+        fieldName === 'slug' ||
+        fieldName === 'context'
+      ) {
+        continue;
+      }
+
+      // Skip transient fields (non-persisted)
+      if (fieldDef.transient || fieldDef._meta?.transient) {
+        continue;
+      }
+
+      // Skip relationship fields that don't create columns
+      // oneToMany and manyToMany are relationship metadata, not actual database columns
+      if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany') {
+        continue;
+      }
+
+      // Skip meta fields - they're stored in _meta_data JSONB column
+      if (fieldDef.type === 'meta') {
+        continue;
+      }
+
+      // Map field type to SQL type
+      const sqlType = ObjectRegistry.mapFieldTypeToSQL(fieldDef.type);
+
+      const column: ColumnDefinition = {
+        type: sqlType,
+        notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
+        description: fieldDef.description,
+      };
+
+      // Handle default values
+      if (fieldDef.default !== undefined) {
+        column.defaultValue = fieldDef.default;
+      }
+
+      // Handle foreign keys
+      if (fieldDef.type === 'foreignKey' && fieldDef.related) {
+        const [table, columnName = 'id'] = fieldDef.related.split('.');
+        column.foreignKey = {
+          table: classnameToTablename(table),
+          column: columnName,
+          onDelete: 'CASCADE',
+          onUpdate: 'CASCADE',
+        };
+      }
+
+      // Use snake_case for column names
+      columns[toSnakeCase(fieldName)] = column;
+    }
+
+    return columns;
+  }
+
+  /**
+   * Map field type to SQL data type
+   * @private
+   */
+  private static mapFieldTypeToSQL(fieldType: FieldDefinition['type']): string {
+    switch (fieldType) {
+      case 'text':
+        return 'TEXT';
+      case 'integer':
+        return 'INTEGER';
+      case 'decimal':
+        return 'REAL';
+      case 'boolean':
+        return 'BOOLEAN';
+      case 'datetime':
+        return 'TIMESTAMP';
+      case 'json':
+        return 'JSON';
+      case 'foreignKey':
+        return 'TEXT';
+      default:
+        return 'TEXT';
+    }
   }
 
   /**
