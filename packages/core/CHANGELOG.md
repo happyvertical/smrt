@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - detect STI subclass columns in db:migrate (#690) (#691) (core)
+  - @happyvertical/smrt-scanner@0.19.1
+  - @happyvertical/smrt-config@0.19.1
+  - @happyvertical/smrt-types@0.19.1
+
 ## 1.0.0
 
 ### Minor Changes
