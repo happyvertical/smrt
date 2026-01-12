@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "vite build",
-    "test": "smrt test"
+    "test": "npx vitest run"
   },
   "dependencies": {
     "@happyvertical/jobs": "^0.66.0",
