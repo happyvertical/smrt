@@ -113,6 +113,60 @@ export class TenantPermissionOverrideCollection extends SmrtCollection<TenantPer
   }
 
   /**
+   * Batch get all overrides for multiple tenants, organized by effect.
+   * Fetches all overrides in a single query to avoid N+1 query problem.
+   *
+   * @param tenantIds - Array of tenant IDs to fetch overrides for
+   * @returns Map of tenant ID to their permission override results
+   */
+  async getOverridesByEffectBatch(
+    tenantIds: string[],
+  ): Promise<Map<string, TenantPermissionOverrideResult>> {
+    const resultMap = new Map<string, TenantPermissionOverrideResult>();
+
+    // Initialize empty results for all tenant IDs
+    for (const tenantId of tenantIds) {
+      resultMap.set(tenantId, {
+        grantedPermissionIds: [],
+        deniedPermissionIds: [],
+        inheritedPermissionIds: [],
+      });
+    }
+
+    if (tenantIds.length === 0) {
+      return resultMap;
+    }
+
+    // Fetch all overrides for all tenants in a single query
+    const allOverrides = await this.list({
+      where: { tenantId: tenantIds },
+    });
+
+    // Organize overrides by tenant and effect
+    for (const override of allOverrides) {
+      const tenantId = override.tenantId as string;
+      const permId = override.permissionId as string;
+      const result = resultMap.get(tenantId);
+
+      if (result) {
+        switch (override.effect) {
+          case TenantPermissionEffect.GRANT:
+            result.grantedPermissionIds.push(permId);
+            break;
+          case TenantPermissionEffect.DENY:
+            result.deniedPermissionIds.push(permId);
+            break;
+          case TenantPermissionEffect.INHERIT:
+            result.inheritedPermissionIds.push(permId);
+            break;
+        }
+      }
+    }
+
+    return resultMap;
+  }
+
+  /**
    * Set an override for a tenant permission
    */
   async setOverride(

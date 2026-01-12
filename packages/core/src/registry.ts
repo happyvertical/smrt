@@ -2440,7 +2440,21 @@ export class ObjectRegistry {
       }
 
       if (registered.schema?.tableName) {
-        const tableName = registered.schema.tableName;
+        // For STI subclasses, use the STI base class's tableName
+        // This ensures all STI subclass columns are merged into the parent table
+        // (Issue #693: STI subclasses with separate tableName still serialize to parent table)
+        let tableName = registered.schema.tableName;
+        const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+        if (tableStrategy === 'sti') {
+          const stiBaseName = ObjectRegistry.getSTIBase(_className);
+          if (stiBaseName && stiBaseName !== _className) {
+            // This is an STI subclass - use the base class's tableName
+            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
+            if (stiBaseClass?.schema?.tableName) {
+              tableName = stiBaseClass.schema.tableName;
+            }
+          }
+        }
 
         // Get columns from schema, or generate from fields if schema.columns is empty
         // This handles STI subclasses that have fields but no pre-generated schema
