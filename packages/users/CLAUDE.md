@@ -55,6 +55,80 @@ console.log(result.permissions); // Set<string> of permission slugs
 console.log(result.groupIds);    // Groups that contributed permissions
 ```
 
+## Tenant-Scoped Models
+
+### Using @smrt({ tenantScoped: true })
+
+The simplest way to make a model tenant-scoped is to use the `tenantScoped` option in the `@smrt()` decorator:
+
+```typescript
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+@smrt({ tenantScoped: true })
+class Invoice extends SmrtObject {
+  // tenantId field is auto-injected
+  number: string = '';
+  amount: number = 0.0;
+}
+```
+
+This automatically:
+- Adds a `tenantId` field referencing the `Tenant` model
+- Filters queries by the current tenant context
+- Validates tenant ownership on save/delete
+- Auto-populates `tenantId` from context on create
+
+#### Configuration Options
+
+```typescript
+@smrt({
+  tenantScoped: {
+    mode: 'required',        // 'required' | 'optional' (default: 'required')
+    field: 'tenantId',       // Custom field name (default: 'tenantId')
+    autoFilter: true,        // Auto-filter queries (default: true)
+    autoPopulate: true,      // Auto-set from context (default: true)
+    allowSuperAdminBypass: false  // Allow bypass (default: false)
+  }
+})
+class AuditLog extends SmrtObject { }
+```
+
+### Using @TenantScoped() Decorator (Alternative)
+
+For more control, you can use the explicit decorator pattern from `@happyvertical/smrt-tenancy`:
+
+```typescript
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+
+@smrt()
+@TenantScoped()
+class Document extends SmrtObject {
+  tenantId = tenantId();  // Explicit field definition
+  title: string = '';
+}
+```
+
+Both patterns work identically - choose based on your preference.
+
+### Enabling Tenant Enforcement
+
+Call `enableTenancy()` at app startup to activate the interceptor:
+
+```typescript
+import { enableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
+
+// Enable tenant enforcement
+enableTenancy();
+
+// Execute operations in tenant context
+await withTenant({ tenantId: 'tenant-123' }, async () => {
+  const docs = await documents.list();  // Auto-filtered by tenant
+  const newDoc = await documents.create({ title: 'New Doc' });
+  // newDoc.tenantId is auto-set to 'tenant-123'
+});
+```
+
 ## Key Concepts
 
 ### System vs Tenant Roles
@@ -237,6 +311,35 @@ const canModify = await resolver.hasAnyPermission(
 |-------|------|-------------|
 | name | string | Display name |
 | status | TenantStatus | active, inactive, suspended |
+| parentTenantId | string \| null | Parent tenant for hierarchical structures |
+| hierarchyLevel | number | Depth in hierarchy (0 = root) |
+| hierarchyPath | string | Materialized path (e.g., "/root/parent/child") |
+| cascadePermissions | boolean | Whether permissions cascade to children |
+| inheritPermissions | boolean | Whether to inherit from parent |
+
+#### Hierarchical Tenants
+
+Tenants can form a hierarchy for organizational structures (parent company → subsidiaries):
+
+```typescript
+// Create parent tenant
+const parent = await tenants.create({ name: 'Acme Corp' });
+await parent.save();
+
+// Create child tenant
+const child = await tenants.createChild(parent.id, { name: 'Acme EU' });
+
+// Query hierarchy
+const roots = await tenants.findRoots();
+const children = await tenants.findChildren(parent.id);
+const ancestors = await tenants.getAncestors(child.id);
+const descendants = await tenants.getDescendants(parent.id);
+
+// Move tenant in hierarchy
+await tenants.moveToParent(child.id, newParent.id);
+```
+
+See [PR #689](https://github.com/happyvertical/smrt/pull/689) for implementation details.
 
 ### Role
 

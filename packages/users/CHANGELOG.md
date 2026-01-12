@@ -1,5 +1,23 @@
 # @happyvertical/smrt-users
 
+## 0.19.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.19.2
+  - @happyvertical/smrt-profiles@0.19.2
+  - @happyvertical/smrt-types@0.19.2
+
+## 0.19.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.19.1
+  - @happyvertical/smrt-profiles@0.19.1
+  - @happyvertical/smrt-types@0.19.1
+
 ## 1.0.0
 
 ### Patch Changes
