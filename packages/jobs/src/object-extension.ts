@@ -1,0 +1,251 @@
+import type { SmrtObject } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { JobBuilder } from './job-builder.js';
+import type { JobHandle } from './job-handle.js';
+import { SmrtJobCollection } from './smrt-job.js';
+
+/**
+ * Options for the simple .bg() method
+ */
+export interface BgOptions {
+  /** Queue name */
+  queue?: string;
+  /** Priority level */
+  priority?: 'critical' | 'high' | 'normal' | 'low' | number;
+  /** Delay before running (ms or string like '5m') */
+  delay?: string | number;
+  /** Maximum retries */
+  retries?: number;
+  /** Timeout in milliseconds */
+  timeout?: number;
+}
+
+/**
+ * Type for the extended SmrtObject with background job methods
+ */
+export interface BackgroundCapable {
+  /**
+   * Simple background job submission
+   *
+   * @param method - Method name to invoke
+   * @param args - Arguments to pass to the method
+   * @param options - Job options
+   * @returns JobHandle for tracking the job
+   *
+   * @example
+   * const handle = await doc.bg('generateSummary', { format: 'md' });
+   */
+  bg<T = unknown>(
+    method: string,
+    args?: Record<string, unknown>,
+    options?: BgOptions,
+  ): Promise<JobHandle<T>>;
+
+  /**
+   * Fluent job builder for advanced options
+   *
+   * @param method - Method name to invoke
+   * @param args - Arguments to pass to the method
+   * @returns JobBuilder for fluent configuration
+   *
+   * @example
+   * const handle = await doc.background('generateSummary', { format: 'md' })
+   *   .delay('5m')
+   *   .retries(5)
+   *   .priority('high')
+   *   .enqueue();
+   */
+  background<T = unknown>(
+    method: string,
+    args?: Record<string, unknown>,
+  ): JobBuilder<T>;
+}
+
+// Cache for job collections per database
+const collectionCache = new WeakMap<DatabaseInterface, SmrtJobCollection>();
+
+/**
+ * Get or create a job collection for the given database
+ */
+async function getJobCollection(
+  db: DatabaseInterface,
+): Promise<SmrtJobCollection> {
+  let collection = collectionCache.get(db);
+  if (!collection) {
+    collection = await SmrtJobCollection.create({
+      db: { type: 'sqlite', url: ':memory:' }, // Placeholder
+    });
+    // Override internal db reference
+    (collection as unknown as { _db: DatabaseInterface })._db = db;
+    collectionCache.set(db, collection);
+  }
+  return collection;
+}
+
+const priorityMap: Record<string, number> = {
+  critical: 100,
+  high: 75,
+  normal: 50,
+  low: 25,
+};
+
+function parseDelayStr(delay: string): number {
+  const match = delay.match(/^(\d+)(ms|s|m|h|d)?$/);
+  if (!match) return 0;
+
+  const value = parseInt(match[1], 10);
+  const unit = match[2] || 'ms';
+
+  switch (unit) {
+    case 'ms':
+      return value;
+    case 's':
+      return value * 1000;
+    case 'm':
+      return value * 60 * 1000;
+    case 'h':
+      return value * 60 * 60 * 1000;
+    case 'd':
+      return value * 24 * 60 * 60 * 1000;
+    default:
+      return value;
+  }
+}
+
+// Type for a SmrtObject constructor
+type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
+
+/**
+ * Extend a SmrtObject class with background job methods
+ *
+ * @param BaseClass - The SmrtObject class to extend
+ * @returns Extended class with .bg() and .background() methods
+ *
+ * @example
+ * const BackgroundDocument = withBackgroundJobs(Document);
+ * const doc = new BackgroundDocument({ ... });
+ * const handle = await doc.bg('generateSummary', { format: 'md' });
+ */
+export function withBackgroundJobs<T extends SmrtObjectConstructor>(
+  BaseClass: T,
+): T & { new (...args: any[]): BackgroundCapable } {
+  return class extends BaseClass implements BackgroundCapable {
+    async bg<R = unknown>(
+      method: string,
+      args: Record<string, unknown> = {},
+      options: BgOptions = {},
+    ): Promise<JobHandle<R>> {
+      const db = (this as unknown as { _db: DatabaseInterface })._db;
+      if (!db) {
+        throw new Error('Object not initialized. Call initialize() first.');
+      }
+
+      const collection = await getJobCollection(db);
+      const builder = new JobBuilder<R>(
+        this.constructor.name,
+        (this as unknown as SmrtObject).id ?? null,
+        method,
+        args,
+        collection,
+      );
+
+      if (options.queue) builder.queue(options.queue);
+      if (options.priority) builder.priority(options.priority);
+      if (options.delay) builder.delay(options.delay);
+      if (options.retries !== undefined) builder.retries(options.retries);
+      if (options.timeout) builder.timeout(options.timeout);
+
+      return builder.enqueue();
+    }
+
+    background<R = unknown>(
+      method: string,
+      args: Record<string, unknown> = {},
+    ): JobBuilder<R> {
+      const db = (this as unknown as { _db: DatabaseInterface })._db;
+      if (!db) {
+        throw new Error('Object not initialized. Call initialize() first.');
+      }
+
+      // Return a lazy builder that will get the collection when enqueue() is called
+      const objectType = this.constructor.name;
+      const objectId = (this as unknown as SmrtObject).id ?? null;
+
+      // Create a proxy builder that defers collection access
+      const lazyBuilder = {
+        _queue: 'default',
+        _delay: 0,
+        _retries: 3,
+        _priority: 50,
+        _timeout: 300000,
+        _timeoutBehavior: 'fail' as 'fail' | 'kill' | 'warn',
+        _retryStrategy: null as unknown,
+
+        queue(name: string) {
+          this._queue = name;
+          return this;
+        },
+        delay(d: string | number) {
+          this._delay = typeof d === 'number' ? d : parseDelayStr(d);
+          return this;
+        },
+        runAt(date: Date) {
+          this._delay = date.getTime() - Date.now();
+          return this;
+        },
+        retries(count: number) {
+          this._retries = count;
+          return this;
+        },
+        retryStrategy(strategy: unknown) {
+          this._retryStrategy = strategy;
+          return this;
+        },
+        priority(level: string | number) {
+          this._priority =
+            typeof level === 'number' ? level : (priorityMap[level] ?? 50);
+          return this;
+        },
+        timeout(ms: number) {
+          this._timeout = ms;
+          return this;
+        },
+        timeoutBehavior(behavior: 'fail' | 'kill' | 'warn') {
+          this._timeoutBehavior = behavior;
+          return this;
+        },
+        async enqueue(): Promise<JobHandle<R>> {
+          const collection = await getJobCollection(db);
+          const builder = new JobBuilder<R>(
+            objectType,
+            objectId,
+            method,
+            args,
+            collection,
+          );
+
+          builder.queue(this._queue);
+          builder.delay(this._delay);
+          builder.retries(this._retries);
+          builder.priority(this._priority);
+          builder.timeout(this._timeout);
+          builder.timeoutBehavior(this._timeoutBehavior);
+
+          if (this._retryStrategy) {
+            builder.retryStrategy(
+              this._retryStrategy as Parameters<
+                typeof builder.retryStrategy
+              >[0],
+            );
+          }
+
+          return builder.enqueue();
+        },
+      };
+
+      return lazyBuilder as unknown as JobBuilder<R>;
+    }
+  } as T & { new (...args: any[]): BackgroundCapable };
+}
+
+export default withBackgroundJobs;
