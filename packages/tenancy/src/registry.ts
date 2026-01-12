@@ -4,8 +4,17 @@
  * Tracks which classes are tenant-scoped and their configuration.
  * Used by the interceptor to determine how to handle operations.
  *
+ * This registry supports two patterns:
+ * 1. @TenantScoped() decorator + tenantId field (original pattern)
+ * 2. @smrt({ tenantScoped: true }) in smrt-core (Issue #688 pattern)
+ *
+ * Both patterns are automatically recognized by the interceptor.
+ *
  * @see https://github.com/happyvertical/smrt/issues/675
+ * @see https://github.com/happyvertical/smrt/issues/688
  */
+
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 /**
  * Configuration for a tenant-scoped class
@@ -82,20 +91,51 @@ export function unregisterTenantScopedClass(className: string): void {
 
 /**
  * Check if a class is registered as tenant-scoped
+ *
+ * Checks both the local registry (@TenantScoped decorator) and
+ * the core ObjectRegistry (@smrt({ tenantScoped: true })).
  */
 export function isTenantScopedClass(className: string): boolean {
-  return tenantScopedClasses.has(className);
+  // Check local registry first (explicit @TenantScoped decorator)
+  if (tenantScopedClasses.has(className)) {
+    return true;
+  }
+  // Check core registry (@smrt({ tenantScoped: true }) pattern - Issue #688)
+  return ObjectRegistry.isTenantScoped(className);
 }
 
 /**
  * Get the tenant-scoped configuration for a class
+ *
+ * Checks both the local registry (@TenantScoped decorator) and
+ * the core ObjectRegistry (@smrt({ tenantScoped: true })).
+ * Local registry takes precedence if class is registered in both.
  *
  * @returns Config if class is tenant-scoped, undefined otherwise
  */
 export function getTenantScopedConfig(
   className: string,
 ): TenantScopedConfig | undefined {
-  return tenantScopedClasses.get(className);
+  // Check local registry first (explicit @TenantScoped decorator)
+  const localConfig = tenantScopedClasses.get(className);
+  if (localConfig) {
+    return localConfig;
+  }
+
+  // Check core registry (@smrt({ tenantScoped: true }) pattern - Issue #688)
+  const coreConfig = ObjectRegistry.getTenantScopedConfig(className);
+  if (coreConfig) {
+    // Convert core config to TenantScopedConfig format
+    return {
+      mode: coreConfig.mode,
+      field: coreConfig.field,
+      autoFilter: coreConfig.autoFilter,
+      autoPopulate: coreConfig.autoPopulate,
+      allowSuperAdminBypass: coreConfig.allowSuperAdminBypass,
+    };
+  }
+
+  return undefined;
 }
 
 /**
