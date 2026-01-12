@@ -25,8 +25,8 @@ export {
   TenantHierarchyError,
 } from './TenantCollection.js';
 export {
-  type TenantPermissionOverrideResult,
   TenantPermissionOverrideCollection,
+  type TenantPermissionOverrideResult,
 } from './TenantPermissionOverrideCollection.js';
 // Core collections
 export {

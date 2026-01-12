@@ -165,7 +165,8 @@ export class PermissionResolver {
     }
 
     // Get the inheritance chain from root to this tenant
-    const ancestors = await this.tenantCollection.getAncestorsFromRoot(tenantId);
+    const ancestors =
+      await this.tenantCollection.getAncestorsFromRoot(tenantId);
     const chain: Tenant[] = [...ancestors, tenant];
 
     // Build a map of permission IDs to slugs for the final result
@@ -185,9 +186,7 @@ export class PermissionResolver {
 
       // Check if inheritance is active for this tenant
       const shouldInherit =
-        !isFirst &&
-        previous?.cascadePermissions &&
-        current.inheritPermissions;
+        !isFirst && previous?.cascadePermissions && current.inheritPermissions;
 
       if (shouldInherit) {
         result.inheritanceActive = true;
@@ -274,7 +273,8 @@ export class PermissionResolver {
       return [];
     }
 
-    const ancestors = await this.tenantCollection.getAncestorsFromRoot(tenantId);
+    const ancestors =
+      await this.tenantCollection.getAncestorsFromRoot(tenantId);
     const chain: Array<{
       tenant: Tenant;
       inherits: boolean;

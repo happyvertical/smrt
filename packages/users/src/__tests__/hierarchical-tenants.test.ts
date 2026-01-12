@@ -9,6 +9,7 @@
  * 5. Breaking inheritance chains
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,7 +29,7 @@ describe('Tenant Hierarchy', () => {
   let tenants: TenantCollection;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `smrt-hierarchy-test-${Date.now()}.db`);
+    dbPath = join(tmpdir(), `smrt-hierarchy-test-${randomUUID()}.db`);
     tenants = await TenantCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
@@ -125,7 +126,9 @@ describe('Tenant Hierarchy', () => {
       await current.save();
 
       for (let i = 1; i < MAX_TENANT_HIERARCHY_DEPTH; i++) {
-        current = await tenants.createChild(current.id!, { name: `Level ${i}` });
+        current = await tenants.createChild(current.id!, {
+          name: `Level ${i}`,
+        });
       }
 
       // Trying to create one more should fail
@@ -381,7 +384,7 @@ describe('Tenant Permission Overrides', () => {
   let tenantOverrides: TenantPermissionOverrideCollection;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `smrt-override-test-${Date.now()}.db`);
+    dbPath = join(tmpdir(), `smrt-override-test-${randomUUID()}.db`);
     const options = { db: { type: 'sqlite' as const, url: dbPath } };
 
     tenants = await TenantCollection.create(options);
@@ -499,9 +502,9 @@ describe('Tenant Permission Overrides', () => {
     await perm.save();
 
     await tenantOverrides.grantPermission(tenant.id!, perm.id!);
-    expect(
-      await tenantOverrides.getGrantedPermissionIds(tenant.id!),
-    ).toContain(perm.id);
+    expect(await tenantOverrides.getGrantedPermissionIds(tenant.id!)).toContain(
+      perm.id,
+    );
 
     const removed = await tenantOverrides.removeOverride(tenant.id!, perm.id!);
     expect(removed).toBe(true);
@@ -543,7 +546,7 @@ describe('Permission Inheritance with Cascade Control', () => {
   let resolver: PermissionResolver;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `smrt-cascade-test-${Date.now()}.db`);
+    dbPath = join(tmpdir(), `smrt-cascade-test-${randomUUID()}.db`);
     const options = { db: { type: 'sqlite' as const, url: dbPath } };
 
     tenants = await TenantCollection.create(options);

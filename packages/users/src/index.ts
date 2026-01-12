@@ -64,10 +64,10 @@ export {
 // Models
 export {
   DEFAULT_SESSION_TTL,
-  generateSessionId,
   Group,
   GroupMember,
   GroupRole,
+  generateSessionId,
   MAX_TENANT_HIERARCHY_DEPTH,
   Membership,
   MembershipOverride,

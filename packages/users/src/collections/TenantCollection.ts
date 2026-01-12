@@ -129,7 +129,8 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     }
 
     // Batch fetch all ancestors
-    const ancestorsMap = await this.findByIds(ancestorIds);
+    const ancestorsList = await this.listByIds(ancestorIds);
+    const ancestorsMap = new Map(ancestorsList.map((a) => [a.id, a]));
 
     // Return in order from immediate parent to root
     const ancestors: Tenant[] = [];
@@ -171,9 +172,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     // Note: This uses a raw query for LIKE pattern matching
     const allTenants = await this.list({});
 
-    return allTenants.filter(
-      (t) => t.hierarchyPath && t.hierarchyPath.startsWith(pathPrefix),
-    );
+    return allTenants.filter((t) => t.hierarchyPath?.startsWith(pathPrefix));
   }
 
   /**
@@ -303,6 +302,9 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       }
     }
 
+    // Fetch descendants BEFORE any changes (uses current hierarchyPath for lookup)
+    const descendants = await this.getDescendants(tenantId);
+
     let newLevel: number;
     let newPath: string;
 
@@ -322,7 +324,6 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       newLevel = newParent.hierarchyLevel + 1;
 
       // Check depth limit (considering descendants)
-      const descendants = await this.getDescendants(tenantId);
       const maxDescendantDepth = descendants.reduce(
         (max, d) => Math.max(max, d.hierarchyLevel - tenant.hierarchyLevel),
         0,
@@ -344,7 +345,9 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     const oldPath = tenant.hierarchyPath
       ? `${tenant.hierarchyPath}/${tenant.id}`
       : tenant.id;
-    const newPathForDescendants = newPath ? `${newPath}/${tenant.id}` : tenant.id;
+    const newPathForDescendants = newPath
+      ? `${newPath}/${tenant.id}`
+      : tenant.id;
 
     // Update the tenant
     const levelDelta = newLevel - tenant.hierarchyLevel;
@@ -353,11 +356,10 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     tenant.hierarchyPath = newPath;
     await tenant.save();
 
-    // Update all descendants
-    const descendants = await this.getDescendants(tenantId);
+    // Update all descendants (using the list fetched before changes)
     for (const descendant of descendants) {
       // Update path by replacing old prefix with new prefix
-      descendant.hierarchyPath = descendant.hierarchyPath!.replace(
+      descendant.hierarchyPath = descendant.hierarchyPath?.replace(
         oldPath,
         newPathForDescendants,
       );
@@ -455,12 +457,13 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       const children = await this.findChildren(tenant.id!);
       const childTrees = await Promise.all(children.map(buildTree));
 
-      return {
-        ...tenant,
+      // Use Object.assign to preserve Tenant instance methods while adding children
+      const tenantWithChildren = Object.assign(tenant, {
         children: childTrees.filter(Boolean) as Array<
           Tenant & { children: Tenant[] }
         >,
-      } as Tenant & { children: Tenant[] };
+      });
+      return tenantWithChildren as Tenant & { children: Tenant[] };
     };
 
     const trees = await Promise.all(roots.map(buildTree));
@@ -470,31 +473,45 @@ export class TenantCollection extends SmrtCollection<Tenant> {
   // ============= Override create to handle hierarchy =============
 
   /**
-   * Override create to automatically set hierarchy fields for new tenants
+   * Override create to automatically set hierarchy fields for new tenants.
+   * Only calculates hierarchy fields if not already provided (preserves
+   * database values during hydration via get()).
    */
   async create(options: any): Promise<Tenant> {
-    // If parentTenantId is provided, set hierarchy fields
+    // If parentTenantId is provided and hierarchy fields not already set
     if (options.parentTenantId) {
-      const parent = await this.get({ id: options.parentTenantId });
-      if (!parent) {
-        throw new TenantHierarchyError(
-          `Parent tenant not found: ${options.parentTenantId}`,
-          'PARENT_NOT_FOUND',
-        );
-      }
+      // Only calculate if hierarchy fields are missing (new tenant creation)
+      // Preserve existing values when hydrating from database
+      const needsHierarchyCalc =
+        options.hierarchyLevel === undefined ||
+        options.hierarchyPath === undefined;
 
-      const newLevel = parent.hierarchyLevel + 1;
-      if (newLevel >= MAX_TENANT_HIERARCHY_DEPTH) {
-        throw new TenantHierarchyError(
-          `Maximum hierarchy depth (${MAX_TENANT_HIERARCHY_DEPTH}) exceeded`,
-          'MAX_DEPTH_EXCEEDED',
-        );
-      }
+      if (needsHierarchyCalc) {
+        const parent = await this.get({ id: options.parentTenantId });
+        if (!parent) {
+          throw new TenantHierarchyError(
+            `Parent tenant not found: ${options.parentTenantId}`,
+            'PARENT_NOT_FOUND',
+          );
+        }
 
-      options.hierarchyLevel = newLevel;
-      options.hierarchyPath = parent.hierarchyPath
-        ? `${parent.hierarchyPath}/${parent.id}`
-        : parent.id;
+        const newLevel = parent.hierarchyLevel + 1;
+        if (newLevel >= MAX_TENANT_HIERARCHY_DEPTH) {
+          throw new TenantHierarchyError(
+            `Maximum hierarchy depth (${MAX_TENANT_HIERARCHY_DEPTH}) exceeded`,
+            'MAX_DEPTH_EXCEEDED',
+          );
+        }
+
+        if (options.hierarchyLevel === undefined) {
+          options.hierarchyLevel = newLevel;
+        }
+        if (options.hierarchyPath === undefined) {
+          options.hierarchyPath = parent.hierarchyPath
+            ? `${parent.hierarchyPath}/${parent.id}`
+            : parent.id;
+        }
+      }
     } else {
       // Root tenant
       options.hierarchyLevel = options.hierarchyLevel ?? 0;
