@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.4
+
+### Patch Changes
+
+- ### Features
+
+  - add @happyvertical/smrt-jobs for background job processing (#701) (jobs)
+  - @happyvertical/smrt-scanner@0.19.4
+  - @happyvertical/smrt-config@0.19.4
+  - @happyvertical/smrt-types@0.19.4
+
 ## 0.19.3
 
 ### Patch Changes
