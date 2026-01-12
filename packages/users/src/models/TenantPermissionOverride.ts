@@ -18,7 +18,7 @@ import { TenantPermissionEffect } from '../types/index.js';
  * ## Resolution Order
  *
  * When resolving effective tenant permissions:
- * 1. Walk up the tenant hierarchy collecting permissions
+ * 1. Walk down the tenant hierarchy from root to target, accumulating permissions
  * 2. Apply each tenant's overrides (DENY blocks, GRANT adds)
  * 3. INHERIT means "use whatever the parent resolved to"
  *

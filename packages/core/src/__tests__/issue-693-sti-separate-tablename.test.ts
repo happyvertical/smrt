@@ -89,11 +89,13 @@ describe('Issue #693: STI subclasses with separate tableName', () => {
 
   describe('Direct getAllSchemas() verification', () => {
     it('should resolve STI base tableName even when schema declares different tableName', () => {
-      // Verify that the classes have their own declared tableNames
+      // Verify that the classes are registered
       const meetingClass = ObjectRegistry.findClass('Issue693Meeting');
       const forecastClass = ObjectRegistry.findClass('Issue693WeatherForecast');
       const eventClass = ObjectRegistry.findClass('Issue693Event');
 
+      expect(meetingClass).toBeDefined();
+      expect(forecastClass).toBeDefined();
       expect(eventClass?.schema?.tableName).toBe('issue693events');
 
       // These MAY have been corrected by the manifest generator, but the fix

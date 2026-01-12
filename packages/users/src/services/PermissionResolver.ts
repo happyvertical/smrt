@@ -142,12 +142,13 @@ export class PermissionResolver {
    *
    * Algorithm:
    * 1. Get the tenant and its ancestors (from root to immediate parent)
-   * 2. Walk down the chain, building up permissions:
+   * 2. Batch fetch all permission overrides for the entire chain (single query)
+   * 3. Walk down the chain, building up permissions:
    *    - Start with root tenant's permissions
    *    - For each child: if parent.cascadePermissions && child.inheritPermissions:
    *      - Merge parent's permissions
    *      - Apply child's overrides (GRANT adds, DENY removes)
-   * 3. Return the final effective permission set
+   * 4. Return the final effective permission set
    */
   async resolveTenantPermissions(
     tenantId: string,
@@ -168,8 +169,19 @@ export class PermissionResolver {
       await this.tenantCollection.getAncestorsFromRoot(tenantId);
     const chain: Tenant[] = [...ancestors, tenant];
 
+    // Batch fetch all permission overrides for the entire chain (single query)
+    const chainTenantIds = chain.map((t) => t.id!);
+    const allOverridesMap =
+      await this.tenantPermissionOverrideCollection.getOverridesByEffectBatch(
+        chainTenantIds,
+      );
+
     // Build a set of permission IDs for batch lookup
     const allPermissionIds = new Set<string>();
+    for (const overrides of allOverridesMap.values()) {
+      for (const id of overrides.grantedPermissionIds) allPermissionIds.add(id);
+      for (const id of overrides.deniedPermissionIds) allPermissionIds.add(id);
+    }
 
     // Process each tenant in the chain
     let inheritedPermissions = new Set<string>();
@@ -187,38 +199,44 @@ export class PermissionResolver {
         result.inheritanceActive = true;
       }
 
-      // Get this tenant's permission overrides
-      const overrides =
-        await this.tenantPermissionOverrideCollection.getOverridesByEffect(
-          current.id!,
-        );
-
-      // Collect all permission IDs we need to look up
-      for (const id of overrides.grantedPermissionIds) allPermissionIds.add(id);
-      for (const id of overrides.deniedPermissionIds) allPermissionIds.add(id);
+      // Get this tenant's permission overrides from the batch result
+      const overrides = allOverridesMap.get(current.id!) ?? {
+        grantedPermissionIds: [],
+        deniedPermissionIds: [],
+        inheritedPermissionIds: [],
+      };
 
       // Build this tenant's effective permissions
       const currentPermissions = new Set<string>();
 
+      // Track if this tenant actually contributed to the permission set
+      let contributed = false;
+
       // Start with inherited permissions if applicable
-      if (shouldInherit) {
+      if (shouldInherit && inheritedPermissions.size > 0) {
         for (const permId of inheritedPermissions) {
           currentPermissions.add(permId);
         }
-        result.contributingTenantIds.push(current.id!);
+        contributed = true;
       }
 
       // Apply grants
       for (const permId of overrides.grantedPermissionIds) {
         currentPermissions.add(permId);
-        if (!result.contributingTenantIds.includes(current.id!)) {
-          result.contributingTenantIds.push(current.id!);
+        contributed = true;
+      }
+
+      // Apply denies (remove) - only counts as contribution if something was actually removed
+      for (const permId of overrides.deniedPermissionIds) {
+        if (currentPermissions.has(permId)) {
+          currentPermissions.delete(permId);
+          contributed = true;
         }
       }
 
-      // Apply denies (remove)
-      for (const permId of overrides.deniedPermissionIds) {
-        currentPermissions.delete(permId);
+      // Only add to contributingTenantIds if this tenant actually affected the final set
+      if (contributed && !result.contributingTenantIds.includes(current.id!)) {
+        result.contributingTenantIds.push(current.id!);
       }
 
       // This becomes the inherited set for the next iteration

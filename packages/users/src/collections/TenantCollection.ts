@@ -168,14 +168,17 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       ? `${tenant.hierarchyPath}/${tenant.id}`
       : tenant.id;
 
-    // Find all tenants whose hierarchyPath starts with this prefix
-    // Note: This loads all tenants and filters in memory. For large hierarchies,
-    // consider implementing database-level LIKE query.
-    const allTenants = await this.list({});
+    // Use database-level LIKE query for initial filtering
+    // This is much more efficient than loading all tenants for large hierarchies
+    const candidates = await this.list({
+      where: {
+        'hierarchyPath like': `${pathPrefix}%`,
+      },
+    });
 
-    // Use exact match OR prefix + '/' to ensure proper boundary detection.
-    // Without the '/' check, "ancestor/tenant1" would incorrectly match "ancestor/tenant123".
-    return allTenants.filter(
+    // Apply boundary check in memory to avoid false positives
+    // Without the '/' check, "ancestor/tenant1" would incorrectly match "ancestor/tenant123"
+    return candidates.filter(
       (t) =>
         t.hierarchyPath === pathPrefix ||
         t.hierarchyPath?.startsWith(`${pathPrefix}/`),
@@ -365,13 +368,27 @@ export class TenantCollection extends SmrtCollection<Tenant> {
 
     // Update all descendants (using the list fetched before changes)
     for (const descendant of descendants) {
-      // Update path by replacing old prefix with new prefix
-      // Use substring for explicit control rather than replace()
-      if (descendant.hierarchyPath?.startsWith(oldPath)) {
-        descendant.hierarchyPath =
-          newPathForDescendants +
-          descendant.hierarchyPath.substring(oldPath.length);
+      // Validate descendant has hierarchyPath - missing path indicates data corruption
+      if (!descendant.hierarchyPath) {
+        throw new TenantHierarchyError(
+          `Descendant tenant ${descendant.id} has no hierarchyPath while updating hierarchy from ${oldPath} to ${newPathForDescendants}`,
+          'INVALID_OPERATION',
+        );
       }
+
+      // Validate descendant path starts with expected prefix
+      if (!descendant.hierarchyPath.startsWith(oldPath)) {
+        throw new TenantHierarchyError(
+          `Descendant tenant ${descendant.id} has hierarchyPath "${descendant.hierarchyPath}" which does not start with expected prefix "${oldPath}"`,
+          'INVALID_OPERATION',
+        );
+      }
+
+      // Update path by replacing old prefix with new prefix
+      descendant.hierarchyPath =
+        newPathForDescendants +
+        descendant.hierarchyPath.substring(oldPath.length);
+
       // Adjust level by the same delta
       descendant.hierarchyLevel += levelDelta;
       await descendant.save();
