@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import * as ts from 'typescript';
 import { createQualifiedName } from '../utils/qualified-names.js';
+import { isTestFile } from './test-file-patterns.js';
 import type {
   FieldDefinition,
   MethodDefinition,
@@ -15,24 +16,6 @@ import type {
   SmartObjectDefinition,
   SmrtVisibility,
 } from './types';
-
-/**
- * Test file patterns for auto-detecting visibility: 'test'
- */
-const TEST_FILE_PATTERNS = [
-  /__tests__\//,
-  /\.test\.(ts|tsx|js|jsx)$/,
-  /\.spec\.(ts|tsx|js|jsx)$/,
-  /\/test\//i,
-  /fixtures?\//i,
-];
-
-/**
- * Check if a file path matches test file patterns
- */
-function isTestFile(filePath: string): boolean {
-  return TEST_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
-}
 
 /**
  * Cache for package.json lookups to avoid repeated file system reads

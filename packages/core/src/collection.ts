@@ -21,6 +21,40 @@ import {
 } from './utils';
 
 /**
+ * Resolve _meta_type in WHERE clause from simple class name to qualified name (Issue #713)
+ *
+ * This helper function allows queries like { _meta_type: 'Image' } to work correctly
+ * when the database stores qualified names like '@happyvertical/smrt-assets:Image'.
+ *
+ * @param where - The original WHERE clause object
+ * @returns Modified WHERE clause with qualified _meta_type, or original if no resolution needed
+ */
+function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
+  where: T | undefined,
+): T | undefined {
+  if (!where?._meta_type || typeof where._meta_type !== 'string') {
+    return where;
+  }
+
+  const metaTypeValue = where._meta_type as string;
+
+  // Only resolve if it's a simple class name (no ':' means not qualified)
+  if (metaTypeValue.includes(':')) {
+    return where;
+  }
+
+  const registeredClass = ObjectRegistry.getClass(metaTypeValue);
+  if (registeredClass?.qualifiedName) {
+    return {
+      ...where,
+      _meta_type: registeredClass.qualifiedName,
+    };
+  }
+
+  return where;
+}
+
+/**
  * Configuration options for SmrtCollection
  */
 export interface SmrtCollectionOptions extends SmrtClassOptions {}
@@ -654,20 +688,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     // Resolve _meta_type to qualified name if user provided simple class name (Issue #713)
-    // Allows queries like { _meta_type: 'Image' } to work with qualified names in DB
-    if (where?._meta_type && typeof where._meta_type === 'string') {
-      const metaTypeValue = where._meta_type as string;
-      // Only resolve if it's a simple class name (no ':' in the name)
-      if (!metaTypeValue.includes(':')) {
-        const registeredClass = ObjectRegistry.getClass(metaTypeValue);
-        if (registeredClass?.qualifiedName) {
-          where = {
-            ...where,
-            _meta_type: registeredClass.qualifiedName,
-          };
-        }
-      }
-    }
+    where = resolveMetaTypeInWhere(where);
 
     // convertWhereKeys is now sync (issue #663) - no await needed
     const convertedWhere = this.convertWhereKeys(where || {});
@@ -954,6 +975,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns New item instance
    */
   public async create(options: any) {
+    // Ensure manifest is loaded for external packages before creating instance
+    // This is critical for STI children to have inherited fields available during toJSON()
+    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+
     // STI: Check for polymorphic instantiation
     const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
 
@@ -1252,18 +1277,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     // Resolve _meta_type to qualified name if user provided simple class name (Issue #713)
-    if (where?._meta_type && typeof where._meta_type === 'string') {
-      const metaTypeValue = where._meta_type as string;
-      if (!metaTypeValue.includes(':')) {
-        const resolvedClass = ObjectRegistry.getClass(metaTypeValue);
-        if (resolvedClass?.qualifiedName) {
-          where = {
-            ...where,
-            _meta_type: resolvedClass.qualifiedName,
-          };
-        }
-      }
-    }
+    where = resolveMetaTypeInWhere(where);
 
     // convertWhereKeys is now sync (issue #663) - no await needed
     const { sql: whereSql, values: whereValues } = buildWhere(

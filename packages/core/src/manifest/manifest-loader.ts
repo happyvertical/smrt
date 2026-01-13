@@ -960,7 +960,7 @@ export function findManifestEntryByQualifiedName(
     return undefined;
   }
 
-  const { packageName, className } = parseQualifiedName(qualifiedName);
+  const { packageName } = parseQualifiedName(qualifiedName);
 
   // Check if we have the package's manifest cached
   const manifest = getManifestCacheMap().get(packageName);

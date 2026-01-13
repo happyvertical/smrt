@@ -23,6 +23,46 @@ import {
 import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
 
 /**
+ * Validate that _meta_type matches the expected class (Issue #713)
+ *
+ * Accepts both simple class name (e.g., 'Product') and qualified name
+ * (e.g., '@happyvertical/smrt-core:Product') for namespace isolation support.
+ *
+ * @param actualMetaType - The _meta_type value from the data
+ * @param className - The class name to validate against
+ * @returns true if the meta type is valid for this class
+ */
+function isValidMetaType(actualMetaType: unknown, className: string): boolean {
+  if (typeof actualMetaType !== 'string') {
+    return false;
+  }
+
+  // Accept simple class name match
+  if (actualMetaType === className) {
+    return true;
+  }
+
+  // Accept qualified name match (namespace isolation)
+  const registeredClass = ObjectRegistry.getClass(className);
+  if (
+    registeredClass?.qualifiedName &&
+    actualMetaType === registeredClass.qualifiedName
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Get the expected qualified or simple name for a class (for error messages)
+ */
+function getExpectedMetaType(className: string): string {
+  const registeredClass = ObjectRegistry.getClass(className);
+  return registeredClass?.qualifiedName || className;
+}
+
+/**
  * Options for SmrtObject initialization
  */
 export interface SmrtObjectOptions extends SmrtClassOptions {
@@ -429,17 +469,10 @@ export class SmrtObject extends SmrtClass {
 
       // Validation 2: _meta_type must match the class being instantiated
       // Accept both simple class name and qualified name (namespace isolation - Issue #713)
-      const registeredClass = ObjectRegistry.getClass(this.constructor.name);
-      const expectedSimple = this.constructor.name;
-      const expectedQualified = registeredClass?.qualifiedName;
-      const isValidMetaType =
-        formattedData._meta_type === expectedSimple ||
-        (expectedQualified && formattedData._meta_type === expectedQualified);
-
-      if (!isValidMetaType) {
+      if (!isValidMetaType(formattedData._meta_type, this.constructor.name)) {
         throw new Error(
           `STI validation failed: Type mismatch when loading ${this.constructor.name}. ` +
-            `Database row has _meta_type='${formattedData._meta_type}' but expected '${expectedQualified || expectedSimple}'. ` +
+            `Database row has _meta_type='${formattedData._meta_type}' but expected '${getExpectedMetaType(this.constructor.name)}'. ` +
             `This usually means you're trying to load a row with the wrong class.`,
         );
       }
@@ -957,17 +990,10 @@ export class SmrtObject extends SmrtClass {
           );
         }
         // Accept both simple class name and qualified name (namespace isolation - Issue #713)
-        const registeredClass = ObjectRegistry.getClass(this.constructor.name);
-        const expectedSimple = this.constructor.name;
-        const expectedQualified = registeredClass?.qualifiedName;
-        const isValidMetaType =
-          jsonData._meta_type === expectedSimple ||
-          (expectedQualified && jsonData._meta_type === expectedQualified);
-
-        if (!isValidMetaType) {
+        if (!isValidMetaType(jsonData._meta_type, this.constructor.name)) {
           throw new Error(
             `STI validation failed: _meta_type mismatch when saving ${this.constructor.name}. ` +
-              `Expected '${expectedQualified || expectedSimple}' but got '${jsonData._meta_type}'. ` +
+              `Expected '${getExpectedMetaType(this.constructor.name)}' but got '${jsonData._meta_type}'. ` +
               `This should not happen - please report this bug.`,
           );
         }

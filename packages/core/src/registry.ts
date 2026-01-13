@@ -1018,10 +1018,13 @@ export class ObjectRegistry {
     // 4. Cached external manifests (if already loaded)
     // For external packages not yet loaded, manifest discovery happens lazily during schema generation
     // Issue #713: Use lookupInManifest for qualified name support
-    const manifestEntry =
-      (config._manifest
-        ? lookupInManifest(config._manifest, name)
-        : undefined) ?? discoverManifestSync(name);
+    let manifestEntry: ReturnType<typeof lookupInManifest> | undefined;
+    if (config._manifest) {
+      manifestEntry = lookupInManifest(config._manifest, name);
+    }
+    if (!manifestEntry) {
+      manifestEntry = discoverManifestSync(name);
+    }
     const fields = new Map<string, any>();
     const methods = new Map<string, any>();
     let packageName: string | undefined;
@@ -1359,7 +1362,7 @@ export class ObjectRegistry {
     // Generate qualified name if we have a package name
     // Format: "@package/name:ClassName"
     const qualifiedName = packageName
-      ? (createQualifiedName(packageName, name) as QualifiedClassName)
+      ? createQualifiedName(packageName, name)
       : undefined;
 
     // Determine visibility from config, manifest, or default to 'public'
@@ -1592,7 +1595,7 @@ export class ObjectRegistry {
 
     // Generate qualified name if we have package context
     const qualifiedName = packageName
-      ? (createQualifiedName(packageName, name) as QualifiedClassName)
+      ? createQualifiedName(packageName, name)
       : (objectDef.qualifiedName as QualifiedClassName | undefined);
 
     // Get visibility from manifest (defaults to 'public')

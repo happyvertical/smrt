@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import { generateToolManifest } from '../tools/tool-generator';
 import { createQualifiedName } from '../utils/qualified-names.js';
+import { isTestFile } from './test-file-patterns.js';
 import type {
   ScanResult,
   SmartObjectDefinition,
@@ -15,25 +16,6 @@ import type {
 
 // Create require function for synchronous module loading in ESM context
 const require = createRequire(import.meta.url);
-
-/**
- * Patterns that identify test files (used for auto-detecting test visibility)
- */
-const TEST_FILE_PATTERNS = [
-  /__tests__\//,
-  /\.test\.(ts|tsx|js|jsx)$/,
-  /\.spec\.(ts|tsx|js|jsx)$/,
-  /\/test\//i,
-  /fixtures?\//i,
-  /\/mocks?\//i,
-];
-
-/**
- * Check if a file path indicates a test file
- */
-function isTestFile(filePath: string): boolean {
-  return TEST_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
-}
 
 /**
  * Infer visibility from file path and explicit config

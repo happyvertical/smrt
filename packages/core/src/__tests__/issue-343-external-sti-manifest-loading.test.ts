@@ -30,13 +30,26 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { loadExternalManifest } from '../manifest/manifest-loader.js';
 import { ObjectRegistry } from '../registry.js';
 
+// Type definitions for manifest structures
+interface SmartObjectDefinition {
+  fields?: Record<string, unknown>;
+  // Allow additional properties that may exist on object definitions
+  [key: string]: unknown;
+}
+
+interface SmartObjectManifest {
+  objects?: Record<string, SmartObjectDefinition>;
+  // Allow additional properties that may exist on manifests
+  [key: string]: unknown;
+}
+
 // Helper to find object definition in manifest by class name
 // Handles both qualified keys (@pkg:Class) and legacy keys (class, Class)
 function findObjectInManifest(
-  manifest: any,
+  manifest: SmartObjectManifest | undefined,
   className: string,
   packageName: string,
-): any {
+): SmartObjectDefinition | undefined {
   if (!manifest?.objects) return undefined;
 
   // Try qualified key first (new format: @pkg:Class)

@@ -193,7 +193,7 @@ export interface DataMigrationStatement {
  */
 export interface StiDiscriminatorMigration extends DataMigration {
   type: 'data';
-  subtype: 'sti-discriminator';
+  migrationCategory: 'sti-discriminator';
   oldValue: string; // "Product"
   newValue: string; // "@happyvertical/smrt-core:Product"
   table: string;
