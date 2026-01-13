@@ -450,6 +450,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         injectPackageInfo: true,
         moduleType: 'smrt',
         loadViteConfig: false, // We are already in Vite context
+        // Enable external package discovery for cross-package STI inheritance
+        // (Issue #690: Without this, smrtDependencies is null and STI child classes
+        // from external packages get separate tables instead of merging into parent)
+        discoverExternalPackages: true,
+        includeExternalBaseClasses: true,
       });
 
       // Generate TypeScript declarations if enabled
