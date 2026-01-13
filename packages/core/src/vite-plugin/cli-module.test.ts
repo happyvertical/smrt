@@ -40,10 +40,11 @@ class CliModuleTestDocument extends SmrtObject {
 }
 
 // Test class with CLI excluded
+// Named "CliTestSecret" to avoid collision with @happyvertical/smrt-secrets Secret class
 @smrt({
   cli: false,
 })
-class Secret extends SmrtObject {
+class CliTestSecret extends SmrtObject {
   value = '';
 
   constructor(options: any) {
@@ -93,10 +94,10 @@ describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
   });
 
   it('should exclude objects with cli: false', () => {
-    const secretClass = ObjectRegistry.getClass('Secret');
+    const secretClass = ObjectRegistry.getClass('CliTestSecret');
     expect(secretClass).toBeDefined();
 
-    const config = ObjectRegistry.getConfig('Secret');
+    const config = ObjectRegistry.getConfig('CliTestSecret');
     expect(config.cli).toBe(false);
   });
 
