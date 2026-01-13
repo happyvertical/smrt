@@ -534,6 +534,20 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // Add moduleType identifier
       newManifest.moduleType = 'smrt';
 
+      // Discover external SMRT packages for cross-package STI inheritance
+      // (Issue #690: Without this, STI child classes from external packages
+      // get separate tables instead of merging into parent)
+      const { discoverSmrtPackages } = await import(
+        '../manifest/discover-smrt-packages.js'
+      );
+      const smrtDependencies = discoverSmrtPackages();
+      if (smrtDependencies.length > 0) {
+        newManifest.smrtDependencies = smrtDependencies;
+        console.log(
+          `[smrt] Found ${smrtDependencies.length} SMRT dependencies: ${smrtDependencies.join(', ')}`,
+        );
+      }
+
       // Generate pre-computed schemas for each object (same as TypeScript scanner path)
       const { ManifestGenerator } = await import('../scanner/index.js');
       const manifestGen = new ManifestGenerator();
