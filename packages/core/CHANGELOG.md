@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.7
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - include base columns and STI meta columns in getAllSchemas() DDL (#690) (#706) (core)
+  - @happyvertical/smrt-scanner@0.19.7
+  - @happyvertical/smrt-config@0.19.7
+  - @happyvertical/smrt-types@0.19.7
+
 ## 0.19.6
 
 ### Patch Changes

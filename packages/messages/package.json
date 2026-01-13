@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-messages",
-  "version": "0.19.6",
+  "version": "0.19.7",
   "description": "SMRT-based email message persistence with AI integration",
   "type": "module",
   "main": "./dist/index.js",
