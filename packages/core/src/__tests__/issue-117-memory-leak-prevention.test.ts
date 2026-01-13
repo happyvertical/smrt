@@ -8,6 +8,10 @@
  * - Automatic eviction of least recently used entries
  */
 
+import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
@@ -25,7 +29,14 @@ class CacheTestCollection extends SmrtCollection<CacheTestObject> {
 }
 
 describe('Issue #117: Memory Leak Prevention', () => {
+  let tempDir: string;
+
   beforeEach(() => {
+    // Create a unique temporary directory for each test to avoid conflicts
+    tempDir = mkdtempSync(
+      path.join(os.tmpdir(), `smrt-issue-117-${randomUUID().slice(0, 8)}-`),
+    );
+
     // Clear registry before each test
     ObjectRegistry.clear();
 
@@ -40,6 +51,13 @@ describe('Issue #117: Memory Leak Prevention', () => {
   afterEach(() => {
     // Clean up after each test
     ObjectRegistry.clear();
+
+    // Clean up temporary directory
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
   });
 
   describe('LRU Cache Implementation', () => {
@@ -73,7 +91,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
           {
             persistence: {
               type: 'sqlite',
-              url: `test-${i}.db`,
+              url: path.join(tempDir, `test-${i}.db`),
             },
           },
         );
@@ -84,7 +102,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
         persistence: {
           type: 'sqlite',
-          url: 'test-0.db',
+          url: path.join(tempDir, 'test-0.db'),
         },
       });
 
@@ -92,7 +110,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
         persistence: {
           type: 'sqlite',
-          url: 'test-100.db',
+          url: path.join(tempDir, 'test-100.db'),
         },
       });
 
@@ -102,7 +120,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
         {
           persistence: {
             type: 'sqlite',
-            url: 'test-0.db',
+            url: path.join(tempDir, 'test-0.db'),
           },
         },
       );
@@ -114,7 +132,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
         {
           persistence: {
             type: 'sqlite',
-            url: 'test-1.db',
+            url: path.join(tempDir, 'test-1.db'),
           },
         },
       );
@@ -163,7 +181,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
         await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
           persistence: {
             type: 'sqlite',
-            url: `collection-${i}.db`, // Each has unique URL
+            url: path.join(tempDir, `collection-${i}.db`), // Each has unique URL
           },
         });
       }
@@ -209,14 +227,17 @@ describe('Issue #117: Memory Leak Prevention', () => {
       const collection1 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'sqlite', url: 'test.db' },
+          persistence: { type: 'sqlite', url: path.join(tempDir, 'test.db') },
         },
       );
 
       const collection2 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
         {
-          persistence: { type: 'sqlite', url: 'different.db' },
+          persistence: {
+            type: 'sqlite',
+            url: path.join(tempDir, 'different.db'),
+          },
         },
       );
 
@@ -226,7 +247,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       // Requesting again with same config returns cached instance
       const collection1Again =
         await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
-          persistence: { type: 'sqlite', url: 'test.db' },
+          persistence: { type: 'sqlite', url: path.join(tempDir, 'test.db') },
         });
 
       expect(collection1Again).toBe(collection1);

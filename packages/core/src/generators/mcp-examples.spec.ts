@@ -3,6 +3,7 @@
  * Demonstrates full workflow with realistic project scenarios
  */
 
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,11 @@ describe('MCP Generator - Example Projects', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = join(tmpdir(), `smrt-examples-${Date.now()}`);
+    // Use UUID for uniqueness in parallel test runs
+    tmpDir = join(
+      tmpdir(),
+      `smrt-examples-${Date.now()}-${randomUUID().slice(0, 8)}`,
+    );
     await mkdir(tmpDir, { recursive: true });
   });
 
