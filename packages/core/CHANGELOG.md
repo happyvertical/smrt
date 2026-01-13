@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.5
+
+### Patch Changes
+
+- ### Features
+
+  - add @happyvertical/smrt-secrets package (#702) (secrets)
+  - @happyvertical/smrt-scanner@0.19.5
+  - @happyvertical/smrt-config@0.19.5
+  - @happyvertical/smrt-types@0.19.5
+
 ## 0.19.4
 
 ### Patch Changes
