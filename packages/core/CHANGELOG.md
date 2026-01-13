@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - skip default UI for SvelteKit projects (#709) (core)
+  - @happyvertical/smrt-scanner@0.19.9
+  - @happyvertical/smrt-config@0.19.9
+  - @happyvertical/smrt-types@0.19.9
+
 ## 0.19.8
 
 ### Patch Changes
