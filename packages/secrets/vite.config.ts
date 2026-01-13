@@ -3,7 +3,6 @@ import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 
 const packageDir = resolve(__dirname);
-const sdkSecretsPath = resolve(__dirname, '../../../sdk/packages/secrets/dist/index.js');
 
 export default defineConfig(async () => {
   // Dynamically import smrtPlugin
@@ -12,11 +11,6 @@ export default defineConfig(async () => {
   );
 
   return {
-    resolve: {
-      alias: {
-        '@happyvertical/secrets': sdkSecretsPath,
-      },
-    },
     build: {
       lib: {
         entry: resolve(packageDir, 'src/index.ts'),

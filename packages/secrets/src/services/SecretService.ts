@@ -160,9 +160,13 @@ export class SecretService {
     const tenantId = requireTenantId();
     const userId = this.getCurrentUserId();
 
+    // Track whether this is an update to use correct audit action on error
+    let isUpdate = false;
+
     try {
       // Check if secret already exists
       const existing = await this.secrets.findByName(name);
+      isUpdate = existing !== null;
 
       // Encrypt the value
       const envelope = await this.secretStore.encrypt(tenantId, name, value, {
@@ -210,9 +214,16 @@ export class SecretService {
       await this.audit(secret.id ?? null, name, userId, 'create', 'success');
       return secret;
     } catch (error) {
-      await this.audit(null, name, userId, 'create', 'failure', {
-        error: (error as Error).message,
-      });
+      await this.audit(
+        null,
+        name,
+        userId,
+        isUpdate ? 'update' : 'create',
+        'failure',
+        {
+          error: (error as Error).message,
+        },
+      );
       throw error;
     }
   }
@@ -224,12 +235,16 @@ export class SecretService {
     const tenantId = requireTenantId();
     const userId = this.getCurrentUserId();
 
+    // Track whether we've already audited to avoid double-auditing
+    let audited = false;
+
     try {
       const secret = await this.secrets.findByName(name);
       if (!secret) {
         await this.audit(null, name, userId, 'read', 'failure', {
           error: 'Secret not found',
         });
+        audited = true;
         throw new Error(`Secret '${name}' not found`);
       }
 
@@ -240,6 +255,7 @@ export class SecretService {
         await this.audit(secret.id ?? null, name, userId, 'read', 'failure', {
           error: reason,
         });
+        audited = true;
         throw new Error(reason);
       }
 
@@ -265,7 +281,8 @@ export class SecretService {
         metadata: secret.metadata,
       };
     } catch (error) {
-      if (!(error as Error).message.includes('not found')) {
+      // Only audit if we haven't already audited this error
+      if (!audited) {
         await this.audit(null, name, userId, 'read', 'failure', {
           error: (error as Error).message,
         });

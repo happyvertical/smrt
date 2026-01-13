@@ -60,18 +60,17 @@ export {
   StoreNotInitializedError,
   TenantKeyMissingError,
 } from '@happyvertical/secrets';
+// Collections
 export {
   type ListAuditLogsOptions,
   SecretAuditLogCollection,
 } from './collections/SecretAuditLogCollection.js';
-
-// Collections
 export {
   type ListSecretsOptions,
   SecretCollection,
 } from './collections/SecretCollection.js';
-
 export { TenantKeyCollection } from './collections/TenantKeyCollection.js';
+
 // Models
 export {
   Secret,
