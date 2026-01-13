@@ -2,11 +2,11 @@
 
 /**
  * Test manifest generator for smrt-analytics
- * Scans source files and generates manifest for runtime field detection
+ * Uses ManifestBuilder with OXC scanner for manifest generation
  */
 
-import { writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,56 +16,58 @@ async function generateTestManifest() {
   try {
     console.log('[smrt] Generating test manifest...');
 
-    const { execSync } = await import('node:child_process');
+    // Import ManifestBuilder (uses OXC scanner internally)
+    const { ManifestBuilder } = await import(
+      '@happyvertical/smrt-core/manifest'
+    );
 
-    // Create a temporary TypeScript runner
-    const tsCode = `
-import { ASTScanner, ManifestGenerator } from '@happyvertical/smrt-core/scanner';
-import fg from 'fast-glob';
-import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+    // Discover base classes from external SMRT packages
+    const { discoverBaseClasses } = await import(
+      '@happyvertical/smrt-core/manifest/discover-base-classes'
+    );
 
-async function runScanner() {
-  // Scan all source files (models, collections, tests)
-  const sourceFiles = fg.sync(['src/**/*.ts'], {
-    absolute: true,
-    ignore: ['src/**/*.d.ts'],
-  });
+    const baseClasses = await discoverBaseClasses();
+    console.log(`[smrt] Discovered ${baseClasses.length} base classes`);
 
-  if (sourceFiles.length === 0) {
-    console.log('[smrt] No source files found');
-    return { version: '1.0.0', timestamp: Date.now(), objects: {} };
-  }
+    // Generate test manifest using ManifestBuilder with OXC scanner
+    const builder = new ManifestBuilder();
+    const manifest = await builder.generate({
+      // File discovery
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.d.ts', 'node_modules/**', 'dist/**', 'build/**'],
 
-  console.log(\`[smrt] Scanning \${sourceFiles.length} source files...\`);
+      // Scanner configuration
+      baseClasses,
+      followImports: true,
+      loadViteConfig: true,
+      discoverExternalPackages: true,
+      includeExternalBaseClasses: true,
+      includePrivateMethods: false,
+      includeStaticMethods: true,
 
-  const scanner = new ASTScanner(sourceFiles, {
-    baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
-    includePrivateMethods: false,
-    includeStaticMethods: true,
-    followImports: true,
-  });
+      // Output configuration
+      outputDir: 'src/manifest',
+      outputName: 'test-manifest.json',
+      generateTypeStub: true,
+      stubName: 'test-manifest-stub.ts',
 
-  const scanResults = scanner.scanFiles();
-  const generator = new ManifestGenerator();
-  return generator.generateManifest(scanResults);
-}
+      // Metadata
+      injectPackageInfo: true,
+      moduleType: 'smrt',
+    });
 
-runScanner().then(manifest => {
-  // Inject package name from package.json
-  try {
-    const packageJsonPath = resolve(process.cwd(), 'package.json');
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-    manifest.packageName = packageJson.name;
-    console.log(\`[smrt] Injected package name: \${packageJson.name}\`);
-  } catch (error) {
-    console.warn('[smrt] Warning: Could not read package.json, packageName will be undefined');
-  }
+    const objectCount = Object.keys(manifest.objects).length;
+    console.log(`[smrt] Generated test manifest with ${objectCount} objects`);
 
-  mkdirSync('src/manifest', { recursive: true });
-  writeFileSync('src/manifest/test-manifest.json', JSON.stringify(manifest, null, 2));
+    // Write manifest.json
+    const outputDir = resolve(process.cwd(), 'src/manifest');
+    mkdirSync(outputDir, { recursive: true });
 
-  const tsContent = \`/**
+    const jsonPath = resolve(outputDir, 'test-manifest.json');
+    writeFileSync(jsonPath, JSON.stringify(manifest, null, 2));
+
+    // Write TypeScript stub
+    const tsContent = `/**
  * Test manifest stub
  * This file is replaced by generate-test-manifest.js during pretest
  * If tests run without pretest, this empty manifest is used
@@ -75,31 +77,14 @@ runScanner().then(manifest => {
 
 import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner';
 
-export const testManifest: SmartObjectManifest = \${JSON.stringify(manifest, null, 2)} as const;
+export const testManifest: SmartObjectManifest = ${JSON.stringify(manifest, null, 2)} as const;
 
 export default testManifest;
-\`;
-  writeFileSync('src/manifest/test-manifest-stub.ts', tsContent);
-
-  const objectCount = Object.keys(manifest.objects).length;
-  console.log(\`[smrt] Generated test manifest with \${objectCount} objects\`);
-}).catch(console.error);
 `;
+    const tsPath = resolve(outputDir, 'test-manifest-stub.ts');
+    writeFileSync(tsPath, tsContent);
 
-    // Write and execute the TypeScript code with unique name to avoid race conditions
-    // when multiple builds run in parallel (see issue #631)
-    const { unlinkSync } = await import('node:fs');
-    const tempFile = `temp-test-manifest-gen-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`;
-    writeFileSync(tempFile, tsCode);
-
-    try {
-      execSync(`npx tsx ${tempFile}`, { stdio: 'inherit' });
-    } finally {
-      // Clean up
-      try {
-        unlinkSync(tempFile);
-      } catch {}
-    }
+    console.log(`[smrt] Manifest written to ${jsonPath}`);
   } catch (error) {
     console.error('[smrt] Failed to generate test manifest:', error);
     process.exit(1);
