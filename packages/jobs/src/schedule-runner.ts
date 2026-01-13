@@ -164,10 +164,24 @@ export class ScheduleRunner extends EventEmitter {
   }
 
   /**
-   * Poll for due schedules and create jobs
+   * Process due schedules once and return the count
+   * Useful for single-run mode (e.g., CLI --once flag)
    */
-  private async poll(): Promise<void> {
-    if (!this.db || !this.jobCollection) return;
+  async processOnce(): Promise<number> {
+    if (!this.db) {
+      throw new Error(
+        'ScheduleRunner not initialized. Call initialize() first.',
+      );
+    }
+    return this.poll();
+  }
+
+  /**
+   * Poll for due schedules and create jobs
+   * @returns Number of schedules processed
+   */
+  private async poll(): Promise<number> {
+    if (!this.db || !this.jobCollection) return 0;
 
     const now = new Date().toISOString();
 
@@ -186,6 +200,8 @@ export class ScheduleRunner extends EventEmitter {
     for (const row of result.rows) {
       await this.triggerSchedule(row as ScheduleRow);
     }
+
+    return result.rows.length;
   }
 
   /**

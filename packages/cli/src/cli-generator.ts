@@ -47,6 +47,8 @@ let _gitCommands: Record<string, Command> | null = null;
 let _initCommands: Record<string, Command> | null = null;
 let _utilityCommands: Record<string, Command> | null = null;
 let _dispatchCommands: Record<string, Command> | null = null;
+let _jobCommands: Record<string, Command> | null = null;
+let _scheduleCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -94,6 +96,22 @@ async function getDispatchCommands(): Promise<Record<string, Command>> {
     _dispatchCommands = dispatchCommands;
   }
   return _dispatchCommands;
+}
+
+async function getJobCommands(): Promise<Record<string, Command>> {
+  if (!_jobCommands) {
+    const { jobCommands } = await import('./commands/index.js');
+    _jobCommands = jobCommands;
+  }
+  return _jobCommands;
+}
+
+async function getScheduleCommands(): Promise<Record<string, Command>> {
+  if (!_scheduleCommands) {
+    const { scheduleCommands } = await import('./commands/index.js');
+    _scheduleCommands = scheduleCommands;
+  }
+  return _scheduleCommands;
 }
 
 export interface CLIConfig {
@@ -873,6 +891,8 @@ export class CLIGenerator {
       initCommands,
       utilityCommands,
       dispatchCommands,
+      jobCommands,
+      scheduleCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -880,6 +900,8 @@ export class CLIGenerator {
       getInitCommands(),
       getUtilityCommands(),
       getDispatchCommands(),
+      getJobCommands(),
+      getScheduleCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -888,6 +910,8 @@ export class CLIGenerator {
       ...initCommands,
       ...utilityCommands,
       ...dispatchCommands,
+      ...jobCommands,
+      ...scheduleCommands,
     };
 
     const builtInCommand = builtInCommands[parsed.command];
@@ -1209,6 +1233,8 @@ export class CLIGenerator {
       initCommands,
       utilityCommands,
       dispatchCommands,
+      jobCommands,
+      scheduleCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1216,6 +1242,8 @@ export class CLIGenerator {
       getInitCommands(),
       getUtilityCommands(),
       getDispatchCommands(),
+      getJobCommands(),
+      getScheduleCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1244,6 +1272,16 @@ export class CLIGenerator {
 
     console.log('Gnode Commands:');
     for (const command of Object.values(gnodeCommands)) {
+      this.showCommandHelp(command);
+    }
+
+    console.log('Background Jobs:');
+    for (const command of Object.values(jobCommands)) {
+      this.showCommandHelp(command);
+    }
+
+    console.log('Agent Scheduling:');
+    for (const command of Object.values(scheduleCommands)) {
       this.showCommandHelp(command);
     }
 

@@ -15,4 +15,7 @@ export { generateCommands } from './generate.js';
 export { gitCommands } from './git.js';
 export { gnodeCommands } from './gnode.js';
 export { initCommands } from './init.js';
+// Background worker commands
+export { jobCommands } from './jobs.js';
+export { scheduleCommands } from './schedules.js';
 export { utilityCommands } from './utilities.js';
