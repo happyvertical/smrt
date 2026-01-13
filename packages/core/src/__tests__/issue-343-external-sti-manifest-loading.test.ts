@@ -30,6 +30,26 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { loadExternalManifest } from '../manifest/manifest-loader.js';
 import { ObjectRegistry } from '../registry.js';
 
+// Helper to find object definition in manifest by class name
+// Handles both qualified keys (@pkg:Class) and legacy keys (class, Class)
+function findObjectInManifest(
+  manifest: any,
+  className: string,
+  packageName: string,
+): any {
+  if (!manifest?.objects) return undefined;
+
+  // Try qualified key first (new format: @pkg:Class)
+  const qualifiedKey = `${packageName}:${className}`;
+  if (manifest.objects[qualifiedKey]) {
+    return manifest.objects[qualifiedKey];
+  }
+
+  // Fall back to legacy keys (lowercase or PascalCase)
+  const lowerKey = className.toLowerCase();
+  return manifest.objects[lowerKey] || manifest.objects[className];
+}
+
 describe('Issue #343: External Package STI Classes Manifest Loading', () => {
   // Register Person from manifest before running tests
   // (In production, auto-loading works, but in monorepo tests we need explicit registration)
@@ -37,8 +57,12 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
     const manifest = await loadExternalManifest('@happyvertical/smrt-profiles');
     console.log('[test setup] Loaded manifest:', manifest ? 'Yes' : 'No');
 
-    if (manifest?.objects?.person) {
-      const personDef = manifest.objects.person || manifest.objects.Person;
+    const personDef = findObjectInManifest(
+      manifest,
+      'Person',
+      '@happyvertical/smrt-profiles',
+    );
+    if (personDef) {
       console.log(
         '[test setup] Person fields in manifest:',
         Object.keys(personDef.fields || {}).length,
@@ -61,6 +85,12 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
         '[test setup] Person fields after registration:',
         registered?.fields.size,
       );
+    } else {
+      console.log('[test setup] Person NOT found in manifest');
+      console.log(
+        '[test setup] Available keys:',
+        Object.keys(manifest?.objects || {}),
+      );
     }
   });
 
@@ -71,8 +101,12 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
     console.log('Loaded manifest:', manifest ? 'Yes' : 'No');
 
     if (manifest) {
-      // Verify Person is in the manifest
-      const personDef = manifest.objects?.person || manifest.objects?.Person;
+      // Verify Person is in the manifest (using helper for qualified keys)
+      const personDef = findObjectInManifest(
+        manifest,
+        'Person',
+        '@happyvertical/smrt-profiles',
+      );
       console.log('Person in manifest:', personDef ? 'Yes' : 'No');
 
       if (personDef) {
@@ -94,7 +128,11 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
       }
 
       // Verify Profile is in the manifest (the STI base)
-      const profileDef = manifest.objects?.profile || manifest.objects?.Profile;
+      const profileDef = findObjectInManifest(
+        manifest,
+        'Profile',
+        '@happyvertical/smrt-profiles',
+      );
       console.log('Profile in manifest:', profileDef ? 'Yes' : 'No');
 
       if (profileDef) {

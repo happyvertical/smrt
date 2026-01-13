@@ -135,7 +135,7 @@ describe('Issue #603: JSON adapter cross-table queries', () => {
       WHERE NOT EXISTS (
         SELECT 1 FROM ${contentTableName} c
         WHERE c.meeting_id = ${tableName}.id
-        AND c._meta_type = 'Issue603MeetingRecap'
+        AND c._meta_type = '@happyvertical/smrt-core:Issue603MeetingRecap'
       )
     `,
       [],
@@ -193,7 +193,7 @@ describe('Issue #603: JSON adapter cross-table queries', () => {
       WHERE EXISTS (
         SELECT 1 FROM ${contentTableName} c
         WHERE c.meeting_id = ${tableName}.id
-        AND c._meta_type = 'Issue603MeetingRecap'
+        AND c._meta_type = '@happyvertical/smrt-core:Issue603MeetingRecap'
       )
     `,
       [],
@@ -241,7 +241,7 @@ describe('Issue #603: JSON adapter cross-table queries', () => {
       `
       SELECT e.* FROM ${tableName} e
       INNER JOIN ${contentTableName} c ON c.meeting_id = e.id
-      WHERE c._meta_type = 'Issue603MeetingRecap'
+      WHERE c._meta_type = '@happyvertical/smrt-core:Issue603MeetingRecap'
     `,
       [],
     );
@@ -290,7 +290,7 @@ describe('Issue #603: JSON adapter cross-table queries', () => {
       WHERE NOT EXISTS (
         SELECT 1 FROM ${contentTableName} c
         WHERE c.meeting_id = ${tableName}.id
-        AND c._meta_type = 'Issue603MeetingRecap'
+        AND c._meta_type = '@happyvertical/smrt-core:Issue603MeetingRecap'
       )
       ORDER BY title
     `,
