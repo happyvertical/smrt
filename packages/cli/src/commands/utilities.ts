@@ -4,7 +4,7 @@
  * Commands for introspection, testing, and project management
  */
 
-import { readFile } from 'node:fs/promises';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
@@ -325,32 +325,10 @@ export const utilityCommands: Record<string, CLICommand> = {
       console.log('\n🧪 Generating test manifest...\n');
 
       try {
-        // Import scanner and manifest manager
-        const { ASTScanner } = await import('@happyvertical/smrt-core/scanner');
-        const { ManifestManager } = await import(
+        // Import ManifestBuilder (uses OXC scanner internally)
+        const { ManifestBuilder } = await import(
           '@happyvertical/smrt-core/manifest'
         );
-        const fg = await import('fast-glob');
-        const { writeFileSync, mkdirSync } = await import('node:fs');
-
-        // Scan source files (including test files for packages that define fixtures there)
-        const testFiles = fg.default.sync(
-          [
-            'src/**/*.ts', // Include all source files for SMRT object definitions
-          ],
-          {
-            absolute: true,
-            ignore: ['src/**/*.d.ts', 'node_modules/**', 'dist/**', 'build/**'],
-          },
-        );
-
-        if (testFiles.length === 0) {
-          console.log('⚠️  No test files found');
-          console.log('\nSearched for: src/**/*.ts');
-          return;
-        }
-
-        console.log(`📄 Scanning ${testFiles.length} file(s)...\n`);
 
         // Discover base classes from external SMRT packages
         const { discoverBaseClasses } = await import(
@@ -363,56 +341,32 @@ export const utilityCommands: Record<string, CLICommand> = {
           `[smrt test] Discovered ${baseClasses.length} base classes (including ${baseClasses.length - 3} from external packages)`,
         );
 
-        // Scan files for SMRT objects
-        const scanner = new ASTScanner(testFiles, {
+        // Generate test manifest using ManifestBuilder with OXC scanner
+        const builder = new ManifestBuilder();
+        const manifest = await builder.generate({
+          // File discovery
+          include: ['src/**/*.ts'],
+          exclude: ['src/**/*.d.ts', 'node_modules/**', 'dist/**', 'build/**'],
+
+          // Scanner configuration
           baseClasses,
+          followImports: true,
+          loadViteConfig: true,
+          discoverExternalPackages: true,
+          includeExternalBaseClasses: true,
           includePrivateMethods: false,
           includeStaticMethods: true,
-          followImports: true,
+
+          // Output configuration
+          outputDir: options.output || 'src/manifest',
+          outputName: 'test-manifest.json',
+          generateTypeStub: true,
+          stubName: 'test-manifest-stub.ts',
+
+          // Metadata
+          injectPackageInfo: true,
+          moduleType: 'smrt',
         });
-
-        const scanResults = scanner.scanFiles();
-
-        // Read package.json for package name
-        let packageName: string | undefined;
-        try {
-          const pkgPath = resolve(process.cwd(), 'package.json');
-          const pkgContent = await readFile(pkgPath, 'utf-8');
-          const pkg = JSON.parse(pkgContent);
-          packageName = pkg.name || undefined;
-        } catch {
-          console.warn('⚠️  Could not read package.json');
-        }
-
-        // Discover external SMRT packages for field inheritance
-        console.log('[smrt test] Discovering external SMRT packages...');
-        const { discoverSmrtPackages } = await import(
-          '@happyvertical/smrt-core/manifest/discover-smrt-packages'
-        );
-        const smrtDependencies = discoverSmrtPackages();
-
-        if (smrtDependencies.length > 0) {
-          console.log(
-            `[smrt test] Found ${smrtDependencies.length} external SMRT package(s): ${smrtDependencies.join(', ')}`,
-          );
-        } else {
-          console.log('[smrt test] No external SMRT packages found');
-        }
-
-        // Generate manifest using ManifestManager
-        const manager = new ManifestManager(process.cwd());
-        const manifest = await manager.generateFromScanResults(scanResults, {
-          mode: 'dev',
-          packageName,
-          smrtDependencies:
-            smrtDependencies.length > 0 ? smrtDependencies : undefined,
-        });
-
-        if (smrtDependencies.length > 0) {
-          console.log(
-            '[smrt test] Manifest generated with external package support',
-          );
-        }
 
         console.log(
           `[MANIFEST] Generated manifest with ${Object.keys(manifest.objects).length} objects`,
@@ -881,41 +835,32 @@ export default testManifest;
         if (discovered.length === 0 && !options.json) {
           console.log('\n⚠️  No SMRT manifests found - generating...');
 
-          // Generate manifest on the fly (like smrt test does)
+          // Generate manifest on the fly using ManifestBuilder (with OXC scanner)
           try {
-            const { ASTScanner } = await import(
-              '@happyvertical/smrt-core/scanner'
-            );
-            const { ManifestManager } = await import(
+            const { ManifestBuilder } = await import(
               '@happyvertical/smrt-core/manifest'
             );
-            const fg = await import('fast-glob');
+            const { discoverBaseClasses } = await import(
+              '@happyvertical/smrt-core/manifest/discover-base-classes'
+            );
 
-            const sourceFiles = fg.default.sync(['src/**/*.ts'], {
-              absolute: true,
-              ignore: ['src/**/*.d.ts', 'node_modules/**', 'dist/**'],
+            const baseClasses = await discoverBaseClasses();
+            const builder = new ManifestBuilder();
+
+            await builder.generate({
+              include: ['src/**/*.ts'],
+              exclude: ['src/**/*.d.ts', 'node_modules/**', 'dist/**'],
+              baseClasses,
+              followImports: true,
+              discoverExternalPackages: true,
+              includePrivateMethods: false,
+              includeStaticMethods: true,
+              outputDir: 'src/manifest',
+              outputName: 'manifest.json',
+              injectPackageInfo: true,
             });
 
-            if (sourceFiles.length > 0) {
-              const { discoverBaseClasses } = await import(
-                '@happyvertical/smrt-core/manifest/discover-base-classes'
-              );
-              const baseClasses = await discoverBaseClasses();
-
-              const scanner = new ASTScanner(sourceFiles, {
-                baseClasses,
-                includePrivateMethods: false,
-                includeStaticMethods: true,
-              });
-
-              const scanResults = scanner.scanFiles();
-              const manager = new ManifestManager(process.cwd());
-              await manager.generateFromScanResults(scanResults, {
-                mode: 'dev',
-              });
-
-              console.log('  ✓ Generated manifest from source files');
-            }
+            console.log('  ✓ Generated manifest from source files');
           } catch (err) {
             if (!options.json) {
               console.warn('  ⚠️  Could not generate manifest:', err);
@@ -1048,6 +993,12 @@ export default testManifest;
         type: 'boolean',
         description:
           'Force re-apply even if already applied (skip checksum validation)',
+        default: false,
+      },
+      'upgrade-sti': {
+        type: 'boolean',
+        description:
+          'Upgrade STI discriminators from simple class names to qualified names (@pkg:Class)',
         default: false,
       },
       verbose: {
@@ -1491,6 +1442,138 @@ export default testManifest;
             console.error(`  ✗ ${migration.type} failed: ${errorMsg}`);
             if (options.verbose && error instanceof Error && error.stack) {
               console.error(`\n${error.stack}\n`);
+            }
+          }
+        }
+
+        // 13.5 Handle --upgrade-sti flag for STI discriminator migration
+        if (options.upgradeSti) {
+          console.log(
+            '\n🔄 Upgrading STI discriminators to qualified names...\n',
+          );
+
+          // Import qualified name utilities
+          const { isQualifiedName } = await import('@happyvertical/smrt-core');
+
+          // Find all STI tables (tables with _meta_type column)
+          const stiTables: string[] = [];
+          for (const tableName of tablesProcessed) {
+            const schema = await db.getTableSchema(tableName);
+            if (schema?.columns._meta_type) {
+              stiTables.push(tableName);
+            }
+          }
+
+          if (stiTables.length === 0) {
+            console.log(
+              '  No STI tables found - skipping discriminator upgrade\n',
+            );
+          } else {
+            if (options.verbose) {
+              console.log(
+                `  Found ${stiTables.length} STI table(s): ${stiTables.join(', ')}\n`,
+              );
+            }
+
+            let stiSuccessCount = 0;
+            let stiSkippedCount = 0;
+            let stiErrorCount = 0;
+
+            for (const tableName of stiTables) {
+              // Get distinct _meta_type values that are NOT qualified
+              const result = await db.query(
+                `SELECT DISTINCT _meta_type FROM ${quoteIdentifier(tableName)} WHERE _meta_type IS NOT NULL`,
+              );
+
+              for (const row of result.rows) {
+                const metaType = row._meta_type as string;
+
+                // Skip if already qualified
+                if (isQualifiedName(metaType)) {
+                  if (options.verbose) {
+                    console.log(
+                      `  ⊙ ${tableName}._meta_type="${metaType}" (already qualified)`,
+                    );
+                  }
+                  stiSkippedCount++;
+                  continue;
+                }
+
+                // Look up the class in the registry to get qualified name
+                const registeredClass = ObjectRegistry.getClass(metaType);
+                if (!registeredClass) {
+                  console.warn(
+                    `  ⚠️  ${tableName}._meta_type="${metaType}" - class not found in registry`,
+                  );
+                  stiSkippedCount++;
+                  continue;
+                }
+
+                const qualifiedName = registeredClass.qualifiedName;
+                if (!qualifiedName) {
+                  console.warn(
+                    `  ⚠️  ${tableName}._meta_type="${metaType}" - class has no qualified name`,
+                  );
+                  stiSkippedCount++;
+                  continue;
+                }
+
+                // Generate UPDATE statement
+                const updateSql = `UPDATE ${quoteIdentifier(tableName)} SET ${quoteIdentifier('_meta_type')} = ? WHERE ${quoteIdentifier('_meta_type')} = ?`;
+
+                if (options.dryRun) {
+                  console.log(`  [DRY RUN] ${updateSql}`);
+                  console.log(
+                    `            params: ['${qualifiedName}', '${metaType}']`,
+                  );
+                  stiSuccessCount++;
+                  continue;
+                }
+
+                try {
+                  const updateResult = await db.query(updateSql, [
+                    qualifiedName,
+                    metaType,
+                  ]);
+                  const rowsAffected = updateResult.rowCount || 0;
+                  console.log(
+                    `  ✓ ${tableName}: "${metaType}" → "${qualifiedName}" (${rowsAffected} row(s))`,
+                  );
+                  stiSuccessCount++;
+                } catch (error) {
+                  const errorMsg =
+                    error instanceof Error ? error.message : String(error);
+                  console.error(
+                    `  ✗ ${tableName}: "${metaType}" → "${qualifiedName}" failed: ${errorMsg}`,
+                  );
+                  stiErrorCount++;
+                }
+              }
+            }
+
+            console.log();
+            if (stiErrorCount > 0) {
+              console.log(
+                `⚠️  STI upgrade completed with errors: ${stiSuccessCount} succeeded, ${stiErrorCount} failed`,
+              );
+              if (stiSkippedCount > 0) {
+                console.log(
+                  `   (${stiSkippedCount} already qualified or skipped)`,
+                );
+              }
+            } else if (stiSuccessCount === 0) {
+              console.log(
+                `✅ All STI discriminators already qualified (${stiSkippedCount} checked)\n`,
+              );
+            } else {
+              console.log(
+                `✅ Successfully upgraded ${stiSuccessCount} STI discriminator(s)`,
+              );
+              if (stiSkippedCount > 0) {
+                console.log(
+                  `   (${stiSkippedCount} already qualified or skipped)`,
+                );
+              }
             }
           }
         }

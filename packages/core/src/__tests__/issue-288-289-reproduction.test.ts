@@ -154,8 +154,10 @@ describe('Issue #288 and #289 Reproduction', () => {
       console.log('Has _meta_data?', '_meta_data' in json);
       console.log('_meta_data contents:', json._meta_data);
 
-      // _meta_type should be set automatically
-      expect(json._meta_type).toBe('TestMeetingAnnouncement');
+      // _meta_type should be set automatically (Issue #713: now uses qualified names)
+      expect(json._meta_type).toBe(
+        '@happyvertical/smrt-core:TestMeetingAnnouncement',
+      );
 
       // Foreign keys should be in the JSON output (either directly or in _meta_data)
       expect(

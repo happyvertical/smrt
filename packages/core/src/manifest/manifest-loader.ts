@@ -33,6 +33,11 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import {
+  createQualifiedName,
+  isQualifiedName,
+  parseQualifiedName,
+} from '../utils/qualified-names.js';
 import { ManifestManager } from './manager.js';
 
 /**
@@ -731,58 +736,45 @@ export function discoverManifestSync(
       loadLocalTestManifestSync();
     }
 
-    if (getLocalTestManifestCache()?.objects[name]) {
-      console.log(
-        `[manifest-loader] ✅ Found ${className} in localTestManifest (lowercase key)`,
-      );
-      return getLocalTestManifestCache()?.objects[name];
-    }
-    if (getLocalTestManifestCache()?.objects[className]) {
-      console.log(
-        `[manifest-loader] ✅ Found ${className} in localTestManifest (exact key)`,
-      );
-      return getLocalTestManifestCache()?.objects[className];
+    const localManifest = getLocalTestManifestCache();
+    if (localManifest) {
+      // Use lookupInManifest for qualified name support (Issue #713)
+      const entry = lookupInManifest(localManifest, className);
+      if (entry) {
+        console.log(
+          `[manifest-loader] ✅ Found ${className} in localTestManifest`,
+        );
+        return entry;
+      }
     }
   }
 
   // 2. Check testManifest (core test classes) - ONLY in test environment
   if (isTestEnvironment()) {
     const manifest = getTestManifest();
-    if (manifest?.objects[name]) {
-      console.log(
-        `[manifest-loader] ✅ Found ${className} in testManifest (lowercase key)`,
-      );
-      return manifest.objects[name];
-    }
-    if (manifest?.objects[className]) {
-      console.log(
-        `[manifest-loader] ✅ Found ${className} in testManifest (exact key)`,
-      );
-      return manifest.objects[className];
+    if (manifest) {
+      // Use lookupInManifest for qualified name support (Issue #713)
+      const entry = lookupInManifest(manifest, className);
+      if (entry) {
+        console.log(`[manifest-loader] ✅ Found ${className} in testManifest`);
+        return entry;
+      }
     }
   }
 
   // 3. Check staticManifest (core framework classes)
-  const staticObjects = getStaticManifest().objects as Record<
-    string,
-    ManifestEntry
-  >;
-  if (staticObjects[name]) {
-    console.log(
-      `[manifest-loader] ✅ Found ${className} in staticManifest (lowercase key)`,
-    );
-    return staticObjects[name];
-  }
-  if (staticObjects[className]) {
-    console.log(
-      `[manifest-loader] ✅ Found ${className} in staticManifest (exact key)`,
-    );
-    return staticObjects[className];
+  const staticManifest = getStaticManifest();
+  // Use lookupInManifest for qualified name support (Issue #713)
+  const staticEntry = lookupInManifest(staticManifest, className);
+  if (staticEntry) {
+    console.log(`[manifest-loader] ✅ Found ${className} in staticManifest`);
+    return staticEntry;
   }
 
   // 4. Check cached external manifests
   for (const manifest of getManifestCacheMap().values()) {
-    const entry = manifest.objects[name] || manifest.objects[className];
+    // Use lookupInManifest for qualified name support (Issue #713)
+    const entry = lookupInManifest(manifest, className);
     if (entry) {
       console.log(
         `[manifest-loader] ✅ Found ${className} in external manifest cache`,
@@ -814,7 +806,8 @@ export function discoverManifestSync(
   for (const pkg of smrtPackages) {
     const manifest = loadExternalManifestSync(pkg);
     if (manifest) {
-      const entry = manifest.objects[name] || manifest.objects[className];
+      // Use lookupInManifest for qualified name support (Issue #713)
+      const entry = lookupInManifest(manifest, className);
       if (entry) {
         console.log(
           `[manifest-loader] ✅ Found ${className} in external package ${pkg}`,
@@ -862,8 +855,8 @@ export function discoverManifestSync(
               // Cache it for future lookups
               getManifestCacheMap().set(fullPackageName, manifest);
               // Check if this manifest has the class we're looking for
-              const entry =
-                manifest.objects[name] || manifest.objects[className];
+              // Use lookupInManifest for qualified name support (Issue #713)
+              const entry = lookupInManifest(manifest, className);
               if (entry) {
                 console.log(
                   `[manifest-loader] ✅ Found ${className} in node_modules package ${fullPackageName}`,
@@ -898,6 +891,108 @@ export function discoverManifestSync(
 // getManifestCollisionsMap()
 
 /**
+ * Look up a manifest entry in a manifest's objects map.
+ * Supports both qualified names and simple class names.
+ *
+ * Lookup order:
+ * 1. Direct qualified name lookup (e.g., "@happyvertical/smrt-core:Product")
+ * 2. Constructed qualified name (packageName + className)
+ * 3. Search by className property (case-insensitive)
+ *
+ * @param manifest - The manifest to search in
+ * @param nameOrQualified - Either a qualified name or simple class name
+ * @returns ManifestEntry or undefined if not found
+ */
+export function lookupInManifest(
+  manifest: SmartObjectManifest,
+  nameOrQualified: string,
+): ManifestEntry | undefined {
+  // First try direct lookup (handles both qualified names and exact matches)
+  if (manifest.objects[nameOrQualified]) {
+    return manifest.objects[nameOrQualified];
+  }
+
+  // If input is a qualified name, try extracting class name for fallback search
+  if (isQualifiedName(nameOrQualified)) {
+    const { className } = parseQualifiedName(nameOrQualified);
+    // Search by className property (case-insensitive)
+    const lowerClassName = className.toLowerCase();
+    for (const entry of Object.values(manifest.objects)) {
+      if (entry.className?.toLowerCase() === lowerClassName) {
+        return entry;
+      }
+    }
+    return undefined;
+  }
+
+  // For simple class names, try constructing qualified name if manifest has packageName
+  if (manifest.packageName) {
+    const qualifiedKey = createQualifiedName(
+      manifest.packageName,
+      nameOrQualified,
+    );
+    if (manifest.objects[qualifiedKey]) {
+      return manifest.objects[qualifiedKey];
+    }
+  }
+
+  // Search by className property (case-insensitive) for simple names
+  const lowerName = nameOrQualified.toLowerCase();
+  for (const entry of Object.values(manifest.objects)) {
+    if (entry.className?.toLowerCase() === lowerName) {
+      return entry;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Find a manifest entry by qualified name across all loaded manifests.
+ *
+ * @param qualifiedName - The fully qualified class name (e.g., "@happyvertical/smrt-core:Product")
+ * @returns ManifestEntry or undefined if not found
+ */
+export function findManifestEntryByQualifiedName(
+  qualifiedName: string,
+): ManifestEntry | undefined {
+  if (!isQualifiedName(qualifiedName)) {
+    return undefined;
+  }
+
+  const { packageName } = parseQualifiedName(qualifiedName);
+
+  // Check if we have the package's manifest cached
+  const manifest = getManifestCacheMap().get(packageName);
+  if (manifest) {
+    // Try qualified name first, then fallback to simple names
+    return lookupInManifest(manifest, qualifiedName);
+  }
+
+  // Check static manifest
+  const staticManifestData = getStaticManifest();
+  if (staticManifestData.packageName === packageName) {
+    return lookupInManifest(staticManifestData, qualifiedName);
+  }
+
+  // Check test manifest (if in test environment)
+  if (isTestEnvironment()) {
+    const testManifest = getTestManifest();
+    if (testManifest?.packageName === packageName) {
+      return lookupInManifest(testManifest, qualifiedName);
+    }
+
+    // Check local test manifest
+    const localTest = getLocalTestManifestCache();
+    if (localTest?.packageName === packageName) {
+      return lookupInManifest(localTest, qualifiedName);
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Discover manifest entry asynchronously (includes external package loading)
  *
  * Search order:
@@ -928,6 +1023,11 @@ export async function discoverManifestEntry(
     manifestSource: string;
   }> = [];
 
+  // Build qualified name for lookup if we have package context
+  const qualifiedName = constructorPackage
+    ? createQualifiedName(constructorPackage, className)
+    : undefined;
+
   // 2. Check localTestManifest first (domain package test classes) - ONLY in test environment
   // Do this BEFORE loading external manifest to avoid duplicate loading
   let localEntry: SmartObjectDefinition | undefined;
@@ -935,16 +1035,18 @@ export async function discoverManifestEntry(
     if (getLocalTestManifestCache() === undefined) {
       loadLocalTestManifestSync();
     }
-    localEntry =
-      getLocalTestManifestCache()?.objects[name] ||
-      getLocalTestManifestCache()?.objects[className];
-    if (localEntry) {
-      foundEntries.push({
-        entry: localEntry,
-        packageName: getLocalTestManifestCache()?.packageName || 'local-test',
-        filePath: localEntry.filePath,
-        manifestSource: 'local test manifest',
-      });
+    const localManifest = getLocalTestManifestCache();
+    if (localManifest) {
+      // Use lookupInManifest for consistent qualified name handling
+      localEntry = lookupInManifest(localManifest, qualifiedName || className);
+      if (localEntry) {
+        foundEntries.push({
+          entry: localEntry,
+          packageName: localManifest.packageName || 'local-test',
+          filePath: localEntry.filePath,
+          manifestSource: 'local test manifest',
+        });
+      }
     }
   }
 
@@ -958,7 +1060,8 @@ export async function discoverManifestEntry(
     if (!skipExternal) {
       const manifest = await loadExternalManifest(constructorPackage);
       if (manifest) {
-        const entry = manifest.objects[name] || manifest.objects[className];
+        // Use lookupInManifest for consistent qualified name handling
+        const entry = lookupInManifest(manifest, qualifiedName || className);
         if (entry) {
           const enrichedEntry =
             !entry.packageName && manifest.packageName
@@ -980,24 +1083,27 @@ export async function discoverManifestEntry(
   // Skip if we already loaded a local test manifest (avoids duplicate entries from same package)
   if (isTestEnvironment() && (!getLocalTestManifestCache() || !localEntry)) {
     const manifest = getTestManifest();
-    const testEntry = manifest?.objects[name] || manifest?.objects[className];
-    if (testEntry) {
-      foundEntries.push({
-        entry: testEntry,
-        packageName: manifest?.packageName || '@happyvertical/smrt-core',
-        filePath: testEntry.filePath,
-        manifestSource: '@happyvertical/smrt-core test manifest',
-      });
+    if (manifest) {
+      // Use lookupInManifest for consistent qualified name handling
+      const testEntry = lookupInManifest(manifest, qualifiedName || className);
+      if (testEntry) {
+        foundEntries.push({
+          entry: testEntry,
+          packageName: manifest.packageName || '@happyvertical/smrt-core',
+          filePath: testEntry.filePath,
+          manifestSource: '@happyvertical/smrt-core test manifest',
+        });
+      }
     }
   }
 
   // 4. Check staticManifest (core framework classes)
   const staticManifestData = getStaticManifest();
-  const staticObjects = staticManifestData.objects as Record<
-    string,
-    ManifestEntry
-  >;
-  const staticEntry = staticObjects[name] || staticObjects[className];
+  // Use lookupInManifest for consistent qualified name handling
+  const staticEntry = lookupInManifest(
+    staticManifestData,
+    qualifiedName || className,
+  );
   if (staticEntry) {
     foundEntries.push({
       entry: staticEntry,
@@ -1014,7 +1120,8 @@ export async function discoverManifestEntry(
       continue;
     }
 
-    const entry = manifest.objects[name] || manifest.objects[className];
+    // Use lookupInManifest for consistent qualified name handling
+    const entry = lookupInManifest(manifest, qualifiedName || className);
     if (entry) {
       foundEntries.push({
         entry:

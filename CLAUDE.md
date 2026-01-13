@@ -663,6 +663,119 @@ class Product extends SmrtObject {
 }
 ```
 
+### Qualified Class Names (Namespace Isolation)
+
+SMRT uses **qualified class names** to prevent collisions when multiple packages define classes with the same name. This enables true namespace isolation across packages.
+
+**Format**: `@package/name:ClassName`
+
+```typescript
+// Examples of qualified names
+'@happyvertical/smrt-core:Product'
+'@happyvertical/smrt-profiles:Person'
+'@happyvertical/praeco:Article'
+```
+
+**Why Qualified Names?**
+
+Without qualified names, two packages defining `class Product` would collide:
+```
+Package A: class Product → manifest.objects["Product"]  ❌ Collision!
+Package B: class Product → manifest.objects["Product"]  ❌
+```
+
+With qualified names:
+```
+Package A: class Product → manifest.objects["@pkg-a:Product"]  ✅
+Package B: class Product → manifest.objects["@pkg-b:Product"]  ✅
+```
+
+**STI Discriminator Format**
+
+The `_meta_type` discriminator column now uses qualified names:
+
+```typescript
+// Old format (no longer used)
+{ _meta_type: 'Meeting', title: 'Standup' }
+
+// New format (qualified)
+{ _meta_type: '@happyvertical/smrt-events:Meeting', title: 'Standup' }
+```
+
+**Creating STI Objects**
+
+When creating STI objects, use the qualified `_meta_type`:
+
+```typescript
+const event = await eventCollection.create({
+  _meta_type: '@happyvertical/smrt-events:Meeting',
+  title: 'Team Standup',
+  location: 'Room A'
+});
+```
+
+**Querying STI Objects**
+
+Filter by qualified `_meta_type`:
+
+```typescript
+// Get all meetings
+const meetings = await eventCollection.list({
+  where: { _meta_type: '@happyvertical/smrt-events:Meeting' }
+});
+```
+
+**Migration for Existing Databases**
+
+If you have existing databases with unqualified `_meta_type` values, use the STI migration command:
+
+```bash
+# Preview migration without applying
+smrt db:migrate --upgrade-sti --dry-run
+
+# Apply STI discriminator migration
+smrt db:migrate --upgrade-sti
+```
+
+This updates all `_meta_type` values from simple class names to qualified format:
+```sql
+-- Generated migration
+UPDATE events SET _meta_type = '@happyvertical/smrt-events:Meeting'
+WHERE _meta_type = 'Meeting';
+```
+
+**Registry Lookups**
+
+The ObjectRegistry supports both qualified and simple name lookups:
+
+```typescript
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+
+// Qualified lookup (preferred)
+const registered = ObjectRegistry.getClass('@happyvertical/smrt-core:Product');
+
+// Simple name lookup (for convenience, searches by className)
+const fields = ObjectRegistry.getFields('Product');
+const methods = ObjectRegistry.getMethods('Product');
+```
+
+**Visibility Control**
+
+Classes can specify visibility to control manifest inclusion:
+
+```typescript
+@smrt({ visibility: 'public' })   // Default - exported to consumers
+class Product extends SmrtObject {}
+
+@smrt({ visibility: 'internal' }) // Package-only, not in published manifest
+class InternalHelper extends SmrtObject {}
+
+@smrt({ visibility: 'test' })     // Test-only, never published
+class TestFixture extends SmrtObject {}
+```
+
+Test files (`*.test.ts`, `__tests__/*`) automatically get `visibility: 'test'`.
+
 ---
 
 ## For Contributors

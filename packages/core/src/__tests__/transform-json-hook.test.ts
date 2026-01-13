@@ -207,8 +207,8 @@ describe('transformJSON() Hook', () => {
 
       const data = content.toJSON();
 
-      // STI discriminator must be preserved
-      expect(data._meta_type).toBe('EnhancedContent');
+      // STI discriminator must be preserved (Issue #713: now uses qualified names)
+      expect(data._meta_type).toBe('@happyvertical/smrt-core:EnhancedContent');
       // Custom fields added by hook
       expect(data.enhanced).toBe(true);
       expect(data.length).toBe(12);
@@ -271,8 +271,8 @@ describe('transformJSON() Hook', () => {
       expect(data.level1Transform).toBe(true);
       expect(data.level2Transform).toBe(true);
       expect(data.level3Transform).toBe(true);
-      // STI still works
-      expect(data._meta_type).toBe('Level3');
+      // STI still works (Issue #713: now uses qualified names)
+      expect(data._meta_type).toBe('@happyvertical/smrt-core:Level3');
     });
 
     it('should allow intermediate classes to modify parent transformations', async () => {

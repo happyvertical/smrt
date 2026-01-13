@@ -217,9 +217,28 @@ async function main(): Promise<void> {
     process.exit(results.errors.length > 0 ? 1 : 0);
   }
 
-  // Generate manifest
+  // Read package.json for metadata (Issue #713 - namespace isolation)
+  let packageName: string | undefined;
+  let packageVersion: string | undefined;
+  try {
+    const pkgPath = resolve(options.directory, 'package.json');
+    const pkgContent = readFileSync(pkgPath, 'utf-8');
+    const packageJson = JSON.parse(pkgContent);
+    packageName = packageJson.name || undefined;
+    packageVersion = packageJson.version || undefined;
+  } catch {
+    // package.json not found or invalid - continue without packageName
+    console.error(
+      'Warning: package.json not found. Qualified names will not be generated.',
+    );
+  }
+
+  // Generate manifest with packageName for qualified names (Issue #713)
   const adapter = new ManifestAdapter();
-  const manifest = adapter.toManifest(resolved);
+  const manifest = adapter.toManifest(resolved, {
+    packageName,
+    packageVersion,
+  });
 
   const output = JSON.stringify(manifest, null, 2);
 

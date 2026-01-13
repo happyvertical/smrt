@@ -4,6 +4,20 @@
 
 import type { SmartObjectConfig } from '../registry.js';
 
+/**
+ * Qualified class name in format "@package/name:ClassName"
+ * Example: "@happyvertical/smrt-core:Product"
+ */
+export type QualifiedClassName = `${string}:${string}`;
+
+/**
+ * Controls how a class is exposed in manifests and across packages
+ */
+export type SmrtVisibility =
+  | 'public' // Included in published manifest, available to all consumers
+  | 'internal' // Package-only, excluded from published manifest
+  | 'test'; // Test-only, never in any published manifest
+
 export interface FieldDefinition {
   type:
     | 'text'
@@ -76,11 +90,47 @@ export interface ManifestSchema {
 }
 
 export interface SmartObjectDefinition {
-  name: string;
+  /**
+   * Qualified name in format "@package/name:ClassName"
+   * This is the PRIMARY KEY for manifest lookups.
+   * Example: "@happyvertical/smrt-core:Product"
+   *
+   * Optional during transition - will be required in future versions.
+   */
+  qualifiedName?: QualifiedClassName;
+
+  /**
+   * Simple class name (PascalCase)
+   * Example: "Product"
+   */
   className: string;
+
+  /**
+   * Package name where this class is defined.
+   * Example: "@happyvertical/smrt-core"
+   *
+   * Optional during transition - will be required in future versions.
+   */
+  packageName?: string;
+
+  /**
+   * Visibility control for manifest inclusion
+   * - 'public': Included in published manifest (default)
+   * - 'internal': Package-only, excluded from published manifest
+   * - 'test': Test-only, never in any published manifest
+   *
+   * Defaults to 'public' if not specified.
+   */
+  visibility?: SmrtVisibility;
+
+  /**
+   * @deprecated Use qualifiedName instead. Kept for transition period.
+   * Lowercase class name, formerly used as manifest key.
+   */
+  name: string;
+
   collection: string; // Pluralized name for endpoints
   filePath: string;
-  packageName?: string; // Package name for external manifest loading
   packageVersion?: string; // Package version for external manifest loading
   importPath?: string; // Import path for dynamic loading (e.g., "@pkg/objects")
   modulePath?: string; // Relative module path within package
@@ -89,7 +139,8 @@ export interface SmartObjectDefinition {
   fields: Record<string, FieldDefinition>;
   methods: Record<string, MethodDefinition>;
   decoratorConfig: SmartObjectConfig;
-  extends?: string; // Base class name
+  extends?: string; // Base class name (simple name, not qualified)
+  extendsQualified?: string; // Base class qualified name
   extendsTypeArg?: string; // Generic type argument (e.g., "Meeting" from "SmrtCollection<Meeting>")
   tools?: Array<{
     type: 'function';
@@ -112,8 +163,12 @@ export interface SmartObjectDefinition {
 export interface SmartObjectManifest {
   version: string;
   timestamp: number;
-  packageName?: string; // Root package name
+  packageName?: string; // Root package name (should be set for all new manifests)
   packageVersion?: string; // Root package version
+  /**
+   * Objects keyed by qualified name (e.g., "@happyvertical/smrt-core:Product")
+   * Key is string for backward compatibility, but should be QualifiedClassName format.
+   */
   objects: Record<string, SmartObjectDefinition>;
   moduleType?: string; // Module type identifier (e.g., "smrt") for package discovery
   smrtDependencies?: string[]; // Discovered SMRT packages from dependency tree

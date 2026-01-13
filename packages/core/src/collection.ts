@@ -21,6 +21,40 @@ import {
 } from './utils';
 
 /**
+ * Resolve _meta_type in WHERE clause from simple class name to qualified name (Issue #713)
+ *
+ * This helper function allows queries like { _meta_type: 'Image' } to work correctly
+ * when the database stores qualified names like '@happyvertical/smrt-assets:Image'.
+ *
+ * @param where - The original WHERE clause object
+ * @returns Modified WHERE clause with qualified _meta_type, or original if no resolution needed
+ */
+function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
+  where: T | undefined,
+): T | undefined {
+  if (!where?._meta_type || typeof where._meta_type !== 'string') {
+    return where;
+  }
+
+  const metaTypeValue = where._meta_type as string;
+
+  // Only resolve if it's a simple class name (no ':' means not qualified)
+  if (metaTypeValue.includes(':')) {
+    return where;
+  }
+
+  const registeredClass = ObjectRegistry.getClass(metaTypeValue);
+  if (registeredClass?.qualifiedName) {
+    return {
+      ...where,
+      _meta_type: registeredClass.qualifiedName,
+    };
+  }
+
+  return where;
+}
+
+/**
  * Configuration options for SmrtCollection
  */
 export interface SmrtCollectionOptions extends SmrtClassOptions {}
@@ -510,8 +544,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
       // If this is a child collection (not the base), auto-filter by type
       if (stiBase && stiBase !== this._itemClass.name) {
+        // Use qualified name for STI filtering (namespace isolation)
+        const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
+        const metaType = registeredClass?.qualifiedName || this._itemClass.name;
         where = {
-          _meta_type: this._itemClass.name,
+          _meta_type: metaType,
           ...where,
         };
       }
@@ -640,12 +677,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
       // If this is a child collection (not the base), auto-filter by type
       if (stiBase && stiBase !== this._itemClass.name) {
+        // Use qualified name for STI filtering (namespace isolation)
+        const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
+        const metaType = registeredClass?.qualifiedName || this._itemClass.name;
         where = {
-          _meta_type: this._itemClass.name,
+          _meta_type: metaType,
           ...(where || {}),
         };
       }
     }
+
+    // Resolve _meta_type to qualified name if user provided simple class name (Issue #713)
+    where = resolveMetaTypeInWhere(where);
 
     // convertWhereKeys is now sync (issue #663) - no await needed
     const convertedWhere = this.convertWhereKeys(where || {});
@@ -932,6 +975,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns New item instance
    */
   public async create(options: any) {
+    // Ensure manifest is loaded for external packages before creating instance
+    // This is critical for STI children to have inherited fields available during toJSON()
+    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+
     // STI: Check for polymorphic instantiation
     const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
 
@@ -967,10 +1014,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const instance = new this._itemClass(params);
     await instance.initialize();
 
-    // For STI collections, set _meta_type to the class name (fix for issue #442)
+    // For STI collections, set _meta_type to the qualified class name (fix for issue #442)
     // This ensures _meta_type is available immediately after creation, not just after DB load
+    // Use qualified name for namespace isolation (issue #713)
     if (tableStrategy === 'sti') {
-      (instance as any)._meta_type = this._itemClass.name;
+      const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
+      (instance as any)._meta_type =
+        registeredClass?.qualifiedName || this._itemClass.name;
     }
     // Generate ID if not provided, then save
     if (!instance.id) {
@@ -1004,7 +1054,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     // Get the correct class constructor from ObjectRegistry
-    const registeredClass = ObjectRegistry.getClass(className);
+    // Support both qualified names (new format: @pkg:Class) and simple names (legacy)
+    let registeredClass = ObjectRegistry.getClassByQualifiedName(className);
+    if (!registeredClass) {
+      // Fall back to simple name lookup for legacy data
+      registeredClass = ObjectRegistry.getClass(className);
+    }
 
     if (!registeredClass) {
       throw new Error(
@@ -1025,7 +1080,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     await instance.initialize();
 
     // Ensure _meta_type is set on the instance (fix for issue #442)
-    (instance as any)._meta_type = className;
+    // Use qualified name if available, otherwise keep the input className
+    // (which may already be qualified for new data or simple for legacy data)
+    (instance as any)._meta_type = registeredClass?.qualifiedName || className;
 
     return instance as ModelType;
   }
@@ -1209,12 +1266,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
       // If this is a child collection (not the base), auto-filter by type
       if (stiBase && stiBase !== this._itemClass.name) {
+        // Use qualified name for STI filtering (namespace isolation - issue #713)
+        const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
+        const metaType = registeredClass?.qualifiedName || this._itemClass.name;
         where = {
-          _meta_type: this._itemClass.name,
+          _meta_type: metaType,
           ...(where || {}),
         };
       }
     }
+
+    // Resolve _meta_type to qualified name if user provided simple class name (Issue #713)
+    where = resolveMetaTypeInWhere(where);
 
     // convertWhereKeys is now sync (issue #663) - no await needed
     const { sql: whereSql, values: whereValues } = buildWhere(
@@ -1318,9 +1381,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         const instance = new this._itemClass(instanceParams);
         await instance.initialize();
 
-        // For STI collections, set _meta_type to the class name
+        // For STI collections, set _meta_type to the qualified class name (namespace isolation - issue #713)
         if (isSTI) {
-          (instance as any)._meta_type = this._itemClass.name;
+          const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
+          (instance as any)._meta_type =
+            registeredClass?.qualifiedName || this._itemClass.name;
         }
 
         return instance;

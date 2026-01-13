@@ -62,17 +62,18 @@ class Issue396EventCollection extends SmrtCollection<Issue396Event> {
 // Test Fixtures
 // ============================================================================
 
+// Issue #713: STI discriminators now use qualified names
 const fixtures = {
   event: {
     scheduled: {
-      _meta_type: 'Issue396Event',
+      _meta_type: '@happyvertical/smrt-core:Issue396Event',
       title: 'Community Event',
       date: new Date('2025-01-15'),
       location: 'Community Center',
       status: 'scheduled',
     },
     completed: {
-      _meta_type: 'Issue396Event',
+      _meta_type: '@happyvertical/smrt-core:Issue396Event',
       title: 'Past Event',
       date: new Date('2024-12-01'),
       location: 'Town Hall',
@@ -81,7 +82,7 @@ const fixtures = {
   },
   meeting: {
     regular: {
-      _meta_type: 'Issue396Meeting',
+      _meta_type: '@happyvertical/smrt-core:Issue396Meeting',
       title: 'Regular Council Meeting',
       date: new Date('2025-11-25'),
       location: 'Council Chambers',
@@ -90,7 +91,7 @@ const fixtures = {
       councilId: 'test-council-id',
     },
     special: {
-      _meta_type: 'Issue396Meeting',
+      _meta_type: '@happyvertical/smrt-core:Issue396Meeting',
       title: 'Special Council Meeting',
       date: new Date('2025-12-01'),
       location: 'Council Chambers',
@@ -101,7 +102,7 @@ const fixtures = {
     },
     // Exact scenario from #396 - Meeting without explicit status
     withoutStatus: {
-      _meta_type: 'Issue396Meeting',
+      _meta_type: '@happyvertical/smrt-core:Issue396Meeting',
       title: 'Regular Council Meeting – November 25, 2025',
       date: new Date('2025-11-25'),
       location: 'Council Chambers',
@@ -299,9 +300,9 @@ function runSTITests(getContext: () => { events: Issue396EventCollection }) {
       const all = await events.list({});
       expect(all.length).toBeGreaterThanOrEqual(3);
 
-      // Query by type
+      // Query by type - Issue #713: STI discriminators now use qualified names
       const meetings = await events.list({
-        where: { _meta_type: 'Issue396Meeting' },
+        where: { _meta_type: '@happyvertical/smrt-core:Issue396Meeting' },
       });
       expect(meetings.length).toBeGreaterThanOrEqual(2);
     });
@@ -398,11 +399,12 @@ function runQueryTests(getContext: () => { events: Issue396EventCollection }) {
         location: 'Council Chambers',
       });
 
+      // Issue #713: STI discriminators now use qualified names
       const results = await events.list({
         where: {
           status: 'scheduled',
           location: 'Council Chambers',
-          _meta_type: 'Issue396Meeting',
+          _meta_type: '@happyvertical/smrt-core:Issue396Meeting',
         },
       });
 
@@ -501,7 +503,10 @@ function runMetaTypeOnCreationTests(
       });
 
       // _meta_type should be set immediately, not undefined
-      expect((event as any)._meta_type).toBe('Issue396Event');
+      // Issue #713: STI discriminators now use qualified names
+      expect((event as any)._meta_type).toBe(
+        '@happyvertical/smrt-core:Issue396Event',
+      );
       expect(event.constructor.name).toBe('Issue396Event');
     });
 
@@ -509,15 +514,18 @@ function runMetaTypeOnCreationTests(
       const { events } = getContext();
 
       // Create a child class instance with explicit _meta_type
+      // Issue #713: STI discriminators now use qualified names
       const meeting = await events.create({
-        _meta_type: 'Issue396Meeting',
+        _meta_type: '@happyvertical/smrt-core:Issue396Meeting',
         title: 'Test Meeting',
         location: 'Conference Room',
         type: 'Special',
       });
 
       // _meta_type should be set immediately
-      expect((meeting as any)._meta_type).toBe('Issue396Meeting');
+      expect((meeting as any)._meta_type).toBe(
+        '@happyvertical/smrt-core:Issue396Meeting',
+      );
       expect(meeting.constructor.name).toBe('Issue396Meeting');
     });
 
@@ -525,19 +533,24 @@ function runMetaTypeOnCreationTests(
       const { events } = getContext();
 
       // Create and verify _meta_type is set
+      // Issue #713: STI discriminators now use qualified names
       const meeting = await events.create({
-        _meta_type: 'Issue396Meeting',
+        _meta_type: '@happyvertical/smrt-core:Issue396Meeting',
         title: 'Persistence Test Meeting',
         location: 'Main Hall',
         slug: 'persistence-test-meeting',
       });
 
-      expect((meeting as any)._meta_type).toBe('Issue396Meeting');
+      expect((meeting as any)._meta_type).toBe(
+        '@happyvertical/smrt-core:Issue396Meeting',
+      );
 
       // Reload from database
       const reloaded = await events.get({ slug: 'persistence-test-meeting' });
       expect(reloaded).not.toBeNull();
-      expect((reloaded as any)._meta_type).toBe('Issue396Meeting');
+      expect((reloaded as any)._meta_type).toBe(
+        '@happyvertical/smrt-core:Issue396Meeting',
+      );
     });
 
     it('should allow filtering by _meta_type in arrays', async () => {
@@ -549,8 +562,9 @@ function runMetaTypeOnCreationTests(
         location: 'Location 1',
       });
 
+      // Issue #713: STI discriminators now use qualified names
       const meeting1 = await events.create({
-        _meta_type: 'Issue396Meeting',
+        _meta_type: '@happyvertical/smrt-core:Issue396Meeting',
         title: 'Meeting 1',
         location: 'Location 2',
       });
@@ -561,12 +575,15 @@ function runMetaTypeOnCreationTests(
       });
 
       // All should have _meta_type set
+      // Issue #713: STI discriminators now use qualified names
       const items = [event1, meeting1, event2];
       const meetings = items.filter(
-        (i) => (i as any)._meta_type === 'Issue396Meeting',
+        (i) =>
+          (i as any)._meta_type === '@happyvertical/smrt-core:Issue396Meeting',
       );
       const baseEvents = items.filter(
-        (i) => (i as any)._meta_type === 'Issue396Event',
+        (i) =>
+          (i as any)._meta_type === '@happyvertical/smrt-core:Issue396Event',
       );
 
       expect(meetings.length).toBe(1);

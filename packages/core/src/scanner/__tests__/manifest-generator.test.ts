@@ -46,8 +46,9 @@ describe('ManifestGenerator', () => {
         },
       ];
 
+      // Issue #713: Error message now includes qualified name hint
       expect(() => generator.generateManifest(scanResults)).toThrow(
-        /Class name collision detected: 'Product' is defined in multiple files/,
+        /Class name collision detected: 'Product'.*is defined in multiple files/,
       );
     });
 

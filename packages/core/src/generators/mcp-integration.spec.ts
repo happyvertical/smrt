@@ -3,6 +3,7 @@
  * Tests with real SMRT objects, database operations, and generated servers
  */
 
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,8 +22,11 @@ describe('MCPGenerator - Integration Tests', () => {
   let collection: McpIntegrationTestProductCollection;
 
   beforeEach(async () => {
-    // Create temp directory
-    tmpDir = join(tmpdir(), `smrt-mcp-integration-${Date.now()}`);
+    // Create temp directory with UUID for uniqueness in parallel test runs
+    tmpDir = join(
+      tmpdir(),
+      `smrt-mcp-integration-${Date.now()}-${randomUUID().slice(0, 8)}`,
+    );
     await mkdir(tmpDir, { recursive: true });
 
     // Register the collection for the test object

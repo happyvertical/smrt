@@ -45,6 +45,10 @@ export type {
   ColumnInfo,
   DatabaseEngine,
   DatabaseInterface,
+  // Data migration types (for STI upgrades, etc.)
+  DataMigration,
+  DataMigrationResult,
+  DataMigrationStatement,
   DriftReport,
   ForeignKeyInfo,
   IndexDefinition,
@@ -63,5 +67,6 @@ export type {
   SchemaChange,
   SchemaDiff,
   SchemaMigrationRecord,
+  StiDiscriminatorMigration,
   TableSchemaInfo,
 } from './types.js';

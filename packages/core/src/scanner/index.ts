@@ -1,8 +1,14 @@
 /**
- * AST scanning and manifest generation for SMRT objects
+ * Manifest generation for SMRT objects
+ *
+ * Note: AST scanning is now handled by @happyvertical/smrt-scanner package
+ * which uses OXC (Rust-based parser) for 2-3x faster performance.
+ *
+ * For scanning capabilities, import from '@happyvertical/smrt-scanner':
+ *   import { OxcScanner, ManifestAdapter } from '@happyvertical/smrt-scanner';
  */
 
-export { ASTScanner, scanFile, scanFiles } from './ast-scanner';
+export { ASTScanner } from './ast-scanner';
 export { generateManifest, ManifestGenerator } from './manifest-generator';
 export type {
   FieldDefinition,

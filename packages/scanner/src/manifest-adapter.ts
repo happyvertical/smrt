@@ -78,6 +78,7 @@ interface SmartObjectConfig {
 interface SmartObjectDefinition {
   name: string;
   className: string;
+  qualifiedName?: string; // NEW: @package/name:ClassName for namespace isolation (Issue #713)
   collection: string;
   filePath: string;
   packageName?: string;
@@ -108,11 +109,24 @@ interface SmartObjectManifest {
 // ============================================================================
 
 /**
+ * Create a qualified name for a class (namespace isolation - Issue #713)
+ * Format: @package/name:ClassName
+ */
+function createQualifiedName(packageName: string, className: string): string {
+  return `${packageName}:${className}`;
+}
+
+/**
  * Converts OXC scanner output to smrt-core manifest format
  */
 export class ManifestAdapter {
   /**
    * Convert resolved classes to manifest format
+   *
+   * @param resolved - Array of resolved class definitions
+   * @param options - Configuration options
+   * @param options.packageName - Package name for qualified name generation (Issue #713)
+   * @param options.packageVersion - Package version for manifest metadata
    */
   toManifest(
     resolved: ResolvedClassDefinition[],
@@ -124,8 +138,13 @@ export class ManifestAdapter {
     const objects: Record<string, SmartObjectDefinition> = {};
 
     for (const classDef of resolved) {
-      const definition = this.toSmartObjectDefinition(classDef);
-      objects[definition.name.toLowerCase()] = definition;
+      const definition = this.toSmartObjectDefinition(classDef, options);
+
+      // Use qualified name as key if packageName is available (Issue #713)
+      // This enables namespace isolation for multi-package scenarios
+      const manifestKey =
+        definition.qualifiedName || definition.name.toLowerCase();
+      objects[manifestKey] = definition;
     }
 
     return {
@@ -140,9 +159,13 @@ export class ManifestAdapter {
 
   /**
    * Convert a single resolved class to SmartObjectDefinition
+   *
+   * @param classDef - Resolved class definition from OXC scanner
+   * @param options - Configuration options (packageName for qualified names)
    */
   toSmartObjectDefinition(
     classDef: ResolvedClassDefinition,
+    options: { packageName?: string; packageVersion?: string } = {},
   ): SmartObjectDefinition {
     // Convert fields
     const fields: Record<string, FieldDefinition> = {};
@@ -165,12 +188,22 @@ export class ManifestAdapter {
     // Generate collection name (pluralize)
     const collection = this.pluralize(classDef.className);
 
+    // Determine package name (prefer option, then classDef value)
+    const packageName = options.packageName || classDef.packageName;
+
+    // Generate qualified name if packageName is available (Issue #713)
+    // Format: @package/name:ClassName for namespace isolation
+    const qualifiedName = packageName
+      ? createQualifiedName(packageName, classDef.className)
+      : undefined;
+
     return {
       name: classDef.className.toLowerCase(),
       className: classDef.className,
+      qualifiedName,
       collection,
       filePath: classDef.filePath,
-      packageName: classDef.packageName || undefined,
+      packageName: packageName || undefined,
       fields,
       methods,
       decoratorConfig: (classDef.decoratorConfig || {}) as SmartObjectConfig,
@@ -182,6 +215,22 @@ export class ManifestAdapter {
   }
 
   /**
+   * Framework internal fields that should NOT be included in manifests
+   * These are SmrtObject internals used by the framework, not user-defined fields
+   */
+  private static readonly FRAMEWORK_INTERNAL_FIELDS = new Set([
+    '_tableName',
+    'options',
+    '_loadedRelationships',
+    '_db',
+    '_ai',
+    '_fs',
+    '_isInitialized',
+    '_errors',
+    '_warnings',
+  ]);
+
+  /**
    * Convert raw field to FieldDefinition
    */
   convertField(field: RawFieldDefinition): FieldDefinition | null {
@@ -189,6 +238,14 @@ export class ManifestAdapter {
     if (field.accessibility !== 'public') {
       return null;
     }
+
+    // Skip framework internal fields (SmrtObject internals)
+    if (ManifestAdapter.FRAMEWORK_INTERNAL_FIELDS.has(field.name)) {
+      return null;
+    }
+
+    // Check if field is a function type (automatically transient)
+    const isFunctionType = field.typeAnnotation === 'Function';
 
     const inference = this.inferFieldType(field);
 
@@ -203,6 +260,19 @@ export class ManifestAdapter {
 
     if (inference.defaultValue !== undefined) {
       definition.default = inference.defaultValue;
+    }
+
+    // For meta fields, store the underlying type for hydration coercion
+    if (inference.underlyingType) {
+      definition._meta = {
+        ...definition._meta,
+        underlyingType: inference.underlyingType,
+      };
+    }
+
+    // Mark function type fields as transient (not persisted to database)
+    if (isFunctionType) {
+      definition.transient = true;
     }
 
     return definition;
@@ -231,6 +301,20 @@ export class ManifestAdapter {
     // 3. Use type annotation with 0 vs 0.0 heuristic
     if (field.typeAnnotation) {
       return this.inferFromAnnotation(field);
+    }
+
+    // 3.5. Infer from numeric literal without type annotation
+    // Handles cases like `version = 1` where there's no `: number` annotation
+    if (field.numericValue !== null) {
+      const fieldType: InferredFieldType = field.hasDecimalPoint
+        ? 'decimal'
+        : 'integer';
+      return {
+        type: fieldType,
+        required: !field.optional,
+        defaultValue: field.numericValue,
+        source: 'heuristic',
+      };
     }
 
     // 4. Default to text
@@ -352,6 +436,27 @@ export class ManifestAdapter {
     // This matches the behavior of the legacy TypeScript scanner
     const hasDefaultValue = field.initializer !== null;
     const isRequired = !field.optional && !hasDefaultValue;
+
+    // Meta<T> wrapper for STI child fields
+    // Extract the inner type T and mark as meta field
+    if (type?.startsWith('Meta<') && type.endsWith('>')) {
+      const innerType = type.slice(5, -1); // Extract type inside Meta<...>
+
+      // Recursively infer the underlying type
+      const underlyingInference = this.inferFromAnnotation({
+        ...field,
+        typeAnnotation: innerType,
+      });
+
+      return {
+        type: 'meta',
+        required: isRequired,
+        defaultValue: underlyingInference.defaultValue,
+        source: 'annotation',
+        // Store underlying type for hydration coercion
+        underlyingType: underlyingInference.type,
+      };
+    }
 
     // String types
     if (type === 'string') {

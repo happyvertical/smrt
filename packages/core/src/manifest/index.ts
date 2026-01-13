@@ -12,6 +12,7 @@ export type {
 export { ManifestBuilder } from './generator';
 export { ManifestManager } from './manager';
 export {
+  findManifestEntryByQualifiedName,
   loadExternalManifestSync,
   loadLocalTestManifestSync,
 } from './manifest-loader';

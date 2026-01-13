@@ -100,7 +100,8 @@ describe('STI Meta Field Detection', () => {
       const json = instance.toJSON();
 
       // Should have _meta_type and _meta_data for STI
-      expect(json._meta_type).toBe('TestSTI1');
+      // Issue #713: STI discriminators now use qualified names
+      expect(json._meta_type).toBe('@happyvertical/smrt-core:TestSTI1');
       expect(json._meta_data).toBeDefined();
       expect(typeof json._meta_data).toBe('object');
     });
@@ -123,11 +124,12 @@ describe('STI Meta Field Detection', () => {
       const instance = new TestLoad1();
       await instance.initialize(); // Need to initialize to load fields
 
+      // Issue #713: STI discriminators now use qualified names
       const dbData = {
         id: '123',
         slug: 'test',
         context: '',
-        _meta_type: 'TestLoad1',
+        _meta_type: '@happyvertical/smrt-core:TestLoad1',
         _meta_data: {
           metaField: 'from metadata',
         },
@@ -145,11 +147,12 @@ describe('STI Meta Field Detection', () => {
       const instance = new TestLoad2();
       await instance.initialize(); // Need to initialize to load fields
 
+      // Issue #713: STI discriminators now use qualified names
       const dbData = {
         id: '123',
         slug: 'test',
         context: '',
-        _meta_type: 'TestLoad2',
+        _meta_type: '@happyvertical/smrt-core:TestLoad2',
         _meta_data: JSON.stringify({ metaField: 'from JSON string' }), // JSON string
         created_at: new Date(),
         updated_at: new Date(),
