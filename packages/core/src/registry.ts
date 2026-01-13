@@ -2439,6 +2439,37 @@ export class ObjectRegistry {
         continue;
       }
 
+      // Issue #703: Handle STI subclasses with null tableName from external manifests
+      // When loaded from external manifests, tableName may be null, causing
+      // registerFromManifest() to derive a tableName from class name.
+      // For STI subclasses, we need to use the STI base's tableName instead.
+      if (!registered.schema?.tableName && registered.extends) {
+        const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+        if (tableStrategy === 'sti') {
+          const stiBaseName = ObjectRegistry.getSTIBase(_className);
+          if (stiBaseName && stiBaseName !== _className) {
+            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
+            if (stiBaseClass?.schema?.tableName) {
+              // Ensure we have a schema object to modify
+              if (!registered.schema) {
+                registered.schema = {
+                  tableName: '',
+                  ddl: '',
+                  columns: {},
+                  indexes: [],
+                  triggers: [],
+                  foreignKeys: [],
+                  dependencies: [],
+                  version: '',
+                };
+              }
+              // Set tableName from STI base so the following block processes this class
+              registered.schema.tableName = stiBaseClass.schema.tableName;
+            }
+          }
+        }
+      }
+
       if (registered.schema?.tableName) {
         // For STI subclasses, use the STI base class's tableName
         // This ensures all STI subclass columns are merged into the parent table
@@ -3580,40 +3611,35 @@ export class ObjectRegistry {
       return null; // Not using STI
     }
 
-    // Find the OLDEST/ROOT class in the chain with tableStrategy: 'sti'
-    // that shares the same table name as the target class.
+    // Find the OLDEST/ROOT class in the chain with explicit tableStrategy: 'sti'
+    // (Issue #703 fix: don't rely on tableName matching)
     //
     // In multi-level STI hierarchies (e.g., Council → Organization → Profile),
     // we need to return the oldest ancestor (Profile), not the first one found (Organization)
-    const registered = ObjectRegistry.findClass(className);
-    if (!registered) {
-      return null;
-    }
-
-    // Get this class's table name for matching
-    const targetTableName =
-      registered.config?.tableName || registered.schema?.tableName;
-
-    // Walk up the chain to find the OLDEST STI base with matching table
-    // The chain is ordered [root, ..., className], so the first match is the oldest
+    //
+    // IMPORTANT: Don't rely on tableName matching because:
+    // 1. STI subclasses loaded from external manifests may have tableName: null
+    // 2. registerFromManifest() derives a tableName from class name when null
+    // 3. This causes tableName mismatch ('meetings' vs 'events')
+    // 4. Instead, find the oldest ancestor with EXPLICIT tableStrategy: 'sti'
     const chain = ObjectRegistry.getInheritanceChain(className);
+
+    // Walk the chain (ordered [root, ..., className]) to find oldest STI base
     for (const ancestorName of chain) {
       const ancestor = ObjectRegistry.findClass(ancestorName);
       if (!ancestor) continue;
-      // Use getTableStrategy() to properly detect inherited STI strategy
-      // (not ancestor.config.tableStrategy which only shows explicit config)
-      if (ObjectRegistry.getTableStrategy(ancestorName) === 'sti') {
-        // Check if this ancestor shares the same table
-        const ancestorTableName =
-          ancestor.config?.tableName || ancestor.schema?.tableName;
-        if (ancestorTableName === targetTableName) {
-          // Found the OLDEST STI ancestor with same table - this is the base
-          return ancestorName;
-        }
+
+      // Check if this ancestor EXPLICITLY declares tableStrategy: 'sti'
+      // (not inherited via getTableStrategy(), but set directly in config)
+      if (ancestor.config?.tableStrategy === 'sti') {
+        // Found the OLDEST ancestor with explicit STI - this is the base
+        // All descendants inherit from this table regardless of their tableName
+        return ancestorName;
       }
     }
 
-    // If no matching ancestor found, this class is its own STI base
+    // If no explicit STI ancestor found but we detected STI strategy,
+    // this class is its own STI base (it must have declared tableStrategy: 'sti')
     return className;
   }
 
