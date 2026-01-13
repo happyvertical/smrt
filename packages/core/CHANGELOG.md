@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.10
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - rename test Secret class to avoid collision with smrt-secrets (#712) (core)
+  - @happyvertical/smrt-scanner@0.19.10
+  - @happyvertical/smrt-config@0.19.10
+  - @happyvertical/smrt-types@0.19.10
+
 ## 0.19.9
 
 ### Patch Changes
