@@ -40,11 +40,11 @@ class CliModuleTestDocument extends SmrtObject {
 }
 
 // Test class with CLI excluded
-// Named "CliTestSecret" to avoid collision with @happyvertical/smrt-secrets Secret class
+// Named "CliModuleTestSecret" to avoid collision with @happyvertical/smrt-secrets Secret class
 @smrt({
   cli: false,
 })
-class CliTestSecret extends SmrtObject {
+class CliModuleTestSecret extends SmrtObject {
   value = '';
 
   constructor(options: any) {
@@ -61,7 +61,7 @@ class CliTestSecret extends SmrtObject {
     exclude: ['delete'],
   },
 })
-class Article extends SmrtObject {
+class CliModuleTestArticle extends SmrtObject {
   title = '';
   author = '';
 
@@ -94,18 +94,18 @@ describe('@happyvertical/smrt-virt-cli virtual module generation', () => {
   });
 
   it('should exclude objects with cli: false', () => {
-    const secretClass = ObjectRegistry.getClass('CliTestSecret');
+    const secretClass = ObjectRegistry.getClass('CliModuleTestSecret');
     expect(secretClass).toBeDefined();
 
-    const config = ObjectRegistry.getConfig('CliTestSecret');
+    const config = ObjectRegistry.getConfig('CliModuleTestSecret');
     expect(config.cli).toBe(false);
   });
 
   it('should respect include/exclude configuration', () => {
-    const articleClass = ObjectRegistry.getClass('Article');
+    const articleClass = ObjectRegistry.getClass('CliModuleTestArticle');
     expect(articleClass).toBeDefined();
 
-    const config = ObjectRegistry.getConfig('Article');
+    const config = ObjectRegistry.getConfig('CliModuleTestArticle');
     expect(config.cli).toEqual({
       include: ['list', 'get', 'analyze'],
       exclude: ['delete'],
