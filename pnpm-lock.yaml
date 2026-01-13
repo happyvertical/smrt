@@ -1011,8 +1011,8 @@ importers:
   packages/secrets:
     dependencies:
       '@happyvertical/secrets':
-        specifier: portal:/Users/will/Work/happyvertical/repos/sdk/packages/secrets
-        version: link:portal:/Users/will/Work/happyvertical/repos/sdk/packages/secrets
+        specifier: ^0.66.0
+        version: 0.66.7
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2750,6 +2750,9 @@ packages:
 
   '@happyvertical/repos@0.66.4':
     resolution: {integrity: sha512-PMheJE2nFWe3cdlBeOuwwoJqjsGzdXGLI7gSTXnPeK9K9dBhdFHkiBKHxHIbYe32wyg6epEdmmKf4O3Ipv4gtg==, tarball: https://npm.pkg.github.com/download/@happyvertical/repos/0.66.4/2a18394c1fe97373f0f8938bf92f3b87ed557538}
+
+  '@happyvertical/secrets@0.66.7':
+    resolution: {integrity: sha512-placeholder==, tarball: https://npm.pkg.github.com/download/@happyvertical/secrets/0.66.7/placeholder}
 
   '@happyvertical/spider@0.60.6':
     resolution: {integrity: sha512-hYtjT+MkS1QGpGzWLWDKER52j/LHQjtkBa44ac8G1AXqR1iee7sP4k0qw9t5dX8OEAe/Daf3yHAo/Ktc+xU1cw==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.60.6/9f16bedd645427021b632e6e2ba5721c5cc20821}
@@ -13134,6 +13137,11 @@ snapshots:
     dependencies:
       '@happyvertical/graphql': 0.66.4
       js-yaml: 4.1.1
+
+  '@happyvertical/secrets@0.66.7':
+    dependencies:
+      '@happyvertical/sql': 0.66.7
+      '@happyvertical/utils': 0.66.7
 
   '@happyvertical/spider@0.60.6(@types/node@24.0.0)(postcss@8.5.6)':
     dependencies:
