@@ -2429,6 +2429,7 @@ export class ObjectRegistry {
         columns: Record<string, ColumnDefinition>;
         indexes: Array<{ name: string; columns: string[]; unique?: boolean }>;
         ddl: string;
+        isSTI: boolean;
       }
     > = {};
 
@@ -2499,12 +2500,30 @@ export class ObjectRegistry {
         }
 
         if (!tableSchemas[tableName]) {
-          // First class for this table - initialize
+          // First class for this table - initialize with base columns
+          // These are required for all tables but are skipped by fieldsToColumns()
+          const baseColumns: Record<string, ColumnDefinition> = {
+            id: { type: 'TEXT', primaryKey: true },
+            slug: { type: 'TEXT', notNull: true },
+            context: { type: 'TEXT' },
+            created_at: { type: 'TIMESTAMP' },
+            updated_at: { type: 'TIMESTAMP' },
+          };
+
+          // For STI tables, add discriminator and data columns
+          // (Issue #690: db:diff needs these columns to detect schema changes)
+          const isSTI = tableStrategy === 'sti';
+          if (isSTI) {
+            baseColumns._meta_type = { type: 'TEXT', notNull: true };
+            baseColumns._meta_data = { type: 'TEXT' };
+          }
+
           tableSchemas[tableName] = {
             tableName,
-            columns: { ...columnsToUse },
+            columns: { ...baseColumns, ...columnsToUse },
             indexes: [],
             ddl: registered.schema.ddl || '',
+            isSTI,
           };
         } else {
           // Additional class sharing this table (STI scenario)
@@ -2558,6 +2577,7 @@ export class ObjectRegistry {
         ddl = ObjectRegistry.generateDDLFromColumns(
           tableName,
           tableSchema.columns,
+          tableSchema.isSTI,
         );
       }
 
@@ -2594,6 +2614,7 @@ export class ObjectRegistry {
   private static generateDDLFromColumns(
     tableName: string,
     columns: Record<string, ColumnDefinition>,
+    isSTI = false,
   ): string {
     let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
 
@@ -2632,6 +2653,18 @@ export class ObjectRegistry {
     }
 
     sql += columnLines.join(',\n');
+
+    // Add UNIQUE constraint for UPSERT operations
+    // For STI tables: UNIQUE(slug, context, _meta_type) - different types can have same slug+context
+    // For non-STI tables: UNIQUE(slug, context)
+    if (columns.slug && columns.context) {
+      if (isSTI && columns._meta_type) {
+        sql += ',\n  UNIQUE(slug, context, _meta_type)';
+      } else {
+        sql += ',\n  UNIQUE(slug, context)';
+      }
+    }
+
     sql += '\n);';
 
     return sql;

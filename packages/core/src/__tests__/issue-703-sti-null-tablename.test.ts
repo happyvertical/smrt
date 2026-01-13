@@ -219,13 +219,14 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
     it('should only produce ONE table for the entire STI hierarchy', () => {
       const schemas = ObjectRegistry.getAllSchemas();
 
-      // Count tables that match the issue703 prefix
-      const issue703Tables = Object.keys(schemas).filter((name) =>
-        name.startsWith('issue703'),
+      // Count STI tables that match the issue703 prefix
+      // (exclude the CTI table 'issue703_cti' which was registered for getSTIBase comparison)
+      const issue703STITables = Object.keys(schemas).filter(
+        (name) => name.startsWith('issue703') && name !== 'issue703_cti',
       );
 
       // There should be exactly ONE table for the entire STI hierarchy
-      expect(issue703Tables).toEqual(['issue703_events']);
+      expect(issue703STITables).toEqual(['issue703_events']);
     });
   });
 });
