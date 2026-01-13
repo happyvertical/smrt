@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.6
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve STI base by inheritance chain, not tableName (#703) (#705) (core)
+  - @happyvertical/smrt-scanner@0.19.6
+  - @happyvertical/smrt-config@0.19.6
+  - @happyvertical/smrt-types@0.19.6
+
 ## 0.19.5
 
 ### Patch Changes
