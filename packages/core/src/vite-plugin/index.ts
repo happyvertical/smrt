@@ -162,7 +162,13 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       server = devServer;
 
       // Serve default HTML when no index.html exists
+      // Skip for SvelteKit projects (they use src/app.html and handle routing themselves)
       devServer.middlewares.use(async (req, res, next) => {
+        // Skip default UI entirely for SvelteKit projects
+        if (svelteKit.enabled) {
+          return next();
+        }
+
         if (req.url === '/' || req.url === '/index.html') {
           try {
             const { existsSync } = await import('node:fs');
