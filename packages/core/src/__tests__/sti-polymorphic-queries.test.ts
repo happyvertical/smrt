@@ -206,8 +206,9 @@ describe('STI Polymorphic Queries', () => {
       });
 
       // Filter by type - only meetings
+      // Issue #713: STI discriminators now use qualified names
       const meetings = await eventCollection.list({
-        where: { _meta_type: 'PolyMeeting' },
+        where: { _meta_type: '@happyvertical/smrt-core:PolyMeeting' },
       });
 
       expect(meetings).toHaveLength(2);
@@ -216,7 +217,7 @@ describe('STI Polymorphic Queries', () => {
 
       // Filter by type - only concerts
       const concerts = await eventCollection.list({
-        where: { _meta_type: 'PolyConcert' },
+        where: { _meta_type: '@happyvertical/smrt-core:PolyConcert' },
       });
 
       expect(concerts).toHaveLength(1);

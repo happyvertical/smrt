@@ -68,7 +68,7 @@ describe('Multi-Level STI Save Operations', () => {
   describe('Save operations', () => {
     it('should save STITestProfile (base class) successfully', async () => {
       const profile = await profiles.create({
-        _meta_type: 'STITestProfile',
+        _meta_type: '@happyvertical/smrt-core:STITestProfile',
         name: 'John Doe',
         bio: 'Software developer',
       });
@@ -81,7 +81,7 @@ describe('Multi-Level STI Save Operations', () => {
 
     it('should save STITestOrganization (middle level) successfully', async () => {
       const org = await profiles.create({
-        _meta_type: 'STITestOrganization',
+        _meta_type: '@happyvertical/smrt-core:STITestOrganization',
         name: 'Acme Corp',
         bio: 'We make everything',
         website: 'https://acme.com',
@@ -98,7 +98,7 @@ describe('Multi-Level STI Save Operations', () => {
 
     it('should save STITestCouncil (leaf level) successfully', async () => {
       const council = await profiles.create({
-        _meta_type: 'STITestCouncil',
+        _meta_type: '@happyvertical/smrt-core:STITestCouncil',
         name: 'Springfield City Council',
         bio: 'Municipal government',
         website: 'https://springfield.gov',
@@ -123,7 +123,7 @@ describe('Multi-Level STI Save Operations', () => {
     it('should load STITestCouncil from database with all inherited fields', async () => {
       // Create and save
       const council = await profiles.create({
-        _meta_type: 'STITestCouncil',
+        _meta_type: '@happyvertical/smrt-core:STITestCouncil',
         name: 'Springfield City Council',
         bio: 'Municipal government',
         website: 'https://springfield.gov',
@@ -154,14 +154,14 @@ describe('Multi-Level STI Save Operations', () => {
     it('should list mixed types in one query', async () => {
       // Create one of each type
       const profile = await profiles.create({
-        _meta_type: 'STITestProfile',
+        _meta_type: '@happyvertical/smrt-core:STITestProfile',
         name: 'John Doe',
         bio: 'Developer',
       });
       await profile.save();
 
       const org = await profiles.create({
-        _meta_type: 'STITestOrganization',
+        _meta_type: '@happyvertical/smrt-core:STITestOrganization',
         name: 'Acme Corp',
         bio: 'Company',
         website: 'https://acme.com',
@@ -170,7 +170,7 @@ describe('Multi-Level STI Save Operations', () => {
       await org.save();
 
       const council = await profiles.create({
-        _meta_type: 'STITestCouncil',
+        _meta_type: '@happyvertical/smrt-core:STITestCouncil',
         name: 'Springfield Council',
         bio: 'Government',
         website: 'https://springfield.gov',
@@ -193,14 +193,14 @@ describe('Multi-Level STI Save Operations', () => {
       // Create one of each type
       await (
         await profiles.create({
-          _meta_type: 'STITestProfile',
+          _meta_type: '@happyvertical/smrt-core:STITestProfile',
           name: 'John',
           bio: 'Developer',
         })
       ).save();
       await (
         await profiles.create({
-          _meta_type: 'STITestOrganization',
+          _meta_type: '@happyvertical/smrt-core:STITestOrganization',
           name: 'Acme',
           bio: 'Company',
           website: 'https://acme.com',
@@ -208,7 +208,7 @@ describe('Multi-Level STI Save Operations', () => {
       ).save();
       await (
         await profiles.create({
-          _meta_type: 'STITestCouncil',
+          _meta_type: '@happyvertical/smrt-core:STITestCouncil',
           name: 'Springfield',
           bio: 'Government',
           meetingsUrl: 'https://gov.com/meetings',
@@ -218,7 +218,7 @@ describe('Multi-Level STI Save Operations', () => {
 
       // Filter by type
       const councils = await profiles.list({
-        where: { _meta_type: 'STITestCouncil' },
+        where: { _meta_type: '@happyvertical/smrt-core:STITestCouncil' },
       });
 
       expect(councils).toHaveLength(1);

@@ -103,7 +103,7 @@ describe('Issue #370: STI Field Loading', () => {
       const persons = await Issue370PersonCollection.create({ db });
 
       const person = await persons.create({
-        _meta_type: 'Issue370Person',
+        _meta_type: '@happyvertical/smrt-core:Issue370Person',
         name: 'John Smith',
       });
 
@@ -122,7 +122,7 @@ describe('Issue #370: STI Field Loading', () => {
       const persons = await Issue370PersonCollection.create({ db });
 
       const created = await persons.create({
-        _meta_type: 'Issue370Person',
+        _meta_type: '@happyvertical/smrt-core:Issue370Person',
         name: 'Jane Doe',
       });
 
@@ -142,7 +142,7 @@ describe('Issue #370: STI Field Loading', () => {
       const councils = await Issue370CouncilCollection.create({ db });
 
       const council = await councils.create({
-        _meta_type: 'Issue370Council',
+        _meta_type: '@happyvertical/smrt-core:Issue370Council',
         name: 'Springfield City Council',
         meetingsUrl: 'https://springfield.gov/meetings',
         timezone: 'America/Edmonton',
@@ -163,7 +163,7 @@ describe('Issue #370: STI Field Loading', () => {
       const councils = await Issue370CouncilCollection.create({ db });
 
       const council = await councils.create({
-        _meta_type: 'Issue370Council',
+        _meta_type: '@happyvertical/smrt-core:Issue370Council',
         name: 'Metro Council',
         bio: 'Metropolitan government',
         website: 'https://metro.gov',
@@ -189,13 +189,13 @@ describe('Issue #370: STI Field Loading', () => {
       const councils = await Issue370CouncilCollection.create({ db });
 
       await councils.create({
-        _meta_type: 'Issue370Council',
+        _meta_type: '@happyvertical/smrt-core:Issue370Council',
         name: 'Council A',
         meetingsUrl: 'https://a.gov/meetings',
       });
 
       await councils.create({
-        _meta_type: 'Issue370Council',
+        _meta_type: '@happyvertical/smrt-core:Issue370Council',
         name: 'Council B',
         meetingsUrl: 'https://b.gov/meetings',
       });
@@ -221,7 +221,7 @@ describe('Issue #370: STI Field Loading', () => {
       const councils = await Issue370CouncilCollection.create({ db });
 
       const council = await councils.create({
-        _meta_type: 'Issue370Council',
+        _meta_type: '@happyvertical/smrt-core:Issue370Council',
         name: 'Test Council',
         meetingsUrl: 'https://test.gov/meetings',
         timezone: 'America/Vancouver',
@@ -231,7 +231,8 @@ describe('Issue #370: STI Field Loading', () => {
       const row = await db.get('issue370profiles', { id: council.id });
 
       expect(row).toBeDefined();
-      expect(row?._meta_type).toBe('Issue370Council');
+      // Issue #713: STI discriminators now use qualified names
+      expect(row?._meta_type).toBe('@happyvertical/smrt-core:Issue370Council');
       expect(row?._meta_data).toBeDefined();
 
       // Meta fields should be in _meta_data JSON
@@ -249,17 +250,17 @@ describe('Issue #370: STI Field Loading', () => {
 
       // Create instances of all three types
       await profiles.create({
-        _meta_type: 'Issue370Profile',
+        _meta_type: '@happyvertical/smrt-core:Issue370Profile',
         name: 'Plain Profile',
       });
 
       await profiles.create({
-        _meta_type: 'Issue370Person',
+        _meta_type: '@happyvertical/smrt-core:Issue370Person',
         name: 'John Doe',
       });
 
       await profiles.create({
-        _meta_type: 'Issue370Organization',
+        _meta_type: '@happyvertical/smrt-core:Issue370Organization',
         name: 'Acme Corp',
         website: 'https://acme.com',
       });
@@ -269,14 +270,19 @@ describe('Issue #370: STI Field Loading', () => {
 
       expect(all.length).toBeGreaterThanOrEqual(3);
 
+      // Issue #713: STI discriminators now use qualified names
       const profile = all.find(
-        (p) => (p as any)._meta_type === 'Issue370Profile',
+        (p) =>
+          (p as any)._meta_type === '@happyvertical/smrt-core:Issue370Profile',
       );
       const person = all.find(
-        (p) => (p as any)._meta_type === 'Issue370Person',
+        (p) =>
+          (p as any)._meta_type === '@happyvertical/smrt-core:Issue370Person',
       );
       const org = all.find(
-        (p) => (p as any)._meta_type === 'Issue370Organization',
+        (p) =>
+          (p as any)._meta_type ===
+          '@happyvertical/smrt-core:Issue370Organization',
       );
 
       expect(profile).toBeDefined();

@@ -1100,23 +1100,35 @@ export class SchemaGenerator {
   /**
    * Find all descendants of a class in the manifest
    *
-   * Note: Manifest keys are lowercase but `extends` field is PascalCase,
-   * so we need case-insensitive comparison.
+   * Note: Manifest keys are now qualified names (@pkg:ClassName) but `extends` field
+   * stores simple PascalCase class names. We need to handle both qualified and simple
+   * name lookups.
+   *
+   * Issue #713: Updated to handle qualified names in manifest keys
    */
   private findDescendantsInManifest(
     baseClassName: string,
     manifest: SmartObjectManifest,
   ): string[] {
     const descendants: string[] = [];
-    const baseClassLower = baseClassName.toLowerCase();
+
+    // Extract the simple class name from qualified name if needed
+    // e.g., '@happyvertical/smrt-core:PolyEvent' -> 'PolyEvent'
+    const simpleBaseClassName = baseClassName.includes(':')
+      ? baseClassName.split(':').pop() || baseClassName
+      : baseClassName;
+    const baseClassLower = simpleBaseClassName.toLowerCase();
 
     for (const [name, obj] of Object.entries(manifest.objects)) {
-      // Case-insensitive comparison: manifest keys are lowercase,
-      // but `extends` field stores PascalCase class names
+      // obj.extends is a simple class name (e.g., 'PolyEvent')
+      // Compare with the simple (non-qualified) version of the base class name
       if (obj.extends?.toLowerCase() === baseClassLower) {
         descendants.push(name);
         // Recursively find descendants of this class
-        descendants.push(...this.findDescendantsInManifest(name, manifest));
+        // Pass the qualified name (manifest key) for recursive lookup
+        descendants.push(
+          ...this.findDescendantsInManifest(obj.className, manifest),
+        );
       }
     }
 

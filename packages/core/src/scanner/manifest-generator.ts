@@ -5,14 +5,52 @@
 import { createRequire } from 'node:module';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import { generateToolManifest } from '../tools/tool-generator';
+import { createQualifiedName } from '../utils/qualified-names.js';
 import type {
   ScanResult,
   SmartObjectDefinition,
   SmartObjectManifest,
+  SmrtVisibility,
 } from './types';
 
 // Create require function for synchronous module loading in ESM context
 const require = createRequire(import.meta.url);
+
+/**
+ * Patterns that identify test files (used for auto-detecting test visibility)
+ */
+const TEST_FILE_PATTERNS = [
+  /__tests__\//,
+  /\.test\.(ts|tsx|js|jsx)$/,
+  /\.spec\.(ts|tsx|js|jsx)$/,
+  /\/test\//i,
+  /fixtures?\//i,
+  /\/mocks?\//i,
+];
+
+/**
+ * Check if a file path indicates a test file
+ */
+function isTestFile(filePath: string): boolean {
+  return TEST_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
+}
+
+/**
+ * Infer visibility from file path and explicit config
+ *
+ * Priority:
+ * 1. Explicit visibility in decorator config
+ * 2. Auto-detect test files → 'test'
+ * 3. Default to 'public'
+ */
+function inferVisibility(
+  filePath: string,
+  explicitVisibility?: SmrtVisibility,
+): SmrtVisibility {
+  if (explicitVisibility) return explicitVisibility;
+  if (isTestFile(filePath)) return 'test';
+  return 'public';
+}
 
 export class ManifestGenerator {
   /**
@@ -23,6 +61,10 @@ export class ManifestGenerator {
    * @param options.packageName - Package name to inject into manifest and object definitions
    * @param options.packageVersion - Package version
    * @param options.packageJson - Full package.json object for determining import paths
+   * @param options.smrtDependencies - List of SMRT package dependencies to include in manifest
+   * @param options.includeVisibility - Array of visibility levels to include (default: all)
+   *   - For published packages: ['public']
+   *   - For development: ['public', 'internal', 'test'] or omit for all
    */
   generateManifest(
     scanResults: ScanResult[],
@@ -31,6 +73,7 @@ export class ManifestGenerator {
       packageVersion?: string;
       packageJson?: any;
       smrtDependencies?: string[];
+      includeVisibility?: SmrtVisibility[];
     },
   ): SmartObjectManifest {
     const manifest: SmartObjectManifest = {
@@ -61,6 +104,32 @@ export class ManifestGenerator {
           objectDef.packageVersion = options.packageVersion;
         }
 
+        // Generate qualified name (required for manifest keying)
+        // Must have packageName to generate qualified name
+        if (objectDef.packageName) {
+          objectDef.qualifiedName = createQualifiedName(
+            objectDef.packageName,
+            objectDef.className,
+          );
+        }
+
+        // Infer visibility from file path and decorator config
+        objectDef.visibility = inferVisibility(
+          objectDef.filePath,
+          objectDef.decoratorConfig?.visibility as SmrtVisibility | undefined,
+        );
+
+        // Filter by visibility if specified
+        // Skip objects that don't match the requested visibility levels
+        if (
+          options?.includeVisibility &&
+          options.includeVisibility.length > 0 &&
+          !options.includeVisibility.includes(objectDef.visibility)
+        ) {
+          // Skip this object - visibility not in allowed list
+          continue;
+        }
+
         // Determine import path from package.json exports
         if (options?.packageName && options?.packageJson) {
           objectDef.importPath = this.determineImportPath(
@@ -88,18 +157,22 @@ export class ManifestGenerator {
           }
         }
 
-        // Check for class name collisions
-        if (manifest.objects[objectDef.name]) {
-          const existing = manifest.objects[objectDef.name];
+        // Determine manifest key: use qualified name if available, fall back to lowercase name
+        // During transition, some objects may not have qualified names
+        const manifestKey = objectDef.qualifiedName || objectDef.name;
+
+        // Check for collisions using the manifest key
+        if (manifest.objects[manifestKey]) {
+          const existing = manifest.objects[manifestKey];
           throw new Error(
-            `Class name collision detected: '${objectDef.className}' is defined in multiple files:\n` +
+            `Class name collision detected: '${objectDef.className}' (${manifestKey}) is defined in multiple files:\n` +
               `  1. ${existing.filePath}\n` +
               `  2. ${objectDef.filePath}\n\n` +
-              `Class names must be unique across the entire codebase. Please rename one of these classes.`,
+              `Class names must be unique within a package. Use different class names or separate packages.`,
           );
         }
 
-        manifest.objects[objectDef.name] = objectDef;
+        manifest.objects[manifestKey] = objectDef;
       }
     }
 
@@ -1403,10 +1476,20 @@ ${fields}
 
 /**
  * Convenience function to generate manifest
+ *
+ * @param scanResults - Array of scan results containing object definitions
+ * @param options - Optional configuration (passed to ManifestGenerator.generateManifest)
  */
 export function generateManifest(
   scanResults: ScanResult[],
+  options?: {
+    packageName?: string;
+    packageVersion?: string;
+    packageJson?: any;
+    smrtDependencies?: string[];
+    includeVisibility?: SmrtVisibility[];
+  },
 ): SmartObjectManifest {
   const generator = new ManifestGenerator();
-  return generator.generateManifest(scanResults);
+  return generator.generateManifest(scanResults, options);
 }

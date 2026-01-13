@@ -3,14 +3,98 @@
  * Uses TypeScript Compiler API to extract metadata
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import * as ts from 'typescript';
+import { createQualifiedName } from '../utils/qualified-names.js';
 import type {
   FieldDefinition,
   MethodDefinition,
   ScanOptions,
   ScanResult,
   SmartObjectDefinition,
+  SmrtVisibility,
 } from './types';
+
+/**
+ * Test file patterns for auto-detecting visibility: 'test'
+ */
+const TEST_FILE_PATTERNS = [
+  /__tests__\//,
+  /\.test\.(ts|tsx|js|jsx)$/,
+  /\.spec\.(ts|tsx|js|jsx)$/,
+  /\/test\//i,
+  /fixtures?\//i,
+];
+
+/**
+ * Check if a file path matches test file patterns
+ */
+function isTestFile(filePath: string): boolean {
+  return TEST_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
+}
+
+/**
+ * Cache for package.json lookups to avoid repeated file system reads
+ */
+const packageJsonCache = new Map<
+  string,
+  { name?: string; version?: string } | null
+>();
+
+/**
+ * Find the nearest package.json and extract package name
+ * Caches results to avoid repeated file system reads
+ */
+function findPackageContext(filePath: string): {
+  packageName?: string;
+  packageVersion?: string;
+} {
+  let currentDir = dirname(filePath);
+  const checkedDirs: string[] = [];
+
+  while (currentDir && currentDir !== '/' && currentDir !== '.') {
+    // Check cache first
+    if (packageJsonCache.has(currentDir)) {
+      const cached = packageJsonCache.get(currentDir);
+      if (cached) {
+        return { packageName: cached.name, packageVersion: cached.version };
+      }
+      // null in cache means no package.json found in this dir
+    }
+
+    checkedDirs.push(currentDir);
+    const packageJsonPath = resolve(currentDir, 'package.json');
+
+    if (existsSync(packageJsonPath)) {
+      try {
+        const content = readFileSync(packageJsonPath, 'utf-8');
+        const pkg = JSON.parse(content);
+        const result = { name: pkg.name, version: pkg.version };
+
+        // Cache for all checked directories
+        for (const dir of checkedDirs) {
+          packageJsonCache.set(dir, result);
+        }
+
+        return { packageName: pkg.name, packageVersion: pkg.version };
+      } catch {
+        // Invalid package.json, cache as null
+        packageJsonCache.set(currentDir, null);
+      }
+    } else {
+      // No package.json here, mark as null
+      packageJsonCache.set(currentDir, null);
+    }
+
+    // Move up to parent directory
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) break; // Reached root
+    currentDir = parentDir;
+  }
+
+  return {};
+}
 
 export class ASTScanner {
   private program: ts.Program;
@@ -228,9 +312,31 @@ export class ASTScanner {
     // Extract parent class name and generic type argument from extends clause
     const { parentClass, typeArg } = this.extractExtendsInfo(node);
 
+    // Detect package context for qualified name generation
+    const { packageName, packageVersion } = findPackageContext(
+      sourceFile.fileName,
+    );
+
+    // Determine visibility (decorator config > auto-detect from file path)
+    let visibility: SmrtVisibility = 'public';
+    if (decoratorConfig.visibility) {
+      visibility = decoratorConfig.visibility as SmrtVisibility;
+    } else if (isTestFile(sourceFile.fileName)) {
+      visibility = 'test';
+    }
+
+    // Generate qualified name if package context is available
+    const qualifiedName = packageName
+      ? createQualifiedName(packageName, className)
+      : undefined;
+
     const objectDef: SmartObjectDefinition = {
       name: className.toLowerCase(),
       className,
+      qualifiedName,
+      packageName,
+      packageVersion,
+      visibility,
       collection,
       filePath: sourceFile.fileName,
       fields: {},

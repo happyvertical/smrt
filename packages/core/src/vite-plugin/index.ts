@@ -520,22 +520,31 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         );
       }
 
-      // Convert to manifest format
-      const adapter = new ManifestAdapter();
-      const newManifest = adapter.toManifest(resolved);
-
-      // Read package.json for metadata
+      // Read package.json for metadata BEFORE creating manifest (Issue #713)
+      // This ensures qualified names are generated correctly for namespace isolation
+      let packageName: string | undefined;
+      let packageVersion: string | undefined;
       try {
         const { readFileSync } = await import('node:fs');
         const { join } = await import('node:path');
         const pkgPath = join(rootDir, 'package.json');
         const pkgContent = readFileSync(pkgPath, 'utf-8');
         const packageJson = JSON.parse(pkgContent);
-        newManifest.packageName = packageJson.name || undefined;
-        newManifest.packageVersion = packageJson.version || undefined;
+        packageName = packageJson.name || undefined;
+        packageVersion = packageJson.version || undefined;
       } catch {
         // package.json not found or invalid - continue without packageName
+        console.warn(
+          '[smrt] Warning: package.json not found. Qualified names will not be generated.',
+        );
       }
+
+      // Convert to manifest format with packageName for qualified names (Issue #713)
+      const adapter = new ManifestAdapter();
+      const newManifest = adapter.toManifest(resolved, {
+        packageName,
+        packageVersion,
+      });
 
       // Add moduleType identifier
       newManifest.moduleType = 'smrt';

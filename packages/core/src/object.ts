@@ -428,10 +428,18 @@ export class SmrtObject extends SmrtClass {
       }
 
       // Validation 2: _meta_type must match the class being instantiated
-      if (formattedData._meta_type !== this.constructor.name) {
+      // Accept both simple class name and qualified name (namespace isolation - Issue #713)
+      const registeredClass = ObjectRegistry.getClass(this.constructor.name);
+      const expectedSimple = this.constructor.name;
+      const expectedQualified = registeredClass?.qualifiedName;
+      const isValidMetaType =
+        formattedData._meta_type === expectedSimple ||
+        (expectedQualified && formattedData._meta_type === expectedQualified);
+
+      if (!isValidMetaType) {
         throw new Error(
           `STI validation failed: Type mismatch when loading ${this.constructor.name}. ` +
-            `Database row has _meta_type='${formattedData._meta_type}' but expected '${this.constructor.name}'. ` +
+            `Database row has _meta_type='${formattedData._meta_type}' but expected '${expectedQualified || expectedSimple}'. ` +
             `This usually means you're trying to load a row with the wrong class.`,
         );
       }
@@ -629,7 +637,11 @@ export class SmrtObject extends SmrtClass {
 
     // If STI, add discriminator and prepare meta_data container
     if (isSTI) {
-      data._meta_type = this.constructor.name;
+      // Use qualified name for STI discriminator (namespace isolation)
+      // The qualified name uses the child class's own package, not the parent's
+      // This supports multi-package inheritance hierarchies (Issue #713)
+      const registeredClass = ObjectRegistry.getClass(this.constructor.name);
+      data._meta_type = registeredClass?.qualifiedName || this.constructor.name;
       data._meta_data = {};
     }
 
@@ -944,10 +956,18 @@ export class SmrtObject extends SmrtClass {
               `This should have been set automatically by toJSON(). Please report this bug.`,
           );
         }
-        if (jsonData._meta_type !== this.constructor.name) {
+        // Accept both simple class name and qualified name (namespace isolation - Issue #713)
+        const registeredClass = ObjectRegistry.getClass(this.constructor.name);
+        const expectedSimple = this.constructor.name;
+        const expectedQualified = registeredClass?.qualifiedName;
+        const isValidMetaType =
+          jsonData._meta_type === expectedSimple ||
+          (expectedQualified && jsonData._meta_type === expectedQualified);
+
+        if (!isValidMetaType) {
           throw new Error(
             `STI validation failed: _meta_type mismatch when saving ${this.constructor.name}. ` +
-              `Expected '${this.constructor.name}' but got '${jsonData._meta_type}'. ` +
+              `Expected '${expectedQualified || expectedSimple}' but got '${jsonData._meta_type}'. ` +
               `This should not happen - please report this bug.`,
           );
         }
@@ -1422,7 +1442,14 @@ export class SmrtObject extends SmrtClass {
 
       if (row?._meta_type) {
         // Get the actual class from the registry based on _meta_type
-        const actualClass = ObjectRegistry.getClass(row._meta_type);
+        // Support both qualified names (new format: @pkg:Class) and simple names (legacy)
+        let actualClass = ObjectRegistry.getClassByQualifiedName(
+          row._meta_type,
+        );
+        if (!actualClass) {
+          // Fall back to simple name lookup for legacy data
+          actualClass = ObjectRegistry.getClass(row._meta_type);
+        }
         if (actualClass) {
           actualClassInfo = actualClass;
         }

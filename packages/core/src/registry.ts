@@ -42,12 +42,19 @@ import {
   discoverManifestSync,
   discoverSTISiblingsSync,
   getPackageName,
+  lookupInManifest,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
-import type { FieldDefinition, SmartObjectManifest } from './scanner/types.js';
+import type {
+  FieldDefinition,
+  QualifiedClassName,
+  SmartObjectManifest,
+  SmrtVisibility,
+} from './scanner/types.js';
 import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
 import { classnameToTablename, tableNameFromClass, toSnakeCase } from './utils';
 import { LRUCache } from './utils/lru-cache';
+import { createQualifiedName } from './utils/qualified-names.js';
 
 /**
  * Extend globalThis to include ObjectRegistry state.
@@ -194,6 +201,29 @@ export interface SmartObjectConfig {
    * ```
    */
   tableStrategy?: 'cti' | 'sti';
+
+  /**
+   * Visibility control for manifest inclusion and cross-package access
+   * - 'public': Included in published manifest, available to all consumers (default)
+   * - 'internal': Package-only, excluded from published manifest
+   * - 'test': Test-only, never in any published manifest
+   *
+   * @example
+   * ```typescript
+   * // Public class (default) - exported to consumers
+   * @smrt({ visibility: 'public' })
+   * class Product extends SmrtObject {}
+   *
+   * // Internal helper class - not exported
+   * @smrt({ visibility: 'internal' })
+   * class InternalHelper extends SmrtObject {}
+   *
+   * // Test fixture - never exported
+   * @smrt({ visibility: 'test' })
+   * class TestProduct extends SmrtObject {}
+   * ```
+   */
+  visibility?: SmrtVisibility;
 
   /**
    * API configuration
@@ -476,7 +506,18 @@ export interface RelationshipMetadata {
  * @private
  */
 interface RegisteredClass {
+  /**
+   * Simple class name (e.g., "Product")
+   */
   name: string;
+
+  /**
+   * Qualified class name in format "@package/name:ClassName"
+   * This is the PRIMARY KEY for registry lookups.
+   * Example: "@happyvertical/smrt-core:Product"
+   */
+  qualifiedName?: QualifiedClassName;
+
   constructor: typeof SmrtObject;
   collectionConstructor?: new (options: any) => SmrtCollection<any>;
   config: SmartObjectConfig;
@@ -516,6 +557,13 @@ interface RegisteredClass {
     autoPopulate: boolean;
     allowSuperAdminBypass: boolean;
   };
+  /**
+   * Visibility control for manifest inclusion
+   * - 'public': Included in published manifest (default)
+   * - 'internal': Package-only, excluded from published manifest
+   * - 'test': Test-only, never in any published manifest
+   */
+  visibility?: SmrtVisibility;
 }
 
 /**
@@ -969,9 +1017,11 @@ export class ObjectRegistry {
     // 3. Static manifests (for core framework classes)
     // 4. Cached external manifests (if already loaded)
     // For external packages not yet loaded, manifest discovery happens lazily during schema generation
+    // Issue #713: Use lookupInManifest for qualified name support
     const manifestEntry =
-      config._manifest?.objects?.[name.toLowerCase()] ??
-      discoverManifestSync(name);
+      (config._manifest
+        ? lookupInManifest(config._manifest, name)
+        : undefined) ?? discoverManifestSync(name);
     const fields = new Map<string, any>();
     const methods = new Map<string, any>();
     let packageName: string | undefined;
@@ -1306,8 +1356,20 @@ export class ObjectRegistry {
       tableName, // Override with correctly computed tableName
     };
 
+    // Generate qualified name if we have a package name
+    // Format: "@package/name:ClassName"
+    const qualifiedName = packageName
+      ? (createQualifiedName(packageName, name) as QualifiedClassName)
+      : undefined;
+
+    // Determine visibility from config, manifest, or default to 'public'
+    // Priority: explicit config > manifest > default
+    const visibility: SmrtVisibility =
+      config.visibility || manifestEntry?.visibility || 'public';
+
     ObjectRegistry.classes.set(name, {
       name,
+      qualifiedName, // New: Qualified name for cross-package identification
       constructor: ctor,
       config: mergedConfig,
       fields,
@@ -1318,6 +1380,7 @@ export class ObjectRegistry {
       sourceFilePath, // Store source file for collision detection (Issue #555)
       extends: extendsClass, // Capture parent class name from manifest OR prototype chain
       tenantScopedConfig, // Multi-tenancy config (Issue #688)
+      visibility, // New: Visibility control for manifest filtering
       // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
       // it lazily using the `extends` field. This ensures correct chain for both
       // decorator-registered and manifest-loaded classes.
@@ -1527,11 +1590,21 @@ export class ObjectRegistry {
     // Compile validators
     const validators = ObjectRegistry.compileValidators(name, fields);
 
+    // Generate qualified name if we have package context
+    const qualifiedName = packageName
+      ? (createQualifiedName(packageName, name) as QualifiedClassName)
+      : (objectDef.qualifiedName as QualifiedClassName | undefined);
+
+    // Get visibility from manifest (defaults to 'public')
+    const visibility: SmrtVisibility =
+      objectDef.visibility || config.visibility || 'public';
+
     // Register in ObjectRegistry (metadata only, no collection constructor)
     // Manifest registration is for command discovery and help text.
     // Runtime execution requires real classes loaded from entry point.
     ObjectRegistry.classes.set(name, {
       name,
+      qualifiedName, // New: Qualified name for cross-package identification
       constructor: stubConstructor,
       config,
       fields,
@@ -1541,6 +1614,7 @@ export class ObjectRegistry {
       packageName,
       sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
       extends: objectDef.extends, // Parent class name for inheritance chain
+      visibility, // New: Visibility control for manifest filtering
     });
 
     console.log(
@@ -1642,6 +1716,150 @@ export class ObjectRegistry {
   }
 
   /**
+   * Get a registered class by its qualified name.
+   * Qualified names are in format "@package/name:ClassName".
+   *
+   * @param qualifiedName - The fully qualified class name
+   * @returns Registered class information or undefined if not found
+   * @example
+   * ```typescript
+   * const product = ObjectRegistry.getClassByQualifiedName('@happyvertical/smrt-products:Product');
+   * if (product) {
+   *   console.log(`Found: ${product.name} from ${product.packageName}`);
+   * }
+   * ```
+   */
+  static getClassByQualifiedName(
+    qualifiedName: string,
+  ): RegisteredClass | undefined {
+    // Iterate through all classes and find one with matching qualified name
+    for (const registered of ObjectRegistry.classes.values()) {
+      if (registered.qualifiedName === qualifiedName) {
+        return registered;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Get a registered class by package name and class name.
+   * This is a convenience method for looking up classes by their namespace components.
+   *
+   * @param packageName - The package name (e.g., "@happyvertical/smrt-products")
+   * @param className - The class name (e.g., "Product")
+   * @returns Registered class information or undefined if not found
+   * @example
+   * ```typescript
+   * const product = ObjectRegistry.getClassInPackage('@happyvertical/smrt-products', 'Product');
+   * ```
+   */
+  static getClassInPackage(
+    packageName: string,
+    className: string,
+  ): RegisteredClass | undefined {
+    const qualifiedName = createQualifiedName(packageName, className);
+    return ObjectRegistry.getClassByQualifiedName(qualifiedName);
+  }
+
+  /**
+   * Find all registered classes with a given simple class name.
+   * Useful for detecting collisions or when multiple packages have the same class name.
+   *
+   * @param className - The simple class name to search for
+   * @returns Array of registered classes with matching name
+   * @example
+   * ```typescript
+   * const products = ObjectRegistry.findClassesByName('Product');
+   * if (products.length > 1) {
+   *   console.log(`Found ${products.length} classes named "Product":`);
+   *   for (const p of products) {
+   *     console.log(`  - ${p.qualifiedName} from ${p.packageName}`);
+   *   }
+   * }
+   * ```
+   */
+  static findClassesByName(className: string): RegisteredClass[] {
+    const matches: RegisteredClass[] = [];
+    const lowerName = className.toLowerCase();
+
+    for (const registered of ObjectRegistry.classes.values()) {
+      if (registered.name.toLowerCase() === lowerName) {
+        matches.push(registered);
+      }
+    }
+
+    return matches;
+  }
+
+  /**
+   * Get all registered classes from a specific package.
+   *
+   * @param packageName - The package name to filter by
+   * @returns Map of class names to registered class information
+   * @example
+   * ```typescript
+   * const coreClasses = ObjectRegistry.getClassesByPackage('@happyvertical/smrt-core');
+   * for (const [name, info] of coreClasses) {
+   *   console.log(`  ${name}: ${info.qualifiedName}`);
+   * }
+   * ```
+   */
+  static getClassesByPackage(
+    packageName: string,
+  ): Map<string, RegisteredClass> {
+    const result = new Map<string, RegisteredClass>();
+
+    for (const [name, registered] of ObjectRegistry.classes.entries()) {
+      if (registered.packageName === packageName) {
+        result.set(name, registered);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get all registered classes with a specific visibility level.
+   *
+   * @param visibility - The visibility level to filter by
+   * @returns Map of class names to registered class information
+   * @example
+   * ```typescript
+   * const publicClasses = ObjectRegistry.getClassesByVisibility('public');
+   * console.log(`Found ${publicClasses.size} public classes`);
+   * ```
+   */
+  static getClassesByVisibility(
+    visibility: SmrtVisibility,
+  ): Map<string, RegisteredClass> {
+    const result = new Map<string, RegisteredClass>();
+
+    for (const [name, registered] of ObjectRegistry.classes.entries()) {
+      const classVisibility = registered.visibility || 'public';
+      if (classVisibility === visibility) {
+        result.set(name, registered);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get all public registered classes (excludes 'internal' and 'test' visibility).
+   * Useful for generating published manifests or public APIs.
+   *
+   * @returns Map of class names to registered class information
+   * @example
+   * ```typescript
+   * const publicClasses = ObjectRegistry.getPublicClasses();
+   * console.log(`Publishing ${publicClasses.size} public classes to manifest`);
+   * ```
+   */
+  static getPublicClasses(): Map<string, RegisteredClass> {
+    return ObjectRegistry.getClassesByVisibility('public');
+  }
+
+  /**
    * Get all registered classes
    *
    * @returns Map of class names to registered class information
@@ -1736,9 +1954,24 @@ export class ObjectRegistry {
       }
 
       // Look for the class in this manifest (case-insensitive)
+      // Support both qualified keys (@pkg:Class) and simple class names
       const lowerClassName = className.toLowerCase();
-      const objectDef =
+      let objectDef =
         manifest.objects[lowerClassName] || manifest.objects[className];
+
+      // If not found by direct key lookup, search by className field (Issue #713)
+      // This handles manifests with qualified keys while allowing simple name lookups
+      if (!objectDef) {
+        for (const [_key, def] of Object.entries(manifest.objects)) {
+          if (
+            def.className?.toLowerCase() === lowerClassName ||
+            def.className === className
+          ) {
+            objectDef = def;
+            break;
+          }
+        }
+      }
 
       if (!objectDef) {
         continue;
@@ -1757,9 +1990,23 @@ export class ObjectRegistry {
 
       // If this is an STI class, also register the parent class
       if (objectDef.extends) {
-        const parentDef =
-          manifest.objects[objectDef.extends.toLowerCase()] ||
-          manifest.objects[objectDef.extends];
+        const parentName = objectDef.extends;
+        const lowerParentName = parentName.toLowerCase();
+        let parentDef =
+          manifest.objects[lowerParentName] || manifest.objects[parentName];
+
+        // Search by className field if not found by key (Issue #713)
+        if (!parentDef) {
+          for (const [_key, def] of Object.entries(manifest.objects)) {
+            if (
+              def.className?.toLowerCase() === lowerParentName ||
+              def.className === parentName
+            ) {
+              parentDef = def;
+              break;
+            }
+          }
+        }
 
         if (parentDef && !ObjectRegistry.hasClass(objectDef.extends)) {
           console.log(
@@ -2188,11 +2435,26 @@ export class ObjectRegistry {
   }
 
   /**
-   * Get field definitions for a registered class
+   * Get field definitions for a registered class.
+   * Supports both qualified names and simple class names.
    */
   static getFields(name: string): Map<string, any> {
+    // Try direct lookup first (handles qualified names)
     const registered = ObjectRegistry.classes.get(name);
-    return registered ? registered.fields : new Map();
+    if (registered) {
+      return registered.fields;
+    }
+
+    // For simple names, search by className property (case-insensitive)
+    // Issue #713: Registry now uses qualified keys
+    const lowerName = name.toLowerCase();
+    for (const entry of ObjectRegistry.classes.values()) {
+      if (entry.name?.toLowerCase() === lowerName) {
+        return entry.fields;
+      }
+    }
+
+    return new Map();
   }
 
   /**
@@ -2216,8 +2478,22 @@ export class ObjectRegistry {
    * ```
    */
   static getMethods(name: string): Map<string, any> {
+    // Try direct lookup first (handles qualified names)
     const registered = ObjectRegistry.classes.get(name);
-    return registered ? registered.methods : new Map();
+    if (registered) {
+      return registered.methods;
+    }
+
+    // For simple names, search by className property (case-insensitive)
+    // Issue #713: Registry now uses qualified keys
+    const lowerName = name.toLowerCase();
+    for (const entry of ObjectRegistry.classes.values()) {
+      if (entry.name?.toLowerCase() === lowerName) {
+        return entry.methods;
+      }
+    }
+
+    return new Map();
   }
 
   /**

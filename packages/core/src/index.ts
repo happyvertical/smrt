@@ -86,5 +86,16 @@ export {
 } from './testing/database';
 // AI function calling tools
 export * from './tools/index';
+// Qualified name utilities
+export {
+  createQualifiedName,
+  getClassName,
+  getPackageFromQualifiedName,
+  isFromPackage,
+  isQualifiedName,
+  type ParsedQualifiedName,
+  parseQualifiedName,
+  qualifiedNamesEqual,
+} from './utils/qualified-names';
 // Vite plugin for auto-service generation
 export { smrtPlugin } from './vite-plugin/index';

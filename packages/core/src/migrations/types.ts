@@ -170,6 +170,48 @@ export interface ParsedMigrationFile {
 export type MigrationMode = 'dynamic' | 'file' | 'hybrid';
 
 /**
+ * Data migration for updating existing data (e.g., STI discriminator upgrades)
+ */
+export interface DataMigration {
+  type: 'data';
+  table: string;
+  description: string;
+  up: DataMigrationStatement[];
+  down: DataMigrationStatement[];
+}
+
+/**
+ * Single data migration statement with optional parameters
+ */
+export interface DataMigrationStatement {
+  sql: string;
+  params?: unknown[];
+}
+
+/**
+ * STI discriminator migration (specific type of data migration)
+ */
+export interface StiDiscriminatorMigration extends DataMigration {
+  type: 'data';
+  subtype: 'sti-discriminator';
+  oldValue: string; // "Product"
+  newValue: string; // "@happyvertical/smrt-core:Product"
+  table: string;
+  column: string; // "_meta_type"
+}
+
+/**
+ * Result of applying a data migration
+ */
+export interface DataMigrationResult {
+  success: boolean;
+  name: string;
+  rowsAffected?: number;
+  execution_time_ms: number;
+  error?: string;
+}
+
+/**
  * Migrations configuration for smrt.config.js
  */
 export interface MigrationsConfig {

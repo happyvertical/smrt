@@ -317,7 +317,7 @@ function runSTIQueryTests(
 
       // Create different event types
       await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Team Meeting',
         location: 'Room A',
         type: 'Regular',
@@ -325,7 +325,7 @@ function runSTIQueryTests(
       });
 
       await events.create({
-        _meta_type: 'QueryTestConference',
+        _meta_type: '@happyvertical/smrt-core:QueryTestConference',
         title: 'Tech Conference',
         location: 'Convention Center',
         sponsorName: 'TechCorp',
@@ -360,24 +360,24 @@ function runSTIQueryTests(
       const { events } = getContext();
 
       await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Meeting 1',
         location: 'Room A',
       });
       await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Meeting 2',
         location: 'Room B',
       });
       await events.create({
-        _meta_type: 'QueryTestConference',
+        _meta_type: '@happyvertical/smrt-core:QueryTestConference',
         title: 'Conference 1',
         location: 'Hall A',
       });
 
       const meetings = await events.query(
         `SELECT * FROM ${events.tableName} WHERE _meta_type = ?`,
-        ['QueryTestMeeting'],
+        ['@happyvertical/smrt-core:QueryTestMeeting'],
       );
 
       expect(meetings.length).toBe(2);
@@ -414,12 +414,12 @@ function runComplexQueryTests(
 
       // Create events
       const event1 = await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Meeting With Recap',
         location: 'Room A',
       });
       const event2 = await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Meeting Without Recap',
         location: 'Room B',
       });
@@ -448,12 +448,12 @@ function runComplexQueryTests(
 
       // Create events and recaps
       const event1 = await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Important Meeting',
         location: 'Board Room',
       });
       await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Casual Meeting',
         location: 'Cafeteria',
       });
@@ -480,17 +480,17 @@ function runComplexQueryTests(
 
       // Create events at different locations
       await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Meeting 1',
         location: 'Room A',
       });
       await events.create({
-        _meta_type: 'QueryTestMeeting',
+        _meta_type: '@happyvertical/smrt-core:QueryTestMeeting',
         title: 'Meeting 2',
         location: 'Room A',
       });
       await events.create({
-        _meta_type: 'QueryTestConference',
+        _meta_type: '@happyvertical/smrt-core:QueryTestConference',
         title: 'Conference',
         location: 'Room B',
       });

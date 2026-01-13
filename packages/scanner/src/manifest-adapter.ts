@@ -78,6 +78,7 @@ interface SmartObjectConfig {
 interface SmartObjectDefinition {
   name: string;
   className: string;
+  qualifiedName?: string; // NEW: @package/name:ClassName for namespace isolation (Issue #713)
   collection: string;
   filePath: string;
   packageName?: string;
@@ -108,11 +109,24 @@ interface SmartObjectManifest {
 // ============================================================================
 
 /**
+ * Create a qualified name for a class (namespace isolation - Issue #713)
+ * Format: @package/name:ClassName
+ */
+function createQualifiedName(packageName: string, className: string): string {
+  return `${packageName}:${className}`;
+}
+
+/**
  * Converts OXC scanner output to smrt-core manifest format
  */
 export class ManifestAdapter {
   /**
    * Convert resolved classes to manifest format
+   *
+   * @param resolved - Array of resolved class definitions
+   * @param options - Configuration options
+   * @param options.packageName - Package name for qualified name generation (Issue #713)
+   * @param options.packageVersion - Package version for manifest metadata
    */
   toManifest(
     resolved: ResolvedClassDefinition[],
@@ -124,8 +138,13 @@ export class ManifestAdapter {
     const objects: Record<string, SmartObjectDefinition> = {};
 
     for (const classDef of resolved) {
-      const definition = this.toSmartObjectDefinition(classDef);
-      objects[definition.name.toLowerCase()] = definition;
+      const definition = this.toSmartObjectDefinition(classDef, options);
+
+      // Use qualified name as key if packageName is available (Issue #713)
+      // This enables namespace isolation for multi-package scenarios
+      const manifestKey =
+        definition.qualifiedName || definition.name.toLowerCase();
+      objects[manifestKey] = definition;
     }
 
     return {
@@ -140,9 +159,13 @@ export class ManifestAdapter {
 
   /**
    * Convert a single resolved class to SmartObjectDefinition
+   *
+   * @param classDef - Resolved class definition from OXC scanner
+   * @param options - Configuration options (packageName for qualified names)
    */
   toSmartObjectDefinition(
     classDef: ResolvedClassDefinition,
+    options: { packageName?: string; packageVersion?: string } = {},
   ): SmartObjectDefinition {
     // Convert fields
     const fields: Record<string, FieldDefinition> = {};
@@ -165,12 +188,22 @@ export class ManifestAdapter {
     // Generate collection name (pluralize)
     const collection = this.pluralize(classDef.className);
 
+    // Determine package name (prefer option, then classDef value)
+    const packageName = options.packageName || classDef.packageName;
+
+    // Generate qualified name if packageName is available (Issue #713)
+    // Format: @package/name:ClassName for namespace isolation
+    const qualifiedName = packageName
+      ? createQualifiedName(packageName, classDef.className)
+      : undefined;
+
     return {
       name: classDef.className.toLowerCase(),
       className: classDef.className,
+      qualifiedName,
       collection,
       filePath: classDef.filePath,
-      packageName: classDef.packageName || undefined,
+      packageName: packageName || undefined,
       fields,
       methods,
       decoratorConfig: (classDef.decoratorConfig || {}) as SmartObjectConfig,

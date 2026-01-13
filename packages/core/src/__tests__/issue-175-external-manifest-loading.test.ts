@@ -45,7 +45,11 @@ describe('Issue #175: External package manifest loading', () => {
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
 
       // Should contain Content class definition
-      const contentDef = manifest.objects.content || manifest.objects.Content;
+      // Issue #713: Manifest keys are now qualified (e.g., "@happyvertical/smrt-content:Content")
+      const contentDef =
+        manifest.objects['@happyvertical/smrt-content:Content'] ||
+        manifest.objects.content ||
+        manifest.objects.Content;
       expect(contentDef).toBeDefined();
       expect(contentDef.className).toBe('Content');
       expect(contentDef.fields).toBeDefined();

@@ -41,7 +41,8 @@ describe('Content STI Support', () => {
       await content.initialize();
 
       const data = content.toJSON();
-      expect(data._meta_type).toBe('Content');
+      // Issue #713: STI discriminators now use qualified names
+      expect(data._meta_type).toBe('@happyvertical/smrt-content:Content');
     });
 
     it('should save with STI discriminator', async () => {
@@ -106,7 +107,10 @@ describe('Content STI Support', () => {
       await doc.initialize();
 
       const data = doc.toJSON();
-      expect(data._meta_type).toBe('ContentDocument');
+      // Issue #713: STI discriminators now use qualified names
+      expect(data._meta_type).toBe(
+        '@happyvertical/smrt-content:ContentDocument',
+      );
     });
 
     it('should save ContentDocument with STI discriminator', async () => {
@@ -169,7 +173,8 @@ describe('Content STI Support', () => {
       await article.initialize();
 
       const data = article.toJSON();
-      expect(data._meta_type).toBe('Article');
+      // Issue #713: STI discriminators now use qualified names
+      expect(data._meta_type).toBe('@happyvertical/smrt-content:Article');
     });
 
     it('should save Article with STI discriminator', async () => {
@@ -211,10 +216,16 @@ describe('Content STI Support', () => {
       });
       await article.initialize();
 
-      // Verify each has correct _meta_type
-      expect(content.toJSON()._meta_type).toBe('Content');
-      expect(doc.toJSON()._meta_type).toBe('ContentDocument');
-      expect(article.toJSON()._meta_type).toBe('Article');
+      // Verify each has correct _meta_type (Issue #713: qualified names)
+      expect(content.toJSON()._meta_type).toBe(
+        '@happyvertical/smrt-content:Content',
+      );
+      expect(doc.toJSON()._meta_type).toBe(
+        '@happyvertical/smrt-content:ContentDocument',
+      );
+      expect(article.toJSON()._meta_type).toBe(
+        '@happyvertical/smrt-content:Article',
+      );
     });
 
     it('should persist _meta_type when saving', async () => {
@@ -223,12 +234,13 @@ describe('Content STI Support', () => {
       await content.initialize();
 
       const jsonBefore = content.toJSON();
-      expect(jsonBefore._meta_type).toBe('Content');
+      // Issue #713: STI discriminators now use qualified names
+      expect(jsonBefore._meta_type).toBe('@happyvertical/smrt-content:Content');
 
       await content.save();
 
       const jsonAfter = content.toJSON();
-      expect(jsonAfter._meta_type).toBe('Content');
+      expect(jsonAfter._meta_type).toBe('@happyvertical/smrt-content:Content');
     });
   });
 

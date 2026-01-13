@@ -1050,6 +1050,12 @@ export default testManifest;
           'Force re-apply even if already applied (skip checksum validation)',
         default: false,
       },
+      'upgrade-sti': {
+        type: 'boolean',
+        description:
+          'Upgrade STI discriminators from simple class names to qualified names (@pkg:Class)',
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show detailed output',
@@ -1491,6 +1497,139 @@ export default testManifest;
             console.error(`  ✗ ${migration.type} failed: ${errorMsg}`);
             if (options.verbose && error instanceof Error && error.stack) {
               console.error(`\n${error.stack}\n`);
+            }
+          }
+        }
+
+        // 13.5 Handle --upgrade-sti flag for STI discriminator migration
+        if (options.upgradeSti) {
+          console.log(
+            '\n🔄 Upgrading STI discriminators to qualified names...\n',
+          );
+
+          // Import qualified name utilities
+          const { isQualifiedName } = await import('@happyvertical/smrt-core');
+
+          // Find all STI tables (tables with _meta_type column)
+          const stiTables: string[] = [];
+          for (const tableName of tablesProcessed) {
+            const schema = await db.getTableSchema(tableName);
+            if (schema?.columns._meta_type) {
+              stiTables.push(tableName);
+            }
+          }
+
+          if (stiTables.length === 0) {
+            console.log(
+              '  No STI tables found - skipping discriminator upgrade\n',
+            );
+          } else {
+            if (options.verbose) {
+              console.log(
+                `  Found ${stiTables.length} STI table(s): ${stiTables.join(', ')}\n`,
+              );
+            }
+
+            let stiSuccessCount = 0;
+            let stiSkippedCount = 0;
+            let stiErrorCount = 0;
+
+            for (const tableName of stiTables) {
+              // Get distinct _meta_type values that are NOT qualified
+              const result = await db.query(
+                `SELECT DISTINCT _meta_type FROM ${quoteIdentifier(tableName)} WHERE _meta_type IS NOT NULL`,
+              );
+
+              for (const row of result.rows) {
+                const metaType = row._meta_type as string;
+
+                // Skip if already qualified
+                if (isQualifiedName(metaType)) {
+                  if (options.verbose) {
+                    console.log(
+                      `  ⊙ ${tableName}._meta_type="${metaType}" (already qualified)`,
+                    );
+                  }
+                  stiSkippedCount++;
+                  continue;
+                }
+
+                // Look up the class in the registry to get qualified name
+                const registeredClass = ObjectRegistry.getClass(metaType);
+                if (!registeredClass) {
+                  console.warn(
+                    `  ⚠️  ${tableName}._meta_type="${metaType}" - class not found in registry`,
+                  );
+                  stiSkippedCount++;
+                  continue;
+                }
+
+                const qualifiedName = registeredClass.qualifiedName;
+                if (!qualifiedName) {
+                  console.warn(
+                    `  ⚠️  ${tableName}._meta_type="${metaType}" - class has no qualified name`,
+                  );
+                  stiSkippedCount++;
+                  continue;
+                }
+
+                // Generate UPDATE statement
+                const updateSql = `UPDATE ${quoteIdentifier(tableName)} SET _meta_type = ? WHERE _meta_type = ?`;
+
+                if (options.dryRun) {
+                  console.log(`  [DRY RUN] ${updateSql}`);
+                  console.log(
+                    `            params: ['${qualifiedName}', '${metaType}']`,
+                  );
+                  stiSuccessCount++;
+                  continue;
+                }
+
+                try {
+                  const updateResult = await db.query(
+                    updateSql,
+                    qualifiedName,
+                    metaType,
+                  );
+                  const rowsAffected = updateResult.rowCount || 0;
+                  console.log(
+                    `  ✓ ${tableName}: "${metaType}" → "${qualifiedName}" (${rowsAffected} row(s))`,
+                  );
+                  stiSuccessCount++;
+                } catch (error) {
+                  const errorMsg =
+                    error instanceof Error ? error.message : String(error);
+                  console.error(
+                    `  ✗ ${tableName}: "${metaType}" → "${qualifiedName}" failed: ${errorMsg}`,
+                  );
+                  stiErrorCount++;
+                }
+              }
+            }
+
+            console.log();
+            if (stiErrorCount > 0) {
+              console.log(
+                `⚠️  STI upgrade completed with errors: ${stiSuccessCount} succeeded, ${stiErrorCount} failed`,
+              );
+              if (stiSkippedCount > 0) {
+                console.log(
+                  `   (${stiSkippedCount} already qualified or skipped)`,
+                );
+              }
+            } else if (stiSuccessCount === 0) {
+              console.log(
+                `✅ All STI discriminators already qualified (${stiSkippedCount} checked)\n`,
+              );
+            } else {
+              console.log(
+                `✅ Successfully upgraded ${stiSuccessCount} STI discriminator(s)`,
+              );
+              if (stiSkippedCount > 0) {
+                console.log(
+                  `   (${stiSkippedCount} already qualified or skipped)`,
+                );
+              }
             }
           }
         }

@@ -145,10 +145,11 @@ describe('AST Scanner', () => {
 
     expect(manifest.version).toBe('1.0.0');
     expect(manifest.timestamp).toBeGreaterThan(0);
+    // Issue #713: Manifest keys are now qualified names
     expect(Object.keys(manifest.objects)).toEqual([
-      'scannertestcontent',
-      'category',
-      'scannertestagent',
+      '@happyvertical/smrt-core:ScannerTestContent',
+      '@happyvertical/smrt-core:Category',
+      '@happyvertical/smrt-core:ScannerTestAgent',
     ]);
   });
 
