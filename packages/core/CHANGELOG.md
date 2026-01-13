@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - enable external package discovery for STI inheritance (#707) (vite-plugin)
+  - @happyvertical/smrt-scanner@0.19.8
+  - @happyvertical/smrt-config@0.19.8
+  - @happyvertical/smrt-types@0.19.8
+
 ## 0.19.7
 
 ### Patch Changes
