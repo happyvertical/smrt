@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.19.14
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - correct URL logging in db:setup and db:migrate (#732) (cli)
+  - handle self-referencing foreignKey in dependency graph (#731) (core)
+  - @happyvertical/smrt-scanner@0.19.14
+  - @happyvertical/smrt-config@0.19.14
+  - @happyvertical/smrt-types@0.19.14
+
 ## 0.19.13
 
 ### Patch Changes
