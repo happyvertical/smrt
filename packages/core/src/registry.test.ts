@@ -827,6 +827,51 @@ describe('ObjectRegistry', () => {
       const graph = ObjectRegistry.getDependencyGraph();
       expect(graph.get('SelfRefClass')).toEqual([]);
     });
+
+    it('should handle unregistered parent classes gracefully (Issue #735)', () => {
+      // Simulate a child class with an unregistered parent
+      // This happens when parent is from an external package that hasn't been loaded
+      @smrt()
+      class ChildClass extends SmrtObject {
+        name: string = '';
+      }
+
+      // Manually set extends to a non-existent parent (simulating external package parent)
+      const registered = (ObjectRegistry as any).classes.get('ChildClass');
+      expect(registered).toBeDefined();
+
+      // Manually set extends to an unregistered class
+      registered.extends = 'NonExistentParent';
+
+      // Clear the inheritance cache so it recomputes
+      registered.inheritanceChain = undefined;
+
+      // getInheritanceChain should not throw, and should return a chain
+      // that includes only the registered classes
+      const chain = ObjectRegistry.getInheritanceChain('ChildClass');
+
+      // Chain should contain at least the child class
+      expect(chain).toContain('ChildClass');
+
+      // Since NonExistentParent isn't in any manifest, chain should only have ChildClass
+      expect(chain.length).toBe(1);
+    });
+
+    it('should skip framework base classes in inheritance chain (Issue #735)', () => {
+      @smrt()
+      class TestObject extends SmrtObject {
+        name: string = '';
+      }
+
+      // Get the inheritance chain
+      const chain = ObjectRegistry.getInheritanceChain('TestObject');
+
+      // Should contain TestObject but not SmrtObject
+      expect(chain).toContain('TestObject');
+      expect(chain).not.toContain('SmrtObject');
+      expect(chain).not.toContain('SmrtClass');
+      expect(chain).not.toContain('SmrtCollection');
+    });
   });
 
   describe('Table Name Capture (Issue #9 - Phase 1)', () => {

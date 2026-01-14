@@ -574,6 +574,20 @@ export async function ensureSchema(db: any, className: string): Promise<void> {
       // Use syncSchema to execute DDL (like main branch does for external packages)
       if (fullSchema && fullSchema.trim() !== '') {
         await syncSchema({ db, schema: fullSchema });
+
+        // FIX #735: Verify table was actually created
+        // Some adapters may silently fail to create tables
+        const tableCreated = await db.tableExists(tableName);
+        if (!tableCreated) {
+          console.warn(
+            `[ensureSchema] syncSchema returned but table "${tableName}" doesn't exist, attempting direct DDL`,
+          );
+          // Fallback: Execute DDL directly
+          await db.query(createTableDDL);
+          for (const indexSQL of indexStatements) {
+            await db.query(indexSQL);
+          }
+        }
       }
     }
   })();

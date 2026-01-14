@@ -727,6 +727,21 @@ export class ObjectRegistry {
   }
 
   /**
+   * Global cache for manifest discovery attempts (Issue #735 optimization)
+   * Maps className → boolean (true = found and registered, false = not found)
+   * Prevents repeated discoverManifestSync calls for the same class name
+   */
+  private static getDiscoveryAttemptCache(): Map<string, boolean> {
+    if (!globalThis.__smrtRegistryDiscoveryAttemptCache) {
+      globalThis.__smrtRegistryDiscoveryAttemptCache = new Map<
+        string,
+        boolean
+      >();
+    }
+    return globalThis.__smrtRegistryDiscoveryAttemptCache;
+  }
+
+  /**
    * Register field decorator metadata
    *
    * Called by property decorators (@field, @foreignKey, etc.) to store
@@ -2061,6 +2076,7 @@ export class ObjectRegistry {
     ObjectRegistry.collectionCache.clear();
     ObjectRegistry.collectionTableNames.clear();
     ObjectRegistry.getInheritanceCache().clear();
+    ObjectRegistry.getDiscoveryAttemptCache().clear();
     ObjectRegistry.fieldDecorators.clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
     // Note: dbInstanceIds WeakMap will be garbage collected automatically
@@ -2114,6 +2130,7 @@ export class ObjectRegistry {
    */
   static invalidateAllInheritanceCaches(): void {
     ObjectRegistry.getInheritanceCache().clear();
+    ObjectRegistry.getDiscoveryAttemptCache().clear();
 
     for (const registered of ObjectRegistry.classes.values()) {
       registered.inheritedFields = undefined;
@@ -3390,7 +3407,51 @@ export class ObjectRegistry {
     while (current) {
       chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
       if (!current.extends) break;
-      current = ObjectRegistry.findClass(current.extends);
+
+      // Skip framework base classes that are never registered
+      if (
+        current.extends === 'SmrtObject' ||
+        current.extends === 'SmrtClass' ||
+        current.extends === 'SmrtCollection'
+      ) {
+        break;
+      }
+
+      // Try to find the parent class
+      let parent = ObjectRegistry.findClass(current.extends);
+
+      // FIX #735: If parent not found, try loading from external manifests
+      // This handles STI hierarchies where parent class is from an external package
+      // (e.g., Meeting extends Event from @happyvertical/smrt-events)
+      if (!parent) {
+        const discoveryCache = ObjectRegistry.getDiscoveryAttemptCache();
+        const parentName = current.extends;
+
+        // Check if we've already attempted to discover this class
+        if (!discoveryCache.has(parentName)) {
+          const manifestEntry = discoverManifestSync(parentName);
+          if (manifestEntry) {
+            const packageName = manifestEntry.packageName;
+            ObjectRegistry.registerFromManifest(
+              parentName,
+              manifestEntry,
+              packageName,
+            );
+            discoveryCache.set(parentName, true);
+            parent = ObjectRegistry.findClass(parentName);
+          } else {
+            // Mark as not found to avoid repeated lookups
+            discoveryCache.set(parentName, false);
+          }
+        }
+        // If already attempted and found, try findClass again (it should work now)
+        else if (discoveryCache.get(parentName) === true) {
+          parent = ObjectRegistry.findClass(parentName);
+        }
+        // If already attempted and not found, parent stays undefined
+      }
+
+      current = parent;
     }
 
     // Cache in both places
