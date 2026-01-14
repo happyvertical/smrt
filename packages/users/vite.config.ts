@@ -6,7 +6,10 @@ import dts from 'vite-plugin-dts';
 export default defineConfig({
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: {
+        index: resolve(__dirname, 'src/index.ts'),
+        sveltekit: resolve(__dirname, 'src/sveltekit/index.ts'),
+      },
       formats: ['es'] as const,
     },
     rollupOptions: {
@@ -23,6 +26,8 @@ export default defineConfig({
         /^node:/,
         // External SDK packages
         /^@happyvertical\//,
+        // SvelteKit
+        /^@sveltejs\//,
       ],
     },
     minify: false,
@@ -51,4 +56,3 @@ export default defineConfig({
     environment: 'node',
   },
 });
-
