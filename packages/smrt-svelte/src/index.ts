@@ -44,6 +44,8 @@ export { default as MembershipList } from './components/memberships/MembershipLi
 export * from './components/module/index.js';
 // Navigation components
 export * from './components/nav/index.js';
+// Nunitus components (email routing agent management)
+export * from './components/nunitus/index.js';
 // Permission components
 export { default as PermissionCheck } from './components/permissions/PermissionCheck.svelte';
 // Role components
