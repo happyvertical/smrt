@@ -106,14 +106,33 @@ export class SchemaManager {
         console.log(fullSchema);
       }
 
-      await (this.db as any).syncSchema(fullSchema);
+      try {
+        await (this.db as any).syncSchema(fullSchema);
 
-      if (this.options.debug) {
-        console.log(
-          `[SchemaManager] Table "${tableName}" created via adapter syncSchema`,
+        // FIX #735: Verify table was actually created
+        // Some adapters (notably PostgreSQL) may silently fail to create tables
+        // when syncSchema returns without error but doesn't execute the DDL
+        const createdSuccessfully = await this.db.tableExists(tableName);
+        if (createdSuccessfully) {
+          if (this.options.debug) {
+            console.log(
+              `[SchemaManager] Table "${tableName}" created via adapter syncSchema`,
+            );
+          }
+          return;
+        }
+
+        // Table wasn't created - fall through to direct DDL execution
+        console.warn(
+          `[SchemaManager] syncSchema returned but table "${tableName}" doesn't exist, falling back to direct DDL`,
+        );
+      } catch (syncError) {
+        // syncSchema failed - fall through to direct DDL execution
+        console.warn(
+          `[SchemaManager] syncSchema failed for "${tableName}", falling back to direct DDL:`,
+          syncError,
         );
       }
-      return;
     }
 
     // Fallback: Execute DDL directly (for adapters without syncSchema)

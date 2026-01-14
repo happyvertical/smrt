@@ -3390,7 +3390,36 @@ export class ObjectRegistry {
     while (current) {
       chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
       if (!current.extends) break;
-      current = ObjectRegistry.findClass(current.extends);
+
+      // Skip framework base classes that are never registered
+      if (
+        current.extends === 'SmrtObject' ||
+        current.extends === 'SmrtClass' ||
+        current.extends === 'SmrtCollection'
+      ) {
+        break;
+      }
+
+      // Try to find the parent class
+      let parent = ObjectRegistry.findClass(current.extends);
+
+      // FIX #735: If parent not found, try loading from external manifests
+      // This handles STI hierarchies where parent class is from an external package
+      // (e.g., Meeting extends Event from @happyvertical/smrt-events)
+      if (!parent) {
+        const manifestEntry = discoverManifestSync(current.extends);
+        if (manifestEntry) {
+          const packageName = manifestEntry.packageName;
+          ObjectRegistry.registerFromManifest(
+            current.extends,
+            manifestEntry,
+            packageName,
+          );
+          parent = ObjectRegistry.findClass(current.extends);
+        }
+      }
+
+      current = parent;
     }
 
     // Cache in both places

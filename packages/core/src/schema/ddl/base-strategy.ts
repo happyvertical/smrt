@@ -312,11 +312,40 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
 
   /**
    * Format JSON default
+   *
+   * Ensures the default value is valid JSON for PostgreSQL/SQLite.
+   * Invalid inputs like empty strings or '[object Object]' are converted to 'null'.
+   * @see https://github.com/happyvertical/smrt/issues/735
    */
   protected formatJSONDefault(value: any): string {
-    if (typeof value === 'string') {
-      return `'${value.replace(/'/g, "''")}'`;
+    // Handle null/undefined
+    if (value === null || value === undefined) {
+      return "'null'";
     }
+
+    // Handle string inputs - need to validate they're valid JSON
+    if (typeof value === 'string') {
+      // Empty string is not valid JSON
+      if (value === '') {
+        return "'null'";
+      }
+      // '[object Object]' is a common bug from accidental toString()
+      if (value === '[object Object]') {
+        return "'{}'";
+      }
+      // Try to parse as JSON to validate
+      try {
+        JSON.parse(value);
+        // It's valid JSON, use it as-is (escaped for SQL)
+        return `'${value.replace(/'/g, "''")}'`;
+      } catch {
+        // Not valid JSON - encode the string as a JSON string
+        const json = JSON.stringify(value);
+        return `'${json.replace(/'/g, "''")}'`;
+      }
+    }
+
+    // Objects and arrays - stringify them
     const json = JSON.stringify(value);
     return `'${json.replace(/'/g, "''")}'`;
   }
