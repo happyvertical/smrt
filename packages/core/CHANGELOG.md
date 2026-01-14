@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - switch to vite build for proper ESM module resolution (#733) (ledgers)
+  - @happyvertical/smrt-scanner@0.19.15
+  - @happyvertical/smrt-config@0.19.15
+  - @happyvertical/smrt-types@0.19.15
+
 ## 0.19.14
 
 ### Patch Changes
