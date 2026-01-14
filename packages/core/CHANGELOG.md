@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.17
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve db:setup table creation issues (#735) (#737) (core)
+  - @happyvertical/smrt-scanner@0.19.17
+  - @happyvertical/smrt-config@0.19.17
+  - @happyvertical/smrt-types@0.19.17
+
 ## 0.19.16
 
 ### Patch Changes
