@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.18
+
+### Patch Changes
+
+- ### Features
+
+  - add conflictColumns support for junction tables (#738) (core)
+  - @happyvertical/smrt-scanner@0.19.18
+  - @happyvertical/smrt-config@0.19.18
+  - @happyvertical/smrt-types@0.19.18
+
 ## 0.19.17
 
 ### Patch Changes

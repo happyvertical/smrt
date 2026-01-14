@@ -1,5 +1,16 @@
 # @happyvertical/smrt-commerce
 
+## 0.19.18
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.19.18
+  - @happyvertical/smrt-ledgers@0.19.18
+  - @happyvertical/smrt-profiles@0.19.18
+  - @happyvertical/smrt-svelte@0.19.18
+  - @happyvertical/smrt-types@0.19.18
+
 ## 0.19.17
 
 ### Patch Changes
