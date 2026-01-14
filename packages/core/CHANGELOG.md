@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.13
+
+### Patch Changes
+
+- ### Other Changes
+
+  - perf: optimize manifest-loader to reduce 52k+ lookups to ~2k (#730) (core)
+  - @happyvertical/smrt-scanner@0.19.13
+  - @happyvertical/smrt-config@0.19.13
+  - @happyvertical/smrt-types@0.19.13
+
 ## 0.19.12
 
 ### Patch Changes
