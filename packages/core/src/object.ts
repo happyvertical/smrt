@@ -1011,11 +1011,10 @@ export class SmrtObject extends SmrtClass {
         }
       }
 
-      // STI: Include _meta_type in conflict columns
-      const conflictColumns =
-        tableStrategy === 'sti'
-          ? ['slug', 'context', '_meta_type']
-          : ['slug', 'context'];
+      // Get conflict columns from registry (supports custom columns for junction tables)
+      const conflictColumns = ObjectRegistry.getConflictColumns(
+        this.constructor.name,
+      );
 
       await ErrorUtils.withRetry(
         async () => {

@@ -971,6 +971,7 @@ export class SchemaGenerator {
     className: string,
     tableName: string,
     fields: Record<string, FieldDefinition>,
+    config?: { conflictColumns?: string[] },
   ): ManifestSchema {
     const columns: Record<string, ManifestColumnDefinition> = {};
 
@@ -1058,9 +1059,16 @@ export class SchemaGenerator {
       columns: ['id'],
     });
 
+    // Use custom conflict columns if provided, otherwise default to slug+context
+    const conflictColumns = config?.conflictColumns || ['slug', 'context'];
+    const indexName =
+      conflictColumns.length > 2
+        ? `${tableName}_${conflictColumns.slice(0, 2).join('_')}_idx`
+        : `${tableName}_${conflictColumns.join('_')}_idx`;
+
     indexes.push({
-      name: `${tableName}_slug_context_idx`,
-      columns: ['slug', 'context'],
+      name: indexName,
+      columns: conflictColumns,
       unique: true,
     });
 

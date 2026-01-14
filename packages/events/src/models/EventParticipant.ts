@@ -8,7 +8,9 @@ import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { EventParticipantOptions } from '../types';
 
 @smrt({
-  tableStrategy: 'sti',
+  // Junction table - uses event_id + profile_id + role as natural key
+  // instead of slug-based conflict columns
+  conflictColumns: ['event_id', 'profile_id', 'role'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
   cli: true,
