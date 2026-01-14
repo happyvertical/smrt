@@ -1444,6 +1444,16 @@ export default testManifest;
             const errorMsg =
               error instanceof Error ? error.message : String(error);
             console.error(`  ✗ ${migration.type} failed: ${errorMsg}`);
+            // Show underlying database error if available
+            if (
+              error instanceof Error &&
+              'context' in error &&
+              (error as any).context?.originalError
+            ) {
+              console.error(
+                `     Cause: ${(error as any).context.originalError}`,
+              );
+            }
             if (options.verbose && error instanceof Error && error.stack) {
               console.error(`\n${error.stack}\n`);
             }
