@@ -268,6 +268,7 @@ export class ManifestGenerator {
           name,
           tableName,
           obj.fields,
+          obj.decoratorConfig,
         );
       }
     }

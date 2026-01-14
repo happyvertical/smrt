@@ -203,6 +203,25 @@ export interface SmartObjectConfig {
   tableStrategy?: 'cti' | 'sti';
 
   /**
+   * Custom conflict columns for UPSERT operations
+   *
+   * By default, SMRT uses ['slug', 'context'] for CTI tables and
+   * ['slug', 'context', '_meta_type'] for STI tables. Override this
+   * for junction tables or models with different natural keys.
+   *
+   * @example
+   * ```typescript
+   * // Junction table using foreign keys as natural key
+   * @smrt({ conflictColumns: ['event_id', 'profile_id'] })
+   * class EventParticipant extends SmrtObject {
+   *   eventId = '';
+   *   profileId = '';
+   * }
+   * ```
+   */
+  conflictColumns?: string[];
+
+  /**
    * Visibility control for manifest inclusion and cross-package access
    * - 'public': Included in published manifest, available to all consumers (default)
    * - 'internal': Package-only, excluded from published manifest
@@ -3921,6 +3940,45 @@ export class ObjectRegistry {
     }
 
     return 'cti'; // Default strategy
+  }
+
+  /**
+   * Get the conflict columns for UPSERT operations on a class
+   *
+   * Returns custom conflict columns if specified, otherwise defaults based on
+   * table strategy:
+   * - CTI: ['slug', 'context']
+   * - STI: ['slug', 'context', '_meta_type']
+   *
+   * @param className - Name of the class to get conflict columns for
+   * @returns Array of column names to use for conflict detection
+   *
+   * @example
+   * ```typescript
+   * // Junction table with custom conflict columns
+   * @smrt({ conflictColumns: ['event_id', 'profile_id'] })
+   * class EventParticipant extends SmrtObject {}
+   *
+   * ObjectRegistry.getConflictColumns('EventParticipant');
+   * // Returns: ['event_id', 'profile_id']
+   * ```
+   */
+  static getConflictColumns(className: string): string[] {
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      return ['slug', 'context']; // Default for unregistered classes
+    }
+
+    // Explicit config wins
+    if (registered.config?.conflictColumns) {
+      return registered.config.conflictColumns;
+    }
+
+    // Fall back to table strategy-based defaults
+    const tableStrategy = ObjectRegistry.getTableStrategy(className);
+    return tableStrategy === 'sti'
+      ? ['slug', 'context', '_meta_type']
+      : ['slug', 'context'];
   }
 
   /**
