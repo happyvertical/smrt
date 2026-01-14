@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.19
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use JSON type for \_meta_data in getAllSchemas() (#739) (core)
+  - @happyvertical/smrt-scanner@0.19.19
+  - @happyvertical/smrt-config@0.19.19
+  - @happyvertical/smrt-types@0.19.19
+
 ## 0.19.18
 
 ### Patch Changes
