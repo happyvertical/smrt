@@ -801,6 +801,32 @@ describe('ObjectRegistry', () => {
       expect(productIndex).toBeLessThan(orderIndex);
       expect(customerIndex).toBeLessThan(orderIndex);
     });
+
+    it('should handle self-referencing classes (Issue #728)', () => {
+      // Self-referencing class like Tenant with parentTenantId -> Tenant
+      class SelfRefClass extends SmrtObject {
+        name: string = '';
+        parentId?: string;
+      }
+
+      const fields = new Map();
+      fields.set('name', new Field('text', { required: true }));
+      fields.set(
+        'parentId',
+        new Field('foreignKey', { related: 'SelfRefClass', nullable: true }),
+      );
+      registerTestClass(SelfRefClass, fields);
+
+      // Should NOT throw circular dependency error
+      const order = ObjectRegistry.getInitializationOrder();
+
+      // Self-referencing class should be in the order
+      expect(order).toContain('SelfRefClass');
+
+      // Verify dependency graph excludes self-reference
+      const graph = ObjectRegistry.getDependencyGraph();
+      expect(graph.get('SelfRefClass')).toEqual([]);
+    });
   });
 
   describe('Table Name Capture (Issue #9 - Phase 1)', () => {
