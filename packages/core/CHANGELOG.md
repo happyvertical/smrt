@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.12
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-secrets integration for EmailAccount credentials (#726) (messages)
+  - @happyvertical/smrt-scanner@0.19.12
+  - @happyvertical/smrt-config@0.19.12
+  - @happyvertical/smrt-types@0.19.12
+
 ## 0.19.11
 
 ### Patch Changes
