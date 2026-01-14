@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 
+// Vite build config for proper ESM module resolution
 export default defineConfig({
   build: {
     lib: {
