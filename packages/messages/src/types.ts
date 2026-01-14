@@ -53,7 +53,8 @@ export interface EmailAccountOptions extends SmrtObjectOptions {
   name?: string;
   email?: string;
   providerType?: ProviderType;
-  settings?: string; // JSON (encrypted connection settings)
+  settings?: string; // JSON (DEPRECATED: use credentialSecretId)
+  credentialSecretId?: string | null; // Reference to secret in smrt-secrets
   lastSyncAt?: Date | null;
   isActive?: boolean;
   createdAt?: Date;

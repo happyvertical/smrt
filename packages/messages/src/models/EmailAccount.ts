@@ -19,7 +19,8 @@ export class EmailAccount extends SmrtObject {
   name = '';
   email = '';
   providerType: ProviderType = 'imap';
-  settings = ''; // JSON (connection settings - should be encrypted in production)
+  settings = ''; // JSON (connection settings - DEPRECATED: use credentialSecretId)
+  credentialSecretId: string | null = null; // Reference to secret in smrt-secrets
   lastSyncAt: Date | null = null;
   isActive = true;
 
@@ -35,6 +36,8 @@ export class EmailAccount extends SmrtObject {
     if (options.providerType !== undefined)
       this.providerType = options.providerType;
     if (options.settings !== undefined) this.settings = options.settings;
+    if (options.credentialSecretId !== undefined)
+      this.credentialSecretId = options.credentialSecretId || null;
     if (options.lastSyncAt !== undefined)
       this.lastSyncAt = options.lastSyncAt || null;
     if (options.isActive !== undefined) this.isActive = options.isActive;
@@ -63,10 +66,23 @@ export class EmailAccount extends SmrtObject {
 
   /**
    * Create an EmailClient from stored settings
+   * Retrieves credentials from smrt-secrets if credentialSecretId is set
    */
   async createClient() {
     const { getEmailClient } = await import('@happyvertical/email');
-    const settings = this.getSettings();
+    let settings: Record<string, any>;
+
+    // Use secrets integration if available
+    if (this.credentialSecretId) {
+      const { SecretService } = await import('@happyvertical/smrt-secrets');
+      const secretService = await SecretService.create({ db: this.db });
+
+      const secret = await secretService.retrieve(this.credentialSecretId);
+      settings = JSON.parse(secret.value);
+    } else {
+      // Fallback to plain-text settings (DEPRECATED)
+      settings = this.getSettings();
+    }
 
     // Settings should contain auth and other required connection details
     // Cast to any since settings is a dynamic JSON object with all required fields
@@ -308,5 +324,107 @@ export class EmailAccount extends SmrtObject {
     this.isActive = false;
     this.updatedAt = new Date();
     await this.save();
+  }
+
+  /**
+   * Store credentials securely using smrt-secrets
+   * This is the recommended way to set email account credentials
+   *
+   * @example
+   * ```typescript
+   * await account.setCredentials({
+   *   host: 'imap.gmail.com',
+   *   port: 993,
+   *   secure: true,
+   *   auth: {
+   *     user: 'support@example.com',
+   *     pass: process.env.EMAIL_PASSWORD
+   *   }
+   * });
+   * ```
+   */
+  async setCredentials(
+    credentials: Record<string, any>,
+    options: {
+      description?: string;
+      category?: string;
+    } = {},
+  ): Promise<void> {
+    const { SecretService } = await import('@happyvertical/smrt-secrets');
+    const secretService = await SecretService.create({ db: this.db });
+
+    // Generate secret name
+    const secretName = `email-account-${this.id}`;
+
+    // Store credentials as JSON
+    const secretValue = JSON.stringify(credentials);
+
+    // Store or update secret
+    if (this.credentialSecretId) {
+      // Update existing secret
+      await secretService.store(this.credentialSecretId, secretValue, {
+        description: options.description || `IMAP credentials for ${this.name}`,
+        category: options.category || 'email',
+      });
+    } else {
+      // Create new secret
+      await secretService.store(secretName, secretValue, {
+        description: options.description || `IMAP credentials for ${this.name}`,
+        category: options.category || 'email',
+      });
+
+      // Update account with secret ID
+      this.credentialSecretId = secretName;
+      this.updatedAt = new Date();
+      await this.save();
+    }
+  }
+
+  /**
+   * Retrieve stored credentials (for debugging/migration)
+   * WARNING: This exposes credentials in plain text
+   */
+  async getCredentials(): Promise<Record<string, any> | null> {
+    if (!this.credentialSecretId) {
+      // Fallback to plain-text settings
+      return this.getSettings();
+    }
+
+    const { SecretService } = await import('@happyvertical/smrt-secrets');
+    const secretService = await SecretService.create({ db: this.db });
+
+    try {
+      const secret = await secretService.retrieve(this.credentialSecretId);
+      return JSON.parse(secret.value);
+    } catch (error) {
+      // Secret not found or access denied
+      return null;
+    }
+  }
+
+  /**
+   * Migrate from plain-text settings to secrets
+   */
+  async migrateToSecrets(): Promise<void> {
+    if (this.credentialSecretId) {
+      // Already using secrets
+      return;
+    }
+
+    const settings = this.getSettings();
+    if (Object.keys(settings).length === 0) {
+      // No settings to migrate
+      return;
+    }
+
+    // Store credentials securely
+    await this.setCredentials(settings, {
+      description: `Migrated IMAP credentials for ${this.name}`,
+    });
+
+    // Clear plain-text settings (optional, for security)
+    // Uncomment to remove plain-text after migration:
+    // this.settings = '';
+    // await this.save();
   }
 }
