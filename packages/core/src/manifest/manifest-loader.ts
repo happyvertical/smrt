@@ -176,6 +176,95 @@ function getSTISiblingCache(): Map<
 const require = createRequire(import.meta.url);
 
 /**
+ * Cached debug flag evaluated once at module load time.
+ * Environment variables don't change at runtime, so this is safe.
+ * @see https://github.com/happyvertical/smrt/issues/729
+ */
+const DEBUG_ENABLED =
+  process.env.DEBUG_MANIFEST === 'true' ||
+  process.env.DEBUG_MANIFEST === '1' ||
+  process.env.DEBUG?.includes('manifest') ||
+  false;
+
+/**
+ * Log a debug message only if DEBUG_MANIFEST is enabled.
+ * Uses cached boolean check instead of repeated env var access.
+ */
+function debugLog(message: string): void {
+  if (DEBUG_ENABLED) {
+    console.log(message);
+  }
+}
+
+/**
+ * Cache for className-to-entry index per manifest.
+ * This enables O(1) lookup by className instead of O(n) iteration.
+ * @see https://github.com/happyvertical/smrt/issues/729
+ */
+const classNameIndexCache = new WeakMap<
+  SmartObjectManifest,
+  Map<string, SmartObjectDefinition>
+>();
+
+/**
+ * Get or build the className index for a manifest.
+ * Index maps lowercase className to entry for O(1) lookup.
+ */
+function getClassNameIndex(
+  manifest: SmartObjectManifest,
+): Map<string, SmartObjectDefinition> {
+  let index = classNameIndexCache.get(manifest);
+  if (!index) {
+    index = new Map<string, SmartObjectDefinition>();
+    for (const [key, entry] of Object.entries(manifest.objects)) {
+      const name = (entry.className || key).toLowerCase();
+      // Only store first occurrence (prevents overwrites)
+      if (!index.has(name)) {
+        index.set(name, entry);
+      } else {
+        debugLog(
+          `Manifest className collision for '${name}': keeping first, ignoring key '${key}'`,
+        );
+      }
+    }
+    classNameIndexCache.set(manifest, index);
+  }
+  return index;
+}
+
+/**
+ * Cached list of @happyvertical packages in node_modules.
+ * Avoids repeated readdirSync calls on the same directory.
+ * @see https://github.com/happyvertical/smrt/issues/729
+ */
+let cachedNodeModulesPackages: string[] | null = null;
+
+/**
+ * Get the list of @happyvertical packages in node_modules.
+ * Result is cached to avoid repeated filesystem scans.
+ */
+function getHappyVerticalPackages(): string[] {
+  if (cachedNodeModulesPackages === null) {
+    const nodeModulesPath = join(
+      process.cwd(),
+      'node_modules',
+      '@happyvertical',
+    );
+    try {
+      cachedNodeModulesPackages = existsSync(nodeModulesPath)
+        ? readdirSync(nodeModulesPath)
+        : [];
+    } catch {
+      cachedNodeModulesPackages = [];
+    }
+    debugLog(
+      `[manifest-loader] Found ${cachedNodeModulesPackages.length} @happyvertical packages in node_modules`,
+    );
+  }
+  return cachedNodeModulesPackages;
+}
+
+/**
  * Detect if we're running in a test environment
  * Test manifests should ONLY be loaded during tests to avoid collisions with production classes
  */
@@ -307,7 +396,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     // If manifest has objects, use it
     if (objectCount > 0) {
       setLocalTestManifestCache(manifest);
-      console.log(
+      debugLog(
         `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
       );
       return manifest;
@@ -323,7 +412,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
 
         if (testObjectCount > 0) {
           setLocalTestManifestCache(testManifest);
-          console.log(
+          debugLog(
             `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${testObjectCount} objects) - preferred over empty ManifestManager result`,
           );
           return testManifest;
@@ -335,7 +424,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
 
     // No better option, cache and use the empty manifest
     setLocalTestManifestCache(manifest);
-    console.log(
+    debugLog(
       `[manifest-loader] ✅ Loaded local manifest via ManifestManager (${objectCount} objects)`,
     );
     return manifest;
@@ -349,12 +438,12 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
       );
       setLocalTestManifestCache(testManifest);
       const objectCount = Object.keys(testManifest.objects).length;
-      console.log(
+      debugLog(
         `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${objectCount} objects)`,
       );
       return testManifest;
     } catch (error) {
-      console.log(
+      debugLog(
         `[manifest-loader] ✗ Failed to load test manifest from ${testManifestPath}: ${error instanceof Error ? error.message : 'unknown'}`,
       );
     }
@@ -362,7 +451,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
 
   // No manifest found - DON'T cache null, allow retries
   // This is important because the manifest may be generated later
-  console.log(
+  debugLog(
     '[manifest-loader] ⚠️  No local manifest found (will retry on next call)',
   );
   return null;
@@ -503,11 +592,11 @@ export function getPackageName(
 export function loadExternalManifestSync(packageName: string): Manifest | null {
   // Check cache first
   if (getManifestCacheMap().has(packageName)) {
-    console.log(`[manifest-loader] Using cached manifest for ${packageName}`);
+    debugLog(`[manifest-loader] Using cached manifest for ${packageName}`);
     return getManifestCacheMap().get(packageName)!;
   }
 
-  console.log(
+  debugLog(
     `[manifest-loader] Attempting to load external manifest for ${packageName}`,
   );
 
@@ -591,7 +680,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
           const json = JSON.parse(content);
           if (json.name === packageName) {
             pkgPath = workspacePkgPath;
-            console.log(
+            debugLog(
               `[manifest-loader] ✅ Found ${packageName} in workspace at ${workspacePath}`,
             );
             break;
@@ -604,7 +693,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
   }
 
   if (!pkgPath) {
-    console.log(
+    debugLog(
       `[manifest-loader] Could not find package.json for ${packageName}`,
     );
     return null;
@@ -628,7 +717,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
 
       // Cache the loaded manifest
       getManifestCacheMap().set(packageName, manifest);
-      console.log(
+      debugLog(
         `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(manifest.objects).length} objects)`,
       );
 
@@ -644,7 +733,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     }
 
     if (!manifestExport) {
-      console.log(
+      debugLog(
         `[manifest-loader] Package ${packageName} does not export manifest (checked ./manifest.json and ./manifest)`,
       );
       return null;
@@ -665,7 +754,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
 
     // Check if the path points to a JSON file
     if (!manifestRelPath.endsWith('.json')) {
-      console.log(
+      debugLog(
         `[manifest-loader] Package ${packageName} manifest export points to non-JSON file: ${manifestRelPath}`,
       );
       return null;
@@ -688,7 +777,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
 
     // Cache the loaded manifest
     getManifestCacheMap().set(packageName, fallbackManifest);
-    console.log(
+    debugLog(
       `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(fallbackManifest.objects).length} objects) via exports`,
     );
 
@@ -725,9 +814,7 @@ export function discoverManifestSync(
 ): ManifestEntry | undefined {
   const name = className.toLowerCase();
 
-  console.log(
-    `[manifest-loader] discoverManifestSync called for: ${className}`,
-  );
+  debugLog(`[manifest-loader] discoverManifestSync called for: ${className}`);
 
   // 1. Check localTestManifest (domain package classes) - ONLY in test environment
   // This prevents test classes from polluting production code
@@ -741,7 +828,7 @@ export function discoverManifestSync(
       // Use lookupInManifest for qualified name support (Issue #713)
       const entry = lookupInManifest(localManifest, className);
       if (entry) {
-        console.log(
+        debugLog(
           `[manifest-loader] ✅ Found ${className} in localTestManifest`,
         );
         return entry;
@@ -756,7 +843,7 @@ export function discoverManifestSync(
       // Use lookupInManifest for qualified name support (Issue #713)
       const entry = lookupInManifest(manifest, className);
       if (entry) {
-        console.log(`[manifest-loader] ✅ Found ${className} in testManifest`);
+        debugLog(`[manifest-loader] ✅ Found ${className} in testManifest`);
         return entry;
       }
     }
@@ -767,7 +854,7 @@ export function discoverManifestSync(
   // Use lookupInManifest for qualified name support (Issue #713)
   const staticEntry = lookupInManifest(staticManifest, className);
   if (staticEntry) {
-    console.log(`[manifest-loader] ✅ Found ${className} in staticManifest`);
+    debugLog(`[manifest-loader] ✅ Found ${className} in staticManifest`);
     return staticEntry;
   }
 
@@ -776,7 +863,7 @@ export function discoverManifestSync(
     // Use lookupInManifest for qualified name support (Issue #713)
     const entry = lookupInManifest(manifest, className);
     if (entry) {
-      console.log(
+      debugLog(
         `[manifest-loader] ✅ Found ${className} in external manifest cache`,
       );
       // Enrich entry with packageName from manifest if not already present
@@ -790,7 +877,7 @@ export function discoverManifestSync(
   // 5. Try loading from external SMRT packages
   // This handles STI inheritance where child class is in one package
   // but parent class is in another (e.g., Meeting in praeco extends Event from smrt-events)
-  console.log(
+  debugLog(
     `[manifest-loader] ${className} not found in cached manifests, trying external packages...`,
   );
 
@@ -798,7 +885,7 @@ export function discoverManifestSync(
   const smrtPackages = getLocalTestManifestCache()?.smrtDependencies || [];
 
   if (smrtPackages.length === 0) {
-    console.log(
+    debugLog(
       '[manifest-loader] No SMRT dependencies discovered. Run manifest generation if external packages are expected.',
     );
   }
@@ -809,7 +896,7 @@ export function discoverManifestSync(
       // Use lookupInManifest for qualified name support (Issue #713)
       const entry = lookupInManifest(manifest, className);
       if (entry) {
-        console.log(
+        debugLog(
           `[manifest-loader] ✅ Found ${className} in external package ${pkg}`,
         );
         // Enrich entry with packageName from manifest if not already present
@@ -825,65 +912,60 @@ export function discoverManifestSync(
   // This is critical for production environments where localTestManifest is not available
   // and smrtDependencies is empty. Without this, external package classes (like EventType
   // from smrt-events) won't be found, causing schema generation to miss indexes.
-  try {
+  // Uses cached package list to avoid repeated readdirSync calls (issue #729)
+  const packages = getHappyVerticalPackages();
+  if (packages.length > 0) {
     const nodeModulesPath = join(
       process.cwd(),
       'node_modules',
       '@happyvertical',
     );
-    if (existsSync(nodeModulesPath)) {
-      const packages = readdirSync(nodeModulesPath);
-      console.log(
-        `[manifest-loader] Scanning ${packages.length} @happyvertical packages in node_modules for ${className}`,
-      );
-      for (const pkg of packages) {
-        const fullPackageName = `@happyvertical/${pkg}`;
-        // Skip if already in cache (already checked above)
-        if (getManifestCacheMap().has(fullPackageName)) {
-          continue;
-        }
-        // Check for manifest in dist/ or root
-        const manifestPaths = [
-          join(nodeModulesPath, pkg, 'dist', 'manifest.json'),
-          join(nodeModulesPath, pkg, 'manifest.json'),
-        ];
-        for (const manifestPath of manifestPaths) {
-          if (existsSync(manifestPath)) {
-            try {
-              const manifestContent = readFileSync(manifestPath, 'utf-8');
-              const manifest: Manifest = JSON.parse(manifestContent);
-              // Cache it for future lookups
-              getManifestCacheMap().set(fullPackageName, manifest);
-              // Check if this manifest has the class we're looking for
-              // Use lookupInManifest for qualified name support (Issue #713)
-              const entry = lookupInManifest(manifest, className);
-              if (entry) {
-                console.log(
-                  `[manifest-loader] ✅ Found ${className} in node_modules package ${fullPackageName}`,
-                );
-                // Enrich entry with packageName from manifest if not already present
-                if (!entry.packageName && manifest.packageName) {
-                  return { ...entry, packageName: manifest.packageName };
-                }
-                return entry;
-              }
-              break; // Found manifest for this package, move to next package
-            } catch (parseError) {
-              console.log(
-                `[manifest-loader] Failed to parse manifest at ${manifestPath}: ${parseError}`,
+    debugLog(
+      `[manifest-loader] Scanning ${packages.length} @happyvertical packages in node_modules for ${className}`,
+    );
+    for (const pkg of packages) {
+      const fullPackageName = `@happyvertical/${pkg}`;
+      // Skip if already in cache (already checked above)
+      if (getManifestCacheMap().has(fullPackageName)) {
+        continue;
+      }
+      // Check for manifest in dist/ or root
+      const manifestPaths = [
+        join(nodeModulesPath, pkg, 'dist', 'manifest.json'),
+        join(nodeModulesPath, pkg, 'manifest.json'),
+      ];
+      for (const manifestPath of manifestPaths) {
+        if (existsSync(manifestPath)) {
+          try {
+            const manifestContent = readFileSync(manifestPath, 'utf-8');
+            const manifest: Manifest = JSON.parse(manifestContent);
+            // Cache it for future lookups
+            getManifestCacheMap().set(fullPackageName, manifest);
+            // Check if this manifest has the class we're looking for
+            // Use lookupInManifest for qualified name support (Issue #713)
+            const entry = lookupInManifest(manifest, className);
+            if (entry) {
+              debugLog(
+                `[manifest-loader] ✅ Found ${className} in node_modules package ${fullPackageName}`,
               );
+              // Enrich entry with packageName from manifest if not already present
+              if (!entry.packageName && manifest.packageName) {
+                return { ...entry, packageName: manifest.packageName };
+              }
+              return entry;
             }
+            break; // Found manifest for this package, move to next package
+          } catch (parseError) {
+            debugLog(
+              `[manifest-loader] Failed to parse manifest at ${manifestPath}: ${parseError}`,
+            );
           }
         }
       }
     }
-  } catch (scanError) {
-    console.log(
-      `[manifest-loader] Failed to scan node_modules for ${className}: ${scanError}`,
-    );
   }
 
-  console.log(`[manifest-loader] ❌ ${className} not found in any manifest`);
+  debugLog(`[manifest-loader] ❌ ${className} not found in any manifest`);
   return undefined;
 }
 
@@ -907,25 +989,22 @@ export function lookupInManifest(
   manifest: SmartObjectManifest,
   nameOrQualified: string,
 ): ManifestEntry | undefined {
-  // First try direct lookup (handles both qualified names and exact matches)
+  // 1. First try direct lookup (handles both qualified names and exact matches)
   if (manifest.objects[nameOrQualified]) {
     return manifest.objects[nameOrQualified];
   }
 
-  // If input is a qualified name, try extracting class name for fallback search
+  // 2. Get the className index for O(1) lookups (instead of O(n) iteration)
+  // This is the key optimization for issue #729
+  const classNameIndex = getClassNameIndex(manifest);
+
+  // 3. If input is a qualified name, extract className and use index
   if (isQualifiedName(nameOrQualified)) {
     const { className } = parseQualifiedName(nameOrQualified);
-    // Search by className property (case-insensitive)
-    const lowerClassName = className.toLowerCase();
-    for (const entry of Object.values(manifest.objects)) {
-      if (entry.className?.toLowerCase() === lowerClassName) {
-        return entry;
-      }
-    }
-    return undefined;
+    return classNameIndex.get(className.toLowerCase());
   }
 
-  // For simple class names, try constructing qualified name if manifest has packageName
+  // 4. For simple class names, try constructing qualified name if manifest has packageName
   if (manifest.packageName) {
     const qualifiedKey = createQualifiedName(
       manifest.packageName,
@@ -936,15 +1015,8 @@ export function lookupInManifest(
     }
   }
 
-  // Search by className property (case-insensitive) for simple names
-  const lowerName = nameOrQualified.toLowerCase();
-  for (const entry of Object.values(manifest.objects)) {
-    if (entry.className?.toLowerCase() === lowerName) {
-      return entry;
-    }
-  }
-
-  return undefined;
+  // 5. Use index for O(1) className lookup (instead of O(n) iteration)
+  return classNameIndex.get(nameOrQualified.toLowerCase());
 }
 
 /**
@@ -1244,7 +1316,7 @@ export function discoverSTISiblingsSync(
   // Use lowercase keys to prevent both 'praeco' and 'Praeco' from being added
   const foundClasses = new Set<string>();
 
-  console.log(
+  debugLog(
     `[manifest-loader] discoverSTISiblingsSync called for collection: ${collection}`,
   );
 
@@ -1271,7 +1343,7 @@ export function discoverSTISiblingsSync(
             entry,
             packageName: entry.packageName || manifest.packageName,
           });
-          console.log(
+          debugLog(
             `[manifest-loader] Found STI sibling: ${className} (collection: ${collection}) from ${source}`,
           );
         }
@@ -1329,7 +1401,7 @@ export function discoverSTISiblingsSync(
     }
   }
 
-  console.log(
+  debugLog(
     `[manifest-loader] Scanning ${allSmrtDeps.size} SMRT dependencies for STI siblings: ${[...allSmrtDeps].join(', ')}`,
   );
 
@@ -1345,51 +1417,48 @@ export function discoverSTISiblingsSync(
 
   // 6. Scan ALL @happyvertical packages in node_modules for manifests
   // This catches peer packages like praeco/caelus that aren't in smrtDependencies
-  try {
+  // Uses cached package list to avoid repeated readdirSync calls (issue #729)
+  const nodeModulesPackages = getHappyVerticalPackages();
+  if (nodeModulesPackages.length > 0) {
     const nodeModulesPath = join(
       process.cwd(),
       'node_modules',
       '@happyvertical',
     );
-    if (existsSync(nodeModulesPath)) {
-      const packages = readdirSync(nodeModulesPath);
-      console.log(
-        `[manifest-loader] Scanning ${packages.length} @happyvertical packages in node_modules`,
-      );
-      for (const pkg of packages) {
-        const fullPackageName = `@happyvertical/${pkg}`;
-        // Skip if already in cache
-        if (getManifestCacheMap().has(fullPackageName)) {
-          continue;
-        }
-        // Check for manifest in dist/ or root
-        const manifestPaths = [
-          join(nodeModulesPath, pkg, 'dist', 'manifest.json'),
-          join(nodeModulesPath, pkg, 'manifest.json'),
-        ];
-        for (const manifestPath of manifestPaths) {
-          if (existsSync(manifestPath)) {
-            try {
-              const manifestContent = readFileSync(manifestPath, 'utf-8');
-              const manifest = JSON.parse(manifestContent);
-              // Cache it
-              getManifestCacheMap().set(fullPackageName, manifest);
-              addFromManifest(manifest, `nodeModules:${fullPackageName}`);
-              break; // Found manifest, skip other paths
-            } catch (parseError) {
-              console.log(
-                `[manifest-loader] Failed to parse manifest at ${manifestPath}: ${parseError}`,
-              );
-            }
+    debugLog(
+      `[manifest-loader] Scanning ${nodeModulesPackages.length} @happyvertical packages in node_modules`,
+    );
+    for (const pkg of nodeModulesPackages) {
+      const fullPackageName = `@happyvertical/${pkg}`;
+      // Skip if already in cache
+      if (getManifestCacheMap().has(fullPackageName)) {
+        continue;
+      }
+      // Check for manifest in dist/ or root
+      const manifestPaths = [
+        join(nodeModulesPath, pkg, 'dist', 'manifest.json'),
+        join(nodeModulesPath, pkg, 'manifest.json'),
+      ];
+      for (const manifestPath of manifestPaths) {
+        if (existsSync(manifestPath)) {
+          try {
+            const manifestContent = readFileSync(manifestPath, 'utf-8');
+            const manifest = JSON.parse(manifestContent);
+            // Cache it
+            getManifestCacheMap().set(fullPackageName, manifest);
+            addFromManifest(manifest, `nodeModules:${fullPackageName}`);
+            break; // Found manifest, skip other paths
+          } catch (parseError) {
+            debugLog(
+              `[manifest-loader] Failed to parse manifest at ${manifestPath}: ${parseError}`,
+            );
           }
         }
       }
     }
-  } catch (scanError) {
-    console.log(`[manifest-loader] Failed to scan node_modules: ${scanError}`);
   }
 
-  console.log(
+  debugLog(
     `[manifest-loader] discoverSTISiblingsSync found ${siblings.length} siblings for collection: ${collection}`,
   );
 

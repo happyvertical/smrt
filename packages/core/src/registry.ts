@@ -3142,8 +3142,12 @@ export class ObjectRegistry {
       for (const [_fieldName, field] of registered.fields) {
         if (field.type === 'foreignKey' && field.related) {
           const relatedClass = field.related;
-          // Only add if the related class is registered
-          if (ObjectRegistry.classes.has(relatedClass)) {
+          // Skip self-references (table can reference itself after creation)
+          // Only add if the related class is registered and not self
+          if (
+            relatedClass !== className &&
+            ObjectRegistry.classes.has(relatedClass)
+          ) {
             dependencies.push(relatedClass);
           }
         }
