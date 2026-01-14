@@ -176,24 +176,22 @@ function getSTISiblingCache(): Map<
 const require = createRequire(import.meta.url);
 
 /**
- * Check if manifest debugging is enabled via environment variable.
- * This prevents performance degradation from excessive logging in production.
+ * Cached debug flag evaluated once at module load time.
+ * Environment variables don't change at runtime, so this is safe.
  * @see https://github.com/happyvertical/smrt/issues/729
  */
-function isDebugEnabled(): boolean {
-  return (
-    process.env.DEBUG_MANIFEST === 'true' ||
-    process.env.DEBUG_MANIFEST === '1' ||
-    process.env.DEBUG?.includes('manifest')
-  );
-}
+const DEBUG_ENABLED =
+  process.env.DEBUG_MANIFEST === 'true' ||
+  process.env.DEBUG_MANIFEST === '1' ||
+  process.env.DEBUG?.includes('manifest') ||
+  false;
 
 /**
  * Log a debug message only if DEBUG_MANIFEST is enabled.
- * Use this for high-frequency logs like cache hits.
+ * Uses cached boolean check instead of repeated env var access.
  */
 function debugLog(message: string): void {
-  if (isDebugEnabled()) {
+  if (DEBUG_ENABLED) {
     console.log(message);
   }
 }
@@ -223,6 +221,10 @@ function getClassNameIndex(
       // Only store first occurrence (prevents overwrites)
       if (!index.has(name)) {
         index.set(name, entry);
+      } else {
+        debugLog(
+          `Manifest className collision for '${name}': keeping first, ignoring key '${key}'`,
+        );
       }
     }
     classNameIndexCache.set(manifest, index);
