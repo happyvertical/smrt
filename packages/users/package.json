@@ -12,7 +12,7 @@
     },
     "./sveltekit": {
       "types": "./dist/sveltekit/index.d.ts",
-      "import": "./dist/sveltekit/index.js"
+      "import": "./dist/sveltekit.js"
     },
     "./manifest.json": "./dist/manifest.json"
   },
