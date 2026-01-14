@@ -2830,7 +2830,7 @@ export class ObjectRegistry {
           const isSTI = tableStrategy === 'sti';
           if (isSTI) {
             baseColumns._meta_type = { type: 'TEXT', notNull: true };
-            baseColumns._meta_data = { type: 'TEXT' };
+            baseColumns._meta_data = { type: 'JSON' };
           }
 
           tableSchemas[tableName] = {
