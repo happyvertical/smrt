@@ -20,8 +20,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm run generate:test && tsc && cp src/manifest/test-manifest.json dist/manifest.json",
-    "dev": "tsc --watch",
+    "build": "pnpm run generate:test && vite build && cp src/manifest/test-manifest.json dist/manifest.json",
+    "dev": "vite build --watch",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "pnpm run generate:test && npx vitest run",
     "typecheck": "tsc --noEmit"
@@ -60,6 +60,8 @@
     "@types/node": "^24.0.0",
     "fast-glob": "^3.3.2",
     "typescript": "^5.7.2",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.4.0",
     "vitest": "^4.0.16"
   }
 }
