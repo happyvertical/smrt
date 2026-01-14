@@ -1,5 +1,39 @@
 # @happyvertical/smrt-core
 
+## 0.19.14
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - correct URL logging in db:setup and db:migrate (#732) (cli)
+  - handle self-referencing foreignKey in dependency graph (#731) (core)
+  - @happyvertical/smrt-scanner@0.19.14
+  - @happyvertical/smrt-config@0.19.14
+  - @happyvertical/smrt-types@0.19.14
+
+## 0.19.13
+
+### Patch Changes
+
+- ### Other Changes
+
+  - perf: optimize manifest-loader to reduce 52k+ lookups to ~2k (#730) (core)
+  - @happyvertical/smrt-scanner@0.19.13
+  - @happyvertical/smrt-config@0.19.13
+  - @happyvertical/smrt-types@0.19.13
+
+## 0.19.12
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-secrets integration for EmailAccount credentials (#726) (messages)
+  - @happyvertical/smrt-scanner@0.19.12
+  - @happyvertical/smrt-config@0.19.12
+  - @happyvertical/smrt-types@0.19.12
+
 ## 0.19.11
 
 ### Patch Changes

@@ -601,7 +601,9 @@ export default testManifest;
         const { getDatabase } = await import('@happyvertical/sql');
         const db = await getDatabase({ type: dbType, url: dbUrl });
 
-        console.log(`✓ Connected to ${dbType}://${dbUrl}\n`);
+        // Mask password in URL for logging
+        const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':***@');
+        console.log(`✓ Connected to ${maskedUrl}\n`);
 
         // 7. Drop tables if requested
         if (options.drop) {
@@ -1114,7 +1116,9 @@ export default testManifest;
           process.exit(1);
         }
 
-        console.log(`✓ Connected to ${dbType}://${dbUrl}\n`);
+        // Mask password in URL for logging
+        const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':***@');
+        console.log(`✓ Connected to ${maskedUrl}\n`);
 
         // 7.5. Initialize MigrationTracker for tracking applied migrations
         const { MigrationTracker, shortChecksum } = await import(
