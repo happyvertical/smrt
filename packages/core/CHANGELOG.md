@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.20
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - show underlying database error in migration failures (#740) (cli)
+  - @happyvertical/smrt-scanner@0.19.20
+  - @happyvertical/smrt-config@0.19.20
+  - @happyvertical/smrt-types@0.19.20
+
 ## 0.19.19
 
 ### Patch Changes
