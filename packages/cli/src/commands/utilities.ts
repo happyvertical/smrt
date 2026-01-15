@@ -6,7 +6,7 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { configExportCommand } from './config-export.js';
@@ -1078,8 +1078,9 @@ export default testManifest;
         // 5. Get initialization order (topological sort respecting FK dependencies)
         const initOrder = ObjectRegistry.getInitializationOrder();
 
-        // 6. Get all merged schemas (handles STI column merging)
-        const allSchemas = ObjectRegistry.getAllSchemas();
+        // 6. Get all merged schemas as SchemaDefinition objects
+        // This format is compatible with SchemaComparer for proper diff detection
+        const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
 
         if (options.verbose) {
           console.log('📋 Tables to check (in dependency order):');
@@ -1142,7 +1143,8 @@ export default testManifest;
           console.log();
         }
 
-        // 8. Compare schemas and collect migrations
+        // 8. Compare schemas using SchemaComparer
+        // This uses the same comparison logic as core (including equivalent index detection)
         type MigrationAction = {
           type: 'add_column' | 'add_index' | 'type_mismatch';
           tableName: string;
@@ -1169,115 +1171,77 @@ export default testManifest;
 
         const migrations: MigrationAction[] = [];
         const typeMismatches: MigrationAction[] = [];
-        const tablesProcessed = new Set<string>();
 
         console.log('🔍 Comparing schemas...\n');
 
-        for (const className of initOrder) {
-          const tableName = ObjectRegistry.getTableName(className);
-          if (!tableName) continue;
+        // Use SchemaComparer from core for consistent schema diff
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare(manifestSchemas);
 
-          // Skip if we've already processed this table (STI children share tables)
-          if (tablesProcessed.has(tableName)) {
-            if (options.verbose) {
-              console.log(
-                `  ⊙ ${className} → ${tableName} (already processed)`,
-              );
-            }
-            continue;
-          }
-          tablesProcessed.add(tableName);
-
-          // Get current schema from database
-          const currentSchema = await db.getTableSchema(tableName);
-
-          if (!currentSchema) {
-            // Table doesn't exist - use db:setup instead
-            console.log(
-              `  ⚠️  ${tableName}: Table does not exist (use db:setup to create)`,
-            );
-            continue;
-          }
-
-          // Get expected schema (merged for STI)
-          const expectedSchema = allSchemas[tableName];
-          if (!expectedSchema) {
-            if (options.verbose) {
-              console.log(`  ⊙ ${tableName}: No schema definition found`);
-            }
-            continue;
-          }
-
-          // Parse expected columns from DDL or columns definition
-          const expectedColumns = parseExpectedColumns(expectedSchema);
-
-          // Compare columns
-          const currentColumnNames = new Set(
-            Object.keys(currentSchema.columns),
+        // Report tables that need db:setup
+        for (const schema of diff.added_tables) {
+          console.log(
+            `  ⚠️  ${schema.tableName}: Table does not exist (use db:setup to create)`,
           );
-          let hasChanges = false;
+        }
 
-          for (const [colName, colDef] of Object.entries(expectedColumns)) {
-            if (!currentColumnNames.has(colName)) {
-              // Missing column - add migration
+        // Helper to get class name for a table (for reporting)
+        const getClassForTable = (tableName: string): string => {
+          for (const className of initOrder) {
+            if (ObjectRegistry.getTableName(className) === tableName) {
+              return className;
+            }
+          }
+          return tableName;
+        };
+
+        // Convert SchemaDiff changes to CLI MigrationAction format
+        for (const change of diff.changes) {
+          const className = getClassForTable(change.table);
+
+          switch (change.type) {
+            case 'add_column':
               migrations.push({
                 type: 'add_column',
-                tableName,
+                tableName: change.table,
                 className,
                 column: {
-                  name: colName,
-                  type: colDef.type,
-                  notNull: colDef.notNull,
-                  defaultValue: colDef.defaultValue,
-                  unique: colDef.unique,
+                  name: change.name!,
+                  type: change.column?.type,
+                  notNull: change.column?.notNull,
+                  defaultValue: change.column?.defaultValue,
+                  unique: change.column?.unique,
                 },
+                sql: change.sql,
               });
-              hasChanges = true;
-            } else {
-              // Column exists - check for type mismatch
-              const currentCol = currentSchema.columns[colName];
-              const normalizedExpected = normalizeType(colDef.type);
-              const normalizedActual = normalizeType(currentCol.type);
+              break;
 
-              if (normalizedExpected !== normalizedActual) {
-                typeMismatches.push({
-                  type: 'type_mismatch',
-                  tableName,
-                  className,
-                  mismatch: {
-                    column: colName,
-                    expected: colDef.type,
-                    actual: currentCol.type,
-                  },
-                });
-              }
-            }
-          }
-
-          // Compare indexes
-          const currentIndexNames = new Set(
-            currentSchema.indexes.map((idx) => idx.name),
-          );
-          const expectedIndexes = parseExpectedIndexes(expectedSchema);
-
-          for (const idx of expectedIndexes) {
-            if (!currentIndexNames.has(idx.name)) {
+            case 'add_index':
               migrations.push({
                 type: 'add_index',
-                tableName,
+                tableName: change.table,
                 className,
-                index: idx,
+                index: {
+                  name: change.index?.name,
+                  columns: change.index?.columns,
+                  unique: change.index?.unique,
+                },
+                sql: change.sql,
               });
-              hasChanges = true;
-            }
-          }
+              break;
 
-          if (options.verbose) {
-            if (hasChanges) {
-              console.log(`  📝 ${tableName}: Changes detected`);
-            } else {
-              console.log(`  ✓ ${tableName}: Up to date`);
-            }
+            case 'type_mismatch':
+              typeMismatches.push({
+                type: 'type_mismatch',
+                tableName: change.table,
+                className,
+                mismatch: {
+                  column: change.name!,
+                  expected: change.mismatch?.expected,
+                  actual: change.mismatch?.actual,
+                },
+              });
+              break;
           }
         }
 

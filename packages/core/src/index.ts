@@ -60,6 +60,14 @@ export * from './generators/index';
 export * from './interceptors';
 // Static manifest (generated at build time)
 export * from './manifest/index';
+export type { DiffOptions } from './migrations/differ';
+// Schema comparison and migration utilities
+export {
+  generateSchemaDiff,
+  getSQLFromDiff,
+  hasActionableChanges,
+  SchemaComparer,
+} from './migrations/differ';
 export * from './object';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';

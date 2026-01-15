@@ -51,7 +51,11 @@ import type {
   SmartObjectManifest,
   SmrtVisibility,
 } from './scanner/types.js';
-import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
+import type {
+  ColumnDefinition,
+  IndexDefinition,
+  SchemaDefinition,
+} from './schema/types.js';
 import { classnameToTablename, tableNameFromClass, toSnakeCase } from './utils';
 import { LRUCache } from './utils/lru-cache';
 import { createQualifiedName } from './utils/qualified-names.js';
@@ -2910,6 +2914,161 @@ export class ObjectRegistry {
         tableName,
         ddl,
         indexes: indexSQL,
+      };
+    }
+
+    return schemas;
+  }
+
+  /**
+   * Get all registered schemas as SchemaDefinition objects
+   *
+   * Similar to getAllSchemas(), but returns SchemaDefinition format suitable
+   * for use with SchemaComparer (migrations/differ.ts).
+   *
+   * Key difference: Indexes are kept as IndexDefinition objects instead of
+   * being converted to SQL strings.
+   *
+   * @returns Map of tableName to SchemaDefinition
+   */
+  static getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
+    // Step 1: Collect all schemas grouped by tableName
+    // For STI, multiple classes may share the same table
+    const tableSchemas: Record<
+      string,
+      {
+        tableName: string;
+        columns: Record<string, ColumnDefinition>;
+        indexes: IndexDefinition[];
+        isSTI: boolean;
+      }
+    > = {};
+
+    for (const [_className, registered] of ObjectRegistry.classes) {
+      // Skip collection classes - they don't have their own tables
+      if (registered.extends === 'SmrtCollection') {
+        continue;
+      }
+
+      // Handle STI subclasses with null tableName from external manifests
+      if (!registered.schema?.tableName && registered.extends) {
+        const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+        if (tableStrategy === 'sti') {
+          const stiBaseName = ObjectRegistry.getSTIBase(_className);
+          if (stiBaseName && stiBaseName !== _className) {
+            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
+            if (stiBaseClass?.schema?.tableName) {
+              if (!registered.schema) {
+                registered.schema = {
+                  tableName: '',
+                  ddl: '',
+                  columns: {},
+                  indexes: [],
+                  triggers: [],
+                  foreignKeys: [],
+                  dependencies: [],
+                  version: '',
+                };
+              }
+              registered.schema.tableName = stiBaseClass.schema.tableName;
+            }
+          }
+        }
+      }
+
+      if (registered.schema?.tableName) {
+        // For STI subclasses, use the STI base class's tableName
+        let tableName = registered.schema.tableName;
+        const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+        if (tableStrategy === 'sti') {
+          const stiBaseName = ObjectRegistry.getSTIBase(_className);
+          if (stiBaseName && stiBaseName !== _className) {
+            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
+            if (stiBaseClass?.schema?.tableName) {
+              tableName = stiBaseClass.schema.tableName;
+            }
+          }
+        }
+
+        // Get columns from schema, or generate from fields if empty
+        let columnsToUse = registered.schema.columns || {};
+        if (
+          Object.keys(columnsToUse).length === 0 &&
+          registered.fields.size > 0
+        ) {
+          columnsToUse = ObjectRegistry.fieldsToColumns(registered.fields);
+        }
+
+        if (!tableSchemas[tableName]) {
+          // First class for this table - initialize with base columns
+          const baseColumns: Record<string, ColumnDefinition> = {
+            id: { type: 'TEXT', primaryKey: true },
+            slug: { type: 'TEXT', notNull: true },
+            context: { type: 'TEXT' },
+            created_at: { type: 'TIMESTAMP' },
+            updated_at: { type: 'TIMESTAMP' },
+          };
+
+          const isSTI = tableStrategy === 'sti';
+          if (isSTI) {
+            baseColumns._meta_type = { type: 'TEXT', notNull: true };
+            baseColumns._meta_data = { type: 'JSON' };
+          }
+
+          tableSchemas[tableName] = {
+            tableName,
+            columns: { ...baseColumns, ...columnsToUse },
+            indexes: [],
+            isSTI,
+          };
+        } else {
+          // Additional class sharing this table (STI scenario) - merge columns
+          for (const [colName, colDef] of Object.entries(columnsToUse)) {
+            if (!tableSchemas[tableName].columns[colName]) {
+              tableSchemas[tableName].columns[colName] = colDef;
+            }
+          }
+        }
+
+        // Merge indexes (avoid duplicates by name)
+        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
+          const existingNames = new Set(
+            tableSchemas[tableName].indexes.map((idx) => idx.name),
+          );
+          for (const idx of registered.schema.indexes) {
+            if (typeof idx !== 'string' && !existingNames.has(idx.name)) {
+              tableSchemas[tableName].indexes.push(idx);
+              existingNames.add(idx.name);
+            }
+          }
+        }
+      }
+    }
+
+    // Step 2: Convert to SchemaDefinition format
+    const schemas: Record<string, SchemaDefinition> = {};
+
+    for (const [tableName, tableSchema] of Object.entries(tableSchemas)) {
+      if (Object.keys(tableSchema.columns).length === 0) {
+        continue;
+      }
+
+      // Generate DDL from columns
+      const ddl = ObjectRegistry.generateDDLFromColumns(
+        tableName,
+        tableSchema.columns,
+        tableSchema.isSTI,
+      );
+
+      schemas[tableName] = {
+        tableName,
+        ddl,
+        columns: tableSchema.columns,
+        indexes: tableSchema.indexes, // Keep as IndexDefinition[]
+        triggers: [],
+        foreignKeys: [],
+        version: '',
+        dependencies: [],
       };
     }
 
