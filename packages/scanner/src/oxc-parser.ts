@@ -33,8 +33,9 @@ function getLangFromFilename(filename: string): 'ts' | 'tsx' | 'js' | 'jsx' {
 /**
  * Extract line/column from offset in source text
  * Note: oxc-parser v0.108+ removed magicString, so we compute manually
+ * @internal Exported for testing
  */
-function getLineColumn(
+export function getLineColumn(
   sourceText: string,
   offset: number,
 ): { line: number; column: number } | undefined {

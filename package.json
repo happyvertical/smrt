@@ -65,7 +65,7 @@
     "vitest": "4.0.17"
   },
   "resolutions": {
-    "@types/node": "24.0.0"
+    "@types/node": "25.0.9"
   },
   "engines": {
     "node": ">=24.0.0",
