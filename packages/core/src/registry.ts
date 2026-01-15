@@ -3036,7 +3036,7 @@ export class ObjectRegistry {
             tableSchemas[tableName].indexes.map((idx) => idx.name),
           );
           for (const idx of registered.schema.indexes) {
-            if (typeof idx !== 'string' && !existingNames.has(idx.name)) {
+            if (!existingNames.has(idx.name)) {
               tableSchemas[tableName].indexes.push(idx);
               existingNames.add(idx.name);
             }

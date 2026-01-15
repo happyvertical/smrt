@@ -1200,48 +1200,60 @@ export default testManifest;
           const className = getClassForTable(change.table);
 
           switch (change.type) {
-            case 'add_column':
+            case 'add_column': {
+              // Type guard: add_column changes always have name and column
+              const col = change.column;
+              if (!change.name || !col) continue;
               migrations.push({
                 type: 'add_column',
                 tableName: change.table,
                 className,
                 column: {
-                  name: change.name!,
-                  type: change.column?.type,
-                  notNull: change.column?.notNull,
-                  defaultValue: change.column?.defaultValue,
-                  unique: change.column?.unique,
+                  name: change.name,
+                  type: col.type,
+                  notNull: col.notNull,
+                  defaultValue: col.defaultValue,
+                  unique: col.unique,
                 },
                 sql: change.sql,
               });
               break;
+            }
 
-            case 'add_index':
+            case 'add_index': {
+              // Type guard: add_index changes always have index
+              const idx = change.index;
+              if (!idx) continue;
               migrations.push({
                 type: 'add_index',
                 tableName: change.table,
                 className,
                 index: {
-                  name: change.index?.name,
-                  columns: change.index?.columns,
-                  unique: change.index?.unique,
+                  name: idx.name,
+                  columns: idx.columns,
+                  unique: idx.unique,
                 },
                 sql: change.sql,
               });
               break;
+            }
 
-            case 'type_mismatch':
+            case 'type_mismatch': {
+              // Type guard: type_mismatch changes always have name and mismatch
+              const mm = change.mismatch;
+              if (!change.name || !mm) continue;
               typeMismatches.push({
                 type: 'type_mismatch',
                 tableName: change.table,
                 className,
                 mismatch: {
-                  column: change.name!,
-                  expected: change.mismatch?.expected,
-                  actual: change.mismatch?.actual,
+                  column: change.name,
+                  expected: mm.expected,
+                  actual: mm.actual,
                 },
               });
               break;
+            }
           }
         }
 
