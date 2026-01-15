@@ -263,7 +263,7 @@ export class SchemaComparer {
     const dbIndexNames = new Set(dbSchema.indexes.map((idx) => idx.name));
 
     // Build a map of existing index signatures for functional equivalence checking
-    // Signature format: "col1,col2:unique" where columns are sorted
+    // Signature format: "col1,col2:unique" with columns in their defined order
     const dbIndexSignatures = new Map<string, string>();
     for (const idx of dbSchema.indexes) {
       const signature = this.getIndexSignature(
@@ -311,14 +311,23 @@ export class SchemaComparer {
    * Generate a signature for an index based on its columns and uniqueness.
    * Used for functional equivalence checking (Issue #741).
    *
-   * @param columns - Array of column names
+   * Note: Column order is preserved because it is semantically significant for
+   * composite indexes. An index on (a, b) is NOT equivalent to (b, a) - they
+   * have different query performance characteristics.
+   *
+   * Limitation: Partial indexes (with WHERE clauses) are not fully supported.
+   * The database introspection layer doesn't provide WHERE clause information,
+   * so two partial indexes with the same columns but different WHERE clauses
+   * cannot be distinguished and may be incorrectly treated as equivalent.
+   *
+   * @param columns - Array of column names (order is preserved)
    * @param unique - Whether the index is unique
    * @returns Signature string like "col1,col2:false"
    */
   private getIndexSignature(columns: string[], unique: boolean): string {
-    // Sort columns to ensure consistent signatures regardless of column order
-    const sortedColumns = [...columns].sort().join(',');
-    return `${sortedColumns}:${unique}`;
+    // Preserve column order because it is semantically significant for composite indexes
+    const columnList = columns.join(',');
+    return `${columnList}:${unique}`;
   }
 
   /**

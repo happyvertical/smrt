@@ -369,7 +369,7 @@ describe('Issue #741: STI Index Detection', () => {
 
 describe('Index normalization edge cases', () => {
   it('should handle indexes on multiple columns correctly', async () => {
-    // Test that compound indexes are also deduplicated by columns
+    // Test that compound indexes with different names but same columns are recognized as functionally equivalent
     const db: DatabaseProvider = await getDatabase({
       type: 'sqlite',
       url: ':memory:',
@@ -421,6 +421,66 @@ describe('Index normalization edge cases', () => {
 
     // Should recognize the compound index already exists
     expect(indexChanges).toHaveLength(0);
+
+    if (typeof (db as any).close === 'function') {
+      await (db as any).close();
+    }
+  });
+
+  it('should treat different column orders as non-equivalent indexes', async () => {
+    // Column order is semantically significant for composite indexes
+    // An index on (a, b) is NOT equivalent to (b, a) - they have different query performance
+    const db: DatabaseProvider = await getDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    await db.query(`
+      CREATE TABLE orders (
+        id TEXT PRIMARY KEY,
+        customer_id TEXT,
+        status TEXT
+      )
+    `);
+
+    // Create index with columns in order (customer_id, status)
+    await db.query(
+      'CREATE INDEX idx_orders_customer_status ON orders(customer_id, status)',
+    );
+
+    // Manifest expects index with REVERSED column order (status, customer_id)
+    const manifest: Record<string, SchemaDefinition> = {
+      orders: {
+        tableName: 'orders',
+        ddl: 'CREATE TABLE orders (id TEXT PRIMARY KEY, customer_id TEXT, status TEXT);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          customer_id: { type: 'TEXT' },
+          status: { type: 'TEXT' },
+        },
+        indexes: [
+          {
+            name: 'idx_orders_status_customer',
+            columns: ['status', 'customer_id'], // REVERSED order
+            unique: false,
+          },
+        ],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db as any);
+    const diff = await comparer.compare(manifest);
+
+    const indexChanges = diff.changes.filter((c) => c.type === 'add_index');
+
+    // Should detect as MISSING because column order is different
+    // (status, customer_id) is NOT equivalent to (customer_id, status)
+    expect(indexChanges).toHaveLength(1);
+    expect(indexChanges[0].name).toBe('idx_orders_status_customer');
 
     if (typeof (db as any).close === 'function') {
       await (db as any).close();
