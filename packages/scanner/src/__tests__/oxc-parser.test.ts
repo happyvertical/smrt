@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSource } from '../oxc-parser.js';
+import { getLineColumn, parseSource } from '../oxc-parser.js';
 
 describe('OXC Parser', () => {
   describe('parseSource', () => {
@@ -263,6 +263,120 @@ describe('OXC Parser', () => {
 
       expect(result.parseTimeMs).toBeDefined();
       expect(result.parseTimeMs).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('getLineColumn', () => {
+    it('should return line 1, column 1 for offset 0', () => {
+      const source = 'hello world';
+      const result = getLineColumn(source, 0);
+
+      expect(result).toEqual({ line: 1, column: 1 });
+    });
+
+    it('should calculate column correctly on first line', () => {
+      const source = 'hello world';
+      const result = getLineColumn(source, 6); // 'w' in world
+
+      expect(result).toEqual({ line: 1, column: 7 });
+    });
+
+    it('should calculate line and column for multi-line text', () => {
+      const source = 'line1\nline2\nline3';
+      //              0123456789...
+
+      // Offset 0 = 'l' in line1
+      expect(getLineColumn(source, 0)).toEqual({ line: 1, column: 1 });
+
+      // Offset 5 = '\n' after line1
+      expect(getLineColumn(source, 5)).toEqual({ line: 1, column: 6 });
+
+      // Offset 6 = 'l' in line2 (first char of line 2)
+      expect(getLineColumn(source, 6)).toEqual({ line: 2, column: 1 });
+
+      // Offset 9 = 'e' in line2
+      expect(getLineColumn(source, 9)).toEqual({ line: 2, column: 4 });
+
+      // Offset 12 = 'l' in line3 (first char of line 3)
+      expect(getLineColumn(source, 12)).toEqual({ line: 3, column: 1 });
+    });
+
+    it('should handle offset at end of file', () => {
+      const source = 'hello';
+      const result = getLineColumn(source, 5); // At length
+
+      expect(result).toEqual({ line: 1, column: 6 });
+    });
+
+    it('should handle multiple consecutive newlines', () => {
+      const source = 'a\n\n\nb';
+      //              01234
+
+      expect(getLineColumn(source, 0)).toEqual({ line: 1, column: 1 }); // 'a'
+      expect(getLineColumn(source, 1)).toEqual({ line: 1, column: 2 }); // first '\n'
+      expect(getLineColumn(source, 2)).toEqual({ line: 2, column: 1 }); // second '\n'
+      expect(getLineColumn(source, 3)).toEqual({ line: 3, column: 1 }); // third '\n'
+      expect(getLineColumn(source, 4)).toEqual({ line: 4, column: 1 }); // 'b'
+    });
+
+    it('should handle CRLF line endings', () => {
+      const source = 'line1\r\nline2\r\nline3';
+      //              01234567890123456789
+
+      // Note: CRLF is treated as two characters, only \n advances line
+      expect(getLineColumn(source, 0)).toEqual({ line: 1, column: 1 }); // 'l'
+      expect(getLineColumn(source, 5)).toEqual({ line: 1, column: 6 }); // '\r'
+      expect(getLineColumn(source, 6)).toEqual({ line: 1, column: 7 }); // '\n'
+      expect(getLineColumn(source, 7)).toEqual({ line: 2, column: 1 }); // 'l' in line2
+    });
+
+    it('should handle empty string', () => {
+      const source = '';
+      const result = getLineColumn(source, 0);
+
+      expect(result).toEqual({ line: 1, column: 1 });
+    });
+
+    it('should return undefined for negative offset', () => {
+      const source = 'hello';
+      const result = getLineColumn(source, -1);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined for offset beyond file length', () => {
+      const source = 'hello';
+      const result = getLineColumn(source, 10);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should handle file ending with newline', () => {
+      const source = 'line1\n';
+      //              012345
+
+      expect(getLineColumn(source, 5)).toEqual({ line: 1, column: 6 }); // '\n'
+      expect(getLineColumn(source, 6)).toEqual({ line: 2, column: 1 }); // at length
+    });
+
+    it('should handle realistic TypeScript code', () => {
+      const source = `class Foo {
+  name: string;
+  age: number;
+}`;
+      // Line 1: 'class Foo {\n' (12 chars including newline)
+      // Line 2: '  name: string;\n' (16 chars)
+      // Line 3: '  age: number;\n' (15 chars)
+      // Line 4: '}'
+
+      // First char
+      expect(getLineColumn(source, 0)).toEqual({ line: 1, column: 1 });
+
+      // First char of line 2 (after 'class Foo {\n')
+      expect(getLineColumn(source, 12)).toEqual({ line: 2, column: 1 });
+
+      // 'n' in 'name' on line 2
+      expect(getLineColumn(source, 14)).toEqual({ line: 2, column: 3 });
     });
   });
 });
