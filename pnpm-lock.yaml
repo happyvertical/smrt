@@ -122,7 +122,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -168,7 +168,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -196,7 +196,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -232,7 +232,7 @@ importers:
         version: link:../tags
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -299,8 +299,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.9
+        specifier: ^0.66.11
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -432,7 +432,7 @@ importers:
         version: 0.60.6(@types/node@24.10.9)
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -483,8 +483,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.9
+        specifier: ^0.66.11
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -557,7 +557,7 @@ importers:
         version: link:../types
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -612,7 +612,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -652,7 +652,7 @@ importers:
         version: link:../types
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -723,7 +723,7 @@ importers:
         version: link:../secrets
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -769,7 +769,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -806,7 +806,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -852,7 +852,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -910,7 +910,7 @@ importers:
         version: link:../types
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -972,7 +972,7 @@ importers:
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1036,7 +1036,7 @@ importers:
         version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1073,7 +1073,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1192,7 +1192,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1235,7 +1235,7 @@ importers:
         version: link:../users
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1315,7 +1315,7 @@ importers:
         version: link:../core
       '@happyvertical/sql':
         specifier: ^0.66.9
-        version: 0.66.9
+        version: 0.66.11
     devDependencies:
       '@types/node':
         specifier: 24.10.9
@@ -2203,8 +2203,16 @@ packages:
   '@duckdb/node-api@1.4.1-r.5':
     resolution: {integrity: sha512-RBDVqlMp3/GYKF/VhHcUrIYGJoOOMmVN2Ha7FPpm0Qpbqzh5RAY+QSfq30PTkRvIav4IwhM/FOu8gJNUqYCZGw==}
 
+  '@duckdb/node-api@1.4.3-r.3':
+    resolution: {integrity: sha512-lPHpmYRMoFJkTCZmp76sETTNPly7lT3eJfV69vqsZE3wur+OY9VW/BflMQ41mP1vSucGqw4rY6XCSmMACE7bwQ==}
+
   '@duckdb/node-bindings-darwin-arm64@1.4.1-r.5':
     resolution: {integrity: sha512-7LhYHy98ZqkGsK5XwDT/p7tCnGBTmZuxiEeNGJ/sdqvLJeDfbJuFnkXwnKMAue8ilgpI1pdET1QmqfdiKgkJyw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@duckdb/node-bindings-darwin-arm64@1.4.3-r.3':
+    resolution: {integrity: sha512-iyVZbanRsZKSoK1BHqC61+PExyFUjJ7Ftz+BVN6xsWvB3tfkBBwEcZ5K/cCkHuCqmT7IcUwwDoc89Naz7Tze/A==}
     cpu: [arm64]
     os: [darwin]
 
@@ -2213,8 +2221,18 @@ packages:
     cpu: [x64]
     os: [darwin]
 
+  '@duckdb/node-bindings-darwin-x64@1.4.3-r.3':
+    resolution: {integrity: sha512-exWYLzYLlKqsTp92iBR8SEcaMJpOWbUjaTmNN48TYCjDzLXPW2r4G2xhbFA67KuxnBJcrGvwNOOFcBje2AhfHg==}
+    cpu: [x64]
+    os: [darwin]
+
   '@duckdb/node-bindings-linux-arm64@1.4.1-r.5':
     resolution: {integrity: sha512-G1dp7PY7gQR0svheXVAQdrsOKv61jQxaM6jhp3FhhSNt2cHlsHld8kjnjXVCDr3OVlTP0vez/1mcbWpLZ7eB+w==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@duckdb/node-bindings-linux-arm64@1.4.3-r.3':
+    resolution: {integrity: sha512-Jx3SS6Hy2l3TuHUZ9iJ/b2ZnajfFV7AB1TMEh2gE1mmytoVkqjiMvVRj7487u4pxEANj9ELYXspdspC4/wyOaA==}
     cpu: [arm64]
     os: [linux]
 
@@ -2223,13 +2241,26 @@ packages:
     cpu: [x64]
     os: [linux]
 
+  '@duckdb/node-bindings-linux-x64@1.4.3-r.3':
+    resolution: {integrity: sha512-1ISlvsyQheiJlr8tdtVJ0cfCsjBB2leQZL82KJHFKx4Q5gj4yWRYi4tfaPup9zk5rY0xXSuVuhBxKPkTX1UZqg==}
+    cpu: [x64]
+    os: [linux]
+
   '@duckdb/node-bindings-win32-x64@1.4.1-r.5':
     resolution: {integrity: sha512-Y/+vsLVGXIx9UMMyYDpYCSY3m0hXC1RjSaYfb7jkim8gcWQg0eRlbjTlDnmhth/8Z+eQ2sXXy8UVBd5IZ/bqYw==}
     cpu: [x64]
     os: [win32]
 
+  '@duckdb/node-bindings-win32-x64@1.4.3-r.3':
+    resolution: {integrity: sha512-DQBGxcIZ6yatHrcxIevejKsyj1cobu6BwXU17YuxCSA/BxdfEl7QnhBzwEpDJUDj6gUbLbBqsEvwY+K/NWAwEg==}
+    cpu: [x64]
+    os: [win32]
+
   '@duckdb/node-bindings@1.4.1-r.5':
     resolution: {integrity: sha512-HUncdmpfjT4HxbH5NO6myazzudhddPc9lly7AgsYBdQSfTr1LCaQGb45cGiS5jEafpod9VOlk0bwJVbAIaBDWw==}
+
+  '@duckdb/node-bindings@1.4.3-r.3':
+    resolution: {integrity: sha512-QrkUgZw4Xwn5lNbvUHXcF3F5OvVexf9uQyJnxrLTzs9P93Be0UB+b4hr1EZwf1OMMocchN9iG1R839aVIfSJBg==}
 
   '@emnapi/core@1.8.1':
     resolution: {integrity: sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg==}
@@ -2541,6 +2572,9 @@ packages:
     resolution: {integrity: sha512-hYtjT+MkS1QGpGzWLWDKER52j/LHQjtkBa44ac8G1AXqR1iee7sP4k0qw9t5dX8OEAe/Daf3yHAo/Ktc+xU1cw==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.60.6/9f16bedd645427021b632e6e2ba5721c5cc20821}
     engines: {node: '>=24', pnpm: '>=9'}
 
+  '@happyvertical/sql@0.66.11':
+    resolution: {integrity: sha512-gFhHl46q+9eBFeDFpDX7A+1tMaRMkZBVZgE7v5rJj9hB30+hM+R2DiKiGA/78SgmVRlPEFcVZ4Grc4sDEV9j6Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.66.11/0f1300a702f4d6a4492949f730ecf8284656c96e}
+
   '@happyvertical/sql@0.66.9':
     resolution: {integrity: sha512-6W6VhXq7SWaf6FKPRBzOefS6w9OFzJd1xeqtQDQ5xQS/g03JXJ5TtaK+xK7nM86A2OnL0yjF5G31JM0p3FL63w==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.66.9/ebbdafe2508ffab58e55dd264abff4ec059e8e6a}
 
@@ -2549,6 +2583,9 @@ packages:
 
   '@happyvertical/utils@0.60.9':
     resolution: {integrity: sha512-OAWGQ3wjzPT0Is8V0oLJwQsLdcObTv/kPMojZ+TNEun23076idmSObsxsFN1+aapbDvM9Xu+aCgQ+FBn/nnSFw==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.60.9/30c234b7ae413761056d796b2862f8637dded1fd}
+
+  '@happyvertical/utils@0.66.11':
+    resolution: {integrity: sha512-ARSofRmpVs68NpSGGmk6eHXXBmCqQP2LzTyhb/HHoZpO+7iny+WGuvknce2cGK1XAvWnmdjwwwjOX3xXDIEz3w==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.66.11/7f6cbb1352f8bd85d372fea3f46454739f91f001}
 
   '@happyvertical/utils@0.66.9':
     resolution: {integrity: sha512-h7O5IBTeQcHdytzBxKlHNCcU+x5lhSsYV6rEo/1hBsOTD4UHWncPGxEeocopnORu6xCNkjj+6mTGnyr/D8QdBg==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.66.9/8ece739eaa331bdc84033ac2117fb498f39bbd85}
@@ -11718,19 +11755,38 @@ snapshots:
     dependencies:
       '@duckdb/node-bindings': 1.4.1-r.5
 
+  '@duckdb/node-api@1.4.3-r.3':
+    dependencies:
+      '@duckdb/node-bindings': 1.4.3-r.3
+
   '@duckdb/node-bindings-darwin-arm64@1.4.1-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-darwin-arm64@1.4.3-r.3':
     optional: true
 
   '@duckdb/node-bindings-darwin-x64@1.4.1-r.5':
     optional: true
 
+  '@duckdb/node-bindings-darwin-x64@1.4.3-r.3':
+    optional: true
+
   '@duckdb/node-bindings-linux-arm64@1.4.1-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-linux-arm64@1.4.3-r.3':
     optional: true
 
   '@duckdb/node-bindings-linux-x64@1.4.1-r.5':
     optional: true
 
+  '@duckdb/node-bindings-linux-x64@1.4.3-r.3':
+    optional: true
+
   '@duckdb/node-bindings-win32-x64@1.4.1-r.5':
+    optional: true
+
+  '@duckdb/node-bindings-win32-x64@1.4.3-r.3':
     optional: true
 
   '@duckdb/node-bindings@1.4.1-r.5':
@@ -11740,6 +11796,14 @@ snapshots:
       '@duckdb/node-bindings-linux-arm64': 1.4.1-r.5
       '@duckdb/node-bindings-linux-x64': 1.4.1-r.5
       '@duckdb/node-bindings-win32-x64': 1.4.1-r.5
+
+  '@duckdb/node-bindings@1.4.3-r.3':
+    optionalDependencies:
+      '@duckdb/node-bindings-darwin-arm64': 1.4.3-r.3
+      '@duckdb/node-bindings-darwin-x64': 1.4.3-r.3
+      '@duckdb/node-bindings-linux-arm64': 1.4.3-r.3
+      '@duckdb/node-bindings-linux-x64': 1.4.3-r.3
+      '@duckdb/node-bindings-win32-x64': 1.4.3-r.3
 
   '@emnapi/core@1.8.1':
     dependencies:
@@ -11882,7 +11946,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
     transitivePeerDependencies:
       - debug
 
@@ -12142,6 +12206,19 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  '@happyvertical/sql@0.66.11':
+    dependencies:
+      '@duckdb/node-api': 1.4.3-r.3
+      '@happyvertical/utils': 0.66.11
+      '@libsql/client': 0.17.0
+      pg: 8.17.1
+      sqlite-vss: 0.1.2
+    transitivePeerDependencies:
+      - bufferutil
+      - encoding
+      - pg-native
+      - utf-8-validate
+
   '@happyvertical/sql@0.66.9':
     dependencies:
       '@duckdb/node-api': 1.4.1-r.5
@@ -12163,6 +12240,13 @@ snapshots:
       uuid: 13.0.0
 
   '@happyvertical/utils@0.60.9':
+    dependencies:
+      '@paralleldrive/cuid2': 3.0.6
+      date-fns: 4.1.0
+      pluralize: 8.0.0
+      uuid: 13.0.0
+
+  '@happyvertical/utils@0.66.11':
     dependencies:
       '@paralleldrive/cuid2': 3.0.6
       date-fns: 4.1.0
@@ -16052,7 +16136,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -17831,7 +17915,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2):
+  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 

@@ -2124,10 +2124,6 @@ export async function main() {
   }
 }
 
-// Run if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error) => {
-    console.error('Fatal error:', error);
-    process.exit(1);
-  });
-}
+// NOTE: Do not add self-execution check here.
+// The entry point (src/index.ts) calls main() directly.
+// Adding a self-execution check would cause double execution when bundled.
