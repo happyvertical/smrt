@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.22
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - detect functionally equivalent indexes in schema comparison (#743) (migrations)
+  - @happyvertical/smrt-scanner@0.19.22
+  - @happyvertical/smrt-config@0.19.22
+  - @happyvertical/smrt-types@0.19.22
+
 ## 0.19.21
 
 ### Patch Changes
