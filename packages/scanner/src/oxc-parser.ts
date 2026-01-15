@@ -8,7 +8,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { type ParseResult, parseSync } from 'oxc-parser';
+import { parseSync } from 'oxc-parser';
 import type {
   FileScanResult,
   RawClassDefinition,
@@ -31,18 +31,31 @@ function getLangFromFilename(filename: string): 'ts' | 'tsx' | 'js' | 'jsx' {
 }
 
 /**
- * Extract line/column from parse result using magicString
+ * Extract line/column from offset in source text
+ * Note: oxc-parser v0.108+ removed magicString, so we compute manually
  */
 function getLineColumn(
-  result: ParseResult,
+  sourceText: string,
   offset: number,
 ): { line: number; column: number } | undefined {
-  try {
-    const lc = result.magicString.getLineColumnNumber(offset);
-    return { line: lc.line + 1, column: lc.column + 1 }; // Convert to 1-based
-  } catch {
+  if (offset < 0 || offset > sourceText.length) {
     return undefined;
   }
+
+  let line = 1;
+  let lastNewlinePos = -1;
+
+  for (let i = 0; i < offset; i++) {
+    if (sourceText[i] === '\n') {
+      line++;
+      lastNewlinePos = i;
+    }
+  }
+
+  return {
+    line,
+    column: offset - lastNewlinePos, // 1-based column
+  };
 }
 
 // ============================================================================
@@ -385,7 +398,7 @@ export function parseFile(filePath: string): FileScanResult {
     if (result.errors && result.errors.length > 0) {
       for (const error of result.errors) {
         const loc = error.labels?.[0]
-          ? getLineColumn(result, error.labels[0].start)
+          ? getLineColumn(sourceText, error.labels[0].start)
           : undefined;
         errors.push({
           message: error.message || 'Parse error',
@@ -443,7 +456,7 @@ export function parseSource(
     if (result.errors && result.errors.length > 0) {
       for (const error of result.errors) {
         const loc = error.labels?.[0]
-          ? getLineColumn(result, error.labels[0].start)
+          ? getLineColumn(sourceText, error.labels[0].start)
           : undefined;
         errors.push({
           message: error.message || 'Parse error',
@@ -720,7 +733,10 @@ function extractExtendsClause(node: ClassDeclaration): {
   }
 
   // Get type argument (e.g., Meeting from SmrtCollection<Meeting>)
-  const params = node.superTypeParameters?.params;
+  // Note: oxc-parser v0.108+ renamed superTypeParameters to superTypeArguments
+  const params =
+    (node as any).superTypeArguments?.params ||
+    node.superTypeParameters?.params;
   if (params && params.length > 0) {
     const typeParam = params[0];
     extendsTypeArg = extractTypeName(typeParam);
@@ -878,8 +894,11 @@ function extractTypeName(type: TSType): string | null {
       }
 
       // Include type parameters (e.g., Promise<any>, Map<string, number>)
-      if (baseName && type.typeParameters?.params?.length) {
-        const typeArgs = type.typeParameters.params
+      // Note: oxc-parser v0.108+ renamed typeParameters to typeArguments
+      const typeParams =
+        (type as any).typeArguments?.params || type.typeParameters?.params;
+      if (baseName && typeParams?.length) {
+        const typeArgs = typeParams
           .map((p: TSType) => extractTypeName(p))
           .filter(Boolean);
         if (typeArgs.length > 0) {

@@ -12,11 +12,11 @@
     "@happyvertical/browser-ai": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
     "@mlc-ai/web-llm": "^0.2.80",
-    "@remotion/whisper-web": "^4.0.376",
-    "@sveltejs/adapter-static": "^3.0.0",
-    "@sveltejs/kit": "^2.21.0",
-    "@sveltejs/vite-plugin-svelte": "^6.2.1",
-    "svelte": "^5.18.2",
-    "vite": "^7.3.0"
+    "@remotion/whisper-web": "^4.0.406",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.49.5",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "svelte": "^5.46.4",
+    "vite": "^7.3.1"
   }
 }

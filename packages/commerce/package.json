@@ -71,12 +71,12 @@
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.7",
-    "@sveltejs/vite-plugin-svelte": "^6.2.1",
-    "@types/node": "^24.0.0",
-    "fast-glob": "^3.3.2",
-    "svelte": "^5.18.2",
-    "svelte-check": "^4.0.0",
-    "typescript": "^5.7.2",
-    "vitest": "^4.0.8"
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@types/node": "25.0.9",
+    "fast-glob": "^3.3.3",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
   }
 }

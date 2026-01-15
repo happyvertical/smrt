@@ -43,14 +43,14 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "^0.66.0"
+    "@happyvertical/sql": "^0.66.9"
   },
   "peerDependencies": {
     "vitest": ">=2.0.0"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "typescript": "^5.7.2",
-    "vitest": "^4.0.8"
+    "@types/node": "25.0.9",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
   }
 }
