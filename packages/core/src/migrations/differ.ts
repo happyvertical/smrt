@@ -248,6 +248,11 @@ export class SchemaComparer {
 
   /**
    * Compare indexes between manifest and database
+   *
+   * Issue #741: Also checks for functionally equivalent indexes to avoid
+   * detecting indexes as "missing" when a different-named index with the
+   * same columns already exists. This is critical for STI tables where
+   * child classes may generate indexes with different name prefixes.
    */
   private compareIndexes(
     tableName: string,
@@ -257,20 +262,63 @@ export class SchemaComparer {
     const changes: SchemaChange[] = [];
     const dbIndexNames = new Set(dbSchema.indexes.map((idx) => idx.name));
 
+    // Build a map of existing index signatures for functional equivalence checking
+    // Signature format: "col1,col2:unique" where columns are sorted
+    const dbIndexSignatures = new Map<string, string>();
+    for (const idx of dbSchema.indexes) {
+      const signature = this.getIndexSignature(
+        idx.columns,
+        idx.unique ?? false,
+      );
+      dbIndexSignatures.set(signature, idx.name);
+    }
+
     // Check for new indexes
     for (const idx of manifest.indexes) {
-      if (!dbIndexNames.has(idx.name)) {
-        changes.push({
-          type: 'add_index',
-          table: tableName,
-          name: idx.name,
-          index: idx,
-          sql: this.generateAddIndexSQL(tableName, idx),
-        });
+      // First, check by exact name match
+      if (dbIndexNames.has(idx.name)) {
+        continue; // Index exists with same name
       }
+
+      // Second, check for functionally equivalent index (same columns, same uniqueness)
+      // This prevents creating redundant indexes with different names
+      const manifestSignature = this.getIndexSignature(
+        idx.columns,
+        idx.unique ?? false,
+      );
+      const equivalentIndexName = dbIndexSignatures.get(manifestSignature);
+
+      if (equivalentIndexName) {
+        // A functionally equivalent index already exists
+        // Skip this index to avoid PostgreSQL "relation already exists" errors
+        continue;
+      }
+
+      // No equivalent index found - this is genuinely missing
+      changes.push({
+        type: 'add_index',
+        table: tableName,
+        name: idx.name,
+        index: idx,
+        sql: this.generateAddIndexSQL(tableName, idx),
+      });
     }
 
     return changes;
+  }
+
+  /**
+   * Generate a signature for an index based on its columns and uniqueness.
+   * Used for functional equivalence checking (Issue #741).
+   *
+   * @param columns - Array of column names
+   * @param unique - Whether the index is unique
+   * @returns Signature string like "col1,col2:false"
+   */
+  private getIndexSignature(columns: string[], unique: boolean): string {
+    // Sort columns to ensure consistent signatures regardless of column order
+    const sortedColumns = [...columns].sort().join(',');
+    return `${sortedColumns}:${unique}`;
   }
 
   /**
