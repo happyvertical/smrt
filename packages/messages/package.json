@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-messages",
-  "version": "0.19.20",
+  "version": "0.19.21",
   "description": "SMRT-based email message persistence with AI integration",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,14 +21,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.66.0",
-    "@happyvertical/email": "^0.66.0",
-    "@happyvertical/files": "^0.66.0",
-    "@happyvertical/logger": "^0.66.0",
+    "@happyvertical/ai": "^0.66.9",
+    "@happyvertical/email": "^0.66.9",
+    "@happyvertical/files": "^0.66.9",
+    "@happyvertical/logger": "^0.66.9",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
-    "@happyvertical/sql": "^0.66.0",
-    "@happyvertical/utils": "^0.66.0"
+    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/utils": "^0.66.9"
   },
   "peerDependencies": {
     "@happyvertical/encryption": "*"
@@ -41,10 +41,10 @@
   "devDependencies": {
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@types/node": "^20.11.5",
-    "typescript": "^5.6.3",
-    "vite": "^7.1.7",
-    "vitest": "^4.0.8"
+    "@types/node": "25.0.9",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
   },
   "keywords": [
     "email",

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-content",
-  "version": "0.19.20",
+  "version": "0.19.21",
   "description": "Content processing module for SMRT framework - handles documents, web content, and media",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,29 +21,29 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.66.0",
-    "@happyvertical/documents": "^0.66.0",
-    "@happyvertical/files": "^0.66.0",
-    "@happyvertical/geo": "^0.66.0",
-    "@happyvertical/images": "^0.66.0",
-    "@happyvertical/logger": "^0.66.0",
-    "@happyvertical/ocr": "^0.60.5",
+    "@happyvertical/ai": "^0.66.9",
+    "@happyvertical/documents": "^0.66.9",
+    "@happyvertical/files": "^0.66.9",
+    "@happyvertical/geo": "^0.66.9",
+    "@happyvertical/images": "^0.66.9",
+    "@happyvertical/logger": "^0.66.9",
+    "@happyvertical/ocr": "^0.60.6",
     "@happyvertical/pdf": "^0.60.4",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/spider": "^0.60.6",
-    "@happyvertical/sql": "^0.66.0",
-    "@happyvertical/utils": "^0.66.0",
-    "yaml": "^2.8.1"
+    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/utils": "^0.66.9",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
-    "@faker-js/faker": "^9.3.0",
-    "@sveltejs/vite-plugin-svelte": "^5.0.2",
-    "@types/node": "^24.0.0",
-    "svelte": "^5.18.2",
-    "typescript": "^5.7.2",
-    "vite": "^7.1.3",
-    "vitest": "^4.0.8"
+    "@faker-js/faker": "^10.2.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@types/node": "25.0.9",
+    "svelte": "^5.46.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
   },
   "keywords": [
     "ai",

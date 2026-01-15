@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.21
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: update all dependencies to latest (#742) (deps)
+  - @happyvertical/smrt-scanner@0.19.21
+  - @happyvertical/smrt-config@0.19.21
+  - @happyvertical/smrt-types@0.19.21
+
 ## 0.19.20
 
 ### Patch Changes

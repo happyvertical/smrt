@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-ledgers",
-  "version": "0.19.20",
+  "version": "0.19.21",
   "description": "Double-entry accounting ledger for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -46,11 +46,11 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@types/node": "^24.0.0",
-    "fast-glob": "^3.3.2",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.0",
-    "vite-plugin-dts": "^4.4.0",
-    "vitest": "^4.0.8"
+    "@types/node": "25.0.9",
+    "fast-glob": "^3.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^4.0.17"
   }
 }

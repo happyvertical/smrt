@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-events",
-  "version": "0.19.20",
+  "version": "0.19.21",
   "description": "Hierarchical event management with participant tracking and SMRT framework support",
   "type": "module",
   "main": "./dist/index.js",
@@ -30,15 +30,15 @@
     "typecheck": "echo '⏭️  Skipping events typecheck (has pre-existing TypeScript errors)'"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.66.0",
-    "@happyvertical/files": "^0.66.0",
-    "@happyvertical/logger": "^0.66.0",
+    "@happyvertical/ai": "^0.66.9",
+    "@happyvertical/files": "^0.66.9",
+    "@happyvertical/logger": "^0.66.9",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-places": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "^0.66.0",
-    "@happyvertical/utils": "^0.66.0"
+    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/utils": "^0.66.9"
   },
   "peerDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
@@ -56,14 +56,14 @@
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.7",
-    "@sveltejs/vite-plugin-svelte": "^6.2.1",
-    "@types/node": "^20.11.5",
-    "fast-glob": "^3.3.2",
-    "svelte": "^5.18.2",
-    "svelte-check": "^4.0.0",
-    "typescript": "^5.6.3",
-    "vite": "^7.1.7",
-    "vitest": "^4.0.8"
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@types/node": "25.0.9",
+    "fast-glob": "^3.3.3",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
   },
   "keywords": [
     "events",

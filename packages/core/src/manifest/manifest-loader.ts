@@ -1379,8 +1379,9 @@ export function discoverSTISiblingsSync(
   const allSmrtDeps = new Set<string>();
 
   // Collect from localTestManifest (test environment)
-  if (getLocalTestManifestCache()?.smrtDependencies) {
-    for (const pkg of getLocalTestManifestCache()?.smrtDependencies!) {
+  const localTestManifest = getLocalTestManifestCache();
+  if (localTestManifest?.smrtDependencies) {
+    for (const pkg of localTestManifest.smrtDependencies) {
       allSmrtDeps.add(pkg);
     }
   }
