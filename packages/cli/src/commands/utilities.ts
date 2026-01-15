@@ -1273,33 +1273,8 @@ export default testManifest;
           return;
         }
 
-        // 11. Generate SQL statements for preview
-        // Use proper identifier quoting for safety (ANSI SQL double quotes)
-        for (const migration of migrations) {
-          if (migration.type === 'add_column' && migration.column) {
-            const col = migration.column;
-            const parts: string[] = [quoteIdentifier(col.name), col.type];
-            if (col.notNull) parts.push('NOT NULL');
-            if (col.unique) parts.push('UNIQUE');
-            if (col.defaultValue !== undefined) {
-              const defaultVal =
-                typeof col.defaultValue === 'string'
-                  ? `'${col.defaultValue.replace(/'/g, "''")}'`
-                  : String(col.defaultValue);
-              parts.push(`DEFAULT ${defaultVal}`);
-            }
-            migration.sql = `ALTER TABLE ${quoteIdentifier(migration.tableName)} ADD COLUMN ${parts.join(' ')}`;
-          } else if (migration.type === 'add_index' && migration.index) {
-            const idx = migration.index;
-            const uniqueStr = idx.unique ? 'UNIQUE ' : '';
-            const quotedColumns = idx.columns
-              .map((c) => quoteIdentifier(c))
-              .join(', ');
-            migration.sql = `CREATE ${uniqueStr}INDEX ${quoteIdentifier(idx.name)} ON ${quoteIdentifier(migration.tableName)} (${quotedColumns})`;
-          }
-        }
-
-        // 12. Preview or execute migrations
+        // 11. Preview or execute migrations
+        // Note: SQL statements come from SchemaComparer via change.sql
         if (options.dryRun) {
           console.log('📋 Migration Preview (not executed):\n');
 

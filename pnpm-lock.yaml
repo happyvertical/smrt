@@ -121,7 +121,7 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@types/node':
         specifier: 24.10.9
@@ -167,7 +167,7 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@types/node':
         specifier: 24.10.9
@@ -195,7 +195,7 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@types/node':
         specifier: 24.10.9
@@ -231,7 +231,7 @@ importers:
         specifier: workspace:*
         version: link:../tags
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -431,7 +431,7 @@ importers:
         specifier: ^0.60.6
         version: 0.60.6(@types/node@24.10.9)
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -556,7 +556,7 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -611,7 +611,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -651,7 +651,7 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -722,7 +722,7 @@ importers:
         specifier: workspace:*
         version: link:../secrets
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -768,7 +768,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -805,7 +805,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -851,7 +851,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -909,7 +909,7 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -971,7 +971,7 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@types/node':
         specifier: 24.10.9
@@ -1035,7 +1035,7 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -1072,7 +1072,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -1191,7 +1191,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -1234,7 +1234,7 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
       '@happyvertical/utils':
         specifier: ^0.66.9
@@ -1314,7 +1314,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.11
+        specifier: ^0.66.9
         version: 0.66.11
     devDependencies:
       '@types/node':
@@ -6872,7 +6872,6 @@ packages:
 
   libsql@0.5.22:
     resolution: {integrity: sha512-NscWthMQt7fpU8lqd7LXMvT9pi+KhhmTHAJWUB/Lj6MWa0MKFv0F2V4C6WKKpjCVZl0VwcDz4nOI3CyaT1DDiA==}
-    cpu: [x64, arm64, wasm32, arm]
     os: [darwin, linux, win32]
 
   linebreak@1.1.0:
@@ -11947,7 +11946,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
     transitivePeerDependencies:
       - debug
 
@@ -16137,7 +16136,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -17916,7 +17915,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2):
+  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
