@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.26
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - correctly parse and access hyphenated CLI options (#749) (#751) (cli)
+  - @happyvertical/smrt-scanner@0.19.26
+  - @happyvertical/smrt-config@0.19.26
+  - @happyvertical/smrt-types@0.19.26
+
 ## 0.19.25
 
 ### Patch Changes
