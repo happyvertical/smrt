@@ -126,6 +126,27 @@ describe('Issue #746: Relationship loading for external packages', () => {
     expect(profileRel?.targetClass).toBe('TestProfile');
   });
 
+  it('should hoist related property to top level when field created from decorator only', async () => {
+    // This test specifically verifies the Issue #746 fix:
+    // When a decorator creates a new field (not merging with manifest),
+    // the 'related' property must be hoisted to the top level for
+    // getRelationshipMap() to detect it.
+
+    // Register classes
+    ObjectRegistry.register(TestProfile, {});
+    ObjectRegistry.register(TestIdentity, {});
+
+    // Get the raw field definition
+    const fields = ObjectRegistry.getFields('TestIdentity');
+    const profileIdField = fields.get('profileId');
+
+    expect(profileIdField).toBeDefined();
+    expect(profileIdField?.type).toBe('foreignKey');
+
+    // The critical fix: 'related' must be at top level, not just in _meta
+    expect(profileIdField?.related).toBe('TestProfile');
+  });
+
   it('should handle null foreign key gracefully', async () => {
     // Register classes
     ObjectRegistry.register(TestProfile, {});

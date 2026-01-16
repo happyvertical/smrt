@@ -1219,6 +1219,13 @@ export class ObjectRegistry {
             newField.required = decoratorOptions.required;
           }
 
+          // Hoist related to top level for relationship fields (Issue #746)
+          // This is critical for getRelationshipMap() to detect relationships
+          if (decoratorOptions.related !== undefined) {
+            newField.related = decoratorOptions.related;
+            delete newField._meta?.related;
+          }
+
           fields.set(fieldName, newField);
           console.log(
             `[registry]   ✅ Added field ${fieldName} from decorator: type=${decoratorOptions.type || 'text'}`,
