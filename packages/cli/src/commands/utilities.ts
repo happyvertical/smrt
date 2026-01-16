@@ -1420,9 +1420,18 @@ export default testManifest;
           // Import qualified name utilities
           const { isQualifiedName } = await import('@happyvertical/smrt-core');
 
+          // Get unique table names from initialization order
+          const allTableNames = new Set<string>();
+          for (const className of initOrder) {
+            const tableName = ObjectRegistry.getTableName(className);
+            if (tableName) {
+              allTableNames.add(tableName);
+            }
+          }
+
           // Find all STI tables (tables with _meta_type column)
           const stiTables: string[] = [];
-          for (const tableName of tablesProcessed) {
+          for (const tableName of allTableNames) {
             const schema = await db.getTableSchema(tableName);
             if (schema?.columns._meta_type) {
               stiTables.push(tableName);
