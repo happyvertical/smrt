@@ -1590,6 +1590,11 @@ export default testManifest;
               console.log(`   (${skippedCount} already applied, skipped)`);
             }
             console.log();
+          } else {
+            // Edge case: migrations exist but none matched expected types
+            console.log(
+              'ℹ️  No schema migrations were applied (none matched expected types)\n',
+            );
           }
         }
 
