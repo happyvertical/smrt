@@ -159,14 +159,13 @@ describe('Issue #746: Relationship loading for external packages', () => {
       )
     `);
 
-    // Create identity without a profile
+    // Create identity without a profile - pass db instance directly
     const identity = new TestIdentity({
-      db: { type: 'sqlite', url: ':memory:' },
+      db,
       provider: 'oidc',
       subject: 'test-subject',
     });
     await identity.initialize();
-    (identity as any)._db = db;
 
     // getRelated should return null for null foreign key
     const loadedProfile = await identity.getProfile();
