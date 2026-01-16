@@ -556,7 +556,7 @@ export default testManifest;
         }
 
         // 5. Dry-run mode: Show SQL without executing
-        if (options.dryRun) {
+        if (options['dry-run']) {
           console.log('📋 SQL Preview (not executed):\n');
 
           const { generateSchema } = await import(
@@ -1128,14 +1128,14 @@ export default testManifest;
 
         const tracker = new MigrationTracker({
           db,
-          useConcurrentIndexes: options.postgresSafe ?? false,
+          useConcurrentIndexes: options['postgres-safe'] ?? false,
         });
         await tracker.initialize();
 
         if (options.verbose) {
           const engine = tracker.getEngine();
           console.log(`Migration tracker initialized (engine: ${engine})`);
-          if (options.postgresSafe && engine === 'postgres') {
+          if (options['postgres-safe'] && engine === 'postgres') {
             console.log(
               'PostgreSQL-safe mode enabled (CONCURRENTLY, lock_timeout)',
             );
@@ -1279,7 +1279,7 @@ export default testManifest;
 
         // 10. Handle no migrations needed
         // Only return early if there are no migrations AND --upgrade-sti is not requested (Issue #749)
-        if (migrations.length === 0 && !options.upgradeSti) {
+        if (migrations.length === 0 && !options['upgrade-sti']) {
           console.log(
             '✅ Database schema is up to date - no migrations needed\n',
           );
@@ -1287,7 +1287,7 @@ export default testManifest;
         }
 
         // If no schema migrations but upgrade-sti is requested, skip to upgrade-sti section
-        if (migrations.length === 0 && options.upgradeSti) {
+        if (migrations.length === 0 && options['upgrade-sti']) {
           console.log(
             '✅ Database schema is up to date - no migrations needed\n',
           );
@@ -1296,7 +1296,7 @@ export default testManifest;
 
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql
-        if (options.dryRun) {
+        if (options['dry-run']) {
           console.log('📋 Migration Preview (not executed):\n');
 
           const columnMigrations = migrations.filter(
@@ -1332,7 +1332,7 @@ export default testManifest;
           }
           console.log();
 
-          if (!options.upgradeSti) {
+          if (!options['upgrade-sti']) {
             console.log('✅ Dry-run complete (no changes made)');
             console.log('   Run without --dry-run to apply migrations\n');
             return;
@@ -1384,7 +1384,7 @@ export default testManifest;
 
             // Apply migration - tracker handles checksum validation and idempotency
             const result = await tracker.apply(migrationDef, {
-              postgresSafe: options.postgresSafe ?? false,
+              postgresSafe: options['postgres-safe'] ?? false,
               force: options.force ?? false,
             });
 
@@ -1428,7 +1428,7 @@ export default testManifest;
         }
 
         // 13.5 Handle --upgrade-sti flag for STI discriminator migration
-        if (options.upgradeSti) {
+        if (options['upgrade-sti']) {
           console.log(
             '\n🔄 Upgrading STI discriminators to qualified names...\n',
           );
@@ -1508,10 +1508,10 @@ export default testManifest;
                   continue;
                 }
 
-                // Generate UPDATE statement
+                // Generate UPDATE statement (? placeholders are converted to $1, $2 by sql package)
                 const updateSql = `UPDATE ${quoteIdentifier(tableName)} SET ${quoteIdentifier('_meta_type')} = ? WHERE ${quoteIdentifier('_meta_type')} = ?`;
 
-                if (options.dryRun) {
+                if (options['dry-run']) {
                   console.log(`  [DRY RUN] ${updateSql}`);
                   console.log(
                     `            params: ['${qualifiedName}', '${metaType}']`,
@@ -1521,20 +1521,22 @@ export default testManifest;
                 }
 
                 try {
-                  const updateResult = await db.query(updateSql, [
+                  const updateResult = await db.query(
+                    updateSql,
                     qualifiedName,
                     metaType,
-                  ]);
+                  );
                   const rowsAffected = updateResult.rowCount || 0;
                   console.log(
                     `  ✓ ${tableName}: "${metaType}" → "${qualifiedName}" (${rowsAffected} row(s))`,
                   );
                   stiSuccessCount++;
-                } catch (error) {
+                } catch (error: any) {
                   const errorMsg =
                     error instanceof Error ? error.message : String(error);
+                  const originalError = error?.context?.originalError;
                   console.error(
-                    `  ✗ ${tableName}: "${metaType}" → "${qualifiedName}" failed: ${errorMsg}`,
+                    `  ✗ ${tableName}: "${metaType}" → "${qualifiedName}" failed: ${originalError || errorMsg}`,
                   );
                   stiErrorCount++;
                 }
