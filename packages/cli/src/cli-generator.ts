@@ -912,8 +912,14 @@ export class CLIGenerator {
         return;
       }
 
+      // Re-parse options for built-in command since they weren't in initial parse
+      // The initial parseCliArgs only has object commands, not built-in commands
+      const reParsed = parseCliArgs(process.argv, [], {
+        [parsed.command]: builtInCommand,
+      });
+
       try {
-        await builtInCommand.handler(parsed.args, parsed.options);
+        await builtInCommand.handler(parsed.args, reParsed.options);
         return;
       } catch (error) {
         this.exitWithError(
