@@ -139,6 +139,46 @@ importers:
         specifier: ^4.0.17
         version: 4.0.17(@types/node@24.10.9)(happy-dom@20.3.0)(jiti@2.6.1)(jsdom@27.3.0)(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/affiliates:
+    dependencies:
+      '@happyvertical/smrt-ads':
+        specifier: workspace:*
+        version: link:../ads
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
+      '@happyvertical/smrt-properties':
+        specifier: workspace:*
+        version: link:../properties
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@happyvertical/sql':
+        specifier: ^0.66.9
+        version: 0.66.11
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      fast-glob:
+        specifier: 3.3.3
+        version: 3.3.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@types/node@24.10.9)(happy-dom@20.3.0)(jiti@2.6.1)(jsdom@27.3.0)(tsx@4.21.0)(yaml@2.8.2)
+
   packages/agents:
     dependencies:
       '@happyvertical/ai':
@@ -11946,7 +11986,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
     transitivePeerDependencies:
       - debug
 
@@ -16136,7 +16176,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -17915,7 +17955,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.13.2):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 

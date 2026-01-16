@@ -1,0 +1,70 @@
+{
+  "name": "@happyvertical/smrt-affiliates",
+  "version": "0.19.26",
+  "description": "Affiliate partner and commission tracking models for SMRT framework",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "generate:test": "node scripts/generate-test-manifest.js",
+    "test": "pnpm run generate:test && npx vitest run --passWithNoTests",
+    "test:watch": "npx vitest"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-ads": "workspace:*",
+    "@happyvertical/smrt-commerce": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-properties": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-ads": {
+      "optional": true
+    },
+    "@happyvertical/smrt-commerce": {
+      "optional": true
+    },
+    "@happyvertical/smrt-profiles": {
+      "optional": true
+    },
+    "@happyvertical/smrt-properties": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@happyvertical/sql": "^0.66.9",
+    "@types/node": "25.0.9",
+    "fast-glob": "3.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
+  },
+  "keywords": [
+    "smrt",
+    "affiliates",
+    "partners",
+    "commissions",
+    "payouts",
+    "advertising"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
