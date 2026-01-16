@@ -44,6 +44,21 @@ import { Payout } from './Payout.js';
 })
 export class Commission extends SmrtObject {
   /**
+   * Calculate commission amount from gross revenue and rate
+   *
+   * @param grossRevenue - Gross revenue in cents
+   * @param rate - Commission rate (0-1)
+   * @returns Commission amount in cents (rounded)
+   *
+   * @example
+   * ```typescript
+   * const amount = Commission.calculateAmount(1000, 0.50); // 500 cents
+   * ```
+   */
+  static calculateAmount(grossRevenue: number, rate: number): number {
+    return Math.round(grossRevenue * rate);
+  }
+  /**
    * Ad Event ID (FK to smrt-ads AdEvent, cross-package)
    */
   eventId: string = '';

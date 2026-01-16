@@ -215,6 +215,7 @@ if (breakdown.total >= publisher.payoutThreshold) {
 | propertyId | string | '' | FK to Property (publishers only) |
 | partnerTypes | string (JSON) | '[]' | Array of PartnerType |
 | parentPartnerId | string | '' | Self-ref for site-attached partners |
+| referredById | string | '' | Self-ref for referral tracking |
 | parentCommissionShare | number | 0 | Share to parent (0-1) |
 | displayCommissionRate | number | 0.50 | Display commission rate |
 | referralCommissionRate | number | 0.05 | Referral commission rate |
@@ -270,6 +271,7 @@ if (breakdown.total >= publisher.payoutThreshold) {
 | `findByProfile(profileId)` | Partners for a profile |
 | `findByProperty(propertyId)` | Partner for a property |
 | `findByParent(parentPartnerId)` | Child partners |
+| `findByReferrer(referredById)` | Referred partners |
 | `findByStatus(status)` | Partners by status |
 | `findActive()` | Active partners |
 | `findPending()` | Pending approval |
@@ -308,6 +310,30 @@ if (breakdown.total >= publisher.payoutThreshold) {
 | `sumPendingByPartner(partnerId)` | Total pending |
 | `findLatestByPartner(partnerId)` | Most recent payout |
 | `getStats()` | Overall statistics |
+
+### Payout Status Transitions
+
+Payouts follow a strict state machine:
+
+```
+PENDING → APPROVED → PROCESSING → COMPLETED
+                  ↘           ↘
+                   FAILED ←────┘
+```
+
+Methods:
+- `payout.approve()` - Move from PENDING → APPROVED
+- `payout.markProcessing()` - Move from APPROVED → PROCESSING
+- `payout.complete(paymentReference)` - Move from PROCESSING → COMPLETED
+- `payout.fail(reason)` - Move from APPROVED/PROCESSING → FAILED
+
+### Commission Helper
+
+```typescript
+// Calculate commission amount (static method)
+const amount = Commission.calculateAmount(grossRevenue, rate);
+// e.g., Commission.calculateAmount(1000, 0.50) → 500 cents
+```
 
 ## Enums
 

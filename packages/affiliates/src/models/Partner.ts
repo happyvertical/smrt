@@ -71,6 +71,12 @@ export class Partner extends SmrtObject {
   parentPartnerId: string = '';
 
   /**
+   * Referred by partner ID (self-reference)
+   * Tracks who referred this partner for referral commission attribution
+   */
+  referredById: string = '';
+
+  /**
    * Share of commission that goes to parent partner (0-1)
    * e.g., 0.20 means 20% of this partner's sales commission goes to parent
    */
@@ -130,6 +136,8 @@ export class Partner extends SmrtObject {
       this.partnerTypes = options.partnerTypes;
     if (options.parentPartnerId !== undefined)
       this.parentPartnerId = options.parentPartnerId;
+    if (options.referredById !== undefined)
+      this.referredById = options.referredById;
     if (options.parentCommissionShare !== undefined)
       this.parentCommissionShare = options.parentCommissionShare;
     if (options.displayCommissionRate !== undefined)
@@ -220,6 +228,13 @@ export class Partner extends SmrtObject {
    */
   hasParent(): boolean {
     return !!this.parentPartnerId;
+  }
+
+  /**
+   * Check if partner was referred by another partner
+   */
+  wasReferred(): boolean {
+    return !!this.referredById;
   }
 
   /**

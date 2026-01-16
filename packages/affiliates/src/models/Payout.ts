@@ -253,6 +253,73 @@ export class Payout extends SmrtObject {
   setMetadata(data: Record<string, any>): void {
     this.metadata = JSON.stringify(data);
   }
+
+  // ============================================================================
+  // Status Transitions
+  // ============================================================================
+
+  /**
+   * Approve the payout for processing
+   *
+   * @throws Error if payout is not in pending status
+   */
+  approve(): void {
+    if (this.status !== PayoutStatus.PENDING) {
+      throw new Error(
+        `Cannot approve payout with status '${this.status}'. Only pending payouts can be approved.`,
+      );
+    }
+    this.status = PayoutStatus.APPROVED;
+  }
+
+  /**
+   * Mark payout as processing (payment in progress)
+   *
+   * @throws Error if payout is not in approved status
+   */
+  markProcessing(): void {
+    if (this.status !== PayoutStatus.APPROVED) {
+      throw new Error(
+        `Cannot mark payout as processing with status '${this.status}'. Only approved payouts can be processed.`,
+      );
+    }
+    this.status = PayoutStatus.PROCESSING;
+  }
+
+  /**
+   * Mark payout as completed
+   *
+   * @param paymentReference - Payment reference (check number, transfer ID, etc.)
+   * @throws Error if payout is not in processing status
+   */
+  complete(paymentReference: string): void {
+    if (this.status !== PayoutStatus.PROCESSING) {
+      throw new Error(
+        `Cannot complete payout with status '${this.status}'. Only processing payouts can be completed.`,
+      );
+    }
+    this.status = PayoutStatus.COMPLETED;
+    this.paymentReference = paymentReference;
+    this.paidAt = new Date();
+  }
+
+  /**
+   * Mark payout as failed
+   *
+   * @param reason - Reason for failure (stored in notes)
+   */
+  fail(reason: string): void {
+    if (
+      this.status !== PayoutStatus.APPROVED &&
+      this.status !== PayoutStatus.PROCESSING
+    ) {
+      throw new Error(
+        `Cannot fail payout with status '${this.status}'. Only approved or processing payouts can fail.`,
+      );
+    }
+    this.status = PayoutStatus.FAILED;
+    this.notes = reason;
+  }
 }
 
 export default Payout;

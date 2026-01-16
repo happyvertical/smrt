@@ -51,6 +51,19 @@ export class PartnerCollection extends SmrtCollection<Partner> {
   }
 
   /**
+   * Find partners referred by a specific partner
+   *
+   * @param referredById - Referrer partner ID
+   * @returns Array of referred partners
+   */
+  async findByReferrer(referredById: string): Promise<Partner[]> {
+    return await this.list({
+      where: { referredById },
+      orderBy: 'created_at DESC',
+    });
+  }
+
+  /**
    * Find partners by status
    *
    * @param status - Partner status
