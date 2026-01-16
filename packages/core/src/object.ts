@@ -1417,6 +1417,10 @@ export class SmrtObject extends SmrtClass {
       return this._loadedRelationships.get(fieldName);
     }
 
+    // Ensure manifest is loaded for external packages before accessing relationships
+    // This is critical for cross-package relationship resolution (Issue #746)
+    await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
+
     // Get relationship metadata from ObjectRegistry
     const relationships = ObjectRegistry.getRelationships(
       this.constructor.name,
@@ -1514,6 +1518,10 @@ export class SmrtObject extends SmrtClass {
       return this._loadedRelationships.get(fieldName);
     }
 
+    // Ensure manifest is loaded for external packages before accessing relationships
+    // This is critical for cross-package relationship resolution (Issue #746)
+    await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
+
     // Get relationship metadata from ObjectRegistry
     const relationships = ObjectRegistry.getRelationships(
       this.constructor.name,
@@ -1597,6 +1605,10 @@ export class SmrtObject extends SmrtClass {
     if (this._loadedRelationships.has(fieldName)) {
       return this._loadedRelationships.get(fieldName);
     }
+
+    // Ensure manifest is loaded for external packages before accessing relationships
+    // This is critical for cross-package relationship resolution (Issue #746)
+    await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
 
     // Determine relationship type
     const relationships = ObjectRegistry.getRelationships(
