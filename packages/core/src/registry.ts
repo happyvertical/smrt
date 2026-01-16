@@ -933,6 +933,25 @@ export class ObjectRegistry {
       // (Issue #555: Test isolation - class name collision during vitest collection)
       const newSourceFile = getSourceFileFromStack();
 
+      // Detect bundled context: source file is in a build output directory
+      // Bundlers (Vite, webpack, etc.) can duplicate module code into multiple chunks,
+      // causing the same class to be registered multiple times with different source paths
+      const isBundledContext =
+        newSourceFile &&
+        (newSourceFile.includes('.svelte-kit/output/') ||
+          newSourceFile.includes('/dist/') ||
+          newSourceFile.includes('/build/') ||
+          newSourceFile.includes('.next/') ||
+          newSourceFile.includes('.nuxt/'));
+
+      // In bundled contexts, allow re-registration if the existing entry came from a manifest
+      // (which means it's a known package class that the bundler duplicated)
+      if (isBundledContext && existing.packageName?.startsWith('@')) {
+        existing.constructor = ctor;
+        existing.config = { ...existing.config, ...config };
+        return;
+      }
+
       // Allow re-registration if:
       // 1. Both source files are defined and match (same file being re-evaluated)
       // 2. Either source file is unavailable (can't do proper comparison, allow as fallback)
