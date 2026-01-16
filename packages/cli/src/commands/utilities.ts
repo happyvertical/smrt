@@ -1278,11 +1278,20 @@ export default testManifest;
         }
 
         // 10. Handle no migrations needed
-        if (migrations.length === 0) {
+        // Only return early if there are no migrations AND --upgrade-sti is not requested (Issue #749)
+        if (migrations.length === 0 && !options.upgradeSti) {
           console.log(
             '✅ Database schema is up to date - no migrations needed\n',
           );
           return;
+        }
+
+        // If no schema migrations but upgrade-sti is requested, skip to upgrade-sti section
+        if (migrations.length === 0 && options.upgradeSti) {
+          console.log(
+            '✅ Database schema is up to date - no migrations needed\n',
+          );
+          // Fall through to upgrade-sti section
         }
 
         // 11. Preview or execute migrations
@@ -1323,17 +1332,24 @@ export default testManifest;
           }
           console.log();
 
-          console.log('✅ Dry-run complete (no changes made)');
-          console.log('   Run without --dry-run to apply migrations\n');
-          return;
+          if (!options.upgradeSti) {
+            console.log('✅ Dry-run complete (no changes made)');
+            console.log('   Run without --dry-run to apply migrations\n');
+            return;
+          }
+          // If --upgrade-sti is requested, fall through to STI upgrade section
+          // which handles its own dry-run mode
         }
 
         // 13. Execute migrations with tracking
-        console.log(`🔨 Applying ${migrations.length} migration(s)...\n`);
-
         let successCount = 0;
         let skippedCount = 0;
         let errorCount = 0;
+
+        // Only show migration execution header if there are migrations to apply
+        if (migrations.length > 0) {
+          console.log(`🔨 Applying ${migrations.length} migration(s)...\n`);
+        }
 
         for (const migration of migrations) {
           try {
@@ -1552,24 +1568,29 @@ export default testManifest;
           }
         }
 
-        // 14. Report summary
-        console.log();
-        if (errorCount > 0) {
-          console.log(
-            `⚠️  Migration completed with errors: ${successCount} succeeded, ${errorCount} failed`,
-          );
-          if (skippedCount > 0) {
-            console.log(`   (${skippedCount} already applied, skipped)`);
-          }
+        // 14. Report summary (only for schema migrations, not STI upgrades)
+        // STI upgrades have their own summary printed above
+        if (migrations.length > 0 || errorCount > 0 || skippedCount > 0) {
           console.log();
-        } else if (successCount === 0 && skippedCount > 0) {
-          console.log(`✅ All ${skippedCount} migration(s) already applied\n`);
-        } else {
-          console.log(`✅ Successfully applied ${successCount} migration(s)`);
-          if (skippedCount > 0) {
-            console.log(`   (${skippedCount} already applied, skipped)`);
+          if (errorCount > 0) {
+            console.log(
+              `⚠️  Migration completed with errors: ${successCount} succeeded, ${errorCount} failed`,
+            );
+            if (skippedCount > 0) {
+              console.log(`   (${skippedCount} already applied, skipped)`);
+            }
+            console.log();
+          } else if (successCount === 0 && skippedCount > 0) {
+            console.log(
+              `✅ All ${skippedCount} migration(s) already applied\n`,
+            );
+          } else if (successCount > 0) {
+            console.log(`✅ Successfully applied ${successCount} migration(s)`);
+            if (skippedCount > 0) {
+              console.log(`   (${skippedCount} already applied, skipped)`);
+            }
+            console.log();
           }
-          console.log();
         }
 
         console.log('💡 Next steps:');
