@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.24
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - relationship loading for external packages and upgrade-sti table iteration (#747)
+  - @happyvertical/smrt-scanner@0.19.24
+  - @happyvertical/smrt-config@0.19.24
+  - @happyvertical/smrt-types@0.19.24
+
 ## 0.19.23
 
 ### Patch Changes
