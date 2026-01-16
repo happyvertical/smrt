@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.27
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-affiliates package for partner commission tracking (#752) (affiliates)
+  - @happyvertical/smrt-scanner@0.19.27
+  - @happyvertical/smrt-config@0.19.27
+  - @happyvertical/smrt-types@0.19.27
+
 ## 0.19.26
 
 ### Patch Changes
