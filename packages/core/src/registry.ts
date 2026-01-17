@@ -706,6 +706,17 @@ export class ObjectRegistry {
   }
 
   /**
+   * Track database instances that have had ensureAllSchemas called
+   * Prevents redundant calls and deprecation warning spam
+   */
+  private static get schemasInitialized(): WeakSet<object> {
+    if (!globalThis.__smrtRegistrySchemasInitialized) {
+      globalThis.__smrtRegistrySchemasInitialized = new WeakSet<object>();
+    }
+    return globalThis.__smrtRegistrySchemasInitialized;
+  }
+
+  /**
    * Map lowercase class names to their canonical (registered) names
    * Used for case-insensitive duplicate detection to prevent
    * both 'praeco' and 'Praeco' from being registered separately
@@ -1964,12 +1975,20 @@ export class ObjectRegistry {
    * @param db - Database interface to create tables in
    */
   static async ensureAllSchemas(db: DatabaseInterface): Promise<void> {
+    // Skip if already initialized for this database instance
+    if (this.schemasInitialized.has(db)) {
+      return;
+    }
+
     console.warn(
       '[DEPRECATED] ObjectRegistry.ensureAllSchemas() is deprecated. ' +
         'Use getTestDatabase() from @happyvertical/smrt-core/testing for tests, ' +
         'or run "smrt db:setup" / "smrt db:migrate" for production databases. ' +
         'See issue #665.',
     );
+
+    // Mark as initialized before processing to prevent re-entry
+    this.schemasInitialized.add(db);
 
     const { ensureSchema } = await import('./schema/utils.js');
     const classNames = this.getClassNames();
