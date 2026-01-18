@@ -1016,9 +1016,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // For STI collections, set _meta_type to the qualified class name (fix for issue #442)
     // This ensures _meta_type is available immediately after creation, not just after DB load
-    // Use qualified name for namespace isolation (issue #713)
+    // Use constructor-based lookup to avoid name collision issues (issue #713)
+    // When classes are registered with qualified names as keys (e.g., from consumer plugin),
+    // name-based lookup fails. Constructor lookup uses a WeakMap index for O(1) lookups.
     if (tableStrategy === 'sti') {
-      const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
+      const registeredClass = ObjectRegistry.getClassByConstructor(
+        this._itemClass,
+      );
       (instance as any)._meta_type =
         registeredClass?.qualifiedName || this._itemClass.name;
     }

@@ -744,6 +744,21 @@ export class ObjectRegistry {
   }
 
   /**
+   * WeakMap index for O(1) constructor-based lookups
+   * Maps constructor → registered class name for fast reverse lookups
+   * Uses WeakMap so classes can be garbage collected if unregistered
+   */
+  private static get constructorIndex(): WeakMap<typeof SmrtObject, string> {
+    if (!globalThis.__smrtRegistryConstructorIndex) {
+      globalThis.__smrtRegistryConstructorIndex = new WeakMap<
+        typeof SmrtObject,
+        string
+      >();
+    }
+    return globalThis.__smrtRegistryConstructorIndex;
+  }
+
+  /**
    * Global cache for inheritance chains (shared across all instances)
    * Maps className → full inheritance chain (base to child)
    * Performance optimization: ~100x faster than re-walking prototype chain
@@ -916,6 +931,8 @@ export class ObjectRegistry {
         // Merge config from decorator (new) with manifest config (existing)
         // Priority: decorator config wins over manifest config for explicit settings
         existing.config = { ...existing.config, ...config };
+        // Index constructor for O(1) reverse lookups (Issue #713)
+        ObjectRegistry.constructorIndex.set(ctor, name);
         console.log(
           `[registry] Replaced manifest stub with real class: ${name}`,
         );
@@ -935,6 +952,8 @@ export class ObjectRegistry {
         if (newPackageName === existing.packageName) {
           existing.constructor = ctor;
           existing.config = { ...existing.config, ...config };
+          // Index constructor for O(1) reverse lookups (Issue #713)
+          ObjectRegistry.constructorIndex.set(ctor, name);
           return;
         }
       }
@@ -960,6 +979,8 @@ export class ObjectRegistry {
       if (isBundledContext && existing.packageName?.startsWith('@')) {
         existing.constructor = ctor;
         existing.config = { ...existing.config, ...config };
+        // Index constructor for O(1) reverse lookups (Issue #713)
+        ObjectRegistry.constructorIndex.set(ctor, name);
         return;
       }
 
@@ -977,6 +998,8 @@ export class ObjectRegistry {
         // Same source file or can't compare = allow constructor update
         existing.constructor = ctor;
         existing.config = { ...existing.config, ...config };
+        // Index constructor for O(1) reverse lookups (Issue #713)
+        ObjectRegistry.constructorIndex.set(ctor, name);
         return;
       }
 
@@ -1014,6 +1037,8 @@ export class ObjectRegistry {
           ObjectRegistry.classes.set(name, existing);
           // Update classNameMap to point to the new canonical name
           ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+          // Index constructor for O(1) reverse lookups (Issue #713)
+          ObjectRegistry.constructorIndex.set(ctor, name);
           console.log(
             `[registry] Replaced manifest stub '${existingKey}' with real class '${name}'`,
           );
@@ -1048,6 +1073,8 @@ export class ObjectRegistry {
           ObjectRegistry.classes.set(name, existing);
           // Update classNameMap to point to the new canonical name
           ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+          // Index constructor for O(1) reverse lookups (Issue #713)
+          ObjectRegistry.constructorIndex.set(ctor, name);
           return;
         }
 
@@ -1467,6 +1494,9 @@ export class ObjectRegistry {
     // Track this class name for case-insensitive duplicate detection
     ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
 
+    // Index constructor for O(1) reverse lookups (Issue #713: constructor-based lookup)
+    ObjectRegistry.constructorIndex.set(ctor, name);
+
     console.log(
       `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${validators.length} validators`,
     );
@@ -1791,6 +1821,36 @@ export class ObjectRegistry {
    */
   static getClass(name: string): RegisteredClass | undefined {
     return ObjectRegistry.findClass(name);
+  }
+
+  /**
+   * Get a registered class by its constructor reference.
+   * This is the most reliable lookup method as it avoids name collision issues
+   * that can occur when multiple packages define classes with the same name.
+   *
+   * Uses a WeakMap index for O(1) lookups.
+   *
+   * @param ctor - The class constructor to look up
+   * @returns Registered class information or undefined if not found
+   * @example
+   * ```typescript
+   * import { Meeting } from '@happyvertical/praeco';
+   *
+   * const info = ObjectRegistry.getClassByConstructor(Meeting);
+   * if (info) {
+   *   console.log(info.qualifiedName); // '@happyvertical/praeco:Meeting'
+   * }
+   * ```
+   */
+  static getClassByConstructor(
+    ctor: typeof SmrtObject,
+  ): RegisteredClass | undefined {
+    // Use WeakMap index for O(1) lookup
+    const registeredName = ObjectRegistry.constructorIndex.get(ctor);
+    if (registeredName) {
+      return ObjectRegistry.classes.get(registeredName);
+    }
+    return undefined;
   }
 
   /**
