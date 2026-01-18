@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.29
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - prevent ensureAllSchemas deprecation warning spam (#756) (core)
+  - @happyvertical/smrt-scanner@0.19.29
+  - @happyvertical/smrt-config@0.19.29
+  - @happyvertical/smrt-types@0.19.29
+
 ## 0.19.28
 
 ### Patch Changes
