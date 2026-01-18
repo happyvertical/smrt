@@ -706,6 +706,17 @@ export class ObjectRegistry {
   }
 
   /**
+   * Track database instances that have had ensureAllSchemas called
+   * Prevents redundant calls and deprecation warning spam
+   */
+  private static get schemasInitialized(): WeakSet<object> {
+    if (!globalThis.__smrtRegistrySchemasInitialized) {
+      globalThis.__smrtRegistrySchemasInitialized = new WeakSet<object>();
+    }
+    return globalThis.__smrtRegistrySchemasInitialized;
+  }
+
+  /**
    * Map lowercase class names to their canonical (registered) names
    * Used for case-insensitive duplicate detection to prevent
    * both 'praeco' and 'Praeco' from being registered separately
@@ -730,6 +741,21 @@ export class ObjectRegistry {
    */
   static hasClassCaseInsensitive(name: string): boolean {
     return ObjectRegistry.classNameMap.has(name.toLowerCase());
+  }
+
+  /**
+   * WeakMap index for O(1) constructor-based lookups
+   * Maps constructor → registered class name for fast reverse lookups
+   * Uses WeakMap so classes can be garbage collected if unregistered
+   */
+  private static get constructorIndex(): WeakMap<typeof SmrtObject, string> {
+    if (!globalThis.__smrtRegistryConstructorIndex) {
+      globalThis.__smrtRegistryConstructorIndex = new WeakMap<
+        typeof SmrtObject,
+        string
+      >();
+    }
+    return globalThis.__smrtRegistryConstructorIndex;
   }
 
   /**
@@ -905,6 +931,8 @@ export class ObjectRegistry {
         // Merge config from decorator (new) with manifest config (existing)
         // Priority: decorator config wins over manifest config for explicit settings
         existing.config = { ...existing.config, ...config };
+        // Index constructor for O(1) reverse lookups (Issue #713)
+        ObjectRegistry.constructorIndex.set(ctor, name);
         console.log(
           `[registry] Replaced manifest stub with real class: ${name}`,
         );
@@ -924,6 +952,8 @@ export class ObjectRegistry {
         if (newPackageName === existing.packageName) {
           existing.constructor = ctor;
           existing.config = { ...existing.config, ...config };
+          // Index constructor for O(1) reverse lookups (Issue #713)
+          ObjectRegistry.constructorIndex.set(ctor, name);
           return;
         }
       }
@@ -949,6 +979,8 @@ export class ObjectRegistry {
       if (isBundledContext && existing.packageName?.startsWith('@')) {
         existing.constructor = ctor;
         existing.config = { ...existing.config, ...config };
+        // Index constructor for O(1) reverse lookups (Issue #713)
+        ObjectRegistry.constructorIndex.set(ctor, name);
         return;
       }
 
@@ -966,6 +998,8 @@ export class ObjectRegistry {
         // Same source file or can't compare = allow constructor update
         existing.constructor = ctor;
         existing.config = { ...existing.config, ...config };
+        // Index constructor for O(1) reverse lookups (Issue #713)
+        ObjectRegistry.constructorIndex.set(ctor, name);
         return;
       }
 
@@ -1003,6 +1037,8 @@ export class ObjectRegistry {
           ObjectRegistry.classes.set(name, existing);
           // Update classNameMap to point to the new canonical name
           ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+          // Index constructor for O(1) reverse lookups (Issue #713)
+          ObjectRegistry.constructorIndex.set(ctor, name);
           console.log(
             `[registry] Replaced manifest stub '${existingKey}' with real class '${name}'`,
           );
@@ -1037,6 +1073,8 @@ export class ObjectRegistry {
           ObjectRegistry.classes.set(name, existing);
           // Update classNameMap to point to the new canonical name
           ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+          // Index constructor for O(1) reverse lookups (Issue #713)
+          ObjectRegistry.constructorIndex.set(ctor, name);
           return;
         }
 
@@ -1456,6 +1494,9 @@ export class ObjectRegistry {
     // Track this class name for case-insensitive duplicate detection
     ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
 
+    // Index constructor for O(1) reverse lookups (Issue #713: constructor-based lookup)
+    ObjectRegistry.constructorIndex.set(ctor, name);
+
     console.log(
       `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${validators.length} validators`,
     );
@@ -1783,6 +1824,36 @@ export class ObjectRegistry {
   }
 
   /**
+   * Get a registered class by its constructor reference.
+   * This is the most reliable lookup method as it avoids name collision issues
+   * that can occur when multiple packages define classes with the same name.
+   *
+   * Uses a WeakMap index for O(1) lookups.
+   *
+   * @param ctor - The class constructor to look up
+   * @returns Registered class information or undefined if not found
+   * @example
+   * ```typescript
+   * import { Meeting } from '@happyvertical/praeco';
+   *
+   * const info = ObjectRegistry.getClassByConstructor(Meeting);
+   * if (info) {
+   *   console.log(info.qualifiedName); // '@happyvertical/praeco:Meeting'
+   * }
+   * ```
+   */
+  static getClassByConstructor(
+    ctor: typeof SmrtObject,
+  ): RegisteredClass | undefined {
+    // Use WeakMap index for O(1) lookup
+    const registeredName = ObjectRegistry.constructorIndex.get(ctor);
+    if (registeredName) {
+      return ObjectRegistry.classes.get(registeredName);
+    }
+    return undefined;
+  }
+
+  /**
    * Get a registered class by its qualified name.
    * Qualified names are in format "@package/name:ClassName".
    *
@@ -1964,12 +2035,20 @@ export class ObjectRegistry {
    * @param db - Database interface to create tables in
    */
   static async ensureAllSchemas(db: DatabaseInterface): Promise<void> {
+    // Skip if already initialized for this database instance
+    if (this.schemasInitialized.has(db)) {
+      return;
+    }
+
     console.warn(
       '[DEPRECATED] ObjectRegistry.ensureAllSchemas() is deprecated. ' +
         'Use getTestDatabase() from @happyvertical/smrt-core/testing for tests, ' +
         'or run "smrt db:setup" / "smrt db:migrate" for production databases. ' +
         'See issue #665.',
     );
+
+    // Mark as initialized before processing to prevent re-entry
+    this.schemasInitialized.add(db);
 
     const { ensureSchema } = await import('./schema/utils.js');
     const classNames = this.getClassNames();
