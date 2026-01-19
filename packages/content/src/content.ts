@@ -64,7 +64,7 @@ export interface ContentOptions extends SmrtObjectOptions {
   /**
    * Publication status
    */
-  status?: 'published' | 'draft' | 'archived' | 'deleted' | null;
+  status?: 'published' | 'draft' | 'review' | 'archived' | 'deleted' | null;
 
   /**
    * Content state flag
@@ -210,7 +210,8 @@ export class Content extends SmrtObject {
   /**
    * Publication status
    */
-  public status: 'published' | 'draft' | 'archived' | 'deleted' = 'draft';
+  public status: 'published' | 'draft' | 'review' | 'archived' | 'deleted' =
+    'draft';
 
   /**
    * Content state flag
