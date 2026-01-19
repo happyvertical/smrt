@@ -12,8 +12,9 @@ import { ObjectRegistry, smrt } from '../registry';
 import { SchemaGenerator } from '../schema/generator';
 
 // Define test class at top level so AST scanner can find it
+// Prefixed with "Test" to avoid collision with real Place model in smrt-places
 @smrt({ api: true, mcp: true, cli: true })
-class Place extends SmrtObject {
+class TestPlace extends SmrtObject {
   @field({ nullable: true })
   latitude: number = 0.0;
 
@@ -26,9 +27,9 @@ class Place extends SmrtObject {
 describe('Issue #65: Nullable number fields', () => {
   it('should detect nullable number fields in ObjectRegistry', () => {
     // Force registration
-    new Place({ _skipLoad: true });
+    new TestPlace({ _skipLoad: true });
 
-    const fields = ObjectRegistry.getFields('Place');
+    const fields = ObjectRegistry.getFields('TestPlace');
 
     // Nullable number fields should be registered
     expect(fields.has('latitude')).toBe(true);
@@ -44,13 +45,13 @@ describe('Issue #65: Nullable number fields', () => {
 
   it('should include nullable number fields in generated schema', () => {
     // Force registration
-    new Place({ _skipLoad: true });
+    new TestPlace({ _skipLoad: true });
 
-    const fields = ObjectRegistry.getFields('Place');
+    const fields = ObjectRegistry.getFields('TestPlace');
     const generator = new SchemaGenerator();
 
     const schema = generator.generateSchemaFromRegistry(
-      'Place',
+      'TestPlace',
       'places',
       fields,
     );
@@ -66,13 +67,13 @@ describe('Issue #65: Nullable number fields', () => {
 
   it('should generate SQL with latitude/longitude columns', () => {
     // Force registration
-    new Place({ _skipLoad: true });
+    new TestPlace({ _skipLoad: true });
 
-    const fields = ObjectRegistry.getFields('Place');
+    const fields = ObjectRegistry.getFields('TestPlace');
     const generator = new SchemaGenerator();
 
     const schema = generator.generateSchemaFromRegistry(
-      'Place',
+      'TestPlace',
       'places',
       fields,
     );
