@@ -19,7 +19,7 @@
       "default": "./dist/index.js"
     },
     "./utils": "./dist/utils.js",
-    "./schema": "./dist/schema/index.js",
+    "./schema": "./dist/schema.js",
     "./schema/utils": "./dist/schema/utils.js",
     "./generators": "./dist/generators.js",
     "./generators/rest": "./dist/generators/rest.js",
