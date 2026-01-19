@@ -28,7 +28,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    ".claude-meta.json"
   ],
   "scripts": {
     "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",

@@ -10,7 +10,8 @@
     "smrt-prebuild": "dist/prebuild/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    ".claude-meta.json"
   ],
   "exports": {
     ".": {

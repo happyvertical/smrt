@@ -47,6 +47,7 @@ let _gitCommands: Record<string, Command> | null = null;
 let _initCommands: Record<string, Command> | null = null;
 let _utilityCommands: Record<string, Command> | null = null;
 let _dispatchCommands: Record<string, Command> | null = null;
+let _docsCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -94,6 +95,14 @@ async function getDispatchCommands(): Promise<Record<string, Command>> {
     _dispatchCommands = dispatchCommands;
   }
   return _dispatchCommands;
+}
+
+async function getDocsCommands(): Promise<Record<string, Command>> {
+  if (!_docsCommands) {
+    const { docsCommands } = await import('./commands/index.js');
+    _docsCommands = docsCommands;
+  }
+  return _docsCommands;
 }
 
 export interface CLIConfig {
@@ -873,6 +882,7 @@ export class CLIGenerator {
       initCommands,
       utilityCommands,
       dispatchCommands,
+      docsCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -880,6 +890,7 @@ export class CLIGenerator {
       getInitCommands(),
       getUtilityCommands(),
       getDispatchCommands(),
+      getDocsCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -888,6 +899,7 @@ export class CLIGenerator {
       ...initCommands,
       ...utilityCommands,
       ...dispatchCommands,
+      ...docsCommands,
     };
 
     const builtInCommand = builtInCommands[parsed.command];
@@ -1215,6 +1227,7 @@ export class CLIGenerator {
       initCommands,
       utilityCommands,
       dispatchCommands,
+      docsCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1222,6 +1235,7 @@ export class CLIGenerator {
       getInitCommands(),
       getUtilityCommands(),
       getDispatchCommands(),
+      getDocsCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1255,6 +1269,11 @@ export class CLIGenerator {
 
     console.log('Code Generation:');
     for (const command of Object.values(generateCommands)) {
+      this.showCommandHelp(command);
+    }
+
+    console.log('Documentation:');
+    for (const command of Object.values(docsCommands)) {
       this.showCommandHelp(command);
     }
 
