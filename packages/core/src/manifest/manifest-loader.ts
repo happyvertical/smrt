@@ -1089,7 +1089,10 @@ export async function discoverManifestEntry(
   // This provides instant resolution and prevents collisions (each constructor is unique in memory)
   if (!(ctor as any)._isManifestStub) {
     const registered = ObjectRegistry.getClassByConstructor(ctor as any);
-    if (registered?.qualifiedName && isQualifiedName(registered.qualifiedName)) {
+    if (
+      registered?.qualifiedName &&
+      isQualifiedName(registered.qualifiedName)
+    ) {
       // Parse package name from qualified name (format: "@package/name:ClassName")
       const { packageName } = parseQualifiedName(registered.qualifiedName);
 
