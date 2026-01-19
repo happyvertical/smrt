@@ -72,7 +72,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Populated during create() to avoid async getFields() calls on every query.
    * @private
    */
-  private _cachedFields: Map<string, any> | null = null;
+  private _cachedFields: Record<string, any> | null = null;
 
   /**
    * Convert WHERE clause field names from camelCase to snake_case while preserving operators.
@@ -509,7 +509,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @param filter - String ID/slug, Field instance, or object with filter conditions
    * @returns Promise resolving to the object or null if not found
    */
-  public async get(filter: string | Record<string, any>) {
+  public async get(
+    filter: string | Record<string, any>,
+  ): Promise<ModelType | null> {
     // Schema already initialized in Collection.create() static factory
 
     // Ensure manifest is loaded for external packages before validating WHERE clause
@@ -563,7 +565,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     if (!rows?.[0]) {
       // Execute afterGet with null result
-      return await GlobalInterceptors.executeAfterGet(
+      // Explicitly specify type parameter since TypeScript can't infer from null
+      return await GlobalInterceptors.executeAfterGet<ModelType>(
         this._itemClass.name,
         null,
         interceptorContext,
@@ -573,7 +576,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const fields = await this.getFields();
     const formattedData = formatDataJs(rows[0], fields);
 
-    let instance: T;
+    let instance: ModelType;
     if (isSTI && formattedData._meta_type) {
       instance = await this.createPolymorphic(
         formattedData._meta_type,
@@ -581,7 +584,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     } else {
       // CTI: Use collection's item class
-      instance = this.create(formattedData);
+      instance = await this.create(formattedData);
     }
 
     // Execute afterGet interceptors (e.g., tenant validation)

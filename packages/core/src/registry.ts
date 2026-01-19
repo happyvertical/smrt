@@ -55,6 +55,7 @@ import type {
   ColumnDefinition,
   IndexDefinition,
   SchemaDefinition,
+  SQLDataType,
 } from './schema/types.js';
 import { classnameToTablename, tableNameFromClass, toSnakeCase } from './utils';
 import { LRUCache } from './utils/lru-cache';
@@ -72,6 +73,12 @@ import { createQualifiedName } from './utils/qualified-names.js';
  *
  * @see https://github.com/happyvertical/smrt/issues/543
  */
+/**
+ * Type for any constructor function that extends SmrtObject.
+ * Used for WeakMap keys where we need to accept any subclass constructor.
+ */
+type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
+
 declare global {
   // eslint-disable-next-line no-var
   var __smrtRegistryClasses: Map<string, any> | undefined;
@@ -97,6 +104,14 @@ declare global {
   var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryClassNameMap: Map<string, string> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistrySchemasInitialized: WeakSet<object> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryConstructorIndex:
+    | WeakMap<SmrtObjectConstructor, string>
+    | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryDiscoveryAttemptCache: Map<string, boolean> | undefined;
 }
 
 /**
@@ -748,10 +763,13 @@ export class ObjectRegistry {
    * Maps constructor → registered class name for fast reverse lookups
    * Uses WeakMap so classes can be garbage collected if unregistered
    */
-  private static get constructorIndex(): WeakMap<typeof SmrtObject, string> {
+  private static get constructorIndex(): WeakMap<
+    SmrtObjectConstructor,
+    string
+  > {
     if (!globalThis.__smrtRegistryConstructorIndex) {
       globalThis.__smrtRegistryConstructorIndex = new WeakMap<
-        typeof SmrtObject,
+        SmrtObjectConstructor,
         string
       >();
     }
@@ -1843,7 +1861,7 @@ export class ObjectRegistry {
    * ```
    */
   static getClassByConstructor(
-    ctor: typeof SmrtObject,
+    ctor: SmrtObjectConstructor,
   ): RegisteredClass | undefined {
     // Use WeakMap index for O(1) lookup
     const registeredName = ObjectRegistry.constructorIndex.get(ctor);
@@ -3371,7 +3389,9 @@ export class ObjectRegistry {
    * Map field type to SQL data type
    * @private
    */
-  private static mapFieldTypeToSQL(fieldType: FieldDefinition['type']): string {
+  private static mapFieldTypeToSQL(
+    fieldType: FieldDefinition['type'],
+  ): SQLDataType {
     switch (fieldType) {
       case 'text':
         return 'TEXT';

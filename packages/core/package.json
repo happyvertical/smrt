@@ -57,6 +57,7 @@
     "yaml": "^2.8.2"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "generate": "node scripts/generate-manifest.js",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "(command -v smrt >/dev/null 2>&1 && smrt test) || (node scripts/generate-test-manifest.js && npx vitest run)",
