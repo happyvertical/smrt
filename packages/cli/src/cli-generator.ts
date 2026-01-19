@@ -723,7 +723,12 @@ export class CLIGenerator {
       if (!shouldIncludeMethod()) continue;
 
       // Build options from method parameters
-      const methodOptions: Record<string, any> = {};
+      const methodOptions: Record<string, any> = {
+        json: {
+          type: 'boolean',
+          description: 'Output as JSON only (suppress other output)',
+        },
+      };
 
       // Map method parameters to CLI options
       // Handles both flat params and object params like { meetingId?: string; limit?: number }
@@ -1612,9 +1617,11 @@ export class CLIGenerator {
         return;
       }
 
-      const spinner = this.createSpinner(
-        `Executing ${methodName} on ${objectName}...`,
-      );
+      // In JSON mode, suppress spinner and other non-JSON output
+      const jsonMode = options.json === true;
+      const spinner = jsonMode
+        ? { succeed: () => {}, fail: (msg: string) => console.error(msg) }
+        : this.createSpinner(`Executing ${methodName} on ${objectName}...`);
 
       // Map CLI options to method parameters (kebab-case to camelCase)
       // Handle both flat parameters and object type parameters (fix for issue #620)
@@ -1739,9 +1746,11 @@ export class CLIGenerator {
         return;
       }
 
-      const spinner = this.createSpinner(
-        `Executing ${methodName} on ${objectName}...`,
-      );
+      // In JSON mode, suppress spinner and other non-JSON output
+      const jsonMode = options.json === true;
+      const spinner = jsonMode
+        ? { succeed: () => {}, fail: (msg: string) => console.error(msg) }
+        : this.createSpinner(`Executing ${methodName} on ${objectName}...`);
 
       // Load full application config from smrt.config.js
       const { getConfig, getPackageConfig, getModuleConfig } = await import(
@@ -1814,6 +1823,8 @@ export class CLIGenerator {
         ...moduleConfig,
         ...(useCliDb && { db }),
         ...(this.context.ai && { ai: this.context.ai }),
+        // In JSON mode, silence all log output to ensure clean JSON
+        ...(jsonMode && { silent: true }),
       };
 
       const obj = new classInfo.constructor(instanceConfig);
