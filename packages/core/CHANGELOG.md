@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.19.32
+
+### Patch Changes
+
+- ### Features
+
+  - add 'review' status to Content publication workflow (#765) (content)
+  - add WeakMap fast path to manifest discovery (#762)
+
+  ### Bug Fixes
+
+  - add schema.ts re-export file for build compatibility (#766) (core)
+  - resolve TypeScript errors caught by publish workflow (#764)
+  - remove public export of system schema SQL strings (#763)
+  - @happyvertical/smrt-scanner@0.19.32
+  - @happyvertical/smrt-config@0.19.32
+  - @happyvertical/smrt-types@0.19.32
+
 ## 0.19.31
 
 ### Patch Changes
