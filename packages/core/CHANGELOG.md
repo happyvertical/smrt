@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.31
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - suppress non-JSON output when --json flag is used (#761) (cli)
+  - @happyvertical/smrt-scanner@0.19.31
+  - @happyvertical/smrt-config@0.19.31
+  - @happyvertical/smrt-types@0.19.31
+
 ## 0.19.30
 
 ### Patch Changes
