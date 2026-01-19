@@ -36,7 +36,7 @@ export class SchemaCodeGenerator {
    * Generate import statements
    */
   private generateImports(): string {
-    return `import type { SchemaDefinition } from '@happyvertical/smrt-core/schema';`;
+    return `import type { SchemaDefinition } from '@happyvertical/smrt-core';`;
   }
 
   /**
