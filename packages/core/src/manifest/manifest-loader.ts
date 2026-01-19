@@ -1084,6 +1084,34 @@ export async function discoverManifestEntry(
   ctor: new (...args: any[]) => any,
   className: string,
 ): Promise<ManifestEntry | undefined> {
+  // ✅ FAST PATH: O(1) constructor-based lookup for already-registered classes
+  // Skip manifest scanning if we already know this constructor's qualified name via WeakMap
+  // This provides instant resolution and prevents collisions (each constructor is unique in memory)
+  if (!(ctor as any)._isManifestStub) {
+    const registered = ObjectRegistry.getClassByConstructor(ctor as any);
+    if (registered?.qualifiedName) {
+      // Parse package name from qualified name (format: "@package/name:ClassName")
+      const { packageName } = parseQualifiedName(registered.qualifiedName);
+
+      // Load the manifest for this specific package
+      const manifest = await loadExternalManifest(packageName);
+      if (manifest) {
+        // Look up the entry using the qualified name (exact match)
+        const entry = lookupInManifest(manifest, registered.qualifiedName);
+        if (entry) {
+          // Enrich entry with package name if missing
+          return !entry.packageName && manifest.packageName
+            ? { ...entry, packageName: manifest.packageName }
+            : entry;
+        }
+      }
+    }
+  }
+
+  // FALLBACK: Original manifest scanning logic for:
+  // - First-time registration (WeakMap not populated yet)
+  // - Manifest stubs (not in WeakMap)
+  // - Undecorated classes (never registered)
   const name = className.toLowerCase();
   const constructorPackage = getPackageName(ctor);
 
