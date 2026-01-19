@@ -398,11 +398,11 @@ async function generateRegistrationFile(
     }
 
     // Generate registration calls
-    // Pass the manifest object name so ObjectRegistry can find the manifest entry
-    // The object name in manifest might differ from the class name (case, pluralization, etc.)
-    registrations.push(
-      `ObjectRegistry.register(${exportName}, { name: '${objectName}' });`,
-    );
+    // The import above already triggers the @smrt() decorator which registers the class
+    // properly with its simple name and qualified name. We call register() again with
+    // an empty config just to ensure the class is registered (in case it lacks a decorator).
+    // Do NOT pass { name: qualifiedName } as that creates a separate registry entry.
+    registrations.push(`ObjectRegistry.register(${exportName}, {});`);
 
     // Only register collection if it exists
     if (hasCollection && collectionExportName) {
