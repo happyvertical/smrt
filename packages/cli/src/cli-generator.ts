@@ -1620,7 +1620,14 @@ export class CLIGenerator {
       // In JSON mode, suppress spinner and other non-JSON output
       const jsonMode = options.json === true;
       const spinner = jsonMode
-        ? { succeed: () => {}, fail: (msg: string) => console.error(msg) }
+        ? {
+            succeed: (_text?: string) => {},
+            fail: (msg?: string) => {
+              if (msg) {
+                console.error(msg);
+              }
+            },
+          }
         : this.createSpinner(`Executing ${methodName} on ${objectName}...`);
 
       // Map CLI options to method parameters (kebab-case to camelCase)
@@ -1749,7 +1756,14 @@ export class CLIGenerator {
       // In JSON mode, suppress spinner and other non-JSON output
       const jsonMode = options.json === true;
       const spinner = jsonMode
-        ? { succeed: () => {}, fail: (msg: string) => console.error(msg) }
+        ? {
+            succeed: (_text?: string) => {},
+            fail: (msg?: string) => {
+              if (msg) {
+                console.error(msg);
+              }
+            },
+          }
         : this.createSpinner(`Executing ${methodName} on ${objectName}...`);
 
       // Load full application config from smrt.config.js
