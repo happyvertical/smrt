@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.33
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - remove unused ./schema export (#767) (core)
+  - @happyvertical/smrt-scanner@0.19.33
+  - @happyvertical/smrt-config@0.19.33
+  - @happyvertical/smrt-types@0.19.33
+
 ## 0.19.32
 
 ### Patch Changes
