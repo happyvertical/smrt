@@ -1,0 +1,22 @@
+{
+  "purpose": "Shared TypeScript type definitions for the SMRT framework. Prevents circular dependencies by centralizing types.",
+  "readmeSections": [],
+  "patterns": [
+    {
+      "name": "Import types",
+      "description": "Import shared types from this package to avoid circular dependencies.",
+      "example": "import type { SmrtObjectOptions, FieldDefinition } from '@happyvertical/smrt-types';"
+    }
+  ],
+  "pitfalls": [
+    "This package has zero runtime dependencies - only type definitions",
+    "Use 'import type' for types to avoid runtime imports"
+  ],
+  "exports": [
+    "SmrtObjectOptions",
+    "SmrtClassOptions",
+    "FieldDefinition",
+    "CollectionOptions",
+    "SignalType"
+  ]
+}

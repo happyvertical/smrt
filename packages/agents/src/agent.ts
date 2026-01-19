@@ -27,7 +27,13 @@ import type { AgentUISlots } from './ui.js';
  */
 export interface AgentOptions
   extends SmrtObjectOptions,
-    AgentWithInterestsOptions {}
+    AgentWithInterestsOptions {
+  /**
+   * Suppress all log output (useful for CLI --json mode)
+   * When true, creates a no-op logger that discards all messages
+   */
+  silent?: boolean;
+}
 
 /**
  * Base Agent class for building autonomous actors in the SMRT ecosystem
@@ -160,7 +166,8 @@ export abstract class Agent extends SmrtObject {
    */
   constructor(options: AgentOptions = {}) {
     super(options);
-    this.logger = createLogger({ level: 'info' });
+    // Use no-op logger in silent mode (for CLI --json output)
+    this.logger = createLogger(options.silent ? false : { level: 'info' });
   }
 
   /**

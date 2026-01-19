@@ -47,6 +47,7 @@ let _gitCommands: Record<string, Command> | null = null;
 let _initCommands: Record<string, Command> | null = null;
 let _utilityCommands: Record<string, Command> | null = null;
 let _dispatchCommands: Record<string, Command> | null = null;
+let _docsCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -94,6 +95,14 @@ async function getDispatchCommands(): Promise<Record<string, Command>> {
     _dispatchCommands = dispatchCommands;
   }
   return _dispatchCommands;
+}
+
+async function getDocsCommands(): Promise<Record<string, Command>> {
+  if (!_docsCommands) {
+    const { docsCommands } = await import('./commands/index.js');
+    _docsCommands = docsCommands;
+  }
+  return _docsCommands;
 }
 
 export interface CLIConfig {
@@ -723,7 +732,12 @@ export class CLIGenerator {
       if (!shouldIncludeMethod()) continue;
 
       // Build options from method parameters
-      const methodOptions: Record<string, any> = {};
+      const methodOptions: Record<string, any> = {
+        json: {
+          type: 'boolean',
+          description: 'Output as JSON only (suppress other output)',
+        },
+      };
 
       // Map method parameters to CLI options
       // Handles both flat params and object params like { meetingId?: string; limit?: number }
@@ -873,6 +887,7 @@ export class CLIGenerator {
       initCommands,
       utilityCommands,
       dispatchCommands,
+      docsCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -880,6 +895,7 @@ export class CLIGenerator {
       getInitCommands(),
       getUtilityCommands(),
       getDispatchCommands(),
+      getDocsCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -888,6 +904,7 @@ export class CLIGenerator {
       ...initCommands,
       ...utilityCommands,
       ...dispatchCommands,
+      ...docsCommands,
     };
 
     const builtInCommand = builtInCommands[parsed.command];
@@ -1215,6 +1232,7 @@ export class CLIGenerator {
       initCommands,
       utilityCommands,
       dispatchCommands,
+      docsCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1222,6 +1240,7 @@ export class CLIGenerator {
       getInitCommands(),
       getUtilityCommands(),
       getDispatchCommands(),
+      getDocsCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1257,6 +1276,12 @@ export class CLIGenerator {
     for (const command of Object.values(generateCommands)) {
       this.showCommandHelp(command);
     }
+
+    console.log('Documentation:');
+    for (const command of Object.values(docsCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
 
     // Show utility commands (from object commands list)
     const builtInUtilityCommands = commands.filter(
@@ -1612,9 +1637,18 @@ export class CLIGenerator {
         return;
       }
 
-      const spinner = this.createSpinner(
-        `Executing ${methodName} on ${objectName}...`,
-      );
+      // In JSON mode, suppress spinner and other non-JSON output
+      const jsonMode = options.json === true;
+      const spinner = jsonMode
+        ? {
+            succeed: (_text?: string) => {},
+            fail: (msg?: string) => {
+              if (msg) {
+                console.error(msg);
+              }
+            },
+          }
+        : this.createSpinner(`Executing ${methodName} on ${objectName}...`);
 
       // Map CLI options to method parameters (kebab-case to camelCase)
       // Handle both flat parameters and object type parameters (fix for issue #620)
@@ -1739,9 +1773,18 @@ export class CLIGenerator {
         return;
       }
 
-      const spinner = this.createSpinner(
-        `Executing ${methodName} on ${objectName}...`,
-      );
+      // In JSON mode, suppress spinner and other non-JSON output
+      const jsonMode = options.json === true;
+      const spinner = jsonMode
+        ? {
+            succeed: (_text?: string) => {},
+            fail: (msg?: string) => {
+              if (msg) {
+                console.error(msg);
+              }
+            },
+          }
+        : this.createSpinner(`Executing ${methodName} on ${objectName}...`);
 
       // Load full application config from smrt.config.js
       const { getConfig, getPackageConfig, getModuleConfig } = await import(
@@ -1814,6 +1857,8 @@ export class CLIGenerator {
         ...moduleConfig,
         ...(useCliDb && { db }),
         ...(this.context.ai && { ai: this.context.ai }),
+        // In JSON mode, silence all log output to ensure clean JSON
+        ...(jsonMode && { silent: true }),
       };
 
       const obj = new classInfo.constructor(instanceConfig);

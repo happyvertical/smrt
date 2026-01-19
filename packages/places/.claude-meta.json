@@ -1,0 +1,27 @@
+{
+  "purpose": "Hierarchical place management with geocoding integration, spatial queries, and support for both real-world and abstract locations.",
+  "readmeSections": [
+    "Features"
+  ],
+  "patterns": [
+    {
+      "name": "Place hierarchy",
+      "description": "Model places as trees with parent-child relationships.",
+      "example": "const country = await placeCollection.create({\n  name: 'Canada',\n  placeType: 'country'\n});\n\nconst city = await placeCollection.create({\n  name: 'Toronto',\n  placeType: 'city',\n  parentId: country.id,\n  latitude: 43.6532,\n  longitude: -79.3832\n});"
+    },
+    {
+      "name": "Geocoding lookup",
+      "description": "Automatically create places from addresses using geocoding.",
+      "example": "// Checks local DB first, then geocodes if not found\nconst place = await placeCollection.lookupOrCreate(\n  '123 Main St, Toronto, ON'\n);"
+    }
+  ],
+  "pitfalls": [
+    "Geocoding requires @happyvertical/geo package and API keys configured",
+    "Latitude/longitude are optional - supports abstract places without coordinates"
+  ],
+  "exports": [
+    "Place",
+    "PlaceCollection",
+    "PlaceType"
+  ]
+}

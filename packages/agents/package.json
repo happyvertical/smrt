@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-agents",
-  "version": "0.19.28",
+  "version": "0.19.30",
   "type": "module",
   "description": "Agent framework for building autonomous actors in the SMRT ecosystem",
   "author": "HappyVertical",
@@ -28,7 +28,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    ".claude-meta.json"
   ],
   "scripts": {
     "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",
