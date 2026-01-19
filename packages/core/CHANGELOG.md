@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.19.30
+
+### Patch Changes
+
+- ### Features
+
+  - add docs:claude command for generating framework context (#759) (cli)
+
+  ### Bug Fixes
+
+  - suppress non-JSON output when --json flag is used (#760) (cli)
+  - @happyvertical/smrt-scanner@0.19.30
+  - @happyvertical/smrt-config@0.19.30
+  - @happyvertical/smrt-types@0.19.30
+
 ## 0.19.29
 
 ### Patch Changes
