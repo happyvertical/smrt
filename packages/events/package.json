@@ -5,6 +5,10 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    ".claude-meta.json"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

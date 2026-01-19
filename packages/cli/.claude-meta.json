@@ -1,0 +1,26 @@
+{
+  "purpose": "Developer CLI for SMRT framework. Provides introspection, testing, schema management, and project utilities.",
+  "readmeSections": [
+    "Usage"
+  ],
+  "patterns": [
+    {
+      "name": "Running tests",
+      "description": "Always use `smrt test` instead of `npx vitest` - it generates the manifest first.",
+      "example": "# Correct\nsmrt test\n\n# Wrong - will fail with 'unregistered class' errors\nnpx vitest"
+    },
+    {
+      "name": "Project introspection",
+      "description": "Use introspect command to discover all SMRT objects in your project.",
+      "example": "smrt introspect\nsmrt introspect --verbose  # detailed info"
+    }
+  ],
+  "pitfalls": [
+    "Never use `npx vitest` directly - always use `smrt test` to ensure manifest generation",
+    "Run `smrt introspect` to verify your SMRT objects are being discovered correctly"
+  ],
+  "exports": [
+    "CLIGenerator",
+    "main"
+  ]
+}

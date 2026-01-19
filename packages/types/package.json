@@ -29,7 +29,8 @@
     "vitest": "^4.0.17"
   },
   "files": [
-    "dist"
+    "dist",
+    ".claude-meta.json"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",

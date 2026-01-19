@@ -1,0 +1,27 @@
+{
+  "purpose": "Hierarchical tagging system with contexts, multi-language aliases, and flexible metadata for organizing content.",
+  "readmeSections": [
+    "Features"
+  ],
+  "patterns": [
+    {
+      "name": "Hierarchical tags",
+      "description": "Create nested tag structures with parent-child relationships.",
+      "example": "const techTag = await tagCollection.create({\n  name: 'Technology',\n  context: 'blog'\n});\n\nconst aiTag = await tagCollection.create({\n  name: 'AI',\n  parentId: techTag.id,\n  context: 'blog'\n});"
+    },
+    {
+      "name": "Multi-language aliases",
+      "description": "Provide localized tag names for internationalization.",
+      "example": "await tagAliasCollection.create({\n  tagId: aiTag.id,\n  alias: 'Intelligence Artificielle',\n  language: 'fr'\n});"
+    }
+  ],
+  "pitfalls": [
+    "Tags are scoped by 'context' - same tag name can exist in different contexts",
+    "Use the TagAlias class for multi-language support, not the main Tag class"
+  ],
+  "exports": [
+    "Tag",
+    "TagCollection",
+    "TagAlias"
+  ]
+}
