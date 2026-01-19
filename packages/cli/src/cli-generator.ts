@@ -1276,6 +1276,7 @@ export class CLIGenerator {
     for (const command of Object.values(docsCommands)) {
       this.showCommandHelp(command);
     }
+    console.log();
 
     // Show utility commands (from object commands list)
     const builtInUtilityCommands = commands.filter(

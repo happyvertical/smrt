@@ -5,11 +5,18 @@
  * This provides Claude Code with framework context in downstream projects.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { CLICommand } from '../cli-generator.js';
 
-interface ClaudeMeta {
+export interface ClaudeMeta {
   purpose: string;
   readmeSections?: string[];
   patterns?: Array<{
@@ -21,7 +28,7 @@ interface ClaudeMeta {
   exports?: string[];
 }
 
-interface PackageInfo {
+export interface PackageInfo {
   name: string;
   version: string;
   meta: ClaudeMeta | null;
@@ -103,7 +110,7 @@ export const docsClaudeCommand: CLICommand = {
  */
 async function discoverInstalledPackages(): Promise<PackageInfo[]> {
   const packages: PackageInfo[] = [];
-  const { readdirSync, statSync } = await import('node:fs');
+  const { readdirSync } = await import('node:fs');
 
   // First, try node_modules (for downstream projects)
   const nodeModulesPath = join(process.cwd(), 'node_modules', '@happyvertical');
@@ -117,9 +124,10 @@ async function discoverInstalledPackages(): Promise<PackageInfo[]> {
       let packagePath = entryPath;
 
       try {
-        const stats = statSync(entryPath);
+        // Use lstatSync to detect symlinks (statSync follows them)
+        const stats = lstatSync(entryPath);
         if (stats.isSymbolicLink()) {
-          packagePath = readFileSync(entryPath, 'utf-8'); // Follow symlink
+          packagePath = realpathSync(entryPath);
         }
       } catch {
         // Not a symlink, use original path
@@ -214,7 +222,7 @@ function loadPackageInfo(
 /**
  * Extract H2 sections from README content
  */
-function extractReadmeSections(
+export function extractReadmeSections(
   readme: string,
   sectionNames: string[],
 ): Record<string, string> {
@@ -225,7 +233,6 @@ function extractReadmeSections(
     const targetLower = targetSection.toLowerCase();
     let inSection = false;
     let sectionContent: string[] = [];
-    let sectionLevel = 0;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -248,7 +255,6 @@ function extractReadmeSections(
           headingText.toLowerCase().includes(targetLower)
         ) {
           inSection = true;
-          sectionLevel = 2;
           continue;
         }
       }
@@ -278,7 +284,7 @@ function extractReadmeSections(
 /**
  * Generate the markdown content for .claude/smrt-framework.md
  */
-function generateMarkdown(packages: PackageInfo[]): string {
+export function generateMarkdown(packages: PackageInfo[]): string {
   const lines: string[] = [];
 
   // Header
@@ -335,6 +341,7 @@ function generateMarkdown(packages: PackageInfo[]): string {
         lines.push('');
         for (const pattern of pkg.meta.patterns) {
           lines.push(`#### ${pattern.name}`);
+          lines.push('');
           lines.push(pattern.description);
           if (pattern.example) {
             lines.push('```typescript');
