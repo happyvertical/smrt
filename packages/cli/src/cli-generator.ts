@@ -47,6 +47,7 @@ let _gitCommands: Record<string, Command> | null = null;
 let _initCommands: Record<string, Command> | null = null;
 let _utilityCommands: Record<string, Command> | null = null;
 let _dispatchCommands: Record<string, Command> | null = null;
+let _docsCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -94,6 +95,14 @@ async function getDispatchCommands(): Promise<Record<string, Command>> {
     _dispatchCommands = dispatchCommands;
   }
   return _dispatchCommands;
+}
+
+async function getDocsCommands(): Promise<Record<string, Command>> {
+  if (!_docsCommands) {
+    const { docsCommands } = await import('./commands/index.js');
+    _docsCommands = docsCommands;
+  }
+  return _docsCommands;
 }
 
 export interface CLIConfig {
@@ -878,6 +887,7 @@ export class CLIGenerator {
       initCommands,
       utilityCommands,
       dispatchCommands,
+      docsCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -885,6 +895,7 @@ export class CLIGenerator {
       getInitCommands(),
       getUtilityCommands(),
       getDispatchCommands(),
+      getDocsCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -893,6 +904,7 @@ export class CLIGenerator {
       ...initCommands,
       ...utilityCommands,
       ...dispatchCommands,
+      ...docsCommands,
     };
 
     const builtInCommand = builtInCommands[parsed.command];
@@ -1220,6 +1232,7 @@ export class CLIGenerator {
       initCommands,
       utilityCommands,
       dispatchCommands,
+      docsCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1227,6 +1240,7 @@ export class CLIGenerator {
       getInitCommands(),
       getUtilityCommands(),
       getDispatchCommands(),
+      getDocsCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1262,6 +1276,12 @@ export class CLIGenerator {
     for (const command of Object.values(generateCommands)) {
       this.showCommandHelp(command);
     }
+
+    console.log('Documentation:');
+    for (const command of Object.values(docsCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
 
     // Show utility commands (from object commands list)
     const builtInUtilityCommands = commands.filter(
@@ -1620,7 +1640,14 @@ export class CLIGenerator {
       // In JSON mode, suppress spinner and other non-JSON output
       const jsonMode = options.json === true;
       const spinner = jsonMode
-        ? { succeed: () => {}, fail: (msg: string) => console.error(msg) }
+        ? {
+            succeed: (_text?: string) => {},
+            fail: (msg?: string) => {
+              if (msg) {
+                console.error(msg);
+              }
+            },
+          }
         : this.createSpinner(`Executing ${methodName} on ${objectName}...`);
 
       // Map CLI options to method parameters (kebab-case to camelCase)
@@ -1749,7 +1776,14 @@ export class CLIGenerator {
       // In JSON mode, suppress spinner and other non-JSON output
       const jsonMode = options.json === true;
       const spinner = jsonMode
-        ? { succeed: () => {}, fail: (msg: string) => console.error(msg) }
+        ? {
+            succeed: (_text?: string) => {},
+            fail: (msg?: string) => {
+              if (msg) {
+                console.error(msg);
+              }
+            },
+          }
         : this.createSpinner(`Executing ${methodName} on ${objectName}...`);
 
       // Load full application config from smrt.config.js

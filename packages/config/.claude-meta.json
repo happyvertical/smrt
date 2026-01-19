@@ -1,0 +1,27 @@
+{
+  "purpose": "Configuration management for SMRT modules with support for multiple formats (JS, TS, JSON, YAML), environment variables, and type-safe configuration.",
+  "readmeSections": [
+    "Features"
+  ],
+  "patterns": [
+    {
+      "name": "Package configuration",
+      "description": "Get configuration for a specific SMRT package with defaults.",
+      "example": "import { getPackageConfig } from '@happyvertical/smrt-config';\n\nconst config = getPackageConfig('cli', {\n  database: { type: 'sqlite', url: ':memory:' }\n});"
+    },
+    {
+      "name": "Config file",
+      "description": "Create smrt.config.js in project root for framework-wide configuration.",
+      "example": "// smrt.config.js\nexport default {\n  packages: {\n    cli: {\n      database: { type: 'sqlite', url: 'app.db' }\n    }\n  }\n};"
+    }
+  ],
+  "pitfalls": [
+    "Config files are auto-detected from project root - ensure smrt.config.js is in the right location",
+    "Environment variables override config file values"
+  ],
+  "exports": [
+    "getPackageConfig",
+    "loadConfig",
+    "defineConfig"
+  ]
+}
