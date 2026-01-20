@@ -1254,6 +1254,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
    * Deletes a record from the collection by ID
    *
+   * Loads the object and calls its delete() method, ensuring all interceptors
+   * and lifecycle hooks (beforeDelete/afterDelete) are executed correctly.
+   *
    * @param id - The ID of the record to delete
    * @returns Promise resolving to true if deleted, false if not found
    *
@@ -1271,29 +1274,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Ensure manifest is loaded for external packages
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
-    // Execute beforeDelete interceptors
-    const interceptorContext = createInterceptorContext(
-      this._itemClass.name,
-      'delete',
-      this.constructor.name,
-    );
-    await GlobalInterceptors.executeBeforeDelete(
-      this._itemClass.name,
-      id,
-      interceptorContext,
-    );
+    // Load the object first - if it doesn't exist, return false immediately
+    const instance = await this.get(id);
+    if (!instance) {
+      return false;
+    }
 
-    // Delete from database
-    const result = await this.db.delete(this.tableName, { id });
+    // Call the object's delete() method, which handles:
+    // - beforeDelete interceptors
+    // - beforeDelete lifecycle hooks
+    // - Database deletion
+    // - afterDelete lifecycle hooks
+    // - afterDelete interceptors
+    await instance.delete();
 
-    // Execute afterDelete interceptors
-    await GlobalInterceptors.executeAfterDelete(
-      this._itemClass.name,
-      id,
-      interceptorContext,
-    );
-
-    return (result.rowCount ?? 0) > 0;
+    return true;
   }
 
   /**
