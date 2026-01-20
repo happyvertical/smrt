@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.34
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - OXC scanner inherits STI fields from parent classes (#769) (core)
+  - @happyvertical/smrt-scanner@0.19.34
+  - @happyvertical/smrt-config@0.19.34
+  - @happyvertical/smrt-types@0.19.34
+
 ## 0.19.33
 
 ### Patch Changes
