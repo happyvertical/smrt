@@ -3,7 +3,10 @@
  */
 
 import { createRequire } from 'node:module';
-import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
+import {
+  loadExternalManifestSync,
+  lookupInManifest,
+} from '../manifest/manifest-loader.js';
 import { generateToolManifest } from '../tools/tool-generator';
 import { createQualifiedName } from '../utils/qualified-names.js';
 import { isTestFile } from './test-file-patterns.js';
@@ -970,14 +973,11 @@ export class ManifestGenerator {
         continue;
       }
 
-      // Search for parent class in external manifest (case-insensitive)
-      const parentKey = Object.keys(externalManifest.objects).find(
-        (key) => key.toLowerCase() === parentClassName.toLowerCase(),
-      );
+      // Use lookupInManifest for O(1) lookup via cached className index
+      // Handles both qualified names and simple class names
+      const parentObj = lookupInManifest(externalManifest, parentClassName);
 
-      if (parentKey) {
-        const parentObj = externalManifest.objects[parentKey];
-
+      if (parentObj) {
         // Cache the loaded parent object for future lookups
         objectsByName.set(parentObj.className, parentObj);
         objectsByName.set(parentObj.className.toLowerCase(), parentObj);

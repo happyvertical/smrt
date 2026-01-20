@@ -17,6 +17,12 @@ import type {
 // smrt-core compatible types (copied to avoid circular dependency)
 // ============================================================================
 
+/**
+ * Qualified class name format: "@package/name:ClassName"
+ * Uniquely identifies classes across packages.
+ */
+type QualifiedClassName = `${string}:${string}`;
+
 interface FieldDefinition {
   type:
     | 'text'
@@ -78,7 +84,7 @@ interface SmartObjectConfig {
 interface SmartObjectDefinition {
   name: string;
   className: string;
-  qualifiedName?: string; // NEW: @package/name:ClassName for namespace isolation (Issue #713)
+  qualifiedName?: QualifiedClassName; // NEW: @package/name:ClassName for namespace isolation (Issue #713)
   collection: string;
   filePath: string;
   packageName?: string;
@@ -112,8 +118,11 @@ interface SmartObjectManifest {
  * Create a qualified name for a class (namespace isolation - Issue #713)
  * Format: @package/name:ClassName
  */
-function createQualifiedName(packageName: string, className: string): string {
-  return `${packageName}:${className}`;
+function createQualifiedName(
+  packageName: string,
+  className: string,
+): QualifiedClassName {
+  return `${packageName}:${className}` as QualifiedClassName;
 }
 
 /**

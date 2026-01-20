@@ -5,5 +5,5 @@
  * All tables use _smrt_ prefix and share the application's database.
  */
 
-export * from './schema.js';
+// Only export types - schema SQL strings are internal implementation details
 export * from './types.js';

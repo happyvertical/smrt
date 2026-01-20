@@ -73,6 +73,8 @@ export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities
 export * from './runtime/index';
+// Schema types (for generated code from SchemaCodeGenerator)
+export type { SchemaDefinition } from './schema/types';
 // Universal signaling system
 export * from './signals/index';
 // System tables and types (note-taking, migrations, registry, signals)
