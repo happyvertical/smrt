@@ -561,9 +561,12 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         );
       }
 
-      // Generate pre-computed schemas for each object (same as TypeScript scanner path)
+      // Merge inherited fields and generate pre-computed schemas (same as TypeScript scanner path)
       const { ManifestGenerator } = await import('../scanner/index.js');
       const manifestGen = new ManifestGenerator();
+      // IMPORTANT: Must merge inherited fields BEFORE generating schemas
+      // This ensures STI subclasses inherit tableName from their base class
+      manifestGen.mergeInheritedFields(newManifest);
       manifestGen.generateSchemas(newManifest);
 
       const elapsed = performance.now() - startTime;
