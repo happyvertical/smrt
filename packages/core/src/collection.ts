@@ -1252,6 +1252,51 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Deletes a record from the collection by ID
+   *
+   * @param id - The ID of the record to delete
+   * @returns Promise resolving to true if deleted, false if not found
+   *
+   * @example
+   * ```typescript
+   * const success = await collection.delete('some-uuid');
+   * if (success) {
+   *   console.log('Record deleted');
+   * }
+   * ```
+   */
+  public async delete(id: string): Promise<boolean> {
+    // Schema already initialized in Collection.create() static factory
+
+    // Ensure manifest is loaded for external packages
+    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+
+    // Execute beforeDelete interceptors
+    const interceptorContext = createInterceptorContext(
+      this._itemClass.name,
+      'delete',
+      this.constructor.name,
+    );
+    await GlobalInterceptors.executeBeforeDelete(
+      this._itemClass.name,
+      id,
+      interceptorContext,
+    );
+
+    // Delete from database
+    const result = await this.db.delete(this.tableName, { id });
+
+    // Execute afterDelete interceptors
+    await GlobalInterceptors.executeAfterDelete(
+      this._itemClass.name,
+      id,
+      interceptorContext,
+    );
+
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
    * Counts records in the collection matching the given filters
    *
    * Accepts the same where conditions as list() but ignores limit/offset/orderBy.
