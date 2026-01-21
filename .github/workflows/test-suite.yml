@@ -25,9 +25,6 @@ jobs:
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TURBO_API: ${{ vars.TURBO_API }}
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
   typecheck:
     name: Typecheck
@@ -51,17 +48,11 @@ jobs:
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TURBO_API: ${{ vars.TURBO_API }}
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
       - name: Run typecheck
         run: pnpm turbo run typecheck
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TURBO_API: ${{ vars.TURBO_API }}
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
   lint:
     name: Lint
@@ -85,17 +76,11 @@ jobs:
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TURBO_API: ${{ vars.TURBO_API }}
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
       - name: Run lint
         run: pnpm turbo run lint
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TURBO_API: ${{ vars.TURBO_API }}
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
       - name: Format check
         run: pnpm run format-check
@@ -126,9 +111,6 @@ jobs:
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TURBO_API: ${{ vars.TURBO_API }}
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
       - name: Generate test manifest and run core tests (shard ${{ matrix.shard }})
         working-directory: packages/core
@@ -159,18 +141,12 @@ jobs:
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TURBO_API: ${{ vars.TURBO_API }}
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
       - name: Run package tests (excluding core)
         run: pnpm turbo run test --filter='!@happyvertical/smrt-core'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
-          TURBO_API: ${{ vars.TURBO_API }}
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-          TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
       - name: Upload test results
         if: always()
