@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.38
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: split test jobs and use turbo remote cache (#775)
+  - @happyvertical/smrt-scanner@0.19.38
+  - @happyvertical/smrt-config@0.19.38
+  - @happyvertical/smrt-types@0.19.38
+
 ## 0.19.37
 
 ### Patch Changes
