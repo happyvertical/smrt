@@ -112,14 +112,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate test manifest
-        run: node packages/core/scripts/generate-test-manifest.js
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run core tests (shard ${{ matrix.shard }})
+      - name: Generate test manifest and run core tests (shard ${{ matrix.shard }})
         working-directory: packages/core
-        run: npx vitest run --shard=${{ matrix.shard }}
+        run: node scripts/generate-test-manifest.js && npx vitest run --shard=${{ matrix.shard }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
