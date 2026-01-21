@@ -14,7 +14,7 @@ The `@happyvertical/smrt-core` package provides the foundation for building vert
 
 ## Key Features
 
-- **AI-First Object Framework**: Objects with built-in AI operations (`is()`, `do()` methods)
+- **AI-First Object Framework**: Objects with built-in AI operations (`is()`, `do()`, `describe()` methods)
 - **Object-Relational Mapping**: Automatic database schema generation from TypeScript classes
 - **Standardized Collections**: Advanced CRUD operations with flexible querying
 - **Code Generation**: CLI tools, REST APIs, and MCP servers generated from objects
@@ -22,6 +22,7 @@ The `@happyvertical/smrt-core` package provides the foundation for building vert
 - **Vite Plugin Integration**: Virtual modules for automatic service generation
 - **AST Scanning**: Automatic discovery of SMRT objects in codebases
 - **Cross-Package Integration**: Unified access to AI, files, database, and web capabilities
+- **Vector Embeddings**: Generate and manage semantic embeddings for search and similarity
 
 ## Installation
 
@@ -182,6 +183,101 @@ const recentDocs = await documents.list({
 // Use AI-powered operations
 const isQuality = await doc.isHighQuality();
 const summary = await doc.generateSummary();
+```
+
+## AI-Powered Methods
+
+SMRT objects include built-in AI operations that enable intelligent content analysis and transformation. These methods leverage the configured AI provider to perform natural language tasks.
+
+### `is(criteria)` - Evaluate Criteria
+
+Evaluates whether the object meets specified criteria using AI analysis. Returns a boolean.
+
+```typescript
+// Check if content meets quality standards
+const isHighQuality = await document.is(`
+  - Contains more than 500 words
+  - Has clear structure and headings
+  - Uses professional language
+`);
+
+// Validate data conditions
+const isValid = await order.is("Has all required fields populated and total > 0");
+
+// Check content characteristics
+const isTechnical = await article.is("Contains technical programming content");
+```
+
+### `do(instructions)` - Execute Instructions
+
+Executes AI-powered instructions on the object and returns the result. Use this for content transformation, analysis, and generation tasks.
+
+```typescript
+// Generate a summary
+const summary = await document.do(`
+  Create a 2-sentence summary of this document.
+  Focus on the key points and main conclusions.
+`);
+
+// Transform content
+const bullets = await article.do("Convert the main points into a bulleted list");
+
+// Extract information
+const entities = await content.do("Extract all mentioned company names as a JSON array");
+
+// Analyze sentiment
+const analysis = await review.do("Analyze the sentiment and provide a score from 1-10");
+```
+
+### `describe()` - Generate Description
+
+Generates a natural language description of the object based on its content. Returns a string description.
+
+```typescript
+// Generate a product description
+const description = await product.describe();
+// Returns: "A high-performance wireless mouse with ergonomic design..."
+
+// Use in content pipelines
+const items = await collection.list({ where: { description: '' } });
+for (const item of items) {
+  item.description = await item.describe();
+  await item.save();
+}
+```
+
+### AI Method Best Practices
+
+1. **Be specific with criteria**: Provide clear, measurable conditions for `is()` calls
+2. **Use structured prompts**: Break complex instructions into bullet points for `do()` calls
+3. **Cache expensive results**: Store AI-generated content in object properties to avoid repeated calls
+4. **Handle errors gracefully**: AI methods may throw errors if the provider is unavailable
+
+```typescript
+class Article extends SmrtObject {
+  summary: string = '';
+
+  // Cache AI-generated summary
+  async getSummary() {
+    if (!this.summary) {
+      this.summary = await this.do('Summarize in 2-3 sentences');
+      await this.save();
+    }
+    return this.summary;
+  }
+
+  // Combine AI methods for complex workflows
+  async processForPublication() {
+    const isReady = await this.is('Has title, content > 300 words, and proper formatting');
+    if (!isReady) {
+      throw new Error('Article not ready for publication');
+    }
+
+    this.description = await this.describe();
+    this.summary = await this.do('Create an engaging meta description under 160 characters');
+    await this.save();
+  }
+}
 ```
 
 ## Single Table Inheritance (STI)
@@ -636,6 +732,155 @@ const collection = await ProductCollection.create({
 import { getDatabase } from '@have/sql';
 const db = await getDatabase({ type: 'postgres', url: 'postgres://...' });
 const collection = await ProductCollection.create({ db });
+```
+
+## Vector Embeddings
+
+SMRT objects support vector embeddings for semantic search and similarity comparisons. Embeddings convert object content into numerical vectors that capture semantic meaning.
+
+### Configuration
+
+Configure embeddings in the `@smrt()` decorator:
+
+```typescript
+@smrt({
+  embeddings: {
+    fields: ['title', 'content', 'summary'],  // Fields to embed
+    model: 'text-embedding-3-small'            // Embedding model (optional)
+  }
+})
+class Article extends SmrtObject {
+  title: string = '';
+  content: string = '';
+  summary: string = '';
+}
+```
+
+### `generateEmbeddings(options?)` - Generate Vectors
+
+Generates vector embeddings for all configured fields. Call this after creating or updating content.
+
+```typescript
+const article = await collection.create({
+  title: 'Introduction to Vector Search',
+  content: 'Vector embeddings enable semantic search...'
+});
+
+// Generate embeddings for all configured fields
+await article.generateEmbeddings();
+
+// With options
+await article.generateEmbeddings({
+  force: true,        // Regenerate even if content unchanged
+  fields: ['title']   // Only embed specific fields
+});
+```
+
+### `getEmbedding(fieldName, model?)` - Retrieve Embedding
+
+Retrieves the stored embedding vector for a specific field.
+
+```typescript
+// Get the embedding for a field
+const titleVector = await article.getEmbedding('title');
+// Returns: Float32Array with embedding values
+
+// Get embedding for specific model (if multiple models used)
+const vector = await article.getEmbedding('content', 'text-embedding-3-large');
+```
+
+### `hasStaleEmbeddings()` - Check for Updates
+
+Checks if the object's content has changed since embeddings were last generated.
+
+```typescript
+// Check if embeddings need regeneration
+if (await article.hasStaleEmbeddings()) {
+  await article.generateEmbeddings();
+}
+
+// Use in batch processing
+const articles = await collection.list({});
+for (const article of articles) {
+  if (await article.hasStaleEmbeddings()) {
+    await article.generateEmbeddings();
+  }
+}
+```
+
+### `clearEmbeddings()` - Remove Embeddings
+
+Removes all stored embeddings for the object.
+
+```typescript
+// Clear all embeddings
+await article.clearEmbeddings();
+
+// Useful when content is significantly changed
+article.content = newContent;
+await article.clearEmbeddings();
+await article.generateEmbeddings();
+```
+
+### Semantic Search with Embeddings
+
+Use embeddings for similarity-based queries:
+
+```typescript
+class ArticleCollection extends SmrtCollection<Article> {
+  static readonly _itemClass = Article;
+
+  // Find similar articles using vector similarity
+  async findSimilar(article: Article, limit: number = 5) {
+    const embedding = await article.getEmbedding('content');
+
+    return this.list({
+      orderBy: {
+        vector: embedding,
+        field: 'content',
+        similarity: 'cosine'
+      },
+      limit,
+      where: { 'id !=': article.id }
+    });
+  }
+
+  // Search by text query
+  async searchByQuery(query: string, limit: number = 10) {
+    // Generate embedding for the query
+    const queryEmbedding = await this.ai.embed(query);
+
+    return this.list({
+      orderBy: {
+        vector: queryEmbedding,
+        field: 'content',
+        similarity: 'cosine'
+      },
+      limit
+    });
+  }
+}
+```
+
+### Embedding Best Practices
+
+1. **Choose appropriate fields**: Embed fields with meaningful text content, not IDs or numeric values
+2. **Regenerate on content changes**: Use `hasStaleEmbeddings()` to keep embeddings current
+3. **Batch processing**: Generate embeddings in batches to manage API rate limits
+4. **Select the right model**: Use smaller models for speed, larger models for accuracy
+
+```typescript
+// Batch embedding generation with rate limiting
+async function embedAllArticles(collection: ArticleCollection) {
+  const articles = await collection.list({});
+
+  for (const article of articles) {
+    if (await article.hasStaleEmbeddings()) {
+      await article.generateEmbeddings();
+      await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
+    }
+  }
+}
 ```
 
 ## Context Memory System
