@@ -21,15 +21,6 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-
-            ${{ runner.os }}-turbo-
-
       - name: Build packages
         run: pnpm run build
         env:
@@ -52,15 +43,6 @@ jobs:
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-
-            ${{ runner.os }}-turbo-
 
       - name: Restore build from cache
         run: pnpm run build
@@ -89,15 +71,6 @@ jobs:
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-
-            ${{ runner.os }}-turbo-
 
       - name: Restore build from cache
         run: pnpm run build
@@ -134,15 +107,6 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-
-            ${{ runner.os }}-turbo-
-
       - name: Restore build from cache
         run: pnpm run build
         env:
@@ -172,15 +136,6 @@ jobs:
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-
-            ${{ runner.os }}-turbo-
 
       - name: Restore build from cache
         run: pnpm run build
