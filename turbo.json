@@ -81,7 +81,7 @@
       "cache": true
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "generate:test"],
       "inputs": ["src/**", "test/**", "**/*.ts", "tsconfig.json"],
       "cache": true
     },
