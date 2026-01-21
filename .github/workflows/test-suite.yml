@@ -93,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1/3, 2/3, 3/3]
+        shard: ['1/3', '2/3', '3/3']
 
     steps:
       - name: Checkout repository
@@ -118,6 +118,16 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
+
+      - name: Upload core test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-core-${{ strategy.job-index }}
+          path: |
+            packages/core/coverage/
+            packages/core/test-results/
+          retention-days: 7
 
   test-packages:
     name: Test Packages
