@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.36
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - deduplicate manifest discovery and detect version conflicts (#772) (cli)
+  - @happyvertical/smrt-scanner@0.19.36
+  - @happyvertical/smrt-config@0.19.36
+  - @happyvertical/smrt-types@0.19.36
+
 ## 0.19.35
 
 ### Patch Changes
