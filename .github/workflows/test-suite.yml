@@ -112,8 +112,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Generate test manifest
+        run: node packages/core/scripts/generate-test-manifest.js
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run core tests (shard ${{ matrix.shard }})
-        run: pnpm turbo run test --filter=@happyvertical/smrt-core -- --shard=${{ matrix.shard }}
+        working-directory: packages/core
+        run: npx vitest run --shard=${{ matrix.shard }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
