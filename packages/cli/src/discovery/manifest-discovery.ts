@@ -15,7 +15,62 @@ export interface DiscoveredManifest {
   path: string;
   source: 'project' | 'package';
   packageName?: string;
+  packageVersion?: string;
   objectCount: number;
+}
+
+/**
+ * Tracks all versions found for each @happyvertical/smrt-* package.
+ * Used to detect version conflicts that could cause runtime issues.
+ */
+const smrtPackageVersions = new Map<string, Set<string>>();
+
+/**
+ * Error thrown when multiple versions of SMRT packages are detected
+ */
+export class SmrtVersionConflictError extends Error {
+  constructor(conflicts: Map<string, Set<string>>) {
+    const lines = [
+      '',
+      '❌ SMRT Version Conflict Detected',
+      '',
+      'Multiple versions of SMRT packages found in your project:',
+      '',
+    ];
+
+    for (const [pkg, versions] of conflicts) {
+      lines.push(`  ${pkg}: ${[...versions].join(', ')}`);
+    }
+
+    lines.push(
+      '',
+      'All SMRT packages must use the same version to ensure consistent behavior.',
+      '',
+      '🔧 To fix this:',
+      '',
+      '  1. Run: pnpm why <package-name>',
+      '     to find which dependencies are pulling in different versions',
+      '',
+      '  2. Update your dependencies to use consistent versions:',
+      '     pnpm update @happyvertical/smrt-core@latest',
+      '',
+      '  3. If transitive deps are the issue, add overrides to package.json:',
+      '     {',
+      '       "pnpm": {',
+      '         "overrides": {',
+      '           "@happyvertical/smrt-*": "^0.19.34"',
+      '         }',
+      '       }',
+      '     }',
+      '',
+      '  4. Clean stale packages:',
+      '     pnpm store prune && rm -rf node_modules && pnpm install',
+      '',
+    );
+
+    super(lines.join('\n'));
+    this.name = 'SmrtVersionConflictError';
+  }
 }
 
 /**
@@ -76,12 +131,27 @@ async function findProjectManifests(
 
 /**
  * Find manifests in installed packages
+ *
+ * Note: pnpm creates multiple copies of packages with different dependency hashes
+ * (e.g., @happyvertical/smrt-profiles@0.19.34_...hash1..., ...hash2..., etc.)
+ * We deduplicate by package name to avoid loading the same manifest hundreds of times,
+ * which would cause memory exhaustion. See issue #771.
  */
 async function findPackageManifests(
   projectRoot: string,
 ): Promise<DiscoveredManifest[]> {
   const discovered: DiscoveredManifest[] = [];
   const nodeModulesPath = resolve(projectRoot, 'node_modules');
+
+  // Track packages we've already processed to avoid duplicates from pnpm's
+  // content-addressable storage (same package version with different dependency hashes).
+  // We use name@version as the key because:
+  // - Same version with different hashes = identical manifest (safe to dedupe)
+  // - Different versions = potentially different manifest (must not dedupe)
+  const seenPackages = new Set<string>();
+
+  // Clear version tracking for this discovery run
+  smrtPackageVersions.clear();
 
   try {
     // Find all package.json files that might contain SMRT packages
@@ -95,6 +165,20 @@ async function findPackageManifests(
       try {
         const pkgContent = await readFile(pkgPath, 'utf-8');
         const pkg = JSON.parse(pkgContent);
+
+        // Track all versions of @happyvertical/smrt-* packages for conflict detection
+        if (pkg.name?.startsWith('@happyvertical/smrt-')) {
+          if (!smrtPackageVersions.has(pkg.name)) {
+            smrtPackageVersions.set(pkg.name, new Set());
+          }
+          smrtPackageVersions.get(pkg.name)?.add(pkg.version);
+        }
+
+        // Skip if we've already processed this package name@version
+        const packageKey = `${pkg.name}@${pkg.version}`;
+        if (seenPackages.has(packageKey)) {
+          continue;
+        }
 
         // Check if package has @happyvertical/smrt in dependencies
         const deps = {
@@ -120,10 +204,13 @@ async function findPackageManifests(
             try {
               const manifest = await loadManifestFile(manifestPath);
               if (manifest?.objects) {
+                // Mark this package as seen AFTER we successfully load a manifest
+                seenPackages.add(packageKey);
                 discovered.push({
                   path: manifestPath,
                   source: 'package',
                   packageName: pkg.name,
+                  packageVersion: pkg.version,
                   objectCount: Object.keys(manifest.objects).length,
                 });
                 break; // Use first found manifest for this package
@@ -142,6 +229,24 @@ async function findPackageManifests(
   }
 
   return discovered;
+}
+
+/**
+ * Check for SMRT package version conflicts and throw if any found.
+ * This ensures all @happyvertical/smrt-* packages use the same version.
+ */
+function checkSmrtVersionConflicts(): void {
+  const conflicts = new Map<string, Set<string>>();
+
+  for (const [pkg, versions] of smrtPackageVersions) {
+    if (versions.size > 1) {
+      conflicts.set(pkg, versions);
+    }
+  }
+
+  if (conflicts.size > 0) {
+    throw new SmrtVersionConflictError(conflicts);
+  }
 }
 
 /**
@@ -183,7 +288,9 @@ export async function loadManifest(manifestPath: string): Promise<void> {
 }
 
 /**
- * Auto-discover and load all manifests in the project
+ * Auto-discover and load all manifests in the project.
+ *
+ * @throws {SmrtVersionConflictError} If multiple versions of SMRT packages are detected
  */
 export async function autoDiscoverAndLoad(
   projectRoot: string = process.cwd(),
@@ -192,6 +299,11 @@ export async function autoDiscoverAndLoad(
   totalObjects: number;
 }> {
   const manifests = await discoverManifests(projectRoot);
+
+  // Check for version conflicts BEFORE loading manifests
+  // This fails fast with a helpful error message
+  checkSmrtVersionConflicts();
+
   let totalObjects = 0;
 
   // Load each discovered manifest
