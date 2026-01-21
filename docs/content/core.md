@@ -16,7 +16,7 @@ The `@happyvertical/smrt-core` package provides the foundation for building vert
 
 - **AI-First Object Framework**: Objects with built-in AI operations (`is()`, `do()`, `describe()` methods)
 - **Object-Relational Mapping**: Automatic database schema generation from TypeScript classes
-- **Standardized Collections**: Advanced CRUD operations with flexible querying
+- **Standardized Collections**: Advanced CRUD, batch operations, semantic search, and interceptors
 - **Code Generation**: CLI tools, REST APIs, and MCP servers generated from objects
 - **Field System**: Type-safe field definitions with validation and constraints
 - **Vite Plugin Integration**: Virtual modules for automatic service generation
@@ -822,46 +822,6 @@ await article.clearEmbeddings();
 await article.generateEmbeddings();
 ```
 
-### Semantic Search with Embeddings
-
-Use embeddings for similarity-based queries:
-
-```typescript
-class ArticleCollection extends SmrtCollection<Article> {
-  static readonly _itemClass = Article;
-
-  // Find similar articles using vector similarity
-  async findSimilar(article: Article, limit: number = 5) {
-    const embedding = await article.getEmbedding('content');
-
-    return this.list({
-      orderBy: {
-        vector: embedding,
-        field: 'content',
-        similarity: 'cosine'
-      },
-      limit,
-      where: { 'id !=': article.id }
-    });
-  }
-
-  // Search by text query
-  async searchByQuery(query: string, limit: number = 10) {
-    // Generate embedding for the query
-    const queryEmbedding = await this.ai.embed(query);
-
-    return this.list({
-      orderBy: {
-        vector: queryEmbedding,
-        field: 'content',
-        similarity: 'cosine'
-      },
-      limit
-    });
-  }
-}
-```
-
 ### Embedding Best Practices
 
 1. **Choose appropriate fields**: Embed fields with meaningful text content, not IDs or numeric values
@@ -881,6 +841,222 @@ async function embedAllArticles(collection: ArticleCollection) {
     }
   }
 }
+```
+
+### Raw Query with Hydration
+
+Execute complex SQL queries while still getting back fully-hydrated SMRT objects:
+
+```typescript
+// Complex queries with JOINs, CTEs, subqueries - results are still SMRT objects
+const featured = await products.query(`
+  SELECT p.* FROM products p
+  JOIN categories c ON p.category_id = c.id
+  WHERE c.featured = true
+  AND NOT EXISTS (
+    SELECT 1 FROM inventory i
+    WHERE i.product_id = p.id AND i.quantity = 0
+  )
+  ORDER BY p.created_at DESC
+  LIMIT $1
+`, [10]);
+
+// Each result is a fully-functional Product instance
+for (const product of featured) {
+  console.log(product.name);      // Access properties
+  await product.save();            // Use SMRT methods
+  const valid = await product.is('Is this product well-described?'); // AI methods work
+}
+```
+
+### Batch Operations
+
+Efficiently work with multiple records:
+
+```typescript
+// Batch fetch by IDs (single query, avoids N+1)
+const items = await collection.listByIds(['id1', 'id2', 'id3']);
+
+// Find or create with defaults (upsert pattern)
+const user = await users.getOrUpsert(
+  { email: 'user@example.com' },     // Find by these fields
+  { name: 'New User', role: 'member' } // Use these defaults if creating
+);
+
+// Get only changed fields between objects
+const changes = collection.getDiff(existingUser, updatedData);
+// Returns: { name: 'New Name' } if only name changed
+```
+
+## Semantic Search
+
+Collections provide semantic search capabilities using vector embeddings. This enables finding similar content based on meaning rather than exact text matching.
+
+### Search by Text Query
+
+```typescript
+// Search for articles similar to a text query
+const results = await articles.semanticSearch('machine learning basics', {
+  field: 'content',      // Which embedded field to search
+  limit: 10,             // Max results
+  minSimilarity: 0.7     // Minimum cosine similarity (0-1)
+});
+
+for (const article of results) {
+  console.log(article.title, article._similarity); // _similarity score attached
+}
+```
+
+### Find Similar Objects
+
+```typescript
+// Find articles similar to an existing article
+const similar = await articles.findSimilar(article, {
+  field: 'content',
+  limit: 5,
+  excludeSelf: true     // Don't include the source article
+});
+```
+
+### Low-Level Similarity Search
+
+```typescript
+// Search with a pre-computed embedding vector
+const queryEmbedding = await collection.ai.embed('search query');
+const results = await articles.findSimilarToEmbedding(queryEmbedding, {
+  field: 'content',
+  limit: 10
+});
+```
+
+### Batch Generate Embeddings
+
+```typescript
+// Generate embeddings for all objects missing them
+const stats = await articles.generateMissingEmbeddings({
+  batchSize: 50,         // Process in batches
+  onProgress: (done, total) => {
+    console.log(`Progress: ${done}/${total}`);
+  }
+});
+
+console.log(`Generated: ${stats.generated}, Skipped: ${stats.skipped}`);
+```
+
+## Interceptors
+
+Interceptors allow you to hook into collection operations for cross-cutting concerns like tenancy, auditing, caching, and access control.
+
+### Registering Interceptors
+
+```typescript
+import { GlobalInterceptors } from '@happyvertical/smrt-core';
+
+GlobalInterceptors.register({
+  name: 'tenancy',
+  priority: 100,  // Higher priority runs first
+
+  // Intercept list operations
+  beforeList(className, options, context) {
+    // Add tenant filter to all queries
+    return {
+      ...options,
+      where: { ...options.where, tenantId: getCurrentTenantId() }
+    };
+  },
+
+  // Intercept after data is fetched
+  afterList(className, results, context) {
+    // Log or transform results
+    logQuery(className, results.length);
+    return results;
+  }
+});
+```
+
+### Available Hooks
+
+| Hook | Description | Return Value |
+|------|-------------|--------------|
+| `beforeGet` | Before fetching single record | Modified options or void |
+| `afterGet` | After fetching single record | Modified result or void |
+| `beforeList` | Before listing records | Modified options or void |
+| `afterList` | After listing records | Modified results or void |
+| `beforeQuery` | Before raw SQL query | Modified query/params or void |
+| `afterQuery` | After raw SQL query | Modified results or void |
+| `beforeSave` | Before saving record | Modified instance or void |
+| `afterSave` | After saving record | void |
+| `beforeDelete` | Before deleting record | Boolean (false cancels) or void |
+| `afterDelete` | After deleting record | void |
+
+### Interceptor Context
+
+All hooks receive a context object with metadata:
+
+```typescript
+interface InterceptorContext {
+  className: string;       // SMRT class name (e.g., 'Product')
+  collectionName: string;  // Collection class name
+  timestamp: Date;         // When operation started
+  operation: string;       // 'list' | 'get' | 'query' | 'save' | 'delete'
+  metadata: Record<string, any>; // Custom data
+}
+```
+
+### Example: Audit Logging
+
+```typescript
+GlobalInterceptors.register({
+  name: 'audit',
+  priority: 50,
+
+  afterSave(className, instance, context) {
+    auditLog.write({
+      action: 'save',
+      entity: className,
+      entityId: instance.id,
+      timestamp: context.timestamp,
+      changes: instance._changedFields
+    });
+  },
+
+  afterDelete(className, id, context) {
+    auditLog.write({
+      action: 'delete',
+      entity: className,
+      entityId: id,
+      timestamp: context.timestamp
+    });
+  }
+});
+```
+
+### Example: Soft Deletes
+
+```typescript
+GlobalInterceptors.register({
+  name: 'soft-delete',
+  priority: 90,
+
+  // Filter out soft-deleted records from all queries
+  beforeList(className, options, context) {
+    return {
+      ...options,
+      where: { ...options.where, 'deletedAt': null }
+    };
+  },
+
+  // Convert delete to soft delete
+  beforeDelete(className, id, context) {
+    const collection = getCollection(className);
+    collection.db.execute`
+      UPDATE ${collection.tableName}
+      SET deleted_at = ${new Date()}
+      WHERE id = ${id}
+    `;
+    return false; // Cancel the actual delete
+  }
+});
 ```
 
 ## Context Memory System
