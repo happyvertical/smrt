@@ -103,6 +103,7 @@ export {
   getPackageFromQualifiedName,
   isFromPackage,
   isQualifiedName,
+  isType,
   type ParsedQualifiedName,
   parseQualifiedName,
   qualifiedNamesEqual,

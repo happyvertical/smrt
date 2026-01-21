@@ -1948,6 +1948,71 @@ export class ObjectRegistry {
   }
 
   /**
+   * Resolve a short class name to its qualified name.
+   * Throws an error if the name is ambiguous (multiple packages define the same class name).
+   *
+   * @param shortName - The simple class name to resolve (e.g., 'MeetingRecap')
+   * @returns The qualified class name (e.g., '@happyvertical/praeco:MeetingRecap')
+   * @throws {Error} If no class with that name is registered
+   * @throws {Error} If multiple classes with that name exist (ambiguous)
+   *
+   * @example
+   * ```typescript
+   * // Unambiguous resolution
+   * const qualified = ObjectRegistry.resolveType('MeetingRecap');
+   * // Returns: '@happyvertical/praeco:MeetingRecap'
+   *
+   * // Already qualified names pass through
+   * const same = ObjectRegistry.resolveType('@happyvertical/praeco:MeetingRecap');
+   * // Returns: '@happyvertical/praeco:MeetingRecap'
+   *
+   * // Ambiguous names throw
+   * ObjectRegistry.resolveType('Event');
+   * // Error: "Event" is ambiguous. Found in multiple packages:
+   * //   - @happyvertical/smrt-events:Event
+   * //   - @happyvertical/calendar:Event
+   * // Use the fully qualified name instead.
+   * ```
+   */
+  static resolveType(shortName: string): QualifiedClassName {
+    // If already qualified, validate and return
+    if (shortName.includes(':') && shortName.startsWith('@')) {
+      const registered = ObjectRegistry.getClassByQualifiedName(
+        shortName as QualifiedClassName,
+      );
+      if (!registered) {
+        throw new Error(
+          `Class "${shortName}" is not registered. ` +
+            `Make sure the package is installed and the class is decorated with @smrt().`,
+        );
+      }
+      return shortName as QualifiedClassName;
+    }
+
+    // Find all classes with this short name
+    const matches = ObjectRegistry.findClassesByName(shortName);
+
+    if (matches.length === 0) {
+      throw new Error(
+        `Class "${shortName}" is not registered. ` +
+          `Make sure the package is installed and the class is decorated with @smrt().`,
+      );
+    }
+
+    if (matches.length > 1) {
+      const packageList = matches
+        .map((m) => `  - ${m.qualifiedName}`)
+        .join('\n');
+      throw new Error(
+        `"${shortName}" is ambiguous. Found in multiple packages:\n${packageList}\n` +
+          `Use the fully qualified name instead.`,
+      );
+    }
+
+    return matches[0].qualifiedName as QualifiedClassName;
+  }
+
+  /**
    * Get all registered classes from a specific package.
    *
    * @param packageName - The package name to filter by
