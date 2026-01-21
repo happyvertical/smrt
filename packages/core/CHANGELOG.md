@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.37
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - make SmrtProvider SSR-friendly (#773) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.19.37
+  - @happyvertical/smrt-config@0.19.37
+  - @happyvertical/smrt-types@0.19.37
+
 ## 0.19.36
 
 ### Patch Changes
