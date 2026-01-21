@@ -109,9 +109,16 @@ export class SmrtAppStateManager {
   /**
    * Initialize the app state
    * Detects capabilities and sets initial mode
+   * Note: This is a no-op during SSR as browser-ai requires browser environment
    */
   async initialize(): Promise<void> {
     if (this._state.initialized) return;
+
+    // Skip during SSR - browser-ai APIs require browser environment
+    if (typeof window === 'undefined') {
+      this._state.initialized = true;
+      return;
+    }
 
     // Detect capabilities
     const capabilities = detectCapabilities();

@@ -112,7 +112,9 @@ const appState = createAppState({
 setAppStateContext(appState);
 
 // Initialize on mount (untrack to prevent infinite loop)
+// Skip during SSR - browser-ai APIs require browser environment
 $effect(() => {
+  if (typeof window === 'undefined') return;
   untrack(() => {
     appState.initialize();
   });
@@ -123,8 +125,9 @@ $effect(() => {
   appState.setUser(user, permissions);
 });
 
-// Manage socket lifecycle
+// Manage socket lifecycle (browser-only)
 $effect(() => {
+  if (typeof window === 'undefined') return;
   if (socket) {
     // connectSocket already handles disconnecting any existing socket
     appState.connectSocket(socket);
@@ -136,8 +139,9 @@ $effect(() => {
   }
 });
 
-// Update AI config when it changes (for dynamic config updates)
+// Update AI config when it changes (for dynamic config updates, browser-only)
 $effect(() => {
+  if (typeof window === 'undefined') return;
   if (ai) {
     untrack(() => {
       appState.setAIConfig(ai);
