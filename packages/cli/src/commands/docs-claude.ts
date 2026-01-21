@@ -375,6 +375,23 @@ export function generateMarkdown(packages: PackageInfo[]): string {
     }
   }
 
+  // Contributing section
+  lines.push('---');
+  lines.push('');
+  lines.push('## Contributing to This Documentation');
+  lines.push('');
+  lines.push(
+    'If you discover gotchas, patterns, or information that should be included in the SMRT framework documentation, please submit an issue:',
+  );
+  lines.push('');
+  lines.push('**https://github.com/happyvertical/smrt/issues**');
+  lines.push('');
+  lines.push('Include:');
+  lines.push('- The package name (e.g., `@happyvertical/smrt-core`)');
+  lines.push('- Description of the gotcha or pattern');
+  lines.push('- Example code if applicable');
+  lines.push('');
+
   // Footer
   lines.push('---');
   lines.push(
