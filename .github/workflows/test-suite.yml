@@ -44,6 +44,11 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Restore build from cache
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run typecheck
         run: pnpm turbo run typecheck
         env:
@@ -66,6 +71,11 @@ jobs:
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore build from cache
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run lint
         run: pnpm turbo run lint
@@ -92,6 +102,11 @@ jobs:
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore build from cache
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run tests
         run: pnpm turbo run test
