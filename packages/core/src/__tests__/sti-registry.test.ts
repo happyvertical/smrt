@@ -363,4 +363,88 @@ describe('STI Registry Methods', () => {
       expect(ObjectRegistry.getDescendants('Event')).toEqual(['Meeting']);
     });
   });
+
+  describe('resolveType()', () => {
+    it('should resolve unambiguous short name to qualified name', () => {
+      @smrt({ tableStrategy: 'sti' })
+      class Event extends SmrtObject {
+        title: string = '';
+      }
+
+      @smrt()
+      class Meeting extends Event {
+        roomNumber: string = '';
+      }
+
+      const qualified = ObjectRegistry.resolveType('Meeting');
+      expect(qualified).toMatch(/^@[^:]+:Meeting$/);
+    });
+
+    it('should pass through already qualified names', () => {
+      @smrt({ tableStrategy: 'sti' })
+      class Event extends SmrtObject {
+        title: string = '';
+      }
+
+      // Get the actual qualified name
+      const registered = ObjectRegistry.findClass('Event');
+      const qualifiedName = registered?.qualifiedName;
+
+      // Should pass through unchanged
+      const result = ObjectRegistry.resolveType(qualifiedName!);
+      expect(result).toBe(qualifiedName);
+    });
+
+    it('should throw for unregistered class names', () => {
+      expect(() => ObjectRegistry.resolveType('NonExistentClass')).toThrow(
+        'is not registered',
+      );
+    });
+
+    it('should throw for ambiguous names when multiple packages define same class', () => {
+      // Register two classes with the same short name but different packages
+      // We simulate this by registering directly with different qualified names
+
+      @smrt()
+      class Product extends SmrtObject {
+        name: string = '';
+      }
+
+      // Get the first product's qualified name
+      const product1 = ObjectRegistry.findClass('Product');
+
+      // Manually register another "Product" from a different package
+      // This simulates what happens when two packages define the same class name
+      ObjectRegistry.classes.set('Product2', {
+        name: 'Product',
+        qualifiedName: '@other/package:Product',
+        constructor: class OtherProduct extends SmrtObject {},
+        collectionConstructor: undefined,
+        config: {},
+        fields: new Map(),
+        methods: new Map(),
+        schema: undefined,
+        validators: [],
+        packageName: '@other/package',
+        extends: 'SmrtObject',
+      } as any);
+
+      // Now resolveType should throw because "Product" is ambiguous
+      expect(() => ObjectRegistry.resolveType('Product')).toThrow('ambiguous');
+      expect(() => ObjectRegistry.resolveType('Product')).toThrow(
+        'multiple packages',
+      );
+    });
+
+    it('should be case-insensitive for lookup', () => {
+      @smrt()
+      class MyClass extends SmrtObject {
+        value: string = '';
+      }
+
+      // Should find the class regardless of case
+      const qualified = ObjectRegistry.resolveType('myclass');
+      expect(qualified).toMatch(/MyClass$/);
+    });
+  });
 });

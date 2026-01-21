@@ -195,3 +195,33 @@ export function isFromPackage(
   const parsed = parseQualifiedName(qualifiedName);
   return parsed.packageName === packageName;
 }
+
+/**
+ * Checks if a qualified name (like `_meta_type`) matches a short class name.
+ * This is useful for STI filtering where the database stores qualified names
+ * but code often uses short names for comparisons.
+ *
+ * @param qualifiedName - The qualified name or simple name to check (e.g., from `_meta_type`)
+ * @param shortName - The short class name to match against
+ * @returns true if the class name portion matches
+ *
+ * @example
+ * ```typescript
+ * // Filtering STI records by type
+ * const meetings = events.filter(e => isType(e._meta_type, 'Meeting'));
+ *
+ * // Works with both qualified and simple names
+ * isType('@happyvertical/praeco:MeetingRecap', 'MeetingRecap') // true
+ * isType('@happyvertical/praeco:MeetingRecap', 'Article') // false
+ * isType('MeetingRecap', 'MeetingRecap') // true (simple name passthrough)
+ * ```
+ */
+export function isType(
+  qualifiedName: string | null | undefined,
+  shortName: string,
+): boolean {
+  if (!qualifiedName) {
+    return false;
+  }
+  return getClassName(qualifiedName) === shortName;
+}

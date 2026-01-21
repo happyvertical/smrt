@@ -14,6 +14,7 @@ import {
   getPackageFromQualifiedName,
   isFromPackage,
   isQualifiedName,
+  isType,
   parseQualifiedName,
   qualifiedNamesEqual,
 } from '../utils/qualified-names';
@@ -256,6 +257,62 @@ describe('qualified-names utilities', () => {
           '@HAPPYVERTICAL/smrt-core',
         ),
       ).toBe(false);
+    });
+  });
+
+  describe('isType', () => {
+    it('should return true when qualified name matches short name', () => {
+      expect(isType('@happyvertical/praeco:MeetingRecap', 'MeetingRecap')).toBe(
+        true,
+      );
+      expect(isType('@happyvertical/smrt-events:Event', 'Event')).toBe(true);
+    });
+
+    it('should return false when class names do not match', () => {
+      expect(isType('@happyvertical/praeco:MeetingRecap', 'Article')).toBe(
+        false,
+      );
+      expect(isType('@happyvertical/smrt-events:Event', 'Meeting')).toBe(false);
+    });
+
+    it('should work with simple names (passthrough)', () => {
+      expect(isType('MeetingRecap', 'MeetingRecap')).toBe(true);
+      expect(isType('MeetingRecap', 'Article')).toBe(false);
+    });
+
+    it('should return false for null or undefined', () => {
+      expect(isType(null, 'MeetingRecap')).toBe(false);
+      expect(isType(undefined, 'MeetingRecap')).toBe(false);
+    });
+
+    it('should return false for empty string', () => {
+      expect(isType('', 'MeetingRecap')).toBe(false);
+    });
+
+    it('should be case-sensitive', () => {
+      expect(isType('@happyvertical/praeco:MeetingRecap', 'meetingrecap')).toBe(
+        false,
+      );
+      expect(isType('@happyvertical/praeco:MeetingRecap', 'MEETINGRECAP')).toBe(
+        false,
+      );
+    });
+
+    it('should work for STI filtering use case', () => {
+      // Simulating filtering events by _meta_type
+      const events = [
+        {
+          _meta_type: '@happyvertical/praeco:Meeting',
+          name: 'Council Meeting',
+        },
+        { _meta_type: '@happyvertical/smrt-events:Event', name: 'Holiday' },
+        { _meta_type: '@happyvertical/praeco:Meeting', name: 'Budget Meeting' },
+      ];
+
+      const meetings = events.filter((e) => isType(e._meta_type, 'Meeting'));
+      expect(meetings).toHaveLength(2);
+      expect(meetings[0].name).toBe('Council Meeting');
+      expect(meetings[1].name).toBe('Budget Meeting');
     });
   });
 
