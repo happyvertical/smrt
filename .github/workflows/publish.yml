@@ -53,17 +53,6 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Note: This cache is restored but the publish step forces a clean rebuild
-      # to ensure the published dist matches the latest source code.
-      # See the "Force clean rebuild" step in changesets_release.
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
@@ -238,18 +227,6 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: |
-            ${{ runner.os }}-turbo-docs-${{
-              hashFiles('**/pnpm-lock.yaml')
-            }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-docs-
-            ${{ runner.os }}-turbo-
-
       - name: Install docs dependencies
         run: |
           cd docs
@@ -258,6 +235,10 @@ jobs:
 
       - name: Build documentation site
         run: pnpm run docs:site:build
+        env:
+          TURBO_API: ${{ secrets.TURBO_API }}
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
