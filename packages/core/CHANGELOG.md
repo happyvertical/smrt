@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.19.39
+
+### Patch Changes
+
+- ### Features
+
+  - add isType() and resolveType() helpers for STI name resolution (#776) (core)
+
+  ### Other Changes
+
+  - docs: add collection features documentation (#779) (core)
+  - docs: add documentation for describe() method and embedding system (#778) (core)
+  - @happyvertical/smrt-scanner@0.19.39
+  - @happyvertical/smrt-config@0.19.39
+  - @happyvertical/smrt-types@0.19.39
+
 ## 0.19.38
 
 ### Patch Changes
