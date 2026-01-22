@@ -8,7 +8,7 @@ import {
   tryGetFormContext,
 } from '../../state/form-context.js';
 import { formatEmail, formatText } from '../../utils/forms/formatters.js';
-import { SMRTIcon } from '../display/index.js';
+import { Icon } from '../display/index.js';
 
 interface Props {
   /** Field name */
@@ -252,7 +252,7 @@ function handleInput(e: Event) {
         ontouchend={handleTouchEnd}
         aria-label="Hold to speak"
       >
-        <SMRTIcon name="mic" size={20} />
+        <Icon name="mic" size={20} />
       </button>
     {/if}
 

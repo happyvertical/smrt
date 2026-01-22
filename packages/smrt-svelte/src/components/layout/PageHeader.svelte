@@ -8,7 +8,7 @@
  */
 import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
-import { SMRTIcon } from '../display/index.js';
+import { Icon } from '../display/index.js';
 
 interface Props {
   /** Page title */
@@ -40,7 +40,7 @@ const {
     <div class="header-content">
       {#if backHref}
         <a href={backHref} class="back-link" use:ripple>
-          <SMRTIcon name="chevron-left" size={20} />
+          <Icon name="chevron-left" size={20} />
           <span>{backLabel}</span>
         </a>
       {/if}

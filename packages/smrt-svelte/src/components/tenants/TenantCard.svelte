@@ -5,7 +5,7 @@
  */
 import type { Tenant } from '@happyvertical/smrt-users';
 import { ripple } from '../../actions/ripple.js';
-import { SMRTIcon } from '../display/index.js';
+import { Icon } from '../display/index.js';
 
 interface Props {
   tenant: Tenant;
@@ -110,7 +110,7 @@ function getColor(name: string): string {
           use:ripple
           aria-label="Edit"
         >
-          <SMRTIcon name="menu" size={18} />
+          <Icon name="menu" size={18} />
         </button>
       {/if}
       {#if ondelete}
@@ -121,7 +121,7 @@ function getColor(name: string): string {
           use:ripple
           aria-label="Delete"
         >
-          <SMRTIcon name="close" size={18} />
+          <Icon name="close" size={18} />
         </button>
       {/if}
     </div>

@@ -6,7 +6,7 @@ import {
   tryGetFormContext,
 } from '../../state/form-context.js';
 import { matchOption } from '../../utils/forms/formatters.js';
-import { SMRTIcon } from '../display/index.js';
+import { Icon } from '../display/index.js';
 import type { SelectOption } from './types.js';
 
 interface Props {
@@ -127,7 +127,7 @@ function handleChange(e: Event) {
     </div>
 
     <div class="trailing-icon">
-      <SMRTIcon name="chevron-down" size={24} />
+      <Icon name="chevron-down" size={24} />
     </div>
 
     <div class="active-indicator"></div>

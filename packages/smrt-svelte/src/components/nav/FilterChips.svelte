@@ -7,7 +7,7 @@
  * Supports optional counts and "all" option.
  */
 import { ripple } from '../../actions/ripple.js';
-import { SMRTIcon } from '../display/index.js';
+import { Icon } from '../display/index.js';
 import type { FilterOption } from './types.js';
 
 interface Props {
@@ -69,7 +69,7 @@ function handleClick(value: string) {
     >
       {#if isActive}
         <span class="chip-icon">
-          <SMRTIcon name="check" size={18} />
+          <Icon name="check" size={18} />
         </span>
       {/if}
       <span class="chip-label">{option.label}</span>
