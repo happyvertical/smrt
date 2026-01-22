@@ -18,20 +18,20 @@ const components = [
   {
     category: 'Forms',
     items: [
-      'SMRTForm',
-      'SMRTTextInput',
-      'SMRTTextarea',
-      'SMRTNumber',
-      'SMRTPhone',
-      'SMRTSelect',
-      'SMRTDateTime',
-      'SMRTDateRange',
-      'SMRTCheckbox',
-      'SMRTAddress',
-      'SMRTMoney',
-      'SMRTMeasurement',
-      'SMRTSearchInput',
-      'SMRTToggle',
+      'Form',
+      'TextInput',
+      'TextareaInput',
+      'NumberInput',
+      'PhoneInput',
+      'SelectInput',
+      'DateTimeInput',
+      'DateRangeInput',
+      'CheckboxInput',
+      'AddressInput',
+      'MoneyInput',
+      'MeasurementInput',
+      'SearchInput',
+      'Toggle',
     ],
   },
   {
@@ -49,7 +49,7 @@ const components = [
       'CurrencyDisplay',
       'DateDisplay',
       'StatusBadge',
-      'SMRTIcon',
+      'Icon',
     ],
   },
   {
@@ -62,7 +62,7 @@ const components = [
   },
   {
     category: 'Feedback',
-    items: ['ConfirmDialog', 'ProgressBar', 'Modal'],
+    items: ['ConfirmDialog', 'LoadingOverlay', 'Modal', 'ProgressBar'],
   },
   {
     category: 'Commerce',
@@ -78,7 +78,7 @@ const components = [
   {
     category: 'AI',
     items: [
-      'SmrtProvider',
+      'SMRT',
       'AILoadingOverlay',
       'CapabilityGate',
       'DownloadProgress',

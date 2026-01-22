@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { AppMode, User } from '@happyvertical/smrt-svelte';
-import { SmrtProvider, ThemeProvider } from '@happyvertical/smrt-svelte';
+import { SMRT, ThemeProvider } from '@happyvertical/smrt-svelte';
 import type { Snippet } from 'svelte';
 
 interface Props {
@@ -38,7 +38,7 @@ function toggleLogin() {
 }
 </script>
 
-<SmrtProvider
+<SMRT
   {mode}
   user={isLoggedIn ? mockUser : null}
   permissions={isLoggedIn ? mockPermissions : []}
@@ -141,7 +141,7 @@ function toggleLogin() {
     </main>
     </div>
   </ThemeProvider>
-</SmrtProvider>
+</SMRT>
 
 <style>
   .layout {

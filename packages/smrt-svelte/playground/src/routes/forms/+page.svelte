@@ -5,16 +5,16 @@ import type {
   STTAdapterType,
 } from '@happyvertical/smrt-svelte';
 import {
-  SMRTCheckbox,
-  SMRTDateTime,
-  SMRTForm,
-  SMRTNumber,
-  SMRTPhone,
-  SMRTSearchInput,
-  SMRTSelect,
-  SMRTTextarea,
-  SMRTTextInput,
-  SMRTToggle,
+  CheckboxInput,
+  DateTimeInput,
+  Form,
+  NumberInput,
+  PhoneInput,
+  SearchInput,
+  SelectInput,
+  TextareaInput,
+  TextInput,
+  Toggle,
 } from '@happyvertical/smrt-svelte';
 
 let name = $state('');
@@ -160,8 +160,8 @@ function handleSearch(value: string) {
       Say "done" when finished, or wait for silence timeout.
     </p>
 
-    <SMRTForm onsubmit={handleSubmit} {sttAdapter} {llmModel}>
-      <SMRTTextInput
+    <Form onsubmit={handleSubmit} {sttAdapter} {llmModel}>
+      <TextInput
         name="name"
         label="Full Name"
         description="Person's full legal name"
@@ -170,7 +170,7 @@ function handleSearch(value: string) {
         required
       />
 
-      <SMRTTextInput
+      <TextInput
         name="email"
         label="Email Address"
         type="email"
@@ -180,14 +180,14 @@ function handleSearch(value: string) {
         required
       />
 
-      <SMRTPhone
+      <PhoneInput
         name="phone"
         label="Phone Number"
         description="Contact phone number"
         bind:value={phone}
       />
 
-      <SMRTDateTime
+      <DateTimeInput
         name="birthday"
         label="Birthday"
         description="Date of birth"
@@ -195,7 +195,7 @@ function handleSearch(value: string) {
         bind:value={birthday}
       />
 
-      <SMRTNumber
+      <NumberInput
         name="age"
         label="Age"
         description="Person's age in years"
@@ -205,7 +205,7 @@ function handleSearch(value: string) {
         bind:value={age}
       />
 
-      <SMRTSelect
+      <SelectInput
         name="department"
         label="Department"
         description="Work department"
@@ -220,7 +220,7 @@ function handleSearch(value: string) {
         </label>
       </div>
 
-      <SMRTTextarea
+      <TextareaInput
         name="notes"
         label="Notes"
         description="Additional notes or comments"
@@ -230,7 +230,7 @@ function handleSearch(value: string) {
         {appendMode}
       />
 
-      <SMRTCheckbox
+      <CheckboxInput
         name="newsletter"
         label="Subscribe to newsletter"
         description="Whether to receive newsletter emails"
@@ -242,7 +242,7 @@ function handleSearch(value: string) {
           Submit
         </button>
       </div>
-    </SMRTForm>
+    </Form>
 
     {#if submittedData}
       <div class="submitted-data">
@@ -335,12 +335,12 @@ function handleSearch(value: string) {
   </div>
 
   <div class="demo-section">
-    <h2>SMRTSearchInput</h2>
+    <h2>SearchInput</h2>
     <p class="hint">Search input with debounce, loading state, and clear button.</p>
 
     <h3>Basic Search</h3>
     <div class="input-demo">
-      <SMRTSearchInput
+      <SearchInput
         bind:value={searchValue}
         placeholder="Search users..."
         loading={searchLoading}
@@ -360,34 +360,34 @@ function handleSearch(value: string) {
     <div class="input-demo-grid">
       <div>
         <span class="size-label">Small</span>
-        <SMRTSearchInput size="sm" placeholder="Small search..." />
+        <SearchInput size="sm" placeholder="Small search..." />
       </div>
       <div>
         <span class="size-label">Medium</span>
-        <SMRTSearchInput size="md" placeholder="Medium search..." />
+        <SearchInput size="md" placeholder="Medium search..." />
       </div>
       <div>
         <span class="size-label">Large</span>
-        <SMRTSearchInput size="lg" placeholder="Large search..." />
+        <SearchInput size="lg" placeholder="Large search..." />
       </div>
     </div>
   </div>
 
   <div class="demo-section">
-    <h2>SMRTToggle</h2>
+    <h2>Toggle</h2>
     <p class="hint">Accessible toggle switch with label positioning.</p>
 
     <h3>Basic Toggles</h3>
     <div class="toggle-demos">
-      <SMRTToggle
+      <Toggle
         label="Dark Mode"
         bind:checked={darkMode}
       />
-      <SMRTToggle
+      <Toggle
         label="Notifications"
         bind:checked={notifications}
       />
-      <SMRTToggle
+      <Toggle
         label="Auto-save"
         bind:checked={autoSave}
       />
@@ -396,12 +396,12 @@ function handleSearch(value: string) {
 
     <h3>Label Positions</h3>
     <div class="toggle-demos">
-      <SMRTToggle
+      <Toggle
         label="Label on right"
         labelPosition="right"
         checked={true}
       />
-      <SMRTToggle
+      <Toggle
         label="Label on left"
         labelPosition="left"
         checked={true}
@@ -410,15 +410,15 @@ function handleSearch(value: string) {
 
     <h3>Size Variants</h3>
     <div class="toggle-demos">
-      <SMRTToggle label="Small" size="sm" checked={true} />
-      <SMRTToggle label="Medium" size="md" checked={true} />
-      <SMRTToggle label="Large" size="lg" checked={true} />
+      <Toggle label="Small" size="sm" checked={true} />
+      <Toggle label="Medium" size="md" checked={true} />
+      <Toggle label="Large" size="lg" checked={true} />
     </div>
 
     <h3>Disabled State</h3>
     <div class="toggle-demos">
-      <SMRTToggle label="Disabled off" disabled />
-      <SMRTToggle label="Disabled on" disabled checked={true} />
+      <Toggle label="Disabled off" disabled />
+      <Toggle label="Disabled on" disabled checked={true} />
     </div>
   </div>
 </div>

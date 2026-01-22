@@ -7,14 +7,14 @@ import type {
   STTAdapterType,
 } from '@happyvertical/smrt-svelte';
 import {
-  SMRTAddress,
-  SMRTDateRange,
-  SMRTForm,
-  SMRTMeasurement,
-  SMRTMoney,
-  SMRTNumber,
-  SMRTSelect,
-  SMRTTextInput,
+  AddressInput,
+  DateRangeInput,
+  Form,
+  MeasurementInput,
+  MoneyInput,
+  NumberInput,
+  SelectInput,
+  TextInput,
 } from '@happyvertical/smrt-svelte';
 
 // Form state
@@ -84,11 +84,11 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   <div class="demo-section">
     <h2>New Construction Project</h2>
 
-    <SMRTForm onsubmit={handleSubmit} {sttAdapter}>
+    <Form onsubmit={handleSubmit} {sttAdapter}>
       <div class="form-section">
         <h3>Project Details</h3>
 
-        <SMRTTextInput
+        <TextInput
           name="projectName"
           label="Project Name"
           description="Name of the construction project"
@@ -97,7 +97,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
           required
         />
 
-        <SMRTSelect
+        <SelectInput
           name="projectType"
           label="Project Type"
           description="Type of construction project"
@@ -106,7 +106,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
           required
         />
 
-        <SMRTMoney
+        <MoneyInput
           name="budget"
           label="Project Budget"
           description="Total budget for the project in dollars"
@@ -119,7 +119,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
       <div class="form-section">
         <h3>Job Site Location</h3>
 
-        <SMRTAddress
+        <AddressInput
           name="jobSite"
           label="Job Site Address"
           description="Physical address of the construction site"
@@ -132,7 +132,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
       <div class="form-section">
         <h3>Project Timeline</h3>
 
-        <SMRTDateRange
+        <DateRangeInput
           name="timeline"
           label="Project Duration"
           description="Start and end dates for the project"
@@ -148,7 +148,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
         <h3>Dimensions</h3>
 
         <div class="two-column">
-          <SMRTMeasurement
+          <MeasurementInput
             name="squareFootage"
             label="Square Footage"
             description="Total square footage of the project area"
@@ -158,7 +158,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
             min={0}
           />
 
-          <SMRTMeasurement
+          <MeasurementInput
             name="ceilingHeight"
             label="Ceiling Height"
             description="Height of ceilings in the project"
@@ -174,7 +174,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
         <h3>Cost Breakdown</h3>
 
         <div class="two-column">
-          <SMRTMoney
+          <MoneyInput
             name="laborCost"
             label="Labor Costs"
             description="Total cost for labor"
@@ -183,7 +183,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
             min={0}
           />
 
-          <SMRTMoney
+          <MoneyInput
             name="materialCost"
             label="Material Costs"
             description="Total cost for materials"
@@ -206,7 +206,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
           Create Project
         </button>
       </div>
-    </SMRTForm>
+    </Form>
 
     {#if submittedData}
       <div class="submitted-data">

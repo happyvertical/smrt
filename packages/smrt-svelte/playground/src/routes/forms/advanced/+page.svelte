@@ -1,10 +1,10 @@
 <script lang="ts">
 import type { AddressValue, MeasurementUnit } from '@happyvertical/smrt-svelte';
 import {
-  SMRTAddress,
-  SMRTDateRange,
-  SMRTMeasurement,
-  SMRTMoney,
+  AddressInput,
+  DateRangeInput,
+  MeasurementInput,
+  MoneyInput,
 } from '@happyvertical/smrt-svelte';
 
 // State for demos
@@ -30,11 +30,11 @@ let measureUnit = $state<MeasurementUnit>('ft');
 <p class="description">Specialized form inputs for complex data types with voice input support.</p>
 
 <section>
-  <h2>SMRTDateRange</h2>
+  <h2>DateRangeInput</h2>
   <p class="section-desc">Date range picker with natural language voice input support (e.g., "next week" or "from Monday to Friday").</p>
 
   <div class="demo-box">
-    <SMRTDateRange
+    <DateRangeInput
       name="dateRange"
       label="Project Duration"
       description="When the project should run"
@@ -50,7 +50,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
 
   <h3>With Constraints</h3>
   <div class="demo-box">
-    <SMRTDateRange
+    <DateRangeInput
       name="futureRange"
       label="Booking Window"
       description="Available dates for booking"
@@ -61,11 +61,11 @@ let measureUnit = $state<MeasurementUnit>('ft');
 </section>
 
 <section>
-  <h2>SMRTAddress</h2>
+  <h2>AddressInput</h2>
   <p class="section-desc">Full address input with province/country selectors.</p>
 
   <div class="demo-box">
-    <SMRTAddress
+    <AddressInput
       name="address"
       label="Shipping Address"
       description="Where to deliver the package"
@@ -79,7 +79,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
 
   <h3>Partial Address (Select Fields)</h3>
   <div class="demo-box">
-    <SMRTAddress
+    <AddressInput
       name="partialAddress"
       label="City & Province Only"
       fields={['city', 'province']}
@@ -88,11 +88,11 @@ let measureUnit = $state<MeasurementUnit>('ft');
 </section>
 
 <section>
-  <h2>SMRTMoney</h2>
+  <h2>MoneyInput</h2>
   <p class="section-desc">Currency input that stores value in cents for precision. Voice input supports natural phrases like "fifty dollars" or "$25.50".</p>
 
   <div class="demo-box">
-    <SMRTMoney
+    <MoneyInput
       name="amount"
       label="Invoice Amount"
       description="The total amount to charge"
@@ -108,7 +108,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
 
   <h3>With Initial Value</h3>
   <div class="demo-box">
-    <SMRTMoney
+    <MoneyInput
       name="preset"
       label="Pre-filled Amount"
       bind:value={moneyValueCents}
@@ -119,7 +119,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
 
   <h3>With Constraints</h3>
   <div class="demo-box">
-    <SMRTMoney
+    <MoneyInput
       name="constrained"
       label="Payment Amount"
       min={1000}
@@ -132,11 +132,11 @@ let measureUnit = $state<MeasurementUnit>('ft');
 </section>
 
 <section>
-  <h2>SMRTMeasurement</h2>
+  <h2>MeasurementInput</h2>
   <p class="section-desc">Numeric input with unit selector. Supports natural language like "twelve feet" or "2.5 meters".</p>
 
   <div class="demo-box">
-    <SMRTMeasurement
+    <MeasurementInput
       name="length"
       label="Room Length"
       description="The length of the room"
@@ -153,7 +153,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
 
   <h3>Limited Units</h3>
   <div class="demo-box">
-    <SMRTMeasurement
+    <MeasurementInput
       name="fabric"
       label="Fabric Length"
       units={['yd', 'ft', 'in']}
@@ -163,7 +163,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
 
   <h3>With Constraints</h3>
   <div class="demo-box">
-    <SMRTMeasurement
+    <MeasurementInput
       name="height"
       label="Ceiling Height"
       min={6}
@@ -179,7 +179,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
 <section>
   <h2>Props Reference</h2>
 
-  <h3>SMRTDateRange</h3>
+  <h3>DateRangeInput</h3>
   <table class="props-table">
     <thead>
       <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
@@ -195,7 +195,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
     </tbody>
   </table>
 
-  <h3>SMRTAddress</h3>
+  <h3>AddressInput</h3>
   <table class="props-table">
     <thead>
       <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
@@ -209,7 +209,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
     </tbody>
   </table>
 
-  <h3>SMRTMoney</h3>
+  <h3>MoneyInput</h3>
   <table class="props-table">
     <thead>
       <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
@@ -224,7 +224,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
     </tbody>
   </table>
 
-  <h3>SMRTMeasurement</h3>
+  <h3>MeasurementInput</h3>
   <table class="props-table">
     <thead>
       <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>

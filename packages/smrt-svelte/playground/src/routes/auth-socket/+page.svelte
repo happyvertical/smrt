@@ -125,7 +125,7 @@ function clearMessages() {
   <p>
     To test auth and socket features, update the <code>+layout.svelte</code> to pass:
   </p>
-  <pre><code>{`<SmrtProvider
+  <pre><code>{`<SMRT
   user={data.user}
   permissions={data.permissions}
   socket={{
@@ -134,7 +134,7 @@ function clearMessages() {
   }}
 >
   ...
-</SmrtProvider>`}</code></pre>
+</SMRT>`}</code></pre>
 </div>
 
 <style>
