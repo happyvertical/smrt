@@ -511,7 +511,7 @@ importers:
         specifier: ^0.66.9
         version: 0.66.9
       '@happyvertical/json':
-        specifier: 0.67.4
+        specifier: ^0.67.4
         version: 0.67.4
       '@happyvertical/logger':
         specifier: ^0.66.9
@@ -2565,6 +2565,11 @@ packages:
     peerDependencies:
       jimp: '>=1.6.0'
       sharp: '>=0.34.5'
+    peerDependenciesMeta:
+      jimp:
+        optional: true
+      sharp:
+        optional: true
 
   '@happyvertical/jobs@0.66.9':
     resolution: {integrity: sha512-S//tD2dbiqRq+3vcf+v/VOMkiWn/hOS/bmXswv+TPIQ6dhxDKoMDM1fkIIWhuMUlt2W5AUYX2fLz3JC0VIFdRw==, tarball: https://npm.pkg.github.com/download/@happyvertical/jobs/0.66.9/7710e064fc53cd87cfe4ecc558063ccdfbb909dd}
@@ -2573,6 +2578,15 @@ packages:
       '@google-cloud/tasks': '>=4.0.0'
       bull: '>=4.0.0'
       bullmq: '>=5.0.0'
+    peerDependenciesMeta:
+      '@aws-sdk/client-sqs':
+        optional: true
+      '@google-cloud/tasks':
+        optional: true
+      bull:
+        optional: true
+      bullmq:
+        optional: true
 
   '@happyvertical/json@0.67.4':
     resolution: {integrity: sha512-PcqquSt4OzlD8czqXmc/R8ywCuxki1g8UFZVJX/L72cF+LOTAAO7Z5rdsrHfO/mCxkwZIZ5omyWYBWOXRO7I3Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/json/0.67.4/907604f5a1acac7994d1bcbcdd703c5e58703952}
@@ -6904,7 +6918,6 @@ packages:
 
   libsql@0.5.22:
     resolution: {integrity: sha512-NscWthMQt7fpU8lqd7LXMvT9pi+KhhmTHAJWUB/Lj6MWa0MKFv0F2V4C6WKKpjCVZl0VwcDz4nOI3CyaT1DDiA==}
-    cpu: [x64, arm64, wasm32, arm]
     os: [darwin, linux, win32]
 
   linebreak@1.1.0:
@@ -9970,6 +9983,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/client-sso@3.956.0':
     dependencies:
@@ -10099,6 +10113,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/core@3.956.0':
     dependencies:
@@ -10147,6 +10162,7 @@ snapshots:
       '@smithy/util-middleware': 4.2.8
       '@smithy/util-utf8': 4.2.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/crc64-nvme@3.957.0':
     dependencies:
@@ -10196,6 +10212,7 @@ snapshots:
       '@smithy/property-provider': 4.2.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/credential-provider-http@3.956.0':
     dependencies:
@@ -10235,6 +10252,7 @@ snapshots:
       '@smithy/types': 4.12.0
       '@smithy/util-stream': 4.5.10
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/credential-provider-ini@3.956.0':
     dependencies:
@@ -10292,6 +10310,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-provider-login@3.956.0':
     dependencies:
@@ -10331,6 +10350,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-provider-node@3.956.0':
     dependencies:
@@ -10382,6 +10402,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-provider-process@3.956.0':
     dependencies:
@@ -10409,6 +10430,7 @@ snapshots:
       '@smithy/shared-ini-file-loader': 4.4.3
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/credential-provider-sso@3.956.0':
     dependencies:
@@ -10448,6 +10470,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-provider-web-identity@3.956.0':
     dependencies:
@@ -10484,6 +10507,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-providers@3.956.0':
     dependencies:
@@ -10650,6 +10674,7 @@ snapshots:
       '@smithy/protocol-http': 5.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-location-constraint@3.956.0':
     dependencies:
@@ -10680,6 +10705,7 @@ snapshots:
       '@aws-sdk/types': 3.965.0
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-recursion-detection@3.956.0':
     dependencies:
@@ -10704,6 +10730,7 @@ snapshots:
       '@smithy/protocol-http': 5.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-sdk-s3@3.956.0':
     dependencies:
@@ -10747,6 +10774,7 @@ snapshots:
       '@smithy/util-hex-encoding': 4.2.0
       '@smithy/util-utf8': 4.2.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-ssec@3.956.0':
     dependencies:
@@ -10789,6 +10817,7 @@ snapshots:
       '@smithy/protocol-http': 5.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-websocket@3.956.0':
     dependencies:
@@ -10944,6 +10973,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/region-config-resolver@3.956.0':
     dependencies:
@@ -10968,6 +10998,7 @@ snapshots:
       '@smithy/node-config-provider': 4.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/signature-v4-multi-region@3.956.0':
     dependencies:
@@ -11022,6 +11053,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/types@3.956.0':
     dependencies:
@@ -11037,6 +11069,7 @@ snapshots:
     dependencies:
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/util-arn-parser@3.953.0':
     dependencies:
@@ -11069,6 +11102,7 @@ snapshots:
       '@smithy/url-parser': 4.2.8
       '@smithy/util-endpoints': 3.2.8
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/util-format-url@3.956.0':
     dependencies:
@@ -11108,6 +11142,7 @@ snapshots:
       '@smithy/types': 4.12.0
       bowser: 2.13.1
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/util-user-agent-node@3.956.0':
     dependencies:
@@ -11132,6 +11167,7 @@ snapshots:
       '@smithy/node-config-provider': 4.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/xml-builder@3.956.0':
     dependencies:
@@ -11150,6 +11186,7 @@ snapshots:
       '@smithy/types': 4.12.0
       fast-xml-parser: 5.2.5
       tslib: 2.8.1
+    optional: true
 
   '@aws/lambda-invoke-store@0.2.3': {}
 
@@ -11926,6 +11963,7 @@ snapshots:
       google-gax: 5.0.6
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   '@google/genai@1.34.0(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.3.5))':
     dependencies:
@@ -11955,7 +11993,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
     transitivePeerDependencies:
       - debug
 
@@ -11967,6 +12005,7 @@ snapshots:
     dependencies:
       '@grpc/proto-loader': 0.8.0
       '@js-sdsl/ordered-map': 4.4.2
+    optional: true
 
   '@grpc/proto-loader@0.8.0':
     dependencies:
@@ -11974,6 +12013,7 @@ snapshots:
       long: 5.3.2
       protobufjs: 7.5.4
       yargs: 17.7.2
+    optional: true
 
   '@gutenye/ocr-common@1.4.8':
     dependencies:
@@ -12109,16 +12149,18 @@ snapshots:
   '@happyvertical/images@0.66.9(jimp@1.6.0)(sharp@0.34.5)':
     dependencies:
       '@resvg/resvg-js': 2.6.2
-      jimp: 1.6.0
       satori: 0.18.3
+    optionalDependencies:
+      jimp: 1.6.0
       sharp: 0.34.5
 
   '@happyvertical/jobs@0.66.9(@aws-sdk/client-sqs@3.966.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.66.5)':
     dependencies:
-      '@aws-sdk/client-sqs': 3.966.0
-      '@google-cloud/tasks': 6.2.1
       '@happyvertical/sql': 0.66.9
       '@happyvertical/utils': 0.66.9
+    optionalDependencies:
+      '@aws-sdk/client-sqs': 3.966.0
+      '@google-cloud/tasks': 6.2.1
       bull: 4.16.5
       bullmq: 5.66.5
     transitivePeerDependencies:
@@ -12504,7 +12546,8 @@ snapshots:
     optionalDependencies:
       '@types/node': 25.0.9
 
-  '@ioredis/commands@1.5.0': {}
+  '@ioredis/commands@1.5.0':
+    optional: true
 
   '@isaacs/balanced-match@4.0.1': {}
 
@@ -12534,6 +12577,7 @@ snapshots:
       exif-parser: 0.1.12
       file-type: 16.5.4
       mime: 3.0.0
+    optional: true
 
   '@jimp/diff@1.6.0':
     dependencies:
@@ -12541,8 +12585,10 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       pixelmatch: 5.3.0
+    optional: true
 
-  '@jimp/file-ops@1.6.0': {}
+  '@jimp/file-ops@1.6.0':
+    optional: true
 
   '@jimp/js-bmp@1.6.0':
     dependencies:
@@ -12550,6 +12596,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       bmp-ts: 1.0.9
+    optional: true
 
   '@jimp/js-gif@1.6.0':
     dependencies:
@@ -12557,40 +12604,47 @@ snapshots:
       '@jimp/types': 1.6.0
       gifwrap: 0.10.1
       omggif: 1.0.10
+    optional: true
 
   '@jimp/js-jpeg@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       jpeg-js: 0.4.4
+    optional: true
 
   '@jimp/js-png@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       pngjs: 7.0.0
+    optional: true
 
   '@jimp/js-tiff@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       utif2: 4.1.0
+    optional: true
 
   '@jimp/plugin-blit@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-blur@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/utils': 1.6.0
+    optional: true
 
   '@jimp/plugin-circle@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-color@1.6.0':
     dependencies:
@@ -12599,6 +12653,7 @@ snapshots:
       '@jimp/utils': 1.6.0
       tinycolor2: 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-contain@1.6.0':
     dependencies:
@@ -12608,6 +12663,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-cover@1.6.0':
     dependencies:
@@ -12616,6 +12672,7 @@ snapshots:
       '@jimp/plugin-resize': 1.6.0
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-crop@1.6.0':
     dependencies:
@@ -12623,27 +12680,32 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-displace@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-dither@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
+    optional: true
 
   '@jimp/plugin-fisheye@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-flip@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-hash@1.6.0':
     dependencies:
@@ -12657,11 +12719,13 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       any-base: 1.1.0
+    optional: true
 
   '@jimp/plugin-mask@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-print@1.6.0':
     dependencies:
@@ -12675,17 +12739,20 @@ snapshots:
       parse-bmfont-xml: 1.1.6
       simple-xml-to-json: 1.2.3
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-quantize@1.6.0':
     dependencies:
       image-q: 4.0.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-resize@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-rotate@1.6.0':
     dependencies:
@@ -12695,6 +12762,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-threshold@1.6.0':
     dependencies:
@@ -12704,15 +12772,18 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/types@1.6.0':
     dependencies:
       zod: 3.25.76
+    optional: true
 
   '@jimp/utils@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       tinycolor2: 1.6.0
+    optional: true
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -12733,7 +12804,8 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@js-sdsl/ordered-map@4.4.2': {}
+  '@js-sdsl/ordered-map@4.4.2':
+    optional: true
 
   '@keyv/serialize@1.1.1': {}
 
@@ -14155,7 +14227,8 @@ snapshots:
 
   '@tokenizer/token@0.3.0': {}
 
-  '@tootallnate/once@2.0.0': {}
+  '@tootallnate/once@2.0.0':
+    optional: true
 
   '@tybys/wasm-util@0.10.1':
     dependencies:
@@ -14410,6 +14483,7 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   agent-base@7.1.4: {}
 
@@ -14492,7 +14566,8 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  any-base@1.1.0: {}
+  any-base@1.1.0:
+    optional: true
 
   any-promise@1.3.0: {}
 
@@ -14516,7 +14591,8 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
-  await-to-js@3.0.0: {}
+  await-to-js@3.0.0:
+    optional: true
 
   axios@1.13.2(debug@4.4.3):
     dependencies:
@@ -14599,7 +14675,8 @@ snapshots:
 
   bmp-js@0.1.0: {}
 
-  bmp-ts@1.0.9: {}
+  bmp-ts@1.0.9:
+    optional: true
 
   body-parser@2.2.2:
     dependencies:
@@ -14667,6 +14744,7 @@ snapshots:
       uuid: 8.3.2
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   bullmq@5.66.5:
     dependencies:
@@ -14679,6 +14757,7 @@ snapshots:
       uuid: 11.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   byte-counter@0.1.0: {}
 
@@ -15005,6 +15084,7 @@ snapshots:
   cron-parser@4.9.0:
     dependencies:
       luxon: 3.7.2
+    optional: true
 
   cross-fetch@4.1.0:
     dependencies:
@@ -15142,7 +15222,8 @@ snapshots:
 
   delayed-stream@1.0.0: {}
 
-  denque@2.1.0: {}
+  denque@2.1.0:
+    optional: true
 
   depd@2.0.0: {}
 
@@ -15237,6 +15318,7 @@ snapshots:
       inherits: 2.0.4
       readable-stream: 3.6.2
       stream-shift: 1.0.3
+    optional: true
 
   eastasianwidth@0.2.0: {}
 
@@ -15443,7 +15525,8 @@ snapshots:
       strip-final-newline: 4.0.0
       yoctocolors: 2.1.2
 
-  exif-parser@0.1.12: {}
+  exif-parser@0.1.12:
+    optional: true
 
   expand-template@2.0.3: {}
 
@@ -15742,7 +15825,8 @@ snapshots:
       hasown: 2.0.2
       math-intrinsics: 1.1.0
 
-  get-port@5.1.1: {}
+  get-port@5.1.1:
+    optional: true
 
   get-proto@1.0.1:
     dependencies:
@@ -15768,6 +15852,7 @@ snapshots:
     dependencies:
       image-q: 4.0.0
       omggif: 1.0.10
+    optional: true
 
   git-log-parser@1.2.1:
     dependencies:
@@ -15862,6 +15947,7 @@ snapshots:
       rimraf: 5.0.10
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   google-logging-utils@1.1.3: {}
 
@@ -16043,6 +16129,7 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   http-proxy-agent@7.0.2:
     dependencies:
@@ -16062,6 +16149,7 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   https-proxy-agent@7.0.6:
     dependencies:
@@ -16097,7 +16185,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -16131,6 +16219,7 @@ snapshots:
   image-q@4.0.0:
     dependencies:
       '@types/node': 24.10.9
+    optional: true
 
   imapflow@1.2.6:
     dependencies:
@@ -16241,6 +16330,7 @@ snapshots:
       standard-as-callback: 2.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   ioredis@5.9.2:
     dependencies:
@@ -16255,6 +16345,7 @@ snapshots:
       standard-as-callback: 2.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   ip-address@10.1.0: {}
 
@@ -16378,6 +16469,7 @@ snapshots:
       '@jimp/plugin-threshold': 1.6.0
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
+    optional: true
 
   jiti@2.6.1: {}
 
@@ -16695,13 +16787,15 @@ snapshots:
 
   lodash.capitalize@4.2.1: {}
 
-  lodash.defaults@4.2.0: {}
+  lodash.defaults@4.2.0:
+    optional: true
 
   lodash.escaperegexp@4.1.2: {}
 
   lodash.includes@4.3.0: {}
 
-  lodash.isarguments@3.1.0: {}
+  lodash.isarguments@3.1.0:
+    optional: true
 
   lodash.isboolean@3.0.3: {}
 
@@ -16758,7 +16852,8 @@ snapshots:
 
   lunr@2.3.9: {}
 
-  luxon@3.7.2: {}
+  luxon@3.7.2:
+    optional: true
 
   magic-string@0.27.0:
     dependencies:
@@ -16852,7 +16947,8 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  mime@3.0.0: {}
+  mime@3.0.0:
+    optional: true
 
   mime@4.1.0: {}
 
@@ -16941,10 +17037,12 @@ snapshots:
   msgpackr@1.11.5:
     optionalDependencies:
       msgpackr-extract: 3.0.3
+    optional: true
 
   msgpackr@1.11.8:
     optionalDependencies:
       msgpackr-extract: 3.0.3
+    optional: true
 
   muggle-string@0.4.1: {}
 
@@ -16976,7 +17074,8 @@ snapshots:
     dependencies:
       semver: 7.7.3
 
-  node-abort-controller@3.1.1: {}
+  node-abort-controller@3.1.1:
+    optional: true
 
   node-addon-api@6.1.0: {}
 
@@ -17058,7 +17157,8 @@ snapshots:
 
   object-assign@4.1.1: {}
 
-  object-hash@3.0.0: {}
+  object-hash@3.0.0:
+    optional: true
 
   object-inspect@1.13.4: {}
 
@@ -17066,7 +17166,8 @@ snapshots:
 
   obug@2.1.1: {}
 
-  omggif@1.0.10: {}
+  omggif@1.0.10:
+    optional: true
 
   on-exit-leak-free@2.1.2: {}
 
@@ -17325,7 +17426,8 @@ snapshots:
 
   pako@0.2.9: {}
 
-  pako@1.0.11: {}
+  pako@1.0.11:
+    optional: true
 
   parent-module@1.0.1:
     dependencies:
@@ -17333,14 +17435,17 @@ snapshots:
 
   parent-require@1.0.0: {}
 
-  parse-bmfont-ascii@1.0.6: {}
+  parse-bmfont-ascii@1.0.6:
+    optional: true
 
-  parse-bmfont-binary@1.0.6: {}
+  parse-bmfont-binary@1.0.6:
+    optional: true
 
   parse-bmfont-xml@1.1.6:
     dependencies:
       xml-parse-from-string: 1.0.1
       xml2js: 0.5.0
+    optional: true
 
   parse-css-color@0.2.1:
     dependencies:
@@ -17511,6 +17616,7 @@ snapshots:
   pixelmatch@5.3.0:
     dependencies:
       pngjs: 6.0.0
+    optional: true
 
   pkce-challenge@5.0.1: {}
 
@@ -17551,7 +17657,8 @@ snapshots:
 
   pluralize@8.0.0: {}
 
-  pngjs@6.0.0: {}
+  pngjs@6.0.0:
+    optional: true
 
   pngjs@7.0.0: {}
 
@@ -17618,6 +17725,7 @@ snapshots:
   proto3-json-serializer@3.0.4:
     dependencies:
       protobufjs: 7.5.4
+    optional: true
 
   protobufjs@6.11.4:
     dependencies:
@@ -17799,11 +17907,13 @@ snapshots:
     dependencies:
       resolve: 1.22.11
 
-  redis-errors@1.2.0: {}
+  redis-errors@1.2.0:
+    optional: true
 
   redis-parser@3.0.0:
     dependencies:
       redis-errors: 1.2.0
+    optional: true
 
   redis@5.10.0:
     dependencies:
@@ -17854,7 +17964,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2):
+  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
@@ -17864,6 +17974,7 @@ snapshots:
       teeny-request: 10.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   retry@0.12.0: {}
 
@@ -18228,7 +18339,8 @@ snapshots:
 
   simple-wcswidth@1.1.2: {}
 
-  simple-xml-to-json@1.2.3: {}
+  simple-xml-to-json@1.2.3:
+    optional: true
 
   sirv@3.0.2:
     dependencies:
@@ -18321,7 +18433,8 @@ snapshots:
 
   stackback@0.0.2: {}
 
-  standard-as-callback@2.1.0: {}
+  standard-as-callback@2.1.0:
+    optional: true
 
   statuses@2.0.2: {}
 
@@ -18341,12 +18454,14 @@ snapshots:
   stream-events@1.0.5:
     dependencies:
       stubs: 3.0.0
+    optional: true
 
   stream-json@1.9.1:
     dependencies:
       stream-chain: 2.2.5
 
-  stream-shift@1.0.3: {}
+  stream-shift@1.0.3:
+    optional: true
 
   streamx@2.23.0:
     dependencies:
@@ -18426,7 +18541,8 @@ snapshots:
       '@tokenizer/token': 0.3.0
       peek-readable: 4.1.0
 
-  stubs@3.0.0: {}
+  stubs@3.0.0:
+    optional: true
 
   super-regex@1.1.0:
     dependencies:
@@ -18568,6 +18684,7 @@ snapshots:
       stream-events: 1.0.5
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   temp-dir@2.0.0: {}
 
@@ -18645,7 +18762,8 @@ snapshots:
 
   tinybench@2.9.0: {}
 
-  tinycolor2@1.6.0: {}
+  tinycolor2@1.6.0:
+    optional: true
 
   tinyexec@1.0.2: {}
 
@@ -18896,16 +19014,19 @@ snapshots:
   utif2@4.1.0:
     dependencies:
       pako: 1.0.11
+    optional: true
 
   util-deprecate@1.0.2: {}
 
   uuid@10.0.0: {}
 
-  uuid@11.1.0: {}
+  uuid@11.1.0:
+    optional: true
 
   uuid@13.0.0: {}
 
-  uuid@8.3.2: {}
+  uuid@8.3.2:
+    optional: true
 
   vali-date@1.0.0: {}
 
@@ -19156,14 +19277,17 @@ snapshots:
 
   xml-name-validator@5.0.0: {}
 
-  xml-parse-from-string@1.0.1: {}
+  xml-parse-from-string@1.0.1:
+    optional: true
 
   xml2js@0.5.0:
     dependencies:
       sax: 1.4.4
       xmlbuilder: 11.0.1
+    optional: true
 
-  xmlbuilder@11.0.1: {}
+  xmlbuilder@11.0.1:
+    optional: true
 
   xmlchars@2.2.0: {}
 
