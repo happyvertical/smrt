@@ -3,5 +3,6 @@
  */
 
 export { default as ConfirmDialog } from './ConfirmDialog.svelte';
+export { default as LoadingOverlay } from './LoadingOverlay.svelte';
 export { default as Modal } from './Modal.svelte';
 export { default as ProgressBar } from './ProgressBar.svelte';
