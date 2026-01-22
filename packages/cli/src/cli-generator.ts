@@ -619,7 +619,6 @@ export class CLIGenerator {
     const verbose =
       process.env.SMRT_VERBOSE === 'true' ||
       process.env.DEBUG?.includes('smrt');
-    const commandGenStart = timing ? performance.now() : 0;
 
     // Return cached commands if already generated (prevents duplicate execution)
     if (this.commandCache) {
@@ -635,6 +634,9 @@ export class CLIGenerator {
 
     // Ensure manifest and classes are loaded
     await this.ensureManifestLoaded();
+
+    // Start timing AFTER class loading to measure only command generation
+    const commandGenStart = timing ? performance.now() : 0;
 
     // Only generate utility commands upfront (small fixed set)
     // Object commands are generated lazily when needed
@@ -2361,13 +2363,10 @@ export async function main() {
     console.log('\n⏱  Startup Timing:');
     console.log(`   Config load:      ${timing.config?.toFixed(0) ?? 'N/A'}ms`);
     console.log(
-      `   Command gen:      ${timing.commandGen?.toFixed(0) ?? 'N/A'}ms`,
-    );
-    console.log(
       `   Class loading:    ${timing.classLoading?.toFixed(0) ?? 'N/A'}ms`,
     );
     console.log(
-      `   Discovery:        ${timing.discovery?.toFixed(0) ?? 'N/A'}ms`,
+      `   Command gen:      ${timing.commandGen?.toFixed(0) ?? 'N/A'}ms`,
     );
     console.log(`   Total startup:    ${timing.total.toFixed(0)}ms`);
   }
