@@ -78,7 +78,7 @@ const components = [
   {
     category: 'AI',
     items: [
-      'SMRT',
+      'smrt',
       'AILoadingOverlay',
       'CapabilityGate',
       'DownloadProgress',
