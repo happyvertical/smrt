@@ -14,7 +14,7 @@ describe('createInitialState', () => {
   it('creates initial state with correct defaults', () => {
     const state = createInitialState();
 
-    expect(state.mode).toBe('dumb');
+    expect(state.mode).toBe('default');
     expect(state.modeSource).toBe('auto');
     expect(state.initialized).toBe(false);
     expect(state.error).toBeNull();

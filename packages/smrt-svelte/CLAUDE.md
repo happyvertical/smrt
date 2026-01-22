@@ -31,7 +31,7 @@ The root component that provides app-wide state for authentication, permissions,
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `mode` | `'dumb' \| 'smrt'` | auto-detected | Force a specific mode |
+| `mode` | `'default' \| 'smrt'` | auto-detected | Force a specific mode |
 | `autoEnableSmrt` | `boolean` | `true` | Auto-enable smrt mode when AI is available |
 | `user` | `User \| null` | `null` | Current user from your load function |
 | `permissions` | `string[]` | `[]` | User's resolved permissions |
@@ -341,7 +341,7 @@ export const load = async ({ locals }) => {
 SmrtProvider
     │
     ├── SmrtAppStateManager ($state rune)
-    │   ├── mode: 'dumb' | 'smrt'
+    │   ├── mode: 'default' | 'smrt'
     │   ├── session: { user, permissions, preferences }
     │   ├── capabilities: BrowserAICapabilities
     │   ├── ai: { stt, tts, llm } (adapter states)

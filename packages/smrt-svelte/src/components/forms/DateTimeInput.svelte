@@ -343,7 +343,7 @@ function handleNativeChange(e: Event) {
         {/if}
       </button>
     {:else}
-      <!-- In dumb mode: native datetime picker -->
+      <!-- In default mode: native datetime picker -->
       <input
         bind:this={inputEl}
         id={name}

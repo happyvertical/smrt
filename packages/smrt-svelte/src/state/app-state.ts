@@ -19,10 +19,10 @@ export type { User } from '@happyvertical/smrt-users';
 
 /**
  * App mode determines which features are enabled
- * - 'dumb': Standard components, no AI features
+ * - 'default': Standard components, no AI features
  * - 'smrt': AI-enhanced features enabled
  */
-export type AppMode = 'dumb' | 'smrt';
+export type AppMode = 'default' | 'smrt';
 
 /**
  * How the current mode was determined
@@ -325,7 +325,7 @@ export interface SmrtAppState {
  */
 export function createInitialState(): SmrtAppState {
   return {
-    mode: 'dumb',
+    mode: 'default',
     modeSource: 'auto',
     session: {
       user: null,

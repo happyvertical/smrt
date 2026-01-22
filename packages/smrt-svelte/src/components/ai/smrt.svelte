@@ -14,7 +14,7 @@ import AILoadingOverlay from './AILoadingOverlay.svelte';
 
 interface Props {
   /**
-   * Initial mode: 'dumb' | 'smrt'
+   * Initial mode: 'default' | 'smrt'
    * If not provided, mode is auto-detected based on capabilities
    */
   mode?: AppMode;

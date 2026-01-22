@@ -355,10 +355,10 @@ export class SmrtAppStateManager {
   }
 
   /**
-   * Toggle between dumb and smrt modes
+   * Toggle between default and smrt modes
    */
   toggleMode(): void {
-    const newMode = this._state.mode === 'dumb' ? 'smrt' : 'dumb';
+    const newMode = this._state.mode === 'default' ? 'smrt' : 'default';
     this.setMode(newMode, 'toggled');
   }
 

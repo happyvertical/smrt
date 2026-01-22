@@ -8,7 +8,7 @@ interface Props {
 }
 
 const { children }: Props = $props();
-let mode: AppMode = $state('dumb');
+let mode: AppMode = $state('default');
 
 // Theme State
 let themeMode = $state<'light' | 'dark' | 'system'>('system');
@@ -52,9 +52,9 @@ function toggleLogin() {
         <div class="mode-toggle">
           <button
             class="mode-btn"
-            class:active={mode === 'dumb'}
-            onclick={() => mode = 'dumb'}
-          >Dumb</button>
+            class:active={mode === 'default'}
+            onclick={() => mode = 'default'}
+          >Default</button>
           <button
             class="mode-btn"
             class:active={mode === 'smrt'}

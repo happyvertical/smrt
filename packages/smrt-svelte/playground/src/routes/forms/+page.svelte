@@ -294,7 +294,7 @@ function handleSearch(value: string) {
     <h2>How It Works</h2>
     <div class="features">
       <div class="feature">
-        <h3>Dumb Mode</h3>
+        <h3>Default Mode</h3>
         <ul>
           <li>Standard HTML form inputs</li>
           <li>Native date picker for birthday</li>
