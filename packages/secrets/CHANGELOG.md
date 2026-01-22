@@ -1,5 +1,12 @@
 # @happyvertical/smrt-secrets
 
+## 0.19.40
+
+### Patch Changes
+
+- @happyvertical/smrt-core@0.19.40
+- @happyvertical/smrt-tenancy@0.19.40
+
 ## 0.19.39
 
 ### Patch Changes

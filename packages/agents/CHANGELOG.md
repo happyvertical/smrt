@@ -1,5 +1,19 @@
 # @happyvertical/smrt-agents
 
+## 0.19.40
+
+### Patch Changes
+
+- fix(agents): use qualified name for STI \_meta_type filter in interests
+
+  When querying STI child classes in the interests system, the filter now
+  uses the fully qualified class name (e.g., '@happyvertical/praeco:Meeting')
+  instead of the simple class name ('Meeting'). This matches how \_meta_type
+  values are stored in the database.
+
+  - @happyvertical/smrt-config@0.19.40
+  - @happyvertical/smrt-core@0.19.40
+
 ## 0.19.39
 
 ### Patch Changes

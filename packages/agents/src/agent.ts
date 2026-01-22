@@ -766,9 +766,13 @@ export abstract class Agent extends SmrtObject {
       if (tableStrategy === 'sti') {
         const stiBase = ObjectRegistry.getSTIBase(_className);
         if (stiBase && stiBase !== _className) {
+          // Get the qualified name for this class (e.g., '@happyvertical/praeco:Meeting')
+          // This is what's stored in the _meta_type column in the database
+          const classInfo = ObjectRegistry.getClass(_className);
+          const metaTypeValue = classInfo?.qualifiedName || _className;
           // Wrap original where clause and add _meta_type filter
           whereClause = `_meta_type = ? AND (${whereClause})`;
-          params = [_className, ...params];
+          params = [metaTypeValue, ...params];
         }
       }
 
