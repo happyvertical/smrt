@@ -41,6 +41,7 @@
   "dependencies": {
     "@happyvertical/ai": "^0.66.9",
     "@happyvertical/files": "^0.66.9",
+    "@happyvertical/json": "^0.67.4",
     "@happyvertical/logger": "^0.66.9",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",

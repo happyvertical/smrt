@@ -24,6 +24,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { parse } from '../utils/json.js';
 
 const CACHE_DIR = '.smrt';
 const CACHE_FILE = 'discovery-cache.json';
@@ -109,7 +110,7 @@ function getCachedDiscovery(
   }
 
   try {
-    const cache: DiscoveryCache = JSON.parse(readFileSync(cachePath, 'utf-8'));
+    const cache: DiscoveryCache = parse(readFileSync(cachePath, 'utf-8'));
     const currentLockfileHash = getLockfileHash();
 
     // Check lockfile hash
@@ -200,7 +201,7 @@ function hasManifestExport(packageName: string): boolean {
     }
 
     // Load and validate manifest
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    const manifest = parse(readFileSync(manifestPath, 'utf-8'));
 
     // Validate moduleType
     if (manifest.moduleType !== 'smrt') {

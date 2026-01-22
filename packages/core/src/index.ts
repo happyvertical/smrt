@@ -96,6 +96,20 @@ export {
 } from './testing/database';
 // AI function calling tools
 export * from './tools/index';
+// JSON utilities with optional SIMD acceleration
+export {
+  clone,
+  getAdapterInfo,
+  isValid,
+  type JSONAdapter,
+  type ParseError,
+  parse,
+  type Result,
+  type StringifyError,
+  safeParse,
+  safeStringify,
+  stringify,
+} from './utils/json';
 // Qualified name utilities
 export {
   createQualifiedName,
