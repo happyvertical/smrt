@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.19.41
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use qualified name for STI \_meta_type filter (#780) (agents)
+
+  ### Other Changes
+
+  - ci: shard core tests across 3 parallel jobs (#777)
+  - @happyvertical/smrt-scanner@0.19.41
+  - @happyvertical/smrt-config@0.19.41
+  - @happyvertical/smrt-types@0.19.41
+
 ## 0.19.40
 
 ### Patch Changes
