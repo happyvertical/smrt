@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { AppMode, User } from '@happyvertical/smrt-svelte';
-import { SmrtProvider, ThemeProvider } from '@happyvertical/smrt-svelte';
+import { smrt, ThemeProvider } from '@happyvertical/smrt-svelte';
 import type { Snippet } from 'svelte';
 
 interface Props {
@@ -8,7 +8,7 @@ interface Props {
 }
 
 const { children }: Props = $props();
-let mode: AppMode = $state('dumb');
+let mode: AppMode = $state('default');
 
 // Theme State
 let themeMode = $state<'light' | 'dark' | 'system'>('system');
@@ -38,7 +38,7 @@ function toggleLogin() {
 }
 </script>
 
-<SmrtProvider
+<smrt
   {mode}
   user={isLoggedIn ? mockUser : null}
   permissions={isLoggedIn ? mockPermissions : []}
@@ -52,9 +52,9 @@ function toggleLogin() {
         <div class="mode-toggle">
           <button
             class="mode-btn"
-            class:active={mode === 'dumb'}
-            onclick={() => mode = 'dumb'}
-          >Dumb</button>
+            class:active={mode === 'default'}
+            onclick={() => mode = 'default'}
+          >Default</button>
           <button
             class="mode-btn"
             class:active={mode === 'smrt'}
@@ -141,7 +141,7 @@ function toggleLogin() {
     </main>
     </div>
   </ThemeProvider>
-</SmrtProvider>
+</smrt>
 
 <style>
   .layout {

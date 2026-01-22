@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ripple, SMRTIcon } from '@happyvertical/smrt-svelte';
+import { Icon, ripple } from '@happyvertical/smrt-svelte';
 </script>
 
 <h1>Foundation & Infrastructure</h1>
@@ -16,12 +16,12 @@ import { ripple, SMRTIcon } from '@happyvertical/smrt-svelte';
 <section>
   <h2>Icons (M3 Presets)</h2>
   <div class="icon-grid">
-    <div class="icon-item"><SMRTIcon name="menu" /> <span>menu</span></div>
-    <div class="icon-item"><SMRTIcon name="search" /> <span>search</span></div>
-    <div class="icon-item"><SMRTIcon name="close" /> <span>close</span></div>
-    <div class="icon-item"><SMRTIcon name="check" /> <span>check</span></div>
-    <div class="icon-item"><SMRTIcon name="add" /> <span>add</span></div>
-    <div class="icon-item"><SMRTIcon name="chevron-right" /> <span>chevron-right</span></div>
+    <div class="icon-item"><Icon name="menu" /> <span>menu</span></div>
+    <div class="icon-item"><Icon name="search" /> <span>search</span></div>
+    <div class="icon-item"><Icon name="close" /> <span>close</span></div>
+    <div class="icon-item"><Icon name="check" /> <span>check</span></div>
+    <div class="icon-item"><Icon name="add" /> <span>add</span></div>
+    <div class="icon-item"><Icon name="chevron-right" /> <span>chevron-right</span></div>
   </div>
 </section>
 

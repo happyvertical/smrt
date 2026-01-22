@@ -42,7 +42,7 @@ export interface FieldDefinition {
  */
 export interface SMRTFormContext {
   /** Current mode */
-  readonly mode: 'smrt' | 'dumb';
+  readonly mode: 'smrt' | 'default';
   /** Register a field with the form */
   registerField: (field: FieldDefinition) => void;
   /** Unregister a field */

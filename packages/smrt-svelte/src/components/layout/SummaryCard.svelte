@@ -6,7 +6,7 @@
  * and link functionality.
  */
 import { ripple } from '../../actions/ripple.js';
-import { SMRTIcon } from '../display/index.js';
+import { Icon } from '../display/index.js';
 
 interface Props {
   /** Card label */
@@ -19,7 +19,7 @@ interface Props {
   highlight?: boolean;
   /** Make card clickable with href */
   href?: string;
-  /** Optional icon (name for SMRTIcon or SVG string) */
+  /** Optional icon (name for Icon or SVG string) */
   icon?: string;
   /** Value color variant */
   variant?: 'default' | 'success' | 'warning' | 'danger';
@@ -65,7 +65,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
         {#if isSvg}
           {@html icon}
         {:else}
-          <SMRTIcon name={icon} size={24} />
+          <Icon name={icon} size={24} />
         {/if}
       </span>
     {/if}
@@ -79,7 +79,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
       <span class="card-value {valueColorClass}">{value}</span>
     </div>
     <div class="trailing">
-      <SMRTIcon name="chevron-right" size={20} />
+      <Icon name="chevron-right" size={20} />
     </div>
   </a>
 {:else}
@@ -89,7 +89,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
         {#if isSvg}
           {@html icon}
         {:else}
-          <SMRTIcon name={icon} size={24} />
+          <Icon name={icon} size={24} />
         {/if}
       </span>
     {/if}

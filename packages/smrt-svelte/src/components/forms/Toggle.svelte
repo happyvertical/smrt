@@ -1,124 +1,217 @@
 <script lang="ts">
-import type { Snippet } from 'svelte';
+/**
+ * SMRTToggle - An accessible toggle/switch component
+ *
+ * Features:
+ * - Native checkbox semantics for accessibility
+ * - Bindable checked state
+ * - Disabled state
+ * - Labels on either side
+ * - Size variants
+ * - Material 3 styling
+ */
 
-interface Props {
-  id?: string;
+interface ToggleProps {
+  /** Whether the toggle is checked */
   checked?: boolean;
+  /** Whether the toggle is disabled */
   disabled?: boolean;
+  /** Name attribute for form submission */
   name?: string;
-  label?: string | Snippet;
-  description?: Snippet;
-  class?: string;
-  onchange?: (e: Event & { currentTarget: HTMLInputElement }) => void;
-  children?: Snippet;
+  /** Value attribute for form submission */
+  value?: string;
+  /** Label text */
+  label?: string;
+  /** Position of the label */
+  labelPosition?: 'left' | 'right';
+  /** Size variant */
+  size?: 'sm' | 'md' | 'lg';
+  /** ID for the input element */
+  id?: string;
+  /** ARIA label for accessibility */
+  ariaLabel?: string;
+  /** Change callback */
+  onchange?: (checked: boolean) => void;
 }
 
 let {
-  id,
   checked = $bindable(false),
   disabled = false,
   name,
+  value,
   label,
-  description,
-  class: className = '',
+  labelPosition = 'right',
+  size = 'md',
+  id,
+  ariaLabel,
   onchange,
-  children,
-}: Props = $props();
+}: ToggleProps = $props();
 
-function isSnippet(value: unknown): value is Snippet {
-  return typeof value === 'function';
+function handleChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  checked = target.checked;
+  onchange?.(checked);
 }
+
+const sizeClasses = {
+  sm: 'toggle--sm',
+  md: 'toggle--md',
+  lg: 'toggle--lg',
+};
 </script>
 
-<label class="toggle {className}" class:disabled>
-	<input
-		type="checkbox"
-		{id}
-		bind:checked
-		{disabled}
-		{name}
-		class="toggle-input"
-		{onchange}
-	/>
-	<span class="toggle-switch"></span>
-	<div class="toggle-content">
-		{#if label}
-			<span class="toggle-label">
-				{#if isSnippet(label)}
-					{@render label()}
-				{:else}
-					{label}
-				{/if}
-			</span>
-		{/if}
-		{#if description}
-			<span class="toggle-description">
-				{@render description()}
-			</span>
-		{/if}
-		{#if children}
-			{@render children()}
-		{/if}
-	</div>
+<label class="toggle {sizeClasses[size]}" class:toggle--disabled={disabled}>
+  {#if label && labelPosition === 'left'}
+    <span class="toggle__label toggle__label--left">{label}</span>
+  {/if}
+
+  <span class="toggle__track">
+    <input
+      type="checkbox"
+      class="toggle__input"
+      {id}
+      {name}
+      {value}
+      {disabled}
+      {checked}
+      onchange={handleChange}
+      aria-label={ariaLabel ?? label ?? ''}
+    />
+    <span class="toggle__thumb"></span>
+  </span>
+
+  {#if label && labelPosition === 'right'}
+    <span class="toggle__label toggle__label--right">{label}</span>
+  {/if}
 </label>
 
 <style>
-	.toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		cursor: pointer;
-	}
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    cursor: pointer;
+    user-select: none;
+  }
 
-	.toggle.disabled {
-		cursor: not-allowed;
-		opacity: 0.6;
-	}
+  .toggle--disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
 
-	.toggle-input {
-		position: absolute;
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
+  .toggle__label {
+    font-size: var(--smrt-font-size-sm, 0.875rem);
+    color: var(--smrt-on-surface, #111827);
+    line-height: 1.5;
+  }
 
-	.toggle-switch {
-		position: relative;
-		display: inline-block;
-		width: 44px;
-		height: 24px;
-		background-color: #d1d5db;
-		border-radius: 12px;
-		transition: background-color 0.2s ease;
-	}
+  .toggle__track {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
 
-	.toggle-switch::after {
-		content: '';
-		position: absolute;
-		top: 2px;
-		left: 2px;
-		width: 20px;
-		height: 20px;
-		background-color: #fff;
-		border-radius: 50%;
-		transition: transform 0.2s ease;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-	}
+  .toggle__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 
-	.toggle-input:checked + .toggle-switch {
-		background-color: #3b82f6;
-	}
+  .toggle__thumb {
+    position: relative;
+    background: var(--smrt-surface-container-highest, #e5e7eb);
+    border-radius: var(--smrt-radius-full, 9999px);
+    transition: background-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
+  }
 
-	.toggle-input:checked + .toggle-switch::after {
-		transform: translateX(20px);
-	}
+  .toggle__thumb::after {
+    content: '';
+    position: absolute;
+    background: var(--smrt-surface, #ffffff);
+    border-radius: var(--smrt-radius-full, 9999px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
+  }
 
-	.toggle-input:focus + .toggle-switch {
-		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-	}
+  /* Checked state */
+  .toggle__input:checked + .toggle__thumb {
+    background: var(--smrt-primary, #3b82f6);
+  }
 
-	.toggle-label {
-		font-size: 0.875rem;
-		color: #374151;
-	}
+  /* Focus state */
+  .toggle__input:focus-visible + .toggle__thumb {
+    outline: 2px solid var(--smrt-primary, #3b82f6);
+    outline-offset: 2px;
+  }
+
+  /* Hover state */
+  .toggle:not(.toggle--disabled):hover .toggle__thumb {
+    background: var(--smrt-surface-container-high, #d1d5db);
+  }
+
+  .toggle:not(.toggle--disabled):hover .toggle__input:checked + .toggle__thumb {
+    background: var(--smrt-primary-hover, #2563eb);
+  }
+
+  /* Size: Small */
+  .toggle--sm .toggle__thumb {
+    width: 32px;
+    height: 18px;
+  }
+
+  .toggle--sm .toggle__thumb::after {
+    width: 14px;
+    height: 14px;
+    top: 2px;
+    left: 2px;
+  }
+
+  .toggle--sm .toggle__input:checked + .toggle__thumb::after {
+    transform: translateX(14px);
+  }
+
+  /* Size: Medium (default) */
+  .toggle--md .toggle__thumb {
+    width: 44px;
+    height: 24px;
+  }
+
+  .toggle--md .toggle__thumb::after {
+    width: 20px;
+    height: 20px;
+    top: 2px;
+    left: 2px;
+  }
+
+  .toggle--md .toggle__input:checked + .toggle__thumb::after {
+    transform: translateX(20px);
+  }
+
+  /* Size: Large */
+  .toggle--lg .toggle__thumb {
+    width: 56px;
+    height: 30px;
+  }
+
+  .toggle--lg .toggle__thumb::after {
+    width: 26px;
+    height: 26px;
+    top: 2px;
+    left: 2px;
+  }
+
+  .toggle--lg .toggle__input:checked + .toggle__thumb::after {
+    transform: translateX(26px);
+  }
+
+  .toggle--lg .toggle__label {
+    font-size: var(--smrt-font-size-md, 1rem);
+  }
 </style>

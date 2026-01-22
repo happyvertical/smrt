@@ -7,22 +7,22 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
-import { formatText } from '../../utils/forms/formatters.js';
-import { SMRTIcon } from '../display/index.js';
+import { formatEmail, formatText } from '../../utils/forms/formatters.js';
+import { Icon } from '../display/index.js';
 
 interface Props {
   /** Field name */
   name: string;
   /** Field label */
   label?: string;
-  /** Description for voice extraction */
+  /** Description for LLM field extraction */
   description?: string;
+  /** Input type */
+  type?: 'text' | 'email';
   /** Placeholder text */
   placeholder?: string;
   /** Current value (bindable) */
   value?: string;
-  /** Number of rows */
-  rows?: number;
   /** Disabled state */
   disabled?: boolean;
   /** Required field */
@@ -37,9 +37,9 @@ let {
   name,
   label,
   description,
+  type = 'text',
   placeholder = '',
   value = $bindable(''),
-  rows = 4,
   disabled = false,
   required = false,
   appendMode = false,
@@ -50,7 +50,7 @@ const app = useAppState();
 const stt = useSTT();
 const formContext = tryGetFormContext();
 
-let textareaEl: HTMLTextAreaElement | null = $state(null);
+let inputEl: HTMLInputElement | null = $state(null);
 let isHolding = $state(false);
 let isProcessing = $state(false);
 let isFocused = $state(false);
@@ -58,13 +58,26 @@ let valueBeforeRecording = '';
 let processError = $state<string | null>(null);
 let recordingStartTime = 0;
 
+// Minimum hold time in ms before processing (prevents accidental clicks)
 const MIN_HOLD_TIME = 500;
+// Minimum transcript length to process
 const MIN_TRANSCRIPT_LENGTH = 2;
 
+// Check if we're in smrt mode
 const isSmrt = $derived(app.state.mode === 'smrt');
+
+// Track STT initialization and download progress
 const isInitializing = $derived(stt.isInitializing);
 const downloadProgress = $derived(stt.downloadProgress);
 
+// Validation
+const isValidEmail = $derived.by(() => {
+  if (type !== 'email' || !value) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+});
+const showInvalid = $derived(type === 'email' && value && !isValidEmail);
+
+// Helper to update value (works with $bindable)
 function updateValue(newValue: string) {
   value = newValue;
   onchange?.(value);
@@ -75,15 +88,11 @@ onMount(() => {
   if (formContext) {
     const fieldDef: FieldDefinition = {
       name,
-      type: 'textarea',
+      type: type === 'email' ? 'email' : 'text',
       label,
       description,
       setValue: (v: unknown) => {
-        if (appendMode && value) {
-          updateValue(`${value}\n${String(v ?? '')}`);
-        } else {
-          updateValue(String(v ?? ''));
-        }
+        updateValue(String(v ?? ''));
       },
       getValue: () => value,
     };
@@ -100,15 +109,18 @@ onDestroy(() => {
 async function startHoldRecording() {
   if (!isSmrt || disabled || isProcessing) return;
 
+  // Initialize STT with Whisper v2 for speed + accuracy
   if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
     await stt.initialize({ type: 'whisper-wasm' });
   }
 
+  // Store current value for append mode
   valueBeforeRecording = value;
   processError = null;
   recordingStartTime = Date.now();
   isHolding = true;
 
+  // Use continuous mode to capture all speech while holding
   await stt.start({ continuous: true, interimResults: false });
 }
 
@@ -139,12 +151,15 @@ async function stopHoldRecording() {
   processError = null;
 
   try {
-    const formattedValue = formatText(finalTranscript);
+    const validatedValue =
+      type === 'email'
+        ? formatEmail(finalTranscript)
+        : formatText(finalTranscript);
 
     if (appendMode && valueBeforeRecording) {
-      updateValue(`${valueBeforeRecording}\n${formattedValue}`);
+      updateValue(`${valueBeforeRecording} ${validatedValue}`);
     } else {
-      updateValue(formattedValue);
+      updateValue(validatedValue);
     }
   } catch (err) {
     processError =
@@ -176,16 +191,22 @@ function handleTouchEnd() {
   stopHoldRecording();
 }
 
+function handleMicClick(e: MouseEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
 function handleInput(e: Event) {
-  const target = e.target as HTMLTextAreaElement;
+  const target = e.target as HTMLInputElement;
   updateValue(target.value);
 }
 </script>
 
 <div 
-  class="smrt-text-field multiline" 
+  class="smrt-text-field" 
   class:smrt-mode={isSmrt} 
   class:focused={isFocused} 
+  class:invalid={showInvalid}
   class:disabled
   class:has-value={!!value}
   class:listening={isHolding}
@@ -195,13 +216,13 @@ function handleInput(e: Event) {
       {#if label}
         <label for={name} class="label">{label}{#if required}*{/if}</label>
       {/if}
-      <textarea
-        bind:this={textareaEl}
+      <input
+        bind:this={inputEl}
         id={name}
         {name}
+        type={type}
         placeholder={isFocused ? placeholder : ''}
         {value}
-        {rows}
         disabled={disabled || isProcessing}
         {required}
         class="input"
@@ -213,7 +234,7 @@ function handleInput(e: Event) {
         onmouseleave={isSmrt ? handleMouseLeave : undefined}
         ontouchstart={isSmrt ? handleTouchStart : undefined}
         ontouchend={isSmrt ? handleTouchEnd : undefined}
-      ></textarea>
+      />
     </div>
 
     {#if isSmrt}
@@ -223,6 +244,7 @@ function handleInput(e: Event) {
         class:active={isHolding}
         {disabled}
         use:ripple
+        onclick={handleMicClick}
         onmousedown={(e) => { e.stopPropagation(); if (e.button === 0) startHoldRecording(); }}
         onmouseup={handleMouseUp}
         onmouseleave={handleMouseLeave}
@@ -230,7 +252,7 @@ function handleInput(e: Event) {
         ontouchend={handleTouchEnd}
         aria-label="Hold to speak"
       >
-        <SMRTIcon name="mic" size={20} />
+        <Icon name="mic" size={20} />
       </button>
     {/if}
 
@@ -246,6 +268,8 @@ function handleInput(e: Event) {
       <span class="info">Processing...</span>
     {:else if processError}
       <span class="error">{processError}</span>
+    {:else if showInvalid}
+      <span class="error">Invalid email address</span>
     {:else if description && isFocused}
       <span class="info">{description}</span>
     {/if}
@@ -261,12 +285,13 @@ function handleInput(e: Event) {
     display: flex;
     flex-direction: column;
     width: 100%;
+    min-width: 240px;
   }
 
   .container {
     position: relative;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     background-color: var(--field-bg);
     border-radius: 4px 4px 0 0;
     min-height: 56px;
@@ -282,8 +307,9 @@ function handleInput(e: Event) {
     flex: 1;
     display: flex;
     flex-direction: column;
+    justify-content: center;
+    height: 100%;
     padding-top: 8px;
-    padding-bottom: 8px;
   }
 
   .label {
@@ -294,11 +320,11 @@ function handleInput(e: Event) {
     pointer-events: none;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     transform-origin: top left;
-    margin-bottom: 4px;
   }
 
+  /* Label float logic */
   .focused .label, .has-value .label, .listening .label {
-    transform: translateY(-4px) scale(0.75);
+    transform: translateY(-8px) scale(0.75);
     color: var(--field-active);
   }
 
@@ -312,8 +338,7 @@ function handleInput(e: Event) {
     width: 100%;
     padding: 0;
     margin: 0;
-    resize: vertical;
-    font-family: inherit;
+    height: 24px;
   }
 
   .input:focus {
@@ -347,7 +372,6 @@ function handleInput(e: Event) {
     border-radius: 50%;
     cursor: pointer;
     margin-right: -8px;
-    margin-top: 8px;
     transition: all 200ms;
   }
 
@@ -366,6 +390,12 @@ function handleInput(e: Event) {
   .error { color: var(--md-sys-color-error); }
   .success { color: var(--md-sys-color-primary); }
 
+  /* States */
+  .invalid {
+    --field-active: var(--md-sys-color-error);
+    --field-color: var(--md-sys-color-error);
+  }
+
   .listening {
     background-color: var(--md-sys-color-primary-container);
   }
@@ -373,9 +403,5 @@ function handleInput(e: Event) {
   .disabled {
     opacity: 0.38;
     pointer-events: none;
-  }
-
-  .smrt-mode {
-    --field-active: var(--md-sys-color-tertiary);
   }
 </style>

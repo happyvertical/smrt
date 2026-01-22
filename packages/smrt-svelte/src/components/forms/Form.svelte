@@ -64,7 +64,7 @@ const isSmrt = $derived(app.state.mode === 'smrt');
 // Create form context
 const formContext: SMRTFormContext = {
   get mode() {
-    return app.state.mode === 'smrt' ? 'smrt' : 'dumb';
+    return app.state.mode === 'smrt' ? 'smrt' : 'default';
   },
   registerField(field: FieldDefinition) {
     fields.set(field.name, field);
@@ -505,7 +505,7 @@ onDestroy(() => {
 });
 
 function handleModeToggle() {
-  const newMode = app.state.mode === 'smrt' ? 'dumb' : 'smrt';
+  const newMode = app.state.mode === 'smrt' ? 'default' : 'smrt';
   app.setMode(newMode);
 }
 
