@@ -299,48 +299,59 @@ export function formatDataJs(
     // These are special STI/framework fields that should not be camelCased
     const camelKey = key.startsWith('_') ? key : toCamelCase(key);
 
+    // Determine the actual output key based on what's in fields
+    // If the original key (snake_case) is in fields, use it; otherwise use camelCase
+    // This supports both conventions (e.g., publish_date vs publishDate)
+    let outputKey = camelKey;
+    if (fields && key in fields && !(camelKey in fields)) {
+      // Original key exists in fields but camelCase doesn't - use original (snake_case)
+      outputKey = key;
+    }
+
+    // Get field type from fields, trying both key variants
+    const fieldDef = fields?.[outputKey] ?? fields?.[camelKey] ?? fields?.[key];
+    const fieldType = fieldDef?.type?.toLowerCase();
+
     if (value instanceof Date) {
-      normalizedData[camelKey] = value;
+      normalizedData[outputKey] = value;
     } else if (typeof value === 'string') {
       // Use field definitions if available, otherwise fall back to name patterns
-      const fieldType = fields?.[camelKey]?.type?.toLowerCase();
       const isDate = fieldType === 'datetime' || isDateField(key);
 
       if (isDate) {
-        normalizedData[camelKey] = new Date(value);
+        normalizedData[outputKey] = new Date(value);
       } else if (fieldType === 'json') {
         // Parse JSON strings back to objects
         try {
-          normalizedData[camelKey] = JSON.parse(value);
+          normalizedData[outputKey] = JSON.parse(value);
         } catch {
           // Keep as string if parsing fails
-          normalizedData[camelKey] = value;
+          normalizedData[outputKey] = value;
         }
       } else if (fieldType === 'integer') {
         // Convert string numbers to integers for INTEGER fields
         // SQLite may return "2.0" as a string in some cases
         const parsed = Number.parseInt(value, 10);
-        normalizedData[camelKey] = Number.isNaN(parsed) ? value : parsed;
+        normalizedData[outputKey] = Number.isNaN(parsed) ? value : parsed;
       } else if (fieldType === 'real' || fieldType === 'decimal') {
         // Convert string numbers to floats for REAL/DECIMAL fields
         const parsed = Number.parseFloat(value);
-        normalizedData[camelKey] = Number.isNaN(parsed) ? value : parsed;
+        normalizedData[outputKey] = Number.isNaN(parsed) ? value : parsed;
       } else {
-        normalizedData[camelKey] = value;
+        normalizedData[outputKey] = value;
       }
     } else if (typeof value === 'number') {
-      const fieldType = fields?.[camelKey]?.type?.toLowerCase();
       if (fieldType === 'boolean') {
         // Convert SQLite integers (0/1) to booleans for boolean fields
-        normalizedData[camelKey] = value === 1;
+        normalizedData[outputKey] = value === 1;
       } else {
         // Pass through numeric values as-is
         // Note: In JavaScript, 2.0 === 2 so no conversion needed
         // Non-integers in INTEGER fields (e.g., 2.9) are kept to surface data issues
-        normalizedData[camelKey] = value;
+        normalizedData[outputKey] = value;
       }
     } else {
-      normalizedData[camelKey] = value;
+      normalizedData[outputKey] = value;
     }
   }
 
