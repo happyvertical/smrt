@@ -85,11 +85,15 @@ jobs:
       - name: Format check
         run: pnpm run format-check
 
-  test:
-    name: Test
+  test-core:
+    name: Test Core (${{ matrix.shard }})
     needs: build
     runs-on: arc-happyvertical
-    timeout-minutes: 15
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/3', '2/3', '3/3']
 
     steps:
       - name: Checkout repository
@@ -108,8 +112,48 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run tests
-        run: pnpm turbo run test
+      - name: Generate test manifest and run core tests (shard ${{ matrix.shard }})
+        working-directory: packages/core
+        run: node scripts/generate-test-manifest.js && npx vitest run --shard=${{ matrix.shard }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+
+      - name: Upload core test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-core-${{ strategy.job-index }}
+          path: |
+            packages/core/coverage/
+            packages/core/test-results/
+          retention-days: 7
+
+  test-packages:
+    name: Test Packages
+    needs: build
+    runs-on: arc-happyvertical
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore build from cache
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run package tests (excluding core)
+        run: pnpm turbo run test --filter='!@happyvertical/smrt-core'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
