@@ -40,6 +40,12 @@ export interface BaseBrowserAIOptions {
   onProgress?: OnProgress;
   /** Timeout for initialization in ms */
   timeout?: number;
+  /**
+   * Whether to allow loading models from local /models/ path.
+   * When false, models are loaded from remote CDN (HuggingFace Hub).
+   * @default false - Use remote models by default to avoid 404s
+   */
+  allowLocalModels?: boolean;
 }
 
 /**

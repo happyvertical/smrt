@@ -164,11 +164,13 @@ export class WhisperWasmSTTAdapter implements STTAdapter {
     try {
       // Try v2 (@xenova/transformers) first
       this.transformersModule = await import('@xenova/transformers');
+      this.configureTransformersEnv(this.transformersModule);
       return this.transformersModule;
     } catch {
       try {
         // Fall back to v3 (@huggingface/transformers)
         this.transformersModule = await import('@huggingface/transformers');
+        this.configureTransformersEnv(this.transformersModule);
         return this.transformersModule;
       } catch {
         throw new InitializationError(
@@ -176,6 +178,25 @@ export class WhisperWasmSTTAdapter implements STTAdapter {
           'Neither @xenova/transformers nor @huggingface/transformers installed.',
         );
       }
+    }
+  }
+
+  /**
+   * Configure transformers.js environment settings
+   */
+  private configureTransformersEnv(transformers: any): void {
+    if (transformers.env) {
+      // Default to remote models unless explicitly allowing local
+      const allowLocal = this.options.allowLocalModels ?? false;
+      transformers.env.allowLocalModels = allowLocal;
+
+      // Always use browser cache for better performance
+      transformers.env.useBrowserCache = true;
+
+      console.log('[Whisper v2] Configured env:', {
+        allowLocalModels: allowLocal,
+        useBrowserCache: true,
+      });
     }
   }
 
