@@ -15,6 +15,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
   SmrtVisibility,
+  ValidationRule,
 } from './types';
 
 // Create require function for synchronous module loading in ESM context
@@ -165,11 +166,120 @@ export class ManifestGenerator {
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
 
-    // Third pass: Generate schemas for each object (build-time schema generation)
+    // Third pass: Generate validation rules for all objects
+    // This pre-computes validation rules from field definitions, eliminating
+    // the need to compile validator closures at runtime (Issue #782)
+    this.generateValidationRules(manifest);
+
+    // Fourth pass: Generate schemas for each object (build-time schema generation)
     // This pre-computes DDL, indexes, and columns for efficient external package consumption
     this.generateSchemas(manifest);
 
     return manifest;
+  }
+
+  /**
+   * Generate pre-computed validation rules for all objects in the manifest.
+   *
+   * This extracts validation constraints (required, min, max, minLength, maxLength, pattern)
+   * from field definitions and stores them as serializable rules in the manifest.
+   *
+   * At runtime, these rules can be evaluated without creating validator closures,
+   * significantly reducing CLI startup time for projects with many SMRT objects.
+   *
+   * @param manifest - The manifest to process in-place
+   */
+  generateValidationRules(manifest: SmartObjectManifest): void {
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      const rules: ValidationRule[] = [];
+
+      for (const [fieldName, field] of Object.entries(obj.fields)) {
+        // Skip transient fields (they're not persisted, so no validation needed)
+        if (field.transient || field._meta?.transient) {
+          continue;
+        }
+
+        const options = field._meta || {};
+
+        // Required field rule
+        if (options.required || field.required) {
+          rules.push({
+            field: fieldName,
+            rule: 'required',
+            fieldType: field.type,
+          });
+        }
+
+        // Numeric range rules (for integer, decimal fields)
+        if (field.type === 'integer' || field.type === 'decimal') {
+          if (options.min !== undefined || field.min !== undefined) {
+            rules.push({
+              field: fieldName,
+              rule: 'min',
+              value: options.min ?? field.min,
+              fieldType: field.type,
+            });
+          }
+
+          if (options.max !== undefined || field.max !== undefined) {
+            rules.push({
+              field: fieldName,
+              rule: 'max',
+              value: options.max ?? field.max,
+              fieldType: field.type,
+            });
+          }
+        }
+
+        // String length rules (for text fields)
+        if (field.type === 'text') {
+          if (
+            options.minLength !== undefined ||
+            field.minLength !== undefined
+          ) {
+            rules.push({
+              field: fieldName,
+              rule: 'minLength',
+              value: options.minLength ?? field.minLength,
+              fieldType: field.type,
+            });
+          }
+
+          if (
+            options.maxLength !== undefined ||
+            field.maxLength !== undefined
+          ) {
+            rules.push({
+              field: fieldName,
+              rule: 'maxLength',
+              value: options.maxLength ?? field.maxLength,
+              fieldType: field.type,
+            });
+          }
+
+          // Pattern rule (regex validation)
+          if (options.pattern) {
+            rules.push({
+              field: fieldName,
+              rule: 'pattern',
+              value:
+                typeof options.pattern === 'string'
+                  ? options.pattern
+                  : options.pattern.source,
+              fieldType: field.type,
+            });
+          }
+        }
+      }
+
+      // Only add validationRules if there are any rules
+      if (rules.length > 0) {
+        obj.validationRules = rules;
+        console.log(
+          `[manifest-generator] Generated ${rules.length} validation rules for ${name}`,
+        );
+      }
+    }
   }
 
   /**

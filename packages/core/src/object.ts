@@ -1094,8 +1094,27 @@ export class SmrtObject extends SmrtClass {
    * Override in subclasses to add custom validation logic
    */
   protected async validateBeforeSave(): Promise<void> {
-    // Use cached validators from ObjectRegistry for efficient validation
-    const validators = ObjectRegistry.getValidators(this.constructor.name);
+    const className = this.constructor.name;
+
+    // Priority 1: Use pre-computed validation rules from manifest (Issue #782)
+    // This is the fastest path - rules are serializable and don't require closures
+    const validationRules = ObjectRegistry.getValidationRules(className);
+
+    if (validationRules && validationRules.length > 0) {
+      const errors = await ObjectRegistry.validateWithRules(
+        this,
+        validationRules,
+        className,
+      );
+
+      if (errors.length > 0) {
+        throw errors[0];
+      }
+      return;
+    }
+
+    // Priority 2: Use compiled validators (backward compatibility)
+    const validators = ObjectRegistry.getValidators(className);
 
     if (validators && validators.length > 0) {
       // Execute all cached validators
@@ -1113,21 +1132,19 @@ export class SmrtObject extends SmrtClass {
       if (errors.length > 0) {
         throw errors[0];
       }
-    } else {
-      // Fallback to old validation logic if no cached validators
-      // (for classes not registered with ObjectRegistry)
-      const fields = await fieldsFromClass(this.constructor as any);
+      return;
+    }
 
-      for (const [fieldName, field] of Object.entries(fields)) {
-        // With decorators, field definitions are plain objects with nested options
-        if ((field as any).options?.required) {
-          const value = this.getFieldValue(fieldName);
-          if (value === null || value === undefined || value === '') {
-            throw ValidationError.requiredField(
-              fieldName,
-              this.constructor.name,
-            );
-          }
+    // Priority 3: Fallback to old validation logic if no cached validators
+    // (for classes not registered with ObjectRegistry)
+    const fields = await fieldsFromClass(this.constructor as any);
+
+    for (const [fieldName, field] of Object.entries(fields)) {
+      // With decorators, field definitions are plain objects with nested options
+      if ((field as any).options?.required) {
+        const value = this.getFieldValue(fieldName);
+        if (value === null || value === undefined || value === '') {
+          throw ValidationError.requiredField(fieldName, className);
         }
       }
     }
