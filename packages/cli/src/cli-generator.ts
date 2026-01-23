@@ -120,6 +120,8 @@ export interface CLIContext {
     id: string;
     roles?: string[];
   };
+  /** Timing data for --timing flag */
+  timing?: Record<string, number>;
 }
 
 // Re-export Command as CLICommand for backward compatibility
@@ -136,6 +138,12 @@ export class CLIGenerator {
   private context: CLIContext;
   private collections = new Map<string, SmrtCollection<any>>();
   private commandCache: CLICommand[] | null = null;
+  /** Lazy-loaded cache for object commands (key: objectName lowercase) */
+  private objectCommandsCache = new Map<string, CLICommand[]>();
+  /** Set of registered object names (lowercase) for quick lookup */
+  private registeredObjectNames: Set<string> | null = null;
+  /** Whether manifest/classes have been loaded */
+  private manifestLoaded = false;
 
   constructor(config: CLIConfig = {}, context: CLIContext = {}) {
     this.config = {
@@ -181,22 +189,35 @@ export class CLIGenerator {
    * (from packages in .smrt/manifest.json) to enable full CLI functionality.
    */
   private async tryLoadUserClasses(): Promise<void> {
-    console.log('[CLI DEBUG] tryLoadUserClasses() called');
+    const verbose =
+      process.env.SMRT_VERBOSE === 'true' ||
+      process.env.DEBUG?.includes('smrt');
+
+    if (verbose) {
+      console.log('[CLI] tryLoadUserClasses() called');
+    }
+
     try {
       // 1. Load local classes (existing code)
       // Wrap in try/catch so failures don't prevent loading external classes
       try {
-        console.log('[CLI DEBUG] Loading local classes...');
+        if (verbose) {
+          console.log('[CLI] Loading local classes...');
+        }
         await this.loadLocalClasses();
       } catch (localError) {
-        console.log(
-          '[CLI DEBUG] Local class loading failed (this is OK if using external packages only):',
-          localError instanceof Error ? localError.message : 'Unknown error',
-        );
+        if (verbose) {
+          console.log(
+            '[CLI] Local class loading failed (this is OK if using external packages only):',
+            localError instanceof Error ? localError.message : 'Unknown error',
+          );
+        }
       }
 
-      // 2. NEW: Load classes from external packages
-      console.log('[CLI DEBUG] Loading external classes...');
+      // 2. Load classes from external packages
+      if (verbose) {
+        console.log('[CLI] Loading external classes...');
+      }
       await this.loadExternalClasses();
 
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -204,16 +225,16 @@ export class CLIGenerator {
       const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
 
       const registeredCount = ObjectRegistry.getAllClasses().size;
-      console.log(
-        `[CLI DEBUG] Successfully loaded ${registeredCount} SMRT objects`,
-      );
-      if (config.verbose) {
+      if (verbose || config.verbose) {
         console.log(
           `[CLI] Successfully loaded ${registeredCount} SMRT objects`,
         );
       }
     } catch (error) {
-      console.error('[CLI DEBUG] ERROR in tryLoadUserClasses:', error);
+      if (verbose) {
+        console.error('[CLI] ERROR in tryLoadUserClasses:', error);
+      }
+
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
       const { DEFAULT_CLI_CONFIG } = await import('./config.js');
       const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
@@ -463,38 +484,34 @@ export class CLIGenerator {
   }
 
   /**
-   * Generate all CLI commands
+   * Ensure manifest and user classes are loaded.
+   * This is the minimum required work before any command can be executed.
+   * Separated from command generation to enable lazy command loading.
    */
-  private async generateCommands(): Promise<CLICommand[]> {
-    // Return cached commands if already generated (prevents duplicate execution)
-    if (this.commandCache) {
-      console.log('[CLI DEBUG] generateCommands() returning cached commands');
-      return this.commandCache;
+  private async ensureManifestLoaded(): Promise<void> {
+    if (this.manifestLoaded) {
+      return;
     }
 
-    console.log('[CLI DEBUG] generateCommands() starting');
-    const commands: CLICommand[] = [];
-    const commandNames = new Set<string>(); // Track registered command names
+    const timing = this.context.timing;
+    const verbose =
+      process.env.SMRT_VERBOSE === 'true' ||
+      process.env.DEBUG?.includes('smrt');
 
-    // IMPORTANT: Load local project manifest before generating commands
-    // This populates ObjectRegistry with objects from the user's project
-    // Without this, the CLI would only see core framework objects
+    // Load local project manifest
     const manifest = loadLocalTestManifestSync();
-    console.log(
-      '[CLI DEBUG] Manifest loaded:',
-      manifest
-        ? `${Object.keys(manifest.objects || {}).length} objects`
-        : 'null',
-    );
+    if (verbose) {
+      console.log(
+        '[CLI] Manifest loaded:',
+        manifest
+          ? `${Object.keys(manifest.objects || {}).length} objects`
+          : 'null',
+      );
+    }
 
     if (manifest?.objects) {
-      console.log('[CLI DEBUG] Entering manifest processing block');
-      // Register objects from manifest so they're available in ObjectRegistry
-      // This enables the CLI to generate commands for user-defined SMRT objects
+      // Register objects from manifest
       for (const [name, objectDef] of Object.entries(manifest.objects)) {
-        // Register with stub constructor - we don't need the actual class
-        // for CLI generation, just the metadata (fields, methods, config)
-        // registerFromManifest handles duplicate checking internally
         ObjectRegistry.registerFromManifest(
           name,
           objectDef,
@@ -503,40 +520,192 @@ export class CLIGenerator {
       }
     }
 
-    // IMPORTANT: Try to load actual compiled classes for runtime execution
-    // This must run even when no local manifest exists - the project may use
-    // external packages (like praeco) that have their own manifests and classes.
-    // The .smrt/register.js file imports these external packages and registers them.
+    // Load actual compiled classes for runtime execution
+    const classLoadStart = timing ? performance.now() : 0;
     await this.tryLoadUserClasses();
+    if (timing) {
+      timing.classLoading = performance.now() - classLoadStart;
+    }
 
+    // Build set of registered object names for quick lookup
     const registeredClasses = ObjectRegistry.getAllClasses();
+    this.registeredObjectNames = new Set(
+      Array.from(registeredClasses.keys()).map((name) => name.toLowerCase()),
+    );
 
-    // Generate object commands (with duplicate detection)
-    for (const [name, classInfo] of registeredClasses) {
-      const objectCommands = await this.generateObjectCommands(name, classInfo);
-      for (const cmd of objectCommands) {
-        if (commandNames.has(cmd.name)) {
-          console.warn(`[CLI] Skipping duplicate command: ${cmd.name}`);
-          continue;
-        }
-        commandNames.add(cmd.name);
-        commands.push(cmd);
+    this.manifestLoaded = true;
+  }
+
+  /**
+   * Get commands for a specific object (lazy generation with caching)
+   */
+  private async getObjectCommandsLazy(
+    objectName: string,
+  ): Promise<CLICommand[]> {
+    const lowerName = objectName.toLowerCase();
+
+    // Return cached commands if available
+    if (this.objectCommandsCache.has(lowerName)) {
+      return this.objectCommandsCache.get(lowerName)!;
+    }
+
+    // Find the actual registered name (may have different casing)
+    const registeredClasses = ObjectRegistry.getAllClasses();
+    let actualName: string | undefined;
+    for (const name of registeredClasses.keys()) {
+      if (name.toLowerCase() === lowerName) {
+        actualName = name;
+        break;
       }
     }
+
+    if (!actualName) {
+      return [];
+    }
+
+    // Generate commands for this object
+    const classInfo = registeredClasses.get(actualName);
+    const commands = await this.generateObjectCommands(actualName, classInfo);
+
+    // Cache the commands
+    this.objectCommandsCache.set(lowerName, commands);
+
+    return commands;
+  }
+
+  /**
+   * Find an object command by name (lazy lookup)
+   */
+  private async findObjectCommand(
+    commandName: string,
+  ): Promise<CLICommand | undefined> {
+    // Parse command name to extract object name
+    // Format: objectname:action (e.g., council:list, event:get)
+    const colonIndex = commandName.indexOf(':');
+    if (colonIndex === -1) {
+      return undefined;
+    }
+
+    const objectName = commandName.slice(0, colonIndex);
+
+    // Ensure manifest is loaded so we know what objects exist
+    await this.ensureManifestLoaded();
+
+    // Check if this is a known object
+    if (!this.registeredObjectNames?.has(objectName.toLowerCase())) {
+      return undefined;
+    }
+
+    // Get commands for this object (lazy generation)
+    const objectCommands = await this.getObjectCommandsLazy(objectName);
+
+    // Find the specific command
+    return objectCommands.find(
+      (cmd) => cmd.name === commandName || cmd.aliases?.includes(commandName),
+    );
+  }
+
+  /**
+   * Generate all CLI commands
+   *
+   * NOTE: Object commands are now loaded LAZILY for better startup performance.
+   * This method only generates utility commands upfront. Object commands are
+   * generated on-demand when executeCommand() looks for them.
+   *
+   * For full command list (e.g., help display), use generateAllCommands().
+   */
+  private async generateCommands(): Promise<CLICommand[]> {
+    const timing = this.context.timing;
+    const verbose =
+      process.env.SMRT_VERBOSE === 'true' ||
+      process.env.DEBUG?.includes('smrt');
+
+    // Return cached commands if already generated (prevents duplicate execution)
+    if (this.commandCache) {
+      if (verbose) {
+        console.log('[CLI] generateCommands() returning cached commands');
+      }
+      return this.commandCache;
+    }
+
+    if (verbose) {
+      console.log('[CLI] generateCommands() starting (lazy mode)');
+    }
+
+    // Ensure manifest and classes are loaded
+    await this.ensureManifestLoaded();
+
+    // Start timing AFTER class loading to measure only command generation
+    const commandGenStart = timing ? performance.now() : 0;
+
+    // Only generate utility commands upfront (small fixed set)
+    // Object commands are generated lazily when needed
+    const commands: CLICommand[] = [];
+    const commandNames = new Set<string>();
 
     // Add utility commands (with duplicate detection)
     for (const cmd of this.generateUtilityCommands()) {
       if (commandNames.has(cmd.name)) {
-        console.warn(`[CLI] Skipping duplicate utility command: ${cmd.name}`);
+        if (verbose) {
+          console.warn(`[CLI] Skipping duplicate utility command: ${cmd.name}`);
+        }
         continue;
       }
       commandNames.add(cmd.name);
       commands.push(cmd);
     }
 
+    // Record timing
+    if (timing) {
+      timing.commandGen = performance.now() - commandGenStart;
+    }
+
     // Cache the commands to prevent duplicate generation
     this.commandCache = commands;
     return commands;
+  }
+
+  /**
+   * Generate ALL commands including lazy-loaded object commands.
+   * Used for help display where we need the complete list.
+   */
+  private async generateAllCommands(): Promise<CLICommand[]> {
+    const verbose =
+      process.env.SMRT_VERBOSE === 'true' ||
+      process.env.DEBUG?.includes('smrt');
+
+    if (verbose) {
+      console.log('[CLI] generateAllCommands() - loading all object commands');
+    }
+
+    // Ensure manifest and classes are loaded
+    await this.ensureManifestLoaded();
+
+    // Start with utility commands
+    const allCommands: CLICommand[] = [];
+    const commandNames = new Set<string>();
+
+    // Add utility commands first
+    for (const cmd of this.generateUtilityCommands()) {
+      if (!commandNames.has(cmd.name)) {
+        commandNames.add(cmd.name);
+        allCommands.push(cmd);
+      }
+    }
+
+    // Generate all object commands
+    const registeredClasses = ObjectRegistry.getAllClasses();
+    for (const [name, classInfo] of registeredClasses) {
+      const objectCommands = await this.getObjectCommandsLazy(name);
+      for (const cmd of objectCommands) {
+        if (!commandNames.has(cmd.name)) {
+          commandNames.add(cmd.name);
+          allCommands.push(cmd);
+        }
+      }
+    }
+
+    return allCommands;
   }
 
   /**
@@ -835,16 +1004,23 @@ export class CLIGenerator {
     commands: CLICommand[],
   ): Promise<void> {
     if (!parsed.command) {
-      await this.showHelp(commands);
+      // For help, we need all commands
+      const allCommands = await this.generateAllCommands();
+      await this.showHelp(allCommands);
       return;
     }
 
-    // First check auto-generated object commands (no dependencies to load)
-    const command = commands.find(
+    // First check utility commands from the passed array (already generated)
+    let command = commands.find(
       (cmd) =>
         cmd.name === parsed.command ||
         (parsed.command && cmd.aliases && cmd.aliases.includes(parsed.command)),
     );
+
+    // If not found in utility commands, try lazy-loading object commands
+    if (!command && parsed.command) {
+      command = await this.findObjectCommand(parsed.command);
+    }
 
     if (command) {
       // Validate required arguments (args wrapped in [...] are optional)
@@ -947,13 +1123,16 @@ export class CLIGenerator {
     }
 
     // Check if the command matches a registered object name (show help for that object)
+    await this.ensureManifestLoaded();
     const registeredClasses = ObjectRegistry.getAllClasses();
     const matchingObject = Array.from(registeredClasses.keys()).find(
       (name) => name.toLowerCase() === parsed.command?.toLowerCase(),
     );
 
     if (matchingObject) {
-      await this.showObjectHelp(matchingObject, commands);
+      // Lazy load just this object's commands for help
+      const objectCommands = await this.getObjectCommandsLazy(matchingObject);
+      await this.showObjectHelp(matchingObject, objectCommands);
       return;
     }
 
@@ -966,7 +1145,7 @@ export class CLIGenerator {
    */
   private async showObjectHelp(
     objectName: string,
-    allCommands: CLICommand[],
+    objectCommands: CLICommand[],
   ): Promise<void> {
     const classInfo = ObjectRegistry.getClass(objectName);
     const lowerName = objectName.toLowerCase();
@@ -977,13 +1156,6 @@ export class CLIGenerator {
     if (classInfo?.packageName) {
       console.log(`Package: ${classInfo.packageName}`);
     }
-
-    // Find all commands for this object
-    const objectCommands = allCommands.filter(
-      (cmd) =>
-        cmd.name.startsWith(`${lowerName}:`) ||
-        cmd.aliases?.some((a) => a.startsWith(`${lowerName}:`)),
-    );
 
     if (objectCommands.length === 0) {
       console.log('\nNo CLI commands available for this object.');
@@ -2142,9 +2314,19 @@ export class CLIGenerator {
 
 // CLI Binary Entry Point
 export async function main() {
+  const args = process.argv.slice(2);
+  const timingEnabled = args.includes('--timing');
+  const timing: Record<string, number> = {};
+
+  const startTime = timingEnabled ? performance.now() : 0;
+
   // Initialize smrt-config (loads smrt.config.js if present)
+  const configStart = timingEnabled ? performance.now() : 0;
   const { loadConfig } = await import('@happyvertical/smrt-config');
   await loadConfig({ cache: true });
+  if (timingEnabled) {
+    timing.config = performance.now() - configStart;
+  }
 
   const config: CLIConfig = {
     name: 'smrt',
@@ -2156,22 +2338,37 @@ export async function main() {
 
   const context: CLIContext = {
     // db and ai can be configured via environment or initialized here
+    timing: timingEnabled ? timing : undefined,
   };
 
   const cli = new CLIGenerator(config, context);
   const handler = cli.generateHandler();
 
-  // Remove 'node' and script name from argv
-  const args = process.argv.slice(2);
+  // Remove --timing from args before passing to handler
+  const filteredArgs = args.filter((arg) => arg !== '--timing');
 
   try {
-    await handler(args);
+    await handler(filteredArgs);
   } catch (error) {
     console.error(
       'CLI Error:',
       error instanceof Error ? error.message : 'Unknown error',
     );
     process.exit(1);
+  }
+
+  // Print timing summary if enabled
+  if (timingEnabled) {
+    timing.total = performance.now() - startTime;
+    console.log('\n⏱  Startup Timing:');
+    console.log(`   Config load:      ${timing.config?.toFixed(0) ?? 'N/A'}ms`);
+    console.log(
+      `   Class loading:    ${timing.classLoading?.toFixed(0) ?? 'N/A'}ms`,
+    );
+    console.log(
+      `   Command gen:      ${timing.commandGen?.toFixed(0) ?? 'N/A'}ms`,
+    );
+    console.log(`   Total startup:    ${timing.total.toFixed(0)}ms`);
   }
 }
 
