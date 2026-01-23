@@ -260,7 +260,8 @@ export class ManifestGenerator {
           // Pattern rule (regex validation)
           // Note: Custom validator functions (options.validate) cannot be serialized
           // and will fall back to compiled validators at runtime
-          const pattern = options.pattern ?? field.pattern;
+          // Note: Pattern is only available in field options, not in FieldDefinition
+          const pattern = options.pattern;
           if (pattern) {
             rules.push({
               field: fieldName,
