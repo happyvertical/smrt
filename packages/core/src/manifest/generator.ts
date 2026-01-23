@@ -215,7 +215,11 @@ export class ManifestBuilder {
     // Scan for SMRT imports if tree shaking is enabled
     let smrtImports: Map<string, Set<string>> | undefined;
     if (options.treeShake) {
-      console.log('[smrt] Tree shaking enabled, scanning for SMRT imports...');
+      if (process.env.DEBUG_MANIFEST) {
+        console.log(
+          '[smrt] Tree shaking enabled, scanning for SMRT imports...',
+        );
+      }
       smrtImports = scanner.scanSmrtImports();
     }
 
@@ -276,7 +280,13 @@ export class ManifestBuilder {
 
             // Apply tree shaking filter if enabled
             if (allowedClasses) {
-              if (!this.isClassAllowed(obj.className, key, allowedClasses)) {
+              if (
+                !this.isClassAllowed(
+                  obj.className,
+                  obj.qualifiedName ?? obj.className,
+                  allowedClasses,
+                )
+              ) {
                 excludedCount++;
                 continue;
               }
@@ -289,7 +299,7 @@ export class ManifestBuilder {
       }
 
       // Log filtering results
-      if (shouldFilter) {
+      if (shouldFilter && process.env.DEBUG_MANIFEST) {
         console.log(
           `[smrt] Tree shaking: included ${includedCount} external object(s), excluded ${excludedCount}`,
         );
@@ -334,16 +344,21 @@ export class ManifestBuilder {
         if (className.includes(':')) {
           // Qualified name like "@happyvertical/smrt-profiles:Person"
           allowed.add(className);
-          // Also add simple name for matching
-          const simpleName = className.split(':')[1];
-          allowed.add(simpleName);
+          // Also add simple name for matching (use last segment for multi-colon names)
+          const parts = className.split(':');
+          const simpleName = parts[parts.length - 1];
+          if (simpleName) {
+            allowed.add(simpleName);
+          }
         } else {
           allowed.add(className);
         }
       }
-      console.log(
-        `[smrt] Whitelist: ${options.externalObjectsWhitelist.length} class(es)`,
-      );
+      if (process.env.DEBUG_MANIFEST) {
+        console.log(
+          `[smrt] Whitelist: ${options.externalObjectsWhitelist.length} class(es)`,
+        );
+      }
     }
 
     // 2. Add imported classes
@@ -361,7 +376,9 @@ export class ManifestBuilder {
               }
             }
           }
-          console.log(`[smrt] Import wildcard: all classes from ${pkgName}`);
+          if (process.env.DEBUG_MANIFEST) {
+            console.log(`[smrt] Import wildcard: all classes from ${pkgName}`);
+          }
         } else {
           for (const className of classNames) {
             allowed.add(className);
@@ -373,9 +390,11 @@ export class ManifestBuilder {
     // 3. Resolve transitive dependencies
     const resolved = this.resolveTransitiveDependencies(allowed, packages);
 
-    console.log(
-      `[smrt] Allowed classes after dependency resolution: ${resolved.size}`,
-    );
+    if (process.env.DEBUG_MANIFEST) {
+      console.log(
+        `[smrt] Allowed classes after dependency resolution: ${resolved.size}`,
+      );
+    }
 
     return resolved;
   }
@@ -478,8 +497,15 @@ export class ManifestBuilder {
     if (obj.decoratorConfig.tableStrategy !== 'sti') return null;
 
     // Walk up inheritance chain to find the root STI class
+    // Track visited classes to prevent infinite loops
+    const visited = new Set<string>();
     let current = obj;
     while (current.extends) {
+      if (visited.has(current.className)) {
+        // Circular inheritance detected, return current as base
+        break;
+      }
+      visited.add(current.className);
       const parentEntry = externalObjects.get(current.extends);
       if (!parentEntry) break;
       if (parentEntry.obj.decoratorConfig?.tableStrategy !== 'sti') {

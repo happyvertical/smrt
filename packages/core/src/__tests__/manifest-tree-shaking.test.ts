@@ -6,8 +6,7 @@
  */
 
 import { resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ASTScanner } from '../scanner/ast-scanner.js';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Manifest Tree Shaking', () => {
   describe('ASTScanner.scanSmrtImports()', () => {

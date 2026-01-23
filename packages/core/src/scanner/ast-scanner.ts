@@ -262,8 +262,8 @@ export class ASTScanner {
             : element.name.text;
 
           // Skip non-class imports (lowercase = likely utility/function)
-          // Classes are PascalCase
-          if (importedName[0] === importedName[0].toUpperCase()) {
+          // Classes are PascalCase (start with uppercase, alphanumeric)
+          if (/^[A-Z][A-Za-z0-9]*$/.test(importedName)) {
             classSet.add(importedName);
           }
         }
@@ -279,8 +279,8 @@ export class ASTScanner {
     // Handle default import: import SomeClass from '...'
     if (importClause.name) {
       const defaultImportName = importClause.name.text;
-      // Default imports are typically classes
-      if (defaultImportName[0] === defaultImportName[0].toUpperCase()) {
+      // Default imports are typically classes (PascalCase)
+      if (/^[A-Z][A-Za-z0-9]*$/.test(defaultImportName)) {
         classSet.add(defaultImportName);
       }
     }
