@@ -63,6 +63,27 @@ import { LRUCache } from './utils/lru-cache';
 import { createQualifiedName } from './utils/qualified-names.js';
 
 /**
+ * Cached verbose flag evaluated once at module load time.
+ * Checks SMRT_VERBOSE=true or DEBUG containing 'smrt'.
+ * Avoids repeated env var parsing on every log statement.
+ * @see https://github.com/happyvertical/smrt/issues/782
+ */
+const VERBOSE_ENABLED =
+  process.env.SMRT_VERBOSE === 'true' ||
+  (process.env.DEBUG?.includes('smrt') ?? false);
+
+/**
+ * Log a message only when verbose mode is enabled.
+ * Used throughout registry.ts to reduce noise during normal operation.
+ * @param args - Arguments to pass to console.log
+ */
+function verboseLog(...args: unknown[]): void {
+  if (VERBOSE_ENABLED) {
+    console.log(...args);
+  }
+}
+
+/**
  * Extend globalThis to include ObjectRegistry state.
  * Using globalThis ensures all module instances share the same registry,
  * which is critical in monorepos where the same package can be loaded
@@ -126,17 +147,6 @@ function getInheritanceConfig() {
     onMissingAncestor:
       config.inheritance?.onMissingAncestor ?? ('warn' as 'warn' | 'error'),
   };
-}
-
-/**
- * Conditional verbose logging for registry operations.
- * Only logs when SMRT_VERBOSE or DEBUG environment variable is set.
- * This reduces CLI startup noise while allowing debugging when needed.
- */
-function verboseLog(message: string): void {
-  if (process.env.SMRT_VERBOSE || process.env.DEBUG) {
-    console.log(message);
-  }
 }
 
 /**
@@ -969,7 +979,7 @@ export class ObjectRegistry {
         existing.config = { ...existing.config, ...config };
         // Index constructor for O(1) reverse lookups (Issue #713)
         ObjectRegistry.constructorIndex.set(ctor, name);
-        console.log(
+        verboseLog(
           `[registry] Replaced manifest stub with real class: ${name}`,
         );
         return;
@@ -1075,7 +1085,7 @@ export class ObjectRegistry {
           ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
           // Index constructor for O(1) reverse lookups (Issue #713)
           ObjectRegistry.constructorIndex.set(ctor, name);
-          console.log(
+          verboseLog(
             `[registry] Replaced manifest stub '${existingKey}' with real class '${name}'`,
           );
           return;
@@ -1160,12 +1170,12 @@ export class ObjectRegistry {
     const methods = new Map<string, any>();
     let packageName: string | undefined;
 
-    console.log(
+    verboseLog(
       `[registry] Registering ${name}: manifestEntry =`,
       manifestEntry ? 'found' : 'not found',
     );
     if (manifestEntry?.fields) {
-      console.log(
+      verboseLog(
         `[registry] Manifest has ${Object.keys(manifestEntry.fields).length} fields:`,
         Object.keys(manifestEntry.fields),
       );
@@ -1217,7 +1227,7 @@ export class ObjectRegistry {
         fields.set(fieldName, field);
       }
 
-      console.log(
+      verboseLog(
         `[registry] ✅ Loaded ${fields.size} fields for ${name} from manifest`,
       );
 
@@ -1230,7 +1240,7 @@ export class ObjectRegistry {
     } else {
       // No manifest found yet - use package name from stack trace
       // This will be used later by ensureManifestLoaded() to load the external manifest
-      console.log(
+      verboseLog(
         `[registry] ⚠️  No manifest entry for ${name} - fields will be loaded later`,
       );
       packageName = packageNameFromStack;
@@ -1240,7 +1250,7 @@ export class ObjectRegistry {
     // Decorators take priority over AST-scanned types (Issue #316)
     const decorators = ObjectRegistry.fieldDecorators.get(name);
     if (decorators && decorators.size > 0) {
-      console.log(
+      verboseLog(
         `[registry] Applying ${decorators.size} field decorators for ${name}`,
       );
 
@@ -1290,7 +1300,7 @@ export class ObjectRegistry {
           }
 
           fields.set(fieldName, mergedField);
-          console.log(
+          verboseLog(
             `[registry]   ✅ Merged decorator for ${fieldName}: type=${mergedField.type}`,
           );
         } else {
@@ -1320,7 +1330,7 @@ export class ObjectRegistry {
           }
 
           fields.set(fieldName, newField);
-          console.log(
+          verboseLog(
             `[registry]   ✅ Added field ${fieldName} from decorator: type=${decoratorOptions.type || 'text'}`,
           );
         }
@@ -1358,7 +1368,7 @@ export class ObjectRegistry {
             },
           },
         });
-        console.log(
+        verboseLog(
           `[registry] ✅ Injected ${fieldName} field for tenant-scoped class ${name}`,
         );
       }
@@ -1381,7 +1391,7 @@ export class ObjectRegistry {
       )) {
         methods.set(methodName, methodDef);
       }
-      console.log(
+      verboseLog(
         `[registry] Loaded ${methods.size} methods for ${name} from _manifestMethods`,
       );
     }
@@ -1454,7 +1464,7 @@ export class ObjectRegistry {
         version: manifestEntry.schema.version || '',
         packageName: manifestEntry.packageName,
       };
-      console.log(
+      verboseLog(
         `[registry] Loaded pre-generated schema for ${name} (${Object.keys(manifestEntry.schema.columns || {}).length} columns)`,
       );
     } else {
@@ -1562,7 +1572,7 @@ export class ObjectRegistry {
       // Mark this collection as processed to prevent infinite recursion
       ObjectRegistry.stiSiblingsLoaded.add(collection);
 
-      console.log(
+      verboseLog(
         `[registry] Checking for STI siblings for collection: ${collection}`,
       );
 
@@ -1580,13 +1590,13 @@ export class ObjectRegistry {
             packageName &&
             sibling.packageName === packageName
           ) {
-            console.log(
+            verboseLog(
               `[registry] Skipping STI sibling ${sibling.className} from same package: ${packageName}`,
             );
             continue;
           }
 
-          console.log(
+          verboseLog(
             `[registry] Auto-loading STI sibling: ${sibling.className} for collection: ${collection}`,
           );
           ObjectRegistry.registerFromManifest(
@@ -1725,7 +1735,7 @@ export class ObjectRegistry {
         version: objectDef.schema.version || '',
         packageName: packageName,
       };
-      console.log(
+      verboseLog(
         `[registry] Loaded pre-generated schema for ${name} (${Object.keys(objectDef.schema.columns || {}).length} columns)`,
       );
     } else {
@@ -1789,7 +1799,7 @@ export class ObjectRegistry {
       visibility, // New: Visibility control for manifest filtering
     });
 
-    console.log(
+    verboseLog(
       `📦 Registered ${name} from manifest (${fields.size} fields, ${methods.size} methods)`,
     );
 
@@ -1806,7 +1816,7 @@ export class ObjectRegistry {
       // Mark this collection as processed to prevent infinite recursion
       ObjectRegistry.stiSiblingsLoaded.add(collection);
 
-      console.log(
+      verboseLog(
         `[registry] Checking for STI siblings for collection: ${collection}`,
       );
 
@@ -1824,13 +1834,13 @@ export class ObjectRegistry {
             packageName &&
             sibling.packageName === packageName
           ) {
-            console.log(
+            verboseLog(
               `[registry] Skipping STI sibling ${sibling.className} from same package: ${packageName}`,
             );
             continue;
           }
 
-          console.log(
+          verboseLog(
             `[registry] Auto-loading STI sibling: ${sibling.className} for collection: ${collection}`,
           );
           ObjectRegistry.registerFromManifest(
@@ -2216,7 +2226,7 @@ export class ObjectRegistry {
 
     const smrtPackages = discoverSmrtPackages();
 
-    console.log(
+    verboseLog(
       `[ObjectRegistry] Attempting to auto-load ${className} from ${smrtPackages.length} external packages...`,
     );
 
@@ -2252,7 +2262,7 @@ export class ObjectRegistry {
         continue;
       }
 
-      console.log(
+      verboseLog(
         `[ObjectRegistry] ✅ Found ${className} in ${packageName} manifest`,
       );
 
@@ -2284,7 +2294,7 @@ export class ObjectRegistry {
         }
 
         if (parentDef && !ObjectRegistry.hasClass(objectDef.extends)) {
-          console.log(
+          verboseLog(
             `[ObjectRegistry] Also registering parent class ${objectDef.extends} for STI`,
           );
           ObjectRegistry.registerFromManifest(
@@ -2296,13 +2306,13 @@ export class ObjectRegistry {
 
         // Merge inherited fields from parent into child
         // This ensures STI child classes get all parent fields
-        console.log(
+        verboseLog(
           `[ObjectRegistry] Merging inherited fields for ${className}...`,
         );
         await ObjectRegistry.getAllFields(className);
         const registered = ObjectRegistry.findClass(className);
         if (registered?.inheritedFields) {
-          console.log(
+          verboseLog(
             `[ObjectRegistry] ✅ ${className} now has ${registered.inheritedFields.size} total fields (including inherited)`,
           );
         }
@@ -2311,7 +2321,7 @@ export class ObjectRegistry {
       return true;
     }
 
-    console.log(
+    verboseLog(
       `[ObjectRegistry] ❌ Could not find ${className} in any SMRT package`,
     );
     return false;
@@ -2871,7 +2881,7 @@ export class ObjectRegistry {
         registered.extends = manifestEntry.extends;
       }
 
-      console.log(
+      verboseLog(
         `📦 Loaded manifest for external package class: ${className} (${registered.fields.size} fields, ${registered.methods.size} methods)`,
       );
     } else {
