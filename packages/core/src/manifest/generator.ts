@@ -11,6 +11,7 @@ import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { ScanResult, SmartObjectManifest } from '../scanner/types.js';
 import { discoverSmrtPackages } from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
+import { loadExternalManifestSync } from './manifest-loader.js';
 
 /**
  * Options for ManifestBuilder.generate()
@@ -189,12 +190,27 @@ export class ManifestBuilder {
     // Add module type
     manifest.moduleType = options.moduleType || 'smrt';
 
-    // Add SMRT dependencies (already discovered in configureScanner)
+    // Add SMRT dependencies and aggregate their manifests (Issue #782)
+    // This pre-aggregates all external package objects into a single manifest,
+    // eliminating the need to scan node_modules at runtime
     if (
       scannerConfig.smrtDependencies &&
       scannerConfig.smrtDependencies.length > 0
     ) {
       manifest.smrtDependencies = scannerConfig.smrtDependencies;
+
+      // Merge objects from external packages into this manifest
+      for (const pkgName of scannerConfig.smrtDependencies) {
+        const extManifest = loadExternalManifestSync(pkgName);
+        if (extManifest?.objects) {
+          for (const [key, obj] of Object.entries(extManifest.objects)) {
+            // Don't overwrite local objects with external ones
+            if (!manifest.objects[key]) {
+              manifest.objects[key] = obj;
+            }
+          }
+        }
+      }
     }
 
     // Inject package info

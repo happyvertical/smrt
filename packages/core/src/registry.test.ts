@@ -1062,4 +1062,216 @@ describe('ObjectRegistry', () => {
       expect(fields.get('location')?.type).toBe('text');
     });
   });
+
+  describe('Pre-computed Validation Rules (Issue #782)', () => {
+    // Test class for validation rules
+    @smrt()
+    class ValidationRulesTestProduct extends SmrtObject {
+      name: string = '';
+      price: number = 0.0;
+      quantity: number = 0;
+      sku: string = '';
+    }
+
+    beforeEach(() => {
+      // Register with pre-computed validation rules
+      const fields = new Map();
+      fields.set('name', new Field('text', { required: true, maxLength: 100 }));
+      fields.set('price', new Field('decimal', { min: 0, max: 10000 }));
+      fields.set('quantity', new Field('integer', { min: 0 }));
+      fields.set('sku', new Field('text', { pattern: '^[A-Z]{3}-\\d{4}$' }));
+
+      // Register class
+      ObjectRegistry.register(ValidationRulesTestProduct, {});
+
+      // Manually set fields and validation rules
+      const registered = (ObjectRegistry as any).classes.get(
+        'ValidationRulesTestProduct',
+      );
+      if (registered) {
+        registered.fields = fields;
+        registered.validationRules = [
+          { field: 'name', rule: 'required', fieldType: 'text' },
+          { field: 'name', rule: 'maxLength', value: 100, fieldType: 'text' },
+          { field: 'price', rule: 'min', value: 0, fieldType: 'decimal' },
+          { field: 'price', rule: 'max', value: 10000, fieldType: 'decimal' },
+          { field: 'quantity', rule: 'min', value: 0, fieldType: 'integer' },
+          {
+            field: 'sku',
+            rule: 'pattern',
+            value: '^[A-Z]{3}-\\d{4}$',
+            fieldType: 'text',
+          },
+        ];
+      }
+    });
+
+    it('should return validation rules via getValidationRules()', () => {
+      const rules = ObjectRegistry.getValidationRules(
+        'ValidationRulesTestProduct',
+      );
+
+      expect(rules).toBeDefined();
+      expect(rules).toBeInstanceOf(Array);
+      expect(rules?.length).toBe(6);
+
+      // Check specific rules
+      const requiredRule = rules?.find(
+        (r) => r.field === 'name' && r.rule === 'required',
+      );
+      expect(requiredRule).toBeDefined();
+
+      const maxLengthRule = rules?.find(
+        (r) => r.field === 'name' && r.rule === 'maxLength',
+      );
+      expect(maxLengthRule).toBeDefined();
+      expect(maxLengthRule?.value).toBe(100);
+
+      const patternRule = rules?.find(
+        (r) => r.field === 'sku' && r.rule === 'pattern',
+      );
+      expect(patternRule).toBeDefined();
+      expect(patternRule?.value).toBe('^[A-Z]{3}-\\d{4}$');
+    });
+
+    it('should return undefined for class without validation rules', () => {
+      // Register a class without rules
+      @smrt()
+      class NoRulesClass extends SmrtObject {
+        data: string = '';
+      }
+
+      ObjectRegistry.register(NoRulesClass, {});
+
+      const rules = ObjectRegistry.getValidationRules('NoRulesClass');
+      expect(rules).toBeUndefined();
+    });
+
+    it('should validate required fields with validateWithRules()', async () => {
+      const rules = ObjectRegistry.getValidationRules(
+        'ValidationRulesTestProduct',
+      );
+      const instance = { name: '', price: 10, quantity: 5, sku: 'ABC-1234' };
+
+      const errors = await ObjectRegistry.validateWithRules(
+        instance,
+        rules!,
+        'ValidationRulesTestProduct',
+      );
+
+      expect(errors.length).toBe(1);
+      expect(errors[0].message).toContain('name');
+      expect(errors[0].message.toLowerCase()).toContain('required');
+    });
+
+    it('should validate min constraint with validateWithRules()', async () => {
+      const rules = ObjectRegistry.getValidationRules(
+        'ValidationRulesTestProduct',
+      );
+      const instance = {
+        name: 'Test',
+        price: -5,
+        quantity: -1,
+        sku: 'ABC-1234',
+      };
+
+      const errors = await ObjectRegistry.validateWithRules(
+        instance,
+        rules!,
+        'ValidationRulesTestProduct',
+      );
+
+      expect(errors.length).toBe(2); // price and quantity both below min
+      const priceError = errors.find((e) => e.message.includes('price'));
+      const quantityError = errors.find((e) => e.message.includes('quantity'));
+      expect(priceError).toBeDefined();
+      expect(quantityError).toBeDefined();
+    });
+
+    it('should validate max constraint with validateWithRules()', async () => {
+      const rules = ObjectRegistry.getValidationRules(
+        'ValidationRulesTestProduct',
+      );
+      const instance = {
+        name: 'Test',
+        price: 20000,
+        quantity: 5,
+        sku: 'ABC-1234',
+      };
+
+      const errors = await ObjectRegistry.validateWithRules(
+        instance,
+        rules!,
+        'ValidationRulesTestProduct',
+      );
+
+      expect(errors.length).toBe(1);
+      expect(errors[0].message).toContain('price');
+    });
+
+    it('should validate maxLength constraint with validateWithRules()', async () => {
+      const rules = ObjectRegistry.getValidationRules(
+        'ValidationRulesTestProduct',
+      );
+      const longName = 'A'.repeat(150);
+      const instance = {
+        name: longName,
+        price: 10,
+        quantity: 5,
+        sku: 'ABC-1234',
+      };
+
+      const errors = await ObjectRegistry.validateWithRules(
+        instance,
+        rules!,
+        'ValidationRulesTestProduct',
+      );
+
+      expect(errors.length).toBe(1);
+      expect(errors[0].message).toContain('name');
+      expect(errors[0].message).toContain('maximum length');
+    });
+
+    it('should validate pattern constraint with validateWithRules()', async () => {
+      const rules = ObjectRegistry.getValidationRules(
+        'ValidationRulesTestProduct',
+      );
+      const instance = {
+        name: 'Test',
+        price: 10,
+        quantity: 5,
+        sku: 'invalid-sku',
+      };
+
+      const errors = await ObjectRegistry.validateWithRules(
+        instance,
+        rules!,
+        'ValidationRulesTestProduct',
+      );
+
+      expect(errors.length).toBe(1);
+      expect(errors[0].message).toContain('sku');
+      expect(errors[0].message).toContain('pattern');
+    });
+
+    it('should return no errors for valid data', async () => {
+      const rules = ObjectRegistry.getValidationRules(
+        'ValidationRulesTestProduct',
+      );
+      const instance = {
+        name: 'Valid Product',
+        price: 99.99,
+        quantity: 10,
+        sku: 'ABC-1234',
+      };
+
+      const errors = await ObjectRegistry.validateWithRules(
+        instance,
+        rules!,
+        'ValidationRulesTestProduct',
+      );
+
+      expect(errors.length).toBe(0);
+    });
+  });
 });

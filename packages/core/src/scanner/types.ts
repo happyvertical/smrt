@@ -89,6 +89,37 @@ export interface ManifestSchema {
   version: string; // Hash of schema definition for migration tracking
 }
 
+/**
+ * Validation rule type for pre-computed validators
+ * These are serializable rules extracted from field definitions at build time,
+ * eliminating the need to compile validator closures at runtime.
+ */
+export type ValidationRuleType =
+  | 'required'
+  | 'min'
+  | 'max'
+  | 'minLength'
+  | 'maxLength'
+  | 'pattern';
+
+/**
+ * Pre-computed validation rule for a field
+ * Generated at build time by ManifestGenerator, stored in manifest.json
+ *
+ * These rules are evaluated at runtime without creating closure functions,
+ * significantly reducing CLI startup time for projects with many SMRT objects.
+ */
+export interface ValidationRule {
+  /** Field name to validate */
+  field: string;
+  /** Type of validation rule */
+  rule: ValidationRuleType;
+  /** Value for the rule (number for min/max/minLength/maxLength, string for pattern) */
+  value?: number | string;
+  /** Field type for context (text, integer, decimal, etc.) */
+  fieldType?: string;
+}
+
 export interface SmartObjectDefinition {
   /**
    * Qualified name in format "@package/name:ClassName"
@@ -158,6 +189,17 @@ export interface SmartObjectDefinition {
    * without calling generateSchema() at runtime, eliminating latency.
    */
   schema?: ManifestSchema;
+
+  /**
+   * Pre-computed validation rules for efficient runtime validation
+   * Generated at build time by ManifestGenerator (smrt scan)
+   *
+   * When present, the registry uses these rules instead of compiling
+   * validator closures at runtime, significantly reducing startup time.
+   *
+   * @see ValidationRule
+   */
+  validationRules?: ValidationRule[];
 }
 
 export interface SmartObjectManifest {

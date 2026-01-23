@@ -50,6 +50,7 @@ import type {
   QualifiedClassName,
   SmartObjectManifest,
   SmrtVisibility,
+  ValidationRule,
 } from './scanner/types.js';
 import type {
   ColumnDefinition,
@@ -587,6 +588,12 @@ interface RegisteredClass {
   schema?: SchemaDefinition;
   /** Compiled validation functions for efficient runtime validation */
   validators?: ValidatorFunction[];
+  /**
+   * Pre-computed validation rules from manifest (Issue #782)
+   * When available, these are used instead of compiling validator closures,
+   * significantly reducing CLI startup time.
+   */
+  validationRules?: ValidationRule[];
   /** AI-callable tools generated from methods at build time */
   tools?: Array<{
     type: 'function';
@@ -1475,8 +1482,19 @@ export class ObjectRegistry {
       };
     }
 
-    // Compile validation functions from field definitions
-    const validators = ObjectRegistry.compileValidators(name, fields);
+    // Use pre-computed validation rules from manifest if available (Issue #782)
+    // For decorator-based registration, manifest may have pre-computed rules
+    const validationRules = manifestEntry?.validationRules;
+    let validators: ValidatorFunction[] | undefined;
+
+    // Only compile validators if no pre-computed rules exist
+    if (!validationRules || validationRules.length === 0) {
+      validators = ObjectRegistry.compileValidators(name, fields);
+    } else {
+      verboseLog(
+        `[registry] Using ${validationRules.length} pre-computed validation rules for ${name}`,
+      );
+    }
 
     // Derive extends from prototype chain if not available from manifest
     // This is critical for inline test classes that use decorators
@@ -1520,6 +1538,7 @@ export class ObjectRegistry {
       methods,
       schema,
       validators,
+      validationRules, // Pre-computed rules from manifest (Issue #782)
       packageName, // Store package name from manifest for getPackageName() lookup
       sourceFilePath, // Store source file for collision detection (Issue #555)
       extends: extendsClass, // Capture parent class name from manifest OR prototype chain
@@ -1537,7 +1556,7 @@ export class ObjectRegistry {
     ObjectRegistry.constructorIndex.set(ctor, name);
 
     verboseLog(
-      `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${validators.length} validators`,
+      `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${(validators?.length || 0) + (validationRules?.length || 0)} validators/rules`,
     );
 
     // STI sibling auto-loading (Issue #430)
@@ -1734,8 +1753,23 @@ export class ObjectRegistry {
       };
     }
 
-    // Compile validators
-    const validators = ObjectRegistry.compileValidators(name, fields);
+    // Use pre-computed validation rules from manifest if available (Issue #782)
+    // This avoids compiling validator closures at runtime, reducing startup time
+    const validationRules = objectDef.validationRules;
+    let validators: ValidatorFunction[] | undefined;
+
+    // Only compile validators if no pre-computed rules exist
+    // (backward compatibility for older manifests)
+    if (!validationRules || validationRules.length === 0) {
+      validators = ObjectRegistry.compileValidators(name, fields);
+      verboseLog(
+        `[registry] No pre-computed rules for ${name}, compiled ${validators.length} validators`,
+      );
+    } else {
+      verboseLog(
+        `[registry] Using ${validationRules.length} pre-computed validation rules for ${name}`,
+      );
+    }
 
     // Generate qualified name if we have package context
     const qualifiedName = packageName
@@ -1758,6 +1792,7 @@ export class ObjectRegistry {
       methods,
       schema,
       validators,
+      validationRules, // Pre-computed rules from manifest (Issue #782)
       packageName,
       sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
       extends: objectDef.extends, // Parent class name for inheritance chain
@@ -3518,6 +3553,141 @@ export class ObjectRegistry {
   static getValidators(name: string): ValidatorFunction[] | undefined {
     const registered = ObjectRegistry.classes.get(name);
     return registered?.validators;
+  }
+
+  /**
+   * Get pre-computed validation rules for a registered class
+   *
+   * Returns serializable validation rules that can be evaluated at runtime
+   * without needing pre-compiled validator closures. This significantly
+   * reduces CLI startup time for projects with many SMRT objects.
+   *
+   * @param name - Name of the registered class
+   * @returns Array of validation rules or undefined if not found
+   * @see https://github.com/happyvertical/smrt/issues/782
+   */
+  static getValidationRules(name: string): ValidationRule[] | undefined {
+    const registered = ObjectRegistry.classes.get(name);
+    return registered?.validationRules;
+  }
+
+  /**
+   * Validate an instance using pre-computed validation rules
+   *
+   * This method evaluates validation rules without creating closures,
+   * providing faster validation than compiled validator functions.
+   *
+   * @param instance - The object instance to validate
+   * @param rules - Array of validation rules to apply
+   * @param className - Name of the class for error messages
+   * @returns Array of validation errors (empty if valid)
+   * @see https://github.com/happyvertical/smrt/issues/782
+   */
+  static async validateWithRules(
+    instance: any,
+    rules: ValidationRule[],
+    className: string,
+  ): Promise<any[]> {
+    // Import ValidationError lazily to avoid circular dependency at module load
+    const { ValidationError } = await import('./errors');
+    const errors: any[] = [];
+
+    for (const rule of rules) {
+      const value = instance[rule.field];
+
+      switch (rule.rule) {
+        case 'required':
+          if (value === null || value === undefined || value === '') {
+            errors.push(ValidationError.requiredField(rule.field, className));
+          }
+          break;
+
+        case 'min':
+          if (
+            value !== null &&
+            value !== undefined &&
+            value < (rule.value as number)
+          ) {
+            errors.push(
+              ValidationError.rangeError(
+                rule.field,
+                value,
+                rule.value as number,
+                undefined,
+              ),
+            );
+          }
+          break;
+
+        case 'max':
+          if (
+            value !== null &&
+            value !== undefined &&
+            value > (rule.value as number)
+          ) {
+            errors.push(
+              ValidationError.rangeError(
+                rule.field,
+                value,
+                undefined,
+                rule.value as number,
+              ),
+            );
+          }
+          break;
+
+        case 'minLength':
+          if (
+            value &&
+            typeof value === 'string' &&
+            value.length < (rule.value as number)
+          ) {
+            errors.push(
+              ValidationError.invalidValue(
+                rule.field,
+                value,
+                `string with minimum length ${rule.value}`,
+              ),
+            );
+          }
+          break;
+
+        case 'maxLength':
+          if (
+            value &&
+            typeof value === 'string' &&
+            value.length > (rule.value as number)
+          ) {
+            errors.push(
+              ValidationError.invalidValue(
+                rule.field,
+                value,
+                `string with maximum length ${rule.value}`,
+              ),
+            );
+          }
+          break;
+
+        case 'pattern':
+          // Note: Creates regex on each validation call, trading runtime efficiency
+          // for faster startup time (no closure compilation needed)
+          if (value && typeof value === 'string') {
+            const regex = new RegExp(rule.value as string);
+            if (!regex.test(value)) {
+              errors.push(
+                ValidationError.invalidValue(
+                  rule.field,
+                  value,
+                  `string matching pattern ${rule.value}`,
+                ),
+              );
+            }
+          }
+          break;
+      }
+    }
+
+    return errors;
   }
 
   /**
