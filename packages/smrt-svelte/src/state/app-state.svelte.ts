@@ -354,7 +354,7 @@ export class SmrtAppStateManager {
     if (mode === 'smrt') {
       this.initializeSTT({
         type: 'whisper-cpp',
-        allowLocalModels: this._aiConfig.stt?.allowLocalModels,
+        allowLocalModels: this._aiConfig?.stt?.allowLocalModels,
       }).catch(() => {
         // Error stored in state, don't throw
       });
