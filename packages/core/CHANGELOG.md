@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.19.43
+
+### Patch Changes
+
+- ### Other Changes
+
+  - perf: pre-compute validation rules at build time (#787) (core)
+  - perf: reduce console noise by making registry logs conditional (#782) (#786) (core)
+  - @happyvertical/smrt-scanner@0.19.43
+  - @happyvertical/smrt-config@0.19.43
+  - @happyvertical/smrt-types@0.19.43
+
 ## 0.19.42
 
 ### Patch Changes
