@@ -4,9 +4,13 @@
  * Tests README section extraction and markdown generation
  */
 
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   type ClaudeMeta,
+  detectMonorepoRoot,
   extractReadmeSections,
   generateMarkdown,
   type PackageInfo,
@@ -409,6 +413,102 @@ Gamma content.
       // Should have separators (---) around framework docs
       expect(markdown).toMatch(/---\s+### Framework Overview/);
       expect(markdown).toMatch(/---\s+## Package Documentation/);
+    });
+  });
+
+  describe('detectMonorepoRoot', () => {
+    let tempDir: string;
+    let originalCwd: string;
+
+    beforeEach(() => {
+      tempDir = mkdtempSync(join(tmpdir(), 'smrt-test-'));
+      originalCwd = process.cwd();
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+      rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('should detect monorepo root from cwd', () => {
+      // Create monorepo structure
+      writeFileSync(
+        join(tempDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*',
+      );
+      mkdirSync(join(tempDir, 'packages'));
+      writeFileSync(join(tempDir, 'CLAUDE.md'), '# Framework Docs');
+
+      process.chdir(tempDir);
+      const root = detectMonorepoRoot();
+
+      expect(root).toBe(tempDir);
+    });
+
+    it('should detect monorepo root from subdirectory', () => {
+      // Create monorepo structure
+      writeFileSync(
+        join(tempDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*',
+      );
+      mkdirSync(join(tempDir, 'packages'));
+      writeFileSync(join(tempDir, 'CLAUDE.md'), '# Framework Docs');
+
+      // Create and cd into subdirectory
+      const subDir = join(tempDir, 'packages', 'cli');
+      mkdirSync(subDir, { recursive: true });
+      process.chdir(subDir);
+
+      const root = detectMonorepoRoot();
+
+      expect(root).toBe(tempDir);
+    });
+
+    it('should return null when not in monorepo', () => {
+      // Create directory without monorepo markers
+      process.chdir(tempDir);
+      const root = detectMonorepoRoot();
+
+      expect(root).toBeNull();
+    });
+
+    it('should return null when missing pnpm-workspace.yaml', () => {
+      // Missing pnpm-workspace.yaml
+      mkdirSync(join(tempDir, 'packages'));
+      writeFileSync(join(tempDir, 'CLAUDE.md'), '# Framework Docs');
+
+      process.chdir(tempDir);
+      const root = detectMonorepoRoot();
+
+      expect(root).toBeNull();
+    });
+
+    it('should return null when missing packages directory', () => {
+      // Missing packages/
+      writeFileSync(
+        join(tempDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*',
+      );
+      writeFileSync(join(tempDir, 'CLAUDE.md'), '# Framework Docs');
+
+      process.chdir(tempDir);
+      const root = detectMonorepoRoot();
+
+      expect(root).toBeNull();
+    });
+
+    it('should return null when missing CLAUDE.md', () => {
+      // Missing CLAUDE.md
+      writeFileSync(
+        join(tempDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*',
+      );
+      mkdirSync(join(tempDir, 'packages'));
+
+      process.chdir(tempDir);
+      const root = detectMonorepoRoot();
+
+      expect(root).toBeNull();
     });
   });
 });

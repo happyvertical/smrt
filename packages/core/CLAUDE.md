@@ -558,23 +558,30 @@ await order.loadRelated('customerId');
 const customer = order.getRelated('customerId'); // Returns Customer instance
 ```
 
-#### loadRelatedMany() - Load Multiple Relationships
+#### loadRelatedMany() - Load One-to-Many Relationship
 ```typescript
-// Load multiple relationships in parallel
-await order.loadRelatedMany(['customerId', 'productId']);
+class Order extends SmrtObject {
+  items = hasMany(OrderItem);
+}
 
-const customer = order.getRelated('customerId');
-const product = order.getRelated('productId');
+const order = await orderCollection.get({ id: 'order-123' });
+
+// Load all related OrderItem records for this order
+await order.loadRelatedMany('items');
+
+const items = order.getRelated('items'); // Returns OrderItem[]
 ```
 
 #### getRelated() - Access Loaded Relationship
 ```typescript
-// Returns related object if loaded, undefined otherwise
-const customer = order.getRelated('customerId');
+// getRelated() is async and will load the relationship if not already loaded
+const customer = await order.getRelated('customerId');
 
-if (!customer) {
+// Or check if already loaded first
+if (!order.isRelationshipLoaded('customerId')) {
   await order.loadRelated('customerId');
 }
+const customer = order.getRelated('customerId');
 ```
 
 **Performance comparison**:
@@ -597,14 +604,14 @@ for (const order of orders) {
 ```
 
 **When to use each approach**:
-- **Eager loading** (`include`): When you know you'll need relationships for all records
-- **loadRelated()**: When loading relationships for a single object
-- **loadRelatedMany()**: When loading multiple relationships for a single object
+- **Eager loading** (`include` on `SmrtCollection.list()`): When you know you'll need `foreignKey` or `oneToMany` relationships for many records
+- **loadRelated()**: When loading a single relationship for a single object
+- **loadRelatedMany()**: When loading one-to-many collections or multiple relationships for a single object
 
 **Important notes**:
 - Relationships are cached after loading - calling `getRelated()` twice doesn't re-query
-- Only `foreignKey` relationships support eager loading via `include`
-- `oneToMany` and `manyToMany` relationships require explicit `loadRelated()` calls
+- `include` currently supports eager loading for `foreignKey` and `oneToMany` relationships when using `SmrtCollection.list()`
+- `manyToMany` relationships do **not** yet support eager loading via `include`; use `loadRelatedMany()`/`getRelated()` instead and be aware of potential N+1 queries
 - camelCase/snake_case conversion is automatic - use property names as defined in your class
 
 ## Defining SMRT Objects

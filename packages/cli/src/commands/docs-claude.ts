@@ -239,19 +239,39 @@ function loadPackageInfo(
 /**
  * Detect if running in the SMRT monorepo
  * Returns the monorepo root path if detected, null otherwise
+ * Walks up directory tree to find monorepo root markers
  */
-function detectMonorepoRoot(): string | null {
-  const cwd = process.cwd();
-  const pnpmWorkspace = join(cwd, 'pnpm-workspace.yaml');
-  const packagesDir = join(cwd, 'packages');
-  const rootClaudeMd = join(cwd, 'CLAUDE.md');
+export function detectMonorepoRoot(): string | null {
+  try {
+    let currentDir = realpathSync(process.cwd());
 
-  if (
-    existsSync(pnpmWorkspace) &&
-    existsSync(packagesDir) &&
-    existsSync(rootClaudeMd)
-  ) {
-    return cwd;
+    // Walk up the directory tree until we find the monorepo root or hit filesystem root
+    // Monorepo root is indicated by the presence of:
+    // - pnpm-workspace.yaml
+    // - packages/ directory
+    // - CLAUDE.md
+    for (;;) {
+      const pnpmWorkspace = join(currentDir, 'pnpm-workspace.yaml');
+      const packagesDir = join(currentDir, 'packages');
+      const rootClaudeMd = join(currentDir, 'CLAUDE.md');
+
+      if (
+        existsSync(pnpmWorkspace) &&
+        existsSync(packagesDir) &&
+        existsSync(rootClaudeMd)
+      ) {
+        return currentDir;
+      }
+
+      const parentDir = dirname(currentDir);
+      if (parentDir === currentDir) {
+        // Reached filesystem root without finding monorepo markers
+        break;
+      }
+      currentDir = parentDir;
+    }
+  } catch {
+    // On any unexpected filesystem error, fall through and report no monorepo detected
   }
   return null;
 }

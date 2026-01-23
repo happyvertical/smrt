@@ -165,6 +165,7 @@ beforeEach(async () => {
 For testing file operations or when you need a file-based database:
 
 ```typescript
+import { describe, it, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
