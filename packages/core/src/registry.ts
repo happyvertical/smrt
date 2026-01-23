@@ -3659,6 +3659,8 @@ export class ObjectRegistry {
           break;
 
         case 'pattern':
+          // Note: Creates regex on each validation call, trading runtime efficiency
+          // for faster startup time (no closure compilation needed)
           if (value && typeof value === 'string') {
             const regex = new RegExp(rule.value as string);
             if (!regex.test(value)) {

@@ -258,14 +258,14 @@ export class ManifestGenerator {
           }
 
           // Pattern rule (regex validation)
-          if (options.pattern) {
+          // Note: Custom validator functions (options.validate) cannot be serialized
+          // and will fall back to compiled validators at runtime
+          const pattern = options.pattern ?? field.pattern;
+          if (pattern) {
             rules.push({
               field: fieldName,
               rule: 'pattern',
-              value:
-                typeof options.pattern === 'string'
-                  ? options.pattern
-                  : options.pattern.source,
+              value: typeof pattern === 'string' ? pattern : pattern.source,
               fieldType: field.type,
             });
           }
@@ -275,9 +275,6 @@ export class ManifestGenerator {
       // Only add validationRules if there are any rules
       if (rules.length > 0) {
         obj.validationRules = rules;
-        console.log(
-          `[manifest-generator] Generated ${rules.length} validation rules for ${name}`,
-        );
       }
     }
   }
