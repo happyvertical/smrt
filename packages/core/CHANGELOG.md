@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.19.42
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add type annotations for parse() calls (#785) (core)
+
+  ### Other Changes
+
+  - perf: enable discovery cache by default and add --timing flag (#784) (cli)
+  - refactor: remove SMRT prefix from component names (#781)
+  - @happyvertical/smrt-scanner@0.19.42
+  - @happyvertical/smrt-config@0.19.42
+  - @happyvertical/smrt-types@0.19.42
+
 ## 0.19.41
 
 ### Patch Changes
