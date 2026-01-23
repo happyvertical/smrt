@@ -412,7 +412,72 @@ await collection.list({
 const profiles = await profileCollection.listByIds(['id1', 'id2', 'id3']);
 ```
 
-**Raw SQL queries** (for complex patterns like NOT EXISTS, JOINs, CTEs):
+### WHERE Clause Reference
+
+The `where` object in `list()` supports 8 operators for filtering:
+
+| Operator | Syntax | Example | SQL Output |
+|----------|--------|---------|------------|
+| **Equals** | `field: value` | `status: 'active'` | `status = 'active'` |
+| **Greater than** | `'field >': value` | `'price >': 100` | `price > 100` |
+| **Less than** | `'field <': value` | `'price <': 50` | `price < 50` |
+| **Greater or equal** | `'field >=': value` | `'age >=': 18` | `age >= 18` |
+| **Less or equal** | `'field <=': value` | `'age <=': 65` | `age <= 65` |
+| **Not equals** | `'field !=': value` | `'status !=': 'draft'` | `status != 'draft'` |
+| **IN** | `field: [...]` or `'field in': [...]` | `category: ['A', 'B']` | `category IN ('A', 'B')` |
+| **LIKE** | `'field like': pattern` | `'name like': '%test%'` | `name LIKE '%test%'` |
+
+**Important limitations**:
+- **No nested queries**: Cannot use subqueries in WHERE conditions
+- **No OR conditions**: All conditions are ANDed together
+- **No array operations**: Cannot filter on array fields (e.g., JSON arrays)
+- **No NULL checks with operators**: Use `field: null` for IS NULL, not `'field =': null`
+
+**Examples**:
+```typescript
+// ✅ Simple equality
+await collection.list({ where: { status: 'active' } });
+
+// ✅ Multiple conditions (ANDed)
+await collection.list({
+  where: {
+    'price >': 100,
+    'price <': 500,
+    category: 'Electronics'
+  }
+});
+
+// ✅ IN with arrays (implicit or explicit)
+await collection.list({ where: { status: ['active', 'pending'] } });
+await collection.list({ where: { 'status in': ['active', 'pending'] } });
+
+// ✅ LIKE pattern matching
+await collection.list({ where: { 'title like': '%report%' } });
+
+// ✅ NULL checks
+await collection.list({ where: { deleted_at: null } });
+await collection.list({ where: { 'deleted_at !=': null } });
+
+// ❌ OR conditions - NOT SUPPORTED
+// Use collection.query() instead:
+const results = await collection.query(`
+  SELECT * FROM items
+  WHERE status = ? OR priority = ?
+`, ['urgent', 'high']);
+
+// ❌ Nested queries - NOT SUPPORTED
+// Use collection.query() instead:
+const orphans = await collection.query(`
+  SELECT * FROM items
+  WHERE NOT EXISTS (
+    SELECT 1 FROM parents WHERE parents.id = items.parent_id
+  )
+`);
+```
+
+**Workaround for complex queries**: Use `collection.query()` for SQL patterns not supported by the WHERE clause builder.
+
+**Raw SQL queries** (for complex patterns like NOT EXISTS, JOINs, CTEs, OR conditions):
 ```typescript
 // Find meetings without corresponding recaps (NOT EXISTS pattern)
 const meetings = await meetingCollection.query(`
@@ -434,6 +499,12 @@ const products = await productCollection.query(`
   WHERE c.name = ? AND p.price > ?
   ORDER BY p.price ASC
 `, ['Electronics', 100]);
+
+// OR conditions
+const items = await itemCollection.query(`
+  SELECT * FROM items
+  WHERE status = ? OR priority = ?
+`, ['urgent', 'high']);
 ```
 
 The `query()` method:
@@ -468,6 +539,73 @@ for (const order of orders) {
 **Performance**: 40-70% improvement for relationship-heavy queries
 
 **Limitations**: Only works with `foreignKey` relationships (not `oneToMany` or `manyToMany`)
+
+### Relationship Loading Methods
+
+SMRT objects provide several methods for loading related objects:
+
+#### loadRelated() - Load Single Relationship
+```typescript
+class Order extends SmrtObject {
+  customerId = foreignKey(Customer);
+  productId = foreignKey(Product);
+}
+
+const order = await orderCollection.get({ id: 'order-123' });
+
+// Load a single relationship
+await order.loadRelated('customerId');
+const customer = order.getRelated('customerId'); // Returns Customer instance
+```
+
+#### loadRelatedMany() - Load Multiple Relationships
+```typescript
+// Load multiple relationships in parallel
+await order.loadRelatedMany(['customerId', 'productId']);
+
+const customer = order.getRelated('customerId');
+const product = order.getRelated('productId');
+```
+
+#### getRelated() - Access Loaded Relationship
+```typescript
+// Returns related object if loaded, undefined otherwise
+const customer = order.getRelated('customerId');
+
+if (!customer) {
+  await order.loadRelated('customerId');
+}
+```
+
+**Performance comparison**:
+```typescript
+// ❌ SLOW: N+1 query problem (101 queries for 100 orders)
+const orders = await orderCollection.list({ limit: 100 });
+for (const order of orders) {
+  await order.loadRelated('customerId');  // 1 query per order
+  const customer = order.getRelated('customerId');
+}
+
+// ✅ FAST: Eager loading (1 query total)
+const orders = await orderCollection.list({
+  limit: 100,
+  include: ['customerId']  // Pre-loads in single JOIN
+});
+for (const order of orders) {
+  const customer = order.getRelated('customerId');  // Already loaded!
+}
+```
+
+**When to use each approach**:
+- **Eager loading** (`include`): When you know you'll need relationships for all records
+- **loadRelated()**: When loading relationships for a single object
+- **loadRelatedMany()**: When loading multiple relationships for a single object
+
+**Important notes**:
+- Relationships are cached after loading - calling `getRelated()` twice doesn't re-query
+- Only `foreignKey` relationships support eager loading via `include`
+- `oneToMany` and `manyToMany` relationships require explicit `loadRelated()` calls
+- camelCase/snake_case conversion is automatic - use property names as defined in your class
 
 ## Defining SMRT Objects
 
