@@ -201,7 +201,9 @@ function hasManifestExport(packageName: string): boolean {
     }
 
     // Load and validate manifest
-    const manifest = parse(readFileSync(manifestPath, 'utf-8'));
+    const manifest = parse<{ moduleType?: string }>(
+      readFileSync(manifestPath, 'utf-8'),
+    );
 
     // Validate moduleType
     if (manifest.moduleType !== 'smrt') {
@@ -319,10 +321,10 @@ export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
   const cacheDisabled =
     options.noCache || process.env.SMRT_DISABLE_DISCOVERY_CACHE === 'true';
 
-  const verbose =
-    options.verbose ||
+  const verbose: boolean =
+    options.verbose === true ||
     process.env.SMRT_VERBOSE === 'true' ||
-    process.env.DEBUG?.includes('smrt');
+    !!process.env.DEBUG?.includes('smrt');
 
   if (cacheDisabled) {
     if (verbose) {
