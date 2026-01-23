@@ -189,7 +189,7 @@ const sameDocs = await documents.list({
   where: { id: docIds }  // Arrays auto-detect IN operator
 });
 
-// Raw SQL query for complex patterns (NOT EXISTS, JOINs, etc.)
+// Raw SQL query for complex patterns (NOT EXISTS, JOINs, OR conditions, etc.)
 const unpublished = await documents.query(`
   SELECT * FROM documents
   WHERE is_published = false
@@ -204,6 +204,8 @@ const unpublished = await documents.query(`
 const isQuality = await doc.isHighQuality();
 const summary = await doc.generateSummary();
 ```
+
+**WHERE clause reference**: The `where` object supports 8 operators: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `like`. For complex queries (OR conditions, nested queries, array operations), use `collection.query()` with raw SQL. See [packages/core/CLAUDE.md](./packages/core/CLAUDE.md#where-clause-reference) for complete operator reference and limitations.
 
 ### Multi-Level Class Inheritance
 
@@ -601,6 +603,48 @@ The framework includes comprehensive adapter parity tests to ensure consistent b
 - Query operations with filtering
 
 See `packages/core/src/__tests__/sti-adapter-parity.test.ts` for the complete test suite that runs identical tests across all supported adapters.
+
+### Testing Best Practices
+
+SMRT provides the `@happyvertical/smrt-vitest` package for isolated test database setup:
+
+```typescript
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createIsolatedTestDb } from '@happyvertical/smrt-vitest';
+import { MyObject, MyCollection } from './my-object.js';
+
+describe('MyObject', () => {
+  let collection: MyCollection;
+
+  beforeEach(async () => {
+    // Creates isolated in-memory SQLite database
+    const db = await createIsolatedTestDb();
+    collection = await MyCollection.create({
+      persistence: { type: 'sql', db }
+    });
+  });
+
+  it('should create and save object', async () => {
+    const obj = await collection.create({
+      name: 'Test',
+      value: 42
+    });
+    await obj.save();
+
+    const loaded = await collection.get({ id: obj.id });
+    expect(loaded?.name).toBe('Test');
+    expect(loaded?.value).toBe(42);
+  });
+});
+```
+
+**Key patterns**:
+- **Isolated databases**: Use `createIsolatedTestDb()` for each test suite
+- **Real resources**: Prefer in-memory databases over mocks
+- **Readable tests**: Tests should read like documentation
+- **README examples**: All README code examples must have corresponding tests
+
+**See also**: [TESTING_STANDARD.md](./TESTING_STANDARD.md) for complete testing guidelines.
 
 ### Build System
 
