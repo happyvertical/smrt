@@ -663,6 +663,79 @@ class Product extends SmrtObject {
 }
 ```
 
+### Tree Shaking for External Packages
+
+When using external SMRT packages (e.g., `@happyvertical/smrt-profiles`), by default ALL objects from those packages are included in your manifest. This can lead to bloat if you only use a few classes.
+
+**Tree shaking** filters external objects to only include what your project actually uses.
+
+#### Enabling Tree Shaking
+
+**Option 1: Import-Based (Automatic)**
+```typescript
+// smrt.config.js or ManifestBuilder options
+{
+  treeShake: true,  // Enable import analysis
+  discoverExternalPackages: true
+}
+```
+
+When enabled, the AST scanner analyzes your imports:
+```typescript
+// Your code
+import { Person, Organization } from '@happyvertical/smrt-profiles';
+
+// Only Person, Organization, and their dependencies are included
+// Other classes like Team, Role, etc. are excluded
+```
+
+**Option 2: Explicit Whitelist**
+```typescript
+// smrt.config.js or ManifestBuilder options
+{
+  externalObjectsWhitelist: [
+    'Person',
+    'Organization',
+    '@happyvertical/smrt-events:Meeting'  // Qualified names also work
+  ],
+  discoverExternalPackages: true
+}
+```
+
+**Option 3: Combined (Imports + Whitelist)**
+```typescript
+// Both imported classes AND whitelisted classes are included
+{
+  treeShake: true,
+  externalObjectsWhitelist: ['ExtraClass'],
+  discoverExternalPackages: true
+}
+```
+
+#### Transitive Dependency Resolution
+
+Tree shaking automatically includes transitive dependencies:
+
+- **Inheritance**: If `Meeting` extends `Event`, both are included
+- **Foreign Keys**: If `Person` has `organizationId: foreignKey(Organization)`, both are included
+- **STI Siblings**: If `Meeting` uses STI with `Event` as base, all `Event` subtypes are included
+
+#### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `treeShake` | boolean | `false` | Enable import-based filtering |
+| `externalObjectsWhitelist` | string[] | `[]` | Explicit list of classes to include |
+| `discoverExternalPackages` | boolean | `false` | Scan node_modules for SMRT packages |
+
+#### Example Manifest Size Impact
+
+| Configuration | Objects Included | Manifest Size |
+|---------------|------------------|---------------|
+| Default (no filtering) | All 27 from smrt-profiles | ~180KB |
+| treeShake with 3 imports | 5 (imports + dependencies) | ~35KB |
+| Whitelist with 2 classes | 3 (whitelist + dependencies) | ~25KB |
+
 ### Qualified Class Names (Namespace Isolation)
 
 SMRT uses **qualified class names** to prevent collisions when multiple packages define classes with the same name. This enables true namespace isolation across packages.

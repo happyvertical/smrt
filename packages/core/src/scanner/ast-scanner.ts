@@ -190,6 +190,103 @@ export class ASTScanner {
   }
 
   /**
+   * Scan files to discover imports from SMRT packages
+   *
+   * Used for tree-shaking: tracks which classes are actually imported
+   * from external @happyvertical/smrt-* packages, enabling the manifest
+   * generator to exclude unused external objects.
+   *
+   * @returns Map of package name → Set of imported class names
+   *
+   * @example
+   * // Given: import { Person, Organization } from '@happyvertical/smrt-profiles';
+   * // Returns: Map { '@happyvertical/smrt-profiles' => Set { 'Person', 'Organization' } }
+   */
+  scanSmrtImports(): Map<string, Set<string>> {
+    const imports = new Map<string, Set<string>>();
+
+    for (const sourceFile of this.program.getSourceFiles()) {
+      // Skip declaration files and node_modules
+      if (sourceFile.isDeclarationFile) continue;
+      if (sourceFile.fileName.includes('node_modules')) continue;
+
+      ts.forEachChild(sourceFile, (node) => {
+        if (ts.isImportDeclaration(node)) {
+          this.processImportDeclaration(node, imports);
+        }
+      });
+    }
+
+    if (process.env.DEBUG_SCANNER || imports.size > 0) {
+      console.log('[ast-scanner] SMRT imports discovered:');
+      for (const [pkg, classes] of imports) {
+        console.log(`  ${pkg}: ${[...classes].join(', ')}`);
+      }
+    }
+
+    return imports;
+  }
+
+  /**
+   * Process a single import declaration to extract SMRT package imports
+   */
+  private processImportDeclaration(
+    node: ts.ImportDeclaration,
+    imports: Map<string, Set<string>>,
+  ): void {
+    // Get the module specifier (e.g., '@happyvertical/smrt-profiles')
+    if (!ts.isStringLiteral(node.moduleSpecifier)) return;
+
+    const moduleName = node.moduleSpecifier.text;
+
+    // Only process @happyvertical/smrt-* packages
+    if (!moduleName.startsWith('@happyvertical/smrt-')) return;
+
+    // Get or create the set for this package
+    if (!imports.has(moduleName)) {
+      imports.set(moduleName, new Set());
+    }
+    const classSet = imports.get(moduleName)!;
+
+    const importClause = node.importClause;
+    if (!importClause) return;
+
+    // Handle named imports: import { Person, Organization } from '...'
+    if (importClause.namedBindings) {
+      if (ts.isNamedImports(importClause.namedBindings)) {
+        for (const element of importClause.namedBindings.elements) {
+          // Use the original name (propertyName) if it's a renamed import,
+          // otherwise use the imported name
+          const importedName = element.propertyName
+            ? element.propertyName.text
+            : element.name.text;
+
+          // Skip non-class imports (lowercase = likely utility/function)
+          // Classes are PascalCase
+          if (importedName[0] === importedName[0].toUpperCase()) {
+            classSet.add(importedName);
+          }
+        }
+      }
+      // Handle namespace imports: import * as Profiles from '...'
+      // These import everything, so we mark the package as "import all"
+      else if (ts.isNamespaceImport(importClause.namedBindings)) {
+        // Mark with special symbol to indicate "include all from this package"
+        classSet.add('*');
+      }
+    }
+
+    // Handle default import: import SomeClass from '...'
+    if (importClause.name) {
+      const defaultImportName = importClause.name.text;
+      // Default imports are typically classes
+      if (defaultImportName[0] === defaultImportName[0].toUpperCase()) {
+        classSet.add(defaultImportName);
+      }
+    }
+  }
+
+  /**
    * Extract properties defined on base classes
    * These properties should be excluded from subclass schemas to avoid circular serialization
    */

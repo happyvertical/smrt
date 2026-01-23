@@ -9,6 +9,7 @@ export type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
+export type { ManifestBuilderOptions } from './generator';
 export { ManifestBuilder } from './generator';
 export { ManifestManager } from './manager';
 export {
