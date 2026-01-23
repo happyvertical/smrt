@@ -529,7 +529,9 @@ export function getPackageName(
               const pkgPath = join(dir, 'package.json');
               try {
                 if (existsSync(pkgPath)) {
-                  const pkg = parse(readFileSync(pkgPath, 'utf-8'));
+                  const pkg = parse<{ name?: string }>(
+                    readFileSync(pkgPath, 'utf-8'),
+                  );
                   if (pkg.name?.startsWith('@')) {
                     return pkg.name;
                   }
@@ -615,7 +617,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
       const testPath = join(dir, 'package.json');
       try {
         const content = readFileSync(testPath, 'utf-8');
-        const json = parse(content);
+        const json = parse<{ name?: string }>(content);
         if (json.name === packageName) {
           pkgPath = testPath;
           break;
@@ -641,7 +643,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     try {
       if (existsSync(nodeModulesPkgPath)) {
         const content = readFileSync(nodeModulesPkgPath, 'utf-8');
-        const json = parse(content);
+        const json = parse<{ name?: string }>(content);
         if (json.name === packageName) {
           pkgPath = nodeModulesPkgPath;
         }
@@ -678,7 +680,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
       try {
         if (existsSync(workspacePkgPath)) {
           const content = readFileSync(workspacePkgPath, 'utf-8');
-          const json = parse(content);
+          const json = parse<{ name?: string }>(content);
           if (json.name === packageName) {
             pkgPath = workspacePkgPath;
             debugLog(
@@ -726,7 +728,9 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     }
 
     // Fallback: Try package.json exports (for published packages without .smrt/)
-    const pkgJson = parse(readFileSync(pkgPath, 'utf-8'));
+    const pkgJson = parse<{
+      exports?: Record<string, string | { default?: string; import?: string }>;
+    }>(readFileSync(pkgPath, 'utf-8'));
     let manifestExport = pkgJson.exports?.['./manifest.json'];
 
     if (!manifestExport) {
@@ -1476,7 +1480,7 @@ export function discoverSTISiblingsSync(
         if (existsSync(manifestPath)) {
           try {
             const manifestContent = readFileSync(manifestPath, 'utf-8');
-            const manifest = parse(manifestContent);
+            const manifest = parse<SmartObjectManifest>(manifestContent);
             // Cache it
             getManifestCacheMap().set(fullPackageName, manifest);
             addFromManifest(manifest, `nodeModules:${fullPackageName}`);
