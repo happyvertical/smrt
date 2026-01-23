@@ -137,7 +137,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
         },
       );
       expect(collection1).not.toBe(collections[1]);
-    }, 10000); // 10 second timeout (creates 100 SQLite databases)
+    }, 30000); // 30 second timeout (creates 100 SQLite databases - slow in CI)
 
     it('should handle cache clear correctly', async () => {
       // Create a collection
