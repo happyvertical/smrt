@@ -10,6 +10,7 @@ import {
   extractReadmeSections,
   generateMarkdown,
   type PackageInfo,
+  type RootDocInfo,
 } from '../docs-claude.js';
 
 describe('docs:claude', () => {
@@ -294,6 +295,120 @@ Gamma content.
       expect(markdown).toContain('The package name');
       expect(markdown).toContain('Description of the gotcha or pattern');
       expect(markdown).toContain('Example code if applicable');
+    });
+  });
+
+  describe('generateMarkdown with root docs', () => {
+    it('should include framework documentation section when root docs provided', () => {
+      const packages: PackageInfo[] = [
+        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+      ];
+
+      const rootDocs: RootDocInfo[] = [
+        {
+          filename: 'CLAUDE.md',
+          heading: 'Framework Overview',
+          content: '# Overview\n\nThis is the framework overview.',
+        },
+        {
+          filename: 'TESTING_STANDARD.md',
+          heading: 'Testing Guide',
+          content: '# Testing\n\nThis is the testing guide.',
+        },
+      ];
+
+      const markdown = generateMarkdown(packages, rootDocs);
+
+      expect(markdown).toContain('## Framework Documentation');
+      expect(markdown).toContain('### Framework Overview');
+      expect(markdown).toContain('*Source: CLAUDE.md*');
+      expect(markdown).toContain('This is the framework overview.');
+      expect(markdown).toContain('### Testing Guide');
+      expect(markdown).toContain('*Source: TESTING_STANDARD.md*');
+      expect(markdown).toContain('This is the testing guide.');
+      expect(markdown).toContain('## Package Documentation');
+    });
+
+    it('should not include framework section when no root docs provided', () => {
+      const packages: PackageInfo[] = [
+        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+      ];
+
+      const markdown = generateMarkdown(packages);
+
+      expect(markdown).not.toContain('## Framework Documentation');
+      expect(markdown).not.toContain('## Package Documentation');
+    });
+
+    it('should not include framework section when empty root docs array', () => {
+      const packages: PackageInfo[] = [
+        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+      ];
+
+      const markdown = generateMarkdown(packages, []);
+
+      expect(markdown).not.toContain('## Framework Documentation');
+      expect(markdown).not.toContain('## Package Documentation');
+    });
+
+    it('should include all root docs in order', () => {
+      const packages: PackageInfo[] = [
+        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+      ];
+
+      const rootDocs: RootDocInfo[] = [
+        {
+          filename: 'CLAUDE.md',
+          heading: 'Framework Overview',
+          content: 'First doc content',
+        },
+        {
+          filename: 'TESTING_STANDARD.md',
+          heading: 'Testing Guide',
+          content: 'Second doc content',
+        },
+        {
+          filename: 'CONTRIBUTING.md',
+          heading: 'Contributing',
+          content: 'Third doc content',
+        },
+        {
+          filename: 'WORKFLOW.md',
+          heading: 'Development Workflow',
+          content: 'Fourth doc content',
+        },
+      ];
+
+      const markdown = generateMarkdown(packages, rootDocs);
+
+      const overviewIndex = markdown.indexOf('Framework Overview');
+      const testingIndex = markdown.indexOf('Testing Guide');
+      const contributingIndex = markdown.indexOf('Contributing');
+      const workflowIndex = markdown.indexOf('Development Workflow');
+
+      expect(overviewIndex).toBeLessThan(testingIndex);
+      expect(testingIndex).toBeLessThan(contributingIndex);
+      expect(contributingIndex).toBeLessThan(workflowIndex);
+    });
+
+    it('should include separators between root docs', () => {
+      const packages: PackageInfo[] = [
+        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+      ];
+
+      const rootDocs: RootDocInfo[] = [
+        {
+          filename: 'CLAUDE.md',
+          heading: 'Framework Overview',
+          content: 'Content',
+        },
+      ];
+
+      const markdown = generateMarkdown(packages, rootDocs);
+
+      // Should have separators (---) around framework docs
+      expect(markdown).toMatch(/---\s+### Framework Overview/);
+      expect(markdown).toMatch(/## Package Documentation\s+---/);
     });
   });
 });

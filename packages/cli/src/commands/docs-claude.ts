@@ -35,6 +35,12 @@ export interface PackageInfo {
   readme: string | null;
 }
 
+export interface RootDocInfo {
+  filename: string;
+  heading: string;
+  content: string;
+}
+
 export const docsClaudeCommand: CLICommand = {
   name: 'docs:claude',
   description:
@@ -59,6 +65,10 @@ export const docsClaudeCommand: CLICommand = {
       const outputPath = options.output || '.claude/smrt-framework.md';
       const dryRun = options['dry-run'];
 
+      // Detect monorepo and load root docs
+      const monorepoRoot = detectMonorepoRoot();
+      const rootDocs = monorepoRoot ? loadRootDocs(monorepoRoot) : [];
+
       // Find installed @happyvertical/smrt-* packages
       const packages = await discoverInstalledPackages();
 
@@ -72,8 +82,11 @@ export const docsClaudeCommand: CLICommand = {
         process.exit(1);
       }
 
-      // Generate markdown content
-      const content = generateMarkdown(packages);
+      // Generate markdown content with optional root docs
+      const content = generateMarkdown(
+        packages,
+        rootDocs.length > 0 ? rootDocs : undefined,
+      );
 
       if (dryRun) {
         console.log(content);
@@ -92,8 +105,12 @@ export const docsClaudeCommand: CLICommand = {
       console.log(`\n✅ Generated ${outputPath}`);
       console.log(`   ${packages.length} packages documented`);
       console.log(
-        `   ${packages.filter((p) => p.meta).length} with .claude-meta.json\n`,
+        `   ${packages.filter((p) => p.meta).length} with .claude-meta.json`,
       );
+      if (rootDocs.length > 0) {
+        console.log(`   ${rootDocs.length} framework documents included`);
+      }
+      console.log('');
     } catch (error) {
       console.error('\n❌ Failed to generate Claude documentation:');
       if (error instanceof Error) {
@@ -220,6 +237,56 @@ function loadPackageInfo(
 }
 
 /**
+ * Detect if running in the SMRT monorepo
+ * Returns the monorepo root path if detected, null otherwise
+ */
+function detectMonorepoRoot(): string | null {
+  const cwd = process.cwd();
+  const pnpmWorkspace = join(cwd, 'pnpm-workspace.yaml');
+  const packagesDir = join(cwd, 'packages');
+  const rootClaudeMd = join(cwd, 'CLAUDE.md');
+
+  if (
+    existsSync(pnpmWorkspace) &&
+    existsSync(packagesDir) &&
+    existsSync(rootClaudeMd)
+  ) {
+    return cwd;
+  }
+  return null;
+}
+
+/**
+ * Load root documentation files from the monorepo
+ */
+function loadRootDocs(rootPath: string): RootDocInfo[] {
+  const docs: RootDocInfo[] = [];
+
+  const rootDocs = [
+    { filename: 'CLAUDE.md', heading: 'Framework Overview' },
+    { filename: 'TESTING_STANDARD.md', heading: 'Testing Guide' },
+    { filename: 'CONTRIBUTING.md', heading: 'Contributing' },
+    { filename: 'WORKFLOW.md', heading: 'Development Workflow' },
+  ];
+
+  for (const doc of rootDocs) {
+    const filePath = join(rootPath, doc.filename);
+    if (existsSync(filePath)) {
+      try {
+        docs.push({
+          filename: doc.filename,
+          heading: doc.heading,
+          content: readFileSync(filePath, 'utf-8'),
+        });
+      } catch (e) {
+        console.warn(`   ⚠️  Could not read ${doc.filename}`);
+      }
+    }
+  }
+  return docs;
+}
+
+/**
  * Extract H2 sections from README content
  */
 export function extractReadmeSections(
@@ -284,7 +351,10 @@ export function extractReadmeSections(
 /**
  * Generate the markdown content for .claude/smrt-framework.md
  */
-export function generateMarkdown(packages: PackageInfo[]): string {
+export function generateMarkdown(
+  packages: PackageInfo[],
+  rootDocs?: RootDocInfo[],
+): string {
   const lines: string[] = [];
 
   // Header
@@ -294,6 +364,28 @@ export function generateMarkdown(packages: PackageInfo[]): string {
     'This project uses the SMRT framework. Below are the conventions and patterns for the installed packages.',
   );
   lines.push('');
+
+  // Framework Documentation section (if root docs provided)
+  if (rootDocs && rootDocs.length > 0) {
+    lines.push('## Framework Documentation');
+    lines.push('');
+
+    for (const doc of rootDocs) {
+      lines.push('---');
+      lines.push('');
+      lines.push(`### ${doc.heading}`);
+      lines.push('');
+      lines.push(`*Source: ${doc.filename}*`);
+      lines.push('');
+      lines.push(doc.content);
+      lines.push('');
+    }
+
+    lines.push('---');
+    lines.push('');
+    lines.push('## Package Documentation');
+    lines.push('');
+  }
 
   // Installed packages table
   lines.push('## Installed Packages');
