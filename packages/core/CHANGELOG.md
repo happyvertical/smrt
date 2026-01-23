@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.44
+
+### Patch Changes
+
+- ### Features
+
+  - add tree shaking for external SMRT packages (#788) (core)
+  - @happyvertical/smrt-scanner@0.19.44
+  - @happyvertical/smrt-config@0.19.44
+  - @happyvertical/smrt-types@0.19.44
+
 ## 0.19.43
 
 ### Patch Changes
