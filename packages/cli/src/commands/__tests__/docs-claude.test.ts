@@ -408,7 +408,7 @@ Gamma content.
 
       // Should have separators (---) around framework docs
       expect(markdown).toMatch(/---\s+### Framework Overview/);
-      expect(markdown).toMatch(/## Package Documentation\s+---/);
+      expect(markdown).toMatch(/---\s+## Package Documentation/);
     });
   });
 });
