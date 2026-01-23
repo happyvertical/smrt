@@ -1,5 +1,13 @@
 # @happyvertical/smrt-content
 
+## 0.19.45
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.19.45
+  - @happyvertical/smrt-assets@0.19.45
+
 ## 0.19.44
 
 ### Patch Changes

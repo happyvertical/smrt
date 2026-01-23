@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.45
+
+### Patch Changes
+
+- ### Features
+
+  - comprehensive framework documentation improvements (#807)
+  - @happyvertical/smrt-scanner@0.19.45
+  - @happyvertical/smrt-config@0.19.45
+  - @happyvertical/smrt-types@0.19.45
+
 ## 0.19.44
 
 ### Patch Changes
