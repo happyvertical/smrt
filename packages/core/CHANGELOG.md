@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.19.46
+
+### Patch Changes
+
+- ### Features
+
+  - add allowLocalModels option to prevent 404s (#806) (browser-ai)
+
+  ### Bug Fixes
+
+  - increase timeout for LRU cache eviction test (#808) (core)
+  - preserve snake_case field names in formatDataJs when defined in manifest (#783) (core)
+  - @happyvertical/smrt-scanner@0.19.46
+  - @happyvertical/smrt-config@0.19.46
+  - @happyvertical/smrt-types@0.19.46
+
 ## 0.19.45
 
 ### Patch Changes
