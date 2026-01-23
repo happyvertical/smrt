@@ -273,7 +273,11 @@ export class SmrtAppStateManager {
 
       try {
         if (category === 'stt') {
-          await this.initializeSTT({ type: type as STTType });
+          const sttConfig = this._aiConfig.stt;
+          await this.initializeSTT({
+            type: type as STTType,
+            allowLocalModels: sttConfig?.allowLocalModels,
+          });
         } else if (category === 'tts') {
           await this.initializeTTS({ type: type as TTSType });
         } else if (category === 'llm') {
@@ -348,7 +352,10 @@ export class SmrtAppStateManager {
 
     // Preload Whisper.cpp when switching to smrt mode
     if (mode === 'smrt') {
-      this.initializeSTT({ type: 'whisper-cpp' }).catch(() => {
+      this.initializeSTT({
+        type: 'whisper-cpp',
+        allowLocalModels: this._aiConfig?.stt?.allowLocalModels,
+      }).catch(() => {
         // Error stored in state, don't throw
       });
     }

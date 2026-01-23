@@ -63,6 +63,11 @@ export interface STTConfig {
   model?: string;
   /** Whether to enable this adapter */
   enabled?: boolean;
+  /**
+   * Allow loading models from local /models/ path.
+   * When false (default), models load from HuggingFace Hub CDN.
+   */
+  allowLocalModels?: boolean;
 }
 
 /**
