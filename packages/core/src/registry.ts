@@ -2352,6 +2352,26 @@ export class ObjectRegistry {
   }
 
   /**
+   * Configure the collection cache size (for testing purposes)
+   *
+   * Resets the collection cache with a new maximum size.
+   * Use this in tests to avoid creating many database files.
+   *
+   * @param maxSize - Maximum number of collections to cache (default: 100)
+   * @example
+   * ```typescript
+   * // In test setup, use a small cache to test LRU eviction with fewer DBs
+   * ObjectRegistry.configureCollectionCache(5);
+   * ```
+   */
+  static configureCollectionCache(maxSize: number): void {
+    globalThis.__smrtRegistryCollectionCache = new LRUCache<
+      string,
+      SmrtCollection<any>
+    >(maxSize);
+  }
+
+  /**
    * Invalidate inheritance cache for a specific class
    *
    * Clears cached inheritance chain and merged fields/methods for the given class.

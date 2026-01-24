@@ -40,6 +40,10 @@ describe('Issue #117: Memory Leak Prevention', () => {
     // Clear registry before each test
     ObjectRegistry.clear();
 
+    // Configure a small cache size for faster tests (default is 100)
+    // This allows us to test LRU eviction with just ~10 databases instead of 100+
+    ObjectRegistry.configureCollectionCache(5);
+
     // Re-register the test class
     ObjectRegistry.register(CacheTestObject, {
       api: true,
@@ -82,10 +86,10 @@ describe('Issue #117: Memory Leak Prevention', () => {
     });
 
     it('should evict least recently used entries', async () => {
-      // Create 100 collections to fill the cache
+      // Create 5 collections to fill the cache (cache size is 5)
       const collections: SmrtCollection<CacheTestObject>[] = [];
 
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < 5; i++) {
         const collection = await ObjectRegistry.getCollection<CacheTestObject>(
           'CacheTestObject',
           {
@@ -110,7 +114,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
       await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
         persistence: {
           type: 'sqlite',
-          url: path.join(tempDir, 'test-100.db'),
+          url: path.join(tempDir, 'test-5.db'),
         },
       });
 
@@ -137,7 +141,7 @@ describe('Issue #117: Memory Leak Prevention', () => {
         },
       );
       expect(collection1).not.toBe(collections[1]);
-    }, 30000); // 30 second timeout (creates 100 SQLite databases - slow in CI)
+    });
 
     it('should handle cache clear correctly', async () => {
       // Create a collection
@@ -175,9 +179,10 @@ describe('Issue #117: Memory Leak Prevention', () => {
       // The key test: verifying LRU cache limits growth
       // Even if we create many unique collections, the cache won't grow unbounded
 
-      // Create 150 unique collections (different persistence configs)
+      // Create 10 unique collections (different persistence configs)
       // This simulates a long-running app accessing many different collections
-      for (let i = 0; i < 150; i++) {
+      // 10 exceeds the LRU cache size of 5, triggering eviction
+      for (let i = 0; i < 10; i++) {
         await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
           persistence: {
             type: 'sqlite',
@@ -188,11 +193,11 @@ describe('Issue #117: Memory Leak Prevention', () => {
 
       // Success! If we got here without running out of memory,
       // the LRU cache is preventing unbounded growth.
-      // With unbounded Map, this would accumulate 150 entries.
-      // With LRU cache (size 100), oldest 50 were evicted automatically.
+      // With unbounded Map, this would accumulate 10 entries.
+      // With LRU cache (size 5), oldest 5 were evicted automatically.
 
       expect(true).toBe(true); // Test passed
-    }, 15000); // 15 second timeout for this test (creates 150 SQLite DBs)
+    });
 
     it('should handle concurrent cache access without memory leaks', async () => {
       // Simulate concurrent requests to same collection
