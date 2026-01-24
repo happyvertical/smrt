@@ -377,4 +377,40 @@ export class PlaceCollection extends SmrtCollection<Place> {
   private toRad(degrees: number): number {
     return degrees * (Math.PI / 180);
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenant Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all places belonging to a specific tenant
+   *
+   * @param tenantId - The tenant ID to filter by
+   * @returns Array of places for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Place[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global places (not associated with any tenant)
+   *
+   * @returns Array of global places
+   */
+  async findGlobal(): Promise<Place[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find places for a tenant including global places
+   *
+   * @param tenantId - The tenant ID to include
+   * @returns Array of tenant-specific and global places
+   */
+  async findWithGlobals(tenantId: string): Promise<Place[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

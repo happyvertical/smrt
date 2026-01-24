@@ -141,4 +141,40 @@ export class ProfileCollection extends SmrtCollection<Profile> {
 
     return network;
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenant-scoped helper methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all profiles belonging to a specific tenant
+   *
+   * @param tenantId - The tenant UUID to filter by
+   * @returns Array of profiles for this tenant
+   */
+  async findByTenant(tenantId: string): Promise<Profile[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global profiles (without a tenant)
+   *
+   * @returns Array of profiles with null tenantId
+   */
+  async findGlobal(): Promise<Profile[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find profiles belonging to a tenant plus all global profiles
+   *
+   * @param tenantId - The tenant UUID to include
+   * @returns Array of tenant-specific and global profiles
+   */
+  async findWithGlobals(tenantId: string): Promise<Profile[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

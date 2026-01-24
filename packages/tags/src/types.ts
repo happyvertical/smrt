@@ -15,6 +15,7 @@ export interface TagOptions extends SmrtObjectOptions {
   level?: number;
   description?: string;
   metadata?: string | Record<string, any>;
+  tenantId?: string | null;
 }
 
 /**
@@ -25,6 +26,7 @@ export interface TagAliasOptions extends SmrtObjectOptions {
   alias?: string;
   language?: string;
   context?: string;
+  tenantId?: string | null;
 }
 
 /**

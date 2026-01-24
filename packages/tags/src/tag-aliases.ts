@@ -175,4 +175,40 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
       String(alias.alias).toLowerCase().includes(queryLower),
     );
   }
+
+  // =========================================================================
+  // Tenant Helper Methods
+  // =========================================================================
+
+  /**
+   * Find all tag aliases belonging to a specific tenant
+   *
+   * @param tenantId - The tenant ID to filter by
+   * @returns Array of tag aliases for the specified tenant
+   */
+  async findByTenant(tenantId: string): Promise<TagAlias[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global (tenant-less) tag aliases
+   *
+   * @returns Array of global tag aliases with null tenantId
+   */
+  async findGlobal(): Promise<TagAlias[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find tag aliases for a tenant including global aliases
+   *
+   * @param tenantId - The tenant ID to filter by
+   * @returns Array of tag aliases for the tenant plus all global aliases
+   */
+  async findWithGlobals(tenantId: string): Promise<TagAlias[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

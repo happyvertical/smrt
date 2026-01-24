@@ -5,8 +5,10 @@
  */
 
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventTypeOptions } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -14,6 +16,7 @@ import type { EventTypeOptions } from '../types';
   cli: true,
 })
 export class EventType extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   @field({ required: true })
   name: string = '';
 

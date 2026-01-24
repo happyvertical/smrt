@@ -132,4 +132,40 @@ export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocatio
       orderBy: 'allocatedAt DESC',
     });
   }
+
+  // ============================================================================
+  // Tenant Helper Methods
+  // ============================================================================
+
+  /**
+   * Find all payment allocations belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of payment allocations for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<PaymentAllocation[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global payment allocations (not associated with any tenant)
+   *
+   * @returns Array of global payment allocations
+   */
+  async findGlobal(): Promise<PaymentAllocation[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find payment allocations for a tenant including global allocations
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant-specific and global payment allocations
+   */
+  async findWithGlobals(tenantId: string): Promise<PaymentAllocation[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

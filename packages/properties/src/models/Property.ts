@@ -6,14 +6,21 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { PropertyOptions, PropertyStatus } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
 })
 export class Property extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Display name of the property
    */
@@ -58,6 +65,7 @@ export class Property extends SmrtObject {
 
   constructor(options: PropertyOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.name !== undefined) this.name = options.name;
     if (options.domain !== undefined) this.domain = options.domain;
     if (options.url !== undefined) this.url = options.url;

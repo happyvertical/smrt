@@ -177,4 +177,40 @@ export class EventParticipantCollection extends SmrtCollection<EventParticipant>
       byPlacement,
     };
   }
+
+  // ============================================
+  // Tenant Helper Methods
+  // ============================================
+
+  /**
+   * Find all event participants for a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of EventParticipant instances for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<EventParticipant[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global event participants (no tenant association)
+   *
+   * @returns Array of EventParticipant instances with no tenant
+   */
+  async findGlobal(): Promise<EventParticipant[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find event participants for a tenant including global participants
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of EventParticipant instances for the tenant and global participants
+   */
+  async findWithGlobals(tenantId: string): Promise<EventParticipant[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

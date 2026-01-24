@@ -465,6 +465,81 @@ For complete documentation, see [packages/core/CLAUDE.md#typescript-types-vs-fie
 
 ---
 
+## Multi-Tenancy
+
+SMRT provides production-ready multi-tenancy support via the `@happyvertical/smrt-tenancy` package.
+
+### Tenancy Pattern
+
+All tenant-scoped models use **optional tenancy** with a simple convention:
+
+| `tenantId` Value | Meaning |
+|------------------|---------|
+| `null` | Global/network-wide resource (visible to all tenants) |
+| `'tenant-123'` | Tenant-specific resource (only visible to that tenant) |
+
+This enables both shared resources and tenant isolation in the same table.
+
+### Basic Usage
+
+```typescript
+import { enableTenancy, TenantScoped, tenantId, withTenant } from '@happyvertical/smrt-tenancy';
+import { smrt, SmrtObject } from '@happyvertical/smrt-core';
+
+// Enable tenancy globally (once at app startup)
+enableTenancy();
+
+@smrt()
+@TenantScoped({ mode: 'optional' })
+class Document extends SmrtObject {
+  tenantId = tenantId({ nullable: true });  // null = global document
+  title: string = '';
+}
+
+// Run code in tenant context
+await withTenant({ tenantId: 'pub-123' }, async () => {
+  // Queries filtered to this tenant
+  const docs = await collection.list({});
+
+  // To include globals, use findWithGlobals()
+  const withGlobals = await collection.findWithGlobals('pub-123');
+});
+```
+
+### Query Patterns
+
+```typescript
+// Tenant's view (their data + globals)
+const items = await collection.findWithGlobals(tenantId);
+
+// Tenant only (exclude globals)
+const tenantOnly = await collection.findByTenant(tenantId);
+
+// Global only
+const globals = await collection.findGlobal();
+
+// Cross-tenant (admin)
+await withSystemContext(async () => {
+  const all = await collection.list({});
+});
+```
+
+### Collection Methods
+
+Tenant-scoped collections should implement:
+
+```typescript
+class DocumentCollection extends SmrtCollection<Document> {
+  async findByTenant(tenantId: string): Promise<Document[]>;
+  async findGlobal(): Promise<Document[]>;
+  async findWithGlobals(tenantId: string): Promise<Document[]>;
+}
+```
+
+For complete documentation, see [packages/tenancy/README.md](./packages/tenancy/README.md).
+
+---
+
 ## Monorepo Structure
 
 The SMRT framework is organized as a pnpm workspace:
@@ -475,6 +550,7 @@ The SMRT framework is organized as a pnpm workspace:
 - **types**: Shared TypeScript type definitions
 - **config**: Configuration management with cosmiconfig
 - **core**: Core framework with ORM, code generation, and AI integration
+- **tenancy**: Multi-tenancy support with automatic tenant isolation
 
 **Domain Modules:**
 - **accounts**: Accounting ledger with multi-currency support

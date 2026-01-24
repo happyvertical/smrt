@@ -3,14 +3,17 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EmailAttachmentOptions } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class EmailAttachment extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   emailId = '';
   filename = '';
   contentType = '';
@@ -25,6 +28,7 @@ export class EmailAttachment extends SmrtObject {
   constructor(options: EmailAttachmentOptions = {}) {
     super(options);
 
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.emailId !== undefined) this.emailId = options.emailId;
     if (options.filename !== undefined) this.filename = options.filename;
     if (options.contentType !== undefined)

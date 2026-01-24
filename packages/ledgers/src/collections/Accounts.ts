@@ -196,4 +196,40 @@ export class AccountCollection extends SmrtCollection<Account> {
 
     return descendants;
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenant Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all accounts belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant's accounts
+   */
+  async findByTenant(tenantId: string): Promise<Account[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global accounts (no tenant association)
+   *
+   * @returns Array of global accounts
+   */
+  async findGlobal(): Promise<Account[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find accounts for a tenant plus all global accounts
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant's accounts and global accounts
+   */
+  async findWithGlobals(tenantId: string): Promise<Account[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

@@ -318,4 +318,40 @@ export class ZoneCollection extends SmrtCollection<Zone> {
 
     return deleted;
   }
+
+  // ============================================
+  // Tenant Helper Methods
+  // ============================================
+
+  /**
+   * Find zones belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of zones for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Zone[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global zones (no tenant association)
+   *
+   * @returns Array of global zones
+   */
+  async findGlobal(): Promise<Zone[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find zones for a tenant including global zones
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of tenant-specific and global zones
+   */
+  async findWithGlobals(tenantId: string): Promise<Zone[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

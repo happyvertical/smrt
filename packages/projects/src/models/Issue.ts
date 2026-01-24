@@ -11,6 +11,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { SYNC_THROTTLE_MS } from '../constants';
 import type {
   IncorporateFeedbackOptions,
@@ -36,8 +37,10 @@ export interface IssueOptions extends SmrtObjectOptions {
   lastSyncedAt?: Date | null;
   originalBody?: string;
   synthesisCount?: number;
+  tenantId?: string | null;
 }
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
@@ -45,6 +48,11 @@ export interface IssueOptions extends SmrtObjectOptions {
   cli: { include: ['list', 'get', 'sync', 'incorporateFeedback', 'rollback'] },
 })
 export class Issue extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Repository this issue belongs to
    */
@@ -142,6 +150,8 @@ export class Issue extends SmrtObject {
       this.originalBody = options.originalBody;
     if (options.synthesisCount !== undefined)
       this.synthesisCount = options.synthesisCount;
+    if (options.tenantId !== undefined)
+      (this as any).tenantId = options.tenantId;
   }
 
   /**

@@ -239,4 +239,36 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
 
     return synced;
   }
+
+  /**
+   * Find pull requests by tenant ID
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of pull requests for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<PullRequest[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global pull requests (no tenant)
+   *
+   * @returns Array of global pull requests
+   */
+  async findGlobal(): Promise<PullRequest[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find pull requests for a tenant including global pull requests
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of tenant and global pull requests
+   */
+  async findWithGlobals(tenantId: string): Promise<PullRequest[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

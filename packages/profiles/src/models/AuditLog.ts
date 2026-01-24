@@ -11,6 +11,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { Profile } from './Profile';
 
 export type AuditSource = 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';
@@ -23,8 +24,10 @@ export interface AuditLogOptions extends SmrtObjectOptions {
   source?: AuditSource;
   metadata?: Record<string, any>;
   onBehalfOfId?: string | null;
+  tenantId?: string | null;
 }
 
+@TenantScoped({ mode: 'optional', allowSuperAdminBypass: true })
 @smrt({
   tableName: 'audit_logs',
   api: { include: ['list', 'get'] },
@@ -32,6 +35,7 @@ export interface AuditLogOptions extends SmrtObjectOptions {
   cli: { include: ['list'] },
 })
 export class AuditLog extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   /**
    * The profile who performed the action
    */

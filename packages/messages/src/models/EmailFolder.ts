@@ -3,14 +3,17 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EmailFolderOptions } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class EmailFolder extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   accountId = '';
   name = '';
   path = '';
@@ -27,6 +30,7 @@ export class EmailFolder extends SmrtObject {
   constructor(options: EmailFolderOptions = {}) {
     super(options);
 
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.accountId !== undefined) this.accountId = options.accountId;
     if (options.name !== undefined) this.name = options.name;
     if (options.path !== undefined) this.path = options.path;

@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { Contract } from './Contract.js';
 
 /**
@@ -23,6 +24,7 @@ import { Contract } from './Contract.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -30,6 +32,11 @@ import { Contract } from './Contract.js';
   cli: true,
 })
 export class ContractLineItem extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global line items
+   */
+  tenantId = tenantId({ nullable: true });
   /**
    * Parent contract
    */
@@ -97,6 +104,7 @@ export class ContractLineItem extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
     if (options.description !== undefined)
       this.description = options.description;

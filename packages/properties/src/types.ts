@@ -13,6 +13,7 @@ export type PropertyStatus = 'active' | 'inactive' | 'pending';
  * Options for creating a Property instance
  */
 export interface PropertyOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
   name?: string;
   domain?: string;
   url?: string;
@@ -27,6 +28,7 @@ export interface PropertyOptions extends SmrtObjectOptions {
  * Options for creating a Zone instance
  */
 export interface ZoneOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
   propertyId?: string;
   parentId?: string | null;
   name?: string;

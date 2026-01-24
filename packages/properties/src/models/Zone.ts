@@ -6,14 +6,21 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ZoneOptions, ZoneTreeNode } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
 })
 export class Zone extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Parent property ID (required)
    */
@@ -77,6 +84,7 @@ export class Zone extends SmrtObject {
 
   constructor(options: ZoneOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;
     if (options.parentId !== undefined) this.parentId = options.parentId;
     if (options.name !== undefined) this.name = options.name;

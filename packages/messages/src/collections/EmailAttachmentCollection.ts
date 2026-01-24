@@ -147,4 +147,32 @@ export class EmailAttachmentCollection extends SmrtCollection<EmailAttachment> {
 
     return count;
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tenant Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all email attachments belonging to a specific tenant
+   */
+  async findByTenant(tenantId: string): Promise<EmailAttachment[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global email attachments (no tenant)
+   */
+  async findGlobal(): Promise<EmailAttachment[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find email attachments for a tenant including global attachments
+   */
+  async findWithGlobals(tenantId: string): Promise<EmailAttachment[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

@@ -5,8 +5,10 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventOptions, EventStatus } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -14,6 +16,7 @@ import type { EventOptions, EventStatus } from '../types';
   cli: true,
 })
 export class Event extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   name: string = '';
   seriesId = ''; // FK to EventSeries (nullable for standalone events)
   parentEventId = ''; // FK to Event (nullable, self-referencing for hierarchy)

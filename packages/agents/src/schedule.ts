@@ -1,4 +1,5 @@
 import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
  * Status of a scheduled agent
@@ -23,6 +24,7 @@ export type ScheduleStatus = 'active' | 'paused' | 'disabled' | 'error';
  * await schedule.save();
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: '_smrt_agent_schedules',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -32,6 +34,11 @@ export type ScheduleStatus = 'active' | 'paused' | 'disabled' | 'error';
   mcp: { include: ['list', 'get'] },
 })
 export class AgentSchedule extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global schedules
+   */
+  tenantId = tenantId({ nullable: true });
   /** Type/class name of the agent to run */
   agentType: string = '';
 
@@ -218,6 +225,35 @@ export class AgentSchedule extends SmrtObject {
  */
 export class AgentScheduleCollection extends SmrtCollection<AgentSchedule> {
   static readonly _itemClass = AgentSchedule;
+
+  /**
+   * Find all schedules for a specific tenant
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of AgentSchedule objects for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<AgentSchedule[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global schedules (not associated with any tenant)
+   * @returns Array of global AgentSchedule objects
+   */
+  async findGlobal(): Promise<AgentSchedule[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find schedules for a tenant including global schedules
+   * @param tenantId - Tenant ID to include
+   * @returns Array of AgentSchedule objects for the tenant and global schedules
+   */
+  async findWithGlobals(tenantId: string): Promise<AgentSchedule[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 
   /**
    * List schedules by status

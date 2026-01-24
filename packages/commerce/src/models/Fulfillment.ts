@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   type Address,
   FulfillmentStatus,
@@ -34,12 +35,18 @@ import { Contract } from './Contract.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class Fulfillment extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global fulfillments
+   */
+  tenantId = tenantId({ nullable: true });
   /**
    * Parent contract being fulfilled
    */
@@ -92,6 +99,7 @@ export class Fulfillment extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
     if (options.fulfillmentType !== undefined)
       this.fulfillmentType = options.fulfillmentType;

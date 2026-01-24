@@ -4,6 +4,7 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { VendorStatus } from '../types/index.js';
 
 /**
@@ -22,12 +23,18 @@ import { VendorStatus } from '../types/index.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class Vendor extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global vendors
+   */
+  tenantId = tenantId({ nullable: true });
   /**
    * Reference to smrt-profiles Profile
    * Plain string for cross-package reference
@@ -76,6 +83,7 @@ export class Vendor extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.profileId !== undefined) this.profileId = options.profileId;
     if (options.leadTimeDays !== undefined)
       this.leadTimeDays = options.leadTimeDays;

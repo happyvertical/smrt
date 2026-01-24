@@ -43,6 +43,7 @@
     "@happyvertical/files": "^0.66.9",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/utils": "^0.66.9"
   },
   "devDependencies": {

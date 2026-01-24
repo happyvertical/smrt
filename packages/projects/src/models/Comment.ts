@@ -10,6 +10,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 export interface CommentOptions extends SmrtObjectOptions {
   issueId?: string;
@@ -19,14 +20,21 @@ export interface CommentOptions extends SmrtObjectOptions {
   createdAt?: Date;
   updatedAt?: Date;
   url?: string;
+  tenantId?: string | null;
 }
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
 })
 export class Comment extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Issue this comment belongs to
    */
@@ -72,6 +80,8 @@ export class Comment extends SmrtObject {
     if (options.createdAt !== undefined) this.createdAt = options.createdAt;
     if (options.updatedAt !== undefined) this.updatedAt = options.updatedAt;
     if (options.url !== undefined) this.url = options.url;
+    if (options.tenantId !== undefined)
+      (this as any).tenantId = options.tenantId;
   }
 
   /**

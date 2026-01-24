@@ -187,4 +187,40 @@ export class EventCollection extends SmrtCollection<Event> {
     const inProgressEvents = await this.getByStatus('in_progress');
     return inProgressEvents.filter((event) => event.isInProgress());
   }
+
+  // ============================================
+  // Tenant Helper Methods
+  // ============================================
+
+  /**
+   * Find all events for a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of Event instances for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Event[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global events (no tenant association)
+   *
+   * @returns Array of Event instances with no tenant
+   */
+  async findGlobal(): Promise<Event[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find events for a tenant including global events
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of Event instances for the tenant and global events
+   */
+  async findWithGlobals(tenantId: string): Promise<Event[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

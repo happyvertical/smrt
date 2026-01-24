@@ -131,4 +131,40 @@ export class AdVariationCollection extends SmrtCollection<AdVariation> {
       .sort((a, b) => b.getCTR() - a.getCTR())
       .slice(0, limit);
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenancy Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find ad variations belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of ad variations for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<AdVariation[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global ad variations (no tenant association)
+   *
+   * @returns Array of global ad variations
+   */
+  async findGlobal(): Promise<AdVariation[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find ad variations for a tenant including global (shared) variations
+   *
+   * @param tenantId - Tenant ID to include
+   * @returns Array of tenant-specific and global ad variations
+   */
+  async findWithGlobals(tenantId: string): Promise<AdVariation[]> {
+    return this.query(
+      `SELECT * FROM ad_variations WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

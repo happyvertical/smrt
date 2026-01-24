@@ -23,7 +23,8 @@
     "test:watch": "npx vitest"
   },
   "dependencies": {
-    "@happyvertical/smrt-core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*"
   },
   "peerDependencies": {
     "@happyvertical/smrt-profiles": "workspace:*",

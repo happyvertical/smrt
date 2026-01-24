@@ -46,6 +46,7 @@ export interface AssetOptions extends SmrtObjectOptions {
   statusSlug?: string;
   ownerProfileId?: string | null;
   parentId?: string | null;
+  tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -109,4 +109,40 @@ export class EventTypeCollection extends SmrtCollection<EventType> {
 
     return types;
   }
+
+  // ============================================
+  // Tenant Helper Methods
+  // ============================================
+
+  /**
+   * Find all event types for a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of EventType instances for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<EventType[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global event types (no tenant association)
+   *
+   * @returns Array of EventType instances with no tenant
+   */
+  async findGlobal(): Promise<EventType[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find event types for a tenant including global types
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of EventType instances for the tenant and global types
+   */
+  async findWithGlobals(tenantId: string): Promise<EventType[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

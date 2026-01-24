@@ -204,4 +204,40 @@ export class JournalCollection extends SmrtCollection<Journal> {
     const end = new Date(year, month, 0, 23, 59, 59, 999);
     return await this.findByDateRange(start, end);
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenant Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all journals belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant's journals
+   */
+  async findByTenant(tenantId: string): Promise<Journal[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global journals (no tenant association)
+   *
+   * @returns Array of global journals
+   */
+  async findGlobal(): Promise<Journal[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find journals for a tenant plus all global journals
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant's journals and global journals
+   */
+  async findWithGlobals(tenantId: string): Promise<Journal[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

@@ -141,4 +141,40 @@ export class PaymentCollection extends SmrtCollection<Payment> {
     });
     return results[0] || null;
   }
+
+  // ============================================================================
+  // Tenant Helper Methods
+  // ============================================================================
+
+  /**
+   * Find all payments belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of payments for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Payment[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global payments (not associated with any tenant)
+   *
+   * @returns Array of global payments
+   */
+  async findGlobal(): Promise<Payment[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find payments for a tenant including global payments
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant-specific and global payments
+   */
+  async findWithGlobals(tenantId: string): Promise<Payment[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

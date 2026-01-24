@@ -275,4 +275,40 @@ export class InvoiceCollection extends SmrtCollection<Invoice> {
       )
       .reduce((sum, inv) => sum + inv.getAmountDue(), 0);
   }
+
+  // ============================================================================
+  // Tenant Helper Methods
+  // ============================================================================
+
+  /**
+   * Find all invoices belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of invoices for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Invoice[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global invoices (not associated with any tenant)
+   *
+   * @returns Array of global invoices
+   */
+  async findGlobal(): Promise<Invoice[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find invoices for a tenant including global invoices
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant-specific and global invoices
+   */
+  async findWithGlobals(tenantId: string): Promise<Invoice[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

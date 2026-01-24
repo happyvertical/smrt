@@ -6,9 +6,11 @@
  */
 
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { Tag } from './tag';
 import type { TagAliasOptions } from './types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -32,6 +34,9 @@ export class TagAlias extends SmrtObject {
   override set context(value: string) {
     this._context = value;
   }
+
+  // Tenancy
+  tenantId = tenantId({ nullable: true });
 
   // Timestamps
   createdAt: Date = new Date();

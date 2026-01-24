@@ -76,4 +76,40 @@ export class CustomerCollection extends SmrtCollection<Customer> {
     await customer.save();
     return customer;
   }
+
+  // ============================================================================
+  // Tenant Helper Methods
+  // ============================================================================
+
+  /**
+   * Find all customers belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of customers for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Customer[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global customers (not associated with any tenant)
+   *
+   * @returns Array of global customers
+   */
+  async findGlobal(): Promise<Customer[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find customers for a tenant including global customers
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant-specific and global customers
+   */
+  async findWithGlobals(tenantId: string): Promise<Customer[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

@@ -110,4 +110,40 @@ export class EventSeriesCollection extends SmrtCollection<EventSeries> {
 
     return series;
   }
+
+  // ============================================
+  // Tenant Helper Methods
+  // ============================================
+
+  /**
+   * Find all event series for a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of EventSeries instances for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<EventSeries[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global event series (no tenant association)
+   *
+   * @returns Array of EventSeries instances with no tenant
+   */
+  async findGlobal(): Promise<EventSeries[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find event series for a tenant including global series
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of EventSeries instances for the tenant and global series
+   */
+  async findWithGlobals(tenantId: string): Promise<EventSeries[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

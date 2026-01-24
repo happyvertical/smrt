@@ -14,6 +14,7 @@ export type ProviderType = 'smtp' | 'imap' | 'pop3' | 'gmail';
  */
 export interface EmailOptions extends SmrtObjectOptions {
   id?: string;
+  tenantId?: string | null;
   accountId?: string;
   messageId?: string; // RFC 822 Message-ID
   threadId?: string;
@@ -50,6 +51,7 @@ export interface EmailOptions extends SmrtObjectOptions {
  */
 export interface EmailAccountOptions extends SmrtObjectOptions {
   id?: string;
+  tenantId?: string | null;
   name?: string;
   email?: string;
   providerType?: ProviderType;
@@ -66,6 +68,7 @@ export interface EmailAccountOptions extends SmrtObjectOptions {
  */
 export interface EmailFolderOptions extends SmrtObjectOptions {
   id?: string;
+  tenantId?: string | null;
   accountId?: string;
   name?: string;
   path?: string;
@@ -83,6 +86,7 @@ export interface EmailFolderOptions extends SmrtObjectOptions {
  */
 export interface EmailAttachmentOptions extends SmrtObjectOptions {
   id?: string;
+  tenantId?: string | null;
   emailId?: string;
   filename?: string;
   contentType?: string;

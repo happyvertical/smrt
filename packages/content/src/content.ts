@@ -2,6 +2,7 @@ import type { Asset, Image } from '@happyvertical/smrt-assets';
 import { ImageCollection } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
 
@@ -102,6 +103,11 @@ export interface ContentOptions extends SmrtObjectOptions {
    * ID of the thumbnail asset for this content
    */
   thumbnailAssetId?: string | null;
+
+  /**
+   * Tenant ID for multi-tenant isolation
+   */
+  tenantId?: string | null;
 }
 
 /**
@@ -111,6 +117,7 @@ export interface ContentOptions extends SmrtObjectOptions {
  * title, author, description, and publishing information. It supports
  * referencing related content objects.
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: {
@@ -122,6 +129,12 @@ export interface ContentOptions extends SmrtObjectOptions {
   cli: true, // Enable CLI commands for content management
 })
 export class Content extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global content
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Array of referenced content objects
    */

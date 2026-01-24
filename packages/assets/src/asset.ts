@@ -1,15 +1,18 @@
 /**
  * Asset model - Core entity for asset management
  *
- * Represents a digital asset with versioning, metadata, and tag support
+ * Represents a digital asset with versioning, metadata, and tag support.
+ * Supports multi-tenancy with optional tenant scoping.
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { Tag } from '@happyvertical/smrt-tags';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetStatus } from './asset-status';
 import type { AssetType } from './asset-type';
 import type { AssetOptions } from './types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -17,6 +20,8 @@ import type { AssetOptions } from './types';
   cli: true,
 })
 export class Asset extends SmrtObject {
+  // Tenant isolation (optional - assets can be global or tenant-specific)
+  tenantId = tenantId({ nullable: true });
   // Core fields
   name = ''; // User-friendly name
   // slug is inherited as an accessor from SmrtObject
@@ -51,6 +56,7 @@ export class Asset extends SmrtObject {
     if (options.ownerProfileId !== undefined)
       this.ownerProfileId = options.ownerProfileId;
     if (options.parentId !== undefined) this.parentId = options.parentId;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
   }

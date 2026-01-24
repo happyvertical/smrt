@@ -5,8 +5,10 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventParticipantOptions } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   // Junction table - uses event_id + profile_id + role as natural key
   // instead of slug-based conflict columns
@@ -16,6 +18,7 @@ import type { EventParticipantOptions } from '../types';
   cli: true,
 })
 export class EventParticipant extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   // id inherited from SmrtObject
 
   eventId = ''; // FK to Event

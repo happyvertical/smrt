@@ -140,4 +140,40 @@ export class ContractCollection extends SmrtCollection<Contract> {
       orderBy: 'issueDate DESC',
     });
   }
+
+  // ============================================================================
+  // Tenant Helper Methods
+  // ============================================================================
+
+  /**
+   * Find all contracts belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of contracts for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Contract[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global contracts (not associated with any tenant)
+   *
+   * @returns Array of global contracts
+   */
+  async findGlobal(): Promise<Contract[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find contracts for a tenant including global contracts
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant-specific and global contracts
+   */
+  async findWithGlobals(tenantId: string): Promise<Contract[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

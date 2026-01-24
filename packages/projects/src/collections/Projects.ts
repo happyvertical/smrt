@@ -181,4 +181,36 @@ export class ProjectCollection extends SmrtCollection<Project> {
       itemsByType,
     };
   }
+
+  /**
+   * Find projects by tenant ID
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of projects for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Project[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global projects (no tenant)
+   *
+   * @returns Array of global projects
+   */
+  async findGlobal(): Promise<Project[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find projects for a tenant including global projects
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of tenant and global projects
+   */
+  async findWithGlobals(tenantId: string): Promise<Project[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

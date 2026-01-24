@@ -35,6 +35,7 @@
     "@happyvertical/pdf": "^0.60.4",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/spider": "^0.60.6",
     "@happyvertical/sql": "^0.66.9",
     "@happyvertical/utils": "^0.66.9",

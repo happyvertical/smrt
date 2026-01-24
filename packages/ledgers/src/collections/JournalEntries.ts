@@ -237,4 +237,40 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
 
     return ledger;
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenant Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all journal entries belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant's journal entries
+   */
+  async findByTenant(tenantId: string): Promise<JournalEntry[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global journal entries (no tenant association)
+   *
+   * @returns Array of global journal entries
+   */
+  async findGlobal(): Promise<JournalEntry[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find journal entries for a tenant plus all global entries
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant's entries and global entries
+   */
+  async findWithGlobals(tenantId: string): Promise<JournalEntry[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }
