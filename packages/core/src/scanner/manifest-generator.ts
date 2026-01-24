@@ -129,6 +129,32 @@ export class ManifestGenerator {
         objectDef.collectionExportName =
           objectDef.collectionExportName || `${objectDef.className}Collection`;
 
+        // Inject tenantId field if tenantScoped is configured (Issue #812)
+        if (objectDef.decoratorConfig.tenantScoped) {
+          const tenantConfig =
+            typeof objectDef.decoratorConfig.tenantScoped === 'boolean'
+              ? {}
+              : objectDef.decoratorConfig.tenantScoped;
+
+          const fieldName = tenantConfig.field || 'tenantId';
+          const isRequired = tenantConfig.mode === 'required';
+
+          // Inject tenantId field definition into manifest
+          objectDef.fields[fieldName] = {
+            type: 'text',
+            required: isRequired,
+            _meta: {
+              generated: true,
+              source: 'tenantScoped_decorator',
+              ...tenantConfig,
+            },
+          };
+
+          console.log(
+            `[manifest-generator] Injected ${fieldName} field for ${objectDef.className} (tenantScoped: ${JSON.stringify(tenantConfig)})`,
+          );
+        }
+
         // Generate AI tools from methods if AI config exists
         if (objectDef.decoratorConfig.ai) {
           const methods = Object.values(objectDef.methods);

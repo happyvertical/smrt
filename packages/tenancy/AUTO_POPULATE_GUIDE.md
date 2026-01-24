@@ -153,8 +153,15 @@ describe('Build', () => {
 ```typescript
 import { enterTenantContext } from '@happyvertical/smrt-tenancy';
 
+// ⚠️ IMPORTANT: tenantId must come from authenticated user state,
+// NOT from client-controlled headers or cookies!
 app.use((req, res, next) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // Assumes an upstream authentication middleware has populated req.user
+  // from a verified token or session, and that req.user.tenantId is trusted
+  // server-side state.
+  const user = (req as any).user;
+  const tenantId = user?.tenantId as string | undefined;
+
   if (tenantId) {
     enterTenantContext({ tenantId });
   }
@@ -167,8 +174,15 @@ app.use((req, res, next) => {
 ```typescript
 import { enterTenantContext } from '@happyvertical/smrt-tenancy';
 
+// ⚠️ IMPORTANT: tenantId must come from authenticated session data,
+// NOT from client-controlled cookies!
 export const handle = async ({ event, resolve }) => {
-  const tenantId = event.cookies.get('tenantId');
+  // Assumes an upstream authentication hook has populated event.locals.user
+  // from a verified session or token, and that user.tenantId is trusted
+  // server-side state.
+  const user = event.locals.user;
+  const tenantId = user?.tenantId as string | undefined;
+
   if (tenantId) {
     enterTenantContext({ tenantId });
   }
@@ -180,7 +194,7 @@ export const handle = async ({ event, resolve }) => {
 
 - [Issue #688: tenantScoped decorator](https://github.com/happyvertical/smrt/issues/688)
 - [Issue #809: Auto-populate tenantId](https://github.com/happyvertical/smrt/issues/809)
-- [RFC-001: Multi-Tenancy](../docs/rfcs/RFC-001-multi-tenancy.md)
+- [RFC-001: Multi-Tenancy](../../docs/rfcs/RFC-001-multi-tenancy.md)
 - [Tenancy Package README](./README.md)
 
 ## FAQ
