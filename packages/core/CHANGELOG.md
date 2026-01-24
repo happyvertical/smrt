@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.47
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: document auto-populate feature for issue #809 (#811) (tenancy)
+  - @happyvertical/smrt-scanner@0.19.47
+  - @happyvertical/smrt-config@0.19.47
+  - @happyvertical/smrt-types@0.19.47
+
 ## 0.19.46
 
 ### Patch Changes
