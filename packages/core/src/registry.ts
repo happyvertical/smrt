@@ -703,7 +703,8 @@ export class ObjectRegistry {
    * Resets the collection cache with a new maximum size.
    * Use this in tests to avoid creating many database files.
    *
-   * @param maxSize - Maximum number of collections to cache (default: 100)
+   * @param maxSize - Maximum number of collections to cache (system default is 100)
+   * @throws Error if maxSize is not a positive finite number
    * @example
    * ```typescript
    * // In test setup, use a small cache to test LRU eviction with fewer DBs
@@ -711,6 +712,9 @@ export class ObjectRegistry {
    * ```
    */
   static configureCollectionCache(maxSize: number): void {
+    if (!Number.isFinite(maxSize) || maxSize <= 0) {
+      throw new Error(`maxSize must be a positive number, got: ${maxSize}`);
+    }
     globalThis.__smrtRegistryCollectionCache = new LRUCache<
       string,
       SmrtCollection<any>

@@ -56,6 +56,9 @@ describe('Issue #117: Memory Leak Prevention', () => {
     // Clean up after each test
     ObjectRegistry.clear();
 
+    // Restore default cache size to avoid affecting other tests
+    ObjectRegistry.configureCollectionCache(100);
+
     // Clean up temporary directory
     try {
       rmSync(tempDir, { recursive: true, force: true });
