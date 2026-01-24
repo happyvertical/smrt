@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.19.48
+
+### Patch Changes
+
+- ### Features
+
+  - add multi-tenancy support across all domain modules (#827) (tenancy)
+
+  ### Bug Fixes
+
+  - prevent flaky memory leak test timeout in CI (#828) (core)
+  - @happyvertical/smrt-scanner@0.19.48
+  - @happyvertical/smrt-config@0.19.48
+  - @happyvertical/smrt-types@0.19.48
+
 ## 0.19.47
 
 ### Patch Changes
