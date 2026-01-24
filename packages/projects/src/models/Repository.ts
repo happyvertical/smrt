@@ -12,6 +12,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { SYNC_THROTTLE_MS } from '../constants';
 import type {
   CreateIssueInput,
@@ -35,14 +36,21 @@ export interface RepositoryOptions extends SmrtObjectOptions {
   providerType?: RepositoryProviderType;
   baseUrl?: string;
   tokenConfigKey?: string;
+  tenantId?: string | null;
 }
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync'] },
   cli: { include: ['list', 'get', 'sync', 'create'] },
 })
 export class Repository extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Repository owner (organization or user)
    */
@@ -114,6 +122,8 @@ export class Repository extends SmrtObject {
     if (options.baseUrl !== undefined) this.baseUrl = options.baseUrl;
     if (options.tokenConfigKey !== undefined)
       this.tokenConfigKey = options.tokenConfigKey;
+    if (options.tenantId !== undefined)
+      (this as any).tenantId = options.tenantId;
   }
 
   /**

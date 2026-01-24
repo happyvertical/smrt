@@ -26,6 +26,7 @@ export interface GeoData {
  */
 export interface PlaceOptions extends SmrtObjectOptions {
   id?: string;
+  tenantId?: string | null;
   typeId?: string;
   parentId?: string;
   name?: string;

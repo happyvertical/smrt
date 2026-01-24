@@ -125,4 +125,40 @@ export class AdGroupCollection extends SmrtCollection<AdGroup> {
   async findCompleted(): Promise<AdGroup[]> {
     return await this.findByStatus(AdGroupStatus.COMPLETED);
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenancy Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find ad groups belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of ad groups for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<AdGroup[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global ad groups (no tenant association)
+   *
+   * @returns Array of global ad groups
+   */
+  async findGlobal(): Promise<AdGroup[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find ad groups for a tenant including global (shared) ad groups
+   *
+   * @param tenantId - Tenant ID to include
+   * @returns Array of tenant-specific and global ad groups
+   */
+  async findWithGlobals(tenantId: string): Promise<AdGroup[]> {
+    return this.query(
+      `SELECT * FROM ad_groups WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

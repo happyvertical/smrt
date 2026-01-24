@@ -127,4 +127,40 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
     const lineItems = await this.findByInvoice(invoiceId);
     return lineItems.map((item) => item.toAccountingLineItem());
   }
+
+  // ============================================================================
+  // Tenant Helper Methods
+  // ============================================================================
+
+  /**
+   * Find all invoice line items belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of invoice line items for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<InvoiceLineItem[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global invoice line items (not associated with any tenant)
+   *
+   * @returns Array of global invoice line items
+   */
+  async findGlobal(): Promise<InvoiceLineItem[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find invoice line items for a tenant including global line items
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant-specific and global invoice line items
+   */
+  async findWithGlobals(tenantId: string): Promise<InvoiceLineItem[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

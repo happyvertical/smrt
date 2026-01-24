@@ -3,14 +3,17 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EmailOptions } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class Email extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   accountId = '';
   messageId = ''; // RFC 822 Message-ID header
   threadId = '';
@@ -58,6 +61,7 @@ export class Email extends SmrtObject {
   constructor(options: EmailOptions = {}) {
     super(options);
 
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.accountId !== undefined) this.accountId = options.accountId;
     if (options.messageId !== undefined) this.messageId = options.messageId;
     if (options.threadId !== undefined) this.threadId = options.threadId;

@@ -29,6 +29,7 @@ export type JournalStatus = 'draft' | 'posted' | 'voided';
  * Options for creating an Account
  */
 export interface AccountOptions extends SmrtClassOptions {
+  tenantId?: string | null;
   number?: string;
   name?: string;
   description?: string;
@@ -42,6 +43,7 @@ export interface AccountOptions extends SmrtClassOptions {
  * Options for creating a Journal
  */
 export interface JournalOptions extends SmrtClassOptions {
+  tenantId?: string | null;
   number?: string;
   date?: Date;
   description?: string;
@@ -58,6 +60,7 @@ export interface JournalOptions extends SmrtClassOptions {
  * Options for creating a JournalEntry
  */
 export interface JournalEntryOptions extends SmrtClassOptions {
+  tenantId?: string | null;
   journalId?: string;
   accountId?: string;
   debit?: number;

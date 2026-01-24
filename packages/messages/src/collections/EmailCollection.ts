@@ -250,4 +250,32 @@ export class EmailCollection extends SmrtCollection<Email> {
       withAttachments: emails.filter((e) => e.hasAttachments).length,
     };
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tenant Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all emails belonging to a specific tenant
+   */
+  async findByTenant(tenantId: string): Promise<Email[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global emails (no tenant)
+   */
+  async findGlobal(): Promise<Email[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find emails for a tenant including global emails
+   */
+  async findWithGlobals(tenantId: string): Promise<Email[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

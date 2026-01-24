@@ -158,4 +158,32 @@ export class EmailAccountCollection extends SmrtCollection<EmailAccount> {
       byProvider,
     };
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tenant Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all email accounts belonging to a specific tenant
+   */
+  async findByTenant(tenantId: string): Promise<EmailAccount[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global email accounts (no tenant)
+   */
+  async findGlobal(): Promise<EmailAccount[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find email accounts for a tenant including global accounts
+   */
+  async findWithGlobals(tenantId: string): Promise<EmailAccount[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

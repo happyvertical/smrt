@@ -298,4 +298,40 @@ export class TagCollection extends SmrtCollection<Tag> {
       await this.updateDescendantLevels(child); // Recursive
     }
   }
+
+  // =========================================================================
+  // Tenant Helper Methods
+  // =========================================================================
+
+  /**
+   * Find all tags belonging to a specific tenant
+   *
+   * @param tenantId - The tenant ID to filter by
+   * @returns Array of tags for the specified tenant
+   */
+  async findByTenant(tenantId: string): Promise<Tag[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global (tenant-less) tags
+   *
+   * @returns Array of global tags with null tenantId
+   */
+  async findGlobal(): Promise<Tag[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find tags for a tenant including global tags
+   *
+   * @param tenantId - The tenant ID to filter by
+   * @returns Array of tags for the tenant plus all global tags
+   */
+  async findWithGlobals(tenantId: string): Promise<Tag[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

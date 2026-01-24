@@ -34,6 +34,7 @@
     "@happyvertical/files": "^0.66.9",
     "@happyvertical/logger": "^0.66.9",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "^0.66.9",
     "@happyvertical/utils": "^0.66.9"
   },

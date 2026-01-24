@@ -133,4 +133,36 @@ export class RepositoryCollection extends SmrtCollection<Repository> {
 
     return withIssues;
   }
+
+  /**
+   * Find repositories by tenant ID
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of repositories for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Repository[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global repositories (no tenant)
+   *
+   * @returns Array of global repositories
+   */
+  async findGlobal(): Promise<Repository[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find repositories for a tenant including global repositories
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of tenant and global repositories
+   */
+  async findWithGlobals(tenantId: string): Promise<Repository[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

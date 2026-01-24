@@ -216,4 +216,36 @@ export class IssueCollection extends SmrtCollection<Issue> {
 
     return synced;
   }
+
+  /**
+   * Find issues by tenant ID
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of issues for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Issue[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global issues (no tenant)
+   *
+   * @returns Array of global issues
+   */
+  async findGlobal(): Promise<Issue[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find issues for a tenant including global issues
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of tenant and global issues
+   */
+  async findWithGlobals(tenantId: string): Promise<Issue[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

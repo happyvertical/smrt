@@ -6,6 +6,7 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   BALANCE_EPSILON,
   type JournalEntryData,
@@ -13,12 +14,18 @@ import {
   type JournalStatus,
 } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create'] }, // No update/delete - immutable after posting
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
 })
 export class Journal extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenancy support (nullable for global journals)
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Journal number (auto-generated sequence, e.g., "JNL-0001")
    */

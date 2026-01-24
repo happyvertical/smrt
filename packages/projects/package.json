@@ -33,6 +33,7 @@
     "@happyvertical/repos": "^0.66.9",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "^0.66.9",
     "@happyvertical/utils": "^0.66.9"

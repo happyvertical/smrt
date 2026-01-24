@@ -78,4 +78,40 @@ export class VendorCollection extends SmrtCollection<Vendor> {
     await vendor.save();
     return vendor;
   }
+
+  // ============================================================================
+  // Tenant Helper Methods
+  // ============================================================================
+
+  /**
+   * Find all vendors belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of vendors for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Vendor[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global vendors (not associated with any tenant)
+   *
+   * @returns Array of global vendors
+   */
+  async findGlobal(): Promise<Vendor[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find vendors for a tenant including global vendors
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant-specific and global vendors
+   */
+  async findWithGlobals(tenantId: string): Promise<Vendor[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

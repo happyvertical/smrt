@@ -406,4 +406,58 @@ export class Contents extends SmrtCollection<Content> {
 
     return { images: generatedImages, failed };
   }
+
+  // ============================================
+  // Tenant Helper Methods
+  // ============================================
+
+  /**
+   * Find all content belonging to a specific tenant
+   *
+   * @param tenantId - The tenant ID to filter by
+   * @returns Promise resolving to array of Content objects for the tenant
+   *
+   * @example
+   * ```typescript
+   * const tenantContent = await contents.findByTenant('tenant-123');
+   * ```
+   */
+  async findByTenant(tenantId: string): Promise<Content[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global content (not associated with any tenant)
+   *
+   * @returns Promise resolving to array of global Content objects
+   *
+   * @example
+   * ```typescript
+   * const globalContent = await contents.findGlobal();
+   * ```
+   */
+  async findGlobal(): Promise<Content[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find content for a tenant including global content
+   *
+   * This returns both tenant-specific content and global content (tenantId is null),
+   * useful for showing a tenant their content plus any shared/global resources.
+   *
+   * @param tenantId - The tenant ID to include
+   * @returns Promise resolving to array of Content objects (tenant + global)
+   *
+   * @example
+   * ```typescript
+   * const allAccessibleContent = await contents.findWithGlobals('tenant-123');
+   * ```
+   */
+  async findWithGlobals(tenantId: string): Promise<Content[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

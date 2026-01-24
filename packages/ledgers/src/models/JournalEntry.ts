@@ -6,14 +6,21 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { JournalEntryOptions } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get'] }, // Created via Journal, not directly
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class JournalEntry extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenancy support (nullable for global entries)
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Parent journal ID (required)
    */

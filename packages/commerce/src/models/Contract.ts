@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { ContractStatus, ContractType } from '../types/index.js';
 import { Customer } from './Customer.js';
 import { Vendor } from './Vendor.js';
@@ -37,6 +38,7 @@ import { Vendor } from './Vendor.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
@@ -44,6 +46,11 @@ import { Vendor } from './Vendor.js';
   cli: true,
 })
 export class Contract extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global contracts
+   */
+  tenantId = tenantId({ nullable: true });
   /**
    * Contract type discriminator (STI)
    */
@@ -123,6 +130,7 @@ export class Contract extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractType !== undefined)
       this.contractType = options.contractType;
     if (options.status !== undefined) this.status = options.status;

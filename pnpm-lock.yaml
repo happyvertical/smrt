@@ -116,6 +116,9 @@ importers:
       '@happyvertical/smrt-tags':
         specifier: workspace:*
         version: link:../tags
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -193,6 +196,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -270,6 +276,9 @@ importers:
       '@happyvertical/smrt-tags':
         specifier: workspace:*
         version: link:../tags
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.66.9
         version: 0.66.11
@@ -378,6 +387,9 @@ importers:
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
@@ -467,6 +479,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/spider':
         specifier: ^0.60.6
         version: 0.60.6(@types/node@24.10.9)
@@ -595,6 +610,9 @@ importers:
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
@@ -718,6 +736,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -764,6 +785,9 @@ importers:
       '@happyvertical/smrt-secrets':
         specifier: workspace:*
         version: link:../secrets
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.66.9
         version: 0.66.11
@@ -771,9 +795,6 @@ importers:
         specifier: ^0.66.9
         version: 0.66.9
     devDependencies:
-      '@happyvertical/smrt-tenancy':
-        specifier: workspace:*
-        version: link:../tenancy
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -810,6 +831,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.66.9
         version: 0.66.11
@@ -893,6 +917,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.66.9
         version: 0.66.11
@@ -948,6 +975,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
@@ -1006,6 +1036,9 @@ importers:
       '@happyvertical/smrt-projects':
         specifier: workspace:*
         version: link:../projects
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -1233,6 +1266,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.66.9
         version: 0.66.11

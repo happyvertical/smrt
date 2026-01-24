@@ -6,8 +6,10 @@
  */
 
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { TagMetadata, TagOptions } from './types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -41,6 +43,9 @@ export class Tag extends SmrtObject {
   level: number = 0; // Hierarchy depth (0 = root)
   description: string = ''; // Optional description
   metadata: string = ''; // JSON metadata stored as text
+
+  // Tenancy
+  tenantId = tenantId({ nullable: true });
 
   // Timestamps
   createdAt: Date = new Date();

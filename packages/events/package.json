@@ -40,6 +40,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-places": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "^0.66.9",
     "@happyvertical/utils": "^0.66.9"

@@ -1,7 +1,7 @@
 /**
  * AssetCollection - Collection manager for Asset instances
  *
- * Provides tag management, versioning, and query operations for assets
+ * Provides tag management, versioning, tenant-aware queries, and operations for assets
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
@@ -9,6 +9,42 @@ import { Asset } from './asset';
 
 export class AssetCollection extends SmrtCollection<Asset> {
   static readonly _itemClass = Asset;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenant-Aware Query Methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all assets belonging to a specific tenant
+   *
+   * @param tenantId - The tenant ID to filter by
+   * @returns Array of assets belonging to this tenant
+   */
+  async findByTenant(tenantId: string): Promise<Asset[]> {
+    return (await this.list({ where: { tenantId } })) as Asset[];
+  }
+
+  /**
+   * Find all global assets (assets without a tenant)
+   *
+   * @returns Array of global assets
+   */
+  async findGlobal(): Promise<Asset[]> {
+    return (await this.list({ where: { tenantId: null } })) as Asset[];
+  }
+
+  /**
+   * Find assets belonging to a tenant plus all global assets
+   *
+   * @param tenantId - The tenant ID to include
+   * @returns Array of tenant-specific and global assets
+   */
+  async findWithGlobals(tenantId: string): Promise<Asset[]> {
+    return (await this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    )) as Asset[];
+  }
 
   /**
    * Add a tag to an asset (uses @smrt/tags)

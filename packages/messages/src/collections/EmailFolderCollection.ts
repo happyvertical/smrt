@@ -195,4 +195,32 @@ export class EmailFolderCollection extends SmrtCollection<EmailFolder> {
       }
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tenant Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find all email folders belonging to a specific tenant
+   */
+  async findByTenant(tenantId: string): Promise<EmailFolder[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global email folders (no tenant)
+   */
+  async findGlobal(): Promise<EmailFolder[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find email folders for a tenant including global folders
+   */
+  async findWithGlobals(tenantId: string): Promise<EmailFolder[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

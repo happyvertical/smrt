@@ -6,14 +6,21 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, AccountTreeNode, AccountType } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
 })
 export class Account extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenancy support (nullable for global accounts)
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Account number (e.g., "1000", "5030")
    */

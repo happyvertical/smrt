@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdEventType } from '../types/index.js';
 import { AdVariation } from './AdVariation.js';
 
@@ -40,12 +41,18 @@ import { AdVariation } from './AdVariation.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['create', 'list'] }, // No update/delete (immutable)
   mcp: { include: ['create'] },
   cli: false, // High volume, not useful in CLI
 })
 export class AdEvent extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenancy support
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Variation ID (FK to AdVariation)
    */
@@ -79,6 +86,7 @@ export class AdEvent extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.variationId !== undefined)
       this.variationId = options.variationId;
     if (options.zoneId !== undefined) this.zoneId = options.zoneId;

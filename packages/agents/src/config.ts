@@ -13,6 +13,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
  * AgentConfig stores agent configuration in the database
@@ -37,6 +38,7 @@ import {
  * await config.save();
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'agent_configs',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -44,6 +46,11 @@ import {
   cli: true,
 })
 export class AgentConfig extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global agent configs
+   */
+  tenantId = tenantId({ nullable: true });
   /**
    * ID of the agent instance this config belongs to
    */
@@ -160,4 +167,33 @@ export class AgentConfig extends SmrtObject {
  */
 export class AgentConfigCollection extends SmrtCollection<AgentConfig> {
   static readonly _itemClass = AgentConfig;
+
+  /**
+   * Find all configs for a specific tenant
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of AgentConfig objects for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<AgentConfig[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global configs (not associated with any tenant)
+   * @returns Array of global AgentConfig objects
+   */
+  async findGlobal(): Promise<AgentConfig[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find configs for a tenant including global configs
+   * @param tenantId - Tenant ID to include
+   * @returns Array of AgentConfig objects for the tenant and global configs
+   */
+  async findWithGlobals(tenantId: string): Promise<AgentConfig[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

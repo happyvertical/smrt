@@ -163,4 +163,40 @@ export class AdEventCollection extends SmrtCollection<AdEvent> {
       conversionRate: clicks > 0 ? conversions / clicks : 0,
     };
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tenancy Helper Methods
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Find ad events belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of ad events for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<AdEvent[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global ad events (no tenant association)
+   *
+   * @returns Array of global ad events
+   */
+  async findGlobal(): Promise<AdEvent[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find ad events for a tenant including global (shared) events
+   *
+   * @param tenantId - Tenant ID to include
+   * @returns Array of tenant-specific and global ad events
+   */
+  async findWithGlobals(tenantId: string): Promise<AdEvent[]> {
+    return this.query(
+      `SELECT * FROM ad_events WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

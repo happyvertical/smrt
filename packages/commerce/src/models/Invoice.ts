@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { InvoiceStatus, type RecognizeRevenueOptions } from '../types/index.js';
 import { Customer } from './Customer.js';
 
@@ -39,12 +40,18 @@ import { Customer } from './Customer.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'send', 'recognizeRevenue'] },
   cli: true,
 })
 export class Invoice extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global invoices
+   */
+  tenantId = tenantId({ nullable: true });
   /**
    * Customer this invoice is for
    */
@@ -211,6 +218,7 @@ export class Invoice extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.customerId !== undefined) this.customerId = options.customerId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
     if (options.invoiceNumber !== undefined)

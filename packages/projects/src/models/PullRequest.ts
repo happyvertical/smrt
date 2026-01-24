@@ -6,6 +6,7 @@
  */
 
 import { smrt } from '@happyvertical/smrt-core';
+import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import { SYNC_THROTTLE_MS } from '../constants';
 import type { MergeMethod, SyncOptions } from '../types';
 import { Issue, type IssueOptions } from './Issue';
@@ -22,6 +23,7 @@ export interface PullRequestOptions extends IssueOptions {
   changedFiles?: number;
 }
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync', 'summarize', 'merge'] },

@@ -12,6 +12,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { SYNC_THROTTLE_MS } from '../constants';
 import type {
   IProject,
@@ -39,8 +40,10 @@ export interface ProjectOptions extends SmrtObjectOptions {
   fields?: ProjectField[];
   statusFieldId?: string;
   statusOptions?: Record<string, string>;
+  tenantId?: string | null;
 }
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync', 'addItem', 'updateItemStatus'] },
@@ -56,6 +59,11 @@ export interface ProjectOptions extends SmrtObjectOptions {
   },
 })
 export class Project extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Provider-specific project ID (e.g., GitHub GraphQL node ID)
    */
@@ -146,6 +154,8 @@ export class Project extends SmrtObject {
       this.statusFieldId = options.statusFieldId;
     if (options.statusOptions !== undefined)
       this.statusOptions = options.statusOptions;
+    if (options.tenantId !== undefined)
+      (this as any).tenantId = options.tenantId;
   }
 
   /**

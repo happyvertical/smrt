@@ -124,4 +124,40 @@ export class PropertyCollection extends SmrtCollection<Property> {
 
     return counts;
   }
+
+  // ============================================
+  // Tenant Helper Methods
+  // ============================================
+
+  /**
+   * Find properties belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of properties for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Property[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find global properties (no tenant association)
+   *
+   * @returns Array of global properties
+   */
+  async findGlobal(): Promise<Property[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find properties for a tenant including global properties
+   *
+   * @param tenantId - Tenant ID to filter by
+   * @returns Array of tenant-specific and global properties
+   */
+  async findWithGlobals(tenantId: string): Promise<Property[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

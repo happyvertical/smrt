@@ -136,8 +136,8 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
         expect(personDef.decoratorConfig?.tableStrategy).toBe('sti');
 
         // As of v0.17: Manifest includes inherited fields inline (build-time merging)
-        // Person now has 7 fields from Profile in the manifest
-        expect(Object.keys(personDef.fields || {}).length).toBe(7);
+        // Person now has 8 fields from Profile in the manifest (includes tenantId)
+        expect(Object.keys(personDef.fields || {}).length).toBe(8);
       }
 
       // Verify Profile is in the manifest (the STI base)
@@ -230,10 +230,12 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
     console.log('Person fields:', Array.from(fields.keys()));
     console.log('Person fields count:', fields.size);
 
-    // FIXED: Person now has 7 fields because manifest includes inherited fields
-    expect(fields.size).toBe(7); // Exactly 7 inherited fields from Profile
+    // FIXED: Person now has 8 fields because manifest includes inherited fields
+    // (includes tenantId after multi-tenancy support was added to smrt-profiles)
+    expect(fields.size).toBe(8); // Exactly 8 inherited fields from Profile
 
     // Check specific fields from Profile (inherited at build time)
+    expect(fields.has('tenantId')).toBe(true);
     expect(fields.has('typeId')).toBe(true);
     expect(fields.has('email')).toBe(true);
     expect(fields.has('name')).toBe(true);

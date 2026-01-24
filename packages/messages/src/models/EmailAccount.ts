@@ -3,6 +3,7 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   EmailAccountOptions,
   ProviderType,
@@ -10,12 +11,14 @@ import type {
   SyncResult,
 } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class EmailAccount extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   name = '';
   email = '';
   providerType: ProviderType = 'imap';
@@ -31,6 +34,7 @@ export class EmailAccount extends SmrtObject {
   constructor(options: EmailAccountOptions = {}) {
     super(options);
 
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.name !== undefined) this.name = options.name;
     if (options.email !== undefined) this.email = options.email;
     if (options.providerType !== undefined)

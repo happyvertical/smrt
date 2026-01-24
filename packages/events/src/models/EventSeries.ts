@@ -5,8 +5,10 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventSeriesOptions, RecurrencePattern } from '../types';
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -14,6 +16,7 @@ import type { EventSeriesOptions, RecurrencePattern } from '../types';
   cli: true,
 })
 export class EventSeries extends SmrtObject {
+  tenantId = tenantId({ nullable: true });
   name: string = '';
   typeId = ''; // FK to EventType
   organizerId = ''; // FK to Profile (from @happyvertical/smrt-profiles)

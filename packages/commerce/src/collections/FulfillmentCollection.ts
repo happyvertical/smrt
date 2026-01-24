@@ -100,4 +100,40 @@ export class FulfillmentCollection extends SmrtCollection<Fulfillment> {
       orderBy: 'shippedAt DESC',
     });
   }
+
+  // ============================================================================
+  // Tenant Helper Methods
+  // ============================================================================
+
+  /**
+   * Find all fulfillments belonging to a specific tenant
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of fulfillments for the tenant
+   */
+  async findByTenant(tenantId: string): Promise<Fulfillment[]> {
+    return this.list({ where: { tenantId } });
+  }
+
+  /**
+   * Find all global fulfillments (not associated with any tenant)
+   *
+   * @returns Array of global fulfillments
+   */
+  async findGlobal(): Promise<Fulfillment[]> {
+    return this.list({ where: { tenantId: null } });
+  }
+
+  /**
+   * Find fulfillments for a tenant including global fulfillments
+   *
+   * @param tenantId - Tenant ID
+   * @returns Array of tenant-specific and global fulfillments
+   */
+  async findWithGlobals(tenantId: string): Promise<Fulfillment[]> {
+    return this.query(
+      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
+      [tenantId],
+    );
+  }
 }

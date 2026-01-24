@@ -10,6 +10,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AgentConfig } from './config.js';
 import type {
   AgentWithInterestsOptions,
@@ -86,6 +87,7 @@ export interface AgentOptions
  * await agent.execute();
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   // Abstract class - no direct CLI/API/MCP exposure
   // But must be registered for inheritance chain to work (issue #523)
@@ -96,6 +98,11 @@ export interface AgentOptions
   tableStrategy: 'sti',
 })
 export abstract class Agent extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation
+   * Nullable to support both tenant-scoped and global agents
+   */
+  tenantId = tenantId({ nullable: true });
   /**
    * UI slots this agent supports for admin panels
    *

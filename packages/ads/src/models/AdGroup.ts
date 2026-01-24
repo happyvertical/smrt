@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdGroupStatus } from '../types/index.js';
 import { AdDeliveryTier } from './AdDeliveryTier.js';
 
@@ -32,12 +33,18 @@ import { AdDeliveryTier } from './AdDeliveryTier.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
 })
 export class AdGroup extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenancy support
+   */
+  tenantId = tenantId({ nullable: true });
+
   /**
    * Contract ID (FK to smrt-commerce Contract, cross-package)
    */
@@ -95,6 +102,7 @@ export class AdGroup extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
     if (options.tierId !== undefined) this.tierId = options.tierId;
     if (options.name !== undefined) this.name = options.name;
