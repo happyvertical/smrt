@@ -4,7 +4,13 @@
  * Tests README section extraction and markdown generation
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -421,7 +427,8 @@ Gamma content.
     let originalCwd: string;
 
     beforeEach(() => {
-      tempDir = mkdtempSync(join(tmpdir(), 'smrt-test-'));
+      // Use realpathSync to normalize path (macOS /var is symlink to /private/var)
+      tempDir = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-test-')));
       originalCwd = process.cwd();
     });
 
