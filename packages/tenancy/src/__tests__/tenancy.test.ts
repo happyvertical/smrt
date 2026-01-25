@@ -25,7 +25,7 @@ import {
 // Decorator tests
 import { TenantScoped } from '../decorators';
 // Field tests
-import { getTenantIdFieldOptions, isTenantIdField, tenantId } from '../fields';
+import { getTenantIdFieldOptions, isTenantIdField } from '../fields';
 // Interceptor tests
 import {
   createTenantInterceptor,
@@ -290,35 +290,37 @@ describe('@TenantScoped decorator', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Field Helper Tests
+// Field Utility Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('tenantId field helper', () => {
-  it('should create a field definition', () => {
-    const field = tenantId();
-
-    expect(field.type).toBe('foreignKey');
-    expect(field.reference).toBe('Tenant');
-    expect(field.sqlType).toBe('TEXT');
-    expect(field.required).toBe(true);
-  });
-
-  it('should identify tenant ID fields', () => {
-    const field = tenantId();
-    expect(isTenantIdField(field)).toBe(true);
+describe('field utilities', () => {
+  it('should identify tenant ID fields by __tenancy marker', () => {
+    const validField = {
+      type: 'foreignKey',
+      __tenancy: { isTenantIdField: true, autoFilter: true },
+    };
+    expect(isTenantIdField(validField)).toBe(true);
 
     expect(isTenantIdField({ type: 'text' })).toBe(false);
     expect(isTenantIdField(null)).toBe(false);
     expect(isTenantIdField('string')).toBe(false);
   });
 
-  it('should return tenancy options', () => {
-    const field = tenantId({ autoFilter: false, nullable: true });
+  it('should return tenancy options from field definition', () => {
+    const field = {
+      type: 'foreignKey',
+      __tenancy: {
+        isTenantIdField: true,
+        autoFilter: false,
+        nullable: true,
+        autoPopulate: true,
+      },
+    };
     const opts = getTenantIdFieldOptions(field);
 
     expect(opts?.autoFilter).toBe(false);
     expect(opts?.nullable).toBe(true);
-    expect(opts?.autoPopulate).toBe(true); // Default
+    expect(opts?.autoPopulate).toBe(true);
   });
 
   it('should return null for non-tenant fields', () => {
