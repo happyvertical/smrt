@@ -42,7 +42,7 @@ interface Props {
    *
    * @example
    * ```svelte
-   * <SmrtProvider
+   * <Provider
    *   ai={{
    *     preload: 'idle',
    *     stt: { type: 'whisper-cpp' },
@@ -50,7 +50,7 @@ interface Props {
    *   }}
    * >
    *   ...
-   * </SmrtProvider>
+   * </Provider>
    * ```
    */
   ai?: AIConfig;
