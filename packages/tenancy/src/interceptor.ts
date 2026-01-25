@@ -24,6 +24,7 @@ import {
   TenantContextError,
   TenantIsolationError,
 } from './context.js';
+import { isTenantIdField } from './fields.js';
 import { getTenantScopedConfig, isTenantScopedClass } from './registry.js';
 
 /**
@@ -307,14 +308,21 @@ export function createTenantInterceptor(
         return; // Mode is 'optional'
       }
 
-      // Auto-populate tenant ID if not set
-      if (!instanceTenantId && config?.autoPopulate !== false) {
+      // Auto-populate tenant ID if not set (or if it's a field descriptor, not a value)
+      if (
+        (!instanceTenantId || isTenantIdField(instanceTenantId)) &&
+        config?.autoPopulate !== false
+      ) {
         (instance as any)[tenantField] = tenantContext.tenantId;
         return;
       }
 
-      // Validate tenant ID matches context
-      if (instanceTenantId && instanceTenantId !== tenantContext.tenantId) {
+      // Validate tenant ID matches context (skip validation for field descriptors)
+      if (
+        instanceTenantId &&
+        !isTenantIdField(instanceTenantId) &&
+        instanceTenantId !== tenantContext.tenantId
+      ) {
         opts.onIsolationViolation?.(
           className,
           tenantContext.tenantId,
@@ -364,8 +372,12 @@ export function createTenantInterceptor(
         return;
       }
 
-      // Validate tenant ID matches
-      if (instanceTenantId && instanceTenantId !== tenantContext.tenantId) {
+      // Validate tenant ID matches (skip validation for field descriptors)
+      if (
+        instanceTenantId &&
+        !isTenantIdField(instanceTenantId) &&
+        instanceTenantId !== tenantContext.tenantId
+      ) {
         opts.onIsolationViolation?.(
           className,
           tenantContext.tenantId,

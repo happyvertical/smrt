@@ -491,6 +491,33 @@ describe('TenantInterceptor', () => {
       });
     });
 
+    it('should auto-populate when tenantId is a field descriptor (issue #829)', async () => {
+      // When a model uses `tenantId = tenantId({ nullable: true })` as a class property,
+      // the field descriptor object remains on the instance if the constructor doesn't
+      // explicitly set a value. The interceptor should treat this as "not set".
+      registerTenantScopedClass('Contract');
+      const interceptor = createTenantInterceptor();
+
+      // Simulate a class property with the field descriptor object
+      const fieldDescriptor = tenantId({ nullable: true });
+      const instance = { tenantId: fieldDescriptor } as any;
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        // Before: tenantId is a field descriptor object (truthy, but not a value)
+        expect(isTenantIdField(instance.tenantId)).toBe(true);
+
+        interceptor.beforeSave?.(instance, {
+          className: 'Contract',
+          operation: 'save',
+          timestamp: new Date(),
+        });
+
+        // After: tenantId should be auto-populated with the actual tenant ID
+        expect(instance.tenantId).toBe('tenant-123');
+        expect(isTenantIdField(instance.tenantId)).toBe(false);
+      });
+    });
+
     it('should throw on tenant mismatch', async () => {
       registerTenantScopedClass('Document');
       const interceptor = createTenantInterceptor();
@@ -507,6 +534,51 @@ describe('TenantInterceptor', () => {
             timestamp: new Date(),
           }),
         ).toThrow(TenantIsolationError);
+      });
+    });
+
+    it('should not throw for field descriptor with different context (issue #829)', async () => {
+      // A field descriptor should not trigger a tenant mismatch error
+      // because it's not an actual tenant ID value
+      registerTenantScopedClass('Contract');
+      const interceptor = createTenantInterceptor();
+
+      const fieldDescriptor = tenantId({ nullable: true });
+      const instance = { tenantId: fieldDescriptor } as any;
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        // Should NOT throw - the field descriptor should be replaced, not validated
+        expect(() =>
+          interceptor.beforeSave?.(instance, {
+            className: 'Contract',
+            operation: 'save',
+            timestamp: new Date(),
+          }),
+        ).not.toThrow();
+
+        expect(instance.tenantId).toBe('tenant-123');
+      });
+    });
+  });
+
+  describe('beforeDelete', () => {
+    it('should not throw for field descriptor with different context (issue #829)', async () => {
+      // A field descriptor should not trigger a tenant mismatch error on delete
+      registerTenantScopedClass('Contract');
+      const interceptor = createTenantInterceptor();
+
+      const fieldDescriptor = tenantId({ nullable: true });
+      const instance = { tenantId: fieldDescriptor } as any;
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        // Should NOT throw - field descriptors are ignored for validation
+        expect(() =>
+          interceptor.beforeDelete?.(instance, {
+            className: 'Contract',
+            operation: 'delete',
+            timestamp: new Date(),
+          }),
+        ).not.toThrow();
       });
     });
   });
