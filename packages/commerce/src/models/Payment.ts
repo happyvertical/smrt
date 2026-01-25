@@ -10,8 +10,6 @@ import {
   PaymentStatus,
   type RecordPaymentOptions,
 } from '../types/index.js';
-import { Contract } from './Contract.js';
-import { Customer } from './Customer.js';
 
 /**
  * Payment represents a financial transaction against a contract.
@@ -49,16 +47,20 @@ export class Payment extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global payments
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   /**
    * Contract this payment is for
    */
-  contractId = foreignKey(Contract);
+  @foreignKey('Contract')
+  contractId: string = '';
 
   /**
    * Customer who made the payment
    */
-  customerId = foreignKey(Customer);
+  @foreignKey('Customer')
+  customerId: string = '';
 
   /**
    * Payment amount

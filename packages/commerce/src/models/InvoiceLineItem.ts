@@ -5,7 +5,6 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { Invoice } from './Invoice.js';
 
 /**
  * InvoiceLineItem represents a single line item on an invoice.
@@ -39,11 +38,14 @@ export class InvoiceLineItem extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global invoice line items
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   /**
    * Parent invoice
    */
-  invoiceId = foreignKey(Invoice);
+  @foreignKey('Invoice')
+  invoiceId: string = '';
 
   /**
    * Item description

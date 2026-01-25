@@ -7,11 +7,11 @@ Svelte 5 components for SMRT user management and browser AI features. Provides r
 ```svelte
 <!-- +layout.svelte -->
 <script>
-  import { SmrtProvider } from '@happyvertical/smrt-svelte';
+  import { Provider } from '@happyvertical/smrt-svelte';
   let { data, children } = $props();
 </script>
 
-<SmrtProvider
+<Provider
   user={data.user}
   permissions={data.permissions}
   ai={{
@@ -20,10 +20,10 @@ Svelte 5 components for SMRT user management and browser AI features. Provides r
   }}
 >
   {@render children()}
-</SmrtProvider>
+</Provider>
 ```
 
-## SmrtProvider
+## Provider
 
 The root component that provides app-wide state for authentication, permissions, sockets, and AI.
 
@@ -44,7 +44,7 @@ The root component that provides app-wide state for authentication, permissions,
 ### Example with Full Configuration
 
 ```svelte
-<SmrtProvider
+<Provider
   user={data.user}
   permissions={data.permissions}
   socket={{
@@ -63,7 +63,7 @@ The root component that provides app-wide state for authentication, permissions,
   onAILoadingChange={(state) => console.log('AI:', state.phase)}
 >
   <slot />
-</SmrtProvider>
+</Provider>
 ```
 
 ---
@@ -108,7 +108,7 @@ interface AIConfig {
 | Strategy | Description |
 |----------|-------------|
 | `'none'` | Don't preload. Initialize on first use. |
-| `'eager'` | Preload immediately when SmrtProvider mounts. |
+| `'eager'` | Preload immediately when Provider mounts. |
 | `'idle'` | Preload during browser idle time (`requestIdleCallback`). Recommended. |
 | `'on-visible'` | Preload when a SMRT AI component becomes visible. |
 
@@ -142,7 +142,7 @@ Shows download progress during model initialization:
   import { AILoadingOverlay } from '@happyvertical/smrt-svelte';
 </script>
 
-<!-- Auto-shown by SmrtProvider when ai.showLoadingOverlay is true -->
+<!-- Auto-shown by Provider when ai.showLoadingOverlay is true -->
 <!-- Or use manually: -->
 <AILoadingOverlay
   message="Loading AI models..."
@@ -218,7 +218,7 @@ Access the full app state manager:
 
 | Component | Description |
 |-----------|-------------|
-| `SmrtProvider` | Root provider for state and AI |
+| `Provider` | Root provider for state and AI |
 | `AILoadingOverlay` | Full-screen loading overlay |
 | `CapabilityGate` | Conditionally render based on AI capabilities |
 | `DownloadProgress` | Progress bar for model downloads |
@@ -320,17 +320,17 @@ export const load = async ({ locals }) => {
 
 ```svelte
 <script>
-  import { SmrtProvider } from '@happyvertical/smrt-svelte';
+  import { Provider } from '@happyvertical/smrt-svelte';
   let { data, children } = $props();
 </script>
 
-<SmrtProvider
+<Provider
   user={data.user}
   permissions={data.permissions}
   ai={{ preload: 'idle', stt: { type: 'whisper-cpp' } }}
 >
   {@render children()}
-</SmrtProvider>
+</Provider>
 ```
 
 ---
@@ -338,7 +338,7 @@ export const load = async ({ locals }) => {
 ## State Architecture
 
 ```
-SmrtProvider
+Provider
     │
     ├── SmrtAppStateManager ($state rune)
     │   ├── mode: 'default' | 'smrt'

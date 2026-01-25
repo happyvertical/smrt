@@ -51,7 +51,8 @@ export class Issue extends SmrtObject {
   /**
    * Tenant ID for multi-tenant isolation
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
 
   /**
    * Repository this issue belongs to

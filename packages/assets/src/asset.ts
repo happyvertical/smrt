@@ -21,7 +21,9 @@ import type { AssetOptions } from './types';
 })
 export class Asset extends SmrtObject {
   // Tenant isolation (optional - assets can be global or tenant-specific)
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   // Core fields
   name = ''; // User-friendly name
   // slug is inherited as an accessor from SmrtObject

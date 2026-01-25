@@ -1,21 +1,11 @@
 /**
- * tenantId Field Helper
+ * Tenancy Field Types and Utilities
  *
- * A specialized field that marks a property as the tenant identifier.
- * This field is automatically managed by the tenancy system.
- *
- * @example
- * ```typescript
- * import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
- *
- * @TenantScoped()
- * class Document extends SmrtObject {
- *   tenantId = tenantId();  // Framework handles filtering/validation
- *   title: string = '';
- * }
- * ```
+ * This module provides types and utility functions for tenant ID fields.
+ * The actual field decorator is in decorators.ts.
  *
  * @see https://github.com/happyvertical/smrt/issues/675
+ * @see https://github.com/happyvertical/smrt/issues/829
  */
 
 /**
@@ -66,54 +56,6 @@ export interface TenantIdFieldDefinition {
   nullable: boolean;
   /** Tenancy-specific options */
   __tenancy: TenantIdFieldOptions & { isTenantIdField: true };
-}
-
-/**
- * Define a tenant ID field
- *
- * This creates a TEXT field that references the Tenant table.
- * The tenancy interceptor uses this field for automatic filtering.
- *
- * @param options - Field options
- * @returns Field definition for use in SMRT class
- *
- * @example Basic usage
- * ```typescript
- * class Document extends SmrtObject {
- *   tenantId = tenantId();
- * }
- * ```
- *
- * @example With custom options
- * ```typescript
- * class GlobalConfig extends SmrtObject {
- *   // Nullable tenant ID for global configs
- *   tenantId = tenantId({ nullable: true, required: false });
- * }
- * ```
- */
-export function tenantId(
-  options: TenantIdFieldOptions = {},
-): TenantIdFieldDefinition {
-  const opts = {
-    autoFilter: true,
-    required: true,
-    autoPopulate: true,
-    nullable: false,
-    ...options,
-  };
-
-  return {
-    type: 'foreignKey',
-    reference: 'Tenant',
-    sqlType: 'TEXT',
-    required: opts.required,
-    nullable: opts.nullable,
-    __tenancy: {
-      ...opts,
-      isTenantIdField: true,
-    },
-  };
 }
 
 /**

@@ -24,6 +24,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { field } from '../decorators/index.js';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
@@ -71,46 +72,51 @@ class MLILevelD extends MLILevelC {
 // Field redefinition test: MLIBase → MLIChild
 @smrt({ tableStrategy: 'sti' })
 class MLIBase extends SmrtObject {
-  title = text({ required: false });
+  @field({ required: false })
+  title: string = '';
 }
 
 @smrt()
 class MLIChild extends MLIBase {
-  title = text({ required: true }); // Redefine with stricter requirement
-  description = text();
+  @field({ required: true })
+  title: string = ''; // Redefine with stricter requirement
+
+  description: string = '';
 }
 
 // Constraints test: MLIParent → MLIChildConstrained
 @smrt({ tableStrategy: 'sti' })
 class MLIParent extends SmrtObject {
-  email = text({ pattern: /@/ }); // Simple pattern
+  @field({ pattern: /@/ })
+  email: string = ''; // Simple pattern
 }
 
 @smrt()
 class MLIChildConstrained extends MLIParent {
-  email = text({
+  @field({
     pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
     required: true,
-  }); // Stricter pattern
+  })
+  email: string = ''; // Stricter pattern
 }
 
 // Real-world scenario from issue #302: MLIProfileIssue302 → MLIOrganizationIssue302 → MLICouncilIssue302
 @smrt({ tableStrategy: 'sti' })
 class MLIProfileIssue302 extends SmrtObject {
-  name = text();
-  slug = text();
-  url = text();
+  name: string = '';
+  slug: string = '';
+  url: string = '';
 }
 
 @smrt()
 class MLIOrganizationIssue302 extends MLIProfileIssue302 {
-  organizationName = text();
+  organizationName: string = '';
 }
 
 @smrt()
 class MLICouncilIssue302 extends MLIOrganizationIssue302 {
-  meetingsUrl = text();
-  timezone = text();
+  meetingsUrl: string = '';
+  timezone: string = '';
 }
 
 // ===== Test Suite =====

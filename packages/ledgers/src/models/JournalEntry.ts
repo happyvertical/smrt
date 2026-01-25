@@ -19,7 +19,8 @@ export class JournalEntry extends SmrtObject {
   /**
    * Tenant ID for multi-tenancy support (nullable for global entries)
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
 
   /**
    * Parent journal ID (required)

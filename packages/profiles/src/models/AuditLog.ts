@@ -35,7 +35,9 @@ export interface AuditLogOptions extends SmrtObjectOptions {
   cli: { include: ['list'] },
 })
 export class AuditLog extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   /**
    * The profile who performed the action
    */

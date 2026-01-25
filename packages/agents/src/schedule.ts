@@ -38,7 +38,9 @@ export class AgentSchedule extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global schedules
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   /** Type/class name of the agent to run */
   agentType: string = '';
 

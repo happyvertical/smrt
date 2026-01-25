@@ -45,7 +45,8 @@ export class Tag extends SmrtObject {
   metadata: string = ''; // JSON metadata stored as text
 
   // Tenancy
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
 
   // Timestamps
   createdAt: Date = new Date();

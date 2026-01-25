@@ -5,8 +5,6 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { ContractLineItem } from './ContractLineItem.js';
-import { Fulfillment } from './Fulfillment.js';
 
 /**
  * FulfillmentLineItem tracks which contract line items are included
@@ -34,16 +32,20 @@ export class FulfillmentLineItem extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global fulfillment line items
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   /**
    * Parent fulfillment
    */
-  fulfillmentId = foreignKey(Fulfillment);
+  @foreignKey('Fulfillment')
+  fulfillmentId: string = '';
 
   /**
    * Contract line item being fulfilled
    */
-  contractLineItemId = foreignKey(ContractLineItem);
+  @foreignKey('ContractLineItem')
+  contractLineItemId: string = '';
 
   /**
    * Quantity fulfilled in this fulfillment

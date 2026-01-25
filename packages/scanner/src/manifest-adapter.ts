@@ -338,73 +338,14 @@ export class ManifestAdapter {
   }
 
   /**
-   * Infer type from field helper call
+   * Infer type from field helper call (removed)
+   *
+   * Field helpers have been removed in favor of decorators and TypeScript types:
+   * - Use TypeScript types: name: string = '', price: number = 0.0
+   * - Use @field() decorator for constraints: @field({ required: true })
+   * - Use @foreignKey(), @oneToMany(), @manyToMany() decorators for relationships
    */
-  private inferFromHelper(initializer: string): FieldTypeInference | null {
-    // text(), text({ required: true })
-    if (initializer.startsWith('text(')) {
-      return { type: 'text', required: true, source: 'helper' };
-    }
-
-    // integer(), integer({ min: 0 })
-    if (initializer.startsWith('integer(')) {
-      return { type: 'integer', required: true, source: 'helper' };
-    }
-
-    // decimal(), decimal({ nullable: true })
-    if (initializer.startsWith('decimal(')) {
-      const nullable = initializer.includes('nullable: true');
-      return { type: 'decimal', required: !nullable, source: 'helper' };
-    }
-
-    // boolean()
-    if (initializer.startsWith('boolean(')) {
-      return { type: 'boolean', required: true, source: 'helper' };
-    }
-
-    // datetime()
-    if (initializer.startsWith('datetime(')) {
-      return { type: 'datetime', required: true, source: 'helper' };
-    }
-
-    // json()
-    if (initializer.startsWith('json(')) {
-      return { type: 'json', required: true, source: 'helper' };
-    }
-
-    // foreignKey(Customer)
-    const fkMatch = initializer.match(/^foreignKey\(\s*(\w+)/);
-    if (fkMatch) {
-      return {
-        type: 'foreignKey',
-        related: fkMatch[1],
-        required: true,
-        source: 'helper',
-      };
-    }
-
-    // oneToMany(OrderItem)
-    const otmMatch = initializer.match(/^oneToMany\(\s*(\w+)/);
-    if (otmMatch) {
-      return {
-        type: 'oneToMany',
-        related: otmMatch[1],
-        required: false,
-        source: 'helper',
-      };
-    }
-
-    // manyToMany(Tag)
-    const mtmMatch = initializer.match(/^manyToMany\(\s*(\w+)/);
-    if (mtmMatch) {
-      return {
-        type: 'manyToMany',
-        related: mtmMatch[1],
-        required: false,
-        source: 'helper',
-      };
-    }
-
+  private inferFromHelper(_initializer: string): FieldTypeInference | null {
     return null;
   }
 
@@ -421,14 +362,48 @@ export class ManifestAdapter {
 
       // Try to parse type from argument
       if (arg.includes("type: 'text'") || arg.includes('type: "text"')) {
-        return { type: 'text', required: true, source: 'helper' };
+        return { type: 'text', required: true, source: 'decorator' };
       }
       if (arg.includes("type: 'integer'") || arg.includes('type: "integer"')) {
-        return { type: 'integer', required: true, source: 'helper' };
+        return { type: 'integer', required: true, source: 'decorator' };
       }
       if (arg.includes("type: 'decimal'") || arg.includes('type: "decimal"')) {
-        return { type: 'decimal', required: true, source: 'helper' };
+        return { type: 'decimal', required: true, source: 'decorator' };
       }
+    }
+
+    // @foreignKey(RelatedClass) decorator
+    if (decorator.name === 'foreignKey') {
+      // First argument is the related class name
+      const relatedClass = decorator.arguments[0]?.trim();
+      return {
+        type: 'foreignKey',
+        related: relatedClass || undefined,
+        required: true,
+        source: 'decorator',
+      };
+    }
+
+    // @oneToMany(RelatedClass) decorator
+    if (decorator.name === 'oneToMany') {
+      const relatedClass = decorator.arguments[0]?.trim();
+      return {
+        type: 'oneToMany',
+        related: relatedClass || undefined,
+        required: false,
+        source: 'decorator',
+      };
+    }
+
+    // @manyToMany(RelatedClass) decorator
+    if (decorator.name === 'manyToMany') {
+      const relatedClass = decorator.arguments[0]?.trim();
+      return {
+        type: 'manyToMany',
+        related: relatedClass || undefined,
+        required: false,
+        source: 'decorator',
+      };
     }
 
     return null;

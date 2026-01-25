@@ -5,13 +5,14 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { SmrtObject, smrt, text } from '../index';
+import { field, SmrtObject, smrt } from '../index';
 import { generateSchema } from '../schema/utils';
 
 @smrt()
 class TestWithProtected extends SmrtObject {
   // Public property - should be in schema
-  publicName = text({ required: true });
+  @field({ required: true })
+  publicName: string = '';
 
   // Protected property - should NOT be in schema
   protected protectedData: string[] = [];

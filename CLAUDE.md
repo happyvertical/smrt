@@ -492,7 +492,9 @@ enableTenancy();
 @smrt()
 @TenantScoped({ mode: 'optional' })
 class Document extends SmrtObject {
-  tenantId = tenantId({ nullable: true });  // null = global document
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;  // null = global document
+
   title: string = '';
 }
 

@@ -343,7 +343,7 @@ export interface FieldTypeInference {
   required: boolean;
 
   /** Inference source for debugging */
-  source: 'helper' | 'annotation' | 'heuristic' | 'default';
+  source: 'helper' | 'decorator' | 'annotation' | 'heuristic' | 'default';
 
   /** Underlying type for meta fields (e.g., 'string' inside Meta<string>) */
   underlyingType?: InferredFieldType;

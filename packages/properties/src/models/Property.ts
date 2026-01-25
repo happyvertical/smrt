@@ -19,7 +19,8 @@ export class Property extends SmrtObject {
   /**
    * Tenant ID for multi-tenant isolation
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
 
   /**
    * Display name of the property

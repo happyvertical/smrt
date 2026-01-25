@@ -12,7 +12,6 @@ export {
   permission,
 } from './actions/permission.js';
 export { ripple } from './actions/ripple.js';
-
 // Admin components
 export * from './components/admin/index.js';
 // AI Components
@@ -66,6 +65,8 @@ export { default as UserForm } from './components/users/UserForm.svelte';
 export { default as UserList } from './components/users/UserList.svelte';
 // Hooks
 export * from './hooks/index.js';
+// Core - App wrapper/provider
+export { default as Provider } from './Provider.svelte';
 // Module UI registry
 export * from './registry/index.js';
 // State management

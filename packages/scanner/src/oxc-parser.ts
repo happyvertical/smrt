@@ -1063,8 +1063,11 @@ function extractFieldDecorator(
       name = expr.callee.name;
     }
     // Extract arguments as strings
+    // OXC uses start/end properties instead of range
     for (const arg of expr.arguments) {
-      if (arg.range) {
+      if (arg.start !== undefined && arg.end !== undefined) {
+        args.push(sourceText.slice(arg.start, arg.end));
+      } else if (arg.range) {
         args.push(sourceText.slice(arg.range[0], arg.range[1]));
       }
     }

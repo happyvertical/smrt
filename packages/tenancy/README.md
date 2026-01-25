@@ -17,11 +17,13 @@ import { smrt, SmrtObject } from '@happyvertical/smrt-core';
 // 1. Enable tenancy globally (once at app startup)
 enableTenancy();
 
-// 2. Mark classes as tenant-scoped
+// 2. Mark classes as tenant-scoped with @tenantId decorator
 @smrt()
 @TenantScoped({ mode: 'optional' })
 class Document extends SmrtObject {
-  tenantId = tenantId({ nullable: true });  // null = global document
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;  // null = global document
+
   title: string = '';
 }
 
@@ -84,7 +86,8 @@ const allTags = await tags.findWithGlobals('bentley-news');
   allowSuperAdminBypass: false // Allow cross-tenant access (default: false)
 })
 class Document extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
 }
 ```
 
@@ -97,24 +100,29 @@ class Document extends SmrtObject {
 
 **Recommendation**: Use `mode: 'optional'` for most models. This provides flexibility for both global resources and tenant-specific data.
 
-## Field Helper
+## Property Decorator
 
-### tenantId()
+### @tenantId()
+
+The `@tenantId` decorator marks a property as the tenant identifier field. Use this decorator instead of the deprecated field helper to avoid field descriptor objects being accidentally saved to the database (see [issue #829](https://github.com/happyvertical/smrt/issues/829)).
 
 ```typescript
 // Required tenant ID (no global resources allowed)
-tenantId = tenantId();
+@tenantId()
+tenantId?: string;
 
 // Optional tenant ID (null = global)
-tenantId = tenantId({ nullable: true });
+@tenantId({ nullable: true })
+tenantId?: string;
 
 // With custom options
-tenantId = tenantId({
+@tenantId({
   nullable: true,      // Allow null for global resources
   required: false,     // Don't require on save
   autoFilter: true,    // Auto-filter queries
   autoPopulate: true   // Auto-set from context
-});
+})
+tenantId?: string;
 ```
 
 ## Context Management
@@ -327,7 +335,9 @@ Tenant-specific with optional globals:
 @smrt()
 @TenantScoped({ mode: 'optional' })
 class Content extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
+
   // ... fields
 }
 ```
@@ -354,7 +364,8 @@ Optional tenancy for B2B scenarios:
 @smrt()
 @TenantScoped({ mode: 'optional' })
 class Customer extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
   // null = known network-wide
   // set = tenant-specific relationship
 }
@@ -368,7 +379,9 @@ Optional with super admin bypass:
 @smrt()
 @TenantScoped({ mode: 'optional', allowSuperAdminBypass: true })
 class AuditLog extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
+
   action: string = '';
 }
 ```
@@ -430,13 +443,15 @@ describe('Document tenancy', () => {
 
 ### Adding Tenancy to Existing Models
 
-1. Add the `tenantId` field:
+1. Add the `@tenantId` decorator:
 
 ```typescript
 @smrt()
 @TenantScoped({ mode: 'optional' })
 class ExistingModel extends SmrtObject {
-  tenantId = tenantId({ nullable: true });  // Add this
+  @tenantId({ nullable: true })
+  tenantId?: string;  // Add this
+
   // ... existing fields
 }
 ```
@@ -471,11 +486,19 @@ WHERE tenant_id IS NULL;
 ### Exports
 
 ```typescript
-// Decorator
-export { TenantScoped, type TenantScopedOptions } from './decorators.js';
+// Decorators
+export {
+  TenantScoped,           // Class decorator
+  type TenantScopedOptions,
+  tenantId,               // Property decorator
+} from './decorators.js';
 
-// Field helper
-export { tenantId, type TenantIdFieldOptions } from './fields.js';
+// Field types and utilities
+export {
+  type TenantIdFieldOptions,
+  isTenantIdField,
+  getTenantIdFieldOptions,
+} from './fields.js';
 
 // Context management
 export {

@@ -1158,25 +1158,13 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Gets the actual value from a property, whether it's a plain value or a Field instance
+   * Gets the value of a property.
    *
-   * Handles both simple and advanced field patterns:
-   * - Simple: `name: string = ''` - returns the string directly
-   * - Advanced: `name = text()` - extracts and returns field.value
-   *
-   * @param key - Property name to extract value from
-   * @returns The actual value (unwrapped from Field if necessary)
+   * @param key - Property name to get value from
+   * @returns The property value
    */
   protected getPropertyValue(key: string): any {
-    const prop = (this as any)[key];
-
-    // If it's a Field instance, return its value
-    if (prop && typeof prop === 'object' && 'value' in prop && 'type' in prop) {
-      return prop.value;
-    }
-
-    // Otherwise return the property directly
-    return prop;
+    return (this as any)[key];
   }
 
   /**

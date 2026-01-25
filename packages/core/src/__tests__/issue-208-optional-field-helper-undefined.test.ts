@@ -1,8 +1,8 @@
 /**
- * Test for Issue #208: Optional TEXT fields with field helpers bypass toJSON() fix
+ * Test for Issue #208: Optional TEXT fields bypass toJSON() fix
  *
- * This tests the specific case from issue #208 where fields declared as:
- * description? = text();
+ * This tests the specific case from issue #208 where optional fields:
+ * description?: string;
  *
  * are still passing undefined to the database even after the toJSON() fix.
  *

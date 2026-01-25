@@ -5,29 +5,33 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { SmrtObject, smrt, text } from '../index';
+import { field, SmrtObject, smrt } from '../index';
 import { generateSchema } from '../schema/utils';
 import { tableNameFromClass } from '../utils';
 
 // Move to top level to avoid collision with TestEvent in issue-144-integration.test.ts
 @smrt()
 class SchemaGenTestEvent extends SmrtObject {
-  title = text({ required: true });
-  description = text();
-  startDate = text();
+  @field({ required: true })
+  title: string = '';
+
+  description: string = '';
+  startDate: string = '';
 }
 
 // Move to top level to avoid collision with Article in cli-module.test.ts
 @smrt()
 class SchemaGenArticle extends SmrtObject {
-  title = text({ required: true });
-  body = text();
+  @field({ required: true })
+  title: string = '';
+
+  body: string = '';
 }
 
 // Move to module level so AST scanner can pick it up during test manifest generation
 @smrt()
 class CustomTimestamps extends SmrtObject {
-  name = text();
+  name: string = '';
   // Explicitly defining timestamp fields (should still not duplicate)
   created_at = new Date();
   updated_at = new Date();

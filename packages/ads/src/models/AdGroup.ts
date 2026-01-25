@@ -6,7 +6,6 @@
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdGroupStatus } from '../types/index.js';
-import { AdDeliveryTier } from './AdDeliveryTier.js';
 
 /**
  * AdGroup organizes ad creatives with targeting and budget controls.
@@ -43,7 +42,8 @@ export class AdGroup extends SmrtObject {
   /**
    * Tenant ID for multi-tenancy support
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
 
   /**
    * Contract ID (FK to smrt-commerce Contract, cross-package)
@@ -53,7 +53,8 @@ export class AdGroup extends SmrtObject {
   /**
    * Delivery tier ID (FK to AdDeliveryTier)
    */
-  tierId = foreignKey(AdDeliveryTier);
+  @foreignKey('AdDeliveryTier')
+  tierId: string = '';
 
   /**
    * Display name (e.g., "Summer Sale - Desktop")

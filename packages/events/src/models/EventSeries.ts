@@ -16,7 +16,9 @@ import type { EventSeriesOptions, RecurrencePattern } from '../types';
   cli: true,
 })
 export class EventSeries extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   name: string = '';
   typeId = ''; // FK to EventType
   organizerId = ''; // FK to Profile (from @happyvertical/smrt-profiles)
