@@ -1,7 +1,7 @@
 /**
- * @TenantScoped Decorator
+ * Tenancy Decorators
  *
- * Marks a SMRT class as tenant-scoped, enabling automatic tenant isolation.
+ * Provides class and property decorators for tenant-scoped SMRT objects.
  *
  * @example
  * ```typescript
@@ -11,14 +11,19 @@
  * @smrt()
  * @TenantScoped()
  * class Document extends SmrtObject {
- *   tenantId = tenantId();  // Auto-filtered and validated
+ *   @tenantId({ nullable: true })
+ *   tenantId?: string;
+ *
  *   title: string = '';
  * }
  * ```
  *
  * @see https://github.com/happyvertical/smrt/issues/675
+ * @see https://github.com/happyvertical/smrt/issues/829
  */
 
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import type { TenantIdFieldOptions } from './fields.js';
 import {
   registerTenantScopedClass,
   type TenantScopedConfig,
@@ -76,7 +81,9 @@ export interface TenantScopedOptions {
  * @smrt()
  * @TenantScoped()
  * class Document extends SmrtObject {
- *   tenantId = tenantId();
+ *   @tenantId()
+ *   tenantId?: string;
+ *
  *   title: string = '';
  * }
  * ```
@@ -86,7 +93,9 @@ export interface TenantScopedOptions {
  * @smrt()
  * @TenantScoped({ allowSuperAdminBypass: true })
  * class AuditLog extends SmrtObject {
- *   tenantId = tenantId();
+ *   @tenantId()
+ *   tenantId?: string;
+ *
  *   action: string = '';
  * }
  * ```
@@ -96,7 +105,9 @@ export interface TenantScopedOptions {
  * @smrt()
  * @TenantScoped({ mode: 'optional' })
  * class GlobalConfig extends SmrtObject {
- *   tenantId = tenantId();  // Will be set if context available
+ *   @tenantId({ nullable: true })
+ *   tenantId?: string;  // Will be set if context available
+ *
  *   key: string = '';
  *   value: string = '';
  * }
@@ -122,5 +133,71 @@ export function TenantScoped(
 
     // Return the class unchanged
     return target;
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property Decorator: @tenantId
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Tenant ID property decorator
+ *
+ * Marks a property as the tenant identifier field. This decorator registers
+ * the field metadata with ObjectRegistry, keeping the property value clean
+ * (no descriptor objects that could be accidentally saved to the database).
+ *
+ * @param options - Field options (nullable, autoFilter, autoPopulate, etc.)
+ * @returns Property decorator
+ *
+ * @example Basic usage
+ * ```typescript
+ * @smrt()
+ * @TenantScoped()
+ * class Document extends SmrtObject {
+ *   @tenantId()
+ *   tenantId?: string;
+ *
+ *   title: string = '';
+ * }
+ * ```
+ *
+ * @example Nullable tenant ID (for global resources)
+ * ```typescript
+ * @smrt()
+ * @TenantScoped({ mode: 'optional' })
+ * class GlobalConfig extends SmrtObject {
+ *   @tenantId({ nullable: true })
+ *   tenantId?: string;
+ *
+ *   key: string = '';
+ * }
+ * ```
+ *
+ * @see https://github.com/happyvertical/smrt/issues/829 - Why decorators over field helpers
+ */
+export function tenantId(options: TenantIdFieldOptions = {}) {
+  const opts = {
+    autoFilter: true,
+    required: true,
+    autoPopulate: true,
+    nullable: false,
+    ...options,
+  };
+
+  return (target: any, propertyKey: string) => {
+    const className = target.constructor.name;
+
+    ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+      type: 'foreignKey',
+      related: 'Tenant',
+      sqlType: 'TEXT',
+      required: opts.required,
+      nullable: opts.nullable,
+      __tenancy: {
+        ...opts,
+        isTenantIdField: true,
+      },
+    });
   };
 }

@@ -33,7 +33,9 @@ export class Customer extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global customers
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
+
   /**
    * Reference to smrt-profiles Profile
    * Plain string for cross-package reference

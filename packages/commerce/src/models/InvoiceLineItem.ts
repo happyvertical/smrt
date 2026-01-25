@@ -39,7 +39,9 @@ export class InvoiceLineItem extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global invoice line items
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
+
   /**
    * Parent invoice
    */

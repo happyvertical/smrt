@@ -41,7 +41,8 @@ export class AdVariation extends SmrtObject {
   /**
    * Tenant ID for multi-tenancy support
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
 
   /**
    * Ad group ID (FK to AdGroup)

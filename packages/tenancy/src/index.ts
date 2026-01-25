@@ -11,11 +11,13 @@
  * // 1. Enable tenancy globally (once at app startup)
  * enableTenancy();
  *
- * // 2. Mark classes as tenant-scoped
+ * // 2. Mark classes as tenant-scoped with @tenantId decorator
  * @smrt()
  * @TenantScoped()
  * class Document extends SmrtObject {
- *   tenantId = tenantId();  // Auto-filtered and validated
+ *   @tenantId({ nullable: true })
+ *   tenantId?: string;
+ *
  *   title: string = '';
  * }
  *
@@ -28,6 +30,7 @@
  * ```
  *
  * @see https://github.com/happyvertical/smrt/issues/675
+ * @see https://github.com/happyvertical/smrt/issues/829 - Decorator pattern for tenantId
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,22 +75,26 @@ export {
 } from './context.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Decorator
+// Decorators
 // ─────────────────────────────────────────────────────────────────────────────
 export {
+  // Class decorator
   TenantScoped,
   type TenantScopedOptions,
+  // Property decorator (preferred)
+  tenantId,
 } from './decorators.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Field Helper
+// Field Helper (Deprecated - use @tenantId decorator instead)
 // ─────────────────────────────────────────────────────────────────────────────
 export {
   getTenantIdFieldOptions,
   isTenantIdField,
   type TenantIdFieldDefinition,
   type TenantIdFieldOptions,
-  tenantId,
+  // Re-export field helper as tenantIdFieldHelper for backwards compat
+  tenantId as tenantIdFieldHelper,
 } from './fields.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Interceptor System

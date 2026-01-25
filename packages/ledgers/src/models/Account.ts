@@ -19,7 +19,8 @@ export class Account extends SmrtObject {
   /**
    * Tenant ID for multi-tenancy support (nullable for global accounts)
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
 
   /**
    * Account number (e.g., "1000", "5030")

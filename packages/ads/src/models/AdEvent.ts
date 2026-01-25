@@ -51,7 +51,8 @@ export class AdEvent extends SmrtObject {
   /**
    * Tenant ID for multi-tenancy support
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
 
   /**
    * Variation ID (FK to AdVariation)

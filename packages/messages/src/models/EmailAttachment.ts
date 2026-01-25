@@ -13,7 +13,9 @@ import type { EmailAttachmentOptions } from '../types';
   cli: true,
 })
 export class EmailAttachment extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
+
   emailId = '';
   filename = '';
   contentType = '';

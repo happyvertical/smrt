@@ -24,7 +24,8 @@ export class Journal extends SmrtObject {
   /**
    * Tenant ID for multi-tenancy support (nullable for global journals)
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
 
   /**
    * Journal number (auto-generated sequence, e.g., "JNL-0001")

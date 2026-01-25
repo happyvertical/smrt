@@ -43,7 +43,8 @@ export class AdGroup extends SmrtObject {
   /**
    * Tenant ID for multi-tenancy support
    */
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
 
   /**
    * Contract ID (FK to smrt-commerce Contract, cross-package)

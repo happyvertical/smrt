@@ -18,7 +18,9 @@ import type {
   cli: true,
 })
 export class EmailAccount extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
+
   name = '';
   email = '';
   providerType: ProviderType = 'imap';

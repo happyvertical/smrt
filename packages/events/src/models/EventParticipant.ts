@@ -18,7 +18,9 @@ import type { EventParticipantOptions } from '../types';
   cli: true,
 })
 export class EventParticipant extends SmrtObject {
-  tenantId = tenantId({ nullable: true });
+  @tenantId({ nullable: true })
+  tenantId?: string;
+
   // id inherited from SmrtObject
 
   eventId = ''; // FK to Event

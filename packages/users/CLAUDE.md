@@ -104,12 +104,14 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 @smrt()
 @TenantScoped()
 class Document extends SmrtObject {
-  tenantId = tenantId();  // Explicit field definition
+  @tenantId()
+  tenantId?: string;
+
   title: string = '';
 }
 ```
 
-Both patterns work identically - choose based on your preference.
+Use the `@tenantId` decorator to avoid field descriptor objects being accidentally saved to the database (see [issue #829](https://github.com/happyvertical/smrt/issues/829)).
 
 ### Enabling Tenant Enforcement
 

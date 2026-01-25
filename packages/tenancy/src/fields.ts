@@ -1,21 +1,24 @@
 /**
- * tenantId Field Helper
+ * tenantId Field Helper (DEPRECATED)
  *
- * A specialized field that marks a property as the tenant identifier.
- * This field is automatically managed by the tenancy system.
+ * @deprecated Use the `@tenantId` decorator instead to avoid field descriptor
+ * objects being accidentally saved to the database. See issue #829.
  *
- * @example
+ * @example Preferred pattern (decorator)
  * ```typescript
  * import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
  *
  * @TenantScoped()
  * class Document extends SmrtObject {
- *   tenantId = tenantId();  // Framework handles filtering/validation
+ *   @tenantId({ nullable: true })
+ *   tenantId?: string;
+ *
  *   title: string = '';
  * }
  * ```
  *
  * @see https://github.com/happyvertical/smrt/issues/675
+ * @see https://github.com/happyvertical/smrt/issues/829
  */
 
 /**
@@ -69,7 +72,19 @@ export interface TenantIdFieldDefinition {
 }
 
 /**
- * Define a tenant ID field
+ * Define a tenant ID field (Field Helper)
+ *
+ * @deprecated Use the `@tenantId` decorator instead to avoid field descriptor
+ * objects being accidentally saved to the database. See issue #829.
+ *
+ * ```typescript
+ * // OLD (deprecated):
+ * tenantId = tenantId({ nullable: true });
+ *
+ * // NEW (preferred):
+ * @tenantId({ nullable: true })
+ * tenantId?: string;
+ * ```
  *
  * This creates a TEXT field that references the Tenant table.
  * The tenancy interceptor uses this field for automatic filtering.
@@ -77,14 +92,14 @@ export interface TenantIdFieldDefinition {
  * @param options - Field options
  * @returns Field definition for use in SMRT class
  *
- * @example Basic usage
+ * @example Basic usage (DEPRECATED)
  * ```typescript
  * class Document extends SmrtObject {
  *   tenantId = tenantId();
  * }
  * ```
  *
- * @example With custom options
+ * @example With custom options (DEPRECATED)
  * ```typescript
  * class GlobalConfig extends SmrtObject {
  *   // Nullable tenant ID for global configs
