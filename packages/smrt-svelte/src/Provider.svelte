@@ -1,16 +1,16 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
+import AILoadingOverlay from './components/ai/AILoadingOverlay.svelte';
 import type {
   AIConfig,
   AILoadingState,
   AppMode,
   SocketConfig,
   User,
-} from '../../state/app-state.js';
-import { createAppState } from '../../state/app-state.svelte.js';
-import { setAppStateContext } from '../../state/context.js';
-import AILoadingOverlay from './AILoadingOverlay.svelte';
+} from './state/app-state.js';
+import { createAppState } from './state/app-state.svelte.js';
+import { setAppStateContext } from './state/context.js';
 
 interface Props {
   /**
