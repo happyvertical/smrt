@@ -13,10 +13,10 @@
  *
  * // 2. Mark classes as tenant-scoped with @tenantId decorator
  * @smrt()
- * @TenantScoped()
+ * @TenantScoped({ mode: 'optional' })
  * class Document extends SmrtObject {
  *   @tenantId({ nullable: true })
- *   tenantId?: string;
+ *   tenantId: string | null = null;  // null = global document
  *
  *   title: string = '';
  * }

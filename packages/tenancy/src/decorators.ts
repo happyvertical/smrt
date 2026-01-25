@@ -9,10 +9,10 @@
  * import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
  *
  * @smrt()
- * @TenantScoped()
+ * @TenantScoped({ mode: 'optional' })
  * class Document extends SmrtObject {
  *   @tenantId({ nullable: true })
- *   tenantId?: string;
+ *   tenantId: string | null = null;  // null = global document
  *
  *   title: string = '';
  * }
@@ -76,13 +76,13 @@ export interface TenantScopedOptions {
  *
  * @param options - Configuration options
  *
- * @example Basic usage (all defaults)
+ * @example Basic usage (required tenancy)
  * ```typescript
  * @smrt()
  * @TenantScoped()
  * class Document extends SmrtObject {
  *   @tenantId()
- *   tenantId?: string;
+ *   tenantId: string = '';
  *
  *   title: string = '';
  * }
@@ -94,7 +94,7 @@ export interface TenantScopedOptions {
  * @TenantScoped({ allowSuperAdminBypass: true })
  * class AuditLog extends SmrtObject {
  *   @tenantId()
- *   tenantId?: string;
+ *   tenantId: string = '';
  *
  *   action: string = '';
  * }
@@ -106,7 +106,7 @@ export interface TenantScopedOptions {
  * @TenantScoped({ mode: 'optional' })
  * class GlobalConfig extends SmrtObject {
  *   @tenantId({ nullable: true })
- *   tenantId?: string;  // Will be set if context available
+ *   tenantId: string | null = null;  // null = global, string = tenant-specific
  *
  *   key: string = '';
  *   value: string = '';
@@ -150,13 +150,13 @@ export function TenantScoped(
  * @param options - Field options (nullable, autoFilter, autoPopulate, etc.)
  * @returns Property decorator
  *
- * @example Basic usage
+ * @example Basic usage (required tenancy)
  * ```typescript
  * @smrt()
  * @TenantScoped()
  * class Document extends SmrtObject {
  *   @tenantId()
- *   tenantId?: string;
+ *   tenantId: string = '';
  *
  *   title: string = '';
  * }
@@ -168,7 +168,7 @@ export function TenantScoped(
  * @TenantScoped({ mode: 'optional' })
  * class GlobalConfig extends SmrtObject {
  *   @tenantId({ nullable: true })
- *   tenantId: string | null = null;
+ *   tenantId: string | null = null;  // null = global, string = tenant-specific
  *
  *   key: string = '';
  * }
