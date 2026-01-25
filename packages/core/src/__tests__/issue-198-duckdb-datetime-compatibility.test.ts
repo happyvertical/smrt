@@ -9,12 +9,14 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { SmrtObject, smrt, text } from '../index';
+import { field, SmrtObject, smrt } from '../index';
 import { generateSchema } from '../schema/utils';
 
 @smrt()
 class TestContent extends SmrtObject {
-  title = text({ required: true });
+  @field({ required: true })
+  title: string = '';
+
   publishDate: Date = new Date();
   lastSyncedAt: Date = new Date();
 }

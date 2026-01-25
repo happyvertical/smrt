@@ -204,13 +204,18 @@ describe('OXC Parser', () => {
       expect(meetingClass?.extendsClause).toBe('Event');
     });
 
-    it('should extract field helpers', () => {
+    it('should extract relationship decorators', () => {
       const source = `
         @smrt()
         class Order extends SmrtObject {
-          customerId = foreignKey(Customer);
-          total = decimal({ required: true });
-          quantity = integer({ min: 0 });
+          @foreignKey(Customer)
+          customerId: string = '';
+
+          @oneToMany(OrderItem)
+          items: OrderItem[] = [];
+
+          @manyToMany(Tag)
+          tags: Tag[] = [];
         }
       `;
 
@@ -221,20 +226,24 @@ describe('OXC Parser', () => {
 
       expect(fields).toHaveLength(3);
 
-      // Check foreignKey field
+      // Check foreignKey decorator
       const customerIdField = fields.find((f) => f.name === 'customerId');
       expect(customerIdField).toBeDefined();
-      expect(customerIdField?.initializer).toContain('foreignKey');
+      expect(customerIdField?.decorators).toHaveLength(1);
+      expect(customerIdField?.decorators[0].name).toBe('foreignKey');
+      expect(customerIdField?.decorators[0].arguments).toContain('Customer');
 
-      // Check decimal field helper
-      const totalField = fields.find((f) => f.name === 'total');
-      expect(totalField).toBeDefined();
-      expect(totalField?.initializer).toContain('decimal');
+      // Check oneToMany decorator
+      const itemsField = fields.find((f) => f.name === 'items');
+      expect(itemsField).toBeDefined();
+      expect(itemsField?.decorators).toHaveLength(1);
+      expect(itemsField?.decorators[0].name).toBe('oneToMany');
 
-      // Check integer field helper
-      const quantityField = fields.find((f) => f.name === 'quantity');
-      expect(quantityField).toBeDefined();
-      expect(quantityField?.initializer).toContain('integer');
+      // Check manyToMany decorator
+      const tagsField = fields.find((f) => f.name === 'tags');
+      expect(tagsField).toBeDefined();
+      expect(tagsField?.decorators).toHaveLength(1);
+      expect(tagsField?.decorators[0].name).toBe('manyToMany');
     });
 
     it('should handle parse errors gracefully', () => {

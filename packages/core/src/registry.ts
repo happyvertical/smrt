@@ -18,11 +18,12 @@
  *
  * @example Using the decorator (recommended)
  * ```typescript
- * import { smrt } from '@happyvertical/smrt-core';
+ * import { smrt, field } from '@happyvertical/smrt-core';
  *
  * @smrt({ api: { exclude: ['delete'] } })
  * class Product extends SmrtObject {
- *   name = text({ required: true });
+ *   @field({ required: true })
+ *   name: string = '';
  * }
  * ```
  */
@@ -4936,8 +4937,11 @@ export class ObjectRegistry {
  * ```typescript
  * @smrt()
  * class Product extends SmrtObject {
- *   name = text({ required: true });
- *   price = decimal({ min: 0 });
+ *   @field({ required: true })
+ *   name: string = '';
+ *
+ *   @field({ min: 0 })
+ *   price: number = 0.0;
  * }
  *
  * @smrt({ tableName: 'custom_products' })
@@ -4947,7 +4951,8 @@ export class ObjectRegistry {
  *
  * @smrt({ api: { exclude: ['delete'] } })
  * class SensitiveData extends SmrtObject {
- *   secret = text({ encrypted: true });
+ *   @field({ encrypted: true })
+ *   secret: string = '';
  * }
  * ```
  */

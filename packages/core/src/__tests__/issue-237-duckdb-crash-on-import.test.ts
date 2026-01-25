@@ -104,7 +104,7 @@ describe('Issue #237: DuckDB crash on import', () => {
 
     // Register a class manually (simulates what @smrt() does)
     class ManuallyRegistered extends SmrtObject {
-      name = text();
+      name: string = '';
     }
 
     ObjectRegistry.register(ManuallyRegistered, {

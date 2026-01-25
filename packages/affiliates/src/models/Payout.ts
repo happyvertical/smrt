@@ -5,7 +5,6 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { PayoutStatus } from '../types/index.js';
-import { Partner } from './Partner.js';
 
 /**
  * Payout represents an aggregated payment batch for a partner.
@@ -43,7 +42,8 @@ export class Payout extends SmrtObject {
   /**
    * Partner ID (FK to Partner)
    */
-  partnerId = foreignKey(Partner);
+  @foreignKey('Partner')
+  partnerId: string = '';
 
   /**
    * Period start date

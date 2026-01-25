@@ -125,8 +125,8 @@ export function dateAsObject(date: Date | string) {
  * ```typescript
  * @smrt()
  * class Product extends SmrtObject {
- *   name = text();
- *   price = decimal();
+ *   name: string = '';
+ *   price: number = 0.0;
  * }
  *
  * const fields = await fieldsFromClass(Product);

@@ -5,8 +5,6 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { Invoice } from './Invoice.js';
-import { Payment } from './Payment.js';
 
 /**
  * PaymentAllocation tracks how payments are applied to invoices.
@@ -66,12 +64,14 @@ export class PaymentAllocation extends SmrtObject {
   /**
    * Payment being allocated
    */
-  paymentId = foreignKey(Payment);
+  @foreignKey('Payment')
+  paymentId: string = '';
 
   /**
    * Invoice receiving the allocation
    */
-  invoiceId = foreignKey(Invoice);
+  @foreignKey('Invoice')
+  invoiceId: string = '';
 
   /**
    * Amount allocated from payment to invoice

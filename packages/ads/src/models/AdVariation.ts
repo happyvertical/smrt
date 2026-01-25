@@ -6,8 +6,6 @@
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdVariationStatus } from '../types/index.js';
-import { AdFormat } from './AdFormat.js';
-import { AdGroup } from './AdGroup.js';
 
 /**
  * AdVariation represents a creative asset within an ad group.
@@ -47,12 +45,14 @@ export class AdVariation extends SmrtObject {
   /**
    * Ad group ID (FK to AdGroup)
    */
-  groupId = foreignKey(AdGroup);
+  @foreignKey('AdGroup')
+  groupId: string = '';
 
   /**
    * Ad format ID (FK to AdFormat)
    */
-  formatId = foreignKey(AdFormat);
+  @foreignKey('AdFormat')
+  formatId: string = '';
 
   /**
    * Asset ID (FK to smrt-assets Asset, cross-package)

@@ -6,7 +6,6 @@
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { InvoiceStatus, type RecognizeRevenueOptions } from '../types/index.js';
-import { Customer } from './Customer.js';
 
 /**
  * Invoice represents a bill sent to a customer for goods or services.
@@ -57,7 +56,8 @@ export class Invoice extends SmrtObject {
   /**
    * Customer this invoice is for
    */
-  customerId = foreignKey(Customer);
+  @foreignKey('Customer')
+  customerId: string = '';
 
   /**
    * Optional link to Contract (cross-package reference)

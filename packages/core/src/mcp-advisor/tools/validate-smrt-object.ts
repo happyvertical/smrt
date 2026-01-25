@@ -116,7 +116,7 @@ export async function validateSmrtObject(
         errors.push({
           type: 'warning',
           message: 'Properties should have explicit TypeScript types',
-          suggestion: 'Add type annotations: name: string = text();',
+          suggestion: "Add type annotations: name: string = '';",
         });
       }
 

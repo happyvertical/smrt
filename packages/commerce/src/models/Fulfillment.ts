@@ -10,7 +10,6 @@ import {
   FulfillmentStatus,
   FulfillmentType,
 } from '../types/index.js';
-import { Contract } from './Contract.js';
 
 /**
  * Fulfillment tracks the delivery or completion of contract items.
@@ -52,7 +51,8 @@ export class Fulfillment extends SmrtObject {
   /**
    * Parent contract being fulfilled
    */
-  contractId = foreignKey(Contract);
+  @foreignKey('Contract')
+  contractId: string = '';
 
   /**
    * Type of fulfillment

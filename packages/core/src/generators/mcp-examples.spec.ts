@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
-
+import { field } from '../decorators/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { MCPGenerator } from './mcp.js';
@@ -43,11 +43,18 @@ describe('MCP Generator - Example Projects', () => {
         cli: true,
       })
       class Product extends SmrtObject {
-        name = text({ required: true });
-        description = text();
-        price = decimal({ min: 0, required: true });
-        stock = integer({ min: 0, default: 0 });
-        category = text();
+        @field({ required: true })
+        name: string = '';
+
+        description: string = '';
+
+        @field({ min: 0, required: true })
+        price: number = 0.0;
+
+        @field({ min: 0 })
+        stock: number = 0;
+
+        category: string = '';
 
         async search(options: any = {}) {
           return {
@@ -121,10 +128,14 @@ describe('MCP Generator - Example Projects', () => {
         cli: true,
       })
       class Article extends SmrtObject {
-        title = text({ required: true });
-        content = text({ required: true });
-        author = text();
-        publishedAt = datetime();
+        @field({ required: true })
+        title: string = '';
+
+        @field({ required: true })
+        content: string = '';
+
+        author: string = '';
+        publishedAt: Date = new Date();
 
         async summarize(options: any = {}) {
           const length = options.length || 'medium';
@@ -202,9 +213,13 @@ describe('MCP Generator - Example Projects', () => {
         mcp: { include: ['list', 'get', 'calculate'] },
       })
       class Order extends SmrtObject {
-        orderNumber = text({ required: true });
-        total = decimal({ min: 0 });
-        createdAt = datetime();
+        @field({ required: true })
+        orderNumber: string = '';
+
+        @field({ min: 0 })
+        total: number = 0.0;
+
+        createdAt: Date = new Date();
 
         async calculate(options: any = {}) {
           return {
@@ -225,9 +240,13 @@ describe('MCP Generator - Example Projects', () => {
         mcp: { include: ['list', 'get'] },
       })
       class Customer extends SmrtObject {
-        name = text({ required: true });
-        email = text({ required: true });
-        phone = text();
+        @field({ required: true })
+        name: string = '';
+
+        @field({ required: true })
+        email: string = '';
+
+        phone: string = '';
       }
 
       class CustomerCollection extends SmrtCollection<Customer> {
@@ -270,8 +289,10 @@ describe('MCP Generator - Example Projects', () => {
       // Define Task model
       @smrt({ mcp: { include: ['list', 'get', 'complete'] } })
       class Task extends SmrtObject {
-        title = text({ required: true });
-        completed = boolean({ default: false });
+        @field({ required: true })
+        title: string = '';
+
+        completed: boolean = false;
 
         async complete() {
           this.completed = true;
@@ -337,7 +358,7 @@ describe('MCP Generator - Example Projects', () => {
       // Define Note model
       @smrt({ mcp: { include: ['list', 'get'] } })
       class Note extends SmrtObject {
-        content = text();
+        content: string = '';
       }
 
       class NoteCollection extends SmrtCollection<Note> {
@@ -380,7 +401,7 @@ describe('MCP Generator - Example Projects', () => {
       // Define Model
       @smrt({ mcp: { include: ['list'] } })
       class Model extends SmrtObject {
-        name = text();
+        name: string = '';
       }
 
       class ModelCollection extends SmrtCollection<Model> {

@@ -11,7 +11,7 @@ import path from 'node:path';
 import { faker } from '@faker-js/faker';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from './collection';
-
+import { field } from './decorators/index.js';
 import { SmrtObject } from './object';
 import { smrt } from './registry';
 
@@ -31,13 +31,13 @@ function getTestDbUrl(): string {
 class PerfTestUser extends SmrtObject {
   static tableName = 'perf_test_users';
 
-  username = text();
-  email = text();
-  age = integer();
-  active = boolean();
+  username: string = '';
+  email: string = '';
+  age: number = 0;
+  active: boolean = false;
   createdAt: Date = new Date();
   lastLogin: Date = new Date();
-  profileData = text();
+  profileData: string = '';
 
   constructor(options: any = {}) {
     super({
@@ -380,8 +380,8 @@ describe.skip('Performance Benchmarks', () => {
       @smrt()
       class PerformanceTestProduct extends SmrtObject {
         static tableName = 'test_products';
-        productName = text();
-        price = integer();
+        productName: string = '';
+        price: number = 0;
 
         constructor(options: any = {}) {
           super({
@@ -401,8 +401,8 @@ describe.skip('Performance Benchmarks', () => {
       @smrt()
       class TestOrder extends SmrtObject {
         static tableName = 'test_orders';
-        total = integer();
-        status = text();
+        total: number = 0;
+        status: string = '';
 
         constructor(options: any = {}) {
           super({

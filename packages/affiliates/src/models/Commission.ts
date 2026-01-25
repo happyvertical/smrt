@@ -5,8 +5,6 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { CommissionStatus, CommissionType } from '../types/index.js';
-import { Partner } from './Partner.js';
-import { Payout } from './Payout.js';
 
 /**
  * Commission tracks revenue attribution from ad events to partners.
@@ -66,7 +64,8 @@ export class Commission extends SmrtObject {
   /**
    * Partner ID (FK to Partner)
    */
-  partnerId = foreignKey(Partner);
+  @foreignKey('Partner')
+  partnerId: string = '';
 
   /**
    * Commission type (display, referral, sales, parent)
@@ -100,7 +99,8 @@ export class Commission extends SmrtObject {
   /**
    * Payout ID when commission is included in a payout
    */
-  payoutId = foreignKey(Payout);
+  @foreignKey('Payout')
+  payoutId: string = '';
 
   /**
    * Commission status

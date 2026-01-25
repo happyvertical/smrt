@@ -6,7 +6,6 @@
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdEventType } from '../types/index.js';
-import { AdVariation } from './AdVariation.js';
 
 /**
  * AdEvent tracks ad impressions, clicks, and conversions.
@@ -57,7 +56,8 @@ export class AdEvent extends SmrtObject {
   /**
    * Variation ID (FK to AdVariation)
    */
-  variationId = foreignKey(AdVariation);
+  @foreignKey('AdVariation')
+  variationId: string = '';
 
   /**
    * Zone ID (FK to smrt-properties Zone, cross-package)

@@ -10,8 +10,6 @@ import {
   PaymentStatus,
   type RecordPaymentOptions,
 } from '../types/index.js';
-import { Contract } from './Contract.js';
-import { Customer } from './Customer.js';
 
 /**
  * Payment represents a financial transaction against a contract.
@@ -55,12 +53,14 @@ export class Payment extends SmrtObject {
   /**
    * Contract this payment is for
    */
-  contractId = foreignKey(Contract);
+  @foreignKey('Contract')
+  contractId: string = '';
 
   /**
    * Customer who made the payment
    */
-  customerId = foreignKey(Customer);
+  @foreignKey('Customer')
+  customerId: string = '';
 
   /**
    * Payment amount

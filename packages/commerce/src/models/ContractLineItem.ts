@@ -5,7 +5,6 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { Contract } from './Contract.js';
 
 /**
  * ContractLineItem represents a single line item on a contract.
@@ -42,7 +41,8 @@ export class ContractLineItem extends SmrtObject {
   /**
    * Parent contract
    */
-  contractId = foreignKey(Contract);
+  @foreignKey('Contract')
+  contractId: string = '';
 
   /**
    * Item description
