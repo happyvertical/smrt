@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.49
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: migrate from field helpers to decorator-only pattern (#831)
+  - @happyvertical/smrt-scanner@0.19.49
+  - @happyvertical/smrt-config@0.19.49
+  - @happyvertical/smrt-types@0.19.49
+
 ## 0.19.48
 
 ### Patch Changes
