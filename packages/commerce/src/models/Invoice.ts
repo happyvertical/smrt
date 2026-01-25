@@ -52,7 +52,7 @@ export class Invoice extends SmrtObject {
    * Nullable to support both tenant-scoped and global invoices
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Customer this invoice is for

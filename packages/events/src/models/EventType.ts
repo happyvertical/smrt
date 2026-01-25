@@ -17,7 +17,7 @@ import type { EventTypeOptions } from '../types';
 })
 export class EventType extends SmrtObject {
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   @field({ required: true })
   name: string = '';

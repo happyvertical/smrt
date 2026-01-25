@@ -34,7 +34,7 @@ export class Comment extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Issue this comment belongs to

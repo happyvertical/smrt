@@ -35,7 +35,7 @@ export class Vendor extends SmrtObject {
    * Nullable to support both tenant-scoped and global vendors
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Reference to smrt-profiles Profile

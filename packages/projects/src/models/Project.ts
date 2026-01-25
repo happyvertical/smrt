@@ -63,7 +63,7 @@ export class Project extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Provider-specific project ID (e.g., GitHub GraphQL node ID)

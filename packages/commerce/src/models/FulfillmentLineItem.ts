@@ -35,7 +35,7 @@ export class FulfillmentLineItem extends SmrtObject {
    * Nullable to support both tenant-scoped and global fulfillment line items
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Parent fulfillment

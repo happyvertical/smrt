@@ -50,7 +50,7 @@ export class Payment extends SmrtObject {
    * Nullable to support both tenant-scoped and global payments
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Contract this payment is for

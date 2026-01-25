@@ -103,7 +103,7 @@ export abstract class Agent extends SmrtObject {
    * Nullable to support both tenant-scoped and global agents
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * UI slots this agent supports for admin panels

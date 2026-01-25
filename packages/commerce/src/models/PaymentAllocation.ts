@@ -61,7 +61,7 @@ export class PaymentAllocation extends SmrtObject {
    * Nullable to support both tenant-scoped and global payment allocations
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Payment being allocated

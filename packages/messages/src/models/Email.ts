@@ -14,7 +14,7 @@ import type { EmailOptions } from '../types';
 })
 export class Email extends SmrtObject {
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   accountId = '';
   messageId = ''; // RFC 822 Message-ID header

@@ -37,7 +37,7 @@ export class ContractLineItem extends SmrtObject {
    * Nullable to support both tenant-scoped and global line items
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Parent contract

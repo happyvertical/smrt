@@ -17,7 +17,7 @@ import type { EventSeriesOptions, RecurrencePattern } from '../types';
 })
 export class EventSeries extends SmrtObject {
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   name: string = '';
   typeId = ''; // FK to EventType

@@ -19,7 +19,7 @@ import type {
 })
 export class EmailAccount extends SmrtObject {
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   name = '';
   email = '';

@@ -51,7 +51,7 @@ export class Contract extends SmrtObject {
    * Nullable to support both tenant-scoped and global contracts
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Contract type discriminator (STI)

@@ -47,7 +47,7 @@ export class Fulfillment extends SmrtObject {
    * Nullable to support both tenant-scoped and global fulfillments
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Parent contract being fulfilled

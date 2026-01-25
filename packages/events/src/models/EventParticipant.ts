@@ -19,7 +19,7 @@ import type { EventParticipantOptions } from '../types';
 })
 export class EventParticipant extends SmrtObject {
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   // id inherited from SmrtObject
 

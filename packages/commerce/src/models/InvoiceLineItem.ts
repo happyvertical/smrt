@@ -40,7 +40,7 @@ export class InvoiceLineItem extends SmrtObject {
    * Nullable to support both tenant-scoped and global invoice line items
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Parent invoice

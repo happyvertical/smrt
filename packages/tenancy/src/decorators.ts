@@ -168,7 +168,7 @@ export function TenantScoped(
  * @TenantScoped({ mode: 'optional' })
  * class GlobalConfig extends SmrtObject {
  *   @tenantId({ nullable: true })
- *   tenantId?: string;
+ *   tenantId: string | null = null;
  *
  *   key: string = '';
  * }

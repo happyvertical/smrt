@@ -51,7 +51,7 @@ export class AgentConfig extends SmrtObject {
    * Nullable to support both tenant-scoped and global agent configs
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * ID of the agent instance this config belongs to

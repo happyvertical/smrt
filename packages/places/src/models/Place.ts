@@ -25,7 +25,7 @@ export class Place extends SmrtObject {
 
   // Tenancy field - nullable for global/shared places
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   // Core fields
   typeId = ''; // FK to PlaceType

@@ -14,7 +14,7 @@ import type { EmailFolderOptions } from '../types';
 })
 export class EmailFolder extends SmrtObject {
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   accountId = '';
   name = '';

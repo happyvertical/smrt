@@ -17,7 +17,7 @@ import type { EventOptions, EventStatus } from '../types';
 })
 export class Event extends SmrtObject {
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   name: string = '';
   seriesId = ''; // FK to EventSeries (nullable for standalone events)

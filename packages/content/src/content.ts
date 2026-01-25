@@ -134,7 +134,7 @@ export class Content extends SmrtObject {
    * Nullable to support both tenant-scoped and global content
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Array of referenced content objects

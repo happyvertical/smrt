@@ -22,7 +22,7 @@ import type { AssetOptions } from './types';
 export class Asset extends SmrtObject {
   // Tenant isolation (optional - assets can be global or tenant-specific)
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   // Core fields
   name = ''; // User-friendly name

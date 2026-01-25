@@ -37,7 +37,7 @@ export class TagAlias extends SmrtObject {
 
   // Tenancy
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   // Timestamps
   createdAt: Date = new Date();

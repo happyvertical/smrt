@@ -50,7 +50,7 @@ export class Repository extends SmrtObject {
    * Tenant ID for multi-tenant isolation
    */
   @tenantId({ nullable: true })
-  tenantId?: string;
+  tenantId: string | null = null;
 
   /**
    * Repository owner (organization or user)
