@@ -86,15 +86,13 @@ export {
 } from './decorators.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Field Helper (Deprecated - use @tenantId decorator instead)
+// Field Types and Utilities
 // ─────────────────────────────────────────────────────────────────────────────
 export {
   getTenantIdFieldOptions,
   isTenantIdField,
   type TenantIdFieldDefinition,
   type TenantIdFieldOptions,
-  // Re-export field helper as tenantIdFieldHelper for backwards compat
-  tenantId as tenantIdFieldHelper,
 } from './fields.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Interceptor System

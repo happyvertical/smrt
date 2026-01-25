@@ -490,13 +490,14 @@ WHERE tenant_id IS NULL;
 export {
   TenantScoped,           // Class decorator
   type TenantScopedOptions,
-  tenantId,               // Property decorator (preferred)
+  tenantId,               // Property decorator
 } from './decorators.js';
 
-// Field helper (deprecated - use @tenantId decorator instead)
+// Field types and utilities
 export {
-  tenantIdFieldHelper,    // Renamed for backwards compat
   type TenantIdFieldOptions,
+  isTenantIdField,
+  getTenantIdFieldOptions,
 } from './fields.js';
 
 // Context management
