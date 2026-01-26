@@ -15,6 +15,7 @@ import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
+import { exportCommand } from './export.js';
 
 /**
  * Column definition type for migration comparison
@@ -1944,4 +1945,7 @@ export default testManifest;
 
   // Configuration commands
   'config:export': configExportCommand,
+
+  // Data export command (for static site generation)
+  export: exportCommand,
 };
