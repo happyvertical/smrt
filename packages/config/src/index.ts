@@ -21,6 +21,10 @@ export type {
   // CLI and migrations configuration types
   CliConfig,
   DatabaseConfig,
+  // Export configuration types
+  ExportConfig,
+  ExportFileConfig,
+  ExportFilterValue,
   LoadConfigOptions,
   MigrationsConfig,
   MigrationsPostgresConfig,
