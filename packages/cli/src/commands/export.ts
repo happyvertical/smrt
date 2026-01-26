@@ -213,17 +213,11 @@ async function queryWithProjection(
 async function resolveTableName(types: string[]): Promise<string> {
   const { ObjectRegistry } = await import('@happyvertical/smrt-core');
 
-  // Get table from first type's config
+  // Get table from first type's registry
   for (const typeName of types) {
-    const config = ObjectRegistry.getConfig(typeName);
-    if (config?.tableName) {
-      return config.tableName;
-    }
-
-    // Check manifest for table info
-    const manifest = ObjectRegistry.getManifest(typeName);
-    if (manifest?.schema?.tableName) {
-      return manifest.schema.tableName;
+    const tableName = ObjectRegistry.getTableName(typeName);
+    if (tableName) {
+      return tableName;
     }
   }
 
@@ -333,6 +327,16 @@ export const exportCommand: CLICommand = {
       const smrtConfig = getConfig();
       const cliConfig = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
 
+      // Check for smrt config
+      if (!smrtConfig) {
+        if (!options.json) {
+          console.error('\n❌ No smrt.config.js found');
+        } else {
+          console.log(JSON.stringify({ error: 'No smrt.config.js found' }));
+        }
+        process.exit(1);
+      }
+
       // Check for export configuration
       const exportConfig = smrtConfig.export;
       if (!exportConfig || Object.keys(exportConfig).length === 0) {
@@ -384,9 +388,8 @@ export const exportCommand: CLICommand = {
         url: cliConfig.database.url,
       });
 
-      // 4. Load manifest for field information
+      // 4. Get ObjectRegistry (already loaded via .smrt/register.js at CLI startup)
       const { ObjectRegistry } = await import('@happyvertical/smrt-core');
-      await ObjectRegistry.loadExternalManifests();
 
       // 5. Get export defaults
       const fieldExportDefault = exportConfig.fieldExportDefault !== false; // Default: true
