@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.52
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add JSON type handling to SchemaGenerator.formatDefaultValue() (#837) (core)
+  - @happyvertical/smrt-scanner@0.19.52
+  - @happyvertical/smrt-config@0.19.52
+  - @happyvertical/smrt-types@0.19.52
+
 ## 0.19.51
 
 ### Patch Changes
