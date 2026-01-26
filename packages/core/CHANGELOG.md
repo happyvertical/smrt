@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.50
+
+### Patch Changes
+
+- ### Features
+
+  - add unified smrt export command for static site generation (cli)
+  - @happyvertical/smrt-scanner@0.19.50
+  - @happyvertical/smrt-config@0.19.50
+  - @happyvertical/smrt-types@0.19.50
+
 ## 0.19.49
 
 ### Patch Changes

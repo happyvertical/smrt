@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-profiles",
-  "version": "0.19.49",
+  "version": "0.19.50",
   "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
