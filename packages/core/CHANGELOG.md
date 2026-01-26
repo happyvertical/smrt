@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.19.51
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - increase hookTimeout for CI stability (ads)
+  - reduce weighted selection test iterations for CI performance (ads)
+  - fix export command API calls (cli)
+  - @happyvertical/smrt-scanner@0.19.51
+  - @happyvertical/smrt-config@0.19.51
+  - @happyvertical/smrt-types@0.19.51
+
 ## 0.19.50
 
 ### Patch Changes

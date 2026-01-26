@@ -1,5 +1,15 @@
 # @happyvertical/smrt-svelte
 
+## 0.19.51
+
+### Patch Changes
+
+- @happyvertical/smrt-agents@0.19.51
+- @happyvertical/smrt-jobs@0.19.51
+- @happyvertical/smrt-profiles@0.19.51
+- @happyvertical/smrt-users@0.19.51
+- @happyvertical/smrt-types@0.19.51
+
 ## 0.19.50
 
 ### Patch Changes
