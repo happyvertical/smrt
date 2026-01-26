@@ -1293,6 +1293,39 @@ export class SchemaGenerator {
       return 'current_timestamp';
     }
 
+    if (type === 'JSON') {
+      // Handle null/undefined
+      if (value === null || value === undefined) {
+        return "'null'";
+      }
+
+      // Handle string inputs - need to validate they're valid JSON
+      if (typeof value === 'string') {
+        // Empty string is not valid JSON
+        if (value === '') {
+          return "'null'";
+        }
+        // '[object Object]' is a common bug from accidental toString()
+        if (value === '[object Object]') {
+          return "'{}'";
+        }
+        // Try to parse as JSON to validate
+        try {
+          JSON.parse(value);
+          // It's valid JSON, use it as-is (escaped for SQL)
+          return `'${value.replace(/'/g, "''")}'`;
+        } catch {
+          // Not valid JSON - encode the string as a JSON string
+          const json = JSON.stringify(value);
+          return `'${json.replace(/'/g, "''")}'`;
+        }
+      }
+
+      // Objects and arrays - stringify them
+      const json = JSON.stringify(value);
+      return `'${json.replace(/'/g, "''")}'`;
+    }
+
     // Fallback for other types
     return `'${String(value).replace(/'/g, "''")}'`;
   }
