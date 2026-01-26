@@ -350,6 +350,121 @@ export interface SiteConfig {
 }
 
 // ============================================================================
+// Export Configuration Types
+// ============================================================================
+
+/**
+ * Filter operators for export queries
+ */
+export interface ExportFilterValue {
+  /** Equals (shorthand: just the value) */
+  eq?: string | number | boolean;
+  /** Not equals */
+  ne?: string | number | boolean;
+  /** Greater than */
+  gt?: string | number;
+  /** Greater than or equal */
+  gte?: string | number;
+  /** Less than */
+  lt?: string | number;
+  /** Less than or equal */
+  lte?: string | number;
+  /** In array */
+  in?: (string | number)[];
+  /** Contains (text) */
+  contains?: string;
+}
+
+/**
+ * Configuration for a single export file
+ */
+export interface ExportFileConfig {
+  /**
+   * SMRT object types to include in this export
+   * Uses className (e.g., 'MeetingRecap', 'Game')
+   */
+  types: string[];
+
+  /**
+   * Field whitelist - only export these fields
+   * If specified, overrides exclude and fieldExportDefault
+   */
+  include?: string[];
+
+  /**
+   * Field blacklist - exclude these fields
+   * Applied after schema-level exported: false check
+   */
+  exclude?: string[];
+
+  /**
+   * Filters to apply when querying records
+   * Keys are field names, values are filter conditions
+   *
+   * @example
+   * filters: {
+   *   status: ['published'],  // shorthand for status IN ('published')
+   *   publish_date: { gte: '2025-01-01' },
+   *   council_slug: ['town-of-bentley'],
+   * }
+   */
+  filters?: Record<string, string[] | number[] | ExportFilterValue>;
+
+  /**
+   * Output format for this file
+   * @default 'json'
+   */
+  format?: 'json' | 'ndjson' | 'csv' | 'sqlite';
+
+  /**
+   * Field to order by
+   * Prefix with '-' for descending (e.g., '-publish_date')
+   */
+  orderBy?: string;
+
+  /**
+   * Maximum records per file
+   * If exceeded, creates paginated files (e.g., contents-1.json, contents-2.json)
+   */
+  limit?: number;
+
+  /**
+   * Create separate files per unique value of this field
+   * e.g., shardBy: 'year' creates contents-2024.json, contents-2025.json
+   */
+  shardBy?: string;
+}
+
+/**
+ * Export configuration for static site generation
+ *
+ * Controls how data is exported from database to JSON files for build.
+ */
+export interface ExportConfig {
+  /**
+   * Default export behavior for fields without explicit `exported` annotation
+   *
+   * - true: Export all fields by default (simpler, for most sites)
+   * - false: Only export fields with explicit `exported: true`
+   *
+   * @default true
+   */
+  fieldExportDefault?: boolean;
+
+  /**
+   * Default output format for all exports
+   * @default 'json'
+   */
+  format?: 'json' | 'ndjson' | 'csv' | 'sqlite';
+
+  /**
+   * Export file configurations
+   * Keys become filenames (e.g., 'contents' -> 'contents.json')
+   */
+  [filename: string]: ExportFileConfig | boolean | string | undefined;
+}
+
+// ============================================================================
 // Main Configuration
 // ============================================================================
 
@@ -362,6 +477,9 @@ export interface SmrtConfig {
 
   // Site identity and configuration (for site templates)
   site?: SiteConfig;
+
+  // Export configuration for static site generation
+  export?: ExportConfig;
 
   // Module-scoped configurations
   modules?: {

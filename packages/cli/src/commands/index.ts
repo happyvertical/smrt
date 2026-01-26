@@ -12,6 +12,8 @@ export { dbRollbackCommand } from './db-rollback.js';
 export { dbStatusCommand } from './db-status.js';
 export { dispatchCommands } from './dispatch.js';
 export { docsCommands } from './docs-claude.js';
+// Data export command
+export { exportCommand } from './export.js';
 export { generateCommands } from './generate.js';
 export { gitCommands } from './git.js';
 export { gnodeCommands } from './gnode.js';

@@ -47,6 +47,13 @@ export interface FieldOptions {
   transient?: boolean;
   /** Field description */
   description?: string;
+  /**
+   * Controls whether the field is included in JSON exports.
+   * - `true`: Always exported (unless site explicitly excludes it)
+   * - `false`: Never exported (cannot be overridden by site config)
+   * - `undefined`: Uses site's fieldExportDefault setting
+   */
+  exported?: boolean;
 }
 
 /**
