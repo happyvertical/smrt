@@ -8,6 +8,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     testTimeout: 30000,
+    hookTimeout: 30000, // Allow longer setup time in CI
     fileParallelism: false,
     pool: 'forks',
     poolOptions: {
