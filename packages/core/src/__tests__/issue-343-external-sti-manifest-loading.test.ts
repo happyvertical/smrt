@@ -26,9 +26,31 @@
  * import { Person } from '@happyvertical/smrt-profiles';
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
-import { loadExternalManifest } from '../manifest/manifest-loader.js';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import {
+  clearManifestCache,
+  loadExternalManifest,
+} from '../manifest/manifest-loader.js';
 import { ObjectRegistry } from '../registry.js';
+
+// Clear manifest cache before and after each test to ensure test isolation
+// This prevents ESM module caching issues where cached manifests from one test
+// could affect another test's results
+beforeEach(() => {
+  clearManifestCache();
+});
+
+afterEach(() => {
+  clearManifestCache();
+});
 
 // Type definitions for manifest structures
 interface SmartObjectDefinition {

@@ -16,12 +16,23 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   clearManifestCache,
   getPackageName,
   loadExternalManifest,
 } from '../manifest/manifest-loader';
+
+// Clear manifest cache before and after each test to ensure test isolation
+// This prevents ESM module caching issues where cached manifests from one test
+// could affect another test's results
+beforeEach(() => {
+  clearManifestCache();
+});
+
+afterEach(() => {
+  clearManifestCache();
+});
 
 describe('Issue #175: External package manifest loading', () => {
   it('should have correct manifest export structure in content package', () => {
@@ -59,9 +70,6 @@ describe('Issue #175: External package manifest loading', () => {
   });
 
   it('should handle loadExternalManifest for workspace packages', async () => {
-    // Clear cache to ensure fresh load
-    clearManifestCache();
-
     // Try to load content package manifest
     // In monorepo, this should work via file: protocol or workspace resolution
     const manifest = await loadExternalManifest('@happyvertical/smrt-content');
