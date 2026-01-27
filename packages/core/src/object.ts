@@ -760,11 +760,33 @@ export class SmrtObject extends SmrtClass {
           fieldDef?.type;
 
         if (fieldType === 'text') {
-          // For TEXT fields, convert undefined to an empty string.
-          if (isSTI && fieldDef?.type === 'meta') {
-            data._meta_data[key] = '';
+          // Don't convert tenant ID fields to empty string (Issue #841)
+          // Tenant fields should remain null/undefined for interceptor to auto-populate.
+          // Check both the property instance and field definition for __tenancy marker.
+          // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
+          // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
+          const hasTenancyMarker =
+            (prop &&
+              typeof prop === 'object' &&
+              '__tenancy' in prop &&
+              (prop as any).__tenancy?.isTenantIdField) ||
+            (fieldDef as any)?.__tenancy?.isTenantIdField ||
+            (fieldDef as any)?._meta?.__tenancy?.isTenantIdField;
+
+          if (hasTenancyMarker) {
+            // Leave tenant field as null so interceptor can auto-populate
+            if (isSTI && fieldDef?.type === 'meta') {
+              data._meta_data[key] = null;
+            } else {
+              data[key] = null;
+            }
           } else {
-            data[key] = '';
+            // For regular TEXT fields, convert undefined to an empty string.
+            if (isSTI && fieldDef?.type === 'meta') {
+              data._meta_data[key] = '';
+            } else {
+              data[key] = '';
+            }
           }
         } else if (fieldType === 'json') {
           // For JSON fields, use the default value from manifest to prevent:
