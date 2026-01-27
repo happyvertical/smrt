@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.53
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve \_\_tenancy metadata during field merging (#842) (core)
+  - @happyvertical/smrt-scanner@0.19.53
+  - @happyvertical/smrt-config@0.19.53
+  - @happyvertical/smrt-types@0.19.53
+
 ## 0.19.52
 
 ### Patch Changes
