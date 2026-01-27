@@ -1,17 +1,16 @@
 # @happyvertical/smrt-vitest
 
-Vitest plugin for automatic cross-package manifest loading in SMRT tests.
+Vitest plugin for automatic manifest generation and cross-package manifest loading in SMRT tests.
 
 ## Purpose
 
-Solves Issue #583: Cross-package integration tests fail because external package classes aren't registered in the local test manifest.
+This plugin is **required** for all SMRT projects. It:
 
-When testing smrt-commerce, for example, and you import `AccountCollection` from smrt-ledgers, the test fails with "unregistered class" errors because:
-1. Each package generates its own test manifest via `generate-test-manifest.js`
-2. The manifest only scans `src/**/*.ts` within that package
-3. Classes from peer dependencies aren't included
+1. **Generates manifests automatically** - No need to run `smrt test` or `smrt generate:test` first
+2. **Loads cross-package manifests** - Solves Issue #583 where external package classes aren't registered
+3. **Registers all classes** - Makes SMRT objects available for tests
 
-This plugin automatically discovers SMRT peer dependencies and loads their manifests before tests run.
+Without this plugin, tests fail with "unregistered class" or "No field metadata found" errors.
 
 ## Installation
 
@@ -79,18 +78,40 @@ export default async function() {
 
 ## How It Works
 
-1. **Discovery**: Scans `package.json` for `@happyvertical/smrt-*` dependencies
-2. **Load**: Uses `loadExternalManifestSync` to load each package's manifest
-3. **Register**: Calls `ObjectRegistry.registerFromManifest` for each class
-4. **Test**: Classes are now available for cross-package integration tests
+At vitest startup, the plugin:
+
+1. **Generates local manifest** - Scans `src/**/*.ts` for SMRT classes using ManifestBuilder
+2. **Discovers dependencies** - Scans `package.json` for `@happyvertical/smrt-*` packages
+3. **Loads external manifests** - Uses ManifestManager to load each package's manifest
+4. **Registers classes** - Calls `ObjectRegistry.registerFromManifest` for all classes
+5. **Tests run** - All SMRT classes are available for testing
+
+**Note on watch mode**: The manifest is generated once at vitest startup. If you add new classes or fields while vitest is running in watch mode, restart vitest to pick up the changes.
 
 ## Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| `generateManifest` | `boolean` | `true` | Auto-generate manifest at startup |
+| `include` | `string[]` | `['src/**/*.ts']` | Source patterns to scan for manifest generation |
+| `exclude` | `string[]` | `['**/*.d.ts', '**/node_modules/**', '**/dist/**']` | Patterns to exclude from scanning |
 | `packages` | `string[]` | `[]` | Additional packages to load beyond auto-discovered |
 | `verbose` | `boolean` | `false` | Enable detailed logging |
 | `root` | `string` | `process.cwd()` | Root directory for package.json discovery |
+
+### Disabling Auto-Generation
+
+If you prefer to use a pre-built manifest (e.g., from `npm run build`):
+
+```typescript
+export default defineConfig({
+  plugins: [
+    smrtVitestPlugin({
+      generateManifest: false, // Use existing manifest only
+    }),
+  ],
+});
+```
 
 ## Example: smrt-commerce Integration Tests
 

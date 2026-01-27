@@ -33,6 +33,7 @@ export interface PackageInfo {
   version: string;
   meta: ClaudeMeta | null;
   readme: string | null;
+  claudeMd: string | null;
 }
 
 export interface RootDocInfo {
@@ -104,9 +105,14 @@ export const docsClaudeCommand: CLICommand = {
 
       console.log(`\n✅ Generated ${outputPath}`);
       console.log(`   ${packages.length} packages documented`);
-      console.log(
-        `   ${packages.filter((p) => p.meta).length} with .claude-meta.json`,
-      );
+      const withClaudeMd = packages.filter((p) => p.claudeMd).length;
+      const withMeta = packages.filter((p) => p.meta && !p.claudeMd).length;
+      if (withClaudeMd > 0) {
+        console.log(`   ${withClaudeMd} with CLAUDE.md`);
+      }
+      if (withMeta > 0) {
+        console.log(`   ${withMeta} with .claude-meta.json (legacy)`);
+      }
       if (rootDocs.length > 0) {
         console.log(`   ${rootDocs.length} framework documents included`);
       }
@@ -207,15 +213,17 @@ function loadPackageInfo(
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     const metaPath = join(packagePath, '.claude-meta.json');
     const readmePath = join(packagePath, 'README.md');
+    const claudeMdPath = join(packagePath, 'CLAUDE.md');
 
     const info: PackageInfo = {
       name: packageJson.name,
       version: packageJson.version,
       meta: null,
       readme: null,
+      claudeMd: null,
     };
 
-    // Load .claude-meta.json if it exists
+    // Load .claude-meta.json if it exists (legacy, will be deprecated)
     if (existsSync(metaPath)) {
       try {
         info.meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
@@ -227,6 +235,11 @@ function loadPackageInfo(
     // Load README.md if it exists
     if (existsSync(readmePath)) {
       info.readme = readFileSync(readmePath, 'utf-8');
+    }
+
+    // Load CLAUDE.md if it exists (preferred over .claude-meta.json)
+    if (existsSync(claudeMdPath)) {
+      info.claudeMd = readFileSync(claudeMdPath, 'utf-8');
     }
 
     return info;
@@ -424,7 +437,19 @@ export function generateMarkdown(
     lines.push(`## ${pkg.name}`);
     lines.push('');
 
-    if (pkg.meta) {
+    // Prefer CLAUDE.md over .claude-meta.json (CLAUDE.md is the source of truth)
+    if (pkg.claudeMd) {
+      // Include CLAUDE.md content directly
+      // Strip the H1 title if it matches the package name to avoid duplication
+      let content = pkg.claudeMd;
+      const h1Match = content.match(/^#\s+.+\n/);
+      if (h1Match) {
+        content = content.slice(h1Match[0].length);
+      }
+      lines.push(content.trim());
+      lines.push('');
+    } else if (pkg.meta) {
+      // Legacy: use .claude-meta.json if no CLAUDE.md
       // Purpose
       if (pkg.meta.purpose) {
         lines.push(pkg.meta.purpose);
@@ -482,7 +507,7 @@ export function generateMarkdown(
         lines.push('');
       }
     } else {
-      lines.push('*No .claude-meta.json found for this package.*');
+      lines.push('*No CLAUDE.md or .claude-meta.json found for this package.*');
       lines.push('');
     }
   }

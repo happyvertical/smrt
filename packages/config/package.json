@@ -15,7 +15,8 @@
   },
   "files": [
     "dist",
-    ".claude-meta.json"
+    ".claude-meta.json",
+    "CLAUDE.md"
   ],
   "scripts": {
     "build": "vite build",

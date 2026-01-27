@@ -18,7 +18,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "CLAUDE.md"
   ],
   "scripts": {
     "build": "pnpm run generate:test && tsc && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && cp src/manifest/test-manifest.json dist/manifest.json",

@@ -308,7 +308,8 @@ export const utilityCommands: Record<string, CLICommand> = {
 
   test: {
     name: 'test',
-    description: 'Generate test manifest and run tests',
+    description:
+      '[DEPRECATED] Generate test manifest and run tests - use npx vitest instead',
     args: ['[pattern...]'],
     options: {
       'manifest-only': {
@@ -323,7 +324,25 @@ export const utilityCommands: Record<string, CLICommand> = {
       },
     },
     handler: async (args: string[], options: any) => {
-      console.log('\n🧪 Generating test manifest...\n');
+      // Show deprecation warning
+      console.log(`
+╔═══════════════════════════════════════════════════════════════════════╗
+║  ⚠️  DEPRECATED: 'smrt test' is deprecated                            ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║  The vitest plugin now generates manifests automatically.             ║
+║                                                                       ║
+║  Instead, just run:                                                   ║
+║    npx vitest                                                         ║
+║    npx vitest run                                                     ║
+║    npm test                                                           ║
+║                                                                       ║
+║  Make sure vitest.config.ts includes:                                 ║
+║    import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';     ║
+║    plugins: [smrtVitestPlugin()]                                      ║
+╚═══════════════════════════════════════════════════════════════════════╝
+      `);
+
+      console.log('🧪 Generating test manifest...\n');
 
       try {
         // Import ManifestBuilder (uses OXC scanner internally)
