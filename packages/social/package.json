@@ -1,0 +1,66 @@
+{
+  "name": "@happyvertical/smrt-social",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
+  },
+  "files": [
+    "dist",
+    ".claude-meta.json"
+  ],
+  "scripts": {
+    "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",
+    "build:watch": "vite build --watch",
+    "test": "npx vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-content": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-video": "workspace:*",
+    "@happyvertical/utils": "^0.66.9"
+  },
+  "devDependencies": {
+    "@happyvertical/logger": "^0.66.9",
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@happyvertical/sql": "^0.66.9",
+    "@types/node": "25.0.9",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
+  },
+  "keywords": [
+    "social",
+    "publishing",
+    "youtube",
+    "threads",
+    "bluesky",
+    "smrt",
+    "framework"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
