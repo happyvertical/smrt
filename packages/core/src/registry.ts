@@ -4157,9 +4157,17 @@ export class ObjectRegistry {
 
     // Type: Child wins (warn if different)
     if (childField.type && childField.type !== parentField.type) {
-      console.warn(
-        `Field type mismatch: "${fieldName}" is ${parentField.type} in parent but ${childField.type} in child. Using child type.`,
-      );
+      // Don't warn for tenantId field - expected type conflict between decorator and AST
+      // The @tenantId decorator registers as 'foreignKey' but AST sees 'text' from type annotation
+      // __tenancy can be at root level (from @tenantId decorator) or under _meta (from @smrt({ tenantScoped: true }))
+      const isTenantField =
+        parentField.__tenancy?.isTenantIdField ||
+        parentField._meta?.__tenancy?.isTenantIdField;
+      if (!(isTenantField && fieldName === 'tenantId')) {
+        console.warn(
+          `Field type mismatch: "${fieldName}" is ${parentField.type} in parent but ${childField.type} in child. Using child type.`,
+        );
+      }
       merged.type = childField.type;
     }
 
@@ -4207,6 +4215,17 @@ export class ObjectRegistry {
       if (parentField._meta?.unique || childField._meta?.unique) {
         merged._meta.unique = true;
       }
+    }
+
+    // __tenancy: Preserve from parent (decorator takes precedence)
+    // This ensures @tenantId decorator metadata survives type conflicts (Issue #841)
+    // The decorator registers __tenancy metadata, but AST scanner may override the type.
+    // We need to preserve __tenancy so the interceptor can identify tenant fields.
+    if (parentField.__tenancy || childField.__tenancy) {
+      merged.__tenancy = {
+        ...(childField.__tenancy || {}),
+        ...(parentField.__tenancy || {}), // Parent (decorator) wins
+      };
     }
 
     // Value: Child wins
