@@ -157,7 +157,7 @@ export interface VideoContentOptions extends ContentOptions {
     include: ['list', 'get', 'create', 'update', 'delete'],
   },
   mcp: {
-    include: ['list', 'get', 'generate'],
+    include: ['list', 'get'],
   },
   cli: true,
 })

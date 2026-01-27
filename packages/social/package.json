@@ -28,8 +28,8 @@
     ".claude-meta.json"
   ],
   "scripts": {
-    "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",
-    "build:watch": "vite build --watch",
+    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build:watch": "vite build --mode library --watch",
     "test": "npx vitest run",
     "test:watch": "vitest"
   },

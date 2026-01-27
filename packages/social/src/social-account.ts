@@ -171,14 +171,26 @@ export class SocialAccount extends SmrtObject {
   platformUrl: string | null = null;
 
   /**
-   * Encrypted OAuth access token
-   * WARNING: This should be encrypted before storage
+   * OAuth access token
+   *
+   * SECURITY: Tokens should be encrypted before storage using @happyvertical/smrt-secrets:
+   * ```typescript
+   * import { SecretService } from '@happyvertical/smrt-secrets';
+   * const service = await SecretService.create({ db });
+   * await service.store(`social-${account.id}-access-token`, plainTextToken);
+   * ```
+   *
+   * TODO: Integrate with smrt-secrets for automatic encryption
    */
   accessToken: string | null = null;
 
   /**
-   * Encrypted OAuth refresh token
-   * WARNING: This should be encrypted before storage
+   * OAuth refresh token
+   *
+   * SECURITY: Tokens should be encrypted before storage using @happyvertical/smrt-secrets.
+   * See accessToken documentation for encryption pattern.
+   *
+   * TODO: Integrate with smrt-secrets for automatic encryption
    */
   refreshToken: string | null = null;
 

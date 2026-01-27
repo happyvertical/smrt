@@ -244,32 +244,54 @@ export class VideoWorkflow extends SmrtObject {
 
   /**
    * Get a copy of the workflow JSON with injected parameters
+   *
+   * Parameter injection follows ComfyUI node structure conventions:
+   * - seedImage, audioFile, baseVideo → node.inputs.image (file path)
+   * - prompt → node.inputs.text (string)
+   * - Other parameters → node.inputs[paramKey]
+   *
+   * @param params - Key-value pairs of parameters to inject
+   * @returns Modified workflow JSON or null if no workflowJson set
    */
   injectParameters(params: Record<string, any>): object | null {
     if (!this.workflowJson) return null;
 
     const workflow = JSON.parse(JSON.stringify(this.workflowJson));
+    const warnings: string[] = [];
 
     for (const [paramKey, nodeId] of Object.entries(this.nodeMapping)) {
       if (nodeId && params[paramKey] !== undefined) {
+        // Validate nodeId exists in workflow
+        if (!workflow[nodeId]) {
+          warnings.push(
+            `Node mapping '${paramKey}' references node '${nodeId}' which does not exist in workflow`,
+          );
+          continue;
+        }
+
         // Inject parameter into the node
-        // The exact injection depends on node type
-        if (workflow[nodeId]) {
-          workflow[nodeId].inputs = workflow[nodeId].inputs || {};
-          // Common injection patterns
-          if (
-            paramKey === 'seedImage' ||
-            paramKey === 'audioFile' ||
-            paramKey === 'baseVideo'
-          ) {
-            workflow[nodeId].inputs.image = params[paramKey];
-          } else if (paramKey === 'prompt') {
-            workflow[nodeId].inputs.text = params[paramKey];
-          } else {
-            workflow[nodeId].inputs[paramKey] = params[paramKey];
-          }
+        workflow[nodeId].inputs = workflow[nodeId].inputs || {};
+
+        // Map parameters to ComfyUI node input field names
+        if (
+          paramKey === 'seedImage' ||
+          paramKey === 'audioFile' ||
+          paramKey === 'baseVideo'
+        ) {
+          workflow[nodeId].inputs.image = params[paramKey];
+        } else if (paramKey === 'prompt') {
+          workflow[nodeId].inputs.text = params[paramKey];
+        } else {
+          workflow[nodeId].inputs[paramKey] = params[paramKey];
         }
       }
+    }
+
+    // Log warnings if any (in development)
+    if (warnings.length > 0 && process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[VideoWorkflow] Parameter injection warnings:\n${warnings.join('\n')}`,
+      );
     }
 
     return workflow;
