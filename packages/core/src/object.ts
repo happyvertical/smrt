@@ -763,12 +763,15 @@ export class SmrtObject extends SmrtClass {
           // Don't convert tenant ID fields to empty string (Issue #841)
           // Tenant fields should remain null/undefined for interceptor to auto-populate.
           // Check both the property instance and field definition for __tenancy marker.
+          // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
+          // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
           const hasTenancyMarker =
             (prop &&
               typeof prop === 'object' &&
               '__tenancy' in prop &&
               (prop as any).__tenancy?.isTenantIdField) ||
-            (fieldDef as any)?.__tenancy?.isTenantIdField;
+            (fieldDef as any)?.__tenancy?.isTenantIdField ||
+            (fieldDef as any)?._meta?.__tenancy?.isTenantIdField;
 
           if (hasTenancyMarker) {
             // Leave tenant field as null so interceptor can auto-populate

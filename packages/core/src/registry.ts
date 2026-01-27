@@ -4159,9 +4159,11 @@ export class ObjectRegistry {
     if (childField.type && childField.type !== parentField.type) {
       // Don't warn for tenantId field - expected type conflict between decorator and AST
       // The @tenantId decorator registers as 'foreignKey' but AST sees 'text' from type annotation
-      if (
-        !(parentField.__tenancy?.isTenantIdField && fieldName === 'tenantId')
-      ) {
+      // __tenancy can be at root level (from @tenantId decorator) or under _meta (from @smrt({ tenantScoped: true }))
+      const isTenantField =
+        parentField.__tenancy?.isTenantIdField ||
+        parentField._meta?.__tenancy?.isTenantIdField;
+      if (!(isTenantField && fieldName === 'tenantId')) {
         console.warn(
           `Field type mismatch: "${fieldName}" is ${parentField.type} in parent but ${childField.type} in child. Using child type.`,
         );
