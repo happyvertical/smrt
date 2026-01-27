@@ -1,3 +1,4 @@
+import pluralizeLib from 'pluralize';
 import { ObjectRegistry } from './registry';
 
 /**
@@ -185,6 +186,105 @@ export async function fieldsFromClass(
 // Import from './schema/utils' in Node.js code that needs schema generation.
 
 /**
+ * Pluralizes an English word using the pluralize library.
+ *
+ * Uses the well-tested `pluralize` npm package which handles all English
+ * pluralization rules including irregular plurals (person → people,
+ * child → children), special cases (quiz → quizzes), and more.
+ *
+ * For snake_case table names with multiple words (e.g., 'journal_entry'),
+ * only the last word is pluralized ('journal_entries').
+ *
+ * @param word - The word to pluralize (should be lowercase)
+ * @returns The pluralized word
+ * @example
+ * ```typescript
+ * pluralize('currency');        // 'currencies'
+ * pluralize('journal_entry');   // 'journal_entries'
+ * pluralize('statement_batch'); // 'statement_batches'
+ * pluralize('product');         // 'products'
+ * pluralize('person');          // 'people'
+ * pluralize('child');           // 'children'
+ * ```
+ */
+export function pluralize(word: string): string {
+  // For snake_case words, only pluralize the last segment
+  // e.g., 'journal_entry' → 'journal_entries' (not 'journals_entries')
+  if (word.includes('_')) {
+    const parts = word.split('_');
+    const lastWord = parts.pop();
+    if (!lastWord) return word; // Safety check (shouldn't happen)
+    return [...parts, pluralizeLib(lastWord)].join('_');
+  }
+
+  return pluralizeLib(word);
+}
+
+/**
+ * Returns the old (incorrect) pluralized table name for migration purposes.
+ *
+ * This function replicates the previous buggy behavior where 'y' → 'ies'
+ * transformation was applied AFTER adding 's', resulting in incorrect
+ * pluralization (e.g., 'currency' → 'currencys' instead of 'currencies').
+ *
+ * Use this to generate migration SQL that renames old tables to new names.
+ *
+ * @param className - Name of the class
+ * @returns The incorrectly pluralized table name (old behavior)
+ * @example
+ * ```typescript
+ * // Generate migration for a class
+ * const oldName = legacyClassnameToTablename('Currency');    // 'currencys'
+ * const newName = classnameToTablename('Currency');          // 'currencies'
+ * console.log(`ALTER TABLE ${oldName} RENAME TO ${newName};`);
+ * ```
+ */
+export function legacyClassnameToTablename(className: string): string {
+  return className
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/([^s])$/, '$1s')
+    .replace(/y$/, 'ies'); // This runs AFTER 's' is added, so it's a no-op for 'y' words
+}
+
+/**
+ * Generates migration SQL for renaming tables from old to new naming convention.
+ *
+ * Returns an array of SQL statements to rename tables that were affected
+ * by the pluralization bug (Issue #839).
+ *
+ * @param classNames - Array of class names to check for migration
+ * @returns Array of SQL RENAME statements (empty if no changes needed)
+ * @example
+ * ```typescript
+ * const migrations = generateTableRenameMigrations([
+ *   'Currency',
+ *   'JournalEntry',
+ *   'Product'  // Not affected
+ * ]);
+ * // Returns:
+ * // [
+ * //   'ALTER TABLE currencys RENAME TO currencies;',
+ * //   'ALTER TABLE journal_entrys RENAME TO journal_entries;'
+ * // ]
+ * ```
+ */
+export function generateTableRenameMigrations(classNames: string[]): string[] {
+  const migrations: string[] = [];
+
+  for (const className of classNames) {
+    const oldName = legacyClassnameToTablename(className);
+    const newName = classnameToTablename(className);
+
+    if (oldName !== newName) {
+      migrations.push(`ALTER TABLE ${oldName} RENAME TO ${newName};`);
+    }
+  }
+
+  return migrations;
+}
+
+/**
  * Generates a table name from a class constructor
  *
  * Checks for SMRT_TABLE_NAME static property first (set by @smrt() decorator),
@@ -215,17 +315,13 @@ export function tableNameFromClass(
   }
 
   // Fallback: derive from class name (breaks with minification)
-  return (
-    ClassType.name
-      // Insert underscore between lower & upper case letters
-      .replace(/([a-z])([A-Z])/g, '$1_$2')
-      // Convert to lowercase
-      .toLowerCase()
-      // Handle basic pluralization rules
-      .replace(/([^s])$/, '$1s')
-      // Handle special cases ending in 'y'
-      .replace(/y$/, 'ies')
-  );
+  const snakeCase = ClassType.name
+    // Insert underscore between lower & upper case letters
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    // Convert to lowercase
+    .toLowerCase();
+
+  return pluralize(snakeCase);
 }
 
 /**
@@ -235,18 +331,15 @@ export function tableNameFromClass(
  * @returns Pluralized snake_case table name
  */
 export function classnameToTablename(className: string) {
-  // Convert camelCase/PascalCase to snake_case and pluralize
-  const tableName = className
+  // Convert camelCase/PascalCase to snake_case
+  const snakeCase = className
     // Insert underscore between lower & upper case letters
     .replace(/([a-z])([A-Z])/g, '$1_$2')
     // Convert to lowercase
-    .toLowerCase()
-    // Handle basic pluralization rules
-    .replace(/([^s])$/, '$1s')
-    // Handle special cases ending in 'y'
-    .replace(/y$/, 'ies');
+    .toLowerCase();
 
-  return tableName;
+  // Pluralize using proper English rules
+  return pluralize(snakeCase);
 }
 
 /**
