@@ -2371,7 +2371,9 @@ export class ObjectRegistry {
     ObjectRegistry.getDiscoveryAttemptCache().clear();
     ObjectRegistry.fieldDecorators.clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
-    // Note: dbInstanceIds WeakMap will be garbage collected automatically
+    ObjectRegistry.classNameMap.clear();
+    // Note: dbInstanceIds WeakMap and constructorIndex WeakMap will be
+    // garbage collected automatically when classes are no longer referenced
     // Reset the counter for clean test state
     ObjectRegistry.nextDbId = 1;
   }
