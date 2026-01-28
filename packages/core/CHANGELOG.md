@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.57
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - clear classNameMap in ObjectRegistry.clear() (#849) (core)
+  - @happyvertical/smrt-scanner@0.19.57
+  - @happyvertical/smrt-config@0.19.57
+  - @happyvertical/smrt-types@0.19.57
+
 ## 0.19.56
 
 ### Patch Changes
