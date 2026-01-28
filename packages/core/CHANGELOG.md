@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.56
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - respect optional marker for @foreignKey fields (#848) (scanner)
+  - @happyvertical/smrt-scanner@0.19.56
+  - @happyvertical/smrt-config@0.19.56
+  - @happyvertical/smrt-types@0.19.56
+
 ## 0.19.55
 
 ### Patch Changes
