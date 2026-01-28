@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-assets",
-  "version": "0.19.54",
+  "version": "0.19.55",
   "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
