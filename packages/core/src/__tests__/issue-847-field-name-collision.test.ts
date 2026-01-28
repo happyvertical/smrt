@@ -26,11 +26,12 @@ import { SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry.js';
 
 // Test class that has a 'name' field - same name as Profile.name from smrt-profiles
-// Council does NOT extend Profile, it extends SmrtObject directly
-@smrt({ tableName: 'councils' })
-class Council extends SmrtObject {
+// This class simulates Council but uses a different name to avoid collision with praeco's Council
+// Issue847Council does NOT extend Profile, it extends SmrtObject directly
+@smrt({ tableName: 'issue847_councils' })
+class Issue847Council extends SmrtObject {
   // This field has the same name as Profile.name from @happyvertical/smrt-profiles
-  // It should persist correctly since Council doesn't extend Profile
+  // It should persist correctly since Issue847Council doesn't extend Profile
   name: string = '';
 
   // Other fields for comparison
@@ -63,32 +64,32 @@ describe('Issue #847: Field name collision with external packages', () => {
     };
     ObjectRegistry.registerFromManifest('Profile', profileDef, 'smrt-profiles');
 
-    // Register the Council class FROM a manifest that includes the name field
+    // Register the Issue847Council class FROM a manifest that includes the name field
     // This simulates the production scenario where OXC scanner generates a correct manifest
     const councilDef = {
-      className: 'Council',
-      tableName: 'councils',
+      className: 'Issue847Council',
+      tableName: 'issue847_councils',
       fields: {
         name: { type: 'text', required: false, default: '' }, // Same field name as Profile!
         meetingsUrl: { type: 'text', required: false, default: '' },
         timezone: { type: 'text', required: false, default: 'America/Toronto' },
       },
     };
-    ObjectRegistry.registerFromManifest('Council', councilDef);
+    ObjectRegistry.registerFromManifest('Issue847Council', councilDef);
   });
 
   it('should have name field in manifest/registry', () => {
-    // Verify Council is registered with name field
-    const fields = ObjectRegistry.getFields('Council');
+    // Verify Issue847Council is registered with name field
+    const fields = ObjectRegistry.getFields('Issue847Council');
 
-    // Council should have name field in registry
+    // Issue847Council should have name field in registry
     expect(fields.has('name')).toBe(true);
     expect(fields.has('meetingsUrl')).toBe(true);
     expect(fields.has('timezone')).toBe(true);
   });
 
   it('should serialize name field in toJSON()', async () => {
-    const council = new Council({
+    const council = new Issue847Council({
       name: 'Test Council',
       meetingsUrl: 'https://example.com/meetings',
       timezone: 'America/New_York',
@@ -107,7 +108,7 @@ describe('Issue #847: Field name collision with external packages', () => {
 
   it('should persist name field to database', async () => {
     // Create council with name
-    const council = new Council({
+    const council = new Issue847Council({
       name: 'Waterloo Council',
       meetingsUrl: 'https://waterloo.ca/meetings',
       timezone: 'America/Toronto',
@@ -118,7 +119,7 @@ describe('Issue #847: Field name collision with external packages', () => {
     await council.save();
 
     // Retrieve from database - pass ID in constructor to trigger auto-load
-    const retrieved = new Council({
+    const retrieved = new Issue847Council({
       id: council.id,
       db: council._db, // Pass the db instance directly (has 'query' method)
     });
@@ -132,7 +133,7 @@ describe('Issue #847: Field name collision with external packages', () => {
 
   it('should handle update of name field', async () => {
     // Create initial council
-    const council = new Council({
+    const council = new Issue847Council({
       name: 'Original Name',
       meetingsUrl: 'https://example.com',
       db: { type: 'sqlite', url: ':memory:' },
@@ -145,7 +146,7 @@ describe('Issue #847: Field name collision with external packages', () => {
     await council.save();
 
     // Retrieve and verify - pass ID in constructor to trigger auto-load
-    const retrieved = new Council({
+    const retrieved = new Issue847Council({
       id: council.id,
       db: council._db, // Pass the db instance directly (has 'query' method)
     });

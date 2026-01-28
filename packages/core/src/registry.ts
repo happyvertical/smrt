@@ -1090,12 +1090,18 @@ export class ObjectRegistry {
       );
     }
 
-    // Case-insensitive check for manifest stubs (Issue #531)
-    // Manifest keys are lowercase (e.g., 'praeco') but class names are PascalCase (e.g., 'Praeco')
-    // When the real class is loaded via @smrt() decorator, we need to find and replace the stub
+    // Case-insensitive check for manifest stubs (Issue #531, #847)
+    // Manifest keys can be:
+    // - lowercase simple names (e.g., 'praeco')
+    // - qualified names (e.g., '@happyvertical/praeco:Council')
+    // When the real class is loaded via @smrt() decorator, we need to find and replace the stub.
+    // Issue #847: Also check the entry's `name` property which contains the simple class name.
     const lowerName = name.toLowerCase();
     for (const [existingKey, existing] of ObjectRegistry.classes.entries()) {
-      if (existingKey.toLowerCase() === lowerName && existingKey !== name) {
+      // Match by key (original behavior) OR by the entry's simple name property (Issue #847)
+      const keyMatches = existingKey.toLowerCase() === lowerName;
+      const nameMatches = existing.name?.toLowerCase() === lowerName;
+      if ((keyMatches || nameMatches) && existingKey !== name) {
         // Found case-insensitive match with different casing
         if ((existing.constructor as any)._isManifestStub === true) {
           // Replace stub with real class
@@ -1697,13 +1703,20 @@ export class ObjectRegistry {
     // Only reached if no case-insensitive match exists
     ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
 
+    // Issue #847: Also map the simple class name for lookups
+    // This enables getCanonicalClassName('Council') to find '@happyvertical/praeco:Council'
+    const simpleClassName = objectDef.className || name;
+    if (simpleClassName.toLowerCase() !== name.toLowerCase()) {
+      ObjectRegistry.classNameMap.set(simpleClassName.toLowerCase(), name);
+    }
+
     // Create stub constructor - not needed for CLI command generation
     // The CLI only needs metadata (fields, methods, config)
     // Mark as manifest stub so real class can replace it during decorator registration
     const stubConstructor = class extends SmrtObject {
       static readonly _isManifestStub = true;
     } as typeof SmrtObject;
-    Object.defineProperty(stubConstructor, 'name', { value: name });
+    Object.defineProperty(stubConstructor, 'name', { value: simpleClassName });
 
     // Convert manifest field definitions to Field objects
     const fields = new Map<string, any>();
@@ -1808,8 +1821,12 @@ export class ObjectRegistry {
     // Register in ObjectRegistry (metadata only, no collection constructor)
     // Manifest registration is for command discovery and help text.
     // Runtime execution requires real classes loaded from entry point.
+    //
+    // Issue #847: Use className from objectDef (simple name like 'Council') for the name
+    // property, not the qualified name key. This enables getFields() lookups by simple
+    // class name to work correctly. simpleClassName is defined earlier in this function.
     ObjectRegistry.classes.set(name, {
-      name,
+      name: simpleClassName,
       qualifiedName, // New: Qualified name for cross-package identification
       constructor: stubConstructor,
       config,
