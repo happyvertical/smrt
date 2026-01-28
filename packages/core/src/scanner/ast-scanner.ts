@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import * as ts from 'typescript';
+import { DEFAULT_BASE_CLASSES } from '../manifest/discover-base-classes.js';
 import { createQualifiedName } from '../utils/qualified-names.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
@@ -353,8 +354,11 @@ export class ASTScanner {
     const className = node.name?.text;
     if (!className) return null;
 
-    // Skip base classes themselves (they shouldn't be in the manifest)
-    if (this.options.baseClasses?.includes(className)) return null;
+    // Skip framework base classes (SmrtObject, SmrtClass, SmrtCollection)
+    // Note: Only skip DEFAULT_BASE_CLASSES, not all discovered SMRT classes
+    // This fixes Issue #847 where local classes with names matching external classes
+    // (e.g., Council) were incorrectly skipped
+    if (DEFAULT_BASE_CLASSES.includes(className as any)) return null;
 
     // Check if class extends a SMRT base class (primary requirement)
     if (!this.extendsBaseClass(node)) return null;

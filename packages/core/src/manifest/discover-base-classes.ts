@@ -1,11 +1,24 @@
 /**
- * Discover base classes from external SMRT packages
+ * Discover SMRT classes from external packages for inheritance detection
  *
- * Loads manifests from external SMRT packages and extracts all class names
- * to use as potential base classes for inheritance detection.
+ * Loads manifests from external SMRT packages and extracts all class names.
+ * These are used by the AST scanner for inheritance detection - to determine
+ * if a class extends a valid SMRT class from an external package.
  *
- * This enables the AST scanner to discover classes that extend models from
- * external packages (e.g., CouncilMember extends ProfileRelationship).
+ * IMPORTANT: Despite the name, this function returns ALL SMRT classes from
+ * external packages, not just "base classes". The two have different uses:
+ *
+ * 1. DEFAULT_BASE_CLASSES (SmrtObject, SmrtClass, SmrtCollection):
+ *    Used by the AST scanner to SKIP these framework classes from the manifest.
+ *    These are the only classes that should be filtered out.
+ *
+ * 2. All discovered classes (return value of this function):
+ *    Used by the AST scanner for INHERITANCE DETECTION - to recognize when a
+ *    local class extends an external SMRT class.
+ *
+ * Issue #847 Fix: The AST scanner now uses DEFAULT_BASE_CLASSES for skipping,
+ * not the full return value of this function. This prevents local classes
+ * with names matching external classes from being incorrectly skipped.
  */
 
 import { readFileSync } from 'node:fs';
@@ -14,7 +27,14 @@ import { resolve } from 'node:path';
 import { discoverSmrtPackages } from './discover-smrt-packages.js';
 
 /**
- * Default base classes that are always included
+ * Framework base classes that should be skipped during manifest generation
+ *
+ * These are the ONLY classes that the AST scanner should skip - they are
+ * framework base classes that should not appear in the manifest themselves.
+ *
+ * Note: This is separate from inheritance detection. A local class named
+ * "Council" should NOT be skipped just because an external package has a
+ * class named "Council" - only these framework classes should be skipped.
  */
 export const DEFAULT_BASE_CLASSES = [
   'SmrtObject',
