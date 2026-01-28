@@ -301,7 +301,7 @@ export class ManifestAdapter {
 
     // 2. Check decorators
     for (const decorator of field.decorators) {
-      const decoratorResult = this.inferFromDecorator(decorator);
+      const decoratorResult = this.inferFromDecorator(decorator, field);
       if (decoratorResult) {
         return decoratorResult;
       }
@@ -352,10 +352,13 @@ export class ManifestAdapter {
   /**
    * Infer type from field decorator
    */
-  private inferFromDecorator(decorator: {
-    name: string;
-    arguments: string[];
-  }): FieldTypeInference | null {
+  private inferFromDecorator(
+    decorator: {
+      name: string;
+      arguments: string[];
+    },
+    field: RawFieldDefinition,
+  ): FieldTypeInference | null {
     // @field decorator with type config
     if (decorator.name === 'field' && decorator.arguments.length > 0) {
       const arg = decorator.arguments[0];
@@ -376,10 +379,12 @@ export class ManifestAdapter {
     if (decorator.name === 'foreignKey') {
       // First argument is the related class name
       const relatedClass = decorator.arguments[0]?.trim();
+      // Respect TypeScript optional marker (?) - fixes #846
+      const hasDefaultValue = field.initializer !== null;
       return {
         type: 'foreignKey',
         related: relatedClass || undefined,
-        required: true,
+        required: !field.optional && !hasDefaultValue,
         source: 'decorator',
       };
     }

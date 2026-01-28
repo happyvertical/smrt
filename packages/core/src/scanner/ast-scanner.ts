@@ -82,7 +82,24 @@ function findPackageContext(filePath: string): {
 export class ASTScanner {
   private program: ts.Program;
   private options: ScanOptions;
-  private baseClassProperties: Set<string> = new Set();
+
+  /**
+   * Framework internal fields that should NOT be included in manifests.
+   * These are SmrtObject/SmrtClass internals used by the framework, not user-defined fields.
+   * Using a hardcoded list prevents incorrectly filtering fields from external packages
+   * that happen to share names with user-defined fields. (Fixes #847)
+   */
+  private static readonly FRAMEWORK_INTERNAL_FIELDS = new Set([
+    '_tableName',
+    'options',
+    '_loadedRelationships',
+    '_db',
+    '_ai',
+    '_fs',
+    '_isInitialized',
+    '_errors',
+    '_warnings',
+  ]);
 
   constructor(filePaths: string[], options: ScanOptions = {}) {
     this.options = {
@@ -156,8 +173,10 @@ export class ASTScanner {
       });
     }
 
-    // Extract properties defined on base classes to exclude from subclass schemas
-    this.baseClassProperties = this.extractBaseClassProperties();
+    // Note: extractBaseClassProperties() was previously used to dynamically discover
+    // base class properties to filter. This has been replaced with a hardcoded list
+    // of FRAMEWORK_INTERNAL_FIELDS to fix #847 (incorrectly filtering fields from
+    // external packages that share names with user-defined fields).
   }
 
   /**
@@ -284,40 +303,6 @@ export class ASTScanner {
         classSet.add(defaultImportName);
       }
     }
-  }
-
-  /**
-   * Extract properties defined on base classes
-   * These properties should be excluded from subclass schemas to avoid circular serialization
-   */
-  private extractBaseClassProperties(): Set<string> {
-    const baseProperties = new Set<string>();
-
-    for (const sourceFile of this.program.getSourceFiles()) {
-      // Skip declaration files - we only want actual source files
-      if (sourceFile.isDeclarationFile) continue;
-
-      ts.forEachChild(sourceFile, (node) => {
-        if (ts.isClassDeclaration(node)) {
-          const className = node.name?.text;
-
-          // Check if this is one of our base classes
-          if (className && this.options.baseClasses?.includes(className)) {
-            // Extract all property declarations from this base class
-            for (const member of node.members) {
-              if (ts.isPropertyDeclaration(member)) {
-                const propName = this.getPropertyName(member);
-                if (propName) {
-                  baseProperties.add(propName);
-                }
-              }
-            }
-          }
-        }
-      });
-    }
-
-    return baseProperties;
   }
 
   /**
@@ -871,20 +856,11 @@ export class ASTScanner {
     const propertyName = this.getPropertyName(node);
     if (!propertyName) return null;
 
-    // Skip properties inherited from base classes to avoid circular serialization
-    if (this.baseClassProperties.has(propertyName)) {
-      // Exception: Allow specific SmrtObject schema properties that should be persisted
-      // These match the SCHEMA_PROPERTIES list in registry.ts
-      const SCHEMA_PROPERTIES = [
-        'id',
-        'slug',
-        'context',
-        'created_at',
-        'updated_at',
-      ];
-      if (!SCHEMA_PROPERTIES.includes(propertyName)) {
-        return null;
-      }
+    // Skip framework internal fields (Fixes #847)
+    // Use hardcoded list instead of dynamic extraction to prevent incorrectly
+    // filtering fields from external packages that share names with user-defined fields.
+    if (ASTScanner.FRAMEWORK_INTERNAL_FIELDS.has(propertyName)) {
+      return null;
     }
 
     // NEW: Check for field decorators (@field, @foreignKey, @oneToMany, @manyToMany)
