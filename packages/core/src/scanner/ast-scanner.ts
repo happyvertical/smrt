@@ -92,13 +92,9 @@ export class ASTScanner {
   private static readonly FRAMEWORK_INTERNAL_FIELDS = new Set([
     '_tableName',
     'options',
-    '_loadedRelationships',
     '_db',
     '_ai',
     '_fs',
-    '_isInitialized',
-    '_errors',
-    '_warnings',
   ]);
 
   constructor(filePaths: string[], options: ScanOptions = {}) {
