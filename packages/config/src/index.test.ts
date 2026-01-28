@@ -105,7 +105,9 @@ describe('@smrt/config', () => {
   });
 
   describe('getModuleConfig', () => {
-    it.skip('should merge defaults with file config', async () => {
+    it('should merge defaults with file config', async () => {
+      // Use unique file path to avoid Node.js ESM module caching
+      const testConfigPath = join(testDir, 'smrt-merge-module.config.js');
       const configContent = `
         export default {
           modules: {
@@ -116,8 +118,9 @@ describe('@smrt/config', () => {
         };
       `;
 
-      writeFileSync(configPath, configContent, 'utf-8');
-      await loadConfig({ configPath, cache: false });
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
 
       const config = getModuleConfig('test-module', {
         enabled: true,
@@ -128,7 +131,9 @@ describe('@smrt/config', () => {
       expect(config.maxItems).toBe(200); // From file
     });
 
-    it.skip('should inherit global smrt config', async () => {
+    it('should inherit global smrt config', async () => {
+      // Use unique file path to avoid Node.js ESM module caching
+      const testConfigPath = join(testDir, 'smrt-inherit-module.config.js');
       const configContent = `
         export default {
           smrt: {
@@ -142,8 +147,9 @@ describe('@smrt/config', () => {
         };
       `;
 
-      writeFileSync(configPath, configContent, 'utf-8');
-      await loadConfig({ configPath, cache: false });
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
 
       const config = getModuleConfig('test-module', {
         logLevel: 'info',
@@ -168,7 +174,9 @@ describe('@smrt/config', () => {
   });
 
   describe('getPackageConfig', () => {
-    it.skip('should merge defaults with file config', async () => {
+    it('should merge defaults with file config', async () => {
+      // Use unique file path to avoid Node.js ESM module caching
+      const testConfigPath = join(testDir, 'smrt-merge-package.config.js');
       const configContent = `
         export default {
           packages: {
@@ -179,8 +187,9 @@ describe('@smrt/config', () => {
         };
       `;
 
-      writeFileSync(configPath, configContent, 'utf-8');
-      await loadConfig({ configPath, cache: false });
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
 
       const config = getPackageConfig('ai', {
         defaultProvider: 'openai',
@@ -191,7 +200,9 @@ describe('@smrt/config', () => {
       expect(config.defaultModel).toBe('gpt-4'); // From file
     });
 
-    it.skip('should inherit global smrt config', async () => {
+    it('should inherit global smrt config', async () => {
+      // Use unique file path to avoid Node.js ESM module caching
+      const testConfigPath = join(testDir, 'smrt-inherit-package.config.js');
       const configContent = `
         export default {
           smrt: {
@@ -205,8 +216,9 @@ describe('@smrt/config', () => {
         };
       `;
 
-      writeFileSync(configPath, configContent, 'utf-8');
-      await loadConfig({ configPath, cache: false });
+      writeFileSync(testConfigPath, configContent, 'utf-8');
+      clearCache();
+      await loadConfig({ configPath: testConfigPath, cache: false });
 
       const config = getPackageConfig('spider', {
         logLevel: 'info',
@@ -250,7 +262,9 @@ describe('@smrt/config', () => {
   });
 
   describe('clearCache', () => {
-    it.skip('should clear cached config', async () => {
+    it('should clear cached config and require new load', async () => {
+      // Use unique file path to avoid Node.js ESM module caching
+      const testConfigPath = join(testDir, 'smrt-clearcache.config.js');
       const configContent = `
         export default {
           smrt: {
@@ -259,12 +273,23 @@ describe('@smrt/config', () => {
         };
       `;
 
-      writeFileSync(configPath, configContent, 'utf-8');
+      writeFileSync(testConfigPath, configContent, 'utf-8');
 
-      const config1 = await loadConfig({ configPath });
+      // Load config (with caching enabled)
+      const config1 = await loadConfig({ configPath: testConfigPath });
       expect(config1.smrt?.logLevel).toBe('debug');
 
-      // Modify file
+      // Verify config is accessible via getConfig
+      expect(getConfig()?.smrt?.logLevel).toBe('debug');
+
+      // Clear cache - should reset state
+      clearCache();
+
+      // After clearCache, getConfig should return null
+      expect(getConfig()).toBeNull();
+
+      // Can reload config from a new file (simulates file change reload)
+      const newConfigPath = join(testDir, 'smrt-clearcache-2.config.js');
       const newConfigContent = `
         export default {
           smrt: {
@@ -272,16 +297,13 @@ describe('@smrt/config', () => {
           }
         };
       `;
-      writeFileSync(configPath, newConfigContent, 'utf-8');
+      writeFileSync(newConfigPath, newConfigContent, 'utf-8');
 
-      // Should still return cached config
-      const config2 = await loadConfig({ configPath });
-      expect(config2.smrt?.logLevel).toBe('debug');
-
-      // Clear cache and reload
-      clearCache();
-      const config3 = await loadConfig({ configPath, cache: false });
-      expect(config3.smrt?.logLevel).toBe('error');
+      const config2 = await loadConfig({
+        configPath: newConfigPath,
+        cache: false,
+      });
+      expect(config2.smrt?.logLevel).toBe('error');
     });
   });
 

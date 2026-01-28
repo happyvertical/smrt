@@ -52,6 +52,31 @@ export interface SmrtVitestPluginOptions {
    * @default process.cwd()
    */
   root?: string;
+
+  /**
+   * Automatically generate manifest if missing or stale.
+   * When enabled, the plugin generates a manifest at vitest startup,
+   * eliminating the need to run `smrt test` or `smrt generate:test` first.
+   *
+   * Note: The manifest is generated once at startup. If you add new classes
+   * or fields while vitest is running in watch mode, restart vitest to
+   * pick up the changes.
+   *
+   * @default true
+   */
+  generateManifest?: boolean;
+
+  /**
+   * Source directories to scan for SMRT classes when generating manifest.
+   * @default ['src/**\/*.ts']
+   */
+  include?: string[];
+
+  /**
+   * Patterns to exclude from scanning when generating manifest.
+   * @default ['**\/*.d.ts', '**\/node_modules/**', '**\/dist/**']
+   */
+  exclude?: string[];
 }
 
 /**
@@ -241,10 +266,81 @@ async function loadAndRegisterManifest(
 }
 
 /**
+ * Generate local manifest using ManifestBuilder
+ *
+ * This ensures the manifest is always fresh after adding new classes/fields.
+ * The ~1-2s overhead is minimal compared to test execution time.
+ */
+async function generateLocalManifest(
+  _root: string,
+  options: SmrtVitestPluginOptions,
+  verbose: boolean,
+): Promise<boolean> {
+  try {
+    console.log('[smrt-vitest] Generating test manifest...');
+
+    const { ManifestBuilder } = await import(
+      '@happyvertical/smrt-core/manifest'
+    );
+    const { discoverBaseClasses } = await import(
+      '@happyvertical/smrt-core/manifest/discover-base-classes'
+    );
+
+    // Discover base classes from external SMRT packages
+    const baseClasses = await discoverBaseClasses();
+
+    if (verbose) {
+      console.log(
+        `[smrt-vitest] Discovered ${baseClasses.length} base classes (including ${baseClasses.length - 3} from external packages)`,
+      );
+    }
+
+    const builder = new ManifestBuilder();
+    const manifest = await builder.generate({
+      // File discovery
+      include: options.include || ['src/**/*.ts'],
+      exclude: options.exclude || [
+        '**/*.d.ts',
+        '**/node_modules/**',
+        '**/dist/**',
+      ],
+
+      // Scanner configuration
+      baseClasses,
+      followImports: true,
+      loadViteConfig: true,
+      discoverExternalPackages: true,
+      includeExternalBaseClasses: true,
+      includePrivateMethods: false,
+      includeStaticMethods: true,
+
+      // Output configuration - write to .smrt directory (ManifestManager default)
+      outputDir: '.smrt',
+      outputName: 'manifest.json',
+      generateTypeStub: false,
+
+      // Metadata
+      injectPackageInfo: true,
+      moduleType: 'smrt',
+    });
+
+    const objectCount = Object.keys(manifest.objects).length;
+    console.log(
+      `[smrt-vitest] ✓ Generated manifest with ${objectCount} object(s)`,
+    );
+
+    return true;
+  } catch (error) {
+    console.error('[smrt-vitest] Failed to generate manifest:', error);
+    return false;
+  }
+}
+
+/**
  * Create the SMRT Vitest plugin
  *
- * This plugin automatically discovers and loads manifests from SMRT peer
- * dependencies before tests run, enabling cross-package integration tests.
+ * This plugin automatically generates and loads manifests before tests run,
+ * enabling cross-package integration tests without needing to run `smrt test` first.
  *
  * @param options - Plugin configuration options
  * @returns Vitest plugin
@@ -273,11 +369,27 @@ async function loadAndRegisterManifest(
  *   ],
  * });
  * ```
+ *
+ * @example Disable auto-generation (use pre-built manifest)
+ * ```typescript
+ * export default defineConfig({
+ *   plugins: [
+ *     smrtVitestPlugin({
+ *       generateManifest: false, // Use existing manifest only
+ *     }),
+ *   ],
+ * });
+ * ```
  */
 export function smrtVitestPlugin(
   options: SmrtVitestPluginOptions = {},
 ): Plugin {
-  const { packages = [], verbose = false, root = process.cwd() } = options;
+  const {
+    packages = [],
+    verbose = false,
+    root = process.cwd(),
+    generateManifest = true,
+  } = options;
 
   let manifestsLoaded = false;
 
@@ -288,33 +400,39 @@ export function smrtVitestPlugin(
     async configResolved() {
       if (manifestsLoaded) return;
 
+      // Step 1: Generate local manifest if enabled (default: true)
+      // This ensures manifest is always fresh after adding new classes/fields
+      if (generateManifest) {
+        await generateLocalManifest(root, options, verbose);
+      }
+
+      // Step 2: Discover and load manifests from SMRT peer dependencies
       const smrtPackages = discoverSmrtPackages(root, packages);
 
       if (smrtPackages.length === 0) {
         if (verbose) {
           console.log('[smrt-vitest] No SMRT packages found to load');
         }
-        return;
-      }
+      } else {
+        if (verbose) {
+          console.log(
+            `[smrt-vitest] Discovered ${smrtPackages.length} SMRT packages:`,
+            smrtPackages,
+          );
+        }
 
-      if (verbose) {
+        // Load manifests from all discovered packages
+        const results = await Promise.all(
+          smrtPackages.map((pkg) => loadAndRegisterManifest(pkg, verbose)),
+        );
+
+        const successCount = results.filter(Boolean).length;
         console.log(
-          `[smrt-vitest] Discovered ${smrtPackages.length} SMRT packages:`,
-          smrtPackages,
+          `[smrt-vitest] Loaded manifests from ${successCount}/${smrtPackages.length} packages`,
         );
       }
 
-      // Load manifests from all discovered packages
-      const results = await Promise.all(
-        smrtPackages.map((pkg) => loadAndRegisterManifest(pkg, verbose)),
-      );
-
-      const successCount = results.filter(Boolean).length;
-      console.log(
-        `[smrt-vitest] Loaded manifests from ${successCount}/${smrtPackages.length} packages`,
-      );
-
-      // Validate local manifest is loaded (fail fast with actionable error)
+      // Step 3: Validate local manifest is loaded
       try {
         const { ManifestManager } = await import(
           '@happyvertical/smrt-core/manifest'
@@ -326,9 +444,9 @@ export function smrtVitestPlugin(
           console.log(
             `[smrt-vitest] ✓ Local manifest: ${Object.keys(localManifest.objects).length} objects`,
           );
-        } else {
-          // Always warn when manifest is missing (not just verbose mode)
-          // Use box format for visibility
+        } else if (!generateManifest) {
+          // Only show warning if auto-generation is disabled
+          // (if enabled and still missing, generateLocalManifest already logged an error)
           const devPath = manager.getOutputPath('dev');
           const buildPath = manager.getOutputPath('build');
 
@@ -342,10 +460,10 @@ export function smrtVitestPlugin(
 ║    • ${devPath.padEnd(55)}║
 ║    • ${buildPath.padEnd(55)}║
 ║                                                                       ║
-║  To fix, run one of:                                                  ║
-║    • smrt generate:test                                               ║
-║    • pnpm turbo generate:test                                         ║
-║    • npm run build (if manifest is part of build)                     ║
+║  To fix, either:                                                      ║
+║    • Enable generateManifest: true in plugin options (default)        ║
+║    • Run: smrt generate:test                                          ║
+║    • Run: npm run build (if manifest is part of build)                ║
 ╚═══════════════════════════════════════════════════════════════════════╝
           `);
         }

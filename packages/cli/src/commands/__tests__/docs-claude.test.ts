@@ -165,8 +165,20 @@ Gamma content.
   describe('generateMarkdown', () => {
     it('should generate header and package table', () => {
       const packages: PackageInfo[] = [
-        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
-        { name: '@test/pkg-b', version: '2.0.0', meta: null, readme: null },
+        {
+          name: '@test/pkg-a',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
+        {
+          name: '@test/pkg-b',
+          version: '2.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages);
@@ -179,14 +191,20 @@ Gamma content.
 
     it('should show placeholder for packages without meta', () => {
       const packages: PackageInfo[] = [
-        { name: '@test/no-meta', version: '1.0.0', meta: null, readme: null },
+        {
+          name: '@test/no-meta',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages);
 
       expect(markdown).toContain('## @test/no-meta');
       expect(markdown).toContain(
-        '*No .claude-meta.json found for this package.*',
+        '*No CLAUDE.md or .claude-meta.json found for this package.*',
       );
     });
 
@@ -195,7 +213,13 @@ Gamma content.
         purpose: 'A test package for unit testing.',
       };
       const packages: PackageInfo[] = [
-        { name: '@test/with-meta', version: '1.0.0', meta, readme: null },
+        {
+          name: '@test/with-meta',
+          version: '1.0.0',
+          meta,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages);
@@ -215,7 +239,13 @@ Gamma content.
         ],
       };
       const packages: PackageInfo[] = [
-        { name: '@test/patterns', version: '1.0.0', meta, readme: null },
+        {
+          name: '@test/patterns',
+          version: '1.0.0',
+          meta,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages);
@@ -236,7 +266,13 @@ Gamma content.
         ],
       };
       const packages: PackageInfo[] = [
-        { name: '@test/pitfalls', version: '1.0.0', meta, readme: null },
+        {
+          name: '@test/pitfalls',
+          version: '1.0.0',
+          meta,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages);
@@ -252,7 +288,13 @@ Gamma content.
         exports: ['ClassA', 'ClassB', 'helperFn'],
       };
       const packages: PackageInfo[] = [
-        { name: '@test/exports', version: '1.0.0', meta, readme: null },
+        {
+          name: '@test/exports',
+          version: '1.0.0',
+          meta,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages);
@@ -274,7 +316,13 @@ Gamma content.
 - Feature 2
 `;
       const packages: PackageInfo[] = [
-        { name: '@test/readme', version: '1.0.0', meta, readme },
+        {
+          name: '@test/readme',
+          version: '1.0.0',
+          meta,
+          readme,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages);
@@ -311,7 +359,13 @@ Gamma content.
   describe('generateMarkdown with root docs', () => {
     it('should include framework documentation section when root docs provided', () => {
       const packages: PackageInfo[] = [
-        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+        {
+          name: '@test/pkg-a',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const rootDocs: RootDocInfo[] = [
@@ -341,7 +395,13 @@ Gamma content.
 
     it('should not include framework section when no root docs provided', () => {
       const packages: PackageInfo[] = [
-        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+        {
+          name: '@test/pkg-a',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages);
@@ -352,7 +412,13 @@ Gamma content.
 
     it('should not include framework section when empty root docs array', () => {
       const packages: PackageInfo[] = [
-        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+        {
+          name: '@test/pkg-a',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const markdown = generateMarkdown(packages, []);
@@ -363,7 +429,13 @@ Gamma content.
 
     it('should include all root docs in order', () => {
       const packages: PackageInfo[] = [
-        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+        {
+          name: '@test/pkg-a',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const rootDocs: RootDocInfo[] = [
@@ -403,7 +475,13 @@ Gamma content.
 
     it('should include separators between root docs', () => {
       const packages: PackageInfo[] = [
-        { name: '@test/pkg-a', version: '1.0.0', meta: null, readme: null },
+        {
+          name: '@test/pkg-a',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
       ];
 
       const rootDocs: RootDocInfo[] = [

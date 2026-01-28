@@ -2,18 +2,27 @@
  * Git Loader Tests
  */
 
+import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted to create mocks before hoisting
-const { mockMkdir, mockRm } = vi.hoisted(() => ({
+const { mockMkdir, mockRm, mockHttpsGet } = vi.hoisted(() => ({
   mockMkdir: vi.fn(),
   mockRm: vi.fn(),
+  mockHttpsGet: vi.fn(),
 }));
 
 // Mock filesystem operations with factory functions for ESM
 vi.mock('node:fs/promises', () => ({
   mkdir: mockMkdir,
   rm: mockRm,
+}));
+
+// Mock https to prevent real network calls
+vi.mock('node:https', () => ({
+  default: {
+    get: mockHttpsGet,
+  },
 }));
 
 // Import after mocks are set up
@@ -29,6 +38,19 @@ describe('Git Loader', () => {
     // Reset mock implementations to no-op by default
     mockMkdir.mockResolvedValue(undefined);
     mockRm.mockResolvedValue(undefined);
+
+    // Mock https.get to fail immediately (simulates network error)
+    // This prevents actual network calls during tests
+    mockHttpsGet.mockImplementation((_url: string, _callback: any) => {
+      const req = new EventEmitter() as any;
+      req.setTimeout = vi.fn();
+      req.destroy = vi.fn();
+      // Emit error on next tick to simulate network failure
+      setImmediate(() => {
+        req.emit('error', new Error('getaddrinfo ENOTFOUND'));
+      });
+      return req;
+    });
   });
 
   describe('parseGitUrl (via integration)', () => {

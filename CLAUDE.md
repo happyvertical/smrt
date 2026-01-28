@@ -1,544 +1,123 @@
-# SMRT Framework: Architecture and Development Guide
-
-## What is SMRT?
+# SMRT Framework
 
 SMRT (Smart, Multi-modal, Real-time Transformation) is a TypeScript framework for building vertical AI agents with automatic code generation and AI-powered operations.
 
-### Core Value Proposition
-
 **Define business logic once, get everything else automatically:**
-- Define TypeScript classes with properties
-- Get REST APIs, CLI tools, and AI integration (MCP servers) automatically
+- REST APIs, CLI tools, and MCP servers from TypeScript classes
 - Built-in AI operations (`is()`, `do()` methods) on every object
 - Database persistence with automatic schema generation
 - Type-safe operations across all interfaces
 
-### Design Philosophy
+## Documentation Map
 
-- **TypeScript-First**: Use native TypeScript types; field helpers only when needed
-- **AI-Powered**: Built-in intelligent operations on every object
-- **Code Generation**: APIs, CLIs, MCP servers generated automatically
-- **Manifest-Based**: Schema generation from AST at build time (no runtime introspection)
-- **Self-Contained**: Minimal external dependencies, focused framework
-- **Developer Experience**: IntelliSense, type safety, hot reload
+This is a **navigational document**. For detailed technical reference, see package-specific CLAUDE.md files:
 
-### When to Use SMRT
+| Topic | Location |
+|-------|----------|
+| **Core Framework** (SmrtObject, Collections, ORM, STI) | [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) |
+| **Multi-Tenancy** (auto-filtering, auto-population) | [packages/tenancy/CLAUDE.md](./packages/tenancy/CLAUDE.md) |
+| **Testing** (isolated DBs, parallel tests, manifest loading) | [packages/vitest/CLAUDE.md](./packages/vitest/CLAUDE.md) |
+| **Configuration** | [packages/config/CLAUDE.md](./packages/config/CLAUDE.md) |
+| **Content Processing** | [packages/content/CLAUDE.md](./packages/content/CLAUDE.md) |
+| **Agents** | [packages/agents/CLAUDE.md](./packages/agents/CLAUDE.md) |
+| **E-Commerce** | [packages/commerce/CLAUDE.md](./packages/commerce/CLAUDE.md) |
+| **Users & Auth** | [packages/users/CLAUDE.md](./packages/users/CLAUDE.md) |
 
-✅ **Perfect for:**
-- Vertical AI agents (local news, research, content processing)
-- Domain-specific applications with AI operations
-- Rapid prototyping of AI-powered services
-- Applications needing APIs, CLIs, and AI integration
-
-❌ **Not ideal for:**
-- Generic web frameworks (use SvelteKit, Next.js, etc.)
-- Pure data processing without AI
-- Applications requiring custom ORM behavior
+**Other important docs:**
+- [WORKFLOW.md](./WORKFLOW.md) - Development workflows and SOPs
+- [TESTING_STANDARD.md](./TESTING_STANDARD.md) - Testing requirements
+- [CHANGESETS.md](./CHANGESETS.md) - Versioning and release workflow
 
 ---
 
 ## Quick Start
 
-### Installation
-
 ```bash
-# Install SMRT framework
 npm install @happyvertical/smrt-core
-
-# Or with pnpm
-pnpm add @happyvertical/smrt-core
 ```
-
-### Define Your First SMRT Object
-
-Use TypeScript types for automatic schema generation:
 
 ```typescript
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { foreignKey } from '@happyvertical/smrt-core/fields';
 
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get', 'analyze'] },
+  api: { include: ['list', 'get', 'create'] },
+  mcp: { include: ['list', 'get'] },
   cli: true
 })
 class Document extends SmrtObject {
-  // TypeScript types → automatic schema generation
   title: string = '';
   content: string = '';
-  wordCount: number = 0;        // → INTEGER (no decimal point)
-  rating: number = 0.0;          // → DECIMAL (has decimal point)
-  isPublished: boolean = false;
-  publishedAt: Date = new Date();
+  wordCount: number = 0;      // INTEGER (no decimal)
+  rating: number = 0.0;       // DECIMAL (has decimal)
   tags: string[] = [];
 
-  // Field helpers for relationships and constraints
-  categoryId = foreignKey(Category);
-
-  constructor(options: any = {}) {
-    super(options);
-    Object.assign(this, options);
-  }
-
-  // AI-powered validation
   async isHighQuality(): Promise<boolean> {
-    return await this.is(`
-      - Contains more than 500 words
-      - Has clear structure
-      - Uses professional language
-    `);
-  }
-
-  // AI-powered transformation
-  async generateSummary(): Promise<string> {
-    return await this.do(`
-      Create a 2-sentence summary of this document.
-      Focus on key points and conclusions.
-    `);
+    return await this.is('Contains 500+ words with clear structure');
   }
 }
 ```
 
-**⚠️ WARNING: Do Not Override toJSON()**
+**This generates:**
+- REST: `GET/POST /documents`
+- CLI: `smrt documents list`, `smrt documents create`
+- MCP: `document_list`, `document_get` tools
 
-The `toJSON()` method in `SmrtObject` handles critical framework infrastructure. **DO NOT override** this method unless you call `super.toJSON()` first.
+For complete examples, see [packages/core/CLAUDE.md](./packages/core/CLAUDE.md).
 
-**What toJSON() handles:**
-- **STI discriminator** (`_meta_type`) for polymorphic queries
-- **Meta field extraction** (`_meta_data`) for child-specific fields
-- **Automatic serialization** of all fields from manifest
+---
 
-**The Safe Way - Use transformJSON() Hook:**
-```typescript
-class Document extends SmrtObject {
-  title: string = '';
-  content: string = '';
+## Critical Warnings
 
-  // ✅ CORRECT - Use transformJSON() hook
-  protected transformJSON(data: any): any {
-    return {
-      ...data,
-      wordCount: this.content.split(/\s+/).length,
-      preview: this.content.substring(0, 100)
-    };
-  }
-}
-```
+### ⚠️ Running Tests - Vitest Plugin Required
 
-**The Dangerous Way - Overriding toJSON():**
-```typescript
-// ❌ WRONG - breaks STI and meta fields
-class Document extends SmrtObject {
-  toJSON() {
-    return { id: this.id, title: this.title };
-    // Missing: _meta_type, _meta_data, other fields!
-  }
-}
+**The vitest plugin is required for all SMRT projects.** It automatically generates manifests at startup.
 
-// ✅ CORRECT - calls super if you must override
-class Document extends SmrtObject {
-  toJSON() {
-    const data = super.toJSON();
-    return { ...data, customField: 'value' };
-  }
-}
-```
-
-See [issue #377](https://github.com/happyvertical/smrt/issues/377) for details.
-
-### Create and Use Collections
-
-```typescript
-import { SmrtCollection } from '@happyvertical/smrt-core';
-
-class DocumentCollection extends SmrtCollection<Document> {
-  static readonly _itemClass = Document;
-}
-
-// Create collection instance
-const documents = await DocumentCollection.create({
-  persistence: { type: 'sql', url: 'documents.db' },
-  ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
-});
-
-// Create and save a document
-const doc = await documents.create({
-  title: 'Getting Started with SMRT',
-  content: 'SMRT makes building AI agents simple...',
-  wordCount: 1250,
-  rating: 4.5
-});
-await doc.save();
-
-// Query with advanced filters
-const recentDocs = await documents.list({
-  where: {
-    'wordCount >': 1000,
-    'publishedAt >': '2024-01-01'
-  },
-  orderBy: 'rating DESC',
-  limit: 10
-});
-
-// Batch ID lookup (avoids N+1 queries)
-const docIds = ['uuid-1', 'uuid-2', 'uuid-3'];
-const batchDocs = await documents.listByIds(docIds);
-
-// Alternative: implicit IN with array values
-const sameDocs = await documents.list({
-  where: { id: docIds }  // Arrays auto-detect IN operator
-});
-
-// Raw SQL query for complex patterns (NOT EXISTS, JOINs, OR conditions, etc.)
-const unpublished = await documents.query(`
-  SELECT * FROM documents
-  WHERE is_published = false
-  AND NOT EXISTS (
-    SELECT 1 FROM reviews r WHERE r.document_id = documents.id
-  )
-  ORDER BY created_at DESC
-  LIMIT ?
-`, [10]);
-
-// Use AI-powered operations
-const isQuality = await doc.isHighQuality();
-const summary = await doc.generateSummary();
-```
-
-**WHERE clause reference**: The `where` object supports 8 operators: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `like`. For complex queries (OR conditions, nested queries, array operations), use `collection.query()` with raw SQL. See [packages/core/CLAUDE.md](./packages/core/CLAUDE.md#where-clause-reference) for complete operator reference and limitations.
-
-### Multi-Level Class Inheritance
-
-SMRT supports multi-level class inheritance, allowing you to build class hierarchies where child classes automatically inherit fields and methods from parent classes:
-
-```typescript
-// Level 1: Base Content class (from @happyvertical/smrt-content)
-@smrt()
-class Content extends SmrtObject {
-  title: string = '';
-  body: string = '';
-  publishedAt: Date | null = null;
-  wordCount: number = 0;
-
-  async generateSummary(): Promise<string> {
-    return await this.do('Create a 2-sentence summary');
-  }
-}
-
-// Level 2: Praeco Content extends Content (from praeco package)
-@smrt()
-class PraecoContent extends Content {
-  sourceUrl: string = '';
-  sentiment: string = '';
-
-  async analyzeSentiment(): Promise<string> {
-    return await this.is('The content has positive sentiment')
-      ? 'positive'
-      : 'negative';
-  }
-}
-
-// Level 3: Bentley Content extends PraecoContent (from bentleyalberta.com)
-@smrt()
-class BentleyContent extends PraecoContent {
-  localTags: string[] = [];
-  featured: boolean = false;
-
-  async analyzeLocalRelevance(): Promise<number> {
-    // Custom local analysis
-    return 0.95;
-  }
-}
-
-// BentleyContent automatically inherits ALL fields and methods:
-// - title, body, publishedAt, wordCount (from Content)
-// - sourceUrl, sentiment (from PraecoContent)
-// - localTags, featured (from BentleyContent)
-// - generateSummary() (from Content)
-// - analyzeSentiment() (from PraecoContent)
-// - analyzeLocalRelevance() (from BentleyContent)
-
-// Schema generation includes all inherited fields
-const bentley = new BentleyContent({
-  title: 'Local News',
-  body: 'Story content...',
-  sourceUrl: 'https://example.com',
-  localTags: ['bentley', 'alberta'],
-  db: { type: 'sqlite', url: 'bentley.db' }
-});
-
-await bentley.initialize();
-await bentley.save();  // Table has ALL inherited columns
-
-// Call methods from any level of the hierarchy
-const summary = await bentley.generateSummary();  // Content
-const sentiment = await bentley.analyzeSentiment();  // PraecoContent
-const relevance = await bentley.analyzeLocalRelevance();  // BentleyContent
-```
-
-### Generate APIs, CLI, and MCP
-
-The `@smrt()` decorator automatically configures code generation:
-
-```typescript
-// REST API endpoints generated:
-// GET    /documents
-// GET    /documents/:id
-// POST   /documents
-// PUT    /documents/:id
-
-// CLI commands generated:
-// smrt documents list
-// smrt documents get <id>
-// smrt documents create --title "..." --content "..."
-
-// MCP tools generated (for AI integration):
-// document_list, document_get, document_analyze
-```
-
-### Custom Method Discovery (Auto-Generated CLI Commands)
-
-**New in v0.6+**: Custom methods are automatically discovered and exposed as CLI commands!
-
-Define custom methods on your SMRT objects, and the CLI generator will automatically create corresponding commands:
-
-```typescript
-@smrt({
-  cli: { include: ['list', 'get', 'research', 'report'] }  // Include custom methods
-})
-class Agent extends SmrtObject {
-  name: string = '';
-  source: string = '';
-
-  // Custom method with parameters
-  async research(options: { query: string, depth?: number }) {
-    return {
-      action: 'research',
-      query: options.query,
-      depth: options.depth || 3,
-      results: await this.do(`Research: ${options.query}`)
-    };
-  }
-
-  // Another custom method
-  async report(options: { type?: string }) {
-    return {
-      action: 'report',
-      type: options.type || 'summary',
-      content: await this.do(`Generate ${options.type} report for ${this.name}`)
-    };
-  }
-}
-```
-
-**Auto-generated CLI commands:**
 ```bash
-# Standard CRUD (as before)
-smrt agent:list
-smrt agent:get <id>
+# ✅ CORRECT - vitest plugin auto-generates manifest
+npx vitest
+npx vitest run
+npm test
 
-# Custom methods (auto-discovered! 🎉)
-smrt agent:research <id> --query "AI safety research" --depth 5
-smrt agent:report <id> --type detailed
+# ⚠️ DEPRECATED - still works but not needed
+smrt test
 ```
 
-**How it works:**
-- CLI generator scans `ObjectRegistry.getMethods()` for public methods
-- Method parameters are converted to kebab-case CLI options (`researchQuery` → `--research-query`)
-- Include/exclude lists work for both CRUD commands and custom methods
-- Only public methods are exposed (private/protected methods are skipped)
-
-### Next Steps
-
-- **Deep Dive**: [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) - Comprehensive technical reference
-- **API Reference**: [packages/core/README.md](./packages/core/README.md) - Complete API documentation
-- **Contributing**: [CONTRIBUTING.md](./CONTRIBUTING.md) - How to contribute
-- **Workflow**: [WORKFLOW.md](./WORKFLOW.md) - Development SOPs
-
----
-
-## TypeScript Types vs Field Helpers
-
-SMRT supports TypeScript-first development with automatic type inference.
-
-### TypeScript Types (Primary Pattern)
-
-Use TypeScript types for most properties - the AST scanner automatically generates database schema:
+**Your vitest.config.ts MUST include the plugin:**
 
 ```typescript
-class Product extends SmrtObject {
-  // String → TEXT
-  name: string = '';
-  description: string = '';
+import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
 
-  // Numbers with 0 vs 0.0 heuristic
-  quantity: number = 0;      // → INTEGER (no decimal point)
-  price: number = 0.0;       // → DECIMAL (has decimal point)
-  rating: number = 4.5;      // → DECIMAL (has decimal point)
-
-  // Boolean → BOOLEAN
-  active: boolean = true;
-
-  // Date → DATETIME
-  created: Date = new Date();
-
-  // Arrays → JSON
-  tags: string[] = [];
-  metadata: Record<string, any> = {};
-}
-```
-
-### The 0 vs 0.0 Heuristic
-
-Numeric literals **without** decimal point → INTEGER:
-- `count: number = 0` → INTEGER
-- `quantity: number = 42` → INTEGER
-
-Numeric literals **with** decimal point → DECIMAL:
-- `price: number = 0.0` → DECIMAL
-- `rating: number = 4.5` → DECIMAL
-
-This semantic distinction enables proper database schema generation without field helpers.
-
-### When to Use Field Helpers
-
-Field helpers are **only required** for:
-
-#### 1. Relationships
-```typescript
-class Order extends SmrtObject {
-  customerId = foreignKey(Customer);
-  items = oneToMany(OrderItem);
-  relatedOrders = manyToMany(Order);
-}
-```
-
-#### 2. Constraints and Validation
-```typescript
-class User extends SmrtObject {
-  username = text({
-    required: true,
-    unique: true,
-    minLength: 3,
-    maxLength: 20
-  });
-
-  email = text({
-    required: true,
-    pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  });
-}
-```
-
-#### 3. Nullable Decimals
-```typescript
-class Place extends SmrtObject {
-  // Optional decimal needs explicit helper
-  latitude = decimal({ nullable: true });
-  longitude = decimal({ nullable: true });
-}
-```
-
-### Decision Tree
-
-```
-Do you need to define a property?
-│
-├─ Is it a relationship?
-│  └─ YES → Use field helper: foreignKey(), oneToMany(), manyToMany()
-│
-├─ Do you need constraints (required, unique, min, max, pattern)?
-│  └─ YES → Use field helper: text({ required: true }), integer({ min: 0 })
-│
-├─ Is it an optional decimal number?
-│  └─ YES → Use field helper: decimal({ nullable: true })
-│
-└─ NO → Use TypeScript types:
-   - Strings: name: string = ''
-   - Integers: count: number = 0
-   - Decimals: price: number = 0.0
-   - Booleans: active: boolean = true
-   - Dates: created: Date = new Date()
-```
-
-For complete documentation, see [packages/core/CLAUDE.md#typescript-types-vs-field-helpers](./packages/core/CLAUDE.md#typescript-types-vs-field-helpers).
-
----
-
-## Multi-Tenancy
-
-SMRT provides production-ready multi-tenancy support via the `@happyvertical/smrt-tenancy` package.
-
-### Tenancy Pattern
-
-All tenant-scoped models use **optional tenancy** with a simple convention:
-
-| `tenantId` Value | Meaning |
-|------------------|---------|
-| `null` | Global/network-wide resource (visible to all tenants) |
-| `'tenant-123'` | Tenant-specific resource (only visible to that tenant) |
-
-This enables both shared resources and tenant isolation in the same table.
-
-### Basic Usage
-
-```typescript
-import { enableTenancy, TenantScoped, tenantId, withTenant } from '@happyvertical/smrt-tenancy';
-import { smrt, SmrtObject } from '@happyvertical/smrt-core';
-
-// Enable tenancy globally (once at app startup)
-enableTenancy();
-
-@smrt()
-@TenantScoped({ mode: 'optional' })
-class Document extends SmrtObject {
-  @tenantId({ nullable: true })
-  tenantId: string | null = null;  // null = global document
-
-  title: string = '';
-}
-
-// Run code in tenant context
-await withTenant({ tenantId: 'pub-123' }, async () => {
-  // Queries filtered to this tenant
-  const docs = await collection.list({});
-
-  // To include globals, use findWithGlobals()
-  const withGlobals = await collection.findWithGlobals('pub-123');
+export default defineConfig({
+  plugins: [smrtVitestPlugin()],  // Required!
 });
 ```
 
-### Query Patterns
-
-```typescript
-// Tenant's view (their data + globals)
-const items = await collection.findWithGlobals(tenantId);
-
-// Tenant only (exclude globals)
-const tenantOnly = await collection.findByTenant(tenantId);
-
-// Global only
-const globals = await collection.findGlobal();
-
-// Cross-tenant (admin)
-await withSystemContext(async () => {
-  const all = await collection.list({});
-});
+Without the plugin, you'll get errors like:
+```
+Cannot generate schema for unregistered class 'Council'.
+No field metadata found for 'Document'.
 ```
 
-### Collection Methods
+For test database utilities and isolation patterns, see [packages/vitest/CLAUDE.md](./packages/vitest/CLAUDE.md).
+For project setup requirements, see [docs/PROJECT_REQUIREMENTS.md](./docs/PROJECT_REQUIREMENTS.md).
 
-Tenant-scoped collections should implement:
+### ⚠️ Do Not Override toJSON()
+
+The `toJSON()` method handles critical framework infrastructure (STI, meta fields). Use `transformJSON()` instead:
 
 ```typescript
-class DocumentCollection extends SmrtCollection<Document> {
-  async findByTenant(tenantId: string): Promise<Document[]>;
-  async findGlobal(): Promise<Document[]>;
-  async findWithGlobals(tenantId: string): Promise<Document[]>;
+// ✅ CORRECT
+protected transformJSON(data: any): any {
+  return { ...data, wordCount: this.content.split(/\s+/).length };
+}
+
+// ❌ WRONG - breaks STI
+toJSON() {
+  return { id: this.id, title: this.title };
 }
 ```
 
-For complete documentation, see [packages/tenancy/README.md](./packages/tenancy/README.md).
+See [packages/core/CLAUDE.md](./packages/core/CLAUDE.md#-warning-customizing-json-serialization) for details.
 
 ---
 
@@ -546,52 +125,36 @@ For complete documentation, see [packages/tenancy/README.md](./packages/tenancy/
 
 The SMRT framework is organized as a pnpm workspace:
 
-### Core Framework Packages
+### Foundation Packages
+| Package | Purpose |
+|---------|---------|
+| **types** | Shared TypeScript type definitions |
+| **config** | Configuration management with cosmiconfig |
+| **core** | Core framework: ORM, code generation, AI integration |
+| **tenancy** | Multi-tenancy with automatic tenant isolation |
+| **vitest** | Test utilities and cross-package manifest loading |
 
-**Foundation:**
-- **types**: Shared TypeScript type definitions
-- **config**: Configuration management with cosmiconfig
-- **core**: Core framework with ORM, code generation, and AI integration
-- **tenancy**: Multi-tenancy support with automatic tenant isolation
-
-**Domain Modules:**
-- **accounts**: Accounting ledger with multi-currency support
-- **agents**: Agent framework for autonomous actors
-- **assets**: Asset management with versioning and metadata
-- **content**: Content processing (documents, PDFs, web)
-- **events**: Event management with participants and hierarchies
-- **gnode**: Federation library for local knowledge bases
-- **places**: Place management with geo integration
-- **products**: Product catalog and microservice template
-- **profiles**: Profile management with relationships
-- **tags**: Hierarchical tagging system
+### Domain Packages
+| Package | Purpose |
+|---------|---------|
+| **agents** | Agent framework for autonomous actors |
+| **assets** | Asset management with versioning |
+| **commerce** | E-commerce functionality |
+| **content** | Content processing (documents, PDFs, web) |
+| **events** | Event management with participants |
+| **ledgers** | Financial ledger management |
+| **places** | Place management with geo integration |
+| **products** | Product catalog |
+| **profiles** | Profile management with relationships |
+| **tags** | Hierarchical tagging system |
 
 ### External SDK Dependencies
 
-Infrastructure packages from [@happyvertical/sdk](https://github.com/happyvertical/sdk):
-- **@happyvertical/ai**: Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
-- **@happyvertical/files**: File system operations
+From [@happyvertical/sdk](https://github.com/happyvertical/sdk):
+- **@happyvertical/ai**: Multi-provider AI client
 - **@happyvertical/sql**: Database operations (SQLite, Postgres, DuckDB)
+- **@happyvertical/files**: File system operations
 - **@happyvertical/utils**: Shared utilities
-- **@happyvertical/logger**: Logging infrastructure
-
-Standalone packages (separate repositories):
-- **@happyvertical/spider**: Web content scraping
-- **@happyvertical/pdf**: PDF text extraction
-- **@happyvertical/ocr**: OCR text extraction
-
-### Package Dependencies
-
-**Within SMRT framework:**
-- `@happyvertical/smrt-types`: No internal dependencies
-- `@happyvertical/smrt-config`: No internal dependencies
-- `@happyvertical/smrt-core`: Depends on types, config, and external SDK packages
-- Domain modules: All depend on core; some have cross-dependencies
-
-**Build order** (managed by Turborepo):
-1. types, config (parallel)
-2. core (depends on types + config)
-3. Domain modules (depend on core)
 
 ---
 
@@ -601,375 +164,26 @@ Standalone packages (separate repositories):
 
 - **Node.js**: 24+ required
 - **pnpm**: 9.0+ required
-- **TypeScript**: Configured with strict type checking
 
 ### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/happyvertical/smrt.git
 cd smrt
-
-# Install dependencies
 pnpm install
-
-# Build all packages (Turborepo with caching)
-npm run build
-# First run: ~8s, cached runs: ~80ms
+npm run build   # Turborepo with caching (~8s first, ~80ms cached)
 ```
 
 ### Common Commands
 
 ```bash
-# Development mode with watch
-npm run dev
-
-# Run tests
-npm test           # Uses 'smrt test' - generates manifests + runs tests
-npm run test:watch # Watch mode
-
-# Type checking
-npm run typecheck
-
-# Linting and formatting
-npm run lint
-npm run lint:fix
-npm run format
-npm run format-check
-
-# Clean build artifacts
-npm run clean
+npm run dev          # Development mode with watch
+npm test             # Run tests (uses 'smrt test')
+npm run typecheck    # Type checking
+npm run lint         # Linting
+npm run format       # Format code
+npm run clean        # Clean build artifacts
 ```
-
-### ⚠️ CRITICAL: Running Tests
-
-**ALWAYS use `smrt test` or `npm test` - NEVER use `npx vitest` directly!**
-
-```bash
-# ✅ CORRECT - Generates test manifest first
-smrt test
-npm test           # Aliases to 'smrt test'
-
-# ❌ WRONG - Will fail with "unregistered class" errors
-npx vitest
-npx vitest run
-```
-
-**Why?** Tests require a manifest file that maps SMRT objects for schema generation. The `smrt test` command:
-1. **Generates the test manifest** from `@smrt()` decorated classes
-2. **Runs vitest** with the manifest loaded
-
-Without the manifest, tests fail with errors like:
-```
-Cannot generate schema for unregistered class 'Council'.
-Ensure the class is decorated with @smrt() for schema generation to work.
-```
-
-**For individual test files:**
-```bash
-# Generate manifest first, then run specific test
-smrt test --manifest-only
-npx vitest run src/specific-test.test.ts
-```
-
-**Database Adapter Testing:**
-
-The framework includes comprehensive adapter parity tests to ensure consistent behavior across all database backends (SQLite, JSON/DuckDB). These tests verify:
-- STI (Single Table Inheritance) operations
-- UPSERT conflict resolution
-- Type preservation across save/load cycles
-- Query operations with filtering
-
-See `packages/core/src/__tests__/sti-adapter-parity.test.ts` for the complete test suite that runs identical tests across all supported adapters.
-
-### Testing Best Practices
-
-SMRT provides the `@happyvertical/smrt-vitest` package for isolated test database setup:
-
-```typescript
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createIsolatedTestDb } from '@happyvertical/smrt-vitest';
-import { MyObject, MyCollection } from './my-object.js';
-
-describe('MyObject', () => {
-  let collection: MyCollection;
-
-  beforeEach(async () => {
-    // Creates isolated in-memory SQLite database
-    const db = await createIsolatedTestDb();
-    collection = await MyCollection.create({
-      persistence: { type: 'sql', db }
-    });
-  });
-
-  it('should create and save object', async () => {
-    const obj = await collection.create({
-      name: 'Test',
-      value: 42
-    });
-    await obj.save();
-
-    const loaded = await collection.get({ id: obj.id });
-    expect(loaded?.name).toBe('Test');
-    expect(loaded?.value).toBe(42);
-  });
-});
-```
-
-**Key patterns**:
-- **Isolated databases**: Use `createIsolatedTestDb()` for each test suite
-- **Real resources**: Prefer in-memory databases over mocks
-- **Readable tests**: Tests should read like documentation
-- **README examples**: All README code examples must have corresponding tests
-
-**See also**: [TESTING_STANDARD.md](./TESTING_STANDARD.md) for complete testing guidelines.
-
-### Build System
-
-The framework uses **Turborepo** for intelligent task orchestration:
-- Intelligent caching: Only rebuilds when dependencies change
-- Parallel execution: Builds packages in parallel when possible
-- GitHub Actions cache: CI/CD benefits from cached builds
-- Dependency awareness: Automatically respects package dependencies
-
-**Performance:**
-- First build: ~8 seconds
-- Cached builds: ~80ms (100x faster)
-
-### Code Style
-
-- Code formatting enforced by Biome
-- 2 spaces for indentation
-- Single quotes for strings
-- 80-character line width
-- ESM module format exclusively
-- camelCase for variables/functions, PascalCase for classes
-
-### Manifest-Based Schema Generation
-
-SMRT uses **AST-based manifest generation** instead of runtime introspection:
-
-**How it works:**
-1. **Build Time**: AST scanner finds all `@smrt()` decorated classes
-2. **Manifest Generation**: Creates JSON manifest with class metadata, fields, and types
-3. **Schema Generation**: Uses manifest data to generate database schemas
-4. **No Runtime Introspection**: All metadata determined at build time
-
-**Benefits:**
-- **Performance**: No runtime reflection overhead
-- **Tree-Shaking**: Unused classes can be eliminated
-- **Type Safety**: Full TypeScript type information preserved
-- **Predictable**: Schema determined at build time, not runtime
-
-**The Manifest Process:**
-```bash
-# During build
-smrt scan           # Scans TypeScript AST
-  → manifest.json   # Generated manifest with all metadata
-  → schema.sql      # Generated database schema
-
-# During runtime
-ObjectRegistry      # Reads manifest.json
-  → generateSchema  # Uses manifest data (no reflection)
-```
-
-**TypeScript Type Inference:**
-```typescript
-// AST scanner infers types from TypeScript
-class Product extends SmrtObject {
-  name: string = '';        // AST → TEXT column
-  count: number = 0;        // AST → INTEGER (no decimal)
-  price: number = 0.0;      // AST → DECIMAL (has decimal)
-  active: boolean = true;   // AST → BOOLEAN
-  tags: string[] = [];      // AST → JSON
-}
-```
-
-### Tree Shaking for External Packages
-
-When using external SMRT packages (e.g., `@happyvertical/smrt-profiles`), by default ALL objects from those packages are included in your manifest. This can lead to bloat if you only use a few classes.
-
-**Tree shaking** filters external objects to only include what your project actually uses.
-
-#### Enabling Tree Shaking
-
-**Option 1: Import-Based (Automatic)**
-```typescript
-// smrt.config.js or ManifestBuilder options
-{
-  treeShake: true,  // Enable import analysis
-  discoverExternalPackages: true
-}
-```
-
-When enabled, the AST scanner analyzes your imports:
-```typescript
-// Your code
-import { Person, Organization } from '@happyvertical/smrt-profiles';
-
-// Only Person, Organization, and their dependencies are included
-// Other classes like Team, Role, etc. are excluded
-```
-
-**Option 2: Explicit Whitelist**
-```typescript
-// smrt.config.js or ManifestBuilder options
-{
-  externalObjectsWhitelist: [
-    'Person',
-    'Organization',
-    '@happyvertical/smrt-events:Meeting'  // Qualified names also work
-  ],
-  discoverExternalPackages: true
-}
-```
-
-**Option 3: Combined (Imports + Whitelist)**
-```typescript
-// Both imported classes AND whitelisted classes are included
-{
-  treeShake: true,
-  externalObjectsWhitelist: ['ExtraClass'],
-  discoverExternalPackages: true
-}
-```
-
-#### Transitive Dependency Resolution
-
-Tree shaking automatically includes transitive dependencies:
-
-- **Inheritance**: If `Meeting` extends `Event`, both are included
-- **Foreign Keys**: If `Person` has `organizationId: foreignKey(Organization)`, both are included
-- **STI Siblings**: If `Meeting` uses STI with `Event` as base, all `Event` subtypes are included
-
-#### Configuration Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `treeShake` | boolean | `false` | Enable import-based filtering |
-| `externalObjectsWhitelist` | string[] | `[]` | Explicit list of classes to include |
-| `discoverExternalPackages` | boolean | `false` | Scan node_modules for SMRT packages |
-
-#### Example Manifest Size Impact
-
-| Configuration | Objects Included | Manifest Size |
-|---------------|------------------|---------------|
-| Default (no filtering) | All 27 from smrt-profiles | ~180KB |
-| treeShake with 3 imports | 5 (imports + dependencies) | ~35KB |
-| Whitelist with 2 classes | 3 (whitelist + dependencies) | ~25KB |
-
-### Qualified Class Names (Namespace Isolation)
-
-SMRT uses **qualified class names** to prevent collisions when multiple packages define classes with the same name. This enables true namespace isolation across packages.
-
-**Format**: `@package/name:ClassName`
-
-```typescript
-// Examples of qualified names
-'@happyvertical/smrt-core:Product'
-'@happyvertical/smrt-profiles:Person'
-'@happyvertical/praeco:Article'
-```
-
-**Why Qualified Names?**
-
-Without qualified names, two packages defining `class Product` would collide:
-```
-Package A: class Product → manifest.objects["Product"]  ❌ Collision!
-Package B: class Product → manifest.objects["Product"]  ❌
-```
-
-With qualified names:
-```
-Package A: class Product → manifest.objects["@pkg-a:Product"]  ✅
-Package B: class Product → manifest.objects["@pkg-b:Product"]  ✅
-```
-
-**STI Discriminator Format**
-
-The `_meta_type` discriminator column now uses qualified names:
-
-```typescript
-// Old format (no longer used)
-{ _meta_type: 'Meeting', title: 'Standup' }
-
-// New format (qualified)
-{ _meta_type: '@happyvertical/smrt-events:Meeting', title: 'Standup' }
-```
-
-**Creating STI Objects**
-
-When creating STI objects, use the qualified `_meta_type`:
-
-```typescript
-const event = await eventCollection.create({
-  _meta_type: '@happyvertical/smrt-events:Meeting',
-  title: 'Team Standup',
-  location: 'Room A'
-});
-```
-
-**Querying STI Objects**
-
-Filter by qualified `_meta_type`:
-
-```typescript
-// Get all meetings
-const meetings = await eventCollection.list({
-  where: { _meta_type: '@happyvertical/smrt-events:Meeting' }
-});
-```
-
-**Migration for Existing Databases**
-
-If you have existing databases with unqualified `_meta_type` values, use the STI migration command:
-
-```bash
-# Preview migration without applying
-smrt db:migrate --upgrade-sti --dry-run
-
-# Apply STI discriminator migration
-smrt db:migrate --upgrade-sti
-```
-
-This updates all `_meta_type` values from simple class names to qualified format:
-```sql
--- Generated migration
-UPDATE events SET _meta_type = '@happyvertical/smrt-events:Meeting'
-WHERE _meta_type = 'Meeting';
-```
-
-**Registry Lookups**
-
-The ObjectRegistry supports both qualified and simple name lookups:
-
-```typescript
-import { ObjectRegistry } from '@happyvertical/smrt-core';
-
-// Qualified lookup (preferred)
-const registered = ObjectRegistry.getClass('@happyvertical/smrt-core:Product');
-
-// Simple name lookup (for convenience, searches by className)
-const fields = ObjectRegistry.getFields('Product');
-const methods = ObjectRegistry.getMethods('Product');
-```
-
-**Visibility Control**
-
-Classes can specify visibility to control manifest inclusion:
-
-```typescript
-@smrt({ visibility: 'public' })   // Default - exported to consumers
-class Product extends SmrtObject {}
-
-@smrt({ visibility: 'internal' }) // Package-only, not in published manifest
-class InternalHelper extends SmrtObject {}
-
-@smrt({ visibility: 'test' })     // Test-only, never published
-class TestFixture extends SmrtObject {}
-```
-
-Test files (`*.test.ts`, `__tests__/*`) automatically get `visibility: 'test'`.
 
 ---
 
@@ -977,507 +191,172 @@ Test files (`*.test.ts`, `__tests__/*`) automatically get `visibility: 'test'`.
 
 ### Quick Links
 
-- **Detailed Workflows**: [WORKFLOW.md](./WORKFLOW.md) - Step-by-step SOPs for development
-- **Testing Standards**: [TESTING_STANDARD.md](../TESTING_STANDARD.md) - Testing requirements
-- **Contributing Guide**: [CONTRIBUTING.md](./CONTRIBUTING.md) - High-level guidelines
+- [WORKFLOW.md](./WORKFLOW.md) - Step-by-step development SOPs
+- [TESTING_STANDARD.md](./TESTING_STANDARD.md) - Testing requirements
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - Contribution guidelines
 
-### Contribution Workflow
-
-1. **Find or create an issue** in [GitHub Issues](https://github.com/happyvertical/smrt/issues)
-2. **Follow workflow SOPs** in [WORKFLOW.md](./WORKFLOW.md):
-   - Pre-work checklist
-   - Create feature branch: `{type}/issue-{number}-{description}`
-   - Implement with tests
-   - Run quality checks
-   - Create PR
-3. **Code review** and feedback
-4. **Merge** after approval
-
-### Git Branching Strategy
+### Git Branching
 
 **Branch naming**: `{type}/issue-{number}-{short-description}`
 - `feat/issue-123-new-feature`
 - `fix/issue-45-bug-fix`
-- `docs/issue-89-update-readme`
 
 **Conventional commits**: All commits follow [Conventional Commits](https://www.conventionalcommits.org/)
 
-For complete workflow details, see [WORKFLOW.md](./WORKFLOW.md).
-
 ### Changesets and Versioning
 
-⚠️ **IMPORTANT: Changesets are auto-generated on merge to main**
+⚠️ **Changesets are auto-generated on merge to main**
 
-This project uses [Changesets](https://github.com/changesets/changesets) for versioning and package releases:
+- **No manual changesets**: Don't run `npx changeset` manually
+- **Avoid `[skip ci]`**: Breaks the publish workflow
+- All `@happyvertical/smrt-*` packages are **version-locked**
 
-- **Automated Generation**: Changesets are auto-generated from conventional commits when PRs merge to main
-- **No Changesets in PRs**: PRs do NOT contain changeset files - they're generated during publish workflow
-- **PR Validation**: Only validates conventional commit format, not changeset presence
-- **No Manual Creation**: Don't run `npx changeset` or create changeset files manually
-- **Critical: Avoid `[skip ci]`**: Using `[skip ci]` in any commit message will prevent the on-merge-main workflow from running, which breaks package publishing
-
-**Why this matters**: When a PR with `[skip ci]` in any commit is merged to main, GitHub Actions skips the entire merge workflow, including building and publishing packages. This requires manual intervention to trigger the publish workflow.
-
-For complete changeset workflow and troubleshooting, see [CHANGESETS.md](./CHANGESETS.md).
+See [CHANGESETS.md](./CHANGESETS.md) for complete workflow.
 
 ### Adding New Packages
 
-When creating a new package in the monorepo, you **MUST** complete these steps to ensure proper versioning and release:
+When creating a new package:
 
-#### 1. Add to Changeset Fixed Array
-
-All packages must be added to the `fixed` array in `.changeset/config.json` to ensure they stay version-locked together:
-
-```json
-{
-  "fixed": [
-    [
-      "@happyvertical/smrt-agents",
-      "@happyvertical/smrt-assets",
-      // ... existing packages ...
-      "@happyvertical/smrt-YOUR-NEW-PACKAGE"  // ADD HERE
-    ]
-  ]
-}
-```
-
-#### 2. Match Current Version
-
-Set the new package's version to match all other packages:
-
-```json
-{
-  "name": "@happyvertical/smrt-your-package",
-  "version": "0.17.34"  // Match current version of other packages
-}
-```
-
-Check current version: `node -p "require('./packages/core/package.json').version"`
-
-#### 3. Required Package.json Fields
-
-Ensure these fields are set correctly:
-
-```json
-{
-  "name": "@happyvertical/smrt-your-package",
-  "version": "0.17.34",
-  "type": "module",
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "public"
-  }
-}
-```
-
-#### Why This Matters
-
-All `@happyvertical/smrt-*` packages are **version-locked** using Changeset's `fixed` configuration. This means:
-
-- When ANY package in the fixed group gets a bump, ALL packages bump together
-- This prevents version mismatches between interdependent packages (e.g., `smrt-core` vs `smrt-cli`)
-- Downstream projects can reliably use `@happyvertical/smrt-*@0.17.x` knowing all packages are compatible
-
-**Failure to add new packages to the fixed array** will cause them to drift to different versions, breaking compatibility.
-
-### Testing Requirements
-
-All code changes must include tests following [TESTING_STANDARD.md](../TESTING_STANDARD.md):
-- Use real resources (in-memory DBs, temp files) over mocks
-- Tests should read like documentation
-- README examples must have corresponding tests
-- Follow BDD/TDD for bug fixes
+1. **Add to `.changeset/config.json`** fixed array
+2. **Match current version**: `node -p "require('./packages/core/package.json').version"`
+3. **Set required fields** in package.json:
+   ```json
+   {
+     "type": "module",
+     "publishConfig": {
+       "registry": "https://npm.pkg.github.com",
+       "access": "public"
+     }
+   }
+   ```
 
 ---
 
-## Architecture & Advanced Topics
+## Key Concepts (Overview)
 
-### Cross-Package Dependencies
+These are summarized here; see [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) for full documentation.
 
-When adding features, maintain the dependency hierarchy to avoid circular dependencies:
+### TypeScript Types vs Field Helpers
 
-**Within SMRT framework:**
-- `types`, `config` → No internal dependencies
-- `core` → Depends on types, config, and external SDK packages
-- Domain modules → Depend on core
+Use TypeScript types for most properties. The `0` vs `0.0` heuristic determines INTEGER vs DECIMAL:
 
-**Cross-dependencies:**
-- `assets` → depends on `tags`
-- `events` → depends on `places`, `profiles`
+```typescript
+class Product extends SmrtObject {
+  name: string = '';
+  count: number = 0;      // INTEGER
+  price: number = 0.0;    // DECIMAL
+  active: boolean = true;
+  tags: string[] = [];
+}
+```
 
-### MCP Server Integration (3-Tier Architecture)
+**Use field helpers only for:**
+- Relationships: `categoryId = foreignKey(Category)`
+- Constraints: `name = text({ required: true, unique: true })`
+- Nullable decimals: `latitude = decimal({ nullable: true })`
 
-The SMRT framework provides three tiers of Model Context Protocol servers for AI integration:
+Full reference: [packages/core/CLAUDE.md#typescript-types-vs-field-helpers](./packages/core/CLAUDE.md#typescript-types-vs-field-helpers)
 
-**Tier 1: Auto-Generated Project MCP Servers**
-- Runtime MCP servers generated from your SMRT objects
-- Deploy alongside your application for AI-powered operations
-- See [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) for MCPGenerator API
+### Multi-Tenancy
 
-**Tier 2: SMRT Advisor MCP** (`@happyvertical/smrt-dev-mcp`)
-- Development-focused tools for code generation
-- Tools: `generate-smrt-class`, `introspect-project`
+Enable automatic tenant scoping with `@happyvertical/smrt-tenancy`:
 
-**Tier 3: SMRT Documentation MCP** (`@happyvertical/smrt-docs-mcp`)
-- Documentation and learning tools
-- Tools: `search-docs`, `get-example`, `explain-concept`
+```typescript
+import { enableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
 
-**Example Development Flow:**
-1. **Learn** (Tier 3): Query framework documentation
-2. **Generate** (Tier 2): Create SMRT classes
-3. **Develop**: Write business logic
-4. **Deploy** (Tier 1): Generate project MCP server
-5. **Operate** (Tier 1): AI interacts with live data
+enableTenancy();  // Call once at startup
 
-### TypeScript Project References
+await withTenant({ tenantId: 'tenant-123' }, async () => {
+  const doc = await collection.create({ title: 'My Doc' });
+  // tenantId auto-populated, queries auto-filtered
+});
+```
 
-The framework uses TypeScript project references for proper type resolution across packages:
+Full reference: [packages/tenancy/CLAUDE.md](./packages/tenancy/CLAUDE.md)
 
-**Configuration requirements:**
-- `composite: true` in tsconfig.json
-- `outDir`, `rootDir`, and `tsBuildInfoFile` properly configured
-- Entry in root tsconfig.json `references` array
+### Single Table Inheritance (STI)
 
-### Performance Optimizations
+Share a table across class hierarchy with polymorphic queries:
 
-**Registry Caching:**
-- Class metadata cached on first access
-- Field definitions analyzed once
-- Collection instances use singleton pattern (60-80% faster)
+```typescript
+@smrt({ tableStrategy: 'sti' })
+class Event extends SmrtObject {
+  title: string = '';
+}
 
-**Query Optimization:**
-- Eager loading with JOINs (40-70% improvement for relationship-heavy queries)
-- Prepared statement reuse
-- Result set streaming for large queries
+@smrt()  // Inherits STI
+class Meeting extends Event {
+  roomNumber: string = '';
+}
 
-**Build Caching:**
-- Manifest generated once at build time
-- Virtual modules cached by Vite
-- Type declarations cached in `node_modules/.vite`
+// Polymorphic query returns correct subclass instances
+const events = await collection.list({});
+```
 
-For detailed architecture documentation, see [packages/core/ARCHITECTURE.md](./packages/core/ARCHITECTURE.md).
+Full reference: [packages/core/CLAUDE.md#single-table-inheritance-sti](./packages/core/CLAUDE.md#single-table-inheritance-sti)
 
 ---
 
 ## Database Migrations
 
-SMRT includes a production-ready migration system for managing database schema changes with transaction wrapping, checksum-based idempotency, and drift detection.
-
-### Migration Commands
+SMRT includes a migration system with transaction wrapping and checksum-based idempotency.
 
 ```bash
-# Check schema status - shows pending changes
-smrt db:status
-smrt db:status --verbose    # Show detailed column info
-smrt db:status --json       # JSON output for CI
-
-# Apply migrations with tracking
-smrt db:migrate
-smrt db:migrate --dry-run       # Preview without applying
-smrt db:migrate --verbose       # Show SQL statements
-smrt db:migrate --postgres-safe # Use CONCURRENTLY for indexes
-
-# View migration history
-smrt db:history
-smrt db:history --limit 20    # Last 20 migrations
-smrt db:history --json        # JSON output
-
-# Generate migration files from schema changes
-smrt db:diff
-smrt db:diff --generate       # Create migration file
-smrt db:diff --name add_users # Custom migration name
-smrt db:diff --with-down      # Include rollback script
-
-# Rollback migrations
-smrt db:rollback
-smrt db:rollback --steps 3    # Rollback last 3 migrations
-smrt db:rollback --to 0005    # Rollback to specific version
-smrt db:rollback --dry-run    # Preview rollback
-
-# Create empty migration template
-smrt db:generate add_user_roles
-smrt db:generate add_user_roles --ts  # TypeScript format
+smrt db:status              # Check pending changes
+smrt db:migrate             # Apply migrations
+smrt db:migrate --dry-run   # Preview without applying
+smrt db:diff --generate     # Generate migration from changes
+smrt db:rollback            # Rollback migrations
 ```
 
-### Migration Tracking
+Migrations are tracked in `_smrt_schema_migrations` table. For PostgreSQL, use `--postgres-safe` for `CREATE INDEX CONCURRENTLY`.
 
-All migrations are tracked in the `_smrt_schema_migrations` table:
-
-| Column | Description |
-|--------|-------------|
-| `id` | Unique identifier |
-| `name` | Migration name (e.g., `0001_initial_schema`) |
-| `checksum` | SHA-256 of normalized SQL |
-| `status` | `pending`, `completed`, `failed`, `rolled_back` |
-| `applied_at` | When migration was applied |
-| `execution_time_ms` | Execution duration |
-| `is_reversible` | Whether DOWN script exists |
-
-### Migration File Formats
-
-**SQL Format (Default):**
-```sql
--- migrations/0001_add_users.sql
--- @id: 0001_add_users
--- @description: Add users table
-
--- @up
-CREATE TABLE users (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  email TEXT UNIQUE
-);
-CREATE INDEX idx_users_email ON users(email);
-
--- @down
-DROP INDEX IF EXISTS idx_users_email;
-DROP TABLE IF EXISTS users;
-```
-
-**TypeScript Format:**
-```typescript
-// migrations/0001_add_users.ts
-import type { Migration } from '@happyvertical/smrt-core';
-
-export default {
-  id: '0001_add_users',
-  description: 'Add users table',
-
-  up: async (db) => {
-    await db.query(`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL)`);
-    await db.query(`CREATE INDEX idx_users_email ON users(email)`);
-  },
-
-  down: async (db) => {
-    await db.query(`DROP INDEX IF EXISTS idx_users_email`);
-    await db.query(`DROP TABLE IF EXISTS users`);
-  },
-} satisfies Migration;
-```
-
-### Checksum-Based Idempotency
-
-Migrations use SHA-256 checksums to ensure idempotency:
-
-- **Same checksum**: Migration already applied, skip
-- **Different checksum**: Error - migration file was modified after application
-- **Checksums normalize**: Comments and whitespace differences are ignored
-
-```typescript
-// Normalized for checksum (comments removed, whitespace collapsed)
-'CREATE TABLE users (id TEXT PRIMARY KEY);'
-```
-
-### PostgreSQL-Specific Handling
-
-Use `--postgres-safe` for production PostgreSQL deployments:
-
-```bash
-smrt db:migrate --postgres-safe
-```
-
-This automatically:
-- Uses `CREATE INDEX CONCURRENTLY` for non-blocking index creation
-- Sets `lock_timeout` and `statement_timeout` for safer execution
-- Handles CONCURRENTLY statements outside transactions (required by PostgreSQL)
-
-### Configuration
-
-Configure migrations in `smrt.config.js`:
-
-```javascript
-export default {
-  packages: {
-    cli: {
-      database: {
-        type: 'postgres',
-        url: process.env.DATABASE_URL,
-      },
-      migrations: {
-        directory: './migrations',
-        table: '_smrt_schema_migrations',
-        format: 'sql',           // 'sql' or 'typescript'
-        naming: 'sequence',      // 'sequence' (0001, 0002) or 'timestamp'
-        autoGenerateDown: true,
-        postgres: {
-          useConcurrently: true,
-          lockTimeout: '30s',
-          statementTimeout: '60s',
-        },
-      },
-    },
-  },
-};
-```
-
-### Programmatic API
-
-Use the migration system programmatically:
-
-```typescript
-import { MigrationTracker, SchemaComparer, MigrationGenerator } from '@happyvertical/smrt-core/migrations';
-import { getDatabase } from '@happyvertical/sql';
-
-// Initialize tracker
-const db = await getDatabase({ type: 'sqlite', url: 'app.db' });
-const tracker = new MigrationTracker({ db });
-await tracker.initialize();
-
-// Check pending migrations
-const pending = await tracker.getPendingMigrations(migrationDir);
-
-// Apply a migration
-const result = await tracker.apply({
-  id: '0001_initial',
-  description: 'Initial schema',
-  version: '1.0.0',
-  up: ['CREATE TABLE users (id TEXT PRIMARY KEY);'],
-  down: ['DROP TABLE users;'],
-});
-
-if (result.success) {
-  console.log(`Applied: ${result.name} in ${result.execution_time_ms}ms`);
-}
-
-// Compare manifest to database
-const comparer = new SchemaComparer(db);
-const diff = await comparer.compare(manifestSchemas);
-
-if (diff.has_changes) {
-  console.log(`New tables: ${diff.added_tables.length}`);
-  console.log(`Changes: ${diff.changes.length}`);
-}
-
-// Generate migration file from diff
-const generator = new MigrationGenerator({
-  engine: 'sqlite',
-  format: 'sql',
-  includeDown: true,
-});
-
-const migration = generator.generateFromDiff(diff, {
-  name: '0002_add_profiles',
-  description: 'Add profiles table',
-});
-
-console.log(migration.content);
-```
-
-### Best Practices
-
-1. **Always use `--dry-run` first** in production
-2. **Include DOWN scripts** for reversible migrations
-3. **Use `--postgres-safe`** for PostgreSQL production deployments
-4. **Don't modify applied migrations** - checksums will fail
-5. **Use sequence naming** for team workflows (avoids merge conflicts)
-6. **Commit migration files** to version control
+Full reference: [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) (see Database Migrations section when added).
 
 ---
 
-## Issue Triage and Management
+## MCP Server Integration
 
-The SMRT repository uses automated AI-powered issue triage:
+SMRT provides three tiers of MCP servers:
 
-- **AI-Powered Triage**: Automatic analysis, labeling, and prioritization
-- **Priority Levels**: P0 (Critical), P1 (High), P2 (Medium), P3 (Low)
-- **Issue Templates**: Structured bug reports and feature requests
-- **Stale Management**: Automatic cleanup after 30+ days inactive
-
-**Response Time Targets:**
-- **P0-Critical**: < 1 hour (production outages, security issues)
-- **P1-High**: < 4 hours (major functionality broken)
-- **P2-Medium**: < 2 business days (non-blocking bugs)
-- **P3-Low**: < 1 week (minor issues, enhancements)
-
-See [.github/TRIAGE_SOP.md](.github/TRIAGE_SOP.md) for complete details.
-
----
-
-## Release Management
-
-The framework uses [Changesets](https://github.com/changesets/changesets) for automated versioning and publishing:
-
-```bash
-# Preview what will be released
-pnpm run changeset:version  # Update package versions based on changesets
-
-# Publish (handled automatically by CI on merge to main)
-pnpm run changeset:publish  # Publish packages to registry
-```
-
-**Important**: Package releases are fully automated:
-1. PRs generate changesets from conventional commits
-2. Merging to main triggers the on-merge-main workflow
-3. Workflow builds, versions, and publishes packages automatically
-4. No manual `npm publish` needed
-
-See [CHANGESETS.md](./CHANGESETS.md) for complete release workflow documentation.
+| Tier | Package | Purpose |
+|------|---------|---------|
+| **1** | Auto-generated | Runtime servers from your SMRT objects |
+| **2** | `@happyvertical/smrt-dev-mcp` | Development code generation tools |
+| **3** | `@happyvertical/smrt-docs-mcp` | Documentation and learning tools |
 
 ---
 
 ## Dependency Management
 
-The SMRT framework uses [Renovate CE](https://github.com/renovatebot/renovate) for automated dependency updates:
-
-### How It Works
-
-1. **Upstream Changes (SDK)**: When `@happyvertical/sdk` packages publish new versions, Renovate CE detects the update via GitHub webhooks
-2. **PR Creation**: Renovate automatically creates a PR in SMRT with the updated dependencies
-3. **Automerge**: Patch version updates are automatically merged after tests pass
-4. **Downstream Propagation**: After SMRT publishes, Renovate detects the new version and creates PRs in downstream repos (praeco, caelus, etc.)
-
-### Configuration
-
-The Renovate configuration is defined in `renovate.json` and extends the shared config from [happyvertical/renovate-config](https://github.com/happyvertical/renovate-config):
-
-```json
-{
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>happyvertical/renovate-config:smrt"]
-}
-```
-
-### Expected Behavior
-
-| Scenario | Renovate Action |
-|----------|-----------------|
-| SDK patch release (0.x.Y) | Auto-create PR, automerge after tests pass |
-| SDK minor release (0.X.0) | Create PR, requires manual review |
-| External dependency update | Grouped weekly PRs |
-| Security vulnerability | Immediate PR with priority label |
-
-### Dependency Flow
+Uses [Renovate CE](https://github.com/renovatebot/renovate) for automated updates:
 
 ```
-@happyvertical/sdk
-        │
-        ▼ (Renovate detects new version)
-@happyvertical/smrt-* (this repo)
-        │
-        ▼ (Renovate detects new version)
-praeco, caelus, create-gnode (downstream repos)
+@happyvertical/sdk → publishes
+    ↓ Renovate creates PR
+@happyvertical/smrt-* → publishes
+    ↓ Renovate creates PR
+downstream repos (praeco, caelus, etc.)
 ```
+
+- **SDK patch releases**: Auto-merged after tests pass
+- **SDK minor releases**: Require manual review
 
 ---
 
 ## Related Projects
 
-- **[HAppyVertical SDK](https://github.com/happyvertical/sdk)**: Infrastructure packages that use SMRT
-- **[create-gnode](https://github.com/happyvertical/create-gnode)**: CLI for creating federated local knowledge bases
+- **[HAppyVertical SDK](https://github.com/happyvertical/sdk)**: Infrastructure packages
+- **[create-gnode](https://github.com/happyvertical/create-gnode)**: CLI for federated knowledge bases
 - **[praeco](https://github.com/happyvertical/praeco)**: Local news agent built on SMRT
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE) file for details.
+MIT License - see [LICENSE](./LICENSE) file.
 
 ## Contact
 
 - **GitHub**: https://github.com/happyvertical/smrt
 - **Issues**: https://github.com/happyvertical/smrt/issues
-- **Discussions**: https://github.com/happyvertical/smrt/discussions
-
----
-
-*This framework was split from the HAppyVertical SDK in October 2024 to create a focused, self-contained foundation for building vertical AI agents.*
