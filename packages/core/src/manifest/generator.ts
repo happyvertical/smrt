@@ -235,7 +235,11 @@ export class ManifestBuilder {
     scannerConfig: ScannerConfig,
   ): SmartObjectManifest {
     const generator = new ManifestGenerator();
-    const manifest = generator.generateManifest(scanResults);
+    // Issue #850: Pass smrtDependencies so mergeInheritedFields() can load parent
+    // definitions from external packages during STI inheritance resolution
+    const manifest = generator.generateManifest(scanResults, {
+      smrtDependencies: scannerConfig.smrtDependencies,
+    });
 
     // Add module type
     manifest.moduleType = options.moduleType || 'smrt';
