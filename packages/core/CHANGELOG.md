@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.59
+
+### Patch Changes
+
+- ### Features
+
+  - add comprehensive multi-theme system to smrt-svelte (#852)
+  - @happyvertical/smrt-scanner@0.19.59
+  - @happyvertical/smrt-config@0.19.59
+  - @happyvertical/smrt-types@0.19.59
+
 ## 0.19.58
 
 ### Patch Changes
