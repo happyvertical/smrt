@@ -68,8 +68,8 @@ const resolvedScheme = $derived<'light' | 'dark'>(
 
 const isDark = $derived(resolvedScheme === 'dark');
 
-// Generate CSS variables - using $derived directly for efficiency
-const cssVariables = $derived(() => {
+// Generate CSS variables - using $derived with immediate value
+const cssVariables = $derived.by(() => {
   const vars = generateThemeVariables(currentTheme, isDark);
 
   // Apply primary color override
@@ -86,14 +86,14 @@ const cssVariables = $derived(() => {
 
   // Apply custom overrides
   return { ...vars, ...config.overrides };
-})();
+});
 
 // Convert to style string
-const styleString = $derived(() => {
+const styleString = $derived.by(() => {
   return Object.entries(cssVariables)
     .map(([key, value]) => `${key}: ${value}`)
     .join('; ');
-})();
+});
 
 // Theme state for context
 const themeState = $derived<ThemeStateType>({
