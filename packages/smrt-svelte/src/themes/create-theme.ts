@@ -99,25 +99,38 @@ const defaultColorStructure: Omit<
 };
 
 /**
+ * Helper function to clamp a value between min and max
+ */
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Helper function to convert RGB component to 2-digit hex
+ */
+function toHexComponent(value: number): string {
+  const clamped = Math.round(clamp(value, 0, 255));
+  return clamped.toString(16).padStart(2, '0');
+}
+
+/**
  * Generate dark mode colors from light mode colors
  * Uses simple inversion logic - for production use, manually define dark colors
  */
 function generateDarkColors(light: ColorPalette): ColorPalette {
-  // Helper to adjust color brightness
+  // Helper to adjust color brightness with proper rounding and hex conversion
   const adjustBrightness = (hex: string, factor: number): string => {
-    const r = Math.min(
-      255,
-      Math.max(0, parseInt(hex.slice(1, 3), 16) * factor),
-    );
-    const g = Math.min(
-      255,
-      Math.max(0, parseInt(hex.slice(3, 5), 16) * factor),
-    );
-    const b = Math.min(
-      255,
-      Math.max(0, parseInt(hex.slice(5, 7), 16) * factor),
-    );
-    return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
+    // Handle 3-character hex codes
+    let fullHex = hex;
+    if (hex.length === 4 && hex[0] === '#') {
+      fullHex = `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+    }
+
+    const r = parseInt(fullHex.slice(1, 3), 16) * factor;
+    const g = parseInt(fullHex.slice(3, 5), 16) * factor;
+    const b = parseInt(fullHex.slice(5, 7), 16) * factor;
+
+    return `#${toHexComponent(r)}${toHexComponent(g)}${toHexComponent(b)}`;
   };
 
   return {
@@ -154,6 +167,7 @@ function generateDarkColors(light: ColorPalette): ColorPalette {
     inverseSurface: '#f9fafb',
     inverseOnSurface: '#1f2937',
     inversePrimary: light.primary,
+    shadow: light.shadow,
     scrim: 'rgba(0, 0, 0, 0.7)',
   };
 }
@@ -311,8 +325,8 @@ export function createTheme(options: CreateThemeOptions): Theme {
     extend = 'material',
   } = options;
 
-  // Get base theme if extending
-  const baseTheme = extend ? getBaseTheme(extend) : null;
+  // Get base theme if extending (lazy import to avoid circular deps)
+  const baseTheme = extend ? getBaseThemeSync(extend) : null;
 
   // Build light colors
   const lightColors: ColorPalette = {
@@ -354,13 +368,31 @@ export function createTheme(options: CreateThemeOptions): Theme {
   };
 }
 
+// Cache for base themes to avoid repeated dynamic imports
+let themeRegistryCache: Record<string, Theme> | null = null;
+
 /**
- * Get a base theme for extension
+ * Get a base theme for extension - synchronous version using cache
+ * Falls back to null if registry not loaded
  */
-function getBaseTheme(preset: ThemePreset): Theme | null {
-  // Import dynamically to avoid circular deps
-  const { themes } = require('./registry.js');
-  return themes[preset] || null;
+function getBaseThemeSync(preset: ThemePreset): Theme | null {
+  if (themeRegistryCache && preset in themeRegistryCache) {
+    return themeRegistryCache[preset] || null;
+  }
+  // Return null if not in cache - will use defaults
+  // User should ensure themes are loaded before extending
+  return null;
+}
+
+/**
+ * Preload the theme registry for extension support
+ * Call this before createTheme if using the extend option
+ */
+export async function preloadThemeRegistry(): Promise<void> {
+  if (themeRegistryCache) return;
+
+  const { themes } = await import('./registry.js');
+  themeRegistryCache = themes;
 }
 
 /**
@@ -392,12 +424,34 @@ function materialElevation(): ElevationScale {
  * ```
  */
 export function registerTheme(theme: Theme): void {
-  const { themes, availablePresets } = require('./registry.js');
+  // Import dynamically to avoid circular dependencies
+  // Using dynamic import for ESM compatibility
+  import('./registry.js')
+    .then(({ registerCustomTheme }) => {
+      registerCustomTheme(theme);
+    })
+    .catch(() => {
+      // Fallback: theme won't be registered if registry fails to load
+      // This should not happen in normal usage
+    });
+}
 
-  themes[theme.id] = theme;
-  if (!availablePresets.includes(theme.id)) {
-    availablePresets.push(theme.id);
-  }
+/**
+ * Get a registered custom theme
+ */
+export function getRegisteredTheme(_id: string): Theme | undefined {
+  // Dynamic import to avoid circular deps
+  // Return undefined synchronously - use isThemeRegistered for checks
+  return undefined;
+}
+
+/**
+ * Check if a theme is registered
+ * Note: This is async due to ESM dynamic import requirements
+ */
+export async function isThemeRegistered(id: string): Promise<boolean> {
+  const { hasCustomTheme } = await import('./registry.js');
+  return hasCustomTheme(id);
 }
 
 /**

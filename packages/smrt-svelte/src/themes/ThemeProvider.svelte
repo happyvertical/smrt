@@ -68,7 +68,7 @@ const resolvedScheme = $derived<'light' | 'dark'>(
 
 const isDark = $derived(resolvedScheme === 'dark');
 
-// Generate CSS variables
+// Generate CSS variables - using $derived directly for efficiency
 const cssVariables = $derived(() => {
   const vars = generateThemeVariables(currentTheme, isDark);
 
@@ -86,15 +86,14 @@ const cssVariables = $derived(() => {
 
   // Apply custom overrides
   return { ...vars, ...config.overrides };
-});
+})();
 
 // Convert to style string
 const styleString = $derived(() => {
-  const vars = cssVariables();
-  return Object.entries(vars)
+  return Object.entries(cssVariables)
     .map(([key, value]) => `${key}: ${value}`)
     .join('; ');
-});
+})();
 
 // Theme state for context
 const themeState = $derived<ThemeStateType>({
@@ -139,7 +138,7 @@ function persistConfig(): void {
     });
     localStorage.setItem(config.storageKey!, data);
   } catch {
-    // Ignore storage errors
+    // Ignore storage errors (e.g., private mode, quota exceeded)
   }
 }
 
@@ -155,7 +154,7 @@ function loadPersistedConfig(): void {
       if (data.borderRadius) config.borderRadius = data.borderRadius;
     }
   } catch {
-    // Ignore storage errors
+    // Ignore storage errors (e.g., corrupted data, JSON parse errors)
   }
 }
 
@@ -230,13 +229,18 @@ $effect(() => {
 $effect(() => {
   config.borderRadius = borderRadius;
 });
+
+// Sync overrides prop to state
+$effect(() => {
+  config.overrides = overrides;
+});
 </script>
 
 <div
   class="smrt-theme-root"
   class:dark={isDark}
   class:smrt-theme-glass={config.preset === 'glass'}
-  style={styleString()}
+  style={styleString}
   data-theme={config.preset}
   data-color-scheme={resolvedScheme}
 >
@@ -245,8 +249,9 @@ $effect(() => {
 
 <style>
   .smrt-theme-root {
-    /* Ensure theme variables cascade */
-    display: contents;
+    /* Ensure theme variables cascade properly */
+    /* Note: Using block display instead of contents so styles apply correctly */
+    display: block;
     color: var(--smrt-color-on-background);
     background-color: var(--smrt-color-background);
     font-family: var(--smrt-font-family);

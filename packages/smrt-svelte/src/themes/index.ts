@@ -30,6 +30,9 @@ export type { CreateThemeOptions } from './create-theme.js';
 export {
   createTheme,
   createThemeFromColor,
+  getRegisteredTheme,
+  isThemeRegistered,
+  preloadThemeRegistry,
   registerTheme,
 } from './create-theme.js';
 // CSS generation

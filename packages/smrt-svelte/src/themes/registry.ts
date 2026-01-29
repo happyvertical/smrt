@@ -11,7 +11,7 @@ import { studioTheme } from './studio/index.js';
 import type { Theme, ThemePreset } from './types.js';
 
 /**
- * Map of all registered themes
+ * Map of all built-in themes
  */
 export const themes: Record<ThemePreset, Theme> = {
   material: materialTheme,
@@ -20,33 +20,45 @@ export const themes: Record<ThemePreset, Theme> = {
 };
 
 /**
- * List of available theme presets
+ * List of available theme presets (built-in only)
  */
 export const availablePresets: ThemePreset[] = ['material', 'glass', 'studio'];
 
 /**
  * Get a theme by preset name
+ * Checks built-in themes first, then custom registered themes
  * @param preset - Theme preset identifier
  * @returns The theme definition
  * @throws Error if preset is invalid
  */
 export function getTheme(preset: ThemePreset): Theme {
-  const theme = themes[preset];
-  if (!theme) {
-    throw new Error(
-      `Unknown theme preset: ${preset}. Available: ${availablePresets.join(', ')}`,
-    );
+  // Check built-in themes first
+  const builtInTheme = themes[preset];
+  if (builtInTheme) {
+    return builtInTheme;
   }
-  return theme;
+
+  // Check custom themes (imported dynamically to avoid circular deps)
+  // This will be populated by registerTheme from create-theme.ts
+  const customTheme = getCustomTheme(preset);
+  if (customTheme) {
+    return customTheme;
+  }
+
+  throw new Error(
+    `Unknown theme preset: ${preset}. Available: ${getAllPresetNames().join(', ')}`,
+  );
 }
 
 /**
- * Check if a preset is valid
+ * Check if a preset is valid (built-in or custom)
  * @param preset - Value to check
  * @returns True if valid theme preset
  */
 export function isValidPreset(preset: string): preset is ThemePreset {
-  return availablePresets.includes(preset as ThemePreset);
+  return (
+    availablePresets.includes(preset as ThemePreset) || hasCustomTheme(preset)
+  );
 }
 
 /**
@@ -55,11 +67,15 @@ export function isValidPreset(preset: string): preset is ThemePreset {
  * @returns Human-readable theme name
  */
 export function getThemeName(preset: ThemePreset): string {
-  return themes[preset]?.name ?? preset;
+  const theme = themes[preset];
+  if (theme) return theme.name;
+
+  const customTheme = getCustomTheme(preset);
+  return customTheme?.name ?? preset;
 }
 
 /**
- * Get all themes as array
+ * Get all themes as array (built-in only)
  * @returns Array of theme definitions
  */
 export function getAllThemes(): Theme[] {
@@ -71,8 +87,60 @@ export function getAllThemes(): Theme[] {
  * @returns Array of {value, label} objects
  */
 export function getThemeOptions(): { value: ThemePreset; label: string }[] {
-  return availablePresets.map((preset) => ({
+  const builtInOptions = availablePresets.map((preset) => ({
     value: preset,
     label: themes[preset].name,
   }));
+
+  const customOptions = getCustomThemeOptions();
+
+  return [...builtInOptions, ...customOptions];
+}
+
+// --- Custom Theme Support ---
+
+// WeakMap to store custom themes without polluting module scope
+const customThemeRegistry = new Map<string, Theme>();
+
+/**
+ * Register a custom theme in the registry
+ * @internal Use registerTheme from create-theme.ts instead
+ */
+export function registerCustomTheme(theme: Theme): void {
+  customThemeRegistry.set(theme.id, theme);
+}
+
+/**
+ * Get a custom theme by id
+ * @internal
+ */
+export function getCustomTheme(id: string): Theme | undefined {
+  return customThemeRegistry.get(id);
+}
+
+/**
+ * Check if a custom theme is registered
+ * @internal
+ */
+export function hasCustomTheme(id: string): boolean {
+  return customThemeRegistry.has(id);
+}
+
+/**
+ * Get all custom theme options for UI
+ * @internal
+ */
+function getCustomThemeOptions(): { value: ThemePreset; label: string }[] {
+  return Array.from(customThemeRegistry.entries()).map(([id, theme]) => ({
+    value: id as ThemePreset,
+    label: theme.name,
+  }));
+}
+
+/**
+ * Get all preset names including custom themes
+ * @internal
+ */
+function getAllPresetNames(): string[] {
+  return [...availablePresets, ...customThemeRegistry.keys()];
 }

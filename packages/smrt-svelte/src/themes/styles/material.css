@@ -7,6 +7,42 @@
  * @usage import '@smrt/svelte/themes/styles/material.css';
  */
 
+/* Common/shared variables for Material theme (both light and dark) */
+[data-theme="material"] {
+  /* Border Radius */
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+
+  /* Elevation (shared between light and dark) */
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.02);
+  --smrt-elevation-2: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-3: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 4px 8px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-4: 0 4px 8px 0 rgb(0 0 0 / 0.08), 0 8px 16px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-5: 0 8px 16px 0 rgb(0 0 0 / 0.1), 0 16px 32px 0 rgb(0 0 0 / 0.04);
+
+  /* Duration (shared between light and dark) */
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+
+  /* Easing (shared between light and dark) */
+  --smrt-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+}
+
 [data-theme="material"][data-color-scheme="light"] {
   /* Primary */
   --smrt-color-primary: #0b57d0;
@@ -79,39 +115,6 @@
   --smrt-theme-name: Material;
   --smrt-color-scheme: light;
   --smrt-font-family: "Google Sans", "Roboto", system-ui, -apple-system, sans-serif;
-
-  /* Border Radius */
-  --smrt-radius-none: 0;
-  --smrt-radius-sm: 0.25rem;
-  --smrt-radius-md: 0.5rem;
-  --smrt-radius-lg: 0.75rem;
-  --smrt-radius-xl: 1rem;
-  --smrt-radius-2xl: 1.5rem;
-  --smrt-radius-3xl: 2rem;
-  --smrt-radius-full: 9999px;
-
-  /* Elevation */
-  --smrt-elevation-0: none;
-  --smrt-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.02);
-  --smrt-elevation-2: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 2px 4px 0 rgb(0 0 0 / 0.04);
-  --smrt-elevation-3: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 4px 8px 0 rgb(0 0 0 / 0.04);
-  --smrt-elevation-4: 0 4px 8px 0 rgb(0 0 0 / 0.08), 0 8px 16px 0 rgb(0 0 0 / 0.04);
-  --smrt-elevation-5: 0 8px 16px 0 rgb(0 0 0 / 0.1), 0 16px 32px 0 rgb(0 0 0 / 0.04);
-
-  /* Duration */
-  --smrt-duration-instant: 0ms;
-  --smrt-duration-fast: 100ms;
-  --smrt-duration-normal: 200ms;
-  --smrt-duration-slow: 300ms;
-  --smrt-duration-slower: 500ms;
-
-  /* Easing */
-  --smrt-easing-standard: cubic-bezier(0.2, 0, 0, 1);
-  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
-  --smrt-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
-  --smrt-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
-  --smrt-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
-  --smrt-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
 }
 
 [data-theme="material"][data-color-scheme="dark"] {
@@ -186,37 +189,4 @@
   --smrt-theme-name: Material;
   --smrt-color-scheme: dark;
   --smrt-font-family: "Google Sans", "Roboto", system-ui, -apple-system, sans-serif;
-
-  /* Border Radius (same as light) */
-  --smrt-radius-none: 0;
-  --smrt-radius-sm: 0.25rem;
-  --smrt-radius-md: 0.5rem;
-  --smrt-radius-lg: 0.75rem;
-  --smrt-radius-xl: 1rem;
-  --smrt-radius-2xl: 1.5rem;
-  --smrt-radius-3xl: 2rem;
-  --smrt-radius-full: 9999px;
-
-  /* Elevation */
-  --smrt-elevation-0: none;
-  --smrt-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.02);
-  --smrt-elevation-2: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 2px 4px 0 rgb(0 0 0 / 0.04);
-  --smrt-elevation-3: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 4px 8px 0 rgb(0 0 0 / 0.04);
-  --smrt-elevation-4: 0 4px 8px 0 rgb(0 0 0 / 0.08), 0 8px 16px 0 rgb(0 0 0 / 0.04);
-  --smrt-elevation-5: 0 8px 16px 0 rgb(0 0 0 / 0.1), 0 16px 32px 0 rgb(0 0 0 / 0.04);
-
-  /* Duration (same as light) */
-  --smrt-duration-instant: 0ms;
-  --smrt-duration-fast: 100ms;
-  --smrt-duration-normal: 200ms;
-  --smrt-duration-slow: 300ms;
-  --smrt-duration-slower: 500ms;
-
-  /* Easing (same as light) */
-  --smrt-easing-standard: cubic-bezier(0.2, 0, 0, 1);
-  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
-  --smrt-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
-  --smrt-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
-  --smrt-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
-  --smrt-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
 }

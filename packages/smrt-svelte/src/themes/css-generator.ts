@@ -78,8 +78,8 @@ function generateSpacingVariables(
   const vars: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(spacing)) {
-    // Handle decimal keys like "0.5"
-    const cssKey = key.replace('.', '_');
+    // Handle decimal keys like "0.5" - replace ALL dots with underscores
+    const cssKey = key.replace(/\./g, '_');
     vars[`${prefix}-spacing-${cssKey}`] = value;
   }
 
@@ -261,8 +261,9 @@ export function generateThemeCSS(
  * Generate all theme CSS for all presets and modes
  * @returns Complete CSS for all themes
  */
-export function generateAllThemesCSS(): string {
-  const { themes } = require('./registry.js');
+export async function generateAllThemesCSS(): Promise<string> {
+  // Use dynamic import for ESM compatibility
+  const { themes } = await import('./registry.js');
   const cssParts: string[] = [];
 
   for (const theme of Object.values<Theme>(themes)) {
