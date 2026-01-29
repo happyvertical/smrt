@@ -43,6 +43,16 @@ const components = [
     items: ['ThemeProvider', 'useTheme', 'Ripple Action'],
   },
   {
+    category: '🎨 NEW: Themes',
+    items: [
+      'Material Theme',
+      'Glass Theme',
+      'Studio Theme',
+      'ThemeSwitcher',
+      'ColorSchemeToggle',
+    ],
+  },
+  {
     category: 'Display',
     items: [
       'ConfidenceBadge',

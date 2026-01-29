@@ -1,0 +1,222 @@
+/**
+ * Material Theme CSS
+ *
+ * Static CSS file for Material theme.
+ * Can be imported at build time for SSR or when JS theming is not needed.
+ *
+ * @usage import '@smrt/svelte/themes/styles/material.css';
+ */
+
+[data-theme="material"][data-color-scheme="light"] {
+  /* Primary */
+  --smrt-color-primary: #0b57d0;
+  --smrt-color-on-primary: #ffffff;
+  --smrt-color-primary-container: #d3e3fd;
+  --smrt-color-on-primary-container: #041e49;
+
+  /* Secondary */
+  --smrt-color-secondary: #5e5e5e;
+  --smrt-color-on-secondary: #ffffff;
+  --smrt-color-secondary-container: #f0f0f0;
+  --smrt-color-on-secondary-container: #1f1f1f;
+
+  /* Tertiary */
+  --smrt-color-tertiary: #7c4dff;
+  --smrt-color-on-tertiary: #ffffff;
+  --smrt-color-tertiary-container: #e8ddff;
+  --smrt-color-on-tertiary-container: #1e005f;
+
+  /* Error */
+  --smrt-color-error: #b3261e;
+  --smrt-color-on-error: #ffffff;
+  --smrt-color-error-container: #f9dedc;
+  --smrt-color-on-error-container: #410e0b;
+
+  /* Warning */
+  --smrt-color-warning: #f9ab00;
+  --smrt-color-on-warning: #000000;
+  --smrt-color-warning-container: #fff4d9;
+  --smrt-color-on-warning-container: #3d2a00;
+
+  /* Success */
+  --smrt-color-success: #1e8e3e;
+  --smrt-color-on-success: #ffffff;
+  --smrt-color-success-container: #e6f4ea;
+  --smrt-color-on-success-container: #1e4620;
+
+  /* Surface */
+  --smrt-color-surface: #ffffff;
+  --smrt-color-on-surface: #1f1f1f;
+  --smrt-color-surface-variant: #f2f2f2;
+  --smrt-color-on-surface-variant: #444746;
+  --smrt-color-surface-container: #f0f4f8;
+  --smrt-color-surface-container-low: #f8f9fa;
+  --smrt-color-surface-container-high: #e8eaed;
+  --smrt-color-surface-container-highest: #e1e3e6;
+  --smrt-color-surface-container-lowest: #ffffff;
+  --smrt-color-surface-dim: #dadce0;
+  --smrt-color-surface-bright: #f8f9fa;
+
+  /* Background */
+  --smrt-color-background: #ffffff;
+  --smrt-color-on-background: #1f1f1f;
+
+  /* Outline */
+  --smrt-color-outline: #747775;
+  --smrt-color-outline-variant: #c4c7c5;
+
+  /* Inverse */
+  --smrt-color-inverse-surface: #303133;
+  --smrt-color-inverse-on-surface: #f2f2f2;
+  --smrt-color-inverse-primary: #a8c7fa;
+
+  /* Effects */
+  --smrt-color-shadow: #000000;
+  --smrt-color-scrim: rgba(0, 0, 0, 0.5);
+
+  /* Theme metadata */
+  --smrt-theme-id: material;
+  --smrt-theme-name: Material;
+  --smrt-color-scheme: light;
+  --smrt-font-family: "Google Sans", "Roboto", system-ui, -apple-system, sans-serif;
+
+  /* Border Radius */
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+
+  /* Elevation */
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.02);
+  --smrt-elevation-2: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-3: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 4px 8px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-4: 0 4px 8px 0 rgb(0 0 0 / 0.08), 0 8px 16px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-5: 0 8px 16px 0 rgb(0 0 0 / 0.1), 0 16px 32px 0 rgb(0 0 0 / 0.04);
+
+  /* Duration */
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+
+  /* Easing */
+  --smrt-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+}
+
+[data-theme="material"][data-color-scheme="dark"] {
+  /* Primary */
+  --smrt-color-primary: #a8c7fa;
+  --smrt-color-on-primary: #062e6f;
+  --smrt-color-primary-container: #0842a0;
+  --smrt-color-on-primary-container: #d3e3fd;
+
+  /* Secondary */
+  --smrt-color-secondary: #c7c7c7;
+  --smrt-color-on-secondary: #303133;
+  --smrt-color-secondary-container: #444746;
+  --smrt-color-on-secondary-container: #e3e3e3;
+
+  /* Tertiary */
+  --smrt-color-tertiary: #cbb7ff;
+  --smrt-color-on-tertiary: #3e1e96;
+  --smrt-color-tertiary-container: #5e3fc0;
+  --smrt-color-on-tertiary-container: #e8ddff;
+
+  /* Error */
+  --smrt-color-error: #f2b8b5;
+  --smrt-color-on-error: #601410;
+  --smrt-color-error-container: #8c1d18;
+  --smrt-color-on-error-container: #f9dedc;
+
+  /* Warning */
+  --smrt-color-warning: #ffcd66;
+  --smrt-color-on-warning: #5c3d00;
+  --smrt-color-warning-container: #8a5d00;
+  --smrt-color-on-warning-container: #fff4d9;
+
+  /* Success */
+  --smrt-color-success: #81c995;
+  --smrt-color-on-success: #0d522d;
+  --smrt-color-success-container: #1e4620;
+  --smrt-color-on-success-container: #e6f4ea;
+
+  /* Surface */
+  --smrt-color-surface: #0e0e0e;
+  --smrt-color-on-surface: #e3e3e3;
+  --smrt-color-surface-variant: #1f1f1f;
+  --smrt-color-on-surface-variant: #c4c7c5;
+  --smrt-color-surface-container: #1f1f1f;
+  --smrt-color-surface-container-low: #141414;
+  --smrt-color-surface-container-high: #2d2d2d;
+  --smrt-color-surface-container-highest: #363636;
+  --smrt-color-surface-container-lowest: #0a0a0a;
+  --smrt-color-surface-dim: #141414;
+  --smrt-color-surface-bright: #2d2d2d;
+
+  /* Background */
+  --smrt-color-background: #0e0e0e;
+  --smrt-color-on-background: #e3e3e3;
+
+  /* Outline */
+  --smrt-color-outline: #8e918f;
+  --smrt-color-outline-variant: #444746;
+
+  /* Inverse */
+  --smrt-color-inverse-surface: #e3e3e3;
+  --smrt-color-inverse-on-surface: #1f1f1f;
+  --smrt-color-inverse-primary: #0b57d0;
+
+  /* Effects */
+  --smrt-color-shadow: #000000;
+  --smrt-color-scrim: rgba(0, 0, 0, 0.7);
+
+  /* Theme metadata */
+  --smrt-theme-id: material;
+  --smrt-theme-name: Material;
+  --smrt-color-scheme: dark;
+  --smrt-font-family: "Google Sans", "Roboto", system-ui, -apple-system, sans-serif;
+
+  /* Border Radius (same as light) */
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+
+  /* Elevation */
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.02);
+  --smrt-elevation-2: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-3: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 4px 8px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-4: 0 4px 8px 0 rgb(0 0 0 / 0.08), 0 8px 16px 0 rgb(0 0 0 / 0.04);
+  --smrt-elevation-5: 0 8px 16px 0 rgb(0 0 0 / 0.1), 0 16px 32px 0 rgb(0 0 0 / 0.04);
+
+  /* Duration (same as light) */
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+
+  /* Easing (same as light) */
+  --smrt-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+}

@@ -1,0 +1,12 @@
+/**
+ * All Themes CSS
+ *
+ * Combined CSS file with all themes (Material, Glass, Studio).
+ * Use this if your app supports runtime theme switching.
+ *
+ * @usage import '@smrt/svelte/themes/styles/all.css';
+ */
+
+@import './material.css';
+@import './glass.css';
+@import './studio.css';

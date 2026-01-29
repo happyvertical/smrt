@@ -73,5 +73,8 @@ export * from './registry/index.js';
 export * from './state/index.js';
 // Theme system
 export * from './theme/index.js';
+
+// Note: The new unified theme system is available at @smrt/svelte/themes
+// import { ThemeProvider } from '@smrt/svelte/themes';
 // Generic types (migrated from @happyvertical/svelte)
 export type * from './types-generic.js';
