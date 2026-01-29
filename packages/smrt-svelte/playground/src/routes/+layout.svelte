@@ -1,6 +1,12 @@
 <script lang="ts">
 import type { AppMode, User } from '@happyvertical/smrt-svelte';
-import { smrt, ThemeProvider } from '@happyvertical/smrt-svelte';
+import { smrt } from '@happyvertical/smrt-svelte';
+import {
+  ColorSchemeToggle,
+  getThemeContext,
+  ThemeProvider,
+  ThemeSwitcher,
+} from '@happyvertical/smrt-svelte/themes';
 import type { Snippet } from 'svelte';
 
 interface Props {
@@ -9,10 +15,6 @@ interface Props {
 
 const { children }: Props = $props();
 let mode: AppMode = $state('default');
-
-// Theme State
-let themeMode = $state<'light' | 'dark' | 'system'>('system');
-let themeSeed = $state('#6750A4');
 
 // Mock user for demo purposes
 // In a real app, this would come from your +layout.server.ts load function
@@ -44,7 +46,7 @@ function toggleLogin() {
   permissions={isLoggedIn ? mockPermissions : []}
   onModeChange={(m) => mode = m}
 >
-  <ThemeProvider mode={themeMode} seed={themeSeed}>
+  <ThemeProvider preset="material" colorScheme="system" persist={false}>
     <div class="layout">
       <nav class="sidebar">
         <h1>SMRT Svelte</h1>
@@ -62,18 +64,13 @@ function toggleLogin() {
           >Smrt</button>
         </div>
 
-        <div class="theme-controls">
-          <div class="row">
-            <label for="theme-mode-select">Mode</label>
-            <select id="theme-mode-select" bind:value={themeMode}>
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
+        <div class="theme-section">
+          <h3>Themes</h3>
+          <div class="theme-controls">
+            <ThemeSwitcher variant="buttons" showIcons={true} />
           </div>
-          <div class="row">
-            <label for="theme-seed-input">Seed</label>
-            <input id="theme-seed-input" type="color" bind:value={themeSeed} />
+          <div class="theme-controls">
+            <ColorSchemeToggle variant="segmented" showLabels={true} />
           </div>
         </div>
 
@@ -90,6 +87,7 @@ function toggleLogin() {
         <ul>
         <li><a href="/">Overview</a></li>
         <li><a href="/foundation">Foundation</a></li>
+        <li><a href="/themes">🎨 New Themes</a></li>
 
         <li class="section">AI Features</li>
         <li><a href="/ai">AI Overview</a></li>
@@ -150,21 +148,22 @@ function toggleLogin() {
   }
 
   .sidebar {
-    width: 220px;
-    background: #1a1a2e;
-    color: #fff;
+    width: 240px;
+    background: var(--smrt-color-surface-container, #1a1a2e);
+    color: var(--smrt-color-on-surface, #fff);
     padding: 20px;
     position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
     overflow-y: auto;
+    border-right: 1px solid var(--smrt-color-outline, #333);
   }
 
   .sidebar h1 {
     font-size: 1.25rem;
-    margin-bottom: 24px;
-    color: #60a5fa;
+    margin-bottom: 16px;
+    color: var(--smrt-color-primary, #60a5fa);
   }
 
   .sidebar ul {
@@ -178,39 +177,44 @@ function toggleLogin() {
   .sidebar li.section {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant, #888);
     margin-top: 16px;
     margin-bottom: 8px;
     letter-spacing: 0.05em;
+    font-weight: 600;
   }
 
   .sidebar a {
-    color: #ccc;
+    color: var(--smrt-color-on-surface-variant, #ccc);
     text-decoration: none;
     display: block;
     padding: 6px 12px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-md, 6px);
     font-size: 0.875rem;
+    transition: all 0.2s;
   }
 
   .sidebar a:hover {
-    background: #2a2a4e;
-    color: #fff;
+    background: var(--smrt-color-surface-container-high, #2a2a4e);
+    color: var(--smrt-color-on-surface, #fff);
   }
 
   .content {
     flex: 1;
-    margin-left: 220px;
+    margin-left: 240px;
     padding: 32px;
+    background: var(--smrt-color-background, #fff);
+    color: var(--smrt-color-on-background, #1f1f1f);
+    min-height: 100vh;
   }
 
   .mode-toggle {
     display: flex;
     gap: 4px;
-    margin-bottom: 20px;
-    background: #0f0f1a;
+    margin-bottom: 16px;
+    background: var(--smrt-color-surface-container-low, #0f0f1a);
     padding: 4px;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-lg, 8px);
   }
 
   .mode-btn {
@@ -218,8 +222,8 @@ function toggleLogin() {
     padding: 8px 12px;
     border: none;
     background: transparent;
-    color: #888;
-    border-radius: 6px;
+    color: var(--smrt-color-on-surface-variant, #888);
+    border-radius: var(--smrt-radius-md, 6px);
     cursor: pointer;
     font-size: 0.875rem;
     font-weight: 500;
@@ -227,12 +231,12 @@ function toggleLogin() {
   }
 
   .mode-btn:hover {
-    color: #fff;
+    color: var(--smrt-color-on-surface, #fff);
   }
 
   .mode-btn.active {
-    background: #3b82f6;
-    color: #fff;
+    background: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-on-primary, #fff);
   }
 
   .auth-toggle {
@@ -243,9 +247,9 @@ function toggleLogin() {
     width: 100%;
     padding: 8px 12px;
     border: none;
-    background: #dc2626;
-    color: #fff;
-    border-radius: 6px;
+    background: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-on-error, #fff);
+    border-radius: var(--smrt-radius-md, 6px);
     cursor: pointer;
     font-size: 0.875rem;
     font-weight: 500;
@@ -257,47 +261,34 @@ function toggleLogin() {
   }
 
   .auth-btn.logged-in {
-    background: #059669;
+    background: var(--smrt-color-success, #059669);
   }
 
-  .theme-controls {
-    margin-bottom: 20px;
-    background: #0f0f1a;
-    padding: 8px;
-    border-radius: 8px;
+  .theme-section {
+    margin-bottom: 16px;
+    background: var(--smrt-color-surface-container-low, #0f0f1a);
+    padding: 12px;
+    border-radius: var(--smrt-radius-lg, 8px);
   }
 
-  .theme-controls label {
-    display: block;
+  .theme-section h3 {
     font-size: 0.75rem;
-    color: #888;
-    margin-bottom: 4px;
     text-transform: uppercase;
+    color: var(--smrt-color-on-surface-variant, #888);
+    margin-bottom: 8px;
     letter-spacing: 0.05em;
   }
 
-  .theme-controls .row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
+  .theme-controls {
+    margin-bottom: 8px;
   }
 
-  .theme-controls select {
-    flex: 1;
-    background: #1a1a2e;
-    color: #fff;
-    border: 1px solid #333;
-    padding: 4px;
-    border-radius: 4px;
-    font-size: 0.875rem;
+  .theme-controls:last-child {
+    margin-bottom: 0;
   }
 
-  .theme-controls input[type="color"] {
-    width: 32px;
-    height: 32px;
-    border: none;
-    padding: 0;
-    background: transparent;
-    cursor: pointer;
+  :global(.smrt-theme-glass) .sidebar {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 </style>

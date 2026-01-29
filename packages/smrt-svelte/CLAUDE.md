@@ -358,6 +358,56 @@ The warm client cache is module-level, surviving component remounts and navigati
 
 ---
 
+---
+
+## Theming
+
+SMRT Svelte includes a comprehensive multi-theme system with support for Material Design, Apple Glass, and Google AI Studio aesthetics.
+
+### Quick Start with Themes
+
+```svelte
+<!-- +layout.svelte -->
+<script>
+  import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
+  import '@happyvertical/smrt-svelte/themes/styles/all.css';
+</script>
+
+<ThemeProvider preset="material" colorScheme="system">
+  {@render children()}
+</ThemeProvider>
+```
+
+### Available Themes
+
+| Theme | Description |
+|-------|-------------|
+| `material` | Modern Google Material Design 3 with refined colors |
+| `glass` | Apple-inspired glass morphism with backdrop blur |
+| `studio` | Google AI Studio flat design with minimal aesthetics |
+
+### Theme Switching
+
+```svelte
+<script>
+  import { getThemeContext, ThemeSwitcher } from '@happyvertical/smrt-svelte/themes';
+  
+  const theme = getThemeContext();
+  
+  // Programmatic switching
+  theme.setPreset('glass');
+  theme.toggleColorScheme();
+</script>
+
+<!-- UI Components -->
+<ThemeSwitcher variant="segmented" />
+<ColorSchemeToggle variant="buttons" />
+```
+
+See the [Themes README](./src/themes/README.md) for complete documentation.
+
+---
+
 ## Dependencies
 
 - `@happyvertical/browser-ai`: Browser AI adapters (STT, TTS, LLM)

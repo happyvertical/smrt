@@ -1,0 +1,260 @@
+/**
+ * Glass Theme CSS
+ *
+ * Static CSS file for Glass theme.
+ * Can be imported at build time for SSR or when JS theming is not needed.
+ *
+ * @usage import '@smrt/svelte/themes/styles/glass.css';
+ */
+
+[data-theme="glass"][data-color-scheme="light"] {
+  /* Primary - Apple system blue */
+  --smrt-color-primary: #007aff;
+  --smrt-color-on-primary: #ffffff;
+  --smrt-color-primary-container: rgba(0, 122, 255, 0.15);
+  --smrt-color-on-primary-container: #003d80;
+
+  /* Secondary - System gray */
+  --smrt-color-secondary: #6c757d;
+  --smrt-color-on-secondary: #ffffff;
+  --smrt-color-secondary-container: rgba(108, 117, 125, 0.12);
+  --smrt-color-on-secondary-container: #2c3237;
+
+  /* Tertiary - System indigo */
+  --smrt-color-tertiary: #5856d6;
+  --smrt-color-on-tertiary: #ffffff;
+  --smrt-color-tertiary-container: rgba(88, 86, 214, 0.15);
+  --smrt-color-on-tertiary-container: #2a2866;
+
+  /* Error - System red */
+  --smrt-color-error: #ff3b30;
+  --smrt-color-on-error: #ffffff;
+  --smrt-color-error-container: rgba(255, 59, 48, 0.15);
+  --smrt-color-on-error-container: #801810;
+
+  /* Warning - System orange */
+  --smrt-color-warning: #ff9500;
+  --smrt-color-on-warning: #000000;
+  --smrt-color-warning-container: rgba(255, 149, 0, 0.15);
+  --smrt-color-on-warning-container: #804a00;
+
+  /* Success - System green */
+  --smrt-color-success: #34c759;
+  --smrt-color-on-success: #000000;
+  --smrt-color-success-container: rgba(52, 199, 89, 0.15);
+  --smrt-color-on-success-container: #1a642d;
+
+  /* Surface - Translucent whites */
+  --smrt-color-surface: rgba(255, 255, 255, 0.72);
+  --smrt-color-on-surface: #000000;
+  --smrt-color-surface-variant: rgba(255, 255, 255, 0.52);
+  --smrt-color-on-surface-variant: #3c3c43;
+  --smrt-color-surface-container: rgba(255, 255, 255, 0.82);
+  --smrt-color-surface-container-low: rgba(255, 255, 255, 0.62);
+  --smrt-color-surface-container-high: rgba(255, 255, 255, 0.88);
+  --smrt-color-surface-container-highest: rgba(255, 255, 255, 0.92);
+  --smrt-color-surface-container-lowest: rgba(255, 255, 255, 0.42);
+  --smrt-color-surface-dim: rgba(120, 120, 128, 0.16);
+  --smrt-color-surface-bright: rgba(255, 255, 255, 0.95);
+
+  /* Background */
+  --smrt-color-background: #f2f2f7;
+  --smrt-color-on-background: #000000;
+
+  /* Outline - Subtle translucent borders */
+  --smrt-color-outline: rgba(120, 120, 128, 0.29);
+  --smrt-color-outline-variant: rgba(120, 120, 128, 0.16);
+
+  /* Inverse */
+  --smrt-color-inverse-surface: #1c1c1e;
+  --smrt-color-inverse-on-surface: #ffffff;
+  --smrt-color-inverse-primary: #66b0ff;
+
+  /* Effects */
+  --smrt-color-shadow: rgba(0, 0, 0, 0.12);
+  --smrt-color-scrim: rgba(0, 0, 0, 0.4);
+
+  /* Glass-specific */
+  --smrt-color-glass-backdrop: rgba(255, 255, 255, 0.72);
+  --smrt-color-glass-border: rgba(255, 255, 255, 0.3);
+  --smrt-glass-blur: 20px;
+  --smrt-glass-saturation: 180%;
+  --smrt-glass-border-opacity: 0.3;
+  --smrt-glass-background-opacity: 0.72;
+
+  /* Theme metadata */
+  --smrt-theme-id: glass;
+  --smrt-theme-name: Glass;
+  --smrt-color-scheme: light;
+  --smrt-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+
+  /* Border Radius */
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+
+  /* Elevation - Softer, more diffuse shadows */
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --smrt-elevation-2: 0 3px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.03);
+  --smrt-elevation-3: 0 6px 12px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --smrt-elevation-4: 0 12px 24px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.05);
+  --smrt-elevation-5: 0 24px 48px rgba(0, 0, 0, 0.12), 0 16px 32px rgba(0, 0, 0, 0.06);
+
+  /* Duration */
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+
+  /* Easing - Apple style */
+  --smrt-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.16, 1, 0.3, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="glass"][data-color-scheme="dark"] {
+  /* Primary - Lighter blue for dark mode */
+  --smrt-color-primary: #0a84ff;
+  --smrt-color-on-primary: #000000;
+  --smrt-color-primary-container: rgba(10, 132, 255, 0.25);
+  --smrt-color-on-primary-container: #b3d9ff;
+
+  /* Secondary */
+  --smrt-color-secondary: #8e8e93;
+  --smrt-color-on-secondary: #000000;
+  --smrt-color-secondary-container: rgba(142, 142, 147, 0.2);
+  --smrt-color-on-secondary-container: #e5e5ea;
+
+  /* Tertiary */
+  --smrt-color-tertiary: #5e5ce6;
+  --smrt-color-on-tertiary: #ffffff;
+  --smrt-color-tertiary-container: rgba(94, 92, 230, 0.25);
+  --smrt-color-on-tertiary-container: #d4d3ff;
+
+  /* Error */
+  --smrt-color-error: #ff453a;
+  --smrt-color-on-error: #000000;
+  --smrt-color-error-container: rgba(255, 69, 58, 0.25);
+  --smrt-color-on-error-container: #ffcac7;
+
+  /* Warning */
+  --smrt-color-warning: #ff9f0a;
+  --smrt-color-on-warning: #000000;
+  --smrt-color-warning-container: rgba(255, 159, 10, 0.25);
+  --smrt-color-on-warning-container: #ffe3b3;
+
+  /* Success */
+  --smrt-color-success: #30d158;
+  --smrt-color-on-success: #000000;
+  --smrt-color-success-container: rgba(48, 209, 88, 0.25);
+  --smrt-color-on-success-container: #b8f5c9;
+
+  /* Surface - Translucent darks */
+  --smrt-color-surface: rgba(30, 30, 30, 0.72);
+  --smrt-color-on-surface: #ffffff;
+  --smrt-color-surface-variant: rgba(44, 44, 46, 0.65);
+  --smrt-color-on-surface-variant: #8e8e93;
+  --smrt-color-surface-container: rgba(44, 44, 46, 0.82);
+  --smrt-color-surface-container-low: rgba(30, 30, 30, 0.62);
+  --smrt-color-surface-container-high: rgba(58, 58, 60, 0.85);
+  --smrt-color-surface-container-highest: rgba(72, 72, 74, 0.88);
+  --smrt-color-surface-container-lowest: rgba(28, 28, 30, 0.55);
+  --smrt-color-surface-dim: rgba(0, 0, 0, 0.3);
+  --smrt-color-surface-bright: rgba(58, 58, 60, 0.9);
+
+  /* Background */
+  --smrt-color-background: #000000;
+  --smrt-color-on-background: #ffffff;
+
+  /* Outline */
+  --smrt-color-outline: rgba(84, 84, 88, 0.65);
+  --smrt-color-outline-variant: rgba(84, 84, 88, 0.35);
+
+  /* Inverse */
+  --smrt-color-inverse-surface: #f2f2f7;
+  --smrt-color-inverse-on-surface: #000000;
+  --smrt-color-inverse-primary: #007aff;
+
+  /* Effects */
+  --smrt-color-shadow: rgba(0, 0, 0, 0.4);
+  --smrt-color-scrim: rgba(0, 0, 0, 0.6);
+
+  /* Glass-specific */
+  --smrt-color-glass-backdrop: rgba(30, 30, 30, 0.72);
+  --smrt-color-glass-border: rgba(255, 255, 255, 0.1);
+  --smrt-glass-blur: 20px;
+  --smrt-glass-saturation: 180%;
+  --smrt-glass-border-opacity: 0.3;
+  --smrt-glass-background-opacity: 0.72;
+
+  /* Theme metadata */
+  --smrt-theme-id: glass;
+  --smrt-theme-name: Glass;
+  --smrt-color-scheme: dark;
+  --smrt-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+
+  /* Border Radius (same as light) */
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+
+  /* Elevation (same as light) */
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --smrt-elevation-2: 0 3px 6px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.03);
+  --smrt-elevation-3: 0 6px 12px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --smrt-elevation-4: 0 12px 24px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.05);
+  --smrt-elevation-5: 0 24px 48px rgba(0, 0, 0, 0.12), 0 16px 32px rgba(0, 0, 0, 0.06);
+
+  /* Duration (same as light) */
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+
+  /* Easing (same as light) */
+  --smrt-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.16, 1, 0.3, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Glass utility classes */
+.smrt-glass {
+  background: var(--smrt-color-surface);
+  backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+  -webkit-backdrop-filter: blur(var(--smrt-glass-blur)) saturate(var(--smrt-glass-saturation));
+  border: 1px solid var(--smrt-color-glass-border);
+}
+
+.smrt-glass-thick {
+  background: var(--smrt-color-surface-container);
+  backdrop-filter: blur(calc(var(--smrt-glass-blur) * 1.5)) saturate(var(--smrt-glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--smrt-glass-blur) * 1.5)) saturate(var(--smrt-glass-saturation));
+  border: 1px solid var(--smrt-color-glass-border);
+}
+
+.smrt-glass-thin {
+  background: var(--smrt-color-surface-variant);
+  backdrop-filter: blur(calc(var(--smrt-glass-blur) * 0.5)) saturate(var(--smrt-glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--smrt-glass-blur) * 0.5)) saturate(var(--smrt-glass-saturation));
+  border: 1px solid var(--smrt-color-glass-border);
+}

@@ -1,0 +1,244 @@
+/**
+ * Studio Theme CSS
+ *
+ * Static CSS file for Studio theme.
+ * Can be imported at build time for SSR or when JS theming is not needed.
+ *
+ * @usage import '@smrt/svelte/themes/styles/studio.css';
+ */
+
+[data-theme="studio"][data-color-scheme="light"] {
+  /* Primary - Google Blue */
+  --smrt-color-primary: #1a73e8;
+  --smrt-color-on-primary: #ffffff;
+  --smrt-color-primary-container: #e8f0fe;
+  --smrt-color-on-primary-container: #174ea6;
+
+  /* Secondary - Neutral gray */
+  --smrt-color-secondary: #5f6368;
+  --smrt-color-on-secondary: #ffffff;
+  --smrt-color-secondary-container: #f1f3f4;
+  --smrt-color-on-secondary-container: #3c4043;
+
+  /* Tertiary - Purple accent */
+  --smrt-color-tertiary: #9334e6;
+  --smrt-color-on-tertiary: #ffffff;
+  --smrt-color-tertiary-container: #f3e8fd;
+  --smrt-color-on-tertiary-container: #6b12b8;
+
+  /* Error - Google red */
+  --smrt-color-error: #d93025;
+  --smrt-color-on-error: #ffffff;
+  --smrt-color-error-container: #fce8e6;
+  --smrt-color-on-error-container: #a50e0e;
+
+  /* Warning - Amber */
+  --smrt-color-warning: #f9ab00;
+  --smrt-color-on-warning: #000000;
+  --smrt-color-warning-container: #fef3c7;
+  --smrt-color-on-warning-container: #92400e;
+
+  /* Success - Teal/green */
+  --smrt-color-success: #188038;
+  --smrt-color-on-success: #ffffff;
+  --smrt-color-success-container: #e6f4ea;
+  --smrt-color-on-success-container: #137333;
+
+  /* Surface - Pure white, flat */
+  --smrt-color-surface: #ffffff;
+  --smrt-color-on-surface: #202124;
+  --smrt-color-surface-variant: #f8f9fa;
+  --smrt-color-on-surface-variant: #5f6368;
+  --smrt-color-surface-container: #f1f3f4;
+  --smrt-color-surface-container-low: #f8f9fa;
+  --smrt-color-surface-container-high: #e8eaed;
+  --smrt-color-surface-container-highest: #dadce0;
+  --smrt-color-surface-container-lowest: #ffffff;
+  --smrt-color-surface-dim: #e8eaed;
+  --smrt-color-surface-bright: #ffffff;
+
+  /* Background */
+  --smrt-color-background: #ffffff;
+  --smrt-color-on-background: #202124;
+
+  /* Outline - Light gray borders */
+  --smrt-color-outline: #dadce0;
+  --smrt-color-outline-variant: #e8eaed;
+
+  /* Inverse */
+  --smrt-color-inverse-surface: #3c4043;
+  --smrt-color-inverse-on-surface: #f1f3f4;
+  --smrt-color-inverse-primary: #8ab4f8;
+
+  /* Effects - Minimal shadows */
+  --smrt-color-shadow: rgba(60, 64, 67, 0.1);
+  --smrt-color-scrim: rgba(0, 0, 0, 0.5);
+
+  /* Theme metadata */
+  --smrt-theme-id: studio;
+  --smrt-theme-name: Studio;
+  --smrt-color-scheme: light;
+  --smrt-font-family: "Google Sans Text", "Roboto", "Segoe UI", system-ui, sans-serif;
+
+  /* Border Radius */
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+
+  /* Elevation - Minimal, subtle shadows */
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: inset 0 0 0 1px rgba(60, 64, 67, 0.08);
+  --smrt-elevation-2: 0 1px 2px 0 rgba(60, 64, 67, 0.08), 0 1px 3px 0 rgba(60, 64, 67, 0.04);
+  --smrt-elevation-3: 0 2px 4px 0 rgba(60, 64, 67, 0.1), 0 1px 2px 0 rgba(60, 64, 67, 0.06);
+  --smrt-elevation-4: 0 4px 8px 0 rgba(60, 64, 67, 0.1), 0 2px 4px 0 rgba(60, 64, 67, 0.06);
+  --smrt-elevation-5: 0 8px 16px 0 rgba(60, 64, 67, 0.12), 0 4px 8px 0 rgba(60, 64, 67, 0.06);
+
+  /* Duration */
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+
+  /* Easing - Snappy studio style */
+  --smrt-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.0, 0, 0.2, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.4, 0, 1, 1);
+}
+
+[data-theme="studio"][data-color-scheme="dark"] {
+  /* Primary - Lighter blue */
+  --smrt-color-primary: #8ab4f8;
+  --smrt-color-on-primary: #062e6f;
+  --smrt-color-primary-container: #174ea6;
+  --smrt-color-on-primary-container: #d2e3fc;
+
+  /* Secondary */
+  --smrt-color-secondary: #9aa0a6;
+  --smrt-color-on-secondary: #202124;
+  --smrt-color-secondary-container: #3c4043;
+  --smrt-color-on-secondary-container: #e8eaed;
+
+  /* Tertiary */
+  --smrt-color-tertiary: #c58af9;
+  --smrt-color-on-tertiary: #3e1385;
+  --smrt-color-tertiary-container: #6b12b8;
+  --smrt-color-on-tertiary-container: #f3e8fd;
+
+  /* Error */
+  --smrt-color-error: #f28b82;
+  --smrt-color-on-error: #5c150c;
+  --smrt-color-error-container: #a50e0e;
+  --smrt-color-on-error-container: #fce8e6;
+
+  /* Warning */
+  --smrt-color-warning: #fdd663;
+  --smrt-color-on-warning: #5c3d00;
+  --smrt-color-warning-container: #92400e;
+  --smrt-color-on-warning-container: #fef3c7;
+
+  /* Success */
+  --smrt-color-success: #81c995;
+  --smrt-color-on-success: #0d3b1f;
+  --smrt-color-success-container: #137333;
+  --smrt-color-on-success-container: #e6f4ea;
+
+  /* Surface - Near black */
+  --smrt-color-surface: #0e0e0e;
+  --smrt-color-on-surface: #e8eaed;
+  --smrt-color-surface-variant: #1f1f1f;
+  --smrt-color-on-surface-variant: #9aa0a6;
+  --smrt-color-surface-container: #1f1f1f;
+  --smrt-color-surface-container-low: #141414;
+  --smrt-color-surface-container-high: #2d2d2d;
+  --smrt-color-surface-container-highest: #3c4043;
+  --smrt-color-surface-container-lowest: #0a0a0a;
+  --smrt-color-surface-dim: #141414;
+  --smrt-color-surface-bright: #2d2d2d;
+
+  /* Background */
+  --smrt-color-background: #0e0e0e;
+  --smrt-color-on-background: #e8eaed;
+
+  /* Outline */
+  --smrt-color-outline: #5f6368;
+  --smrt-color-outline-variant: #3c4043;
+
+  /* Inverse */
+  --smrt-color-inverse-surface: #e8eaed;
+  --smrt-color-inverse-on-surface: #202124;
+  --smrt-color-inverse-primary: #1a73e8;
+
+  /* Effects */
+  --smrt-color-shadow: rgba(0, 0, 0, 0.3);
+  --smrt-color-scrim: rgba(0, 0, 0, 0.7);
+
+  /* Theme metadata */
+  --smrt-theme-id: studio;
+  --smrt-theme-name: Studio;
+  --smrt-color-scheme: dark;
+  --smrt-font-family: "Google Sans Text", "Roboto", "Segoe UI", system-ui, sans-serif;
+
+  /* Border Radius (same as light) */
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+
+  /* Elevation (same as light) */
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --smrt-elevation-2: 0 1px 2px 0 rgba(0, 0, 0, 0.2), 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  --smrt-elevation-3: 0 2px 4px 0 rgba(0, 0, 0, 0.2), 0 1px 2px 0 rgba(0, 0, 0, 0.1);
+  --smrt-elevation-4: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+  --smrt-elevation-5: 0 8px 16px 0 rgba(0, 0, 0, 0.25), 0 4px 8px 0 rgba(0, 0, 0, 0.1);
+
+  /* Duration (same as light) */
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+
+  /* Easing (same as light) */
+  --smrt-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.0, 0, 0.2, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Studio utility classes for flat design */
+.smrt-flat {
+  box-shadow: none;
+  border: 1px solid var(--smrt-color-outline);
+}
+
+.smrt-flat-inset {
+  box-shadow: inset 0 0 0 1px var(--smrt-color-outline);
+  border: none;
+}
+
+.smrt-flat-subtle {
+  box-shadow: var(--smrt-elevation-2);
+  border: none;
+}
+
+/* Studio focus styles - minimal */
+.smrt-focus-flat:focus-visible {
+  outline: 2px solid var(--smrt-color-primary);
+  outline-offset: 2px;
+}

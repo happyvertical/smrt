@@ -74,6 +74,14 @@
       "types": "./dist/registry/index.d.ts",
       "svelte": "./dist/registry/index.js",
       "default": "./dist/registry/index.js"
+    },
+    "./themes": {
+      "types": "./dist/themes/index.d.ts",
+      "svelte": "./dist/themes/index.js",
+      "default": "./dist/themes/index.js"
+    },
+    "./themes/styles/*": {
+      "default": "./dist/themes/styles/*"
     }
   },
   "files": [
