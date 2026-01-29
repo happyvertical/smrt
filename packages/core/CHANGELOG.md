@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.58
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - pass smrtDependencies to generateManifest for STI inheritance (#850) (#851) (core)
+  - @happyvertical/smrt-scanner@0.19.58
+  - @happyvertical/smrt-config@0.19.58
+  - @happyvertical/smrt-types@0.19.58
+
 ## 0.19.57
 
 ### Patch Changes
