@@ -535,6 +535,7 @@ export default smrtVitestPlugin;
 // Export test database utilities
 export {
   createIsolatedTestDb,
+  createIsolatedTestDbFromManifest,
   createTestDb,
   getAdapterDisplayName,
   getInMemoryDbConfig,
@@ -543,6 +544,7 @@ export {
   type IsolatedTestDbOptions,
   type IsolatedTestDbResult,
   isPostgresAvailable,
+  type ManifestTestDbOptions,
   type TestDbAdapter,
   type TestDbConfig,
 } from './test-db.js';

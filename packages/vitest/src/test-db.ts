@@ -31,13 +31,66 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
   DatabaseInterfaceWithTransaction,
   TransactionHandle,
 } from './types.js';
+
+// ============================================================================
+// Manifest Types (minimal to avoid circular dependency with smrt-core)
+// ============================================================================
+
+/**
+ * Schema definition from a manifest object
+ */
+interface ManifestSchema {
+  tableName: string;
+  ddl: string;
+  indexes?: Array<{ name: string; columns: string[]; unique?: boolean }>;
+}
+
+/**
+ * Object definition from a manifest
+ */
+interface ManifestObjectDef {
+  className: string;
+  schema?: ManifestSchema;
+}
+
+/**
+ * Manifest file structure (minimal subset)
+ */
+interface ManifestFile {
+  objects: Record<string, ManifestObjectDef>;
+}
+
+/**
+ * Options for creating an isolated test database from a manifest
+ */
+export interface ManifestTestDbOptions {
+  /**
+   * Path to manifest file. If not provided, auto-detects from common locations:
+   * - .smrt/manifest.json (vitest plugin output)
+   * - dist/manifest.json (production build)
+   * - src/manifest/manifest.json (legacy)
+   */
+  manifestPath?: string;
+
+  /**
+   * Filter to specific object class names (e.g., ['Product', 'Order']).
+   * If not provided, all objects with schemas are included.
+   */
+  includeObjects?: string[];
+
+  /**
+   * Optional prefix for SQLite temp file name
+   * @default 'smrt-manifest'
+   */
+  prefix?: string;
+}
 
 export type TestDbAdapter = 'sqlite' | 'postgres';
 
@@ -316,4 +369,272 @@ export async function createIsolatedTestDb(
   };
 
   return { db, baseDb, config, cleanup };
+}
+
+// ============================================================================
+// Manifest-based Test Database Helpers
+// ============================================================================
+
+/**
+ * Load a manifest file from common locations
+ *
+ * @param manifestPath - Optional explicit path to manifest
+ * @returns Parsed manifest or null if not found
+ */
+function loadManifest(manifestPath?: string): ManifestFile | null {
+  const searchPaths = manifestPath
+    ? [manifestPath]
+    : [
+        join(process.cwd(), '.smrt', 'manifest.json'),
+        join(process.cwd(), 'dist', 'manifest.json'),
+        join(process.cwd(), 'src', 'manifest', 'manifest.json'),
+      ];
+
+  for (const path of searchPaths) {
+    if (existsSync(path)) {
+      try {
+        const content = readFileSync(path, 'utf-8');
+        return JSON.parse(content) as ManifestFile;
+      } catch {
+        // Continue to next path
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Table info extracted from manifest for dependency sorting
+ */
+interface TableInfo {
+  tableName: string;
+  ddl: string;
+  dependencies: string[];
+}
+
+/**
+ * Extract foreign key dependencies from DDL
+ *
+ * Parses REFERENCES tableName( patterns from CREATE TABLE statements
+ */
+function extractForeignKeyDependencies(ddl: string): string[] {
+  const dependencies: string[] = [];
+  // Match REFERENCES "tablename"( or REFERENCES tablename(
+  const regex = /REFERENCES\s+"?([a-z_][a-z0-9_]*)"?\s*\(/gi;
+
+  for (const match of ddl.matchAll(regex)) {
+    const tableName = match[1];
+    if (!dependencies.includes(tableName)) {
+      dependencies.push(tableName);
+    }
+  }
+
+  return dependencies;
+}
+
+/**
+ * Extract DDL from manifest objects with STI deduplication
+ *
+ * Multiple classes may share the same table (STI), so we deduplicate by tableName
+ */
+function extractDDLFromManifest(
+  manifest: ManifestFile,
+  includeObjects?: string[],
+): TableInfo[] {
+  const tableMap = new Map<string, TableInfo>();
+
+  for (const [className, objectDef] of Object.entries(manifest.objects)) {
+    // Skip if filter is specified and class not included
+    if (includeObjects && !includeObjects.includes(className)) {
+      continue;
+    }
+
+    // Skip objects without schema (abstract classes, etc.)
+    if (!objectDef.schema?.ddl || !objectDef.schema?.tableName) {
+      continue;
+    }
+
+    const { tableName, ddl } = objectDef.schema;
+
+    // Deduplicate by tableName (STI classes share tables)
+    if (!tableMap.has(tableName)) {
+      tableMap.set(tableName, {
+        tableName,
+        ddl,
+        dependencies: extractForeignKeyDependencies(ddl),
+      });
+    }
+  }
+
+  return Array.from(tableMap.values());
+}
+
+/**
+ * Sort tables by foreign key dependencies using topological sort (Kahn's algorithm)
+ *
+ * Ensures referenced tables are created before tables that reference them
+ */
+function sortByDependencies(tables: TableInfo[]): string[] {
+  const tableNames = new Set(tables.map((t) => t.tableName));
+  const inDegree = new Map<string, number>();
+  const graph = new Map<string, string[]>();
+
+  // Initialize
+  for (const table of tables) {
+    inDegree.set(table.tableName, 0);
+    graph.set(table.tableName, []);
+  }
+
+  // Build graph - only count dependencies that are in our table set
+  for (const table of tables) {
+    for (const dep of table.dependencies) {
+      if (tableNames.has(dep) && dep !== table.tableName) {
+        inDegree.set(table.tableName, (inDegree.get(table.tableName) || 0) + 1);
+        const edges = graph.get(dep) || [];
+        edges.push(table.tableName);
+        graph.set(dep, edges);
+      }
+    }
+  }
+
+  // Find all nodes with no incoming edges
+  const queue: string[] = [];
+  for (const [table, degree] of inDegree) {
+    if (degree === 0) {
+      queue.push(table);
+    }
+  }
+
+  // Process queue
+  const sorted: string[] = [];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined) break;
+    sorted.push(current);
+
+    const neighbors = graph.get(current) || [];
+    for (const neighbor of neighbors) {
+      const newDegree = (inDegree.get(neighbor) || 1) - 1;
+      inDegree.set(neighbor, newDegree);
+      if (newDegree === 0) {
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  // Handle any remaining tables (circular dependencies)
+  for (const table of tables) {
+    if (!sorted.includes(table.tableName)) {
+      sorted.push(table.tableName);
+    }
+  }
+
+  return sorted;
+}
+
+/**
+ * Create an isolated test database with schema from a manifest file.
+ *
+ * This eliminates manual DDL extraction boilerplate by reading the DDL
+ * directly from the generated manifest. It handles:
+ * - STI deduplication (multiple classes sharing one table)
+ * - Foreign key dependency ordering
+ * - Auto-detection of manifest location
+ *
+ * @param options - Configuration options
+ * @returns Transaction handle and cleanup function
+ *
+ * @example Basic usage
+ * ```typescript
+ * import { createIsolatedTestDbFromManifest } from '@happyvertical/smrt-vitest';
+ *
+ * let db, cleanup;
+ *
+ * beforeEach(async () => {
+ *   ({ db, cleanup } = await createIsolatedTestDbFromManifest());
+ * });
+ *
+ * afterEach(async () => {
+ *   await cleanup();
+ * });
+ * ```
+ *
+ * @example With tenant scoping
+ * ```typescript
+ * import { createIsolatedTestDbFromManifest } from '@happyvertical/smrt-vitest';
+ * import { withTenant, resetTenancy, setupTestTenancy } from '@happyvertical/smrt-tenancy';
+ *
+ * // In setup file
+ * setupTestTenancy({ enableInterceptors: true, rawQueryPolicy: 'allow' });
+ *
+ * // In test file
+ * let db, cleanup;
+ *
+ * beforeEach(async () => {
+ *   ({ db, cleanup } = await createIsolatedTestDbFromManifest());
+ * });
+ *
+ * afterEach(async () => {
+ *   resetTenancy();
+ *   await cleanup();
+ * });
+ *
+ * it('should auto-populate tenantId', async () => {
+ *   await withTenant({ tenantId: 'test-tenant' }, async () => {
+ *     const product = await collection.create({ name: 'Widget' });
+ *     expect(product.tenantId).toBe('test-tenant');
+ *   });
+ * });
+ * ```
+ *
+ * @example Filter to specific objects
+ * ```typescript
+ * const { db, cleanup } = await createIsolatedTestDbFromManifest({
+ *   includeObjects: ['Product', 'Order', 'OrderItem'],
+ * });
+ * ```
+ */
+export async function createIsolatedTestDbFromManifest(
+  options: ManifestTestDbOptions = {},
+): Promise<IsolatedTestDbResult> {
+  const { manifestPath, includeObjects, prefix = 'smrt-manifest' } = options;
+
+  // 1. Load manifest
+  const manifest = loadManifest(manifestPath);
+  if (!manifest) {
+    const checkedPaths = manifestPath
+      ? [manifestPath]
+      : [
+          '.smrt/manifest.json',
+          'dist/manifest.json',
+          'src/manifest/manifest.json',
+        ];
+
+    throw new Error(
+      'No manifest found. Ensure smrtVitestPlugin() is configured in vitest.config.ts ' +
+        'or specify manifestPath. Checked: ' +
+        checkedPaths.join(', '),
+    );
+  }
+
+  // 2. Extract DDL with STI deduplication
+  const tables = extractDDLFromManifest(manifest, includeObjects);
+  if (tables.length === 0) {
+    throw new Error(
+      includeObjects
+        ? `No objects with schema found matching: ${includeObjects.join(', ')}`
+        : 'No objects with schema found in manifest.',
+    );
+  }
+
+  // 3. Sort by FK dependencies and join DDL
+  const sortedTableNames = sortByDependencies(tables);
+  const sortedDDL = sortedTableNames
+    .map((name) => tables.find((t) => t.tableName === name)?.ddl)
+    .filter(Boolean)
+    .join('\n\n');
+
+  // 4. Delegate to existing function
+  return createIsolatedTestDb({ schema: sortedDDL, prefix });
 }
