@@ -395,8 +395,12 @@ function loadManifest(manifestPath?: string): ManifestFile | null {
       try {
         const content = readFileSync(path, 'utf-8');
         return JSON.parse(content) as ManifestFile;
-      } catch {
-        // Continue to next path
+      } catch (error) {
+        // Log parse error but continue to next path
+        console.warn(
+          `[smrt-vitest] Failed to parse manifest at "${path}":`,
+          error,
+        );
       }
     }
   }
@@ -421,7 +425,7 @@ interface TableInfo {
 function extractForeignKeyDependencies(ddl: string): string[] {
   const dependencies: string[] = [];
   // Match REFERENCES "tablename"( or REFERENCES tablename(
-  const regex = /REFERENCES\s+"?([a-z_][a-z0-9_]*)"?\s*\(/gi;
+  const regex = /REFERENCES\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*\(/gi;
 
   for (const match of ddl.matchAll(regex)) {
     const tableName = match[1];
@@ -515,7 +519,7 @@ function sortByDependencies(tables: TableInfo[]): string[] {
 
     const neighbors = graph.get(current) || [];
     for (const neighbor of neighbors) {
-      const newDegree = (inDegree.get(neighbor) || 1) - 1;
+      const newDegree = (inDegree.get(neighbor) ?? 0) - 1;
       inDegree.set(neighbor, newDegree);
       if (newDegree === 0) {
         queue.push(neighbor);
@@ -524,9 +528,12 @@ function sortByDependencies(tables: TableInfo[]): string[] {
   }
 
   // Handle any remaining tables (circular dependencies)
+  // Use Set for O(1) lookups instead of O(n) Array.includes()
+  const sortedSet = new Set(sorted);
   for (const table of tables) {
-    if (!sorted.includes(table.tableName)) {
+    if (!sortedSet.has(table.tableName)) {
       sorted.push(table.tableName);
+      sortedSet.add(table.tableName);
     }
   }
 
@@ -629,9 +636,11 @@ export async function createIsolatedTestDbFromManifest(
   }
 
   // 3. Sort by FK dependencies and join DDL
+  // Use Map for O(1) lookups instead of O(n) Array.find()
+  const tableMap = new Map(tables.map((t) => [t.tableName, t.ddl] as const));
   const sortedTableNames = sortByDependencies(tables);
   const sortedDDL = sortedTableNames
-    .map((name) => tables.find((t) => t.tableName === name)?.ddl)
+    .map((name) => tableMap.get(name))
     .filter(Boolean)
     .join('\n\n');
 
