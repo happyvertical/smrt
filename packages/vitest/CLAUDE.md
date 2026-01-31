@@ -188,12 +188,80 @@ Requires `@happyvertical/sql` with transaction handle support (SDK PR #722).
 
 | Function | Description |
 |----------|-------------|
+| `createIsolatedTestDbFromManifest()` | Create DB from manifest DDL (recommended for multi-table tests) |
 | `createIsolatedTestDb()` | Create DB with transaction isolation (recommended) |
 | `createTestDb()` | Create DB with cleanup function (no isolation) |
 | `getTestDbConfig()` | Get DB config for current environment |
 | `getTestAdapter()` | Detect adapter: 'postgres' or 'sqlite' |
 | `isPostgresAvailable()` | Check if DATABASE_URL is set |
 | `getAdapterDisplayName()` | Get human-readable adapter name |
+
+## Creating Test DBs from Manifest (Issue #854)
+
+For multi-table, tenant-scoped applications, use `createIsolatedTestDbFromManifest()` to avoid manual DDL extraction:
+
+```typescript
+import { createIsolatedTestDbFromManifest } from '@happyvertical/smrt-vitest';
+import { withTenant, resetTenancy, setupTestTenancy } from '@happyvertical/smrt-tenancy';
+
+// In setup file or beforeAll
+setupTestTenancy({ enableInterceptors: true, rawQueryPolicy: 'allow' });
+
+// In test file
+let db, cleanup;
+
+beforeEach(async () => {
+  ({ db, cleanup } = await createIsolatedTestDbFromManifest());
+});
+
+afterEach(async () => {
+  resetTenancy();
+  await cleanup();
+});
+
+it('should auto-populate tenantId', async () => {
+  await withTenant({ tenantId: 'test-tenant' }, async () => {
+    const product = await collection.create({ name: 'Widget' });
+    expect(product.tenantId).toBe('test-tenant');
+  });
+});
+```
+
+### Features
+
+- **Auto-detects manifest** - Checks `.smrt/manifest.json`, `dist/manifest.json`, `src/manifest/manifest.json`
+- **STI deduplication** - Multiple classes sharing one table are handled correctly
+- **FK dependency ordering** - Tables are created in the correct order based on foreign key references
+- **Filtering** - Use `includeObjects` to limit to specific classes
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `manifestPath` | `string` | Auto-detect | Explicit path to manifest file |
+| `includeObjects` | `string[]` | All objects | Filter to specific class names |
+| `prefix` | `string` | `'smrt-manifest'` | Prefix for SQLite temp files |
+
+### Example: Filter to Specific Objects
+
+```typescript
+const { db, cleanup } = await createIsolatedTestDbFromManifest({
+  includeObjects: ['Product', 'Order', 'OrderItem'],
+});
+```
+
+### Error Messages
+
+The function provides helpful error messages:
+
+```
+No manifest found. Ensure smrtVitestPlugin() is configured in vitest.config.ts
+or specify manifestPath. Checked: .smrt/manifest.json, dist/manifest.json, src/manifest/manifest.json
+```
+
+```
+No objects with schema found matching: NonExistentClass
+```
 
 ## GlobalThis Isolation
 
