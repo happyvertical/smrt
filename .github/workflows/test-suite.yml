@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for changeset version preview
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
@@ -20,6 +22,40 @@ jobs:
           install-deps: 'true'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Preview changeset version bump
+        run: |
+          echo "🔍 Simulating changeset version bump..."
+
+          BEFORE_VERSION=$(node -p "require('./packages/core/package.json').version")
+          echo "Current version: $BEFORE_VERSION"
+
+          # Generate changeset from commits (dry-run simulation)
+          pnpm run changeset:auto
+
+          # Run changeset version to see what it would produce
+          pnpm run changeset:version
+
+          AFTER_VERSION=$(node -p "require('./packages/core/package.json').version")
+          echo "Would bump to: $AFTER_VERSION"
+
+          # Check if this would bump to 1.0.0+
+          AFTER_MAJOR=$(echo "$AFTER_VERSION" | cut -d. -f1)
+          if [ "$AFTER_MAJOR" -ge 1 ]; then
+            echo ""
+            echo "⚠️  WARNING: Changesets would bump version to $AFTER_VERSION (1.0.0+)"
+            echo ""
+            echo "This is caused by changesets interpreting peer dependency"
+            echo "changes as breaking. The publish workflow will automatically"
+            echo "downgrade this to a minor bump (0.x) on merge."
+            echo ""
+            # Don't fail - just warn. The publish workflow will handle it.
+            echo "⚠️  Version will be automatically downgraded to 0.x on merge"
+          else
+            echo "✅ Version bump is acceptable: $BEFORE_VERSION → $AFTER_VERSION"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build packages
         run: pnpm run build
