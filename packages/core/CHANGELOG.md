@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.62
+
+### Patch Changes
+
+- ### Features
+
+  - enhance Grid component with header slot and responsive features (#857) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.19.62
+  - @happyvertical/smrt-config@0.19.62
+  - @happyvertical/smrt-types@0.19.62
+
 ## 0.19.61
 
 ### Patch Changes
