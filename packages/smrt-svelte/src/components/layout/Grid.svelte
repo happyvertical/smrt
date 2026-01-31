@@ -6,16 +6,25 @@ type GapSize = 'sm' | 'md' | 'lg' | 'xl';
 
 /**
  * Responsive columns configuration
- * Allows different column counts at different breakpoints
+ * Allows different column counts at different breakpoints.
+ *
+ * Uses mobile-first cascading: each breakpoint inherits from smaller ones.
+ * Unspecified breakpoints use sensible defaults (sm: 1, md: 2, lg: 3, xl: 4).
+ *
+ * Example: `{ md: 2, xl: 4 }` means:
+ * - sm: 1 (default)
+ * - md: 2 (specified)
+ * - lg: 2 (inherits from md)
+ * - xl: 4 (specified)
  */
 interface ResponsiveColumns {
-  /** Columns for small screens (< 640px) */
+  /** Columns for small screens (< 640px). Default: 1 */
   sm?: number;
-  /** Columns for medium screens (>= 640px) */
+  /** Columns for medium screens (>= 640px). Default: 2 or inherits from sm */
   md?: number;
-  /** Columns for large screens (>= 1024px) */
+  /** Columns for large screens (>= 1024px). Default: 3 or inherits from md */
   lg?: number;
-  /** Columns for extra large screens (>= 1280px) */
+  /** Columns for extra large screens (>= 1280px). Default: 4 or inherits from lg */
   xl?: number;
 }
 
@@ -82,9 +91,11 @@ const responsiveStyles = $derived.by(() => {
   return vars.join('; ');
 });
 
-// Parse gap configuration
-const rowGap = $derived(typeof gap === 'object' ? gap.row : gap);
-const columnGap = $derived(typeof gap === 'object' ? gap.column : gap);
+// Parse gap configuration - default to 'md' if not specified in object
+const rowGap = $derived(typeof gap === 'object' ? (gap.row ?? 'md') : gap);
+const columnGap = $derived(
+  typeof gap === 'object' ? (gap.column ?? 'md') : gap,
+);
 
 // Build inline styles
 const inlineStyles = $derived.by(() => {
