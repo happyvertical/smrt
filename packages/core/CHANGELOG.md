@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.61
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: consolidate version validation into build job (#856)
+  - @happyvertical/smrt-scanner@0.19.61
+  - @happyvertical/smrt-config@0.19.61
+  - @happyvertical/smrt-types@0.19.61
+
 ## 0.19.60
 
 ### Patch Changes
