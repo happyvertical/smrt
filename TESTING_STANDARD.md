@@ -11,41 +11,56 @@ This document outlines testing standards and best practices for the SMRT framewo
 
 ## Running Tests
 
-### ⚠️ CRITICAL: Always Use `smrt test`
+### ⚠️ CRITICAL: Use the Vitest Plugin
 
-**NEVER run `npx vitest` directly!** Always use `smrt test` or `npm test`:
+**The vitest plugin is required for all SMRT projects.** It automatically generates manifests at startup.
 
 ```bash
-# ✅ CORRECT - Generates test manifest first
-smrt test
-npm test           # Aliases to 'smrt test'
-
-# ❌ WRONG - Will fail with "unregistered class" errors
+# ✅ CORRECT - vitest plugin auto-generates manifest
 npx vitest
 npx vitest run
+npm test
+
+# ⚠️ DEPRECATED - still works but not needed
+smrt test
 ```
 
-**Why?** Tests require a manifest file that maps SMRT objects for schema generation. The `smrt test` command:
-1. Generates the test manifest from `@smrt()` decorated classes
-2. Runs vitest with the manifest loaded
+**Your vitest.config.ts MUST include the plugin:**
 
-Without the manifest, tests fail with errors like:
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
+
+export default defineConfig({
+  plugins: [smrtVitestPlugin()],
+  test: {
+    globals: true,
+    environment: 'node',
+  },
+});
+```
+
+Without the plugin, tests fail with errors like:
 ```
 Cannot generate schema for unregistered class 'Council'.
-Ensure the class is decorated with @smrt() for schema generation to work.
+No field metadata found for 'Document'.
 ```
+
+**Note on watch mode**: The manifest is generated once at vitest startup. If you add new classes or fields while vitest is running in watch mode, restart vitest to pick up the changes.
 
 ### Watch Mode
 
 ```bash
 npm run test:watch
+# or
+npx vitest --watch
 ```
 
 ### Individual Test Files
 
 ```bash
-# Generate manifest first, then run specific test
-smrt test --manifest-only
+# With the plugin, just run the specific test directly
 npx vitest run src/specific-test.test.ts
 ```
 

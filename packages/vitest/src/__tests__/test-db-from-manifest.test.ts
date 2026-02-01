@@ -229,6 +229,95 @@ describe('createIsolatedTestDbFromManifest', () => {
         }),
       ).rejects.toThrow('No objects with schema found matching: NonExistent');
     });
+
+    it('should filter using className even when manifest keys are namespaced (Issue #860)', async () => {
+      const manifestPath = join(testDir, 'namespaced-filter.json');
+      const manifest = {
+        objects: {
+          // Manifest keys are namespaced (e.g., @package:ClassName)
+          '@dumm/models:Product': {
+            className: 'Product',
+            schema: {
+              tableName: 'products',
+              ddl: 'CREATE TABLE IF NOT EXISTS "products" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+          '@dumm/models:Order': {
+            className: 'Order',
+            schema: {
+              tableName: 'orders',
+              ddl: 'CREATE TABLE IF NOT EXISTS "orders" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+          '@dumm/models:Log': {
+            className: 'Log',
+            schema: {
+              tableName: 'logs',
+              ddl: 'CREATE TABLE IF NOT EXISTS "logs" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+        },
+      };
+
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      // Filter using simple class names (not namespaced keys)
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['Product', 'Order'], // Simple class names, not @dumm/models:Product
+      });
+
+      try {
+        // Product and Order tables should exist
+        await db.list('products', {});
+        await db.list('orders', {});
+
+        // Logs table should NOT exist
+        await expect(db.list('logs', {})).rejects.toThrow();
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('should also support filtering by namespaced key directly', async () => {
+      const manifestPath = join(testDir, 'namespaced-key-filter.json');
+      const manifest = {
+        objects: {
+          '@dumm/models:Product': {
+            className: 'Product',
+            schema: {
+              tableName: 'products',
+              ddl: 'CREATE TABLE IF NOT EXISTS "products" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+          '@dumm/models:Order': {
+            className: 'Order',
+            schema: {
+              tableName: 'orders',
+              ddl: 'CREATE TABLE IF NOT EXISTS "orders" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+        },
+      };
+
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      // Filter using namespaced keys (for backwards compatibility)
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['@dumm/models:Product'],
+      });
+
+      try {
+        // Product table should exist
+        await db.list('products', {});
+
+        // Order table should NOT exist
+        await expect(db.list('orders', {})).rejects.toThrow();
+      } finally {
+        await cleanup();
+      }
+    });
   });
 
   describe('STI deduplication', () => {

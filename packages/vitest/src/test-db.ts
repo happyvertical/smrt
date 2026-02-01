@@ -341,7 +341,7 @@ export async function createIsolatedTestDb(
 
   const db = await baseDb.beginTransaction();
 
-  // Cleanup function rolls back transaction
+  // Cleanup function rolls back transaction and closes connection
   const cleanup = async (): Promise<void> => {
     try {
       if (db.isActive()) {
@@ -349,6 +349,17 @@ export async function createIsolatedTestDb(
       }
     } catch {
       // Ignore rollback errors (connection may be closed)
+    }
+
+    // Close base database connection to prevent connection leaks (Issue #858)
+    try {
+      // Cast to access close method which may exist on concrete implementations
+      const dbWithClose = baseDb as unknown as { close?: () => Promise<void> };
+      if (dbWithClose.close) {
+        await dbWithClose.close();
+      }
+    } catch {
+      // Ignore close errors
     }
 
     // Clean up SQLite temp files
@@ -448,10 +459,17 @@ function extractDDLFromManifest(
 ): TableInfo[] {
   const tableMap = new Map<string, TableInfo>();
 
-  for (const [className, objectDef] of Object.entries(manifest.objects)) {
+  for (const [key, objectDef] of Object.entries(manifest.objects)) {
     // Skip if filter is specified and class not included
-    if (includeObjects && !includeObjects.includes(className)) {
-      continue;
+    // Compare against both the key (e.g., '@dumm/models:Product') and className (e.g., 'Product')
+    // to support both namespaced and simple class names (Issue #860)
+    if (includeObjects) {
+      const className = objectDef.className || key;
+      const matchesKey = includeObjects.includes(key);
+      const matchesClassName = includeObjects.includes(className);
+      if (!matchesKey && !matchesClassName) {
+        continue;
+      }
     }
 
     // Skip objects without schema (abstract classes, etc.)
