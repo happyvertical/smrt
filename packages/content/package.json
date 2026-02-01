@@ -38,7 +38,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/spider": "^0.60.6",
-    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9",
     "yaml": "^2.8.2"
   },

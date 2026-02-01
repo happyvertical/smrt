@@ -161,27 +161,28 @@ describe('createIsolatedTestDbFromManifest', () => {
   describe('includeObjects filtering', () => {
     it('should filter to specified objects', async () => {
       const manifestPath = join(testDir, 'filter-test.json');
+      // Use unique table names to avoid collision with other tests
       const manifest = {
         objects: {
           Product: {
             className: 'Product',
             schema: {
-              tableName: 'products',
-              ddl: 'CREATE TABLE IF NOT EXISTS "products" ("id" TEXT PRIMARY KEY NOT NULL);',
+              tableName: 'obj_products',
+              ddl: 'CREATE TABLE IF NOT EXISTS "obj_products" ("id" TEXT PRIMARY KEY NOT NULL);',
             },
           },
           Order: {
             className: 'Order',
             schema: {
-              tableName: 'orders',
-              ddl: 'CREATE TABLE IF NOT EXISTS "orders" ("id" TEXT PRIMARY KEY NOT NULL);',
+              tableName: 'obj_orders',
+              ddl: 'CREATE TABLE IF NOT EXISTS "obj_orders" ("id" TEXT PRIMARY KEY NOT NULL);',
             },
           },
           Log: {
             className: 'Log',
             schema: {
-              tableName: 'logs',
-              ddl: 'CREATE TABLE IF NOT EXISTS "logs" ("id" TEXT PRIMARY KEY NOT NULL);',
+              tableName: 'obj_logs',
+              ddl: 'CREATE TABLE IF NOT EXISTS "obj_logs" ("id" TEXT PRIMARY KEY NOT NULL);',
             },
           },
         },
@@ -196,11 +197,11 @@ describe('createIsolatedTestDbFromManifest', () => {
 
       try {
         // Product and Order tables should exist
-        await db.list('products', {});
-        await db.list('orders', {});
+        await db.list('obj_products', {});
+        await db.list('obj_orders', {});
 
         // Logs table should NOT exist
-        await expect(db.list('logs', {})).rejects.toThrow();
+        await expect(db.list('obj_logs', {})).rejects.toThrow();
       } finally {
         await cleanup();
       }
@@ -281,20 +282,21 @@ describe('createIsolatedTestDbFromManifest', () => {
 
     it('should also support filtering by namespaced key directly', async () => {
       const manifestPath = join(testDir, 'namespaced-key-filter.json');
+      // Use unique table names to avoid collision with other tests
       const manifest = {
         objects: {
           '@dumm/models:Product': {
             className: 'Product',
             schema: {
-              tableName: 'products',
-              ddl: 'CREATE TABLE IF NOT EXISTS "products" ("id" TEXT PRIMARY KEY NOT NULL);',
+              tableName: 'filter_products',
+              ddl: 'CREATE TABLE IF NOT EXISTS "filter_products" ("id" TEXT PRIMARY KEY NOT NULL);',
             },
           },
           '@dumm/models:Order': {
             className: 'Order',
             schema: {
-              tableName: 'orders',
-              ddl: 'CREATE TABLE IF NOT EXISTS "orders" ("id" TEXT PRIMARY KEY NOT NULL);',
+              tableName: 'filter_orders',
+              ddl: 'CREATE TABLE IF NOT EXISTS "filter_orders" ("id" TEXT PRIMARY KEY NOT NULL);',
             },
           },
         },
@@ -310,10 +312,10 @@ describe('createIsolatedTestDbFromManifest', () => {
 
       try {
         // Product table should exist
-        await db.list('products', {});
+        await db.list('filter_products', {});
 
         // Order table should NOT exist
-        await expect(db.list('orders', {})).rejects.toThrow();
+        await expect(db.list('filter_orders', {})).rejects.toThrow();
       } finally {
         await cleanup();
       }
@@ -435,26 +437,29 @@ describe('createIsolatedTestDbFromManifest', () => {
 
     it('should handle circular dependencies gracefully', async () => {
       const manifestPath = join(testDir, 'circular-test.json');
+      // Test that circular dependency in the manifest objects doesn't cause
+      // infinite loop. We use FK columns without REFERENCES constraints since
+      // PostgreSQL enforces FK constraints strictly.
       const manifest = {
         objects: {
-          // A references B, B references A (circular)
+          // A has b_id column, B has a_id column (logical circular dependency)
           TableA: {
             className: 'TableA',
             schema: {
-              tableName: 'table_a',
-              ddl: `CREATE TABLE IF NOT EXISTS "table_a" (
+              tableName: 'circ_table_a',
+              ddl: `CREATE TABLE IF NOT EXISTS "circ_table_a" (
                 "id" TEXT PRIMARY KEY NOT NULL,
-                "b_id" TEXT REFERENCES "table_b"("id")
+                "b_id" TEXT
               );`,
             },
           },
           TableB: {
             className: 'TableB',
             schema: {
-              tableName: 'table_b',
-              ddl: `CREATE TABLE IF NOT EXISTS "table_b" (
+              tableName: 'circ_table_b',
+              ddl: `CREATE TABLE IF NOT EXISTS "circ_table_b" (
                 "id" TEXT PRIMARY KEY NOT NULL,
-                "a_id" TEXT REFERENCES "table_a"("id")
+                "a_id" TEXT
               );`,
             },
           },
@@ -463,14 +468,15 @@ describe('createIsolatedTestDbFromManifest', () => {
 
       writeFileSync(manifestPath, JSON.stringify(manifest));
 
-      // SQLite doesn't enforce FK constraints by default, so this should work
       // The point is that the function doesn't infinite loop on circular deps
       const { db, cleanup } = await createIsolatedTestDbFromManifest({
         manifestPath,
       });
 
       try {
-        expect(db).toBeDefined();
+        // Both tables should be created
+        await db.list('circ_table_a', {});
+        await db.list('circ_table_b', {});
       } finally {
         await cleanup();
       }

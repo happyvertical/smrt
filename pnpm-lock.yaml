@@ -124,8 +124,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -164,8 +164,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -213,8 +213,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -241,8 +241,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -280,8 +280,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -348,8 +348,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.11
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -486,8 +486,8 @@ importers:
         specifier: ^0.60.6
         version: 0.60.6(@types/node@24.10.9)
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -541,14 +541,14 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.11
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
       '@langchain/community':
         specifier: ^1.1.4
-        version: 1.1.4(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-s3@3.962.0)(@aws-sdk/credential-provider-node@3.966.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(zod@4.3.5))(@huggingface/transformers@3.8.1)(@ibm-cloud/watsonx-ai@1.7.4)(@langchain/core@0.3.79(openai@6.16.0(ws@8.19.0)(zod@4.3.5)))(@mlc-ai/web-llm@0.2.80)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@10.5.0)(googleapis@159.0.0)(html-to-text@9.0.5)(ibm-cloud-sdk-core@5.4.5)(ignore@5.3.2)(ioredis@5.9.2)(jsdom@27.3.0)(jsonwebtoken@9.0.3)(lodash@4.17.21)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(pg@8.17.1)(playwright@1.57.0)(ws@8.19.0)
+        version: 1.1.4(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-s3@3.962.0)(@aws-sdk/credential-provider-node@3.966.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(zod@4.3.5))(@huggingface/transformers@3.8.1)(@ibm-cloud/watsonx-ai@1.7.4)(@langchain/core@0.3.79(openai@6.16.0(ws@8.19.0)(zod@4.3.5)))(@mlc-ai/web-llm@0.2.80)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@10.5.0)(googleapis@159.0.0)(html-to-text@9.0.5)(ibm-cloud-sdk-core@5.4.5)(ignore@5.3.2)(ioredis@5.9.2)(jsdom@27.3.0)(jsonwebtoken@9.0.3)(lodash@4.17.21)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(pg@8.18.0)(playwright@1.57.0)(ws@8.19.0)
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.3.5)
@@ -623,8 +623,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -678,8 +678,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -718,8 +718,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -795,8 +795,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -841,8 +841,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -878,8 +878,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -927,8 +927,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -988,8 +988,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1053,8 +1053,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1117,8 +1117,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1154,8 +1154,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1289,8 +1289,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1322,8 +1322,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1365,8 +1365,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@happyvertical/utils':
         specifier: ^0.66.9
         version: 0.66.9
@@ -1473,8 +1473,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1494,8 +1494,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
     devDependencies:
       '@types/node':
         specifier: 24.10.9
@@ -1538,8 +1538,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.66.9
-        version: 0.66.11
+        specifier: ^0.67.7
+        version: 0.67.7
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -2748,6 +2748,11 @@ packages:
     peerDependencies:
       jimp: '>=1.6.0'
       sharp: '>=0.34.5'
+    peerDependenciesMeta:
+      jimp:
+        optional: true
+      sharp:
+        optional: true
 
   '@happyvertical/jobs@0.66.9':
     resolution: {integrity: sha512-S//tD2dbiqRq+3vcf+v/VOMkiWn/hOS/bmXswv+TPIQ6dhxDKoMDM1fkIIWhuMUlt2W5AUYX2fLz3JC0VIFdRw==, tarball: https://npm.pkg.github.com/download/@happyvertical/jobs/0.66.9/7710e064fc53cd87cfe4ecc558063ccdfbb909dd}
@@ -2756,6 +2761,15 @@ packages:
       '@google-cloud/tasks': '>=4.0.0'
       bull: '>=4.0.0'
       bullmq: '>=5.0.0'
+    peerDependenciesMeta:
+      '@aws-sdk/client-sqs':
+        optional: true
+      '@google-cloud/tasks':
+        optional: true
+      bull:
+        optional: true
+      bullmq:
+        optional: true
 
   '@happyvertical/json@0.67.4':
     resolution: {integrity: sha512-PcqquSt4OzlD8czqXmc/R8ywCuxki1g8UFZVJX/L72cF+LOTAAO7Z5rdsrHfO/mCxkwZIZ5omyWYBWOXRO7I3Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/json/0.67.4/907604f5a1acac7994d1bcbcdd703c5e58703952}
@@ -2787,11 +2801,12 @@ packages:
     resolution: {integrity: sha512-hYtjT+MkS1QGpGzWLWDKER52j/LHQjtkBa44ac8G1AXqR1iee7sP4k0qw9t5dX8OEAe/Daf3yHAo/Ktc+xU1cw==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.60.6/9f16bedd645427021b632e6e2ba5721c5cc20821}
     engines: {node: '>=24', pnpm: '>=9'}
 
-  '@happyvertical/sql@0.66.11':
-    resolution: {integrity: sha512-gFhHl46q+9eBFeDFpDX7A+1tMaRMkZBVZgE7v5rJj9hB30+hM+R2DiKiGA/78SgmVRlPEFcVZ4Grc4sDEV9j6Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.66.11/0f1300a702f4d6a4492949f730ecf8284656c96e}
-
   '@happyvertical/sql@0.66.9':
     resolution: {integrity: sha512-6W6VhXq7SWaf6FKPRBzOefS6w9OFzJd1xeqtQDQ5xQS/g03JXJ5TtaK+xK7nM86A2OnL0yjF5G31JM0p3FL63w==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.66.9/ebbdafe2508ffab58e55dd264abff4ec059e8e6a}
+
+  '@happyvertical/sql@0.67.7':
+    resolution: {integrity: sha512-KxW4duE9ta9nlv4YUuDqNVLbC70mNBaT4z+0Kd2PPBuNNVQt+YWKUI0gm0lTtDOSjaBQXEGil5+/RbAbpZijGA==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.67.7/1abc7d5ccb80d2371ec3cd41acff133553f10d9f}
+    hasBin: true
 
   '@happyvertical/utils@0.59.0':
     resolution: {integrity: sha512-57qm82lVdRuw1bfwCbU+GJ9gLTP01ZYP/cFTSOpybWlOYdqAJeM4FCGGxzhmfSqc1OX/i+A5erjI/bGVhPETrw==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.59.0/4f6be20e49954cb2f1b60908499870ff26b8bc9f}
@@ -2804,6 +2819,10 @@ packages:
 
   '@happyvertical/utils@0.66.9':
     resolution: {integrity: sha512-h7O5IBTeQcHdytzBxKlHNCcU+x5lhSsYV6rEo/1hBsOTD4UHWncPGxEeocopnORu6xCNkjj+6mTGnyr/D8QdBg==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.66.9/8ece739eaa331bdc84033ac2117fb498f39bbd85}
+
+  '@happyvertical/utils@0.67.7':
+    resolution: {integrity: sha512-j2nFISurpDv3ZlqEDkJt4VNQf1V1JCSiB6JY1xwGJ+9fvspw77QKR1ACX5oYFM3WRIL9YbSG08X5rb1MF4F1BA==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.67.7/9c6ebffcde244bc95cd5e950f039ab91c29c5e65}
+    hasBin: true
 
   '@hono/node-server@1.19.9':
     resolution: {integrity: sha512-vHL6w3ecZsky+8P5MD+eFfaGTyCeOHUIFYMGpQGbrBTSmNNoxv0if69rEZ5giu36weC5saFuznL411gRX7bJDw==}
@@ -4174,6 +4193,10 @@ packages:
 
   '@paralleldrive/cuid2@3.0.6':
     resolution: {integrity: sha512-ujtxTTvr4fwPrzuQT7o6VLKs5BzdWetR9+/zRQ0SyK9hVIwZQllEccxgcHYXN6I3Z429y1yg3F6+uiVxMDPrLQ==}
+    hasBin: true
+
+  '@paralleldrive/cuid2@3.3.0':
+    resolution: {integrity: sha512-OqiFvSOF0dBSesELYY2CAMa4YINvlLpvKOz/rv6NeZEqiyttlHgv98Juwv4Ch+GrEV7IZ8jfI2VcEoYUjXXCjw==}
     hasBin: true
 
   '@pinojs/redact@0.4.0':
@@ -8027,6 +8050,9 @@ packages:
   pg-connection-string@2.10.0:
     resolution: {integrity: sha512-ur/eoPKzDx2IjPaYyXS6Y8NSblxM7X64deV2ObV57vhjsWiwLvUD6meukAzogiOsu60GO8m/3Cb6FdJsWNjwXg==}
 
+  pg-connection-string@2.11.0:
+    resolution: {integrity: sha512-kecgoJwhOpxYU21rZjULrmrBJ698U2RxXofKVzOn5UDj61BPj/qMb7diYUR1nLScCDbrztQFl1TaQZT0t1EtzQ==}
+
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
@@ -8045,6 +8071,15 @@ packages:
 
   pg@8.17.1:
     resolution: {integrity: sha512-EIR+jXdYNSMOrpRp7g6WgQr7SaZNZfS7IzZIO0oTNEeibq956JxeD15t3Jk3zZH0KH8DmOIx38qJfQenoE8bXQ==}
+    engines: {node: '>= 16.0.0'}
+    peerDependencies:
+      pg-native: '>=3.0.1'
+    peerDependenciesMeta:
+      pg-native:
+        optional: true
+
+  pg@8.18.0:
+    resolution: {integrity: sha512-xqrUDL1b9MbkydY/s+VZ6v+xiMUmOUk7SS9d/1kpyQxoJ6U9AO1oIJyUWVZojbfe5Cc/oluutcgFG4L9RDP1iQ==}
     engines: {node: '>= 16.0.0'}
     peerDependencies:
       pg-native: '>=3.0.1'
@@ -10156,6 +10191,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/client-sso@3.956.0':
     dependencies:
@@ -10285,6 +10321,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/core@3.956.0':
     dependencies:
@@ -10333,6 +10370,7 @@ snapshots:
       '@smithy/util-middleware': 4.2.8
       '@smithy/util-utf8': 4.2.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/crc64-nvme@3.957.0':
     dependencies:
@@ -10382,6 +10420,7 @@ snapshots:
       '@smithy/property-provider': 4.2.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/credential-provider-http@3.956.0':
     dependencies:
@@ -10421,6 +10460,7 @@ snapshots:
       '@smithy/types': 4.12.0
       '@smithy/util-stream': 4.5.10
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/credential-provider-ini@3.956.0':
     dependencies:
@@ -10478,6 +10518,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-provider-login@3.956.0':
     dependencies:
@@ -10517,6 +10558,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-provider-node@3.956.0':
     dependencies:
@@ -10568,6 +10610,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-provider-process@3.956.0':
     dependencies:
@@ -10595,6 +10638,7 @@ snapshots:
       '@smithy/shared-ini-file-loader': 4.4.3
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/credential-provider-sso@3.956.0':
     dependencies:
@@ -10634,6 +10678,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-provider-web-identity@3.956.0':
     dependencies:
@@ -10670,6 +10715,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/credential-providers@3.956.0':
     dependencies:
@@ -10836,6 +10882,7 @@ snapshots:
       '@smithy/protocol-http': 5.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-location-constraint@3.956.0':
     dependencies:
@@ -10866,6 +10913,7 @@ snapshots:
       '@aws-sdk/types': 3.965.0
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-recursion-detection@3.956.0':
     dependencies:
@@ -10890,6 +10938,7 @@ snapshots:
       '@smithy/protocol-http': 5.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-sdk-s3@3.956.0':
     dependencies:
@@ -10933,6 +10982,7 @@ snapshots:
       '@smithy/util-hex-encoding': 4.2.0
       '@smithy/util-utf8': 4.2.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-ssec@3.956.0':
     dependencies:
@@ -10975,6 +11025,7 @@ snapshots:
       '@smithy/protocol-http': 5.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/middleware-websocket@3.956.0':
     dependencies:
@@ -11130,6 +11181,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/region-config-resolver@3.956.0':
     dependencies:
@@ -11154,6 +11206,7 @@ snapshots:
       '@smithy/node-config-provider': 4.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/signature-v4-multi-region@3.956.0':
     dependencies:
@@ -11208,6 +11261,7 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - aws-crt
+    optional: true
 
   '@aws-sdk/types@3.956.0':
     dependencies:
@@ -11223,6 +11277,7 @@ snapshots:
     dependencies:
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/util-arn-parser@3.953.0':
     dependencies:
@@ -11255,6 +11310,7 @@ snapshots:
       '@smithy/url-parser': 4.2.8
       '@smithy/util-endpoints': 3.2.8
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/util-format-url@3.956.0':
     dependencies:
@@ -11294,6 +11350,7 @@ snapshots:
       '@smithy/types': 4.12.0
       bowser: 2.13.1
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/util-user-agent-node@3.956.0':
     dependencies:
@@ -11318,6 +11375,7 @@ snapshots:
       '@smithy/node-config-provider': 4.3.8
       '@smithy/types': 4.12.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/xml-builder@3.956.0':
     dependencies:
@@ -11336,6 +11394,7 @@ snapshots:
       '@smithy/types': 4.12.0
       fast-xml-parser: 5.2.5
       tslib: 2.8.1
+    optional: true
 
   '@aws/lambda-invoke-store@0.2.3': {}
 
@@ -12112,6 +12171,7 @@ snapshots:
       google-gax: 5.0.6
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   '@google/genai@1.34.0(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.3.5))':
     dependencies:
@@ -12141,7 +12201,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.2(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
     transitivePeerDependencies:
       - debug
 
@@ -12153,6 +12213,7 @@ snapshots:
     dependencies:
       '@grpc/proto-loader': 0.8.0
       '@js-sdsl/ordered-map': 4.4.2
+    optional: true
 
   '@grpc/proto-loader@0.8.0':
     dependencies:
@@ -12160,6 +12221,7 @@ snapshots:
       long: 5.3.2
       protobufjs: 7.5.4
       yargs: 17.7.2
+    optional: true
 
   '@gutenye/ocr-common@1.4.8':
     dependencies:
@@ -12295,16 +12357,18 @@ snapshots:
   '@happyvertical/images@0.66.9(jimp@1.6.0)(sharp@0.34.5)':
     dependencies:
       '@resvg/resvg-js': 2.6.2
-      jimp: 1.6.0
       satori: 0.18.3
+    optionalDependencies:
+      jimp: 1.6.0
       sharp: 0.34.5
 
   '@happyvertical/jobs@0.66.9(@aws-sdk/client-sqs@3.966.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.66.5)':
     dependencies:
-      '@aws-sdk/client-sqs': 3.966.0
-      '@google-cloud/tasks': 6.2.1
       '@happyvertical/sql': 0.66.9
       '@happyvertical/utils': 0.66.9
+    optionalDependencies:
+      '@aws-sdk/client-sqs': 3.966.0
+      '@google-cloud/tasks': 6.2.1
       bull: 4.16.5
       bullmq: 5.66.5
     transitivePeerDependencies:
@@ -12399,10 +12463,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@happyvertical/sql@0.66.11':
+  '@happyvertical/sql@0.66.9':
     dependencies:
-      '@duckdb/node-api': 1.4.3-r.3
-      '@happyvertical/utils': 0.66.11
+      '@duckdb/node-api': 1.4.1-r.5
+      '@happyvertical/utils': 0.66.9
       '@libsql/client': 0.17.0
       pg: 8.17.1
       sqlite-vss: 0.1.2
@@ -12412,12 +12476,12 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/sql@0.66.9':
+  '@happyvertical/sql@0.67.7':
     dependencies:
-      '@duckdb/node-api': 1.4.1-r.5
-      '@happyvertical/utils': 0.66.9
+      '@duckdb/node-api': 1.4.3-r.3
+      '@happyvertical/utils': 0.67.7
       '@libsql/client': 0.17.0
-      pg: 8.17.1
+      pg: 8.18.0
       sqlite-vss: 0.1.2
     transitivePeerDependencies:
       - bufferutil
@@ -12449,6 +12513,13 @@ snapshots:
   '@happyvertical/utils@0.66.9':
     dependencies:
       '@paralleldrive/cuid2': 3.0.6
+      date-fns: 4.1.0
+      pluralize: 8.0.0
+      uuid: 13.0.0
+
+  '@happyvertical/utils@0.67.7':
+    dependencies:
+      '@paralleldrive/cuid2': 3.3.0
       date-fns: 4.1.0
       pluralize: 8.0.0
       uuid: 13.0.0
@@ -12690,7 +12761,8 @@ snapshots:
     optionalDependencies:
       '@types/node': 25.0.9
 
-  '@ioredis/commands@1.5.0': {}
+  '@ioredis/commands@1.5.0':
+    optional: true
 
   '@isaacs/balanced-match@4.0.1': {}
 
@@ -12720,6 +12792,7 @@ snapshots:
       exif-parser: 0.1.12
       file-type: 16.5.4
       mime: 3.0.0
+    optional: true
 
   '@jimp/diff@1.6.0':
     dependencies:
@@ -12727,8 +12800,10 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       pixelmatch: 5.3.0
+    optional: true
 
-  '@jimp/file-ops@1.6.0': {}
+  '@jimp/file-ops@1.6.0':
+    optional: true
 
   '@jimp/js-bmp@1.6.0':
     dependencies:
@@ -12736,6 +12811,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       bmp-ts: 1.0.9
+    optional: true
 
   '@jimp/js-gif@1.6.0':
     dependencies:
@@ -12743,40 +12819,47 @@ snapshots:
       '@jimp/types': 1.6.0
       gifwrap: 0.10.1
       omggif: 1.0.10
+    optional: true
 
   '@jimp/js-jpeg@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       jpeg-js: 0.4.4
+    optional: true
 
   '@jimp/js-png@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       pngjs: 7.0.0
+    optional: true
 
   '@jimp/js-tiff@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       utif2: 4.1.0
+    optional: true
 
   '@jimp/plugin-blit@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-blur@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/utils': 1.6.0
+    optional: true
 
   '@jimp/plugin-circle@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-color@1.6.0':
     dependencies:
@@ -12785,6 +12868,7 @@ snapshots:
       '@jimp/utils': 1.6.0
       tinycolor2: 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-contain@1.6.0':
     dependencies:
@@ -12794,6 +12878,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-cover@1.6.0':
     dependencies:
@@ -12802,6 +12887,7 @@ snapshots:
       '@jimp/plugin-resize': 1.6.0
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-crop@1.6.0':
     dependencies:
@@ -12809,27 +12895,32 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-displace@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-dither@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
+    optional: true
 
   '@jimp/plugin-fisheye@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-flip@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-hash@1.6.0':
     dependencies:
@@ -12843,11 +12934,13 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       any-base: 1.1.0
+    optional: true
 
   '@jimp/plugin-mask@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-print@1.6.0':
     dependencies:
@@ -12861,17 +12954,20 @@ snapshots:
       parse-bmfont-xml: 1.1.6
       simple-xml-to-json: 1.2.3
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-quantize@1.6.0':
     dependencies:
       image-q: 4.0.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-resize@1.6.0':
     dependencies:
       '@jimp/core': 1.6.0
       '@jimp/types': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-rotate@1.6.0':
     dependencies:
@@ -12881,6 +12977,7 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/plugin-threshold@1.6.0':
     dependencies:
@@ -12890,15 +12987,18 @@ snapshots:
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
       zod: 3.25.76
+    optional: true
 
   '@jimp/types@1.6.0':
     dependencies:
       zod: 3.25.76
+    optional: true
 
   '@jimp/utils@1.6.0':
     dependencies:
       '@jimp/types': 1.6.0
       tinycolor2: 1.6.0
+    optional: true
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -12919,7 +13019,8 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@js-sdsl/ordered-map@4.4.2': {}
+  '@js-sdsl/ordered-map@4.4.2':
+    optional: true
 
   '@keyv/serialize@1.1.1': {}
 
@@ -12945,7 +13046,7 @@ snapshots:
       - openai
       - ws
 
-  '@langchain/community@1.1.4(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-s3@3.962.0)(@aws-sdk/credential-provider-node@3.966.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(zod@4.3.5))(@huggingface/transformers@3.8.1)(@ibm-cloud/watsonx-ai@1.7.4)(@langchain/core@0.3.79(openai@6.16.0(ws@8.19.0)(zod@4.3.5)))(@mlc-ai/web-llm@0.2.80)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@10.5.0)(googleapis@159.0.0)(html-to-text@9.0.5)(ibm-cloud-sdk-core@5.4.5)(ignore@5.3.2)(ioredis@5.9.2)(jsdom@27.3.0)(jsonwebtoken@9.0.3)(lodash@4.17.21)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(pg@8.17.1)(playwright@1.57.0)(ws@8.19.0)':
+  '@langchain/community@1.1.4(@aws-crypto/sha256-js@5.2.0)(@aws-sdk/client-s3@3.962.0)(@aws-sdk/credential-provider-node@3.966.0)(@browserbasehq/sdk@2.6.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(zod@4.3.5))(@huggingface/transformers@3.8.1)(@ibm-cloud/watsonx-ai@1.7.4)(@langchain/core@0.3.79(openai@6.16.0(ws@8.19.0)(zod@4.3.5)))(@mlc-ai/web-llm@0.2.80)(@mozilla/readability@0.6.0)(@smithy/util-utf8@2.3.0)(@xenova/transformers@2.17.2)(cheerio@1.1.2)(crypto-js@4.2.0)(fast-xml-parser@5.2.5)(google-auth-library@10.5.0)(googleapis@159.0.0)(html-to-text@9.0.5)(ibm-cloud-sdk-core@5.4.5)(ignore@5.3.2)(ioredis@5.9.2)(jsdom@27.3.0)(jsonwebtoken@9.0.3)(lodash@4.17.21)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(pg@8.18.0)(playwright@1.57.0)(ws@8.19.0)':
     dependencies:
       '@browserbasehq/stagehand': 1.14.0(@playwright/test@1.57.0)(deepmerge@4.3.1)(dotenv@16.6.1)(openai@6.16.0(ws@8.19.0)(zod@4.3.5))(zod@4.3.5)
       '@ibm-cloud/watsonx-ai': 1.7.4
@@ -12981,7 +13082,7 @@ snapshots:
       jsdom: 27.3.0
       jsonwebtoken: 9.0.3
       lodash: 4.17.21
-      pg: 8.17.1
+      pg: 8.18.0
       playwright: 1.57.0
       ws: 8.19.0
     transitivePeerDependencies:
@@ -13491,6 +13592,12 @@ snapshots:
       error-causes: 3.0.2
 
   '@paralleldrive/cuid2@3.0.6':
+    dependencies:
+      '@noble/hashes': 2.0.1
+      bignumber.js: 9.3.1
+      error-causes: 3.0.2
+
+  '@paralleldrive/cuid2@3.3.0':
     dependencies:
       '@noble/hashes': 2.0.1
       bignumber.js: 9.3.1
@@ -14341,7 +14448,8 @@ snapshots:
 
   '@tokenizer/token@0.3.0': {}
 
-  '@tootallnate/once@2.0.0': {}
+  '@tootallnate/once@2.0.0':
+    optional: true
 
   '@tybys/wasm-util@0.10.1':
     dependencies:
@@ -14598,6 +14706,7 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   agent-base@7.1.4: {}
 
@@ -14680,7 +14789,8 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  any-base@1.1.0: {}
+  any-base@1.1.0:
+    optional: true
 
   any-promise@1.3.0: {}
 
@@ -14704,7 +14814,8 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
-  await-to-js@3.0.0: {}
+  await-to-js@3.0.0:
+    optional: true
 
   axios@1.13.2(debug@4.4.3):
     dependencies:
@@ -14787,7 +14898,8 @@ snapshots:
 
   bmp-js@0.1.0: {}
 
-  bmp-ts@1.0.9: {}
+  bmp-ts@1.0.9:
+    optional: true
 
   body-parser@2.2.2:
     dependencies:
@@ -14855,6 +14967,7 @@ snapshots:
       uuid: 8.3.2
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   bullmq@5.66.5:
     dependencies:
@@ -14867,6 +14980,7 @@ snapshots:
       uuid: 11.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   byte-counter@0.1.0: {}
 
@@ -15193,6 +15307,7 @@ snapshots:
   cron-parser@4.9.0:
     dependencies:
       luxon: 3.7.2
+    optional: true
 
   cross-fetch@4.1.0:
     dependencies:
@@ -15330,7 +15445,8 @@ snapshots:
 
   delayed-stream@1.0.0: {}
 
-  denque@2.1.0: {}
+  denque@2.1.0:
+    optional: true
 
   depd@2.0.0: {}
 
@@ -15425,6 +15541,7 @@ snapshots:
       inherits: 2.0.4
       readable-stream: 3.6.2
       stream-shift: 1.0.3
+    optional: true
 
   eastasianwidth@0.2.0: {}
 
@@ -15631,7 +15748,8 @@ snapshots:
       strip-final-newline: 4.0.0
       yoctocolors: 2.1.2
 
-  exif-parser@0.1.12: {}
+  exif-parser@0.1.12:
+    optional: true
 
   expand-template@2.0.3: {}
 
@@ -15930,7 +16048,8 @@ snapshots:
       hasown: 2.0.2
       math-intrinsics: 1.1.0
 
-  get-port@5.1.1: {}
+  get-port@5.1.1:
+    optional: true
 
   get-proto@1.0.1:
     dependencies:
@@ -15956,6 +16075,7 @@ snapshots:
     dependencies:
       image-q: 4.0.0
       omggif: 1.0.10
+    optional: true
 
   git-log-parser@1.2.1:
     dependencies:
@@ -16050,6 +16170,7 @@ snapshots:
       rimraf: 5.0.10
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   google-logging-utils@1.1.3: {}
 
@@ -16231,6 +16352,7 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   http-proxy-agent@7.0.2:
     dependencies:
@@ -16250,6 +16372,7 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   https-proxy-agent@7.0.6:
     dependencies:
@@ -16285,7 +16408,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.2)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -16319,6 +16442,7 @@ snapshots:
   image-q@4.0.0:
     dependencies:
       '@types/node': 24.10.9
+    optional: true
 
   imapflow@1.2.6:
     dependencies:
@@ -16429,6 +16553,7 @@ snapshots:
       standard-as-callback: 2.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   ioredis@5.9.2:
     dependencies:
@@ -16443,6 +16568,7 @@ snapshots:
       standard-as-callback: 2.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   ip-address@10.1.0: {}
 
@@ -16566,6 +16692,7 @@ snapshots:
       '@jimp/plugin-threshold': 1.6.0
       '@jimp/types': 1.6.0
       '@jimp/utils': 1.6.0
+    optional: true
 
   jiti@2.6.1: {}
 
@@ -16883,13 +17010,15 @@ snapshots:
 
   lodash.capitalize@4.2.1: {}
 
-  lodash.defaults@4.2.0: {}
+  lodash.defaults@4.2.0:
+    optional: true
 
   lodash.escaperegexp@4.1.2: {}
 
   lodash.includes@4.3.0: {}
 
-  lodash.isarguments@3.1.0: {}
+  lodash.isarguments@3.1.0:
+    optional: true
 
   lodash.isboolean@3.0.3: {}
 
@@ -16946,7 +17075,8 @@ snapshots:
 
   lunr@2.3.9: {}
 
-  luxon@3.7.2: {}
+  luxon@3.7.2:
+    optional: true
 
   magic-string@0.27.0:
     dependencies:
@@ -17040,7 +17170,8 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  mime@3.0.0: {}
+  mime@3.0.0:
+    optional: true
 
   mime@4.1.0: {}
 
@@ -17129,10 +17260,12 @@ snapshots:
   msgpackr@1.11.5:
     optionalDependencies:
       msgpackr-extract: 3.0.3
+    optional: true
 
   msgpackr@1.11.8:
     optionalDependencies:
       msgpackr-extract: 3.0.3
+    optional: true
 
   muggle-string@0.4.1: {}
 
@@ -17164,7 +17297,8 @@ snapshots:
     dependencies:
       semver: 7.7.3
 
-  node-abort-controller@3.1.1: {}
+  node-abort-controller@3.1.1:
+    optional: true
 
   node-addon-api@6.1.0: {}
 
@@ -17246,7 +17380,8 @@ snapshots:
 
   object-assign@4.1.1: {}
 
-  object-hash@3.0.0: {}
+  object-hash@3.0.0:
+    optional: true
 
   object-inspect@1.13.4: {}
 
@@ -17254,7 +17389,8 @@ snapshots:
 
   obug@2.1.1: {}
 
-  omggif@1.0.10: {}
+  omggif@1.0.10:
+    optional: true
 
   on-exit-leak-free@2.1.2: {}
 
@@ -17513,7 +17649,8 @@ snapshots:
 
   pako@0.2.9: {}
 
-  pako@1.0.11: {}
+  pako@1.0.11:
+    optional: true
 
   parent-module@1.0.1:
     dependencies:
@@ -17521,14 +17658,17 @@ snapshots:
 
   parent-require@1.0.0: {}
 
-  parse-bmfont-ascii@1.0.6: {}
+  parse-bmfont-ascii@1.0.6:
+    optional: true
 
-  parse-bmfont-binary@1.0.6: {}
+  parse-bmfont-binary@1.0.6:
+    optional: true
 
   parse-bmfont-xml@1.1.6:
     dependencies:
       xml-parse-from-string: 1.0.1
       xml2js: 0.5.0
+    optional: true
 
   parse-css-color@0.2.1:
     dependencies:
@@ -17636,11 +17776,17 @@ snapshots:
 
   pg-connection-string@2.10.0: {}
 
+  pg-connection-string@2.11.0: {}
+
   pg-int8@1.0.1: {}
 
   pg-pool@3.11.0(pg@8.17.1):
     dependencies:
       pg: 8.17.1
+
+  pg-pool@3.11.0(pg@8.18.0):
+    dependencies:
+      pg: 8.18.0
 
   pg-protocol@1.11.0: {}
 
@@ -17656,6 +17802,16 @@ snapshots:
     dependencies:
       pg-connection-string: 2.10.0
       pg-pool: 3.11.0(pg@8.17.1)
+      pg-protocol: 1.11.0
+      pg-types: 2.2.0
+      pgpass: 1.0.5
+    optionalDependencies:
+      pg-cloudflare: 1.3.0
+
+  pg@8.18.0:
+    dependencies:
+      pg-connection-string: 2.11.0
+      pg-pool: 3.11.0(pg@8.18.0)
       pg-protocol: 1.11.0
       pg-types: 2.2.0
       pgpass: 1.0.5
@@ -17699,6 +17855,7 @@ snapshots:
   pixelmatch@5.3.0:
     dependencies:
       pngjs: 6.0.0
+    optional: true
 
   pkce-challenge@5.0.1: {}
 
@@ -17739,7 +17896,8 @@ snapshots:
 
   pluralize@8.0.0: {}
 
-  pngjs@6.0.0: {}
+  pngjs@6.0.0:
+    optional: true
 
   pngjs@7.0.0: {}
 
@@ -17806,6 +17964,7 @@ snapshots:
   proto3-json-serializer@3.0.4:
     dependencies:
       protobufjs: 7.5.4
+    optional: true
 
   protobufjs@6.11.4:
     dependencies:
@@ -17987,11 +18146,13 @@ snapshots:
     dependencies:
       resolve: 1.22.11
 
-  redis-errors@1.2.0: {}
+  redis-errors@1.2.0:
+    optional: true
 
   redis-parser@3.0.0:
     dependencies:
       redis-errors: 1.2.0
+    optional: true
 
   redis@5.10.0:
     dependencies:
@@ -18042,7 +18203,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.13.2):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
@@ -18052,6 +18213,7 @@ snapshots:
       teeny-request: 10.1.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   retry@0.12.0: {}
 
@@ -18416,7 +18578,8 @@ snapshots:
 
   simple-wcswidth@1.1.2: {}
 
-  simple-xml-to-json@1.2.3: {}
+  simple-xml-to-json@1.2.3:
+    optional: true
 
   sirv@3.0.2:
     dependencies:
@@ -18509,7 +18672,8 @@ snapshots:
 
   stackback@0.0.2: {}
 
-  standard-as-callback@2.1.0: {}
+  standard-as-callback@2.1.0:
+    optional: true
 
   statuses@2.0.2: {}
 
@@ -18529,12 +18693,14 @@ snapshots:
   stream-events@1.0.5:
     dependencies:
       stubs: 3.0.0
+    optional: true
 
   stream-json@1.9.1:
     dependencies:
       stream-chain: 2.2.5
 
-  stream-shift@1.0.3: {}
+  stream-shift@1.0.3:
+    optional: true
 
   streamx@2.23.0:
     dependencies:
@@ -18614,7 +18780,8 @@ snapshots:
       '@tokenizer/token': 0.3.0
       peek-readable: 4.1.0
 
-  stubs@3.0.0: {}
+  stubs@3.0.0:
+    optional: true
 
   super-regex@1.1.0:
     dependencies:
@@ -18756,6 +18923,7 @@ snapshots:
       stream-events: 1.0.5
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   temp-dir@2.0.0: {}
 
@@ -18833,7 +19001,8 @@ snapshots:
 
   tinybench@2.9.0: {}
 
-  tinycolor2@1.6.0: {}
+  tinycolor2@1.6.0:
+    optional: true
 
   tinyexec@1.0.2: {}
 
@@ -19084,16 +19253,19 @@ snapshots:
   utif2@4.1.0:
     dependencies:
       pako: 1.0.11
+    optional: true
 
   util-deprecate@1.0.2: {}
 
   uuid@10.0.0: {}
 
-  uuid@11.1.0: {}
+  uuid@11.1.0:
+    optional: true
 
   uuid@13.0.0: {}
 
-  uuid@8.3.2: {}
+  uuid@8.3.2:
+    optional: true
 
   vali-date@1.0.0: {}
 
@@ -19344,14 +19516,17 @@ snapshots:
 
   xml-name-validator@5.0.0: {}
 
-  xml-parse-from-string@1.0.1: {}
+  xml-parse-from-string@1.0.1:
+    optional: true
 
   xml2js@0.5.0:
     dependencies:
       sax: 1.4.4
       xmlbuilder: 11.0.1
+    optional: true
 
-  xmlbuilder@11.0.1: {}
+  xmlbuilder@11.0.1:
+    optional: true
 
   xmlchars@2.2.0: {}
 

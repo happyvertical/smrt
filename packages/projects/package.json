@@ -35,7 +35,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9"
   },
   "peerDependencies": {

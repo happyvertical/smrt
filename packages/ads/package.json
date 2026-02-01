@@ -48,7 +48,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/sql": "^0.67.7",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
     "typescript": "^5.9.3",
