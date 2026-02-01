@@ -425,12 +425,45 @@ function loadManifest(manifestPath?: string): ManifestFile | null {
 }
 
 /**
+ * Index definition from manifest
+ */
+interface ManifestIndex {
+  name: string;
+  columns: string[];
+  unique?: boolean;
+}
+
+/**
  * Table info extracted from manifest for dependency sorting
  */
 interface TableInfo {
   tableName: string;
   ddl: string;
+  indexes: ManifestIndex[];
   dependencies: string[];
+}
+
+/**
+ * Generate CREATE INDEX statements from manifest indexes
+ *
+ * Generates both regular and UNIQUE indexes.
+ * UNIQUE indexes on conflict columns (like slug, context) are required
+ * for UPSERT/ON CONFLICT to work in SQLite.
+ */
+function generateIndexDDL(tableName: string, indexes: ManifestIndex[]): string {
+  if (!indexes || indexes.length === 0) return '';
+
+  const statements: string[] = [];
+  for (const index of indexes) {
+    if (!index.columns || index.columns.length === 0) continue;
+
+    const indexType = index.unique ? 'UNIQUE INDEX' : 'INDEX';
+    const columns = index.columns.map((c) => `"${c}"`).join(', ');
+    statements.push(
+      `CREATE ${indexType} IF NOT EXISTS "${index.name}" ON "${tableName}" (${columns});`,
+    );
+  }
+  return statements.join('\n');
 }
 
 /**
@@ -456,7 +489,8 @@ function extractForeignKeyDependencies(ddl: string): string[] {
 /**
  * Extract DDL from manifest objects with STI deduplication
  *
- * Multiple classes may share the same table (STI), so we deduplicate by tableName
+ * Multiple classes may share the same table (STI), so we deduplicate by tableName.
+ * Also extracts indexes for generating CREATE INDEX statements.
  */
 function extractDDLFromManifest(
   manifest: ManifestFile,
@@ -482,13 +516,14 @@ function extractDDLFromManifest(
       continue;
     }
 
-    const { tableName, ddl } = objectDef.schema;
+    const { tableName, ddl, indexes = [] } = objectDef.schema;
 
     // Deduplicate by tableName (STI classes share tables)
     if (!tableMap.has(tableName)) {
       tableMap.set(tableName, {
         tableName,
         ddl,
+        indexes,
         dependencies: extractForeignKeyDependencies(ddl),
       });
     }
@@ -660,12 +695,30 @@ export async function createIsolatedTestDbFromManifest(
 
   // 3. Sort by FK dependencies and join DDL
   // Use Map for O(1) lookups instead of O(n) Array.find()
-  const tableMap = new Map(tables.map((t) => [t.tableName, t.ddl] as const));
+  const tableMap = new Map(tables.map((t) => [t.tableName, t] as const));
   const sortedTableNames = sortByDependencies(tables);
-  const sortedDDL = sortedTableNames
-    .map((name) => tableMap.get(name))
+
+  // Generate CREATE TABLE statements first
+  const createTableDDL = sortedTableNames
+    .map((name) => tableMap.get(name)?.ddl)
     .filter(Boolean)
     .join('\n\n');
+
+  // Generate CREATE INDEX statements after tables exist
+  // This includes UNIQUE indexes required for UPSERT/ON CONFLICT to work
+  const createIndexDDL = sortedTableNames
+    .map((name) => {
+      const table = tableMap.get(name);
+      if (!table) return '';
+      return generateIndexDDL(table.tableName, table.indexes);
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  // Combine table DDL and index DDL
+  const sortedDDL = createIndexDDL
+    ? `${createTableDDL}\n\n${createIndexDDL}`
+    : createTableDDL;
 
   // 4. Delegate to existing function
   return createIsolatedTestDb({ schema: sortedDDL, prefix });
