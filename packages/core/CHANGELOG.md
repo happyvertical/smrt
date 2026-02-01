@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.63
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - address connection leak, DDL application, and doc issues (#862) (vitest)
+  - @happyvertical/smrt-scanner@0.19.63
+  - @happyvertical/smrt-config@0.19.63
+  - @happyvertical/smrt-types@0.19.63
+
 ## 0.19.62
 
 ### Patch Changes
