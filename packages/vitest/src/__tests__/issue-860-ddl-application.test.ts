@@ -18,7 +18,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createIsolatedTestDb,
   createIsolatedTestDbFromManifest,
-  getTestDbConfig,
 } from '../test-db.js';
 
 // Test fixtures directory
@@ -362,8 +361,17 @@ describe('Issue #860 - DDL Application', () => {
           value: 'original',
         });
 
-        // The unique index should allow ON CONFLICT handling
-        // This verifies the index was actually created
+        // A second insert with the same slug should fail if the unique index
+        // from the manifest was actually created and applied.
+        await expect(
+          db.insert('upsert_items', {
+            id: 'item-2',
+            slug: 'test-slug',
+            value: 'duplicate',
+          }),
+        ).rejects.toThrow();
+
+        // Only the first record should exist
         const items = await db.list('upsert_items', {});
         expect(items).toHaveLength(1);
       } finally {
