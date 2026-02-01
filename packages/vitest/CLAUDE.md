@@ -282,6 +282,122 @@ export default defineConfig({
 
 This ensures each test file starts with a clean global state.
 
+## Module-Level Singleton Caches and Mock Isolation (Issue #861)
+
+When testing modules that use module-level singleton caches (a common pattern for database collections), `vi.mock()` doesn't properly reset these caches between tests. This causes mocks to not be applied correctly after the first test runs.
+
+### The Problem
+
+Many SMRT modules use this pattern:
+
+```typescript
+// analytics.ts
+let propertyCollection: AnalyticsPropertyCollection | null = null;
+
+async function getPropertyCollection(): Promise<AnalyticsPropertyCollection> {
+  if (!propertyCollection) {
+    propertyCollection = await AnalyticsPropertyCollection.create({ db: getDbConfig() });
+  }
+  return propertyCollection;
+}
+```
+
+When testing, the cached instance persists across tests, ignoring new mock setups.
+
+### Solution: Reset Modules + Dynamic Imports
+
+The workaround requires:
+1. Using `vi.resetModules()` in `beforeEach`
+2. Using dynamic imports (`await import(...)`) in each test instead of top-level imports
+3. Defining mock objects at module scope but populating them in `beforeEach`
+
+```typescript
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+
+// Define mock at module scope, but populate in beforeEach
+let mockPropertyCollection: any;
+
+vi.mock('@happyvertical/smrt-analytics', () => ({
+  AnalyticsPropertyCollection: {
+    create: vi.fn(() => Promise.resolve(mockPropertyCollection)),
+  },
+}));
+
+describe('Analytics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();  // Critical: reset module cache
+
+    // Populate mock with fresh methods for each test
+    mockPropertyCollection = {
+      findAll: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: 'test-id' }),
+    };
+  });
+
+  it('should list properties', async () => {
+    mockPropertyCollection.findAll.mockResolvedValueOnce([
+      { id: '1', name: 'Property 1' },
+    ]);
+
+    // Dynamic import after resetModules
+    const { listAnalyticsProperties } = await import('$lib/server/analytics');
+
+    const result = await listAnalyticsProperties();
+    expect(result).toHaveLength(1);
+    expect(mockPropertyCollection.findAll).toHaveBeenCalled();
+  });
+
+  it('should get property by id', async () => {
+    mockPropertyCollection.get.mockResolvedValueOnce({ id: '1', name: 'Test' });
+
+    // Fresh import - gets new mock instance
+    const { getAnalyticsProperty } = await import('$lib/server/analytics');
+
+    const result = await getAnalyticsProperty('1');
+    expect(result?.name).toBe('Test');
+  });
+});
+```
+
+### Key Points
+
+1. **`vi.resetModules()`** - Clears vitest's module cache so the next import gets a fresh module
+2. **Dynamic imports** - Use `await import()` inside tests, not top-level imports
+3. **Mock factory function** - Return the mock object from a function to get the current value
+4. **Populate mocks in `beforeEach`** - Create fresh mock objects for each test
+
+### When This Pattern is Needed
+
+This affects all SMRT modules that use the singleton collection pattern, including:
+- `smrt-analytics`
+- `smrt-affiliates`
+- `smrt-users` (UserCollection, TenantCollection, etc.)
+- `smrt-profiles`
+- Any custom collections built on SMRT
+
+### Alternative: Dependency Injection
+
+For new code, consider using dependency injection instead of module-level singletons:
+
+```typescript
+// Instead of module-level cache
+export async function listAnalyticsProperties(
+  collection?: AnalyticsPropertyCollection
+): Promise<AnalyticsProperty[]> {
+  const coll = collection ?? await getDefaultCollection();
+  return coll.findAll({});
+}
+
+// In tests - pass mock directly, no resetModules needed
+it('should list properties', async () => {
+  const mockCollection = { findAll: vi.fn().mockResolvedValue([...]) };
+  const result = await listAnalyticsProperties(mockCollection);
+  expect(result).toHaveLength(1);
+});
+```
+
 ## Development
 
 ```bash
