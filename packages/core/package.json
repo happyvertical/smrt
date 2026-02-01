@@ -47,7 +47,7 @@
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "^0.66.11",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9",
     "@langchain/community": "^1.1.4",
     "@modelcontextprotocol/sdk": "^1.25.2",

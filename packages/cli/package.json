@@ -37,7 +37,7 @@
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "^0.66.11",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9",
     "fast-glob": "3.3.3",
     "tar": "^7.5.2"

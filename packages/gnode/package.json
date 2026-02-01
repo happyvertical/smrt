@@ -19,7 +19,7 @@
     "@happyvertical/files": "^0.66.9",
     "@happyvertical/logger": "^0.66.9",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9"
   },
   "scripts": {
