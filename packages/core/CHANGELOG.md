@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.65
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - update @happyvertical/sql to ^0.67.7 (#864) (deps)
+  - @happyvertical/smrt-scanner@0.19.65
+  - @happyvertical/smrt-config@0.19.65
+  - @happyvertical/smrt-types@0.19.65
+
 ## 0.19.64
 
 ### Patch Changes
