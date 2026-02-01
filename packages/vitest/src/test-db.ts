@@ -353,10 +353,15 @@ export async function createIsolatedTestDb(
 
     // Close base database connection to prevent connection leaks (Issue #858)
     try {
-      // Cast to access close method which may exist on concrete implementations
-      const dbWithClose = baseDb as unknown as { close?: () => Promise<void> };
-      if (dbWithClose.close) {
-        await dbWithClose.close();
+      if (
+        baseDb &&
+        typeof (baseDb as unknown as Record<string, unknown>).close ===
+          'function'
+      ) {
+        await (
+          (baseDb as unknown as Record<string, unknown>)
+            .close as () => Promise<void>
+        )();
       }
     } catch {
       // Ignore close errors
