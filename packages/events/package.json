@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-events",
-  "version": "0.19.63",
+  "version": "0.19.65",
   "description": "Hierarchical event management with participant tracking and SMRT framework support",
   "type": "module",
   "main": "./dist/index.js",
@@ -42,7 +42,7 @@
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9"
   },
   "peerDependencies": {

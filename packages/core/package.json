@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-core",
-  "version": "0.19.63",
+  "version": "0.19.65",
   "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
@@ -47,7 +47,7 @@
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "^0.66.11",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9",
     "@langchain/community": "^1.1.4",
     "@modelcontextprotocol/sdk": "^1.25.2",

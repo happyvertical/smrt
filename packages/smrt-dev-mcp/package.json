@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-dev-mcp",
-  "version": "0.19.63",
+  "version": "0.19.65",
   "description": "Development MCP server for SMRT framework - Code generation and project introspection",
   "type": "module",
   "main": "./dist/index.js",
@@ -46,7 +46,7 @@
     "@happyvertical/files": "^0.66.9",
     "@happyvertical/logger": "^0.66.9",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9",
     "@modelcontextprotocol/sdk": "^1.25.2"
   },

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-video",
-  "version": "0.0.11",
+  "version": "0.0.13",
   "type": "module",
   "description": "Video content management for AI-powered video production in the SMRT ecosystem",
   "author": "HappyVertical",
@@ -45,7 +45,7 @@
   "devDependencies": {
     "@happyvertical/logger": "^0.66.9",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/sql": "^0.67.7",
     "@types/node": "25.0.9",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",

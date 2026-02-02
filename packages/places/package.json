@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-places",
-  "version": "0.19.63",
+  "version": "0.19.65",
   "description": "Hierarchical place management with geo integration and SMRT framework support",
   "type": "module",
   "main": "./dist/index.js",
@@ -37,7 +37,7 @@
     "@happyvertical/logger": "^0.66.9",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
-    "@happyvertical/sql": "^0.66.9",
+    "@happyvertical/sql": "^0.67.7",
     "@happyvertical/utils": "^0.66.9"
   },
   "devDependencies": {
