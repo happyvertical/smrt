@@ -9,6 +9,7 @@ import {
 } from '../manifest/manifest-loader.js';
 import { generateToolManifest } from '../tools/tool-generator';
 import { createQualifiedName } from '../utils/qualified-names.js';
+import { classnameToTablename } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
   ScanResult,
@@ -582,11 +583,9 @@ export class ManifestGenerator {
    * to ensure manifest-generated table names match runtime-derived names.
    */
   private classNameToTableName(className: string): string {
-    return className
-      .replace(/([a-z])([A-Z])/g, '$1_$2') // Only add underscore between lowercase→uppercase
-      .toLowerCase()
-      .replace(/([^s])$/, '$1s') // Add 's' if doesn't end with 's'
-      .replace(/y$/, 'ies'); // Handle words ending in 'y'
+    // Use the shared pluralization function that handles English plurals correctly
+    // (e.g., 'Currency' → 'currencies', 'JournalEntry' → 'journal_entries')
+    return classnameToTablename(className);
   }
 
   /**
