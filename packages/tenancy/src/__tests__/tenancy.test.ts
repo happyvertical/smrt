@@ -119,6 +119,26 @@ describe('TenantContext', () => {
         expect(getTenantId()).toBe('tenant-123');
       });
     });
+
+    it('should be detectable via isSystemContext()', async () => {
+      const { isSystemContext } = await import('../context.js');
+
+      // Outside any context
+      expect(isSystemContext()).toBe(false);
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        // Inside tenant context
+        expect(isSystemContext()).toBe(false);
+
+        await withSystemContext(async () => {
+          // Inside system context
+          expect(isSystemContext()).toBe(true);
+        });
+
+        // Back in tenant context
+        expect(isSystemContext()).toBe(false);
+      });
+    });
   });
 
   describe('withSuperAdminBypass', () => {
@@ -454,6 +474,27 @@ describe('TenantInterceptor', () => {
       );
 
       expect(result).toBeUndefined(); // Pass through
+    });
+
+    it('should bypass mode: required when using withSystemContext (issue #868)', async () => {
+      registerTenantScopedClass('Document', { mode: 'required' });
+      const interceptor = createTenantInterceptor();
+
+      // This should NOT throw when using withSystemContext
+      await withSystemContext(async () => {
+        const result = interceptor.beforeList?.(
+          'Document',
+          { where: {} },
+          {
+            className: 'Document',
+            operation: 'list',
+            timestamp: new Date(),
+          },
+        );
+
+        // Should pass through without adding tenant filter
+        expect(result).toBeUndefined();
+      });
     });
 
     it('should throw on tenant mismatch in filter', async () => {

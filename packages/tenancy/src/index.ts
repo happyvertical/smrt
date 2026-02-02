@@ -57,6 +57,8 @@ export {
   getTenantId,
   hasTenantContext,
   isSuperAdminBypass,
+  // System context detection (issue #868)
+  isSystemContext,
   type MinimalTenantContext,
   requireTenant,
   requireTenantId,

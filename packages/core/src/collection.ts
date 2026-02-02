@@ -115,7 +115,32 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       validFieldNames.add('meta_type');
       validFieldNames.add('_meta_data');
       validFieldNames.add('meta_data');
+
+      // Issue #869: For STI classes, also include fields from all ancestor classes
+      // This ensures child class collections can filter by parent class fields
+      const inheritanceChain = ObjectRegistry.getInheritanceChain(
+        this._itemClass.name,
+      );
+      for (const ancestorName of inheritanceChain) {
+        if (
+          ancestorName === 'SmrtObject' ||
+          ancestorName === 'SmrtClass' ||
+          ancestorName === this._itemClass.name
+        ) {
+          continue; // Skip framework base classes and self (already included)
+        }
+        const ancestorFields = ObjectRegistry.getFields(ancestorName);
+        for (const fieldName of ancestorFields.keys()) {
+          validFieldNames.add(toSnakeCase(fieldName));
+        }
+      }
     }
+
+    // Issue #869: If no fields are registered (no manifest for test classes),
+    // skip field validation. Invalid fields will fail at SQL level instead.
+    // This commonly happens for inline test classes decorated with @smrt().
+    const hasRegisteredFields = Object.keys(fields).length > 0;
+    const skipFieldValidation = !hasRegisteredFields;
 
     const converted: Record<string, any> = {};
 
@@ -172,7 +197,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
 
       // Validate field name exists in schema
-      if (!validFieldNames.has(snakeFieldName)) {
+      // Issue #869: Skip validation when no fields are registered (manifest-less test classes)
+      if (!skipFieldValidation && !validFieldNames.has(snakeFieldName)) {
         throw new Error(
           `Invalid WHERE clause field: '${fieldName}'. ` +
             `Field does not exist on ${this._itemClass.name}. ` +

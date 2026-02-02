@@ -71,14 +71,25 @@ export interface MinimalTenantContext {
   metadata?: Record<string, unknown>;
 }
 
+// Sentinel symbol to mark system context (distinct from "no context")
+const SYSTEM_CONTEXT_MARKER = Symbol.for('smrt:system-context');
+
+// Storage type includes the marker for system context
+type ContextStoreValue = TenantContextData | typeof SYSTEM_CONTEXT_MARKER;
+
 // AsyncLocalStorage instance for tenant context
-const tenantStorage = new AsyncLocalStorage<TenantContextData>();
+const tenantStorage = new AsyncLocalStorage<ContextStoreValue>();
 
 /**
  * Get current tenant context (may be undefined if not in a tenant scope)
  */
 export function getCurrentTenant(): TenantContextData | undefined {
-  return tenantStorage.getStore();
+  const store = tenantStorage.getStore();
+  // Return undefined for system context marker (no tenant data available)
+  if (store === SYSTEM_CONTEXT_MARKER) {
+    return undefined;
+  }
+  return store;
 }
 
 /**
@@ -110,21 +121,43 @@ export function requireTenantId(): string {
  * Get current tenant ID if available (returns undefined if not in tenant scope)
  */
 export function getTenantId(): string | undefined {
-  return tenantStorage.getStore()?.tenantId;
+  const store = tenantStorage.getStore();
+  if (store === SYSTEM_CONTEXT_MARKER) {
+    return undefined;
+  }
+  return store?.tenantId;
 }
 
 /**
  * Check if we're currently in a tenant context
  */
 export function hasTenantContext(): boolean {
-  return tenantStorage.getStore() !== undefined;
+  const store = tenantStorage.getStore();
+  // System context marker means no tenant context (even though storage is set)
+  return store !== undefined && store !== SYSTEM_CONTEXT_MARKER;
+}
+
+/**
+ * Check if we're currently in a system context (explicit bypass via withSystemContext)
+ *
+ * This is different from having no context at all - system context is explicitly
+ * set to bypass tenant checks, while no context means we're outside any context.
+ *
+ * @see withSystemContext
+ */
+export function isSystemContext(): boolean {
+  return tenantStorage.getStore() === SYSTEM_CONTEXT_MARKER;
 }
 
 /**
  * Check if super admin bypass is currently enabled
  */
 export function isSuperAdminBypass(): boolean {
-  return tenantStorage.getStore()?.superAdminBypass === true;
+  const store = tenantStorage.getStore();
+  if (store === SYSTEM_CONTEXT_MARKER) {
+    return false;
+  }
+  return store?.superAdminBypass === true;
 }
 
 /**
@@ -207,6 +240,10 @@ export function enterTenantContext(
  * - Admin tools that need cross-tenant access
  * - Background jobs that process multiple tenants
  *
+ * System context is explicitly different from "no context" - it signals
+ * that tenant checks should be bypassed, while no context means the
+ * interceptor should enforce tenant requirements.
+ *
  * @param fn - Async function to run without tenant context
  *
  * @example
@@ -218,11 +255,8 @@ export function enterTenantContext(
  * ```
  */
 export async function withSystemContext<T>(fn: () => Promise<T>): Promise<T> {
-  // Run without any tenant context (undefined store)
-  // Cast storage to allow undefined to avoid unsafe 'as any'
-  return (
-    tenantStorage as AsyncLocalStorage<TenantContextData | undefined>
-  ).run(undefined, fn);
+  // Run with system context marker (distinct from undefined/no context)
+  return tenantStorage.run(SYSTEM_CONTEXT_MARKER, fn);
 }
 
 /**
@@ -279,22 +313,30 @@ export const TenantContext = {
    * ```
    */
   bind<T extends (...args: unknown[]) => unknown>(fn: T): T {
-    const ctx = tenantStorage.getStore();
-    if (!ctx) {
+    const store = tenantStorage.getStore();
+    if (!store) {
       // No context to bind, return function as-is
       return fn;
     }
 
+    // Preserve the context (including system context marker)
     return ((...args: unknown[]) => {
-      return tenantStorage.run(ctx, () => fn(...args));
+      return tenantStorage.run(store, () => fn(...args));
     }) as T;
   },
 
   /**
-   * Get the current context data (or undefined)
+   * Get the current context data (or undefined for system/no context)
    */
   get current(): TenantContextData | undefined {
     return getCurrentTenant();
+  },
+
+  /**
+   * Check if we're in system context
+   */
+  get isSystem(): boolean {
+    return isSystemContext();
   },
 
   /**
