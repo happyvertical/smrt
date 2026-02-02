@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.66
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use shared pluralize function in manifest generator (#865) (core)
+  - @happyvertical/smrt-scanner@0.19.66
+  - @happyvertical/smrt-config@0.19.66
+  - @happyvertical/smrt-types@0.19.66
+
 ## 0.19.65
 
 ### Patch Changes
