@@ -1377,11 +1377,10 @@ export default defineConfig({
 
 ### SvelteKit Integration (Experimental)
 
-⚠️ **Note**: SvelteKit integration via `smrtPlugin` is experimental and has known issues.
+⚠️ **Note**: SvelteKit integration via `smrtPlugin` is experimental and may have issues.
 
 **Known Issues:**
-- Issue #870: Qualified class names in manifests generate invalid import syntax
-- Default UI template may fail to load
+- Default UI template may fail to load in some configurations
 
 **Current Recommendation**: For SvelteKit projects, consider:
 1. Defining SMRT objects in a separate package
