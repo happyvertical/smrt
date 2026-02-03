@@ -19,6 +19,24 @@ export interface SvelteKitOptions {
 }
 
 /**
+ * Extract simple class name from potentially qualified name.
+ * Qualified names follow the pattern: @scope/package:ClassName
+ *
+ * Issue #870: Manifests may contain qualified names which generate invalid
+ * import statements like: import { @pkg:Class } from '@pkg'
+ *
+ * @param qualifiedName - Class name that may be qualified (e.g., "@pkg:Class" or "Class")
+ * @returns Simple class name (e.g., "Class")
+ */
+function extractSimpleClassName(qualifiedName: string): string {
+  const colonIndex = qualifiedName.indexOf(':');
+  if (colonIndex !== -1) {
+    return qualifiedName.substring(colonIndex + 1);
+  }
+  return qualifiedName;
+}
+
+/**
  * Generates SvelteKit API routes from manifest
  */
 export async function generateSvelteKitRoutes(
@@ -75,24 +93,28 @@ async function generateRegistrationFile(
   }
 
   // Generate imports for local objects
+  // Issue #870: Extract simple class names from qualified names
   const localImports = localObjects
     .map(([className, objectDef]) => {
+      const simpleClassName = extractSimpleClassName(className);
       const importPath = getSvelteKitImportPath(
         projectRoot,
         objectDef.filePath,
         options.objectsDir,
-        className,
+        simpleClassName,
       );
-      const actualClassName = importPath.split('/').pop() || className;
+      const actualClassName = importPath.split('/').pop() || simpleClassName;
       return `import { ${actualClassName} } from '${importPath}';`;
     })
     .join('\n');
 
   // Generate imports for external packages
+  // Issue #870: Extract simple class names from qualified names
   const packageImports = Array.from(packageObjects.entries())
     .map(([packageName, classNames]) => {
-      // Import all classes from the package
-      return `import { ${classNames.join(', ')} } from '${packageName}';`;
+      // Extract simple class names for valid import syntax
+      const simpleNames = classNames.map(extractSimpleClassName);
+      return `import { ${simpleNames.join(', ')} } from '${packageName}';`;
     })
     .join('\n');
 
