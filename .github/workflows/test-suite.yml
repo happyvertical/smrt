@@ -203,3 +203,58 @@ jobs:
             coverage/
             test-results/
           retention-days: 7
+
+  test-postgres:
+    name: Test PostgreSQL
+    needs: build
+    runs-on: arc-happyvertical
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: smrt_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore build from cache
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run tests against PostgreSQL
+        run: pnpm turbo run test
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test:test@localhost:5432/smrt_test
+
+      - name: Upload PostgreSQL test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-postgres
+          path: |
+            coverage/
+            test-results/
+          retention-days: 7
