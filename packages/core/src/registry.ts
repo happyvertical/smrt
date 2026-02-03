@@ -3939,7 +3939,10 @@ export class ObjectRegistry {
    */
   private static buildInheritanceChain(ctor: typeof SmrtObject): string[] {
     const chain: string[] = [];
-    const visited = new Set<string>();
+    // Issue #871: Use constructor references for circular detection, not names.
+    // Two different classes can have the same JS name (e.g., local "Account"
+    // extending upstream "Account"), but they are different constructors.
+    const visited = new Set<Function>();
     let current: any = ctor;
 
     // Walk up the prototype chain
@@ -3949,15 +3952,15 @@ export class ObjectRegistry {
         break;
       }
 
-      // Circular inheritance detection
-      if (visited.has(current.name)) {
+      // Circular inheritance detection using constructor identity
+      if (visited.has(current)) {
         throw ConfigurationError.circularInheritance(
           current.name,
           Array.from(chain),
         );
       }
 
-      visited.add(current.name);
+      visited.add(current);
       chain.unshift(current.name); // Add to front (we're walking child → base)
 
       current = Object.getPrototypeOf(current);

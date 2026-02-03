@@ -21,6 +21,7 @@ import {
 import {
   getCurrentTenant,
   isSuperAdminBypass,
+  isSystemContext,
   TenantContextError,
   TenantIsolationError,
 } from './context.js';
@@ -108,6 +109,11 @@ export function createTenantInterceptor(
         return; // Bypass enabled, pass through
       }
 
+      // Check for system context (explicit bypass via withSystemContext)
+      if (isSystemContext()) {
+        return; // System context bypasses tenant checks
+      }
+
       const config = getTenantScopedConfig(className);
       const tenantContext = getCurrentTenant();
 
@@ -174,6 +180,11 @@ export function createTenantInterceptor(
 
       if (isSuperAdminBypass()) {
         return;
+      }
+
+      // Check for system context (explicit bypass via withSystemContext)
+      if (isSystemContext()) {
+        return; // System context bypasses tenant checks
       }
 
       const config = getTenantScopedConfig(className);
@@ -252,6 +263,12 @@ export function createTenantInterceptor(
         return;
       }
 
+      // Check for system context (explicit bypass via withSystemContext)
+      if (isSystemContext()) {
+        opts.onRawQuery?.(className, queryOptions.sql, context);
+        return;
+      }
+
       // Handle based on policy
       const message =
         `Raw SQL query attempted on tenant-scoped class ${className}. ` +
@@ -287,6 +304,11 @@ export function createTenantInterceptor(
 
       if (isSuperAdminBypass()) {
         return;
+      }
+
+      // Check for system context (explicit bypass via withSystemContext)
+      if (isSystemContext()) {
+        return; // System context bypasses tenant checks
       }
 
       const config = getTenantScopedConfig(className);
@@ -345,6 +367,11 @@ export function createTenantInterceptor(
 
       if (isSuperAdminBypass()) {
         return;
+      }
+
+      // Check for system context (explicit bypass via withSystemContext)
+      if (isSystemContext()) {
+        return; // System context bypasses tenant checks
       }
 
       const config = getTenantScopedConfig(className);

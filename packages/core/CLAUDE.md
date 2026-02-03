@@ -1337,6 +1337,79 @@ class Agent extends SmrtObject {
 
 ## Vite Plugin Integration
 
+### Required Vite Configuration for Decorators
+
+SMRT uses TypeScript decorators (`@smrt()`) which require explicit esbuild configuration. Without this, you'll see:
+
+```
+SyntaxError: Invalid or unexpected token
+```
+
+**Add to your `vite.config.ts`:**
+
+```typescript
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  // Required for @smrt() decorator support
+  esbuild: {
+    tsconfigRaw: {
+      compilerOptions: {
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
+      },
+    },
+  },
+  // ... other config
+});
+```
+
+**Also ensure `tsconfig.json` has:**
+
+```json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  }
+}
+```
+
+### SvelteKit Integration (Experimental)
+
+⚠️ **Note**: SvelteKit integration via `smrtPlugin` is experimental and may have issues.
+
+**Known Issues:**
+- Default UI template may fail to load in some configurations
+
+**Current Recommendation**: For SvelteKit projects, consider:
+1. Defining SMRT objects in a separate package
+2. Consuming via `smrtConsumer` plugin
+3. Manually registering objects if auto-generation fails
+
+```typescript
+// vite.config.ts for SvelteKit
+import { defineConfig } from 'vite';
+import { sveltekit } from '@sveltejs/kit/vite';
+
+export default defineConfig({
+  plugins: [sveltekit()],
+
+  // Required for decorators
+  esbuild: {
+    tsconfigRaw: {
+      compilerOptions: {
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
+      },
+    },
+  },
+
+  // Optional: smrtPlugin for route generation (experimental)
+  // plugins: [sveltekit(), smrtPlugin({ svelteKit: { enabled: true } })]
+});
+```
+
 ### SMRT Plugin (For Object Creators)
 
 Use when **defining** SMRT objects in your project:

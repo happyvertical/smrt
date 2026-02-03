@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.67
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - Multiple issues - system context, STI filtering, SvelteKit, circular inheritance, and docs (#872)
+  - @happyvertical/smrt-scanner@0.19.67
+  - @happyvertical/smrt-config@0.19.67
+  - @happyvertical/smrt-types@0.19.67
+
 ## 0.19.66
 
 ### Patch Changes

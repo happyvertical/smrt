@@ -119,6 +119,26 @@ toJSON() {
 
 See [packages/core/CLAUDE.md](./packages/core/CLAUDE.md#-warning-customizing-json-serialization) for details.
 
+### ⚠️ Vite Decorator Configuration Required
+
+Projects using `@smrt()` decorators with Vite need explicit esbuild configuration:
+
+```typescript
+// vite.config.ts
+export default defineConfig({
+  esbuild: {
+    tsconfigRaw: {
+      compilerOptions: {
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
+      },
+    },
+  },
+});
+```
+
+Without this, you'll see `SyntaxError: Invalid or unexpected token`. For full details including SvelteKit integration, see [packages/core/CLAUDE.md](./packages/core/CLAUDE.md#vite-plugin-integration).
+
 ---
 
 ## Monorepo Structure
