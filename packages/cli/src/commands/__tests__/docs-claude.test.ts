@@ -500,6 +500,131 @@ Gamma content.
     });
   });
 
+  describe('generateMarkdown with SDK packages', () => {
+    it('should include SDK packages table when provided', () => {
+      const packages: PackageInfo[] = [
+        {
+          name: '@happyvertical/smrt-core',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
+      ];
+
+      const sdkPackages: PackageInfo[] = [
+        {
+          name: '@happyvertical/ai',
+          version: '2.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
+        {
+          name: '@happyvertical/sql',
+          version: '2.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
+      ];
+
+      const markdown = generateMarkdown(packages, undefined, sdkPackages);
+
+      expect(markdown).toContain('## Installed SMRT Packages');
+      expect(markdown).toContain('| @happyvertical/smrt-core | 1.0.0 |');
+      expect(markdown).toContain('## Installed SDK Packages');
+      expect(markdown).toContain('| @happyvertical/ai | 2.0.0 |');
+      expect(markdown).toContain('| @happyvertical/sql | 2.0.0 |');
+    });
+
+    it('should include SDK package details with CLAUDE.md', () => {
+      const packages: PackageInfo[] = [];
+      const sdkPackages: PackageInfo[] = [
+        {
+          name: '@happyvertical/ai',
+          version: '2.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: '# AI Package\n\nMulti-provider AI client.',
+        },
+      ];
+
+      const markdown = generateMarkdown(packages, undefined, sdkPackages);
+
+      expect(markdown).toContain('## SDK Package Details');
+      expect(markdown).toContain('### @happyvertical/ai');
+      expect(markdown).toContain('Multi-provider AI client.');
+      // H1 should be stripped
+      expect(markdown).not.toContain('# AI Package');
+    });
+
+    it('should include SDK package details with legacy meta', () => {
+      const packages: PackageInfo[] = [];
+      const sdkPackages: PackageInfo[] = [
+        {
+          name: '@happyvertical/sql',
+          version: '2.0.0',
+          meta: {
+            purpose: 'Database operations for SQLite, Postgres, DuckDB.',
+            pitfalls: ['Always close connections'],
+            exports: ['Database', 'Query'],
+          },
+          readme: null,
+          claudeMd: null,
+        },
+      ];
+
+      const markdown = generateMarkdown(packages, undefined, sdkPackages);
+
+      expect(markdown).toContain('### @happyvertical/sql');
+      expect(markdown).toContain(
+        'Database operations for SQLite, Postgres, DuckDB.',
+      );
+      expect(markdown).toContain('#### Pitfalls');
+      expect(markdown).toContain('- Always close connections');
+      expect(markdown).toContain('#### Key Exports');
+      expect(markdown).toContain('`Database`, `Query`');
+    });
+
+    it('should show placeholder for SDK packages without docs', () => {
+      const packages: PackageInfo[] = [];
+      const sdkPackages: PackageInfo[] = [
+        {
+          name: '@happyvertical/utils',
+          version: '2.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
+      ];
+
+      const markdown = generateMarkdown(packages, undefined, sdkPackages);
+
+      expect(markdown).toContain('### @happyvertical/utils');
+      expect(markdown).toContain(
+        '*No CLAUDE.md or .claude-meta.json found for this package.*',
+      );
+    });
+
+    it('should not include SDK sections when no SDK packages', () => {
+      const packages: PackageInfo[] = [
+        {
+          name: '@test/pkg-a',
+          version: '1.0.0',
+          meta: null,
+          readme: null,
+          claudeMd: null,
+        },
+      ];
+
+      const markdown = generateMarkdown(packages);
+
+      expect(markdown).not.toContain('## Installed SDK Packages');
+      expect(markdown).not.toContain('## SDK Package Details');
+    });
+  });
+
   describe('detectMonorepoRoot', () => {
     let tempDir: string;
     let originalCwd: string;
