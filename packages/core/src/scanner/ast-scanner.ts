@@ -428,8 +428,11 @@ export class ASTScanner {
               objectDef.staticProperties.uiSlots = this.parseExpressionValue(
                 member.initializer,
               );
-            } catch {
-              // If parsing fails, skip - not critical
+            } catch (err) {
+              console.warn(
+                `[ASTScanner] Failed to parse static uiSlots for ${objectDef.className}:`,
+                err,
+              );
             }
           }
           continue;

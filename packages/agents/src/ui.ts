@@ -88,7 +88,7 @@ export interface AgentManifestInfo {
   name: string;
   slug: string;
   icon?: string;
-  tier: string;
+  tier: 'free' | 'standard' | 'premium';
   description?: string;
   uiSlots: Record<string, AgentUISlot>;
   permissions: Array<{
@@ -97,7 +97,12 @@ export interface AgentManifestInfo {
     category: string;
     defaultGranted?: boolean;
   }>;
-  features: Array<{ id: string; label: string; type: string }>;
+  features: Array<{
+    id: string;
+    label: string;
+    description?: string;
+    type: string;
+  }>;
   menuItems: Array<{
     id: string;
     label: string;

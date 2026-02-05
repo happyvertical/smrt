@@ -1605,7 +1605,7 @@ ${fields}
     packageName?: string,
     packageJson?: any,
   ): void {
-    for (const [name, obj] of Object.entries(manifest.objects)) {
+    for (const obj of Object.values(manifest.objects)) {
       if (!obj.decoratorConfig.agent) continue;
 
       const agentConfig = obj.decoratorConfig.agent;
