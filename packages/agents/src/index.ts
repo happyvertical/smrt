@@ -84,11 +84,18 @@ export {
   AgentScheduleCollection,
   type ScheduleStatus,
 } from './schedule.js';
+export {
+  type ResolvedAgentAvailability,
+  TenantAgent,
+  TenantAgentCollection,
+  type TenantAgentStatus,
+} from './tenant-agent.js';
 export type { AgentStatusType } from './types.js';
 
 // UI types and registry for admin panels
 export {
   type AdminPanelBaseProps,
+  type AgentManifestInfo,
   type AgentUIComponentRegistry,
   AgentUIRegistry,
   type AgentUISlot,

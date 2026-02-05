@@ -137,6 +137,243 @@ describe('AST Scanner', () => {
     // Note: validateContent private method was removed by linting (unused)
   });
 
+  describe('Agent metadata scanning', () => {
+    it('should capture agent decorator config', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const agentObj = results[0].objects.find(
+        (obj) => obj.className === 'ScannerTestAgent',
+      );
+
+      expect(agentObj).toBeDefined();
+      expect(agentObj?.decoratorConfig.agent).toMatchObject({
+        icon: 'microscope',
+        tier: 'standard',
+        description: 'Test agent for scanner integration tests',
+      });
+    });
+
+    it('should capture static uiSlots', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const agentObj = results[0].objects.find(
+        (obj) => obj.className === 'ScannerTestAgent',
+      );
+
+      expect(agentObj?.staticProperties).toBeDefined();
+      expect(agentObj?.staticProperties?.uiSlots).toBeDefined();
+      expect(agentObj?.staticProperties?.uiSlots.sources).toMatchObject({
+        id: 'sources',
+        label: 'Data Sources',
+        icon: 'database',
+        order: 1,
+      });
+      expect(agentObj?.staticProperties?.uiSlots.settings).toMatchObject({
+        id: 'settings',
+        label: 'Agent Settings',
+        icon: 'settings',
+        order: 2,
+      });
+    });
+
+    it('should not capture static properties for non-agent classes', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const contentObj = results[0].objects.find(
+        (obj) => obj.className === 'ScannerTestContent',
+      );
+
+      expect(contentObj?.staticProperties).toBeUndefined();
+    });
+  });
+
+  describe('Agent manifest generation', () => {
+    it('should generate agent manifest from decorator + uiSlots', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest(results);
+
+      // Run the fifth pass
+      generator.generateAgentManifests(manifest);
+
+      const agentObj =
+        manifest.objects['@happyvertical/smrt-core:ScannerTestAgent'];
+      expect(agentObj.agent).toBeDefined();
+      expect(agentObj.agent?.name).toBe('ScannerTestAgent');
+      expect(agentObj.agent?.slug).toBe('scannertestagent');
+      expect(agentObj.agent?.icon).toBe('microscope');
+      expect(agentObj.agent?.tier).toBe('standard');
+      expect(agentObj.agent?.description).toBe(
+        'Test agent for scanner integration tests',
+      );
+    });
+
+    it('should derive permissions from uiSlots and exposed methods', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest(results);
+      generator.generateAgentManifests(manifest);
+
+      const agent =
+        manifest.objects['@happyvertical/smrt-core:ScannerTestAgent'].agent;
+      expect(agent?.permissions).toBeDefined();
+
+      // Should have manage: permissions from uiSlots
+      const slotPerms = agent?.permissions.filter((p) => p.category === 'slot');
+      expect(slotPerms).toHaveLength(2);
+      expect(slotPerms.map((p) => p.id)).toContain('manage:sources');
+      expect(slotPerms.map((p) => p.id)).toContain('manage:settings');
+      expect(slotPerms.every((p) => p.defaultGranted === true)).toBe(true);
+
+      // Should have execute: permissions from CLI/MCP methods (deduplicated)
+      const methodPerms = agent?.permissions.filter(
+        (p) => p.category === 'method',
+      );
+      const methodIds = methodPerms.map((p) => p.id);
+      // cli: [research, analyze], mcp: [list, get, research, report, analyze]
+      // Deduplicated union: list, get, research, report, analyze
+      expect(methodIds).toContain('execute:research');
+      expect(methodIds).toContain('execute:analyze');
+      expect(methodIds).toContain('execute:report');
+      expect(methodIds).toContain('execute:list');
+      expect(methodIds).toContain('execute:get');
+    });
+
+    it('should derive features from uiSlots and methods', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest(results);
+      generator.generateAgentManifests(manifest);
+
+      const agent =
+        manifest.objects['@happyvertical/smrt-core:ScannerTestAgent'].agent;
+      const slotFeatures = agent?.features.filter((f) => f.type === 'slot');
+      const methodFeatures = agent?.features.filter((f) => f.type === 'method');
+
+      expect(slotFeatures).toHaveLength(2);
+      expect(slotFeatures.map((f) => f.id)).toContain('sources');
+      expect(slotFeatures.map((f) => f.id)).toContain('settings');
+
+      // Slot features should have descriptions from uiSlots
+      const sourceFeature = slotFeatures.find((f) => f.id === 'sources');
+      expect(sourceFeature?.description).toBe(
+        'Configure data sources for the agent',
+      );
+
+      expect(methodFeatures.length).toBeGreaterThan(0);
+      expect(methodFeatures.map((f) => f.id)).toContain('research');
+    });
+
+    it('should derive menu items from uiSlots sorted by order', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest(results);
+      generator.generateAgentManifests(manifest);
+
+      const agent =
+        manifest.objects['@happyvertical/smrt-core:ScannerTestAgent'].agent;
+      expect(agent?.menuItems).toHaveLength(2);
+
+      // Should be sorted by order (sources=1, settings=2)
+      expect(agent?.menuItems[0]).toMatchObject({
+        id: 'sources',
+        label: 'Data Sources',
+        icon: 'database',
+        order: 1,
+        path: '/agents/scannertestagent/sources',
+        requiredPermission: 'manage:sources',
+      });
+      expect(agent?.menuItems[1]).toMatchObject({
+        id: 'settings',
+        label: 'Agent Settings',
+        icon: 'settings',
+        order: 2,
+        path: '/agents/scannertestagent/settings',
+        requiredPermission: 'manage:settings',
+      });
+    });
+
+    it('should derive components from package.json exports', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest(results);
+
+      // Simulate package.json with svelte exports
+      const packageJson = {
+        name: '@happyvertical/test-agent',
+        exports: {
+          '.': { import: './dist/index.js' },
+          './admin': { svelte: './dist/admin/index.js' },
+          './town': { svelte: './dist/town/index.js' },
+          './manifest': './dist/manifest.json',
+        },
+      };
+
+      generator.generateAgentManifests(
+        manifest,
+        '@happyvertical/test-agent',
+        packageJson,
+      );
+
+      const agent =
+        manifest.objects['@happyvertical/smrt-core:ScannerTestAgent'].agent;
+      expect(agent?.components).toHaveLength(2);
+      expect(agent?.components).toContainEqual({
+        exportPath: '@happyvertical/test-agent/admin',
+        type: 'admin',
+      });
+      expect(agent?.components).toContainEqual({
+        exportPath: '@happyvertical/test-agent/town',
+        type: 'town',
+      });
+    });
+
+    it('should not generate agent manifest for non-agent classes', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest(results);
+      generator.generateAgentManifests(manifest);
+
+      const contentObj =
+        manifest.objects['@happyvertical/smrt-core:ScannerTestContent'];
+      const categoryObj = manifest.objects['@happyvertical/smrt-core:Category'];
+      expect(contentObj.agent).toBeUndefined();
+      expect(categoryObj.agent).toBeUndefined();
+    });
+
+    it('should default tier to free when not specified', () => {
+      const generator = new ManifestGenerator();
+      const manifest: any = {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        objects: {
+          'test:MinimalAgent': {
+            className: 'MinimalAgent',
+            name: 'minimalagent',
+            collection: 'minimalagents',
+            filePath: '/test.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              agent: { icon: 'bot' },
+            },
+            exportName: 'MinimalAgent',
+            collectionExportName: 'MinimalAgentCollection',
+          },
+        },
+      };
+
+      generator.generateAgentManifests(manifest);
+      expect(manifest.objects['test:MinimalAgent'].agent?.tier).toBe('free');
+    });
+  });
+
   it('should generate manifest correctly', () => {
     const scanner = new ASTScanner([testFilePath]);
     const results = scanner.scanFiles();
