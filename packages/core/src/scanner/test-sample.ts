@@ -59,14 +59,39 @@ class Category extends SmrtObject {
 
 // Test class with custom actions for AI agent workflows
 @smrt({
+  agent: {
+    icon: 'microscope',
+    tier: 'standard',
+    description: 'Test agent for scanner integration tests',
+  },
   mcp: {
     include: ['list', 'get', 'research', 'report', 'analyze'],
   },
   api: {
     include: ['list', 'get', 'research', 'report'],
   },
+  cli: {
+    include: ['research', 'analyze'],
+  },
 })
 class ScannerTestAgent extends SmrtObject {
+  static uiSlots = {
+    sources: {
+      id: 'sources',
+      label: 'Data Sources',
+      description: 'Configure data sources for the agent',
+      icon: 'database',
+      order: 1,
+    },
+    settings: {
+      id: 'settings',
+      label: 'Agent Settings',
+      description: 'Configure agent defaults',
+      icon: 'settings',
+      order: 2,
+    },
+  };
+
   name = '';
   source = '';
   lastSynced?: Date;
