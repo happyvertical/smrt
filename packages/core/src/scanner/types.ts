@@ -127,6 +127,79 @@ export interface ValidationRule {
   fieldType?: string;
 }
 
+// ── Agent manifest types ────────────────────────────────────────────────
+
+/**
+ * Permission declared by an agent
+ * Generated from uiSlots (manage:*) and CLI/MCP methods (execute:*)
+ */
+export interface AgentPermission {
+  id: string;
+  label: string;
+  category: 'slot' | 'method';
+  defaultGranted?: boolean;
+}
+
+/**
+ * Feature declared by an agent
+ */
+export interface AgentFeature {
+  id: string;
+  label: string;
+  description?: string;
+  type: 'slot' | 'method';
+}
+
+/**
+ * Menu item derived from agent uiSlots
+ */
+export interface AgentMenuItem {
+  id: string;
+  label: string;
+  icon?: string;
+  order: number;
+  path: string;
+  requiredPermission?: string;
+}
+
+/**
+ * Component export declaration derived from package.json exports
+ */
+export interface AgentComponentDeclaration {
+  exportPath: string;
+  type: string;
+}
+
+/**
+ * UI slot definition captured from static uiSlots on Agent subclasses
+ */
+export interface AgentUISlotManifest {
+  id: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  order?: number;
+}
+
+/**
+ * Auto-generated agent manifest section
+ * Produced by the manifest build pipeline for any class with `agent` decorator config
+ */
+export interface AgentManifest {
+  name: string;
+  slug: string;
+  icon?: string;
+  tier: 'free' | 'standard' | 'premium';
+  description?: string;
+  uiSlots: Record<string, AgentUISlotManifest>;
+  permissions: AgentPermission[];
+  features: AgentFeature[];
+  menuItems: AgentMenuItem[];
+  components: AgentComponentDeclaration[];
+}
+
+// ── Core manifest types ─────────────────────────────────────────────────
+
 export interface SmartObjectDefinition {
   /**
    * Qualified name in format "@package/name:ClassName"
@@ -207,6 +280,19 @@ export interface SmartObjectDefinition {
    * @see ValidationRule
    */
   validationRules?: ValidationRule[];
+
+  /**
+   * Static properties captured from the class definition
+   * Currently used for `static uiSlots` on Agent subclasses
+   */
+  staticProperties?: Record<string, any>;
+
+  /**
+   * Auto-generated agent manifest
+   * Only present for classes with `agent` in their decorator config
+   * Generated at build time by ManifestGenerator fifth pass
+   */
+  agent?: AgentManifest;
 }
 
 export interface SmartObjectManifest {

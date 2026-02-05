@@ -81,6 +81,35 @@ export interface AgentUISlot {
 export type AgentUISlots = Record<string, AgentUISlot>;
 
 /**
+ * Agent manifest type (re-exported from smrt-core scanner types)
+ * Duplicated here to avoid hard dependency on scanner internals
+ */
+export interface AgentManifestInfo {
+  name: string;
+  slug: string;
+  icon?: string;
+  tier: string;
+  description?: string;
+  uiSlots: Record<string, AgentUISlot>;
+  permissions: Array<{
+    id: string;
+    label: string;
+    category: string;
+    defaultGranted?: boolean;
+  }>;
+  features: Array<{ id: string; label: string; type: string }>;
+  menuItems: Array<{
+    id: string;
+    label: string;
+    icon?: string;
+    order: number;
+    path: string;
+    requiredPermission?: string;
+  }>;
+  components: Array<{ exportPath: string; type: string }>;
+}
+
+/**
  * Registry of UI component implementations
  * Maps agent class name + slot ID to Svelte component
  */
@@ -112,6 +141,21 @@ export interface AgentUIComponentRegistry {
 
   /** Clear all registrations (useful for testing) */
   clear(): void;
+
+  /** Register a component by composite key (e.g., 'praeco:sources') */
+  registerByKey(key: string, component: ComponentType): void;
+
+  /** Get a component by composite key */
+  getByKey(key: string): ComponentType | undefined;
+
+  /** Register an agent manifest for runtime access */
+  registerManifest(agentClass: string, manifest: AgentManifestInfo): void;
+
+  /** Get a registered agent manifest */
+  getManifest(agentClass: string): AgentManifestInfo | undefined;
+
+  /** Get all registered manifests */
+  getAllManifests(): Map<string, AgentManifestInfo>;
 }
 
 /**
@@ -131,6 +175,7 @@ export interface AgentUIComponentRegistry {
 export function createUIRegistry(): AgentUIComponentRegistry {
   // biome-ignore lint/suspicious/noExplicitAny: ComponentType needs any
   const components = new Map<string, ComponentType<any>>();
+  const manifests = new Map<string, AgentManifestInfo>();
 
   const makeKey = (agentClass: string, slotId: string) =>
     `${agentClass}:${slotId}`;
@@ -170,6 +215,27 @@ export function createUIRegistry(): AgentUIComponentRegistry {
 
     clear() {
       components.clear();
+      manifests.clear();
+    },
+
+    registerByKey(key, component) {
+      components.set(key, component);
+    },
+
+    getByKey(key) {
+      return components.get(key);
+    },
+
+    registerManifest(agentClass, manifest) {
+      manifests.set(agentClass, manifest);
+    },
+
+    getManifest(agentClass) {
+      return manifests.get(agentClass);
+    },
+
+    getAllManifests() {
+      return new Map(manifests);
     },
   };
 }
