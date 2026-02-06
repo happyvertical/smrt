@@ -522,14 +522,16 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       // Read package.json for metadata BEFORE creating manifest (Issue #713)
       // This ensures qualified names are generated correctly for namespace isolation
+      // packageJson is also needed for agent manifest generation (component discovery)
       let packageName: string | undefined;
       let packageVersion: string | undefined;
+      let packageJson: any;
       try {
         const { readFileSync } = await import('node:fs');
         const { join } = await import('node:path');
         const pkgPath = join(rootDir, 'package.json');
         const pkgContent = readFileSync(pkgPath, 'utf-8');
-        const packageJson = JSON.parse(pkgContent);
+        packageJson = JSON.parse(pkgContent);
         packageName = packageJson.name || undefined;
         packageVersion = packageJson.version || undefined;
       } catch {
@@ -561,13 +563,17 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         );
       }
 
-      // Merge inherited fields and generate pre-computed schemas (same as TypeScript scanner path)
+      // Run all manifest generation passes (same as TypeScript scanner path)
       const { ManifestGenerator } = await import('../scanner/index.js');
       const manifestGen = new ManifestGenerator();
       // IMPORTANT: Must merge inherited fields BEFORE generating schemas
       // This ensures STI subclasses inherit tableName from their base class
       manifestGen.mergeInheritedFields(newManifest);
+      manifestGen.generateValidationRules(newManifest);
       manifestGen.generateSchemas(newManifest);
+      // Fifth pass: Generate agent manifests for Agent subclasses
+      // Derives permissions, features, menuItems, and components from code
+      manifestGen.generateAgentManifests(newManifest, packageName, packageJson);
 
       const elapsed = performance.now() - startTime;
 
