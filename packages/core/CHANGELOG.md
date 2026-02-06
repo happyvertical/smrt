@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.69
+
+### Patch Changes
+
+- ### Features
+
+  - support agent manifests in OXC scanner path (#876) (scanner)
+  - @happyvertical/smrt-scanner@0.19.69
+  - @happyvertical/smrt-config@0.19.69
+  - @happyvertical/smrt-types@0.19.69
+
 ## 0.19.68
 
 ### Patch Changes
