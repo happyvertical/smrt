@@ -12,6 +12,12 @@ import { createQualifiedName } from '../utils/qualified-names.js';
 import { classnameToTablename } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
+  AgentComponentDeclaration,
+  AgentFeature,
+  AgentManifest,
+  AgentMenuItem,
+  AgentPermission,
+  AgentUISlotManifest,
   ScanResult,
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -201,6 +207,14 @@ export class ManifestGenerator {
     // Fourth pass: Generate schemas for each object (build-time schema generation)
     // This pre-computes DDL, indexes, and columns for efficient external package consumption
     this.generateSchemas(manifest);
+
+    // Fifth pass: Generate agent manifests for Agent subclasses
+    // Derives permissions, features, menuItems, and components from code
+    this.generateAgentManifests(
+      manifest,
+      options?.packageName,
+      options?.packageJson,
+    );
 
     return manifest;
   }
@@ -1570,6 +1584,179 @@ ${fields}
       default:
         return 'string';
     }
+  }
+
+  /**
+   * Generate agent manifests for Agent subclasses (fifth pass).
+   *
+   * For any SmartObjectDefinition with `agent` in its decoratorConfig,
+   * auto-generates:
+   * - Permissions from uiSlots (manage:*) and CLI/MCP methods (execute:*)
+   * - Features from uiSlots and exposed methods
+   * - Menu items from uiSlots
+   * - Component declarations from package.json exports
+   *
+   * @param manifest - The manifest to process in-place
+   * @param packageName - Package name for component export paths
+   * @param packageJson - Full package.json for component discovery
+   */
+  generateAgentManifests(
+    manifest: SmartObjectManifest,
+    packageName?: string,
+    packageJson?: any,
+  ): void {
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.decoratorConfig.agent) continue;
+
+      const agentConfig = obj.decoratorConfig.agent;
+      const slug = obj.className.toLowerCase();
+      const uiSlots: Record<string, AgentUISlotManifest> =
+        obj.staticProperties?.uiSlots ?? {};
+
+      // Derive permissions
+      const permissions: AgentPermission[] = [];
+
+      // From uiSlots: manage:<slotId>
+      for (const [slotId, slot] of Object.entries(uiSlots)) {
+        permissions.push({
+          id: `manage:${slotId}`,
+          label: `Manage ${(slot as AgentUISlotManifest).label || slotId}`,
+          category: 'slot',
+          defaultGranted: true,
+        });
+      }
+
+      // From CLI/MCP methods: execute:<methodName>
+      const exposedMethods = this.getExposedMethods(obj);
+      for (const methodName of exposedMethods) {
+        permissions.push({
+          id: `execute:${methodName}`,
+          label: `Execute ${methodName}`,
+          category: 'method',
+          defaultGranted: true,
+        });
+      }
+
+      // Derive features
+      const features: AgentFeature[] = [];
+
+      for (const [slotId, slot] of Object.entries(uiSlots)) {
+        const typedSlot = slot as AgentUISlotManifest;
+        features.push({
+          id: slotId,
+          label: typedSlot.label || slotId,
+          description: typedSlot.description,
+          type: 'slot',
+        });
+      }
+
+      for (const methodName of exposedMethods) {
+        features.push({
+          id: methodName,
+          label: methodName,
+          type: 'method',
+        });
+      }
+
+      // Derive menu items from uiSlots (sorted by order)
+      const menuItems: AgentMenuItem[] = Object.entries(uiSlots)
+        .map(([slotId, slot]) => {
+          const typedSlot = slot as AgentUISlotManifest;
+          return {
+            id: slotId,
+            label: typedSlot.label || slotId,
+            icon: typedSlot.icon,
+            order: typedSlot.order ?? 999,
+            path: `/agents/${slug}/${slotId}`,
+            requiredPermission: `manage:${slotId}`,
+          };
+        })
+        .sort((a, b) => a.order - b.order);
+
+      // Derive component declarations from package.json exports
+      const components: AgentComponentDeclaration[] = [];
+      if (packageName && packageJson?.exports) {
+        for (const [exportKey, exportValue] of Object.entries(
+          packageJson.exports,
+        )) {
+          // Match patterns like './admin', './town', etc.
+          if (exportKey === '.' || exportKey === './manifest') continue;
+
+          // Check if this export has a svelte condition (component export)
+          const hasSvelteCondition = this.hasSvelteExport(exportValue);
+          if (hasSvelteCondition) {
+            const type = exportKey.replace('./', '');
+            components.push({
+              exportPath: `${packageName}/${type}`,
+              type,
+            });
+          }
+        }
+      }
+
+      const agentManifest: AgentManifest = {
+        name: obj.className,
+        slug,
+        icon: agentConfig.icon,
+        tier: agentConfig.tier || 'free',
+        description: agentConfig.description,
+        uiSlots,
+        permissions,
+        features,
+        menuItems,
+        components,
+      };
+
+      obj.agent = agentManifest;
+
+      console.log(
+        `[manifest-generator] Generated agent manifest for ${obj.className}: ` +
+          `${permissions.length} permissions, ${features.length} features, ` +
+          `${menuItems.length} menu items, ${components.length} components`,
+      );
+    }
+  }
+
+  /**
+   * Get deduplicated list of method names exposed via CLI and MCP config
+   */
+  private getExposedMethods(obj: SmartObjectDefinition): string[] {
+    const methods = new Set<string>();
+
+    const cliConfig = obj.decoratorConfig.cli;
+    if (cliConfig && typeof cliConfig === 'object' && cliConfig.include) {
+      for (const m of cliConfig.include) {
+        methods.add(m);
+      }
+    }
+
+    const mcpConfig = obj.decoratorConfig.mcp;
+    if (mcpConfig && typeof mcpConfig === 'object' && mcpConfig.include) {
+      for (const m of mcpConfig.include) {
+        methods.add(m);
+      }
+    }
+
+    return Array.from(methods);
+  }
+
+  /**
+   * Check if an export value has a svelte condition (indicating a component export)
+   */
+  private hasSvelteExport(exportValue: any): boolean {
+    if (!exportValue || typeof exportValue !== 'object') return false;
+
+    // Check for { svelte: ... } condition
+    if ('svelte' in exportValue) return true;
+
+    // Check nested conditions like { import: { svelte: ... } }
+    for (const val of Object.values(exportValue)) {
+      if (val && typeof val === 'object' && 'svelte' in (val as object)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**

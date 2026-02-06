@@ -522,6 +522,36 @@ export interface SmartObjectConfig {
       };
 
   /**
+   * Agent metadata configuration
+   *
+   * Only relevant for classes extending Agent. Provides metadata
+   * that the manifest build uses to auto-generate permissions, features,
+   * menu items, and component declarations.
+   *
+   * @example
+   * ```typescript
+   * @smrt({
+   *   tableName: 'praecos',
+   *   agent: {
+   *     icon: 'newspaper',
+   *     tier: 'standard',
+   *     description: 'Council meeting coverage and article generation',
+   *   },
+   *   cli: { include: ['discover', 'fetch', 'analyze'] },
+   * })
+   * export class Praeco extends Agent { }
+   * ```
+   */
+  agent?: {
+    /** Icon identifier (e.g., 'newspaper', 'cloud', 'git-branch') */
+    icon?: string;
+    /** Billing tier: 'free' | 'standard' | 'premium' */
+    tier?: 'free' | 'standard' | 'premium';
+    /** Human-readable description of the agent */
+    description?: string;
+  };
+
+  /**
    * Synchronous manifest for build-time imports (Issue #270 Phase 1)
    * Allows passing manifest directly instead of async loading
    * @internal Advanced usage - typically set by build tools

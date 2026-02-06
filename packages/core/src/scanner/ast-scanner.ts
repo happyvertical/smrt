@@ -414,6 +414,30 @@ export class ASTScanner {
     // Parse class members
     for (const member of node.members) {
       if (ts.isPropertyDeclaration(member)) {
+        // Capture known static properties (e.g., uiSlots on Agent subclasses)
+        const isStatic = member.modifiers?.some(
+          (m) => m.kind === ts.SyntaxKind.StaticKeyword,
+        );
+        if (isStatic) {
+          const propName = this.getPropertyName(member);
+          if (propName === 'uiSlots' && member.initializer) {
+            if (!objectDef.staticProperties) {
+              objectDef.staticProperties = {};
+            }
+            try {
+              objectDef.staticProperties.uiSlots = this.parseExpressionValue(
+                member.initializer,
+              );
+            } catch (err) {
+              console.warn(
+                `[ASTScanner] Failed to parse static uiSlots for ${objectDef.className}:`,
+                err,
+              );
+            }
+          }
+          continue;
+        }
+
         const field = this.parsePropertyDeclaration(member, sourceFile);
         if (field) {
           const fieldName = this.getPropertyName(member);
@@ -836,7 +860,7 @@ export class ASTScanner {
     node: ts.PropertyDeclaration,
     sourceFile: ts.SourceFile,
   ): FieldDefinition | null {
-    // Skip static properties for now
+    // Skip static properties (except known ones like uiSlots which are captured separately)
     if (node.modifiers?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword)) {
       return null;
     }

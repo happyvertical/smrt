@@ -11,6 +11,12 @@
 export { ASTScanner } from './ast-scanner';
 export { generateManifest, ManifestGenerator } from './manifest-generator';
 export type {
+  AgentComponentDeclaration,
+  AgentFeature,
+  AgentManifest,
+  AgentMenuItem,
+  AgentPermission,
+  AgentUISlotManifest,
   FieldDefinition,
   MethodDefinition,
   ScanOptions,
