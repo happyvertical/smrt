@@ -98,6 +98,7 @@ interface SmartObjectDefinition {
   decoratorConfig: SmartObjectConfig;
   extends?: string;
   extendsTypeArg?: string;
+  staticProperties?: Record<string, any>;
 }
 
 interface SmartObjectManifest {
@@ -108,6 +109,30 @@ interface SmartObjectManifest {
   objects: Record<string, SmartObjectDefinition>;
   moduleType?: string;
   smrtDependencies?: string[];
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+/**
+ * Parse a JavaScript object literal string into a plain object.
+ * Uses Function constructor to safely evaluate object literal syntax
+ * (single quotes, computed keys, nested objects, etc.)
+ *
+ * Only used at build time for parsing static property initializers
+ * from source code (e.g., `static uiSlots = { ... }`).
+ */
+function parseObjectLiteral(source: string): Record<string, any> | null {
+  if (!source || !source.trim().startsWith('{')) return null;
+  try {
+    // Use indirect eval via Function to parse the object literal
+    // This runs at build time only, on source code we already trust
+    // eslint-disable-next-line no-new-func
+    return new Function(`return (${source})`)() as Record<string, any>;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================
@@ -176,9 +201,25 @@ export class ManifestAdapter {
     classDef: ResolvedClassDefinition,
     options: { packageName?: string; packageVersion?: string } = {},
   ): SmartObjectDefinition {
-    // Convert fields
+    // Extract static properties (e.g., uiSlots on Agent subclasses)
+    let staticProperties: Record<string, any> | undefined;
+    for (const field of classDef.allFields) {
+      if (field.isStatic && field.name === 'uiSlots' && field.initializer) {
+        try {
+          const parsed = parseObjectLiteral(field.initializer);
+          if (parsed) {
+            staticProperties = { uiSlots: parsed };
+          }
+        } catch {
+          // Failed to parse uiSlots initializer — skip
+        }
+      }
+    }
+
+    // Convert fields (skip static fields — they're not database columns)
     const fields: Record<string, FieldDefinition> = {};
     for (const field of classDef.allFields) {
+      if (field.isStatic) continue;
       const converted = this.convertField(field);
       if (converted) {
         fields[field.name] = converted;
@@ -220,6 +261,7 @@ export class ManifestAdapter {
       extendsTypeArg: classDef.extendsTypeArg || undefined,
       exportName: classDef.className,
       collectionExportName: `${classDef.className}Collection`,
+      staticProperties,
     };
   }
 

@@ -103,6 +103,9 @@ export interface RawFieldDefinition {
   /** Whether field is optional (has ?) */
   optional: boolean;
 
+  /** Whether field is static */
+  isStatic: boolean;
+
   /** Whether field is readonly */
   readonly: boolean;
 

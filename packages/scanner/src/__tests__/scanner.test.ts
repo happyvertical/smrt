@@ -56,6 +56,49 @@ describe('OxcScanner', () => {
     `,
     );
 
+    // Create agent test file with static uiSlots and agent decorator
+    writeFileSync(
+      join(tempDir, 'agent.ts'),
+      `
+      import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+      @smrt({
+        agent: {
+          icon: 'newspaper',
+          tier: 'standard',
+          description: 'Test agent',
+        },
+        cli: { include: ['discover', 'analyze'] },
+        mcp: { include: ['analyze', 'report'] },
+      })
+      export class TestAgent extends SmrtObject {
+        static uiSlots = {
+          sources: {
+            id: 'sources',
+            label: 'Data Sources',
+            description: 'Configure data sources',
+            icon: 'database',
+            order: 1,
+          },
+          settings: {
+            id: 'settings',
+            label: 'Agent Settings',
+            description: 'Configure defaults',
+            icon: 'settings',
+            order: 2,
+          },
+        };
+
+        name: string = '';
+        source: string = '';
+
+        async discover(): Promise<any> { return {}; }
+        async analyze(): Promise<any> { return {}; }
+        async report(): Promise<any> { return {}; }
+      }
+    `,
+    );
+
     // Create subdirectory with STI example
     const stiDir = join(tempDir, 'events');
     const mkdirSync = require('node:fs').mkdirSync;
@@ -114,19 +157,20 @@ describe('OxcScanner', () => {
 
       const results = await scanner.scan();
 
-      // Should find Product, Category, Event, Meeting, Conference
+      // Should find Product, Category, TestAgent, Event, Meeting, Conference
       // Helper should be found but not as a SMRT class
       const smrtClasses = results.files
         .flatMap((f) => f.classes)
         .filter((c) => c.hasSmartDecorator);
 
-      expect(smrtClasses.length).toBe(5);
+      expect(smrtClasses.length).toBe(6);
       expect(smrtClasses.map((c) => c.className).sort()).toEqual([
         'Category',
         'Conference',
         'Event',
         'Meeting',
         'Product',
+        'TestAgent',
       ]);
     });
 
@@ -215,6 +259,76 @@ describe('OxcScanner', () => {
     });
   });
 
+  describe('static properties and agent manifests', () => {
+    it('should extract static uiSlots into manifest staticProperties', async () => {
+      const scanner = new OxcScanner({
+        cwd: tempDir,
+        include: ['**/*.ts'],
+      });
+
+      const { resolved } = await scanner.scanAndResolve();
+
+      // Convert to manifest
+      const { ManifestAdapter } = await import('../manifest-adapter.js');
+      const adapter = new ManifestAdapter();
+      const manifest = adapter.toManifest(resolved, {
+        packageName: '@test/agent-pkg',
+      });
+
+      const agentKey = '@test/agent-pkg:TestAgent';
+      const agentDef = manifest.objects[agentKey];
+      expect(agentDef).toBeDefined();
+
+      // Should have staticProperties with uiSlots
+      expect(agentDef.staticProperties).toBeDefined();
+      expect(agentDef.staticProperties?.uiSlots).toBeDefined();
+      expect(agentDef.staticProperties?.uiSlots.sources).toMatchObject({
+        id: 'sources',
+        label: 'Data Sources',
+        icon: 'database',
+        order: 1,
+      });
+      expect(agentDef.staticProperties?.uiSlots.settings).toMatchObject({
+        id: 'settings',
+        label: 'Agent Settings',
+        icon: 'settings',
+        order: 2,
+      });
+
+      // uiSlots should NOT appear as a regular field
+      expect(agentDef.fields.uiSlots).toBeUndefined();
+
+      // Regular instance fields should still be present
+      expect(agentDef.fields.name).toBeDefined();
+      expect(agentDef.fields.source).toBeDefined();
+    });
+
+    it('should have decoratorConfig.agent for agent classes', async () => {
+      const scanner = new OxcScanner({
+        cwd: tempDir,
+        include: ['**/*.ts'],
+      });
+
+      const { resolved } = await scanner.scanAndResolve();
+      const { ManifestAdapter } = await import('../manifest-adapter.js');
+      const adapter = new ManifestAdapter();
+      const manifest = adapter.toManifest(resolved, {
+        packageName: '@test/agent-pkg',
+      });
+
+      const agentDef = manifest.objects['@test/agent-pkg:TestAgent'];
+      expect(agentDef.decoratorConfig.agent).toMatchObject({
+        icon: 'newspaper',
+        tier: 'standard',
+        description: 'Test agent',
+      });
+
+      // Non-agent class should NOT have agent config
+      const productDef = manifest.objects['@test/agent-pkg:Product'];
+      expect(productDef.decoratorConfig.agent).toBeUndefined();
+    });
+  });
+
   describe('getStats', () => {
     it('should return scan statistics', async () => {
       const scanner = new OxcScanner({
@@ -227,7 +341,7 @@ describe('OxcScanner', () => {
 
       expect(stats.fileCount).toBeGreaterThan(0);
       expect(stats.totalClasses).toBeGreaterThan(0);
-      expect(stats.smrtClasses).toBe(5); // Product, Category, Event, Meeting, Conference
+      expect(stats.smrtClasses).toBe(6); // Product, Category, TestAgent, Event, Meeting, Conference
       expect(stats.stiClasses).toBe(3); // Event, Meeting, Conference
       expect(stats.parseTimeMs).toBeGreaterThanOrEqual(0);
     });
