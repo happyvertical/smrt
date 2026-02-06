@@ -838,6 +838,19 @@ function reconstructObjectExpression(
       let value = '';
       if (prop.value.range) {
         value = sourceText.slice(prop.value.range[0], prop.value.range[1]);
+      } else if (prop.value.type === 'ObjectExpression') {
+        // Recursively reconstruct nested objects (e.g., uiSlots.sources)
+        value =
+          reconstructObjectExpression(
+            prop.value as ObjectExpression,
+            sourceText,
+          ) || '';
+      } else if (prop.value.type === 'ArrayExpression') {
+        value =
+          reconstructArrayExpression(
+            prop.value as ArrayExpression,
+            sourceText,
+          ) || '';
       } else if (prop.value.type === 'Identifier') {
         value = prop.value.name;
       } else if (prop.value.type === 'Literal') {
@@ -1018,6 +1031,12 @@ function extractPropertyDefinition(
     } else if (node.value.type === 'ArrayExpression') {
       // Reconstruct array expression
       initializer = reconstructArrayExpression(node.value, sourceText);
+    } else if (node.value.type === 'ObjectExpression') {
+      // Reconstruct object expression (e.g., static uiSlots = { ... })
+      initializer = reconstructObjectExpression(
+        node.value as ObjectExpression,
+        sourceText,
+      );
     }
   }
 
@@ -1040,6 +1059,7 @@ function extractPropertyDefinition(
     numericValue,
     decorators,
     optional: node.optional || false,
+    isStatic: node.static || false,
     readonly: node.readonly || false,
     accessibility: node.accessibility || 'public',
     line: node.loc?.start.line || 0,
