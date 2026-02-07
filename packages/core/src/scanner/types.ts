@@ -182,6 +182,19 @@ export interface AgentUISlotManifest {
 }
 
 /**
+ * Admin route declared by an agent via static adminRoutes
+ * Used by vitePluginAgentRoutes to generate SvelteKit route files
+ */
+export interface AgentAdminRouteManifest {
+  /** Route path relative to agent root (e.g., 'sources/[sourceId]') */
+  path: string;
+  /** Component export name from the agent's admin entry point */
+  component: string;
+  /** Optional: export name for server load function */
+  load?: string;
+}
+
+/**
  * Auto-generated agent manifest section
  * Produced by the manifest build pipeline for any class with `agent` decorator config
  */
@@ -192,6 +205,7 @@ export interface AgentManifest {
   tier: 'free' | 'standard' | 'premium';
   description?: string;
   uiSlots: Record<string, AgentUISlotManifest>;
+  adminRoutes?: AgentAdminRouteManifest[];
   permissions: AgentPermission[];
   features: AgentFeature[];
   menuItems: AgentMenuItem[];

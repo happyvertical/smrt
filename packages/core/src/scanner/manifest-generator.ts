@@ -12,6 +12,7 @@ import { createQualifiedName } from '../utils/qualified-names.js';
 import { classnameToTablename } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
+  AgentAdminRouteManifest,
   AgentComponentDeclaration,
   AgentFeature,
   AgentManifest,
@@ -1694,6 +1695,11 @@ ${fields}
         }
       }
 
+      // Capture adminRoutes from static properties (if declared)
+      const adminRoutes = obj.staticProperties?.adminRoutes as
+        | AgentAdminRouteManifest[]
+        | undefined;
+
       const agentManifest: AgentManifest = {
         name: obj.className,
         slug,
@@ -1701,6 +1707,7 @@ ${fields}
         tier: agentConfig.tier || 'free',
         description: agentConfig.description,
         uiSlots,
+        ...(adminRoutes?.length ? { adminRoutes } : {}),
         permissions,
         features,
         menuItems,
