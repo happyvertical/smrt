@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.71
+
+### Patch Changes
+
+- ### Features
+
+  - Character, VideoShot, VideoComposition model hierarchy (#877) (video)
+  - @happyvertical/smrt-scanner@0.19.71
+  - @happyvertical/smrt-config@0.19.71
+  - @happyvertical/smrt-types@0.19.71
+
 ## 0.19.70
 
 ### Patch Changes
