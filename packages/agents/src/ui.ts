@@ -81,6 +81,29 @@ export interface AgentUISlot {
 export type AgentUISlots = Record<string, AgentUISlot>;
 
 /**
+ * A route an agent provides for its admin UI
+ *
+ * Agents declare these to get real SvelteKit routes generated
+ * by the vitePluginAgentRoutes Vite plugin.
+ *
+ * @example
+ * ```typescript
+ * static adminRoutes: AgentAdminRoute[] = [
+ *   { path: 'sources', component: 'SourcesPanel', load: 'loadSources' },
+ *   { path: 'sources/[sourceId]', component: 'SourceDetail', load: 'loadSourceDetail' },
+ * ];
+ * ```
+ */
+export interface AgentAdminRoute {
+  /** Route path relative to agent root (e.g., 'sources/[sourceId]') */
+  path: string;
+  /** Component export name from the agent's admin entry point */
+  component: string;
+  /** Optional: export name for server load function */
+  load?: string;
+}
+
+/**
  * Agent manifest type (re-exported from smrt-core scanner types)
  * Duplicated here to avoid hard dependency on scanner internals
  */
@@ -91,6 +114,7 @@ export interface AgentManifestInfo {
   tier: 'free' | 'standard' | 'premium';
   description?: string;
   uiSlots: Record<string, AgentUISlot>;
+  adminRoutes?: AgentAdminRoute[];
   permissions: Array<{
     id: string;
     label: string;
