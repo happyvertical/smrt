@@ -11,6 +11,7 @@
 export { ASTScanner } from './ast-scanner';
 export { generateManifest, ManifestGenerator } from './manifest-generator';
 export type {
+  AgentAdminRouteManifest,
   AgentComponentDeclaration,
   AgentFeature,
   AgentManifest,

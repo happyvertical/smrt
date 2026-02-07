@@ -12,6 +12,7 @@ import { createQualifiedName } from '../utils/qualified-names.js';
 import { classnameToTablename } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
+  AgentAdminRouteManifest,
   AgentComponentDeclaration,
   AgentFeature,
   AgentManifest,
@@ -1694,6 +1695,10 @@ ${fields}
         }
       }
 
+      // Capture adminRoutes from static property (same pattern as uiSlots)
+      const adminRoutes: AgentAdminRouteManifest[] =
+        obj.staticProperties?.adminRoutes ?? [];
+
       const agentManifest: AgentManifest = {
         name: obj.className,
         slug,
@@ -1705,6 +1710,7 @@ ${fields}
         features,
         menuItems,
         components,
+        ...(adminRoutes.length > 0 ? { adminRoutes } : {}),
       };
 
       obj.agent = agentManifest;

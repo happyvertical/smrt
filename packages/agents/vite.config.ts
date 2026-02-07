@@ -17,10 +17,11 @@ export default defineConfig(async () => {
 	return {
 		build: {
 			lib: {
-				// Multiple entry points: index.ts and ui.ts
+				// Multiple entry points: index.ts, ui.ts, and vite-plugin.ts
 				entry: {
 					index: resolve(packageDir, 'src/index.ts'),
 					ui: resolve(packageDir, 'src/ui.ts'),
+					'vite-plugin': resolve(packageDir, 'src/vite-plugin.ts'),
 				},
 				formats: ['es'] as const,
 			},

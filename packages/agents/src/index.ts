@@ -95,7 +95,10 @@ export type { AgentStatusType } from './types.js';
 // UI types and registry for admin panels
 export {
   type AdminPanelBaseProps,
+  type AgentAdminRoute,
   type AgentManifestInfo,
+  type AgentRouteLoadContext,
+  type AgentRouteLoadFn,
   type AgentUIComponentRegistry,
   AgentUIRegistry,
   type AgentUISlot,

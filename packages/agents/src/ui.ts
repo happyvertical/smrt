@@ -81,6 +81,51 @@ export interface AgentUISlot {
 export type AgentUISlots = Record<string, AgentUISlot>;
 
 /**
+ * A route an agent provides for its admin UI
+ *
+ * Agents declare these to get real SvelteKit routes generated
+ * by the vitePluginAgentRoutes Vite plugin.
+ *
+ * @example
+ * ```typescript
+ * static adminRoutes: AgentAdminRoute[] = [
+ *   { path: 'sources', component: 'SourcesPanel', load: 'loadSources' },
+ *   { path: 'sources/[sourceId]', component: 'SourceDetail', load: 'loadSourceDetail' },
+ * ];
+ * ```
+ */
+export interface AgentAdminRoute {
+  /** Route path relative to agent root (e.g., 'sources/[sourceId]') */
+  path: string;
+  /** Component export name from the agent's admin entry point */
+  component: string;
+  /** Optional: export name for server load function */
+  load?: string;
+}
+
+/**
+ * Context passed to agent route load functions
+ *
+ * A normalized subset of SvelteKit's ServerLoadEvent,
+ * so agent load functions don't need a direct SvelteKit dependency.
+ */
+export interface AgentRouteLoadContext {
+  params: Record<string, string>;
+  parent: () => Promise<any>;
+  fetch: typeof fetch;
+  url: URL;
+}
+
+/**
+ * Agent route load function signature
+ *
+ * Returned data is spread into the page's `data` prop.
+ */
+export type AgentRouteLoadFn = (
+  context: AgentRouteLoadContext,
+) => Promise<Record<string, unknown>> | Record<string, unknown>;
+
+/**
  * Agent manifest type (re-exported from smrt-core scanner types)
  * Duplicated here to avoid hard dependency on scanner internals
  */
@@ -112,6 +157,7 @@ export interface AgentManifestInfo {
     requiredPermission?: string;
   }>;
   components: Array<{ exportPath: string; type: string }>;
+  adminRoutes?: AgentAdminRoute[];
 }
 
 /**
@@ -161,6 +207,29 @@ export interface AgentUIComponentRegistry {
 
   /** Get all registered manifests */
   getAllManifests(): Map<string, AgentManifestInfo>;
+
+  /** Register a route component for an agent */
+  registerRouteComponent(
+    agentClass: string,
+    path: string,
+    component: ComponentType,
+  ): void;
+
+  /** Get a route component for an agent */
+  getRouteComponent(
+    agentClass: string,
+    path: string,
+  ): ComponentType | undefined;
+
+  /** Register a route load function for an agent */
+  registerRouteLoad(
+    agentClass: string,
+    path: string,
+    loadFn: AgentRouteLoadFn,
+  ): void;
+
+  /** Get a route load function for an agent */
+  getRouteLoad(agentClass: string, path: string): AgentRouteLoadFn | undefined;
 }
 
 /**
@@ -181,9 +250,14 @@ export function createUIRegistry(): AgentUIComponentRegistry {
   // biome-ignore lint/suspicious/noExplicitAny: ComponentType needs any
   const components = new Map<string, ComponentType<any>>();
   const manifests = new Map<string, AgentManifestInfo>();
+  const routeComponents = new Map<string, ComponentType>();
+  const routeLoads = new Map<string, AgentRouteLoadFn>();
 
   const makeKey = (agentClass: string, slotId: string) =>
     `${agentClass}:${slotId}`;
+
+  const makeRouteKey = (agentClass: string, path: string) =>
+    `${agentClass}:route:${path}`;
 
   return {
     register(agentClass, slotId, component) {
@@ -221,6 +295,8 @@ export function createUIRegistry(): AgentUIComponentRegistry {
     clear() {
       components.clear();
       manifests.clear();
+      routeComponents.clear();
+      routeLoads.clear();
     },
 
     registerByKey(key, component) {
@@ -241,6 +317,22 @@ export function createUIRegistry(): AgentUIComponentRegistry {
 
     getAllManifests() {
       return new Map(manifests);
+    },
+
+    registerRouteComponent(agentClass, path, component) {
+      routeComponents.set(makeRouteKey(agentClass, path), component);
+    },
+
+    getRouteComponent(agentClass, path) {
+      return routeComponents.get(makeRouteKey(agentClass, path));
+    },
+
+    registerRouteLoad(agentClass, path, loadFn) {
+      routeLoads.set(makeRouteKey(agentClass, path), loadFn);
+    },
+
+    getRouteLoad(agentClass, path) {
+      return routeLoads.get(makeRouteKey(agentClass, path));
     },
   };
 }

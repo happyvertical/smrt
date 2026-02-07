@@ -21,7 +21,7 @@ import type {
 } from './interests.js';
 import { mergeFilters, normalizeSort } from './interests.js';
 import type { AgentStatusType } from './types.js';
-import type { AgentUISlots } from './ui.js';
+import type { AgentAdminRoute, AgentUISlots } from './ui.js';
 
 /**
  * Agent constructor options
@@ -132,6 +132,24 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   static uiSlots: AgentUISlots = {};
+
+  /**
+   * Admin routes this agent provides
+   *
+   * Subclasses override this to declare route trees for their admin UI.
+   * The vitePluginAgentRoutes Vite plugin reads these from the manifest
+   * and generates real SvelteKit route files.
+   *
+   * @example
+   * ```typescript
+   * static override adminRoutes: AgentAdminRoute[] = [
+   *   { path: 'sources', component: 'SourcesPanel', load: 'loadSources' },
+   *   { path: 'sources/[sourceId]', component: 'SourceDetail', load: 'loadSourceDetail' },
+   *   { path: 'sources/[sourceId]/edit', component: 'SourceEditor', load: 'loadSourceDetail' },
+   * ];
+   * ```
+   */
+  static adminRoutes: AgentAdminRoute[] = [];
 
   /**
    * Current agent status
