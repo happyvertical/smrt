@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.19.70
+
+### Patch Changes
+
+- ### Features
+
+  - include SDK packages in docs:claude output (#874) (cli)
+  - @happyvertical/smrt-scanner@0.19.70
+  - @happyvertical/smrt-config@0.19.70
+  - @happyvertical/smrt-types@0.19.70
+
+## 0.19.69
+
+### Patch Changes
+
+- ### Features
+
+  - support agent manifests in OXC scanner path (#876) (scanner)
+  - @happyvertical/smrt-scanner@0.19.69
+  - @happyvertical/smrt-config@0.19.69
+  - @happyvertical/smrt-types@0.19.69
+
 ## 0.19.68
 
 ### Patch Changes

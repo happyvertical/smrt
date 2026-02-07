@@ -1,5 +1,29 @@
 # @happyvertical/smrt-commerce
 
+## 0.19.70
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.19.70
+  - @happyvertical/smrt-ledgers@0.19.70
+  - @happyvertical/smrt-profiles@0.19.70
+  - @happyvertical/smrt-tenancy@0.19.70
+  - @happyvertical/smrt-svelte@0.19.70
+  - @happyvertical/smrt-types@0.19.70
+
+## 0.19.69
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.19.69
+  - @happyvertical/smrt-ledgers@0.19.69
+  - @happyvertical/smrt-profiles@0.19.69
+  - @happyvertical/smrt-tenancy@0.19.69
+  - @happyvertical/smrt-svelte@0.19.69
+  - @happyvertical/smrt-types@0.19.69
+
 ## 0.19.68
 
 ### Patch Changes

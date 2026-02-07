@@ -1,7 +1,8 @@
 /**
  * docs:claude Command
  *
- * Generates .claude/smrt-framework.md from installed @happyvertical/smrt-* packages.
+ * Generates .claude/smrt-framework.md from installed @happyvertical packages.
+ * Includes both SMRT framework packages and HappyVertical SDK packages.
  * This provides Claude Code with framework context in downstream projects.
  */
 
@@ -73,20 +74,22 @@ export const docsClaudeCommand: CLICommand = {
       // Find installed @happyvertical/smrt-* packages
       const packages = await discoverInstalledPackages();
 
-      if (packages.length === 0) {
-        console.log(
-          '\n⚠️  No @happyvertical/smrt-* packages found in node_modules',
-        );
+      // Find installed @happyvertical/* SDK packages (non-smrt)
+      const sdkPackages = await discoverSdkPackages();
+
+      if (packages.length === 0 && sdkPackages.length === 0) {
+        console.log('\n⚠️  No @happyvertical packages found in node_modules');
         console.log(
           '   Make sure packages are installed before running this command.\n',
         );
         process.exit(1);
       }
 
-      // Generate markdown content with optional root docs
+      // Generate markdown content with optional root docs and SDK packages
       const content = generateMarkdown(
         packages,
         rootDocs.length > 0 ? rootDocs : undefined,
+        sdkPackages.length > 0 ? sdkPackages : undefined,
       );
 
       if (dryRun) {
@@ -103,10 +106,18 @@ export const docsClaudeCommand: CLICommand = {
       // Write file
       writeFileSync(outputPath, content, 'utf-8');
 
+      const totalPackages = packages.length + sdkPackages.length;
       console.log(`\n✅ Generated ${outputPath}`);
-      console.log(`   ${packages.length} packages documented`);
-      const withClaudeMd = packages.filter((p) => p.claudeMd).length;
-      const withMeta = packages.filter((p) => p.meta && !p.claudeMd).length;
+      console.log(`   ${totalPackages} packages documented`);
+      if (packages.length > 0) {
+        console.log(`   ${packages.length} SMRT packages`);
+      }
+      if (sdkPackages.length > 0) {
+        console.log(`   ${sdkPackages.length} SDK packages`);
+      }
+      const allPackages = [...packages, ...sdkPackages];
+      const withClaudeMd = allPackages.filter((p) => p.claudeMd).length;
+      const withMeta = allPackages.filter((p) => p.meta && !p.claudeMd).length;
       if (withClaudeMd > 0) {
         console.log(`   ${withClaudeMd} with CLAUDE.md`);
       }
@@ -193,6 +204,46 @@ async function discoverInstalledPackages(): Promise<PackageInfo[]> {
   }
 
   // Sort by package name
+  return packages.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Discover installed @happyvertical/* SDK packages (non-smrt)
+ * These are foundation packages like @happyvertical/ai, @happyvertical/sql, etc.
+ */
+async function discoverSdkPackages(): Promise<PackageInfo[]> {
+  const packages: PackageInfo[] = [];
+  const { readdirSync } = await import('node:fs');
+
+  const nodeModulesPath = join(process.cwd(), 'node_modules', '@happyvertical');
+  if (!existsSync(nodeModulesPath)) {
+    return packages;
+  }
+
+  const entries = readdirSync(nodeModulesPath, { withFileTypes: true });
+  for (const entry of entries) {
+    // Skip smrt-* packages (handled by discoverInstalledPackages)
+    if (entry.name.startsWith('smrt-')) continue;
+    // Skip smrt itself (the meta-package if it exists)
+    if (entry.name === 'smrt') continue;
+
+    // Resolve symlinks for workspace packages
+    const entryPath = join(nodeModulesPath, entry.name);
+    let packagePath = entryPath;
+
+    try {
+      const stats = lstatSync(entryPath);
+      if (stats.isSymbolicLink()) {
+        packagePath = realpathSync(entryPath);
+      }
+    } catch {
+      // Not a symlink, use original path
+    }
+
+    const pkg = loadPackageInfo(packagePath, entry.name);
+    if (pkg) packages.push(pkg);
+  }
+
   return packages.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -387,6 +438,7 @@ export function extractReadmeSections(
 export function generateMarkdown(
   packages: PackageInfo[],
   rootDocs?: RootDocInfo[],
+  sdkPackages?: PackageInfo[],
 ): string {
   const lines: string[] = [];
 
@@ -421,7 +473,7 @@ export function generateMarkdown(
   }
 
   // Installed packages table
-  lines.push('## Installed Packages');
+  lines.push('## Installed SMRT Packages');
   lines.push('');
   lines.push('| Package | Version |');
   lines.push('|---------|---------|');
@@ -430,7 +482,19 @@ export function generateMarkdown(
   }
   lines.push('');
 
-  // Per-package sections
+  // SDK packages table
+  if (sdkPackages && sdkPackages.length > 0) {
+    lines.push('## Installed SDK Packages');
+    lines.push('');
+    lines.push('| Package | Version |');
+    lines.push('|---------|---------|');
+    for (const pkg of sdkPackages) {
+      lines.push(`| ${pkg.name} | ${pkg.version} |`);
+    }
+    lines.push('');
+  }
+
+  // Per-package sections (SMRT)
   for (const pkg of packages) {
     lines.push('---');
     lines.push('');
@@ -509,6 +573,88 @@ export function generateMarkdown(
     } else {
       lines.push('*No CLAUDE.md or .claude-meta.json found for this package.*');
       lines.push('');
+    }
+  }
+
+  // Per-package sections (SDK)
+  if (sdkPackages && sdkPackages.length > 0) {
+    lines.push('---');
+    lines.push('');
+    lines.push('## SDK Package Details');
+    lines.push('');
+
+    for (const pkg of sdkPackages) {
+      lines.push('---');
+      lines.push('');
+      lines.push(`### ${pkg.name}`);
+      lines.push('');
+
+      if (pkg.claudeMd) {
+        let content = pkg.claudeMd;
+        const h1Match = content.match(/^#\s+.+\n/);
+        if (h1Match) {
+          content = content.slice(h1Match[0].length);
+        }
+        lines.push(content.trim());
+        lines.push('');
+      } else if (pkg.meta) {
+        if (pkg.meta.purpose) {
+          lines.push(pkg.meta.purpose);
+          lines.push('');
+        }
+
+        if (pkg.meta.readmeSections && pkg.readme) {
+          const sections = extractReadmeSections(
+            pkg.readme,
+            pkg.meta.readmeSections,
+          );
+          for (const sectionName of pkg.meta.readmeSections) {
+            if (sections[sectionName]) {
+              lines.push(`#### ${sectionName}`);
+              lines.push('');
+              lines.push(sections[sectionName]);
+              lines.push('');
+            }
+          }
+        }
+
+        if (pkg.meta.patterns && pkg.meta.patterns.length > 0) {
+          lines.push('#### Patterns');
+          lines.push('');
+          for (const pattern of pkg.meta.patterns) {
+            lines.push(`##### ${pattern.name}`);
+            lines.push('');
+            lines.push(pattern.description);
+            if (pattern.example) {
+              lines.push('```typescript');
+              lines.push(pattern.example);
+              lines.push('```');
+            }
+            lines.push('');
+          }
+        }
+
+        if (pkg.meta.pitfalls && pkg.meta.pitfalls.length > 0) {
+          lines.push('#### Pitfalls');
+          lines.push('');
+          for (const pitfall of pkg.meta.pitfalls) {
+            lines.push(`- ${pitfall}`);
+          }
+          lines.push('');
+        }
+
+        if (pkg.meta.exports && pkg.meta.exports.length > 0) {
+          lines.push('#### Key Exports');
+          lines.push('');
+          lines.push(`\`${pkg.meta.exports.join('`, `')}\``);
+          lines.push('');
+        }
+      } else {
+        lines.push(
+          '*No CLAUDE.md or .claude-meta.json found for this package.*',
+        );
+        lines.push('');
+      }
     }
   }
 
