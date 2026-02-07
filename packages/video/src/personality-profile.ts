@@ -9,11 +9,36 @@ import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { VoiceProfile } from '@happyvertical/smrt-voice';
+import { Performer } from './performer.js';
+import { Scene } from './scene.js';
 
 /**
  * Personality profile status
  */
 export type PersonalityProfileStatus = 'pending' | 'ready';
+
+/**
+ * Branding configuration for video overlays
+ */
+/**
+ * Scene-specific configuration for a personality profile
+ */
+export interface CharacterSceneConfig {
+  /** Scene ID */
+  sceneId: string;
+
+  /** Preferred viewpoint ID (for 360° scenes) */
+  viewpointId?: string;
+
+  /** Anchor point ID for placement */
+  anchorPointId?: string;
+
+  /** Character scale in this scene */
+  scale: number;
+
+  /** Character position in this scene (normalized 0-1) */
+  position: { x: number; y: number };
+}
 
 /**
  * Branding configuration for video overlays
@@ -89,6 +114,21 @@ export interface PersonalityProfileOptions extends SmrtObjectOptions {
    * @default 'pending'
    */
   status?: PersonalityProfileStatus;
+
+  /**
+   * Linked performer for IP-Adapter face consistency
+   */
+  performerId?: string | null;
+
+  /**
+   * Default scene for this personality
+   */
+  defaultSceneId?: string | null;
+
+  /**
+   * Scene-specific configurations
+   */
+  sceneConfigs?: CharacterSceneConfig[];
 
   /**
    * Tenant ID for multi-tenant isolation
@@ -181,6 +221,23 @@ export class PersonalityProfile extends SmrtObject {
    */
   status: PersonalityProfileStatus = 'pending';
 
+  /**
+   * Linked performer for IP-Adapter face consistency
+   */
+  @foreignKey(() => Performer)
+  performerId: string | null = null;
+
+  /**
+   * Default scene for this personality
+   */
+  @foreignKey(() => Scene)
+  defaultSceneId: string | null = null;
+
+  /**
+   * Scene-specific configurations
+   */
+  sceneConfigs: CharacterSceneConfig[] = [];
+
   constructor(options: PersonalityProfileOptions = {}) {
     super(options);
 
@@ -196,6 +253,12 @@ export class PersonalityProfile extends SmrtObject {
     if (options.brandingKit !== undefined)
       this.brandingKit = options.brandingKit;
     if (options.status !== undefined) this.status = options.status;
+    if (options.performerId !== undefined)
+      this.performerId = options.performerId;
+    if (options.defaultSceneId !== undefined)
+      this.defaultSceneId = options.defaultSceneId;
+    if (options.sceneConfigs !== undefined)
+      this.sceneConfigs = options.sceneConfigs;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 

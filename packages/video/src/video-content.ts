@@ -109,6 +109,11 @@ export interface VideoContentOptions extends ContentOptions {
   errorMessage?: string | null;
 
   /**
+   * Detailed status message for progress tracking
+   */
+  statusMessage?: string | null;
+
+  /**
    * Asset ID of the final video
    */
   videoAssetId?: string | null;
@@ -199,6 +204,11 @@ export class VideoContent extends Content {
   errorMessage: string | null = null;
 
   /**
+   * Detailed status message for progress tracking
+   */
+  statusMessage: string | null = null;
+
+  /**
    * Asset ID of the final video
    */
   videoAssetId: string | null = null;
@@ -236,6 +246,8 @@ export class VideoContent extends Content {
     if (options.progress !== undefined) this.progress = options.progress;
     if (options.errorMessage !== undefined)
       this.errorMessage = options.errorMessage;
+    if (options.statusMessage !== undefined)
+      this.statusMessage = options.statusMessage;
     if (options.videoAssetId !== undefined)
       this.videoAssetId = options.videoAssetId;
     if (options.thumbnailAssetId !== undefined)

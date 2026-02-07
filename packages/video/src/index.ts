@@ -4,7 +4,7 @@
  * Video content management for AI-powered video production.
  *
  * This package provides models for managing personality profiles, video content,
- * and ComfyUI workflows in the SMRT ecosystem.
+ * performers, scenes, and ComfyUI workflows in the SMRT ecosystem.
  *
  * @example
  * ```typescript
@@ -12,6 +12,8 @@
  *   PersonalityProfile,
  *   VideoContent,
  *   VideoWorkflow,
+ *   Performer,
+ *   Scene,
  * } from '@happyvertical/smrt-video';
  *
  * // Create a personality profile
@@ -32,21 +34,41 @@
  * ```
  */
 
+export {
+  CompositeJob,
+  type CompositeJobOptions,
+  type CompositeJobStatus,
+} from './composite-job.js';
+export {
+  Performer,
+  type PerformerDNA,
+  type PerformerOptions,
+  type PerformerStatus,
+} from './performer.js';
 // Models
 export {
   type BrandingConfig,
+  type CharacterSceneConfig,
   PersonalityProfile,
   type PersonalityProfileOptions,
   type PersonalityProfileStatus,
 } from './personality-profile.js';
-
+export {
+  type AnchorPoint,
+  type LightingProfile,
+  Scene,
+  type SceneOptions,
+  type SceneProjection,
+  type SceneSourceType,
+  type SceneStatus,
+  type SceneViewpoint,
+} from './scene.js';
 export {
   VideoContent,
   type VideoContentOptions,
   type VideoContentStatus,
   type VideoMetadata,
 } from './video-content.js';
-
 export {
   type NodeMapping,
   VideoWorkflow,

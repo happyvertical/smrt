@@ -11,6 +11,7 @@ export { AssetMetafield } from './asset-metafield';
 export { AssetMetafieldCollection } from './asset-metafields';
 export { AssetStatus } from './asset-status';
 export { AssetStatusCollection } from './asset-statuses';
+export { AssetStore, type StoreOptions } from './asset-store';
 // Export models
 export { AssetType } from './asset-type';
 // Export collections
