@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.72
+
+### Patch Changes
+
+- ### Features
+
+  - add admin route declarations and Vite plugin for SvelteKit route generation (#878) (agents)
+  - @happyvertical/smrt-scanner@0.19.72
+  - @happyvertical/smrt-config@0.19.72
+  - @happyvertical/smrt-types@0.19.72
+
 ## 0.19.71
 
 ### Patch Changes
