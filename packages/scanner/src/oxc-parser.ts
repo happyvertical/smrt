@@ -77,6 +77,27 @@ interface BaseNode {
   type: string;
   loc?: SourceLocation;
   range?: [number, number];
+  start?: number;
+  end?: number;
+}
+
+/**
+ * Get source range from an AST node.
+ * oxc-parser v0.108+ uses start/end instead of range.
+ */
+function getRange(node: BaseNode): [number, number] | null {
+  if (node.range) return node.range;
+  if (node.start !== undefined && node.end !== undefined)
+    return [node.start, node.end];
+  return null;
+}
+
+/**
+ * Slice source text from an AST node's range.
+ */
+function sliceSource(node: BaseNode, sourceText: string): string | null {
+  const range = getRange(node);
+  return range ? sourceText.slice(range[0], range[1]) : null;
 }
 
 interface Program extends BaseNode {
@@ -695,18 +716,17 @@ function extractValue(node: Expression, sourceText: string): unknown {
       break;
 
     case 'CallExpression':
-    case 'NewExpression':
+    case 'NewExpression': {
       // Return the raw source for complex expressions
-      if (node.range) {
-        return sourceText.slice(node.range[0], node.range[1]);
-      }
+      const src = sliceSource(node, sourceText);
+      if (src) return src;
       break;
+    }
   }
 
   // For complex expressions, return raw source if available
-  if (node.range) {
-    return sourceText.slice(node.range[0], node.range[1]);
-  }
+  const rawSrc = sliceSource(node, sourceText);
+  if (rawSrc) return rawSrc;
 
   return undefined;
 }
@@ -776,9 +796,8 @@ function reconstructCallExpression(
   sourceText: string,
 ): string | null {
   // Try range first
-  if (node.range) {
-    return sourceText.slice(node.range[0], node.range[1]);
-  }
+  const src = sliceSource(node, sourceText);
+  if (src) return src;
 
   // Reconstruct from AST
   let callee = '';
@@ -793,8 +812,9 @@ function reconstructCallExpression(
   // Reconstruct arguments
   const args: string[] = [];
   for (const arg of node.arguments) {
-    if (arg.range) {
-      args.push(sourceText.slice(arg.range[0], arg.range[1]));
+    const argSrc = sliceSource(arg, sourceText);
+    if (argSrc) {
+      args.push(argSrc);
     } else if (arg.type === 'Identifier') {
       args.push(arg.name);
     } else if (arg.type === 'Literal') {
@@ -819,9 +839,8 @@ function reconstructObjectExpression(
   node: ObjectExpression,
   sourceText: string,
 ): string | null {
-  if (node.range) {
-    return sourceText.slice(node.range[0], node.range[1]);
-  }
+  const src = sliceSource(node, sourceText);
+  if (src) return src;
 
   const props: string[] = [];
   for (const prop of node.properties) {
@@ -836,8 +855,9 @@ function reconstructObjectExpression(
       if (!key) continue;
 
       let value = '';
-      if (prop.value.range) {
-        value = sourceText.slice(prop.value.range[0], prop.value.range[1]);
+      const valSrc = sliceSource(prop.value, sourceText);
+      if (valSrc) {
+        value = valSrc;
       } else if (prop.value.type === 'ObjectExpression') {
         // Recursively reconstruct nested objects (e.g., uiSlots.sources)
         value =
@@ -873,21 +893,26 @@ function reconstructArrayExpression(
   node: ArrayExpression,
   sourceText: string,
 ): string | null {
-  if (node.range) {
-    return sourceText.slice(node.range[0], node.range[1]);
-  }
+  const src = sliceSource(node, sourceText);
+  if (src) return src;
 
   const elements: string[] = [];
   for (const el of node.elements) {
     if (!el) continue;
     if (el.type === 'SpreadElement') {
       elements.push('...');
-    } else if (el.range) {
-      elements.push(sourceText.slice(el.range[0], el.range[1]));
-    } else if (el.type === 'Identifier') {
-      elements.push(el.name);
-    } else if (el.type === 'Literal') {
-      elements.push(el.raw || String(el.value));
+    } else {
+      const elSrc = sliceSource(el, sourceText);
+      if (elSrc) {
+        elements.push(elSrc);
+      } else if (el.type === 'Identifier') {
+        elements.push(el.name);
+      } else if (el.type === 'Literal') {
+        elements.push(el.raw || String(el.value));
+      } else if (el.type === 'ObjectExpression') {
+        const objStr = reconstructObjectExpression(el as ObjectExpression, sourceText);
+        if (objStr) elements.push(objStr);
+      }
     }
   }
 
@@ -1006,8 +1031,9 @@ function extractPropertyDefinition(
     }
 
     // Get raw initializer string - try range first for accurate source text
-    if (node.value.range) {
-      initializer = sourceText.slice(node.value.range[0], node.value.range[1]);
+    const valueSrc = sliceSource(node.value, sourceText);
+    if (valueSrc) {
+      initializer = valueSrc;
     } else if (node.value.type === 'Literal' && node.value.raw) {
       // Fall back to raw property for literals
       initializer = node.value.raw;
@@ -1083,13 +1109,9 @@ function extractFieldDecorator(
       name = expr.callee.name;
     }
     // Extract arguments as strings
-    // OXC uses start/end properties instead of range
     for (const arg of expr.arguments) {
-      if (arg.start !== undefined && arg.end !== undefined) {
-        args.push(sourceText.slice(arg.start, arg.end));
-      } else if (arg.range) {
-        args.push(sourceText.slice(arg.range[0], arg.range[1]));
-      }
+      const argSrc = sliceSource(arg, sourceText);
+      if (argSrc) args.push(argSrc);
     }
   } else if (expr.type === 'Identifier') {
     name = expr.name;
@@ -1158,9 +1180,7 @@ function extractParameter(
           ? extractTypeName(left.typeAnnotation.typeAnnotation)
           : null,
         optional: true,
-        defaultValue: param.right.range
-          ? sourceText.slice(param.right.range[0], param.right.range[1])
-          : null,
+        defaultValue: sliceSource(param.right, sourceText),
       };
     }
     // Handle destructured parameter with default
@@ -1171,9 +1191,7 @@ function extractParameter(
           ? extractTypeName(left.typeAnnotation.typeAnnotation)
           : 'any',
         optional: true,
-        defaultValue: param.right.range
-          ? sourceText.slice(param.right.range[0], param.right.range[1])
-          : null,
+        defaultValue: sliceSource(param.right, sourceText),
       };
     }
     return null;

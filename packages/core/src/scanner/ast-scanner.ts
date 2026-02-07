@@ -420,17 +420,19 @@ export class ASTScanner {
         );
         if (isStatic) {
           const propName = this.getPropertyName(member);
-          if (propName === 'uiSlots' && member.initializer) {
+          if (
+            (propName === 'uiSlots' || propName === 'adminRoutes') &&
+            member.initializer
+          ) {
             if (!objectDef.staticProperties) {
               objectDef.staticProperties = {};
             }
             try {
-              objectDef.staticProperties.uiSlots = this.parseExpressionValue(
-                member.initializer,
-              );
+              objectDef.staticProperties[propName] =
+                this.parseExpressionValue(member.initializer);
             } catch (err) {
               console.warn(
-                `[ASTScanner] Failed to parse static uiSlots for ${objectDef.className}:`,
+                `[ASTScanner] Failed to parse static ${propName} for ${objectDef.className}:`,
                 err,
               );
             }
