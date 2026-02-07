@@ -193,6 +193,82 @@ describe('AgentUIRegistry', () => {
       expect(registry.getAllManifests().size).toBe(0);
     });
   });
+
+  describe('registerRouteComponent / getRouteComponent', () => {
+    it('should register and retrieve a route component', () => {
+      const FakeComponent = () => {};
+      registry.registerRouteComponent(
+        'Praeco',
+        'sources/[sourceId]',
+        FakeComponent,
+      );
+
+      expect(registry.getRouteComponent('Praeco', 'sources/[sourceId]')).toBe(
+        FakeComponent,
+      );
+    });
+
+    it('should return undefined for unregistered route component', () => {
+      expect(
+        registry.getRouteComponent('Praeco', 'sources/[sourceId]'),
+      ).toBeUndefined();
+    });
+
+    it('should not collide with slot components', () => {
+      const SlotComponent = () => {};
+      const RouteComponent = () => {};
+      registry.register('Praeco', 'sources', SlotComponent);
+      registry.registerRouteComponent('Praeco', 'sources', RouteComponent);
+
+      expect(registry.get('Praeco', 'sources')).toBe(SlotComponent);
+      expect(registry.getRouteComponent('Praeco', 'sources')).toBe(
+        RouteComponent,
+      );
+    });
+
+    it('should not collide between agents', () => {
+      const PraecoComponent = () => {};
+      const CaelusComponent = () => {};
+      registry.registerRouteComponent('Praeco', 'settings', PraecoComponent);
+      registry.registerRouteComponent('Caelus', 'settings', CaelusComponent);
+
+      expect(registry.getRouteComponent('Praeco', 'settings')).toBe(
+        PraecoComponent,
+      );
+      expect(registry.getRouteComponent('Caelus', 'settings')).toBe(
+        CaelusComponent,
+      );
+    });
+  });
+
+  describe('registerRouteLoad / getRouteLoad', () => {
+    it('should register and retrieve a route load function', () => {
+      const loadFn = async () => ({ data: 'test' });
+      registry.registerRouteLoad('Praeco', 'sources/[sourceId]', loadFn);
+
+      expect(registry.getRouteLoad('Praeco', 'sources/[sourceId]')).toBe(
+        loadFn,
+      );
+    });
+
+    it('should return undefined for unregistered route load', () => {
+      expect(
+        registry.getRouteLoad('Praeco', 'sources/[sourceId]'),
+      ).toBeUndefined();
+    });
+  });
+
+  describe('clear with routes', () => {
+    it('should clear route components and load functions', () => {
+      registry.registerRouteComponent('Praeco', 'sources', () => {});
+      registry.registerRouteLoad('Praeco', 'sources', async () => ({}));
+
+      registry.clear();
+
+      expect(registry.getRouteComponent('Praeco', 'sources')).toBeUndefined();
+      expect(registry.getRouteLoad('Praeco', 'sources')).toBeUndefined();
+    });
+  });
 });
 
 function createTestManifest(name: string): AgentManifestInfo {
