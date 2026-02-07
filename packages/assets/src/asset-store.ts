@@ -133,8 +133,14 @@ export class AssetStore {
     const filePath = `${typeSlug}/${asset.id}.${ext}`;
     const sourceUri = `file://${this.basePath}/${filePath}`;
 
-    // Write file to disk
-    await fs.write(filePath, data, { createParents: true });
+    try {
+      // Write file to disk
+      await fs.write(filePath, data, { createParents: true });
+    } catch (err) {
+      // Clean up orphaned Asset record on file write failure
+      await asset.delete();
+      throw err;
+    }
 
     // Update the Asset with the file URI
     asset.sourceUri = sourceUri;

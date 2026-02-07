@@ -3,13 +3,15 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { VideoComposition } from './video-composition.js';
+import { type RenderStatus, VideoComposition } from './video-composition.js';
 
 export class VideoCompositionCollection extends SmrtCollection<VideoComposition> {
   static readonly _itemClass = VideoComposition;
 
   /** Find compositions by render status */
-  async findByRenderStatus(renderStatus: string): Promise<VideoComposition[]> {
+  async findByRenderStatus(
+    renderStatus: RenderStatus,
+  ): Promise<VideoComposition[]> {
     return (await this.list({
       where: { renderStatus },
     })) as VideoComposition[];

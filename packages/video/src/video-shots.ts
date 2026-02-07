@@ -3,7 +3,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { VideoShot } from './video-shot.js';
+import { VideoShot, type VideoShotStatus } from './video-shot.js';
 
 export class VideoShotCollection extends SmrtCollection<VideoShot> {
   static readonly _itemClass = VideoShot;
@@ -17,7 +17,7 @@ export class VideoShotCollection extends SmrtCollection<VideoShot> {
   }
 
   /** Find shots by status */
-  async findByStatus(shotStatus: string): Promise<VideoShot[]> {
+  async findByStatus(shotStatus: VideoShotStatus): Promise<VideoShot[]> {
     return (await this.list({ where: { shotStatus } })) as VideoShot[];
   }
 

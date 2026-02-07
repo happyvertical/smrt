@@ -21,10 +21,10 @@ export type VideoShotCharacterRole = 'primary' | 'secondary' | 'background';
  */
 export interface VideoShotCharacterOptions extends SmrtObjectOptions {
   /** Video shot ID */
-  videoShotId?: string | null;
+  videoShotId: string;
 
   /** Character ID */
-  characterId?: string | null;
+  characterId: string;
 
   /** Role of the character in this shot */
   role?: VideoShotCharacterRole;
@@ -68,12 +68,12 @@ export class VideoShotCharacter extends SmrtObject {
   tenantId: string | null = null;
 
   /** Video shot ID */
-  @foreignKey(() => VideoShot)
-  videoShotId: string | null = null;
+  @foreignKey(() => VideoShot, { required: true })
+  videoShotId: string = '';
 
   /** Character ID */
-  @foreignKey(() => Character)
-  characterId: string | null = null;
+  @foreignKey(() => Character, { required: true })
+  characterId: string = '';
 
   /** Role of the character in this shot */
   role: VideoShotCharacterRole = 'primary';
@@ -81,13 +81,11 @@ export class VideoShotCharacter extends SmrtObject {
   /** Order/layer position within the shot */
   position: number = 0;
 
-  constructor(options: VideoShotCharacterOptions = {}) {
+  constructor(options: VideoShotCharacterOptions) {
     super(options);
 
-    if (options.videoShotId !== undefined)
-      this.videoShotId = options.videoShotId;
-    if (options.characterId !== undefined)
-      this.characterId = options.characterId;
+    this.videoShotId = options.videoShotId;
+    this.characterId = options.characterId;
     if (options.role !== undefined) this.role = options.role;
     if (options.position !== undefined) this.position = options.position;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
