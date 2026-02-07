@@ -7,7 +7,8 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { Profile } from '@happyvertical/smrt-profiles';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
@@ -72,6 +73,9 @@ export interface PerformerOptions extends SmrtObjectOptions {
 
   /** Performer status */
   status?: PerformerStatus;
+
+  /** 1-1 profile record for this performer */
+  profileId?: string | null;
 
   /** Tenant ID for multi-tenant isolation */
   tenantId?: string | null;
@@ -140,6 +144,10 @@ export class Performer extends SmrtObject {
   /** Performer status */
   status: PerformerStatus = 'pending';
 
+  /** 1-1 profile record for this performer */
+  @foreignKey(() => Profile)
+  profileId: string | null = null;
+
   constructor(options: PerformerOptions = {}) {
     super(options);
 
@@ -154,6 +162,7 @@ export class Performer extends SmrtObject {
     if (options.voiceProfileId !== undefined)
       this.voiceProfileId = options.voiceProfileId;
     if (options.status !== undefined) this.status = options.status;
+    if (options.profileId !== undefined) this.profileId = options.profileId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 

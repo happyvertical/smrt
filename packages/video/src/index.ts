@@ -3,37 +3,35 @@
  *
  * Video content management for AI-powered video production.
  *
- * This package provides models for managing personality profiles, video content,
- * performers, scenes, and ComfyUI workflows in the SMRT ecosystem.
+ * This package provides models for managing characters, video shots,
+ * sequences, compositions, performers, scenes, and ComfyUI workflows.
  *
  * @example
  * ```typescript
  * import {
- *   PersonalityProfile,
- *   VideoContent,
- *   VideoWorkflow,
+ *   Character,
+ *   VideoShot,
+ *   VideoShotCharacter,
+ *   VideoSequence,
+ *   VideoComposition,
  *   Performer,
  *   Scene,
  * } from '@happyvertical/smrt-video';
- *
- * // Create a personality profile
- * const personality = new PersonalityProfile({
- *   name: 'News Anchor',
- *   imageAssetId: 'asset-123',
- *   voiceProfileId: 'voice-456',
- * });
- * await personality.save();
- *
- * // Create video content
- * const video = new VideoContent({
- *   personalityProfileId: personality.id,
- *   scriptText: 'Welcome to the evening news.',
- *   targetDuration: 30,
- * });
- * await video.save();
  * ```
  */
 
+// ── Primary exports (current names) ──────────────────────────────────────────
+
+// Character (renamed from PersonalityProfile)
+export {
+  type BrandingConfig,
+  Character,
+  type CharacterOptions,
+  type CharacterSceneConfig,
+  type CharacterStatus,
+} from './character.js';
+export { CharacterCollection } from './characters.js';
+// Other models
 export {
   CompositeJob,
   type CompositeJobOptions,
@@ -45,14 +43,6 @@ export {
   type PerformerOptions,
   type PerformerStatus,
 } from './performer.js';
-// Models
-export {
-  type BrandingConfig,
-  type CharacterSceneConfig,
-  PersonalityProfile,
-  type PersonalityProfileOptions,
-  type PersonalityProfileStatus,
-} from './personality-profile.js';
 export {
   type AnchorPoint,
   type LightingProfile,
@@ -64,14 +54,88 @@ export {
   type SceneViewpoint,
 } from './scene.js';
 export {
-  VideoContent,
-  type VideoContentOptions,
-  type VideoContentStatus,
+  type RenderStatus,
+  VideoComposition,
+  type VideoCompositionOptions,
+} from './video-composition.js';
+export { VideoCompositionCollection } from './video-compositions.js';
+export {
+  type TransitionType,
+  VideoSequence,
+  type VideoSequenceOptions,
+} from './video-sequence.js';
+export { VideoSequenceCollection } from './video-sequences.js';
+// Video hierarchy
+export {
   type VideoMetadata,
-} from './video-content.js';
+  VideoShot,
+  type VideoShotOptions,
+  type VideoShotStatus,
+} from './video-shot.js';
+export {
+  VideoShotCharacter,
+  type VideoShotCharacterOptions,
+  type VideoShotCharacterRole,
+} from './video-shot-character.js';
+export { VideoShotCharacterCollection } from './video-shot-characters.js';
+export { VideoShotCollection } from './video-shots.js';
+
 export {
   type NodeMapping,
   VideoWorkflow,
   type VideoWorkflowOptions,
   type WorkflowType,
 } from './video-workflow.js';
+
+// ── STI Asset Subclasses ─────────────────────────────────────────────────────
+
+export {
+  CharacterAsset,
+  type CharacterAssetOptions,
+  type CharacterAssetRole,
+} from './character-asset.js';
+export {
+  PerformerAsset,
+  type PerformerAssetOptions,
+  type PerformerAssetRole,
+} from './performer-asset.js';
+export {
+  SceneAsset,
+  type SceneAssetOptions,
+  type SceneAssetRole,
+} from './scene-asset.js';
+
+export {
+  VideoCompositionAsset,
+  type VideoCompositionAssetOptions,
+  type VideoCompositionAssetRole,
+} from './video-composition-asset.js';
+export {
+  VideoSequenceAsset,
+  type VideoSequenceAssetOptions,
+  type VideoSequenceAssetRole,
+} from './video-sequence-asset.js';
+export {
+  VideoShotAsset,
+  type VideoShotAssetOptions,
+  type VideoShotAssetRole,
+} from './video-shot-asset.js';
+
+// ── Deprecated re-exports (backwards compatibility) ──────────────────────────
+
+/** @deprecated Use Character instead */
+/** @deprecated Use CharacterOptions instead */
+/** @deprecated Use CharacterStatus instead */
+export {
+  Character as PersonalityProfile,
+  type CharacterOptions as PersonalityProfileOptions,
+  type CharacterStatus as PersonalityProfileStatus,
+} from './character.js';
+/** @deprecated Use VideoShot instead */
+/** @deprecated Use VideoShotOptions instead */
+/** @deprecated Use VideoShotStatus instead */
+export {
+  VideoShot as VideoContent,
+  type VideoShotOptions as VideoContentOptions,
+  type VideoShotStatus as VideoContentStatus,
+} from './video-shot.js';
