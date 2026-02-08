@@ -1,0 +1,59 @@
+{
+  "name": "@happyvertical/smrt-sites",
+  "version": "0.19.73",
+  "description": "Site lifecycle management for multi-tenant SMRT networks",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "test": "npx vitest run --passWithNoTests",
+    "test:watch": "npx vitest"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-agents": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-agents": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-cli": "workspace:*",
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@happyvertical/sql": "^0.67.7",
+    "@types/node": "25.0.9",
+    "fast-glob": "3.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
+  },
+  "keywords": [
+    "ai",
+    "smrt",
+    "sites",
+    "multi-tenant",
+    "site-management"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
