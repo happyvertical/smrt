@@ -420,8 +420,10 @@ export class ASTScanner {
         );
         if (isStatic) {
           const propName = this.getPropertyName(member);
+          const CAPTURED_STATIC_PROPS = ['uiSlots', 'adminRoutes'];
           if (
-            (propName === 'uiSlots' || propName === 'adminRoutes') &&
+            propName &&
+            CAPTURED_STATIC_PROPS.includes(propName) &&
             member.initializer
           ) {
             if (!objectDef.staticProperties) {

@@ -97,6 +97,8 @@ export {
   type AdminPanelBaseProps,
   type AgentAdminRoute,
   type AgentManifestInfo,
+  type AgentRouteLoadContext,
+  type AgentRouteLoadFn,
   type AgentUIComponentRegistry,
   AgentUIRegistry,
   type AgentUISlot,

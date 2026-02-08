@@ -1695,10 +1695,9 @@ ${fields}
         }
       }
 
-      // Capture adminRoutes from static properties (if declared)
-      const adminRoutes = obj.staticProperties?.adminRoutes as
-        | AgentAdminRouteManifest[]
-        | undefined;
+      // Capture adminRoutes from static property (same pattern as uiSlots)
+      const adminRoutes: AgentAdminRouteManifest[] =
+        obj.staticProperties?.adminRoutes ?? [];
 
       const agentManifest: AgentManifest = {
         name: obj.className,
@@ -1707,7 +1706,7 @@ ${fields}
         tier: agentConfig.tier || 'free',
         description: agentConfig.description,
         uiSlots,
-        ...(adminRoutes?.length ? { adminRoutes } : {}),
+        ...(adminRoutes.length > 0 ? { adminRoutes } : {}),
         permissions,
         features,
         menuItems,

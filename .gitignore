@@ -166,5 +166,10 @@ repomix-output.xml
 *.db
 **/*.db
 
+# Test artifacts
+**/temp-test-manifest-gen-*.ts
+.smrt-test-data/
+:memory:/
+
 # Act (GitHub Actions local runner) binaries
 bin/
