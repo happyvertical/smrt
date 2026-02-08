@@ -910,7 +910,10 @@ function reconstructArrayExpression(
       } else if (el.type === 'Literal') {
         elements.push(el.raw || String(el.value));
       } else if (el.type === 'ObjectExpression') {
-        const objStr = reconstructObjectExpression(el as ObjectExpression, sourceText);
+        const objStr = reconstructObjectExpression(
+          el as ObjectExpression,
+          sourceText,
+        );
         if (objStr) elements.push(objStr);
       }
     }

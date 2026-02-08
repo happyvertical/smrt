@@ -428,8 +428,9 @@ export class ASTScanner {
               objectDef.staticProperties = {};
             }
             try {
-              objectDef.staticProperties[propName] =
-                this.parseExpressionValue(member.initializer);
+              objectDef.staticProperties[propName] = this.parseExpressionValue(
+                member.initializer,
+              );
             } catch (err) {
               console.warn(
                 `[ASTScanner] Failed to parse static ${propName} for ${objectDef.className}:`,

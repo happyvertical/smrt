@@ -123,7 +123,9 @@ interface SmartObjectManifest {
  * Only used at build time for parsing static property initializers
  * from source code (e.g., `static uiSlots = { ... }`).
  */
-function parseObjectLiteral(source: string): Record<string, any> | any[] | null {
+function parseObjectLiteral(
+  source: string,
+): Record<string, any> | any[] | null {
   const trimmed = source?.trim();
   if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('[')))
     return null;
@@ -213,7 +215,11 @@ export class ManifestAdapter {
     const ownStaticNames = new Set<string>();
     // First pass: own fields (child overrides win)
     for (const field of classDef.fields) {
-      if (field.isStatic && knownStaticProps.includes(field.name) && field.initializer) {
+      if (
+        field.isStatic &&
+        knownStaticProps.includes(field.name) &&
+        field.initializer
+      ) {
         try {
           const parsed = parseObjectLiteral(field.initializer);
           if (parsed) {
@@ -228,7 +234,11 @@ export class ManifestAdapter {
     }
     // Second pass: inherited fields for any static props not overridden
     for (const field of classDef.allFields) {
-      if (field.isStatic && knownStaticProps.includes(field.name) && field.initializer) {
+      if (
+        field.isStatic &&
+        knownStaticProps.includes(field.name) &&
+        field.initializer
+      ) {
         if (ownStaticNames.has(field.name)) continue;
         try {
           const parsed = parseObjectLiteral(field.initializer);
