@@ -1132,6 +1132,32 @@ ObjectRegistry.getDescendants('Event');
 // ['SportingEvent', 'HockeyGame']
 ```
 
+## AST Scanner: Static Property Capture
+
+The AST scanner captures specific static properties from SMRT classes into the manifest's `staticProperties` field. This is used by the ManifestGenerator's agent manifest pass.
+
+**Captured static properties** (defined in `CAPTURED_STATIC_PROPS`):
+- `uiSlots` — Admin panel slot definitions for agent UI
+- `adminRoutes` — Admin route metadata for host app integration
+
+```typescript
+@smrt({
+  agent: { icon: 'newspaper', tier: 'standard', description: 'News agent' },
+})
+class Praeco extends Agent {
+  static uiSlots = {
+    sources: { id: 'sources', label: 'Sources', icon: 'database', order: 1 },
+  };
+
+  static adminRoutes = [
+    { path: 'sources', component: 'SourcesPanel', load: 'loadSources' },
+    { path: 'sources/[sourceId]', component: 'SourceDetail' },
+  ];
+}
+```
+
+The scanner stores these on the `SmartObjectDefinition.staticProperties` record. The ManifestGenerator 5th pass (`generateAgentManifests()`) then reads `staticProperties.uiSlots` and `staticProperties.adminRoutes` to produce the `AgentManifest` with derived permissions, features, menuItems, and components.
+
 ## Code Generation
 
 ### CLI Generator

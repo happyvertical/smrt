@@ -26,6 +26,8 @@ Agents are designed for long-running processes, scheduled tasks, and autonomous 
 - **Graceful Shutdown**: Automatic signal handling (SIGTERM, SIGINT) for clean termination
 - **Configuration Management**: Abstract config property for agent-specific settings
 - **Type-Safe**: Full TypeScript support with comprehensive type definitions
+- **Admin Routes**: Declarative admin route metadata for host app integration
+- **Vite Plugin**: Auto-registration of agent manifests via `virtual:smrt-agent-registrations`
 - **Error Handling**: Status-aware error tracking with structured logging
 
 ## Installation
@@ -399,6 +401,98 @@ try {
 }
 ```
 
+### Admin Routes
+
+Agents can declare admin route metadata via a static `adminRoutes` property. Host applications (or the Vite plugin) use this to wire agent-specific admin pages into the host router.
+
+```typescript
+import { Agent, type AgentAdminRoute } from '@happyvertical/smrt-agents';
+import { smrt } from '@happyvertical/smrt-core';
+
+@smrt({
+  agent: {
+    icon: 'newspaper',
+    tier: 'standard',
+    description: 'Council meeting scraper and article generator',
+  },
+})
+class Praeco extends Agent {
+  static override adminRoutes: AgentAdminRoute[] = [
+    { path: 'sources', component: 'SourcesPanel', load: 'loadSources' },
+    { path: 'sources/[sourceId]', component: 'SourceDetail' },
+    { path: 'reports', component: 'ReportsPanel' },
+  ];
+
+  protected config = {};
+
+  async run(): Promise<void> {
+    // Agent logic
+  }
+}
+```
+
+Each route declares:
+- **`path`**: Route path relative to the agent root (supports SvelteKit-style `[param]` segments)
+- **`component`**: Export name from the agent's `./admin` entry point
+- **`load`** (optional): Export name for a server load function
+
+The AST scanner captures `adminRoutes` at build time and includes them in the agent manifest.
+
+### Vite Plugin (Auto-Registration)
+
+The `vitePluginAgentRoutes` Vite plugin provides a `virtual:smrt-agent-registrations` virtual module that auto-registers all agent manifests and imports admin components.
+
+**Setup:**
+
+```typescript
+// vite.config.ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { vitePluginAgentRoutes } from '@happyvertical/smrt-agents/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [
+    sveltekit(),
+    vitePluginAgentRoutes(),
+  ],
+});
+```
+
+**Agent discovery:** The plugin reads `smrt.config.js` in the project root, looking for an `agents` array:
+
+```javascript
+// smrt.config.js
+export default {
+  agents: [
+    '@happyvertical/praeco',
+    '@happyvertical/caelus',
+  ],
+};
+```
+
+Alternatively, pass agents directly in plugin options:
+
+```typescript
+vitePluginAgentRoutes({
+  agents: [
+    { packageName: '@happyvertical/praeco', agentClass: 'Praeco' },
+    { packageName: '@happyvertical/caelus', agentClass: 'Caelus' },
+  ],
+});
+```
+
+**Usage in app code:**
+
+```typescript
+// Import once at app startup (e.g., in +layout.ts or hooks)
+import 'virtual:smrt-agent-registrations';
+```
+
+This import:
+1. Reads each agent package's `manifest.json` to find the agent class
+2. Registers each agent's manifest with `AgentUIRegistry.registerManifest()`
+3. Imports each agent's `./admin` entry point (if it exists) for side-effect component registration
+
 ### Agent Collections
 
 ```typescript
@@ -462,6 +556,37 @@ console.log(`Active agents: ${activeAgents.length}`);
 - `'running'` - Agent is executing
 - `'error'` - Agent encountered an error
 - `'shutdown'` - Agent is shutting down
+
+### AgentAdminRoute
+
+```typescript
+interface AgentAdminRoute {
+  path: string;       // Route path relative to agent root
+  component: string;  // Component export name from ./admin
+  load?: string;      // Optional server load function export name
+}
+```
+
+### AgentRouteLoadContext
+
+Normalized subset of SvelteKit's `ServerLoadEvent`, so agent load functions don't require a direct SvelteKit dependency.
+
+```typescript
+interface AgentRouteLoadContext {
+  params: Record<string, string>;
+  parent: () => Promise<any>;
+  fetch: typeof fetch;
+  url: URL;
+}
+```
+
+### AgentRouteLoadFn
+
+```typescript
+type AgentRouteLoadFn = (
+  context: AgentRouteLoadContext,
+) => Promise<Record<string, unknown>> | Record<string, unknown>;
+```
 
 For complete API documentation, see `/api/agents/globals`.
 

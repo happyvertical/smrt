@@ -1706,11 +1706,11 @@ ${fields}
         tier: agentConfig.tier || 'free',
         description: agentConfig.description,
         uiSlots,
+        ...(adminRoutes.length > 0 ? { adminRoutes } : {}),
         permissions,
         features,
         menuItems,
         components,
-        ...(adminRoutes.length > 0 ? { adminRoutes } : {}),
       };
 
       obj.agent = agentManifest;

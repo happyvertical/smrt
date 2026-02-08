@@ -704,6 +704,58 @@ export default {
 
 ---
 
+## Admin Routes
+
+Agents can declare admin route metadata via `static adminRoutes: AgentAdminRoute[]`. These are captured by the AST scanner at build time and included in the agent manifest's `agent.adminRoutes` array.
+
+```typescript
+static override adminRoutes: AgentAdminRoute[] = [
+  { path: 'sources', component: 'SourcesPanel', load: 'loadSources' },
+  { path: 'sources/[sourceId]', component: 'SourceDetail' },
+];
+```
+
+Each route has:
+- `path` — Route path relative to agent root (supports `[param]` segments)
+- `component` — Export name from the agent's `./admin` entry point
+- `load` (optional) — Export name for a server load function
+
+Host applications use this metadata to wire agent admin pages into their routing.
+
+---
+
+## Vite Plugin (Auto-Registration)
+
+The `vitePluginAgentRoutes()` plugin provides a `virtual:smrt-agent-registrations` virtual module.
+
+**Import path:** `@happyvertical/smrt-agents/vite`
+
+**What the virtual module does:**
+1. Reads each agent package's `manifest.json` to find the agent class
+2. Calls `AgentUIRegistry.registerManifest()` for each agent
+3. Imports each agent's `./admin` entry (if it exists) for side-effect component registration
+
+**Agent discovery:** Reads `smrt.config.js` `agents` array, or falls back to `options.agents`.
+
+```typescript
+// vite.config.ts
+import { vitePluginAgentRoutes } from '@happyvertical/smrt-agents/vite';
+
+export default defineConfig({
+  plugins: [
+    sveltekit(),
+    vitePluginAgentRoutes(), // discovers agents from smrt.config.js
+  ],
+});
+```
+
+```typescript
+// App startup
+import 'virtual:smrt-agent-registrations';
+```
+
+---
+
 ## Package Exports
 
 ```typescript
@@ -730,17 +782,44 @@ export type {
 } from './interests.js';
 export { mergeFilters, normalizeSort } from './interests.js';
 
-// UI
+// Tenancy
+export {
+  TenantAgent,
+  TenantAgentCollection,
+  type TenantAgentStatus,
+  type ResolvedAgentAvailability,
+} from './tenant-agent.js';
+
+// Scheduling
+export {
+  AgentSchedule,
+  AgentScheduleCollection,
+  type ScheduleStatus,
+} from './schedule.js';
+
+// UI types and registry
 export {
   AgentUIRegistry,
   createUIRegistry,
   type AdminPanelBaseProps,
+  type AgentAdminRoute,
+  type AgentManifestInfo,
+  type AgentRouteLoadContext,
+  type AgentRouteLoadFn,
   type AgentUIComponentRegistry,
   type AgentUISlot,
   type AgentUISlots,
   type ComponentType,
 } from './ui.js';
 ```
+
+### Sub-path Exports
+
+| Export path | Purpose |
+|-------------|---------|
+| `@happyvertical/smrt-agents` | Main entry — Agent, configs, types, UI registry |
+| `@happyvertical/smrt-agents/ui` | UI types and AgentUIRegistry singleton |
+| `@happyvertical/smrt-agents/vite` | `vitePluginAgentRoutes()` Vite plugin |
 
 ---
 

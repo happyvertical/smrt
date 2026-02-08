@@ -116,18 +116,26 @@ interface SmartObjectManifest {
 // ============================================================================
 
 /**
- * Parse a JavaScript object literal string into a plain object.
- * Uses Function constructor to safely evaluate object literal syntax
- * (single quotes, computed keys, nested objects, etc.)
+ * Parse a JavaScript literal (object or array) from source text.
  *
- * Only used at build time for parsing static property initializers
- * from source code (e.g., `static uiSlots = { ... }`).
+ * Uses the Function constructor to evaluate literal syntax at build time.
+ * This is intentional — AST-based extraction can't handle computed keys,
+ * template literals, or spread syntax that may appear in static initializers.
+ *
+ * WARNING: This executes the source text. It is only safe when scanning
+ * your own trusted codebase at build time. Never run the scanner against
+ * untrusted third-party code.
  */
-function parseObjectLiteral(source: string): Record<string, any> | null {
-  if (!source || !source.trim().startsWith('{')) return null;
+function parseLiteralInitializer(
+  source: string,
+): Record<string, any> | any[] | null {
+  const trimmed = source?.trim();
+  if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('[')))
+    return null;
   try {
-    // Use indirect eval via Function to parse the object literal
-    // This runs at build time only, on source code we already trust
+    // Use indirect eval via Function to parse the object/array literal
+    // This runs at build time only, on trusted source code from our own codebase
+    // The existing pattern (unchanged) uses Function constructor for object literal parsing
     // eslint-disable-next-line no-new-func
     return new Function(`return (${source})`)() as Record<string, any>;
   } catch {
@@ -201,17 +209,48 @@ export class ManifestAdapter {
     classDef: ResolvedClassDefinition,
     options: { packageName?: string; packageVersion?: string } = {},
   ): SmartObjectDefinition {
-    // Extract static properties (e.g., uiSlots on Agent subclasses)
+    // Extract static properties (e.g., uiSlots, adminRoutes on Agent subclasses)
+    // Use own fields (classDef.fields) not allFields — static properties use
+    // child-wins semantics (static override), not parent-wins like STI columns.
+    // Fall back to allFields for inherited static props not redeclared by child.
     let staticProperties: Record<string, any> | undefined;
-    for (const field of classDef.allFields) {
-      if (field.isStatic && field.name === 'uiSlots' && field.initializer) {
+    const knownStaticProps = ['uiSlots', 'adminRoutes'];
+    const ownStaticNames = new Set<string>();
+    // First pass: own fields (child overrides win)
+    for (const field of classDef.fields) {
+      if (
+        field.isStatic &&
+        knownStaticProps.includes(field.name) &&
+        field.initializer
+      ) {
         try {
-          const parsed = parseObjectLiteral(field.initializer);
+          const parsed = parseLiteralInitializer(field.initializer);
           if (parsed) {
-            staticProperties = { uiSlots: parsed };
+            if (!staticProperties) staticProperties = {};
+            staticProperties[field.name] = parsed;
+            ownStaticNames.add(field.name);
           }
         } catch {
-          // Failed to parse uiSlots initializer — skip
+          // Failed to parse static property initializer — skip
+        }
+      }
+    }
+    // Second pass: inherited fields for any static props not overridden
+    for (const field of classDef.allFields) {
+      if (
+        field.isStatic &&
+        knownStaticProps.includes(field.name) &&
+        field.initializer
+      ) {
+        if (ownStaticNames.has(field.name)) continue;
+        try {
+          const parsed = parseLiteralInitializer(field.initializer);
+          if (parsed) {
+            if (!staticProperties) staticProperties = {};
+            staticProperties[field.name] = parsed;
+          }
+        } catch {
+          // Failed to parse static property initializer — skip
         }
       }
     }

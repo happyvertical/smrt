@@ -182,7 +182,8 @@ export interface AgentUISlotManifest {
 }
 
 /**
- * Admin route declaration captured from static adminRoutes on Agent subclasses
+ * Admin route declared by an agent via static adminRoutes
+ * Consumed by vitePluginAgentRoutes to register admin routes with SvelteKit
  */
 export interface AgentAdminRouteManifest {
   /** Route path relative to agent root (e.g., 'sources/[sourceId]') */
@@ -204,11 +205,11 @@ export interface AgentManifest {
   tier: 'free' | 'standard' | 'premium';
   description?: string;
   uiSlots: Record<string, AgentUISlotManifest>;
+  adminRoutes?: AgentAdminRouteManifest[];
   permissions: AgentPermission[];
   features: AgentFeature[];
   menuItems: AgentMenuItem[];
   components: AgentComponentDeclaration[];
-  adminRoutes?: AgentAdminRouteManifest[];
 }
 
 // ── Core manifest types ─────────────────────────────────────────────────

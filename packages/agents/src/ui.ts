@@ -25,12 +25,7 @@
  * In practice, the actual Svelte component will be passed and used
  * with `<svelte:component this={Component} />` in SvelteKit apps.
  */
-// biome-ignore lint/suspicious/noExplicitAny: ComponentType needs any for generic component handling
-export type ComponentType<Props = any> = (
-  // biome-ignore lint/suspicious/noExplicitAny: Component constructor signature
-  ...args: any[]
-  // biome-ignore lint/suspicious/noExplicitAny: Component instance type
-) => any;
+export type ComponentType<Props = any> = (...args: any[]) => any;
 
 /**
  * Base props that all admin panel components receive
@@ -83,8 +78,8 @@ export type AgentUISlots = Record<string, AgentUISlot>;
 /**
  * A route an agent provides for its admin UI
  *
- * Agents declare these to get real SvelteKit routes generated
- * by the vitePluginAgentRoutes Vite plugin.
+ * Agents declare these so that host applications or tooling
+ * (for example, a Vite plugin) can wire them into a SvelteKit app.
  *
  * @example
  * ```typescript
@@ -136,6 +131,7 @@ export interface AgentManifestInfo {
   tier: 'free' | 'standard' | 'premium';
   description?: string;
   uiSlots: Record<string, AgentUISlot>;
+  adminRoutes?: AgentAdminRoute[];
   permissions: Array<{
     id: string;
     label: string;
@@ -247,7 +243,6 @@ export interface AgentUIComponentRegistry {
  * ```
  */
 export function createUIRegistry(): AgentUIComponentRegistry {
-  // biome-ignore lint/suspicious/noExplicitAny: ComponentType needs any
   const components = new Map<string, ComponentType<any>>();
   const manifests = new Map<string, AgentManifestInfo>();
   const routeComponents = new Map<string, ComponentType>();
