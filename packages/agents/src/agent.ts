@@ -136,8 +136,9 @@ export abstract class Agent extends SmrtObject {
   /**
    * Admin routes this agent provides
    *
-   * Subclasses override this to declare SvelteKit routes that the
-   * vitePluginAgentRoutes Vite plugin will generate at build time.
+   * Subclasses override this to declare admin route metadata.
+   * The vitePluginAgentRoutes Vite plugin reads these from the manifest
+   * and registers them so host applications can discover and render them.
    *
    * @example
    * ```typescript

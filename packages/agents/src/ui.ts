@@ -83,8 +83,8 @@ export type AgentUISlots = Record<string, AgentUISlot>;
 /**
  * A route an agent provides for its admin UI
  *
- * Agents declare these to get real SvelteKit routes generated
- * by the vitePluginAgentRoutes Vite plugin.
+ * Agents declare these so that host applications or tooling
+ * (for example, a Vite plugin) can wire them into a SvelteKit app.
  *
  * @example
  * ```typescript

@@ -183,7 +183,7 @@ export interface AgentUISlotManifest {
 
 /**
  * Admin route declared by an agent via static adminRoutes
- * Used by vitePluginAgentRoutes to generate SvelteKit route files
+ * Consumed by vitePluginAgentRoutes to register admin routes with SvelteKit
  */
 export interface AgentAdminRouteManifest {
   /** Route path relative to agent root (e.g., 'sources/[sourceId]') */

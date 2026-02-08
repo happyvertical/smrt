@@ -1,12 +1,13 @@
 /**
  * Vite Plugin: Agent Auto-Registration
  *
- * Reads agent package names from smrt.config.js and generates a virtual module
- * that imports each agent's manifest and admin components, registering them
- * with AgentUIRegistry at import time.
+ * Provides the `virtual:smrt-agent-registrations` virtual module.
+ * When imported, this module registers each agent's manifest with
+ * AgentUIRegistry and imports the agent's `./admin` entry (if it exists)
+ * for side-effect component registration.
  *
- * This eliminates manual registration in the host application — just add
- * the agent package to smrt.config.js's `agents` array.
+ * Agent packages are discovered from smrt.config.js's `agents` array,
+ * or from the `agents` option passed directly to the plugin.
  *
  * @example
  * ```ts
@@ -16,19 +17,13 @@
  * export default defineConfig({
  *   plugins: [
  *     sveltekit(),
- *     vitePluginAgentRoutes(), // reads from smrt.config.js
+ *     vitePluginAgentRoutes({
+ *       agents: [
+ *         { packageName: '@happyvertical/praeco', agentClass: 'Praeco' },
+ *       ],
+ *     }),
  *   ],
  * });
- * ```
- *
- * ```js
- * // smrt.config.js
- * export default {
- *   agents: [
- *     '@happyvertical/praeco',
- *     '@happyvertical/caelus',
- *   ],
- * };
  * ```
  *
  * ```ts
@@ -45,11 +40,12 @@ const VIRTUAL_MODULE_ID = 'virtual:smrt-agent-registrations';
 const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`;
 
 export interface AgentRoutesPluginOptions {
-  /** Path to smrt.config.js (default: auto-detect in cwd) */
+  /** Path to smrt.config.js (default: <project root>/smrt.config.js) */
   configPath?: string;
   /**
-   * @deprecated Use smrt.config.js `agents` array instead.
-   * Manual agent list — only used as fallback if smrt.config.js has no agents field.
+   * Agent packages to register. Falls back to reading smrt.config.js `agents` array
+   * if not provided. When provided, `agentClass` is used as a hint but the plugin
+   * still reads each package's manifest to discover the actual agent class.
    */
   agents?: Array<{
     packageName: string;
@@ -90,7 +86,6 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
 } {
   let projectRoot = process.cwd();
   let agentPackages: string[] = [];
-  let configFilePath: string | undefined;
 
   return {
     name: 'smrt-agent-routes',
@@ -101,7 +96,6 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
       // Try to load smrt.config.js
       const configPath =
         options.configPath || resolve(projectRoot, 'smrt.config.js');
-      configFilePath = configPath;
 
       try {
         // Read the config file and extract agents array
@@ -110,12 +104,12 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
         const configContent = readFileSync(configPath, 'utf-8');
 
         // Extract agent package names from the config
-        // Match patterns like '@happyvertical/praeco' or "@happyvertical/praeco"
+        // Matches any quoted string inside the agents array (scoped, unscoped, or local paths)
         const agentMatches = configContent.match(/agents\s*:\s*\[([^\]]*)\]/s);
         if (agentMatches) {
           const agentsBlock = agentMatches[1];
           const packageNames = [
-            ...agentsBlock.matchAll(/['"](@[^'"]+)['"]/g),
+            ...agentsBlock.matchAll(/['"]([^'"]+)['"]/g),
           ].map((m) => m[1]);
           agentPackages = packageNames;
         }

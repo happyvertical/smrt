@@ -116,14 +116,17 @@ interface SmartObjectManifest {
 // ============================================================================
 
 /**
- * Parse a JavaScript object literal string into a plain object.
- * Uses Function constructor to safely evaluate object literal syntax
- * (single quotes, computed keys, nested objects, etc.)
+ * Parse a JavaScript literal (object or array) from source text.
  *
- * Only used at build time for parsing static property initializers
- * from source code (e.g., `static uiSlots = { ... }`).
+ * Uses the Function constructor to evaluate literal syntax at build time.
+ * This is intentional — AST-based extraction can't handle computed keys,
+ * template literals, or spread syntax that may appear in static initializers.
+ *
+ * WARNING: This executes the source text. It is only safe when scanning
+ * your own trusted codebase at build time. Never run the scanner against
+ * untrusted third-party code.
  */
-function parseObjectLiteral(
+function parseLiteralInitializer(
   source: string,
 ): Record<string, any> | any[] | null {
   const trimmed = source?.trim();
@@ -221,7 +224,7 @@ export class ManifestAdapter {
         field.initializer
       ) {
         try {
-          const parsed = parseObjectLiteral(field.initializer);
+          const parsed = parseLiteralInitializer(field.initializer);
           if (parsed) {
             if (!staticProperties) staticProperties = {};
             staticProperties[field.name] = parsed;
@@ -241,7 +244,7 @@ export class ManifestAdapter {
       ) {
         if (ownStaticNames.has(field.name)) continue;
         try {
-          const parsed = parseObjectLiteral(field.initializer);
+          const parsed = parseLiteralInitializer(field.initializer);
           if (parsed) {
             if (!staticProperties) staticProperties = {};
             staticProperties[field.name] = parsed;
