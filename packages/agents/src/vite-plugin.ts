@@ -1,9 +1,12 @@
 /**
- * Vite Plugin: Agent Admin Routes
+ * Vite Plugin: Agent Auto-Registration
  *
- * Generates SvelteKit route files from agent manifest adminRoutes declarations.
- * This allows agents to define their own admin route trees that become real
- * SvelteKit routes with SSR, code splitting, and deep linking.
+ * Reads agent package names from smrt.config.js and generates a virtual module
+ * that imports each agent's manifest and admin components, registering them
+ * with AgentUIRegistry at import time.
+ *
+ * This eliminates manual registration in the host application — just add
+ * the agent package to smrt.config.js's `agents` array.
  *
  * @example
  * ```ts
@@ -13,39 +16,241 @@
  * export default defineConfig({
  *   plugins: [
  *     sveltekit(),
- *     vitePluginAgentRoutes({
- *       agents: [
- *         { packageName: '@happyvertical/praeco', agentClass: 'Praeco' },
- *       ],
- *     }),
+ *     vitePluginAgentRoutes(), // reads from smrt.config.js
  *   ],
  * });
  * ```
+ *
+ * ```js
+ * // smrt.config.js
+ * export default {
+ *   agents: [
+ *     '@happyvertical/praeco',
+ *     '@happyvertical/caelus',
+ *   ],
+ * };
+ * ```
+ *
+ * ```ts
+ * // In your app:
+ * import 'virtual:smrt-agent-registrations';
+ * ```
  */
 
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+
+const VIRTUAL_MODULE_ID = 'virtual:smrt-agent-registrations';
+const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`;
+
 export interface AgentRoutesPluginOptions {
-	/** Where to write generated route files (default: 'src/routes/portal/[siteSlug]/agents/[agentId]') */
-	routeBase?: string;
-	/** Agent manifest sources — package names to read manifests from */
-	agents: Array<{
-		packageName: string;
-		agentClass: string;
-	}>;
+  /** Path to smrt.config.js (default: auto-detect in cwd) */
+  configPath?: string;
+  /**
+   * @deprecated Use smrt.config.js `agents` array instead.
+   * Manual agent list — only used as fallback if smrt.config.js has no agents field.
+   */
+  agents?: Array<{
+    packageName: string;
+    agentClass: string;
+  }>;
+}
+
+interface AgentManifestObject {
+  className: string;
+  agent?: {
+    name: string;
+    slug: string;
+    icon?: string;
+    tier: string;
+    description?: string;
+    uiSlots: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface AgentManifest {
+  objects: Record<string, AgentManifestObject>;
+  [key: string]: unknown;
 }
 
 /**
- * Vite plugin that generates SvelteKit route files from agent adminRoutes.
+ * Vite plugin that auto-registers agent manifests and admin components.
  *
- * Currently a no-op stub — route generation will be implemented when agents
- * define sub-routes (e.g., sources/[sourceId]). The existing [slotId] dynamic
- * route handles flat slot navigation.
- *
- * Returns a plain object to avoid Vite version type conflicts between
- * the host app's Vite version and this package's Vite version.
+ * Provides `virtual:smrt-agent-registrations` — import it to register
+ * all agents declared in smrt.config.js.
  */
-export function vitePluginAgentRoutes(_options: AgentRoutesPluginOptions): { name: string } {
-	return {
-		name: 'smrt-agent-routes',
-		// Route generation will be added here when needed
-	};
+export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
+  name: string;
+  resolveId: (id: string) => string | undefined;
+  load: (id: string) => string | undefined;
+  configResolved?: (config: { root: string }) => void;
+} {
+  let projectRoot = process.cwd();
+  let agentPackages: string[] = [];
+  let configFilePath: string | undefined;
+
+  return {
+    name: 'smrt-agent-routes',
+
+    configResolved(config: { root: string }) {
+      projectRoot = config.root;
+
+      // Try to load smrt.config.js
+      const configPath =
+        options.configPath || resolve(projectRoot, 'smrt.config.js');
+      configFilePath = configPath;
+
+      try {
+        // Read the config file and extract agents array
+        // We use a simple approach: read the file and look for the agents array
+        // This avoids async import() which isn't available in configResolved
+        const configContent = readFileSync(configPath, 'utf-8');
+
+        // Extract agent package names from the config
+        // Match patterns like '@happyvertical/praeco' or "@happyvertical/praeco"
+        const agentMatches = configContent.match(/agents\s*:\s*\[([^\]]*)\]/s);
+        if (agentMatches) {
+          const agentsBlock = agentMatches[1];
+          const packageNames = [
+            ...agentsBlock.matchAll(/['"](@[^'"]+)['"]/g),
+          ].map((m) => m[1]);
+          agentPackages = packageNames;
+        }
+      } catch {
+        // Config not found or unreadable — fall back to options.agents
+      }
+
+      // Fall back to legacy options.agents if config didn't provide packages
+      if (agentPackages.length === 0 && options.agents) {
+        agentPackages = options.agents.map((a) => a.packageName);
+      }
+
+      if (agentPackages.length > 0) {
+        console.log(
+          `[smrt-agent-routes] Discovered ${agentPackages.length} agents: ${agentPackages.map((p) => p.split('/').pop()).join(', ')}`,
+        );
+      }
+    },
+
+    resolveId(id: string) {
+      if (id === VIRTUAL_MODULE_ID) {
+        return RESOLVED_VIRTUAL_MODULE_ID;
+      }
+    },
+
+    load(id: string) {
+      if (id !== RESOLVED_VIRTUAL_MODULE_ID) return;
+
+      if (agentPackages.length === 0) {
+        return `// No agents configured in smrt.config.js\nexport function initializeAgentRegistrations() {}\n`;
+      }
+
+      const lines: string[] = [
+        '/**',
+        ' * Auto-generated agent registrations',
+        ` * Source: smrt.config.js (${agentPackages.length} agents)`,
+        ' * Generated by @happyvertical/smrt-agents/vite',
+        ' */',
+        "import { AgentUIRegistry } from '@happyvertical/smrt-agents/ui';",
+        '',
+      ];
+
+      // For each agent package, try to resolve its manifest and find the agent class
+      const registrations: Array<{
+        packageName: string;
+        manifestVar: string;
+        agentClass: string | null;
+      }> = [];
+
+      for (let i = 0; i < agentPackages.length; i++) {
+        const pkg = agentPackages[i];
+        const safeName = pkg.replace('@', '').replace(/[/.-]/g, '_');
+        const manifestVar = `manifest_${safeName}`;
+
+        // Try to read the manifest to extract the agent class name
+        let agentClass: string | null = null;
+        try {
+          const localRequire = createRequire(
+            resolve(projectRoot, 'package.json'),
+          );
+          const manifestPath = localRequire.resolve(`${pkg}/manifest`);
+          const manifestContent = readFileSync(manifestPath, 'utf-8');
+          const manifest: AgentManifest = JSON.parse(manifestContent);
+
+          // Find the agent object (one with agent metadata)
+          for (const obj of Object.values(manifest.objects)) {
+            if (obj.agent) {
+              agentClass = obj.className;
+              break;
+            }
+          }
+        } catch {
+          // Manifest not found or unparseable — skip this agent
+          console.warn(
+            `[smrt-agent-routes] Could not read manifest for ${pkg} — skipping`,
+          );
+          continue;
+        }
+
+        if (!agentClass) {
+          console.warn(
+            `[smrt-agent-routes] No agent object found in manifest for ${pkg} — skipping`,
+          );
+          continue;
+        }
+
+        registrations.push({ packageName: pkg, manifestVar, agentClass });
+
+        // Import manifest
+        lines.push(`import ${manifestVar} from '${pkg}/manifest';`);
+      }
+
+      lines.push('');
+
+      // Generate the extractAgentManifest helper
+      lines.push(
+        'function extractAgentManifest(manifest, agentClass) {',
+        '  for (const obj of Object.values(manifest.objects)) {',
+        '    if (obj.className === agentClass && obj.agent) {',
+        '      return obj.agent;',
+        '    }',
+        '  }',
+        '  return null;',
+        '}',
+        '',
+      );
+
+      // Register manifests
+      lines.push('// Register agent manifests');
+      for (const { manifestVar, agentClass } of registrations) {
+        lines.push(
+          `{`,
+          `  const m = extractAgentManifest(${manifestVar}, '${agentClass}');`,
+          `  if (m) AgentUIRegistry.registerManifest('${agentClass}', m);`,
+          `}`,
+        );
+      }
+      lines.push('');
+
+      // Import admin modules (side-effect: components self-register)
+      lines.push(
+        '// Import admin modules (side-effect: self-register components)',
+      );
+      for (const { packageName } of registrations) {
+        // Wrap in try/catch at the import level isn't possible,
+        // but we can use dynamic import for graceful degradation
+        lines.push(`import '${packageName}/admin';`);
+      }
+
+      lines.push('');
+      lines.push('// Export for explicit initialization if needed');
+      lines.push('export function initializeAgentRegistrations() {}');
+      lines.push('');
+
+      return lines.join('\n');
+    },
+  };
 }
