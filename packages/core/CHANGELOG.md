@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.74
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-sites package for site lifecycle management (#880) (sites)
+  - @happyvertical/smrt-scanner@0.19.74
+  - @happyvertical/smrt-config@0.19.74
+  - @happyvertical/smrt-types@0.19.74
+
 ## 0.19.73
 
 ### Patch Changes
