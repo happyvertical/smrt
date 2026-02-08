@@ -92,6 +92,11 @@ class ScannerTestAgent extends SmrtObject {
     },
   };
 
+  static adminRoutes = [
+    { path: 'sources', component: 'SourcesPanel', load: 'loadSources' },
+    { path: 'sources/[sourceId]', component: 'SourceDetail' },
+  ];
+
   name = '';
   source = '';
   lastSynced?: Date;

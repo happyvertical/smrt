@@ -210,7 +210,6 @@ export interface AgentManifest {
   features: AgentFeature[];
   menuItems: AgentMenuItem[];
   components: AgentComponentDeclaration[];
-  adminRoutes?: AgentAdminRouteManifest[];
 }
 
 // ── Core manifest types ─────────────────────────────────────────────────

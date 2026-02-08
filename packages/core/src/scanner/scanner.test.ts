@@ -176,6 +176,27 @@ describe('AST Scanner', () => {
       });
     });
 
+    it('should capture static adminRoutes', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const agentObj = results[0].objects.find(
+        (obj) => obj.className === 'ScannerTestAgent',
+      );
+
+      expect(agentObj?.staticProperties?.adminRoutes).toBeDefined();
+      expect(agentObj?.staticProperties?.adminRoutes).toHaveLength(2);
+      expect(agentObj?.staticProperties?.adminRoutes[0]).toMatchObject({
+        path: 'sources',
+        component: 'SourcesPanel',
+        load: 'loadSources',
+      });
+      expect(agentObj?.staticProperties?.adminRoutes[1]).toMatchObject({
+        path: 'sources/[sourceId]',
+        component: 'SourceDetail',
+      });
+      expect(agentObj?.staticProperties?.adminRoutes[1].load).toBeUndefined();
+    });
+
     it('should not capture static properties for non-agent classes', () => {
       const scanner = new ASTScanner([testFilePath]);
       const results = scanner.scanFiles();
@@ -207,6 +228,28 @@ describe('AST Scanner', () => {
       expect(agentObj.agent?.description).toBe(
         'Test agent for scanner integration tests',
       );
+    });
+
+    it('should include adminRoutes in agent manifest', () => {
+      const scanner = new ASTScanner([testFilePath]);
+      const results = scanner.scanFiles();
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest(results);
+      generator.generateAgentManifests(manifest);
+
+      const agent =
+        manifest.objects['@happyvertical/smrt-core:ScannerTestAgent'].agent;
+      expect(agent?.adminRoutes).toBeDefined();
+      expect(agent?.adminRoutes).toHaveLength(2);
+      expect(agent?.adminRoutes?.[0]).toMatchObject({
+        path: 'sources',
+        component: 'SourcesPanel',
+        load: 'loadSources',
+      });
+      expect(agent?.adminRoutes?.[1]).toMatchObject({
+        path: 'sources/[sourceId]',
+        component: 'SourceDetail',
+      });
     });
 
     it('should derive permissions from uiSlots and exposed methods', () => {
