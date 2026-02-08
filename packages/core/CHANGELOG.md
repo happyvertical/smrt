@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.73
+
+### Patch Changes
+
+- ### Features
+
+  - virtual module for auto-registration + route generation (#879) (agents)
+  - @happyvertical/smrt-scanner@0.19.73
+  - @happyvertical/smrt-config@0.19.73
+  - @happyvertical/smrt-types@0.19.73
+
 ## 0.19.72
 
 ### Patch Changes
