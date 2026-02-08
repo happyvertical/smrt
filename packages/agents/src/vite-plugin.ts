@@ -163,6 +163,7 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
         packageName: string;
         manifestVar: string;
         agentClass: string | null;
+        hasAdmin: boolean;
       }> = [];
 
       for (let i = 0; i < agentPackages.length; i++) {
@@ -202,7 +203,24 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
           continue;
         }
 
-        registrations.push({ packageName: pkg, manifestVar, agentClass });
+        // Check if ./admin export exists
+        let hasAdmin = false;
+        try {
+          const localRequire = createRequire(
+            resolve(projectRoot, 'package.json'),
+          );
+          localRequire.resolve(`${pkg}/admin`);
+          hasAdmin = true;
+        } catch {
+          // No ./admin export — skip admin import for this agent
+        }
+
+        registrations.push({
+          packageName: pkg,
+          manifestVar,
+          agentClass,
+          hasAdmin,
+        });
 
         // Import manifest
         lines.push(`import ${manifestVar} from '${pkg}/manifest';`);
@@ -239,10 +257,14 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
       lines.push(
         '// Import admin modules (side-effect: self-register components)',
       );
-      for (const { packageName } of registrations) {
-        // Wrap in try/catch at the import level isn't possible,
-        // but we can use dynamic import for graceful degradation
-        lines.push(`import '${packageName}/admin';`);
+      for (const { packageName, hasAdmin } of registrations) {
+        if (hasAdmin) {
+          lines.push(`import '${packageName}/admin';`);
+        } else {
+          lines.push(
+            `// ${packageName}/admin — not available (no ./admin export)`,
+          );
+        }
       }
 
       lines.push('');
