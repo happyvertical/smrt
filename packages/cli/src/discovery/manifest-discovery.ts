@@ -4,7 +4,6 @@
  * Automatically discovers and loads SMRT object manifests from:
  * - Project root (static-manifest.js, manifest.json)
  * - Installed packages in node_modules
- * - App source files (auto-scanned when no project manifest exists)
  */
 
 import { existsSync } from 'node:fs';
@@ -72,6 +71,34 @@ export class SmrtVersionConflictError extends Error {
 
     super(lines.join('\n'));
     this.name = 'SmrtVersionConflictError';
+  }
+}
+
+/**
+ * Error thrown when a project has SMRT package dependencies and source files
+ * but no built manifest. The project needs to be built first.
+ */
+export class SmrtManifestNotBuiltError extends Error {
+  constructor() {
+    const lines = [
+      '',
+      '❌ Project manifest not found',
+      '',
+      'Your project depends on SMRT packages and has source files,',
+      'but no project manifest was found. You need to build first.',
+      '',
+      '🔧 To fix this:',
+      '',
+      '  npm run build',
+      '',
+      'The build step generates a manifest that registers your local',
+      'SMRT classes (including STI subclasses) so that commands like',
+      'db:setup and db:migrate can see the complete class hierarchy.',
+      '',
+    ];
+
+    super(lines.join('\n'));
+    this.name = 'SmrtManifestNotBuiltError';
   }
 }
 
@@ -290,132 +317,23 @@ export async function loadManifest(manifestPath: string): Promise<void> {
 }
 
 /**
- * Generate an app-level manifest by scanning source files.
- *
- * This is the key function for issue #881: when a consuming app defines
- * local STI subclasses (e.g. Publication extends Tenant), those classes
- * need to appear in a manifest so that schema generation includes them.
- *
- * Uses the same ManifestBuilder/discoverBaseClasses pattern as the vitest plugin.
- *
- * @returns The path to the generated manifest, or null if generation failed
+ * Check if the project likely has source files that need building.
+ * Returns true if a src/ directory with .ts files exists.
  */
-export async function generateAppManifest(
-  projectRoot: string = process.cwd(),
-  options: { verbose?: boolean } = {},
-): Promise<string | null> {
-  try {
-    // Check if there are any TypeScript source files to scan
-    const srcDir = resolve(projectRoot, 'src');
-    if (!existsSync(srcDir)) {
-      if (options.verbose) {
-        console.log(
-          '  No src/ directory found, skipping app manifest generation',
-        );
-      }
-      return null;
-    }
-
-    const { ManifestBuilder } = await import(
-      '@happyvertical/smrt-core/manifest'
-    );
-    const { discoverBaseClasses } = await import(
-      '@happyvertical/smrt-core/manifest/discover-base-classes'
-    );
-
-    const baseClasses = await discoverBaseClasses({ cwd: projectRoot });
-
-    if (options.verbose) {
-      console.log(
-        `  Discovered ${baseClasses.length} base classes (framework defaults + external packages)`,
-      );
-    }
-
-    const builder = new ManifestBuilder();
-
-    // ManifestBuilder resolves file paths and output relative to process.cwd(),
-    // so we temporarily chdir to projectRoot to ensure correct resolution
-    const previousCwd = process.cwd();
-    let manifest: any;
-    try {
-      process.chdir(projectRoot);
-      manifest = await builder.generate({
-        // File discovery
-        include: ['src/**/*.ts'],
-        exclude: [
-          '**/*.d.ts',
-          '**/node_modules/**',
-          '**/dist/**',
-          '**/build/**',
-          '**/.svelte-kit/**',
-        ],
-
-        // Scanner configuration
-        baseClasses,
-        followImports: true,
-        loadViteConfig: true,
-        discoverExternalPackages: true,
-        includeExternalBaseClasses: true,
-        includePrivateMethods: false,
-        includeStaticMethods: true,
-
-        // Output configuration
-        outputDir: '.smrt',
-        outputName: 'manifest.json',
-        generateTypeStub: false,
-
-        // Metadata
-        injectPackageInfo: true,
-        moduleType: 'smrt',
-      });
-    } finally {
-      process.chdir(previousCwd);
-    }
-
-    // Count only local objects (from app source files, not external base classes)
-    // External base classes are included for STI inheritance resolution but
-    // shouldn't count as "app objects found"
-    const localObjects = Object.entries(manifest.objects).filter(
-      ([_key, obj]: [string, any]) =>
-        obj.filePath && !obj.filePath.includes('node_modules'),
-    );
-
-    if (localObjects.length === 0) {
-      if (options.verbose) {
-        console.log('  No SMRT objects found in app source files');
-      }
-      return null;
-    }
-
-    const manifestPath = resolve(projectRoot, '.smrt/manifest.json');
-
-    if (options.verbose) {
-      console.log(
-        `  Generated app manifest with ${localObjects.length} local object(s) at ${manifestPath}`,
-      );
-    }
-
-    return manifestPath;
-  } catch (error) {
-    if (options.verbose) {
-      console.warn(
-        '  Could not generate app manifest:',
-        error instanceof Error ? error.message : 'Unknown error',
-      );
-    }
-    return null;
-  }
+function projectHasSourceFiles(projectRoot: string): boolean {
+  return existsSync(resolve(projectRoot, 'src'));
 }
 
 /**
  * Auto-discover and load all manifests in the project.
  *
- * When no project-level manifest is found but package manifests exist,
- * automatically scans app source files to discover local SMRT classes
- * (e.g. STI subclasses defined in the consuming app). This ensures
- * commands like db:setup and db:migrate see the complete class hierarchy.
+ * When package manifests exist but no project manifest is found, and the
+ * project has source files, throws SmrtManifestNotBuiltError to tell the
+ * user to build first. This ensures local SMRT classes (e.g. STI subclasses)
+ * are included in the manifest before running commands like db:setup.
  *
  * @throws {SmrtVersionConflictError} If multiple versions of SMRT packages are detected
+ * @throws {SmrtManifestNotBuiltError} If the project needs to be built first
  */
 export async function autoDiscoverAndLoad(
   projectRoot: string = process.cwd(),
@@ -423,22 +341,20 @@ export async function autoDiscoverAndLoad(
   discovered: DiscoveredManifest[];
   totalObjects: number;
 }> {
-  let manifests = await discoverManifests(projectRoot);
+  const manifests = await discoverManifests(projectRoot);
 
   // Check for version conflicts BEFORE loading manifests
   // This fails fast with a helpful error message
   checkSmrtVersionConflicts();
 
-  // If we have package manifests but no project manifest, auto-scan the app
-  // to discover local SMRT classes (e.g. STI subclasses like Publication extends Tenant)
+  // If we have package manifests but no project manifest, and the project
+  // has source files, the project needs to be built first
   const hasProjectManifest = manifests.some((m) => m.source === 'project');
   const hasPackageManifests = manifests.some((m) => m.source === 'package');
 
   if (!hasProjectManifest && hasPackageManifests) {
-    const appManifestPath = await generateAppManifest(projectRoot);
-    if (appManifestPath) {
-      // Re-discover manifests now that we have a project manifest
-      manifests = await discoverManifests(projectRoot);
+    if (projectHasSourceFiles(projectRoot)) {
+      throw new SmrtManifestNotBuiltError();
     }
   }
 

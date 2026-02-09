@@ -6,7 +6,7 @@ export {
   autoDiscoverAndLoad,
   type DiscoveredManifest,
   discoverManifests,
-  generateAppManifest,
   loadManifest,
   loadManifestFile,
+  SmrtManifestNotBuiltError,
 } from './manifest-discovery.js';

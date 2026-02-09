@@ -1,16 +1,16 @@
 /**
  * Tests for manifest discovery deduplication, version conflict detection,
- * and app-level manifest generation (issue #881)
+ * and missing manifest error (issue #881)
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   autoDiscoverAndLoad,
   discoverManifests,
-  generateAppManifest,
+  SmrtManifestNotBuiltError,
   SmrtVersionConflictError,
 } from '../discovery/manifest-discovery.js';
 
@@ -246,85 +246,14 @@ describe('manifest-discovery', () => {
     });
   });
 
-  describe('generateAppManifest (issue #881)', () => {
-    it('should return null when no src/ directory exists', async () => {
-      // tempDir has no src/ directory
-      const result = await generateAppManifest(tempDir, { verbose: true });
-      expect(result).toBeNull();
-    });
-
-    it(
-      'should not error when source files contain no SMRT objects',
-      { timeout: 30_000 },
-      async () => {
-        // Create src/ directory with a non-SMRT TypeScript file
-        const srcDir = join(tempDir, 'src');
-        await mkdir(srcDir, { recursive: true });
-        await writeFile(
-          join(srcDir, 'utils.ts'),
-          'export function hello() { return "hi"; }',
-        );
-
-        // Also need a package.json for ManifestBuilder
-        await writeFile(
-          join(tempDir, 'package.json'),
-          JSON.stringify({
-            name: 'test-app',
-            version: '1.0.0',
-            dependencies: { '@happyvertical/smrt-core': '^0.19.0' },
-          }),
-        );
-
-        // Should not throw - returns null or a path depending on whether
-        // external base classes are included in the environment
-        const result = await generateAppManifest(tempDir, { verbose: true });
-        expect(result === null || typeof result === 'string').toBe(true);
-      },
-    );
-  });
-
-  describe('autoDiscoverAndLoad with auto-scan (issue #881)', () => {
-    it('should attempt auto-scan when package manifests exist but no project manifest', async () => {
+  describe('missing project manifest detection (issue #881)', () => {
+    it('should throw SmrtManifestNotBuiltError when package manifests exist but project has no manifest and has src/', async () => {
       const nodeModules = join(tempDir, 'node_modules');
       const pkgDir = join(nodeModules, '@happyvertical', 'smrt-profiles');
+      const srcDir = join(tempDir, 'src');
 
       await mkdir(pkgDir, { recursive: true });
-
-      // Create a package manifest
-      await writeFile(
-        join(pkgDir, 'package.json'),
-        JSON.stringify({
-          name: '@happyvertical/smrt-profiles',
-          version: '0.19.34',
-          dependencies: { '@happyvertical/smrt-core': '^0.19.34' },
-        }),
-      );
-      await writeFile(
-        join(pkgDir, 'manifest.json'),
-        JSON.stringify({
-          objects: {
-            Profile: { className: 'Profile' },
-          },
-        }),
-      );
-
-      // No project manifest, but package manifests exist
-      // autoDiscoverAndLoad should attempt auto-scan
-      // It may not find SMRT objects (no src/ with SMRT classes), but shouldn't error
-      const result = await autoDiscoverAndLoad(tempDir);
-
-      // Should still discover the package manifest
-      expect(result.discovered.length).toBeGreaterThanOrEqual(1);
-      expect(result.discovered.some((m) => m.source === 'package')).toBe(true);
-    });
-
-    it('should not auto-scan when project manifest already exists', async () => {
-      const nodeModules = join(tempDir, 'node_modules');
-      const pkgDir = join(nodeModules, '@happyvertical', 'smrt-profiles');
-      const smrtDir = join(tempDir, '.smrt');
-
-      await mkdir(pkgDir, { recursive: true });
-      await mkdir(smrtDir, { recursive: true });
+      await mkdir(srcDir, { recursive: true });
 
       // Create a package manifest
       await writeFile(
@@ -342,7 +271,47 @@ describe('manifest-discovery', () => {
         }),
       );
 
-      // Create a project manifest (simulating existing .smrt/manifest.json)
+      // No project manifest, but src/ exists → needs build
+      await expect(autoDiscoverAndLoad(tempDir)).rejects.toThrow(
+        SmrtManifestNotBuiltError,
+      );
+    });
+
+    it('should provide helpful error message telling user to build', () => {
+      const error = new SmrtManifestNotBuiltError();
+
+      expect(error.message).toContain('Project manifest not found');
+      expect(error.message).toContain('npm run build');
+      expect(error.name).toBe('SmrtManifestNotBuiltError');
+    });
+
+    it('should not throw when project manifest already exists', async () => {
+      const nodeModules = join(tempDir, 'node_modules');
+      const pkgDir = join(nodeModules, '@happyvertical', 'smrt-profiles');
+      const smrtDir = join(tempDir, '.smrt');
+      const srcDir = join(tempDir, 'src');
+
+      await mkdir(pkgDir, { recursive: true });
+      await mkdir(smrtDir, { recursive: true });
+      await mkdir(srcDir, { recursive: true });
+
+      // Create a package manifest
+      await writeFile(
+        join(pkgDir, 'package.json'),
+        JSON.stringify({
+          name: '@happyvertical/smrt-profiles',
+          version: '0.19.34',
+          dependencies: { '@happyvertical/smrt-core': '^0.19.34' },
+        }),
+      );
+      await writeFile(
+        join(pkgDir, 'manifest.json'),
+        JSON.stringify({
+          objects: { Profile: { className: 'Profile' } },
+        }),
+      );
+
+      // Create a project manifest (simulating built output)
       await writeFile(
         join(smrtDir, 'manifest.json'),
         JSON.stringify({
@@ -355,21 +324,40 @@ describe('manifest-discovery', () => {
         }),
       );
 
+      // Should not throw - project manifest exists
       const result = await autoDiscoverAndLoad(tempDir);
-
-      // Should find both project and package manifests
       expect(result.discovered.some((m) => m.source === 'project')).toBe(true);
       expect(result.discovered.some((m) => m.source === 'package')).toBe(true);
-
-      // Verify the project manifest was NOT overwritten by auto-scan
-      // (it should still contain our original Publication object)
-      const projectManifest = JSON.parse(
-        await readFile(join(smrtDir, 'manifest.json'), 'utf-8'),
-      );
-      expect(projectManifest.objects.Publication).toBeDefined();
     });
 
-    it('should not auto-scan when there are no package manifests', async () => {
+    it('should not throw when package manifests exist but no src/ directory', async () => {
+      const nodeModules = join(tempDir, 'node_modules');
+      const pkgDir = join(nodeModules, '@happyvertical', 'smrt-profiles');
+
+      await mkdir(pkgDir, { recursive: true });
+
+      // Create a package manifest
+      await writeFile(
+        join(pkgDir, 'package.json'),
+        JSON.stringify({
+          name: '@happyvertical/smrt-profiles',
+          version: '0.19.34',
+          dependencies: { '@happyvertical/smrt-core': '^0.19.34' },
+        }),
+      );
+      await writeFile(
+        join(pkgDir, 'manifest.json'),
+        JSON.stringify({
+          objects: { Profile: { className: 'Profile' } },
+        }),
+      );
+
+      // No src/ directory → no local source to build, just using packages
+      const result = await autoDiscoverAndLoad(tempDir);
+      expect(result.discovered.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should not throw when there are no package manifests', async () => {
       // Empty tempDir - no manifests at all
       const result = await autoDiscoverAndLoad(tempDir);
 
