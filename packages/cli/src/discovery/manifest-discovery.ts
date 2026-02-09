@@ -362,8 +362,15 @@ export async function generateAppManifest(
       moduleType: 'smrt',
     });
 
-    const objectCount = Object.keys(manifest.objects).length;
-    if (objectCount === 0) {
+    // Count only local objects (from app source files, not external base classes)
+    // External base classes are included for STI inheritance resolution but
+    // shouldn't count as "app objects found"
+    const localObjects = Object.entries(manifest.objects).filter(
+      ([_key, obj]: [string, any]) =>
+        obj.filePath && !obj.filePath.includes('node_modules'),
+    );
+
+    if (localObjects.length === 0) {
       if (options.verbose) {
         console.log('  No SMRT objects found in app source files');
       }
@@ -374,7 +381,7 @@ export async function generateAppManifest(
 
     if (options.verbose) {
       console.log(
-        `  Generated app manifest with ${objectCount} object(s) at ${manifestPath}`,
+        `  Generated app manifest with ${localObjects.length} local object(s) at ${manifestPath}`,
       );
     }
 
