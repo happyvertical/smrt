@@ -6,6 +6,7 @@ export {
   autoDiscoverAndLoad,
   type DiscoveredManifest,
   discoverManifests,
+  generateAppManifest,
   loadManifest,
   loadManifestFile,
 } from './manifest-discovery.js';

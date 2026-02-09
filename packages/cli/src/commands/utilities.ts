@@ -8,7 +8,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
-import { autoDiscoverAndLoad } from '../discovery/index.js';
+import {
+  autoDiscoverAndLoad,
+  generateAppManifest,
+} from '../discovery/index.js';
 import { configExportCommand } from './config-export.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
@@ -242,6 +245,75 @@ function normalizeType(type: string): string {
  * Utility commands for CLI
  */
 export const utilityCommands: Record<string, CLICommand> = {
+  scan: {
+    name: 'scan',
+    description:
+      'Scan app source files and generate a local manifest for SMRT objects',
+    aliases: ['manifest'],
+    args: [],
+    options: {
+      verbose: {
+        type: 'boolean',
+        description: 'Show detailed output',
+        default: false,
+      },
+    },
+    handler: async (_args: string[], options: any) => {
+      console.log('\n🔍 Scanning app source files for SMRT objects...\n');
+
+      try {
+        const manifestPath = await generateAppManifest(process.cwd(), {
+          verbose: options.verbose,
+        });
+
+        if (!manifestPath) {
+          console.log('⚠️  No SMRT objects found in app source files');
+          console.log('\nMake sure your source files:');
+          console.log('  1. Are in the src/ directory');
+          console.log('  2. Use @smrt() decorator on classes');
+          console.log('  3. Extend SmrtObject or another SMRT base class\n');
+          return;
+        }
+
+        // Read and report on generated manifest
+        const { readFile: readFileAsync } = await import('node:fs/promises');
+        const manifest = JSON.parse(await readFileAsync(manifestPath, 'utf-8'));
+        const objectNames = Object.keys(manifest.objects || {});
+
+        console.log(`✅ Generated manifest at ${manifestPath}`);
+        console.log(`   Objects: ${objectNames.length}\n`);
+
+        if (objectNames.length > 0) {
+          console.log('📦 Discovered objects:\n');
+          for (const name of objectNames) {
+            const obj = manifest.objects[name];
+            const ext = obj.extends ? ` extends ${obj.extends}` : '';
+            const strategy = obj.tableStrategy ? ` [${obj.tableStrategy}]` : '';
+            console.log(`  ${name}${ext}${strategy}`);
+          }
+          console.log();
+        }
+
+        console.log('💡 This manifest is used by:');
+        console.log('  - smrt db:setup  (create database tables)');
+        console.log('  - smrt db:migrate (sync schema changes)');
+        console.log('  - smrt db:status (check for pending changes)\n');
+      } catch (error) {
+        console.error('❌ Scan failed:');
+        if (error instanceof Error) {
+          console.error(`   ${error.message}`);
+          if (options.verbose && error.stack) {
+            console.error('\nStack trace:');
+            console.error(error.stack);
+          }
+        } else {
+          console.error(error);
+        }
+        process.exit(1);
+      }
+    },
+  },
+
   introspect: {
     name: 'introspect',
     description: 'Analyze project and discover SMRT objects',
