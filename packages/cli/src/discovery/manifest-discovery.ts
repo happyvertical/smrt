@@ -323,44 +323,54 @@ export async function generateAppManifest(
       '@happyvertical/smrt-core/manifest/discover-base-classes'
     );
 
-    const baseClasses = await discoverBaseClasses();
+    const baseClasses = await discoverBaseClasses({ cwd: projectRoot });
 
     if (options.verbose) {
       console.log(
-        `  Discovered ${baseClasses.length} base classes from external packages`,
+        `  Discovered ${baseClasses.length} base classes (framework defaults + external packages)`,
       );
     }
 
     const builder = new ManifestBuilder();
-    const manifest = await builder.generate({
-      // File discovery
-      include: ['src/**/*.ts'],
-      exclude: [
-        '**/*.d.ts',
-        '**/node_modules/**',
-        '**/dist/**',
-        '**/build/**',
-        '**/.svelte-kit/**',
-      ],
 
-      // Scanner configuration
-      baseClasses,
-      followImports: true,
-      loadViteConfig: true,
-      discoverExternalPackages: true,
-      includeExternalBaseClasses: true,
-      includePrivateMethods: false,
-      includeStaticMethods: true,
+    // ManifestBuilder resolves file paths and output relative to process.cwd(),
+    // so we temporarily chdir to projectRoot to ensure correct resolution
+    const previousCwd = process.cwd();
+    let manifest: any;
+    try {
+      process.chdir(projectRoot);
+      manifest = await builder.generate({
+        // File discovery
+        include: ['src/**/*.ts'],
+        exclude: [
+          '**/*.d.ts',
+          '**/node_modules/**',
+          '**/dist/**',
+          '**/build/**',
+          '**/.svelte-kit/**',
+        ],
 
-      // Output configuration
-      outputDir: '.smrt',
-      outputName: 'manifest.json',
-      generateTypeStub: false,
+        // Scanner configuration
+        baseClasses,
+        followImports: true,
+        loadViteConfig: true,
+        discoverExternalPackages: true,
+        includeExternalBaseClasses: true,
+        includePrivateMethods: false,
+        includeStaticMethods: true,
 
-      // Metadata
-      injectPackageInfo: true,
-      moduleType: 'smrt',
-    });
+        // Output configuration
+        outputDir: '.smrt',
+        outputName: 'manifest.json',
+        generateTypeStub: false,
+
+        // Metadata
+        injectPackageInfo: true,
+        moduleType: 'smrt',
+      });
+    } finally {
+      process.chdir(previousCwd);
+    }
 
     // Count only local objects (from app source files, not external base classes)
     // External base classes are included for STI inheritance resolution but

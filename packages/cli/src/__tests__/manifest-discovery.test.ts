@@ -3,10 +3,10 @@
  * and app-level manifest generation (issue #881)
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   autoDiscoverAndLoad,
   discoverManifests,
@@ -355,22 +355,18 @@ describe('manifest-discovery', () => {
         }),
       );
 
-      // Spy on generateAppManifest module to verify it's NOT called
-      const spy = vi.spyOn(
-        await import('../discovery/manifest-discovery.js'),
-        'generateAppManifest',
-      );
-
       const result = await autoDiscoverAndLoad(tempDir);
 
       // Should find both project and package manifests
       expect(result.discovered.some((m) => m.source === 'project')).toBe(true);
       expect(result.discovered.some((m) => m.source === 'package')).toBe(true);
 
-      // generateAppManifest should NOT have been called (project manifest exists)
-      expect(spy).not.toHaveBeenCalled();
-
-      spy.mockRestore();
+      // Verify the project manifest was NOT overwritten by auto-scan
+      // (it should still contain our original Publication object)
+      const projectManifest = JSON.parse(
+        await readFile(join(smrtDir, 'manifest.json'), 'utf-8'),
+      );
+      expect(projectManifest.objects.Publication).toBeDefined();
     });
 
     it('should not auto-scan when there are no package manifests', async () => {

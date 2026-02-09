@@ -267,11 +267,19 @@ export const utilityCommands: Record<string, CLICommand> = {
         });
 
         if (!manifestPath) {
-          console.log('⚠️  No SMRT objects found in app source files');
-          console.log('\nMake sure your source files:');
+          console.log('⚠️  No manifest was generated.');
+          console.log(
+            '   This may mean no SMRT objects were found, or that the scan did not complete successfully.',
+          );
+          console.log(
+            '\nIf you expect SMRT objects, please make sure your source files:',
+          );
           console.log('  1. Are in the src/ directory');
           console.log('  2. Use @smrt() decorator on classes');
-          console.log('  3. Extend SmrtObject or another SMRT base class\n');
+          console.log('  3. Extend SmrtObject or another SMRT base class');
+          console.log(
+            '\nYou can re-run this command with --verbose for more details.\n',
+          );
           return;
         }
 
