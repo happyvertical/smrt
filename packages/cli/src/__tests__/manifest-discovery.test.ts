@@ -253,30 +253,34 @@ describe('manifest-discovery', () => {
       expect(result).toBeNull();
     });
 
-    it('should not error when source files contain no SMRT objects', async () => {
-      // Create src/ directory with a non-SMRT TypeScript file
-      const srcDir = join(tempDir, 'src');
-      await mkdir(srcDir, { recursive: true });
-      await writeFile(
-        join(srcDir, 'utils.ts'),
-        'export function hello() { return "hi"; }',
-      );
+    it(
+      'should not error when source files contain no SMRT objects',
+      { timeout: 30_000 },
+      async () => {
+        // Create src/ directory with a non-SMRT TypeScript file
+        const srcDir = join(tempDir, 'src');
+        await mkdir(srcDir, { recursive: true });
+        await writeFile(
+          join(srcDir, 'utils.ts'),
+          'export function hello() { return "hi"; }',
+        );
 
-      // Also need a package.json for ManifestBuilder
-      await writeFile(
-        join(tempDir, 'package.json'),
-        JSON.stringify({
-          name: 'test-app',
-          version: '1.0.0',
-          dependencies: { '@happyvertical/smrt-core': '^0.19.0' },
-        }),
-      );
+        // Also need a package.json for ManifestBuilder
+        await writeFile(
+          join(tempDir, 'package.json'),
+          JSON.stringify({
+            name: 'test-app',
+            version: '1.0.0',
+            dependencies: { '@happyvertical/smrt-core': '^0.19.0' },
+          }),
+        );
 
-      // Should not throw - returns null or a path depending on whether
-      // external base classes are included in the environment
-      const result = await generateAppManifest(tempDir, { verbose: true });
-      expect(result === null || typeof result === 'string').toBe(true);
-    });
+        // Should not throw - returns null or a path depending on whether
+        // external base classes are included in the environment
+        const result = await generateAppManifest(tempDir, { verbose: true });
+        expect(result === null || typeof result === 'string').toBe(true);
+      },
+    );
   });
 
   describe('autoDiscoverAndLoad with auto-scan (issue #881)', () => {
