@@ -205,18 +205,19 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
         let hasAdmin = false;
         try {
           let pkgDir = dirname(manifestPath!);
-          while (
-            pkgDir !== '/' &&
-            !existsSync(resolve(pkgDir, 'package.json'))
-          ) {
-            pkgDir = dirname(pkgDir);
+          while (!existsSync(resolve(pkgDir, 'package.json'))) {
+            const parent = dirname(pkgDir);
+            if (parent === pkgDir) {
+              break;
+            }
+            pkgDir = parent;
           }
           const pkgJson = JSON.parse(
             readFileSync(resolve(pkgDir, 'package.json'), 'utf-8'),
           );
           hasAdmin = !!pkgJson.exports?.['./admin'];
         } catch {
-          // Package not found
+          // Failed to read package.json or parse exports — treat as no admin export
         }
 
         registrations.push({
