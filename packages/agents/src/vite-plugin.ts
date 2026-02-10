@@ -108,8 +108,12 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
         const agentMatches = configContent.match(/agents\s*:\s*\[([^\]]*)\]/s);
         if (agentMatches) {
           const agentsBlock = agentMatches[1];
+          // Strip single-line comments before extracting package names,
+          // otherwise commented-out entries like `// '@happyvertical/ludis'`
+          // are incorrectly included.
+          const withoutComments = agentsBlock.replace(/\/\/.*$/gm, '');
           const packageNames = [
-            ...agentsBlock.matchAll(/['"]([^'"]+)['"]/g),
+            ...withoutComments.matchAll(/['"]([^'"]+)['"]/g),
           ].map((m) => m[1]);
           agentPackages = packageNames;
         }
