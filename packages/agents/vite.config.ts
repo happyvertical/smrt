@@ -22,6 +22,7 @@ export default defineConfig(async () => {
 					index: resolve(packageDir, 'src/index.ts'),
 					ui: resolve(packageDir, 'src/ui.ts'),
 					'vite-plugin': resolve(packageDir, 'src/vite-plugin.ts'),
+					server: resolve(packageDir, 'src/server/index.ts'),
 				},
 				formats: ['es'] as const,
 			},
