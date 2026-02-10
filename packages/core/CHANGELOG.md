@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.76
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use package.json exports check for admin detection (#884) (agents)
+  - @happyvertical/smrt-scanner@0.19.76
+  - @happyvertical/smrt-config@0.19.76
+  - @happyvertical/smrt-types@0.19.76
+
 ## 0.19.75
 
 ### Patch Changes
