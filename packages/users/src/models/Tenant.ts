@@ -62,6 +62,7 @@ export const MAX_TENANT_HIERARCHY_DEPTH = 10;
  * ```
  */
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
