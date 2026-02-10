@@ -35,6 +35,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
+import {
+  extractAgentPackagesFromConfig,
+  type PackageManifest,
+} from './server/manifest-utils.js';
 
 const VIRTUAL_MODULE_ID = 'virtual:smrt-agent-registrations';
 const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`;
@@ -51,25 +55,6 @@ export interface AgentRoutesPluginOptions {
     packageName: string;
     agentClass: string;
   }>;
-}
-
-interface AgentManifestObject {
-  className: string;
-  agent?: {
-    name: string;
-    slug: string;
-    icon?: string;
-    tier: string;
-    description?: string;
-    uiSlots: Record<string, unknown>;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
-interface AgentManifest {
-  objects: Record<string, AgentManifestObject>;
-  [key: string]: unknown;
 }
 
 /**
@@ -93,26 +78,12 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
     configResolved(config: { root: string }) {
       projectRoot = config.root;
 
-      // Try to load smrt.config.js
+      // Try to load smrt.config.js using shared config extraction
       const configPath =
         options.configPath || resolve(projectRoot, 'smrt.config.js');
 
       try {
-        // Read the config file and extract agents array
-        // We use a simple approach: read the file and look for the agents array
-        // This avoids async import() which isn't available in configResolved
-        const configContent = readFileSync(configPath, 'utf-8');
-
-        // Extract agent package names from the config
-        // Matches any quoted string inside the agents array (scoped, unscoped, or local paths)
-        const agentMatches = configContent.match(/agents\s*:\s*\[([^\]]*)\]/s);
-        if (agentMatches) {
-          const agentsBlock = agentMatches[1];
-          const packageNames = [
-            ...agentsBlock.matchAll(/['"]([^'"]+)['"]/g),
-          ].map((m) => m[1]);
-          agentPackages = packageNames;
-        }
+        agentPackages = extractAgentPackagesFromConfig(configPath);
       } catch {
         // Config not found or unreadable — fall back to options.agents
       }
@@ -174,7 +145,7 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
           );
           manifestPath = localRequire.resolve(`${pkg}/manifest`);
           const manifestContent = readFileSync(manifestPath, 'utf-8');
-          const manifest: AgentManifest = JSON.parse(manifestContent);
+          const manifest: PackageManifest = JSON.parse(manifestContent);
 
           // Find the agent object (one with agent metadata)
           for (const obj of Object.values(manifest.objects)) {
@@ -233,7 +204,8 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
 
       lines.push('');
 
-      // Generate the extractAgentManifest helper
+      // Generate the extractAgentManifest helper inline in the virtual module.
+      // This runs in the browser, so it can't import from ./server.
       lines.push(
         'function extractAgentManifest(manifest, agentClass) {',
         '  for (const obj of Object.values(manifest.objects)) {',
