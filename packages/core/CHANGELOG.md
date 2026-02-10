@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.75
+
+### Patch Changes
+
+- ### Features
+
+  - add tableStrategy 'sti' to Tenant model (#883) (users)
+  - @happyvertical/smrt-scanner@0.19.75
+  - @happyvertical/smrt-config@0.19.75
+  - @happyvertical/smrt-types@0.19.75
+
 ## 0.19.74
 
 ### Patch Changes
