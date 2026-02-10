@@ -32,9 +32,9 @@
  * ```
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 const VIRTUAL_MODULE_ID = 'virtual:smrt-agent-registrations';
 const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`;
@@ -167,11 +167,12 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
 
         // Try to read the manifest to extract the agent class name
         let agentClass: string | null = null;
+        let manifestPath: string | null = null;
         try {
           const localRequire = createRequire(
             resolve(projectRoot, 'package.json'),
           );
-          const manifestPath = localRequire.resolve(`${pkg}/manifest`);
+          manifestPath = localRequire.resolve(`${pkg}/manifest`);
           const manifestContent = readFileSync(manifestPath, 'utf-8');
           const manifest: AgentManifest = JSON.parse(manifestContent);
 
@@ -197,16 +198,25 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
           continue;
         }
 
-        // Check if ./admin export exists
+        // Check if ./admin export exists by reading the package's exports field.
+        // We can't use createRequire().resolve() because CJS resolution doesn't
+        // recognise 'svelte' or 'import' conditions — only 'default'/'require'/'node'.
+        // Derive the package root from the manifest path we already resolved.
         let hasAdmin = false;
         try {
-          const localRequire = createRequire(
-            resolve(projectRoot, 'package.json'),
+          let pkgDir = dirname(manifestPath!);
+          while (
+            pkgDir !== '/' &&
+            !existsSync(resolve(pkgDir, 'package.json'))
+          ) {
+            pkgDir = dirname(pkgDir);
+          }
+          const pkgJson = JSON.parse(
+            readFileSync(resolve(pkgDir, 'package.json'), 'utf-8'),
           );
-          localRequire.resolve(`${pkg}/admin`);
-          hasAdmin = true;
+          hasAdmin = !!pkgJson.exports?.['./admin'];
         } catch {
-          // No ./admin export — skip admin import for this agent
+          // Package not found
         }
 
         registrations.push({
