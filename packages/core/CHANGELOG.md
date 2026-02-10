@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.77
+
+### Patch Changes
+
+- ### Features
+
+  - add ./server export for server-side agent utilities (#886) (agents)
+  - @happyvertical/smrt-scanner@0.19.77
+  - @happyvertical/smrt-config@0.19.77
+  - @happyvertical/smrt-types@0.19.77
+
 ## 0.19.76
 
 ### Patch Changes
