@@ -139,8 +139,8 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
   ): Promise<AnalyticsEvent[]> {
     return await this.list({
       where: {
-        'eventTimestamp >=': startDate,
-        'eventTimestamp <=': endDate,
+        'eventTimestamp >=': startDate.toISOString(),
+        'eventTimestamp <=': endDate.toISOString(),
       },
       orderBy: 'eventTimestamp DESC',
     });
@@ -246,9 +246,11 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
   ): Promise<PropertyStatsWithTrend> {
     const currentTime = now || new Date();
     const todayStart = new Date(
-      currentTime.getFullYear(),
-      currentTime.getMonth(),
-      currentTime.getDate(),
+      Date.UTC(
+        currentTime.getUTCFullYear(),
+        currentTime.getUTCMonth(),
+        currentTime.getUTCDate(),
+      ),
     );
     const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
     const yesterdayEnd = new Date(todayStart.getTime() - 1);
@@ -258,16 +260,16 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
         where: {
           propertyId,
           eventName: 'page_view',
-          'eventTimestamp >=': todayStart,
-          'eventTimestamp <=': currentTime,
+          'eventTimestamp >=': todayStart.toISOString(),
+          'eventTimestamp <=': currentTime.toISOString(),
         },
       }),
       this.list({
         where: {
           propertyId,
           eventName: 'page_view',
-          'eventTimestamp >=': yesterdayStart,
-          'eventTimestamp <=': yesterdayEnd,
+          'eventTimestamp >=': yesterdayStart.toISOString(),
+          'eventTimestamp <=': yesterdayEnd.toISOString(),
         },
       }),
     ]);
@@ -319,9 +321,11 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
     // Fetch all date-ranged events once to avoid N+1 queries
     const currentTime = now || new Date();
     const todayStart = new Date(
-      currentTime.getFullYear(),
-      currentTime.getMonth(),
-      currentTime.getDate(),
+      Date.UTC(
+        currentTime.getUTCFullYear(),
+        currentTime.getUTCMonth(),
+        currentTime.getUTCDate(),
+      ),
     );
     const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
     const yesterdayEnd = new Date(todayStart.getTime() - 1);
@@ -330,15 +334,15 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
       this.list({
         where: {
           eventName: 'page_view',
-          'eventTimestamp >=': todayStart,
-          'eventTimestamp <=': currentTime,
+          'eventTimestamp >=': todayStart.toISOString(),
+          'eventTimestamp <=': currentTime.toISOString(),
         },
       }),
       this.list({
         where: {
           eventName: 'page_view',
-          'eventTimestamp >=': yesterdayStart,
-          'eventTimestamp <=': yesterdayEnd,
+          'eventTimestamp >=': yesterdayStart.toISOString(),
+          'eventTimestamp <=': yesterdayEnd.toISOString(),
         },
       }),
     ]);
