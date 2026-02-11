@@ -21,6 +21,7 @@ import { AnalyticsPropertyStatus, AnalyticsProvider } from '../types/index.js';
  * ```
  */
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync', 'runReport'] },
   cli: true,
