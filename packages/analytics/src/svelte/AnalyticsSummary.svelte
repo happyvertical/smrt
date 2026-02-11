@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { PropertyStatsWithTrend } from '../types/index.js';
+import type { PropertyStatsWithTrend } from '../index.js';
 import StatCard from './StatCard.svelte';
 
 interface Props {
@@ -16,7 +16,7 @@ const { stats }: Props = $props();
 			value={stats.todayPageviews.toLocaleString()}
 			trend={stats.trend}
 			trendPercent={stats.trendPercent}
-			subtitle="vs. yesterday ({stats.yesterdayPageviews.toLocaleString()})"
+			subtitle={`vs. yesterday (${stats.yesterdayPageviews.toLocaleString()})`}
 		/>
 		<StatCard
 			label="Users Today"

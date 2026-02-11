@@ -253,18 +253,24 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
     const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
     const yesterdayEnd = new Date(todayStart.getTime() - 1);
 
-    const [todayEvents, yesterdayEvents] = await Promise.all([
-      this.findByDateRange(todayStart, currentTime),
-      this.findByDateRange(yesterdayStart, yesterdayEnd),
+    const [todayPageviewEvents, yesterdayPageviewEvents] = await Promise.all([
+      this.list({
+        where: {
+          propertyId,
+          eventName: 'page_view',
+          'eventTimestamp >=': todayStart.toISOString(),
+          'eventTimestamp <=': currentTime.toISOString(),
+        },
+      }),
+      this.list({
+        where: {
+          propertyId,
+          eventName: 'page_view',
+          'eventTimestamp >=': yesterdayStart.toISOString(),
+          'eventTimestamp <=': yesterdayEnd.toISOString(),
+        },
+      }),
     ]);
-
-    // Filter to pageviews for this property
-    const todayPageviewEvents = todayEvents.filter(
-      (e) => e.propertyId === propertyId && e.eventName === 'page_view',
-    );
-    const yesterdayPageviewEvents = yesterdayEvents.filter(
-      (e) => e.propertyId === propertyId && e.eventName === 'page_view',
-    );
 
     // Count unique clients (users)
     const todayClients = new Set(todayPageviewEvents.map((e) => e.clientId));
@@ -321,19 +327,39 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
     const yesterdayEnd = new Date(todayStart.getTime() - 1);
 
     const [todayEvents, yesterdayEvents] = await Promise.all([
-      this.findByDateRange(todayStart, currentTime),
-      this.findByDateRange(yesterdayStart, yesterdayEnd),
+      this.list({
+        where: {
+          eventName: 'page_view',
+          'eventTimestamp >=': todayStart.toISOString(),
+          'eventTimestamp <=': currentTime.toISOString(),
+        },
+      }),
+      this.list({
+        where: {
+          eventName: 'page_view',
+          'eventTimestamp >=': yesterdayStart.toISOString(),
+          'eventTimestamp <=': yesterdayEnd.toISOString(),
+        },
+      }),
     ]);
 
-    const propertyIdSet = new Set(propertyIds);
+    // Pre-group events by propertyId in a single pass
+    const todayByProperty = new Map<string, AnalyticsEvent[]>();
+    const yesterdayByProperty = new Map<string, AnalyticsEvent[]>();
+    for (const e of todayEvents) {
+      const list = todayByProperty.get(e.propertyId);
+      if (list) list.push(e);
+      else todayByProperty.set(e.propertyId, [e]);
+    }
+    for (const e of yesterdayEvents) {
+      const list = yesterdayByProperty.get(e.propertyId);
+      if (list) list.push(e);
+      else yesterdayByProperty.set(e.propertyId, [e]);
+    }
 
     for (const propertyId of propertyIds) {
-      const todayPageviewEvents = todayEvents.filter(
-        (e) => e.propertyId === propertyId && e.eventName === 'page_view',
-      );
-      const yesterdayPageviewEvents = yesterdayEvents.filter(
-        (e) => e.propertyId === propertyId && e.eventName === 'page_view',
-      );
+      const todayPageviewEvents = todayByProperty.get(propertyId) ?? [];
+      const yesterdayPageviewEvents = yesterdayByProperty.get(propertyId) ?? [];
 
       const todayClients = new Set(todayPageviewEvents.map((e) => e.clientId));
       const yesterdayClients = new Set(

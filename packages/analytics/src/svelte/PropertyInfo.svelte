@@ -27,9 +27,12 @@ const providerLabel = $derived(
       : (provider ?? 'Unknown'),
 );
 
-const lastSyncFormatted = $derived(
-  lastSyncAt ? new Date(lastSyncAt).toLocaleString() : 'Never',
-);
+const lastSyncFormatted = $derived.by(() => {
+  if (!lastSyncAt) return 'Never';
+  const parsed = new Date(lastSyncAt);
+  if (Number.isNaN(parsed.getTime())) return 'Never';
+  return parsed.toLocaleString();
+});
 </script>
 
 <div class="property-info">

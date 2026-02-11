@@ -18,11 +18,9 @@ const { events, maxRows = 20 }: Props = $props();
 const displayEvents = $derived(events.slice(0, maxRows));
 
 function formatTimestamp(ts: string): string {
-  try {
-    return new Date(ts).toLocaleString();
-  } catch {
-    return ts;
-  }
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return ts;
+  return date.toLocaleString();
 }
 
 function statusClass(status: string): string {
