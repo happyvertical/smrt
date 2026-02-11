@@ -45,12 +45,16 @@ function getCommitsSinceLastRelease(): string[] {
   }
 
   const commits = exec(
-    `git log ${range} --pretty=format:"%H|||%s|||%b" --no-merges`,
+    `git log ${range} --pretty=format:"%H|||%s|||%b%x00" --no-merges`,
   );
 
   if (!commits) return [];
 
-  return commits.split('\n').filter(Boolean);
+  // Split on null byte (not newline) to handle multi-line commit bodies
+  return commits
+    .split('\x00')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function parseConventionalCommit(commitLine: string): ParsedCommit | null {
