@@ -7,10 +7,12 @@
  */
 
 interface Props {
-  /** Amount in cents */
+  /** Amount value */
   amount: number;
   /** Currency code */
   currency?: 'CAD' | 'USD';
+  /** Whether amount is in cents or dollars (default: cents) */
+  unit?: 'cents' | 'dollars';
   /** Show +/- sign for non-zero values */
   showSign?: boolean;
   /** Display size */
@@ -24,6 +26,7 @@ interface Props {
 const {
   amount,
   currency = 'CAD',
+  unit = 'cents',
   showSign = false,
   size = 'md',
   highlightNegative = false,
@@ -32,7 +35,7 @@ const {
 
 // Format amount using Intl.NumberFormat
 const formatted = $derived.by(() => {
-  const dollars = amount / 100;
+  const dollars = unit === 'cents' ? amount / 100 : amount;
   const absValue = Math.abs(dollars);
 
   const formatter = new Intl.NumberFormat('en-CA', {

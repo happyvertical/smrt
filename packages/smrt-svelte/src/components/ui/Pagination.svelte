@@ -3,9 +3,16 @@ interface Props {
   currentPage: number;
   totalPages: number;
   baseUrl?: string;
+  /** When provided, renders buttons instead of links and calls this on page change */
+  onPageChange?: (page: number) => void;
 }
 
-const { currentPage, totalPages, baseUrl = '/articles' }: Props = $props();
+const {
+  currentPage,
+  totalPages,
+  baseUrl = '/articles',
+  onPageChange,
+}: Props = $props();
 
 function getPageUrl(page: number): string {
   if (page === 1) return baseUrl || '/';
@@ -69,7 +76,11 @@ const hasNextPage = $derived(currentPage < totalPages);
 
 {#if totalPages > 1}
   <nav class="pagination" aria-label="Pagination">
-    {#if hasPrevPage}
+    {#if onPageChange}
+      <button class="page-link nav-link" disabled={!hasPrevPage} onclick={() => onPageChange(currentPage - 1)} aria-label="Previous page">
+        &larr; Prev
+      </button>
+    {:else if hasPrevPage}
       <a href={getPageUrl(currentPage - 1)} class="page-link nav-link" aria-label="Previous page">
         &larr; Prev
       </a>
@@ -83,13 +94,19 @@ const hasNextPage = $derived(currentPage < totalPages);
           <span class="ellipsis" aria-hidden="true">&hellip;</span>
         {:else if page === currentPage}
           <span class="page-link current" aria-current="page">{page}</span>
+        {:else if onPageChange}
+          <button class="page-link" onclick={() => onPageChange(page as number)}>{page}</button>
         {:else}
           <a href={getPageUrl(page)} class="page-link">{page}</a>
         {/if}
       {/each}
     </div>
 
-    {#if hasNextPage}
+    {#if onPageChange}
+      <button class="page-link nav-link" disabled={!hasNextPage} onclick={() => onPageChange(currentPage + 1)} aria-label="Next page">
+        Next &rarr;
+      </button>
+    {:else if hasNextPage}
       <a href={getPageUrl(currentPage + 1)} class="page-link nav-link" aria-label="Next page">
         Next &rarr;
       </a>
@@ -146,10 +163,17 @@ const hasNextPage = $derived(currentPage < totalPages);
     cursor: default;
   }
 
-  .page-link.disabled {
+  .page-link.disabled,
+  .page-link:disabled {
     background: var(--color-neutral-gray100, #f3f4f6);
     color: var(--color-neutral-gray400, #9ca3af);
     cursor: not-allowed;
+  }
+
+  button.page-link {
+    border: none;
+    font: inherit;
+    cursor: pointer;
   }
 
   .nav-link {
