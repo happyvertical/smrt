@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-users",
-  "version": "0.19.77",
+  "version": "0.19.78",
   "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
   "type": "module",
   "main": "./dist/index.js",

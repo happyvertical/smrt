@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.78
+
+### Patch Changes
+
+- ### Features
+
+  - enhance components for downstream app refactoring (#890) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.19.78
+  - @happyvertical/smrt-config@0.19.78
+  - @happyvertical/smrt-types@0.19.78
+
 ## 0.19.77
 
 ### Patch Changes
