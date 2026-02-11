@@ -40,8 +40,8 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "^0.67.7",
-    "@happyvertical/utils": "^0.66.9"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",

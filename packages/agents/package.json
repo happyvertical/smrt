@@ -25,21 +25,12 @@
       "types": "./dist/server.d.ts"
     },
     "./manifest": "./dist/manifest.json",
-    "./manifest.json": "./dist/manifest.json",
-    "./svelte": {
-      "types": "./dist/svelte/index.d.ts",
-      "svelte": "./dist/svelte/index.js",
-      "import": "./dist/svelte/index.js"
-    }
+    "./manifest.json": "./dist/manifest.json"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-svelte": "workspace:*",
-    "svelte": "^5.18.0"
+    "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {
-    "@happyvertical/smrt-svelte": {
-      "optional": true
-    },
     "svelte": {
       "optional": true
     }
@@ -49,32 +40,26 @@
     "CLAUDE.md"
   ],
   "scripts": {
-    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",
     "build:watch": "vite build --watch",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "pnpm run generate:test && npx vitest run",
-    "test:watch": "vitest",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.66.9",
-    "@happyvertical/files": "^0.66.9",
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/files": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
-    "@happyvertical/utils": "^0.66.9"
+    "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
-    "@happyvertical/logger": "^0.66.9",
-    "@happyvertical/smrt-svelte": "workspace:*",
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@happyvertical/sql": "^0.67.7",
-    "@sveltejs/package": "^2.5.7",
-    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@happyvertical/sql": "catalog:",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
-    "svelte": "^5.46.4",
-    "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"

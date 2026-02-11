@@ -3,6 +3,23 @@ packages:
   - 'packages/smrt-svelte/playground'
   - 'packages/browser-ai'
 
-# pnpm workspace configuration for SMRT Framework monorepo
-# Child packages use fixed versioning to stay in sync
-# SDK packages are now consumed as published dependencies from GitHub Package Registry
+catalog:
+  '@happyvertical/ai': ^0.68.5
+  '@happyvertical/cache': ^0.68.5
+  '@happyvertical/documents': ^0.68.5
+  '@happyvertical/email': ^0.68.5
+  '@happyvertical/encryption': ^0.68.5
+  '@happyvertical/files': ^0.68.5
+  '@happyvertical/geo': ^0.68.5
+  '@happyvertical/images': ^0.68.5
+  '@happyvertical/jobs': ^0.68.5
+  '@happyvertical/json': ^0.68.5
+  '@happyvertical/logger': ^0.68.5
+  '@happyvertical/ocr': ^0.60.6
+  '@happyvertical/pdf': ^0.62.0
+  '@happyvertical/projects': ^0.68.5
+  '@happyvertical/repos': ^0.68.5
+  '@happyvertical/secrets': ^0.68.5
+  '@happyvertical/spider': ^0.60.7
+  '@happyvertical/sql': ^0.68.5
+  '@happyvertical/utils': ^0.68.5

@@ -27,16 +27,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.66.9",
-    "@happyvertical/logger": "^0.66.9",
-    "@happyvertical/projects": "^0.66.9",
-    "@happyvertical/repos": "^0.66.9",
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/logger": "catalog:",
+    "@happyvertical/projects": "catalog:",
+    "@happyvertical/repos": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "^0.67.7",
-    "@happyvertical/utils": "^0.66.9"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/utils": "catalog:"
   },
   "peerDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
