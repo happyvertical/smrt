@@ -7,7 +7,8 @@
 
 import type { InvoiceStatus } from './types.js';
 
-interface Props {
+/** Props for InvoiceActions component */
+export interface Props {
   /** Current invoice status */
   status: InvoiceStatus;
   /** Loading state */
@@ -117,64 +118,74 @@ const canDelete = $derived(status === 'draft');
   .btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
+    gap: var(--md-sys-spacing-2, 0.5rem);
+    padding: var(--md-sys-spacing-2, 0.5rem) var(--md-sys-spacing-4, 1rem);
+    font: var(--md-sys-typescale-label-large-font);
     font-weight: 500;
     border: none;
-    border-radius: 0.375rem;
+    border-radius: var(--md-sys-shape-corner-small, 0.375rem);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
     white-space: nowrap;
   }
 
   .sm .btn {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
+    padding: var(--md-sys-spacing-1-5, 0.375rem) var(--md-sys-spacing-3, 0.75rem);
+    font: var(--md-sys-typescale-label-medium-font);
   }
 
   .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .btn {
+      transition: none;
+    }
+  }
+
   .btn-primary {
-    background: #3b82f6;
-    color: white;
+    background: var(--md-sys-color-primary, #005ac1);
+    color: var(--md-sys-color-on-primary, #ffffff);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--md-sys-color-primary-container, #d8e2ff);
+    color: var(--md-sys-color-on-primary-container, #001a41);
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
   .btn-success {
-    background: #16a34a;
-    color: white;
+    background: var(--md-sys-color-tertiary, #6b5778);
+    color: var(--md-sys-color-on-tertiary, #ffffff);
   }
 
   .btn-success:hover:not(:disabled) {
-    background: #15803d;
+    background: var(--md-sys-color-tertiary-container, #f3daff);
+    color: var(--md-sys-color-on-tertiary-container, #251431);
+    box-shadow: var(--md-sys-elevation-level1);
   }
 
   .btn-secondary {
-    background: white;
-    color: #374151;
-    border: 1px solid #d1d5db;
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant, #43474e);
+    border: 1px solid var(--md-sys-color-outline, #74777f);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
+    background: var(--md-sys-color-surface-container-highest, #e0e2ec);
+    border-color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .btn-danger {
-    background: white;
-    color: #dc2626;
-    border: 1px solid #fecaca;
+    background: transparent;
+    color: var(--md-sys-color-error, #ba1a1a);
+    border: 1px solid var(--md-sys-color-error-outline, #ffdad6);
   }
 
   .btn-danger:hover:not(:disabled) {
-    background: #fee2e2;
-    border-color: #fca5a5;
+    background: var(--md-sys-color-error-container, #ffdad6);
+    border-color: var(--md-sys-color-error, #ba1a1a);
   }
 </style>

@@ -9,7 +9,8 @@
 import type { Snippet } from 'svelte';
 import type { LineItem } from './types.js';
 
-interface Props {
+/** Props for InvoiceLineItems component */
+export interface Props {
   /** Line items to display */
   items: LineItem[];
   /** Enable editing mode */
@@ -152,35 +153,35 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 2rem 1rem;
-    background: #f9fafb;
-    border: 1px dashed #d1d5db;
-    border-radius: 0.5rem;
+    padding: var(--md-sys-spacing-8, 2rem) var(--md-sys-spacing-4, 1rem);
+    background: var(--md-sys-color-surface-container-low, #f6f6f6);
+    border: 1px dashed var(--md-sys-color-outline, #74777f);
+    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
     text-align: center;
   }
 
   .empty-state p {
-    color: #6b7280;
-    margin: 0 0 1rem;
+    color: var(--md-sys-color-on-surface-variant, #43474e);
+    margin: 0 0 var(--md-sys-spacing-4, 1rem);
   }
 
   .line-items-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
+    font: var(--md-sys-typescale-body-medium-font);
   }
 
   .line-items-table th {
     text-align: left;
     font-weight: 500;
-    color: #6b7280;
-    padding: 0.75rem 0.5rem;
-    border-bottom: 1px solid #e5e7eb;
+    color: var(--md-sys-color-on-surface-variant, #43474e);
+    padding: var(--md-sys-spacing-3, 0.75rem) var(--md-sys-spacing-2, 0.5rem);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
   }
 
   .line-items-table td {
-    padding: 0.75rem 0.5rem;
-    border-bottom: 1px solid #f3f4f6;
+    padding: var(--md-sys-spacing-3, 0.75rem) var(--md-sys-spacing-2, 0.5rem);
+    border-bottom: 1px solid var(--md-sys-color-surface-container-highest, #e0e2ec);
     vertical-align: top;
   }
 
@@ -211,49 +212,49 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 
   .item-category {
     display: block;
-    font-size: 0.75rem;
-    color: #9ca3af;
+    font: var(--md-sys-typescale-label-small-font);
+    color: var(--md-sys-color-outline, #74777f);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
 
   .item-description {
-    color: #111827;
+    color: var(--md-sys-color-on-surface, #1b1b1f);
   }
 
   .source-badge {
     display: inline-block;
-    padding: 0.125rem 0.5rem;
-    font-size: 0.75rem;
+    padding: var(--md-sys-spacing-0-5, 0.125rem) var(--md-sys-spacing-2, 0.5rem);
+    font: var(--md-sys-typescale-label-small-font);
     font-weight: 500;
-    border-radius: 9999px;
+    border-radius: var(--md-sys-shape-corner-full, 9999px);
   }
 
   .source-expense {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--md-sys-color-tertiary-container, #f3daff);
+    color: var(--md-sys-color-on-tertiary-container, #251431);
   }
 
   .source-time {
-    background: #dbeafe;
-    color: #1e40af;
+    background: var(--md-sys-color-primary-container, #d8e2ff);
+    color: var(--md-sys-color-on-primary-container, #001a41);
   }
 
   .source-manual {
-    background: #f3f4f6;
-    color: #6b7280;
+    background: var(--md-sys-color-surface-variant, #e0e2ec);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .total-row td {
-    border-top: 2px solid #e5e7eb;
+    border-top: 2px solid var(--md-sys-color-outline-variant, #c4c6cf);
     border-bottom: none;
     font-weight: 600;
-    padding-top: 1rem;
+    padding-top: var(--md-sys-spacing-4, 1rem);
   }
 
   .total-label {
     text-align: right;
-    color: #374151;
+    color: var(--md-sys-color-on-surface, #1b1b1f);
   }
 
   .action-btn {
@@ -264,42 +265,54 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     height: 28px;
     background: transparent;
     border: none;
-    border-radius: 0.25rem;
+    border-radius: var(--md-sys-shape-corner-small, 0.25rem);
     cursor: pointer;
-    color: #9ca3af;
-    transition: all 0.15s;
+    color: var(--md-sys-color-outline, #74777f);
+    transition: all var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .action-btn:hover {
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--md-sys-color-surface-container-highest, #e0e2ec);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .action-btn.delete:hover {
-    background: #fee2e2;
-    color: #dc2626;
+    background: var(--md-sys-color-error-container, #ffdad6);
+    color: var(--md-sys-color-error, #ba1a1a);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .action-btn {
+      transition: none;
+    }
   }
 
   .add-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
+    gap: var(--md-sys-spacing-2, 0.5rem);
+    padding: var(--md-sys-spacing-2, 0.5rem) var(--md-sys-spacing-4, 1rem);
+    font: var(--md-sys-typescale-label-large-font);
     font-weight: 500;
-    color: #3b82f6;
+    color: var(--md-sys-color-primary, #005ac1);
     background: transparent;
-    border: 1px dashed #3b82f6;
-    border-radius: 0.375rem;
+    border: 1px dashed var(--md-sys-color-primary, #005ac1);
+    border-radius: var(--md-sys-shape-corner-small, 0.375rem);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .add-btn:hover {
-    background: #eff6ff;
+    background: var(--md-sys-color-primary-container, #d8e2ff);
   }
 
   .add-btn-below {
-    margin-top: 0.75rem;
+    margin-top: var(--md-sys-spacing-3, 0.75rem);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .add-btn {
+      transition: none;
+    }
   }
 </style>

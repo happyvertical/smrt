@@ -9,7 +9,8 @@
 import { ripple } from '../../actions/ripple.js';
 import type { InvoiceData, InvoiceStatus } from './types.js';
 
-interface Props {
+/** Props for InvoiceCard component */
+export interface Props {
   /** Invoice data */
   invoice: InvoiceData;
   /** Currency code */
@@ -127,14 +128,14 @@ const isOverdue = $derived.by(() => {
   .invoice-card {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px;
+    gap: var(--md-sys-spacing-3, 12px);
+    padding: var(--md-sys-spacing-4, 16px);
     background-color: var(--md-sys-color-surface-container-low);
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium, 12px);
     text-decoration: none;
     color: var(--md-sys-color-on-surface);
     cursor: pointer;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: all var(--md-sys-motion-duration-short4, 200ms) var(--md-sys-motion-easing-emphasized, cubic-bezier(0.2, 0, 0, 1));
     text-align: left;
     width: 100%;
     border: none;
