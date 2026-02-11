@@ -22,8 +22,6 @@ export * from './components/ai/index.js';
 export * from './components/auth/index.js';
 // Calendar components
 export * from './components/calendar/index.js';
-// Commerce components
-export * from './components/commerce/index.js';
 // Content components
 export * from './components/content/index.js';
 // Data Components
