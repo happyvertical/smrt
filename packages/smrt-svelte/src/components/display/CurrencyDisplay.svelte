@@ -7,7 +7,8 @@
  * Supports CAD/USD with appropriate symbols and locale formatting.
  */
 
-interface Props {
+/** Props for CurrencyDisplay component */
+export interface Props {
   /** Amount value */
   amount: number;
   /** Currency code */
@@ -22,6 +23,8 @@ interface Props {
   highlightNegative?: boolean;
   /** Highlight positive values in green */
   highlightPositive?: boolean;
+  /** Optional CSS class */
+  class?: string;
 }
 
 const {
@@ -32,6 +35,7 @@ const {
   size = 'md',
   highlightNegative = false,
   highlightPositive = false,
+  class: className = '',
 }: Props = $props();
 
 // Format amount using Intl.NumberFormat
@@ -68,7 +72,7 @@ const colorClass = $derived.by(() => {
 </script>
 
 <span
-  class="currency-display"
+  class="currency-display {className}"
   class:sm={size === 'sm'}
   class:lg={size === 'lg'}
   class:negative={colorClass === 'negative'}
@@ -84,19 +88,19 @@ const colorClass = $derived.by(() => {
   }
 
   .currency-display.sm {
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
   }
 
   .currency-display.lg {
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--md-sys-typescale-title-large-size, 1.25rem);
+    font-weight: var(--md-sys-typescale-title-large-weight, 600);
   }
 
   .currency-display.negative {
-    color: #dc2626;
+    color: var(--md-sys-color-error, #dc2626);
   }
 
   .currency-display.positive {
-    color: #16a34a;
+    color: var(--md-sys-color-tertiary, #16a34a);
   }
 </style>

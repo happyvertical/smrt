@@ -1,10 +1,28 @@
 <script lang="ts">
-interface Props {
+/**
+ * Icon - SVG icon component
+ *
+ * Displays SVG icons from presets or custom paths.
+ *
+ * Accessibility:
+ * - Use aria-label for informative icons
+ * - Uses aria-hidden="true" by default (decorative)
+ */
+
+/** Props for Icon component */
+export interface Props {
+  /** Preset icon name */
   name?: string;
+  /** Custom SVG path */
   path?: string;
+  /** Icon size (number for pixels, string for CSS value) */
   size?: string | number;
+  /** Icon color */
   color?: string;
+  /** SVG viewBox */
   viewBox?: string;
+  /** Accessible label (makes icon informative) */
+  'aria-label'?: string;
 }
 
 const {
@@ -13,7 +31,10 @@ const {
   size = 24,
   color = 'currentColor',
   viewBox = '0 0 24 24',
+  'aria-label': ariaLabel,
 }: Props = $props();
+
+const isInformative = $derived(!!ariaLabel);
 
 // Common M3 Icon Paths (Simplified)
 const presets: Record<string, string> = {
@@ -40,7 +61,9 @@ const pxSize = $derived(typeof size === 'number' ? `${size}px` : size);
   height={pxSize}
   {viewBox}
   fill={color}
-  aria-hidden="true"
+  aria-hidden={!isInformative}
+  aria-label={ariaLabel}
+  role={isInformative ? 'img' : undefined}
 >
   <path d={finalPath} />
 </svg>

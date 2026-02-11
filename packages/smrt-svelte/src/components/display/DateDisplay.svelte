@@ -5,7 +5,8 @@
  * Supports various format options and relative time display.
  */
 
-interface Props {
+/** Props for DateDisplay component */
+export interface Props {
   /** Date to display (Date, ISO string, or timestamp) */
   date: Date | string | number | null | undefined;
   /** Display format */
@@ -16,6 +17,8 @@ interface Props {
   showTime?: boolean;
   /** Locale for formatting (defaults to en-CA) */
   locale?: string;
+  /** Optional CSS class */
+  class?: string;
 }
 
 const {
@@ -24,6 +27,7 @@ const {
   fallback = 'N/A',
   showTime = false,
   locale = 'en-CA',
+  class: className = '',
 }: Props = $props();
 
 // Parse the date
@@ -97,11 +101,11 @@ const isoString = $derived(parsedDate?.toISOString() ?? '');
 </script>
 
 {#if parsedDate}
-  <time class="date-display" datetime={isoString}>
+  <time class="date-display {className}" datetime={isoString}>
     {formatted}
   </time>
 {:else}
-  <span class="date-display date-fallback">
+  <span class="date-display date-fallback {className}">
     {fallback}
   </span>
 {/if}
@@ -112,7 +116,7 @@ const isoString = $derived(parsedDate?.toISOString() ?? '');
   }
 
   .date-fallback {
-    color: #9ca3af;
+    color: var(--md-sys-color-on-surface-variant, #9ca3af);
     font-style: italic;
   }
 </style>
