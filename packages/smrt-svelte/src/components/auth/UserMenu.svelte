@@ -7,7 +7,10 @@ import type { Profile } from '@happyvertical/smrt-profiles';
 import { ripple } from '../../actions/ripple.js';
 
 interface Props {
-  profile: Profile;
+  /** Full SMRT profile object */
+  profile?: Profile;
+  /** Simple user object (used when profile is not available) */
+  user?: { name: string; email?: string };
   signoutUrl?: string;
   profileUrl?: string;
   settingsUrl?: string;
@@ -15,10 +18,13 @@ interface Props {
 
 const {
   profile,
+  user,
   signoutUrl = '/auth/signout',
   profileUrl = '/profile',
   settingsUrl = '/settings',
 }: Props = $props();
+
+const displayName = $derived(profile?.name ?? user?.name ?? 'User');
 
 let open = $state(false);
 
@@ -48,9 +54,9 @@ function getInitials(name: string): string {
     use:ripple
   >
     <span class="avatar">
-      {getInitials(profile.name ?? 'U')}
+      {getInitials(displayName)}
     </span>
-    <span class="user-name">{profile.name}</span>
+    <span class="user-name">{displayName}</span>
     <svg class="chevron" class:open viewBox="0 0 20 20" fill="currentColor">
       <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
     </svg>

@@ -7,6 +7,7 @@ export { default as AddressInput } from './AddressInput.svelte';
 export { default as CheckboxInput } from './CheckboxInput.svelte';
 export { default as DateRangeInput } from './DateRangeInput.svelte';
 export { default as DateTimeInput } from './DateTimeInput.svelte';
+export { default as FileUpload } from './FileUpload.svelte';
 export { default as Form } from './Form.svelte';
 // Generic form components (migrated from @happyvertical/svelte)
 export { default as FormGroup } from './FormGroup.svelte';
