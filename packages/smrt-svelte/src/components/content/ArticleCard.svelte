@@ -30,14 +30,6 @@ const {
   showTags = false,
 }: Props = $props();
 
-/**
- * Handle click event for analytics/tracking
- */
-function handleClick(_event: MouseEvent) {
-  // Allow default navigation but could dispatch event for analytics
-  // dispatch('click', { article, event });
-}
-
 const _formattedDate = $derived(
   article.publish_date
     ? new Date(article.publish_date).toLocaleDateString('en-US', {
@@ -75,7 +67,6 @@ const _tags = $derived.by(() => {
 <a 
   href="/articles/{article.slug}" 
   class="article-link"
-  onclick={handleClick}
 >
   <Card hoverable>
     <article>

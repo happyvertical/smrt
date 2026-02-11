@@ -7,7 +7,8 @@
  * @example
  * <Markdown content="# Hello\n\nThis is **bold** text." />
  */
-interface Props {
+/** Props for the Markdown component */
+export interface Props {
   /** Markdown content to render */
   content: string;
   /** Optional CSS class for styling */
@@ -133,10 +134,11 @@ function renderMarkdown(markdown: string): string {
   html = result.join('\n');
 
   // Process inline formatting
+  // Note: Process bold first, then italic to handle nested patterns correctly
   // Bold: **text**
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // Italic: *text* (but not inside bold)
-  html = html.replace(/(?<!<strong>)\*([^*]+)\*(?!<\/strong>)/g, '<em>$1</em>');
+  // Italic: *text*
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   // Inline code: `text`
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 

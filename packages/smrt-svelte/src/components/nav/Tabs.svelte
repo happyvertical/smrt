@@ -45,8 +45,10 @@ const {
 /** Get enabled tabs only */
 const enabledTabs = $derived(tabs.filter((t) => !t.disabled));
 
-/** Get index of currently active tab */
-const activeIndex = $derived(enabledTabs.findIndex((t) => t.id === active));
+let tablistEl: HTMLElement | null = $state(null);
+
+// Generate unique ID for this tabs instance
+const instanceId = $props.id();
 
 function handleClick(id: string) {
   if (id !== active) {
@@ -89,8 +91,8 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
       onchange?.(nextTab.id);
       // Focus the next tab button after the DOM updates
       requestAnimationFrame(() => {
-        const tabButton = document.querySelector(
-          `[data-tab-id="${nextTab.id}"]`,
+        const tabButton = tablistEl?.querySelector(
+          `[data-tab-id="${CSS.escape(nextTab.id)}"]`,
         ) as HTMLElement;
         tabButton?.focus();
       });
@@ -107,6 +109,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     class:secondary={variant === 'secondary'}
     role="tablist"
     aria-label={ariaLabel}
+    bind:this={tablistEl}
   >
     {#each tabs as tab (tab.id)}
       <button
@@ -115,8 +118,9 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
         class:active={tab.id === active}
         disabled={tab.disabled}
         role="tab"
+        id="tab-{instanceId}-{tab.id}"
         aria-selected={tab.id === active}
-        aria-controls={tab.id === active ? 'tab-panel' : undefined}
+        aria-controls="tab-panel-{instanceId}"
         tabindex={tab.id === active ? 0 : -1}
         data-tab-id={tab.id}
         onclick={() => handleClick(tab.id)}
@@ -138,8 +142,8 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     <div 
       class="tab-panel" 
       role="tabpanel" 
-      id="tab-panel"
-      aria-labelledby="tab-{active}"
+      id="tab-panel-{instanceId}"
+      aria-labelledby="tab-{instanceId}-{active}"
     >
       {@render children()}
     </div>

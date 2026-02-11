@@ -69,6 +69,11 @@ const percentText = $derived(`${Math.round(clampedConfidence)}%`);
 
 // Accessible label
 const defaultLabel = $derived(`Confidence: ${Math.round(clampedConfidence)}%`);
+
+// Human-readable value text for screen readers
+const valueText = $derived(
+  `${level} confidence (${Math.round(clampedConfidence)}%)`,
+);
 </script>
 
 <span
@@ -82,6 +87,7 @@ const defaultLabel = $derived(`Confidence: ${Math.round(clampedConfidence)}%`);
   aria-valuenow={clampedConfidence}
   aria-valuemin={0}
   aria-valuemax={100}
+  aria-valuetext={valueText}
   aria-label={ariaLabel ?? defaultLabel}
 >
   <span class="confidence-bar" style:width="{clampedConfidence}%"></span>

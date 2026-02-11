@@ -21,8 +21,8 @@ export interface Article {
   publish_date: string | null;
   /** Author name */
   author: string | null;
-  /** Tags as JSON string or comma-separated list */
-  tags: string;
+  /** Tags as JSON string, comma-separated list, or parsed string array */
+  tags: string | string[];
 }
 
 /**

@@ -46,6 +46,7 @@ const sortedSlots = $derived(
 );
 
 let activeSlotId = $state<string | null>(null);
+let tablistEl: HTMLElement | null = $state(null);
 
 // Initialize active slot to first sorted slot
 $effect(() => {
@@ -94,8 +95,8 @@ function handleKeydown(event: KeyboardEvent, currentSlotId: string) {
     activeSlotId = nextSlotId;
     // Focus the next tab after DOM update
     requestAnimationFrame(() => {
-      const tabButton = document.querySelector(
-        `[data-tab-id="${nextSlotId}"]`,
+      const tabButton = tablistEl?.querySelector(
+        `[data-tab-id="${CSS.escape(nextSlotId)}"]`,
       ) as HTMLElement;
       tabButton?.focus();
     });
@@ -110,7 +111,7 @@ async function handleSave(config: unknown) {
 </script>
 
 <div class="agent-admin-tabs">
-	<div class="tabs-nav" role="tablist" aria-label="Agent configuration tabs">
+	<div class="tabs-nav" role="tablist" aria-label="Agent configuration tabs" bind:this={tablistEl}>
 		{#each sortedSlots as [slotId, slot]}
 			<button
 				class="tab-button"

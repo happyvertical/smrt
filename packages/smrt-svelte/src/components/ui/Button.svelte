@@ -44,20 +44,23 @@ const {
 const isLink = $derived(!!href);
 const isDisabled = $derived(disabled || loading);
 
+// Button-specific props to exclude in link mode
+const buttonOnlyProps = new Set([
+  'type',
+  'disabled',
+  'form',
+  'formAction',
+  'formEnctype',
+  'formMethod',
+  'formNoValidate',
+  'formTarget',
+]);
+
 // Filter out button-specific props for link mode
 const linkProps = $derived(() => {
-  const {
-    type,
-    disabled,
-    form,
-    formAction,
-    formEnctype,
-    formMethod,
-    formNoValidate,
-    formTarget,
-    ...linkRest
-  } = rest as HTMLButtonAttributes;
-  return linkRest;
+  return Object.fromEntries(
+    Object.entries(rest).filter(([key]) => !buttonOnlyProps.has(key)),
+  ) as HTMLAnchorAttributes;
 });
 </script>
 
