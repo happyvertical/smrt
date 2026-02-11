@@ -25,7 +25,7 @@
   },
   "files": [
     "dist",
-    ".claude-meta.json"
+    "CLAUDE.md"
   ],
   "scripts": {
     "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
