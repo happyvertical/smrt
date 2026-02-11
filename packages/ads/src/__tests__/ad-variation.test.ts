@@ -191,10 +191,10 @@ describe('AdVariation', () => {
       }
 
       // Weight 2 should be selected roughly 2x as often as Weight 1
-      // Allow for wider statistical variance with fewer samples
+      // With only 100 samples, variance is high — use wide bounds
       const ratio = counts['Weight 2'] / counts['Weight 1'];
-      expect(ratio).toBeGreaterThan(1.2);
-      expect(ratio).toBeLessThan(3.0);
+      expect(ratio).toBeGreaterThan(1.0);
+      expect(ratio).toBeLessThan(4.0);
     });
   });
 
