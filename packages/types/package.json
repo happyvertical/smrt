@@ -30,7 +30,7 @@
   },
   "files": [
     "dist",
-    ".claude-meta.json"
+    "CLAUDE.md"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",

@@ -15,7 +15,6 @@
   },
   "files": [
     "dist",
-    ".claude-meta.json",
     "CLAUDE.md"
   ],
   "scripts": {

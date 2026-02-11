@@ -403,5 +403,175 @@ describe.skipIf(skipTests)(
       expect(counts.get('page_view')).toBe(2);
       expect(counts.get('purchase')).toBe(1);
     });
+
+    describe('getPropertyStatsWithTrend', () => {
+      it('should compute day-over-day stats with upward trend', async () => {
+        const propertyId = 'prop-trend';
+        const now = new Date('2024-06-15T12:00:00Z');
+        const todayStart = new Date('2024-06-15T00:00:00Z');
+        const yesterdayMid = new Date('2024-06-14T12:00:00Z');
+
+        // 3 pageviews today, 2 unique clients
+        for (const [clientId, ts] of [
+          ['client-a', todayStart],
+          ['client-a', new Date(todayStart.getTime() + 3600_000)],
+          ['client-b', new Date(todayStart.getTime() + 7200_000)],
+        ] as const) {
+          await (
+            await collection.create({
+              propertyId,
+              eventName: 'page_view',
+              clientId,
+              eventTimestamp: ts,
+            })
+          ).save();
+        }
+
+        // 1 pageview yesterday, 1 unique client
+        await (
+          await collection.create({
+            propertyId,
+            eventName: 'page_view',
+            clientId: 'client-c',
+            eventTimestamp: yesterdayMid,
+          })
+        ).save();
+
+        const stats = await collection.getPropertyStatsWithTrend(
+          propertyId,
+          now,
+        );
+
+        expect(stats.todayPageviews).toBe(3);
+        expect(stats.todayUsers).toBe(2);
+        expect(stats.yesterdayPageviews).toBe(1);
+        expect(stats.yesterdayUsers).toBe(1);
+        expect(stats.trend).toBe('up');
+        expect(stats.trendPercent).toBe(200);
+      });
+
+      it('should report flat trend when change is within 5%', async () => {
+        const propertyId = 'prop-flat';
+        const now = new Date('2024-06-15T12:00:00Z');
+        const todayTs = new Date('2024-06-15T06:00:00Z');
+        const yesterdayTs = new Date('2024-06-14T06:00:00Z');
+
+        // 20 pageviews today
+        for (let i = 0; i < 20; i++) {
+          await (
+            await collection.create({
+              propertyId,
+              eventName: 'page_view',
+              clientId: `client-${i}`,
+              eventTimestamp: todayTs,
+            })
+          ).save();
+        }
+
+        // 20 pageviews yesterday (0% change)
+        for (let i = 0; i < 20; i++) {
+          await (
+            await collection.create({
+              propertyId,
+              eventName: 'page_view',
+              clientId: `client-${i}`,
+              eventTimestamp: yesterdayTs,
+            })
+          ).save();
+        }
+
+        const stats = await collection.getPropertyStatsWithTrend(
+          propertyId,
+          now,
+        );
+
+        expect(stats.todayPageviews).toBe(20);
+        expect(stats.yesterdayPageviews).toBe(20);
+        expect(stats.trend).toBe('flat');
+        expect(stats.trendPercent).toBe(0);
+      });
+
+      it('should ignore non-pageview events', async () => {
+        const propertyId = 'prop-filter';
+        const now = new Date('2024-06-15T12:00:00Z');
+        const todayTs = new Date('2024-06-15T06:00:00Z');
+
+        await (
+          await collection.create({
+            propertyId,
+            eventName: 'purchase',
+            clientId: 'client-a',
+            eventTimestamp: todayTs,
+          })
+        ).save();
+
+        const stats = await collection.getPropertyStatsWithTrend(
+          propertyId,
+          now,
+        );
+
+        expect(stats.todayPageviews).toBe(0);
+        expect(stats.trend).toBe('flat');
+      });
+    });
+
+    describe('getBatchPropertyStats', () => {
+      it('should return stats for multiple properties', async () => {
+        const now = new Date('2024-06-15T12:00:00Z');
+        const todayTs = new Date('2024-06-15T06:00:00Z');
+        const yesterdayTs = new Date('2024-06-14T06:00:00Z');
+
+        // Property A: 2 today, 1 yesterday
+        for (const ts of [todayTs, todayTs]) {
+          await (
+            await collection.create({
+              propertyId: 'prop-a',
+              eventName: 'page_view',
+              clientId: 'client-1',
+              eventTimestamp: ts,
+            })
+          ).save();
+        }
+        await (
+          await collection.create({
+            propertyId: 'prop-a',
+            eventName: 'page_view',
+            clientId: 'client-1',
+            eventTimestamp: yesterdayTs,
+          })
+        ).save();
+
+        // Property B: 0 today, 3 yesterday
+        for (let i = 0; i < 3; i++) {
+          await (
+            await collection.create({
+              propertyId: 'prop-b',
+              eventName: 'page_view',
+              clientId: `client-${i}`,
+              eventTimestamp: yesterdayTs,
+            })
+          ).save();
+        }
+
+        const batch = await collection.getBatchPropertyStats(
+          ['prop-a', 'prop-b'],
+          now,
+        );
+
+        expect(batch.size).toBe(2);
+
+        const statsA = batch.get('prop-a');
+        expect(statsA).toBeDefined();
+        expect(statsA?.todayPageviews).toBe(2);
+        expect(statsA?.yesterdayPageviews).toBe(1);
+        expect(statsA?.trend).toBe('up');
+
+        const statsB = batch.get('prop-b');
+        expect(statsB).toBeDefined();
+        expect(statsB?.todayPageviews).toBe(0);
+        expect(statsB?.yesterdayPageviews).toBe(3);
+        expect(statsB?.trend).toBe('down'); // 0 today vs 3 yesterday = -100%
+      });
+    });
   },
 );

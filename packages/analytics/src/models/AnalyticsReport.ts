@@ -21,6 +21,7 @@ import { ReportFrequency, ReportStatus } from '../types/index.js';
  * ```
  */
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'run'] },
   mcp: { include: ['list', 'get', 'run', 'analyze'] },
   cli: true,

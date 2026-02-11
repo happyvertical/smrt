@@ -55,6 +55,77 @@ function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
 }
 
 /**
+ * Keys from SmrtObject and SmrtClass that should not appear as user-facing
+ * create/update input fields. These are framework-internal properties.
+ */
+type SmrtInternalKeys =
+  | keyof SmrtClass
+  | '_tableName'
+  | '_loadedRelationships'
+  | '_id'
+  | '_slug'
+  | '_context'
+  | '_ai'
+  | '_fs'
+  | '_db'
+  | '_className'
+  | 'options'
+  | '_skipLoad'
+  | '_extractingFields'
+  | 'initialize'
+  | 'save'
+  | 'delete'
+  | 'loadFromId'
+  | 'loadFromSlug'
+  | 'is'
+  | 'do'
+  | 'toJSON'
+  | 'transformJSON';
+
+/**
+ * Input type for `collection.create()`. Constrains input to valid model fields
+ * while preserving backwards compatibility via an index signature escape hatch.
+ *
+ * Provides IDE autocompletion for known fields from the model class while still
+ * accepting arbitrary keys for dynamic usage patterns (e.g., STI meta fields).
+ *
+ * @example
+ * ```typescript
+ * // IDE will suggest: name, price, quantity, categoryId, etc.
+ * await productCollection.create({
+ *   name: 'Widget',
+ *   price: 9.99,
+ *   _meta_type: 'SpecialProduct', // STI discriminator
+ * });
+ * ```
+ */
+export type SmrtCreateInput<T extends SmrtObject> = Partial<
+  Omit<
+    {
+      [K in keyof T as T[K] extends (...args: any[]) => any ? never : K]: T[K];
+    },
+    SmrtInternalKeys
+  >
+> & {
+  /** STI discriminator for polymorphic creation */
+  _meta_type?: string;
+  /** Skip database loading (framework internal) */
+  _skipLoad?: boolean;
+  /** Allow arbitrary additional fields for dynamic usage */
+  [key: string]: unknown;
+};
+
+/**
+ * WHERE clause type for `collection.list()`.
+ *
+ * Uses `Record<string, unknown>` because WHERE keys often include operator
+ * suffixes (e.g., `'price >'`, `'name like'`, `'status in'`) which can't be
+ * expressed as mapped types from model properties. Runtime validation in
+ * `convertWhereKeys()` handles field and operator checking.
+ */
+export type SmrtWhereClause<T extends SmrtObject> = Record<string, unknown>;
+
+/**
  * Configuration options for SmrtCollection
  */
 export interface SmrtCollectionOptions extends SmrtClassOptions {}
@@ -92,7 +163,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   private convertWhereKeys(where: Record<string, any>): Record<string, any> {
     // Whitelist of allowed SQL operators
-    const VALID_OPERATORS = ['=', '>', '<', '>=', '<=', '!=', 'in', 'like'];
+    const VALID_OPERATORS = [
+      '=',
+      '>',
+      '<',
+      '>=',
+      '<=',
+      '!=',
+      'in',
+      'not in',
+      'like',
+      'contains',
+    ];
 
     // Get schema fields for validation (sync from cache)
     const fields = this.getFieldsSync();
@@ -179,10 +261,22 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
-      // Convert field name to snake_case, preserving leading underscores for special fields
-      const snakeFieldName = fieldName.startsWith('_')
-        ? `_${toSnakeCase(fieldName.slice(1))}`
-        : toSnakeCase(fieldName);
+      // Support dot-notation for JSON path queries (e.g., 'metadata.userId')
+      // Validate against the first segment (the column name), pass full path through
+      const dotIndex = fieldName.indexOf('.');
+      const baseFieldName =
+        dotIndex >= 0 ? fieldName.substring(0, dotIndex) : fieldName;
+      const jsonPath = dotIndex >= 0 ? fieldName.substring(dotIndex) : null;
+
+      // Convert base field name to snake_case, preserving leading underscores
+      const snakeBaseFieldName = baseFieldName.startsWith('_')
+        ? `_${toSnakeCase(baseFieldName.slice(1))}`
+        : toSnakeCase(baseFieldName);
+
+      // Full snake_case field name with JSON path preserved
+      const snakeFieldName = jsonPath
+        ? `${snakeBaseFieldName}${jsonPath}`
+        : snakeBaseFieldName;
 
       // Auto-detect IN operator when value is an array without explicit operator
       const effectiveOperator =
@@ -196,9 +290,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
-      // Validate field name exists in schema
+      // Validate field name exists in schema (validate base column name only)
       // Issue #869: Skip validation when no fields are registered (manifest-less test classes)
-      if (!skipFieldValidation && !validFieldNames.has(snakeFieldName)) {
+      if (!skipFieldValidation && !validFieldNames.has(snakeBaseFieldName)) {
         throw new Error(
           `Invalid WHERE clause field: '${fieldName}'. ` +
             `Field does not exist on ${this._itemClass.name}. ` +
@@ -207,21 +301,24 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
 
       // Validate operator-specific value types
-      if (effectiveOperator === 'in' && !Array.isArray(value)) {
+      if (
+        (effectiveOperator === 'in' || effectiveOperator === 'not in') &&
+        !Array.isArray(value)
+      ) {
         throw new Error(
-          `WHERE clause operator 'in' requires an array value for field '${fieldName}', ` +
+          `WHERE clause operator '${effectiveOperator}' requires an array value for field '${fieldName}', ` +
             `got ${typeof value}`,
         );
       }
 
-      // Reject empty arrays for IN operator (generates invalid SQL "IN ()")
+      // Reject empty arrays for IN/NOT IN operators (generates invalid SQL)
       if (
-        effectiveOperator === 'in' &&
+        (effectiveOperator === 'in' || effectiveOperator === 'not in') &&
         Array.isArray(value) &&
         value.length === 0
       ) {
         throw new Error(
-          `WHERE clause operator 'in' requires a non-empty array for field '${fieldName}'. ` +
+          `WHERE clause operator '${effectiveOperator}' requires a non-empty array for field '${fieldName}'. ` +
             `Use listByIds([]) for graceful empty array handling.`,
         );
       }
@@ -500,7 +597,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async findAll(
     options: {
-      where?: Record<string, any>;
+      where?: SmrtWhereClause<ModelType>;
       orderBy?: string | string[];
       limit?: number;
       offset?: number;
@@ -610,7 +707,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     } else {
       // CTI: Use collection's item class
-      instance = await this.create(formattedData);
+      instance = await this.create(formattedData as SmrtCreateInput<ModelType>);
     }
 
     // Execute afterGet interceptors (e.g., tenant validation)
@@ -661,7 +758,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to an array of model instances
    */
   public async list(options: {
-    where?: Record<string, any>;
+    where?: SmrtWhereClause<ModelType>;
     offset?: number;
     limit?: number;
     orderBy?: string | string[];
@@ -787,7 +884,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         }
 
         // CTI: Use collection's item class
-        return this.create(formattedData);
+        return this.create(formattedData as SmrtCreateInput<ModelType>);
       }),
     );
 
@@ -1003,7 +1100,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @param options - Options for creating the item
    * @returns New item instance
    */
-  public async create(options: any) {
+  public async create(options: SmrtCreateInput<ModelType>) {
     // Ensure manifest is loaded for external packages before creating instance
     // This is critical for STI children to have inherited fields available during toJSON()
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
@@ -2031,7 +2128,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ? { 'id in': objectIds, ...where }
       : { 'id in': objectIds };
 
-    const objects = await this.list({ where: whereClause });
+    const objects = await this.list({
+      where: whereClause as SmrtWhereClause<ModelType>,
+    });
 
     // Add similarity scores to objects and sort by similarity
     // We directly assign _similarity to avoid losing class properties when spreading

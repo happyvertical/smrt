@@ -5,7 +5,10 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { AnalyticsEvent } from '../models/AnalyticsEvent.js';
-import { TrackingEventStatus } from '../types/index.js';
+import {
+  type PropertyStatsWithTrend,
+  TrackingEventStatus,
+} from '../types/index.js';
 
 export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
   static readonly _itemClass = AnalyticsEvent;
@@ -224,5 +227,173 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
       conversions: events.filter((e) => e.isConversion()).length,
       pageviews: events.filter((e) => e.isPageview()).length,
     };
+  }
+
+  /**
+   * Get day-over-day pageview stats with trend for a property.
+   *
+   * Compares today's pageview count against yesterday's to produce a
+   * trend direction and percentage change. A threshold of 5% is used
+   * to classify 'up' vs 'down' vs 'flat'.
+   *
+   * @param propertyId - Property ID
+   * @param now - Optional current date (for testing)
+   * @returns Stats with trend
+   */
+  async getPropertyStatsWithTrend(
+    propertyId: string,
+    now?: Date,
+  ): Promise<PropertyStatsWithTrend> {
+    const currentTime = now || new Date();
+    const todayStart = new Date(
+      Date.UTC(
+        currentTime.getUTCFullYear(),
+        currentTime.getUTCMonth(),
+        currentTime.getUTCDate(),
+      ),
+    );
+    const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayEnd = new Date(todayStart.getTime() - 1);
+
+    const [todayPageviewEvents, yesterdayPageviewEvents] = await Promise.all([
+      this.list({
+        where: {
+          propertyId,
+          eventName: 'page_view',
+          'eventTimestamp >=': todayStart.toISOString(),
+          'eventTimestamp <=': currentTime.toISOString(),
+        },
+      }),
+      this.list({
+        where: {
+          propertyId,
+          eventName: 'page_view',
+          'eventTimestamp >=': yesterdayStart.toISOString(),
+          'eventTimestamp <=': yesterdayEnd.toISOString(),
+        },
+      }),
+    ]);
+
+    // Count unique clients (users)
+    const todayClients = new Set(todayPageviewEvents.map((e) => e.clientId));
+    const yesterdayClients = new Set(
+      yesterdayPageviewEvents.map((e) => e.clientId),
+    );
+
+    const todayPageviews = todayPageviewEvents.length;
+    const yesterdayPageviews = yesterdayPageviewEvents.length;
+
+    // Calculate trend
+    let trend: 'up' | 'down' | 'flat' = 'flat';
+    let trendPercent = 0;
+
+    if (yesterdayPageviews > 0) {
+      const change =
+        ((todayPageviews - yesterdayPageviews) / yesterdayPageviews) * 100;
+      trendPercent = Math.round(change);
+      if (change > 5) trend = 'up';
+      else if (change < -5) trend = 'down';
+    }
+
+    return {
+      todayPageviews,
+      todayUsers: todayClients.size,
+      yesterdayPageviews,
+      yesterdayUsers: yesterdayClients.size,
+      trend,
+      trendPercent,
+    };
+  }
+
+  /**
+   * Get day-over-day stats for multiple properties in batch.
+   *
+   * @param propertyIds - Array of property IDs
+   * @param now - Optional current date (for testing)
+   * @returns Map of propertyId to stats
+   */
+  async getBatchPropertyStats(
+    propertyIds: string[],
+    now?: Date,
+  ): Promise<Map<string, PropertyStatsWithTrend>> {
+    const results = new Map<string, PropertyStatsWithTrend>();
+
+    // Fetch all date-ranged events once to avoid N+1 queries
+    const currentTime = now || new Date();
+    const todayStart = new Date(
+      Date.UTC(
+        currentTime.getUTCFullYear(),
+        currentTime.getUTCMonth(),
+        currentTime.getUTCDate(),
+      ),
+    );
+    const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayEnd = new Date(todayStart.getTime() - 1);
+
+    const [todayEvents, yesterdayEvents] = await Promise.all([
+      this.list({
+        where: {
+          eventName: 'page_view',
+          'eventTimestamp >=': todayStart.toISOString(),
+          'eventTimestamp <=': currentTime.toISOString(),
+        },
+      }),
+      this.list({
+        where: {
+          eventName: 'page_view',
+          'eventTimestamp >=': yesterdayStart.toISOString(),
+          'eventTimestamp <=': yesterdayEnd.toISOString(),
+        },
+      }),
+    ]);
+
+    // Pre-group events by propertyId in a single pass
+    const todayByProperty = new Map<string, AnalyticsEvent[]>();
+    const yesterdayByProperty = new Map<string, AnalyticsEvent[]>();
+    for (const e of todayEvents) {
+      const list = todayByProperty.get(e.propertyId);
+      if (list) list.push(e);
+      else todayByProperty.set(e.propertyId, [e]);
+    }
+    for (const e of yesterdayEvents) {
+      const list = yesterdayByProperty.get(e.propertyId);
+      if (list) list.push(e);
+      else yesterdayByProperty.set(e.propertyId, [e]);
+    }
+
+    for (const propertyId of propertyIds) {
+      const todayPageviewEvents = todayByProperty.get(propertyId) ?? [];
+      const yesterdayPageviewEvents = yesterdayByProperty.get(propertyId) ?? [];
+
+      const todayClients = new Set(todayPageviewEvents.map((e) => e.clientId));
+      const yesterdayClients = new Set(
+        yesterdayPageviewEvents.map((e) => e.clientId),
+      );
+
+      const todayPageviews = todayPageviewEvents.length;
+      const yesterdayPageviews = yesterdayPageviewEvents.length;
+
+      let trend: 'up' | 'down' | 'flat' = 'flat';
+      let trendPercent = 0;
+
+      if (yesterdayPageviews > 0) {
+        const change =
+          ((todayPageviews - yesterdayPageviews) / yesterdayPageviews) * 100;
+        trendPercent = Math.round(change);
+        if (change > 5) trend = 'up';
+        else if (change < -5) trend = 'down';
+      }
+
+      results.set(propertyId, {
+        todayPageviews,
+        todayUsers: todayClients.size,
+        yesterdayPageviews,
+        yesterdayUsers: yesterdayClients.size,
+        trend,
+        trendPercent,
+      });
+    }
+
+    return results;
   }
 }
