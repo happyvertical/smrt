@@ -15,7 +15,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  type ClaudeMeta,
   detectMonorepoRoot,
   extractReadmeSections,
   generateMarkdown,
@@ -168,14 +167,12 @@ Gamma content.
         {
           name: '@test/pkg-a',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
         {
           name: '@test/pkg-b',
           version: '2.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -189,12 +186,11 @@ Gamma content.
       expect(markdown).toContain('| @test/pkg-b | 2.0.0 |');
     });
 
-    it('should show placeholder for packages without meta', () => {
+    it('should show placeholder for packages without CLAUDE.md', () => {
       const packages: PackageInfo[] = [
         {
-          name: '@test/no-meta',
+          name: '@test/no-docs',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -202,134 +198,25 @@ Gamma content.
 
       const markdown = generateMarkdown(packages);
 
-      expect(markdown).toContain('## @test/no-meta');
-      expect(markdown).toContain(
-        '*No CLAUDE.md or .claude-meta.json found for this package.*',
-      );
+      expect(markdown).toContain('## @test/no-docs');
+      expect(markdown).toContain('*No CLAUDE.md found for this package.*');
     });
 
-    it('should include purpose from meta', () => {
-      const meta: ClaudeMeta = {
-        purpose: 'A test package for unit testing.',
-      };
+    it('should include CLAUDE.md content and strip H1', () => {
       const packages: PackageInfo[] = [
         {
-          name: '@test/with-meta',
+          name: '@test/with-claude-md',
           version: '1.0.0',
-          meta,
           readme: null,
-          claudeMd: null,
+          claudeMd: '# My Package\n\nThis is the documentation.',
         },
       ];
 
       const markdown = generateMarkdown(packages);
 
-      expect(markdown).toContain('A test package for unit testing.');
-    });
-
-    it('should include patterns with examples', () => {
-      const meta: ClaudeMeta = {
-        purpose: 'Test',
-        patterns: [
-          {
-            name: 'Factory Pattern',
-            description: 'Use factory for object creation.',
-            example: 'const obj = Factory.create();',
-          },
-        ],
-      };
-      const packages: PackageInfo[] = [
-        {
-          name: '@test/patterns',
-          version: '1.0.0',
-          meta,
-          readme: null,
-          claudeMd: null,
-        },
-      ];
-
-      const markdown = generateMarkdown(packages);
-
-      expect(markdown).toContain('### Patterns');
-      expect(markdown).toContain('#### Factory Pattern');
-      expect(markdown).toContain('Use factory for object creation.');
-      expect(markdown).toContain('```typescript');
-      expect(markdown).toContain('const obj = Factory.create();');
-    });
-
-    it('should include pitfalls as bullet list', () => {
-      const meta: ClaudeMeta = {
-        purpose: 'Test',
-        pitfalls: [
-          'Do not call method X before Y',
-          'Always check return value',
-        ],
-      };
-      const packages: PackageInfo[] = [
-        {
-          name: '@test/pitfalls',
-          version: '1.0.0',
-          meta,
-          readme: null,
-          claudeMd: null,
-        },
-      ];
-
-      const markdown = generateMarkdown(packages);
-
-      expect(markdown).toContain('### Pitfalls');
-      expect(markdown).toContain('- Do not call method X before Y');
-      expect(markdown).toContain('- Always check return value');
-    });
-
-    it('should include key exports', () => {
-      const meta: ClaudeMeta = {
-        purpose: 'Test',
-        exports: ['ClassA', 'ClassB', 'helperFn'],
-      };
-      const packages: PackageInfo[] = [
-        {
-          name: '@test/exports',
-          version: '1.0.0',
-          meta,
-          readme: null,
-          claudeMd: null,
-        },
-      ];
-
-      const markdown = generateMarkdown(packages);
-
-      expect(markdown).toContain('### Key Exports');
-      expect(markdown).toContain('`ClassA`, `ClassB`, `helperFn`');
-    });
-
-    it('should extract README sections when specified', () => {
-      const meta: ClaudeMeta = {
-        purpose: 'Test',
-        readmeSections: ['Features'],
-      };
-      const readme = `# Package
-
-## Features
-
-- Feature 1
-- Feature 2
-`;
-      const packages: PackageInfo[] = [
-        {
-          name: '@test/readme',
-          version: '1.0.0',
-          meta,
-          readme,
-          claudeMd: null,
-        },
-      ];
-
-      const markdown = generateMarkdown(packages);
-
-      expect(markdown).toContain('### Features');
-      expect(markdown).toContain('- Feature 1');
-      expect(markdown).toContain('- Feature 2');
+      expect(markdown).toContain('## @test/with-claude-md');
+      expect(markdown).toContain('This is the documentation.');
+      expect(markdown).not.toContain('# My Package');
     });
 
     it('should include footer with regeneration note', () => {
@@ -362,7 +249,6 @@ Gamma content.
         {
           name: '@test/pkg-a',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -398,7 +284,6 @@ Gamma content.
         {
           name: '@test/pkg-a',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -415,7 +300,6 @@ Gamma content.
         {
           name: '@test/pkg-a',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -432,7 +316,6 @@ Gamma content.
         {
           name: '@test/pkg-a',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -478,7 +361,6 @@ Gamma content.
         {
           name: '@test/pkg-a',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -506,7 +388,6 @@ Gamma content.
         {
           name: '@happyvertical/smrt-core',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -516,14 +397,12 @@ Gamma content.
         {
           name: '@happyvertical/ai',
           version: '2.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
         {
           name: '@happyvertical/sql',
           version: '2.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -544,7 +423,6 @@ Gamma content.
         {
           name: '@happyvertical/ai',
           version: '2.0.0',
-          meta: null,
           readme: null,
           claudeMd: '# AI Package\n\nMulti-provider AI client.',
         },
@@ -559,41 +437,12 @@ Gamma content.
       expect(markdown).not.toContain('# AI Package');
     });
 
-    it('should include SDK package details with legacy meta', () => {
-      const packages: PackageInfo[] = [];
-      const sdkPackages: PackageInfo[] = [
-        {
-          name: '@happyvertical/sql',
-          version: '2.0.0',
-          meta: {
-            purpose: 'Database operations for SQLite, Postgres, DuckDB.',
-            pitfalls: ['Always close connections'],
-            exports: ['Database', 'Query'],
-          },
-          readme: null,
-          claudeMd: null,
-        },
-      ];
-
-      const markdown = generateMarkdown(packages, undefined, sdkPackages);
-
-      expect(markdown).toContain('### @happyvertical/sql');
-      expect(markdown).toContain(
-        'Database operations for SQLite, Postgres, DuckDB.',
-      );
-      expect(markdown).toContain('#### Pitfalls');
-      expect(markdown).toContain('- Always close connections');
-      expect(markdown).toContain('#### Key Exports');
-      expect(markdown).toContain('`Database`, `Query`');
-    });
-
     it('should show placeholder for SDK packages without docs', () => {
       const packages: PackageInfo[] = [];
       const sdkPackages: PackageInfo[] = [
         {
           name: '@happyvertical/utils',
           version: '2.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },
@@ -602,9 +451,7 @@ Gamma content.
       const markdown = generateMarkdown(packages, undefined, sdkPackages);
 
       expect(markdown).toContain('### @happyvertical/utils');
-      expect(markdown).toContain(
-        '*No CLAUDE.md or .claude-meta.json found for this package.*',
-      );
+      expect(markdown).toContain('*No CLAUDE.md found for this package.*');
     });
 
     it('should not include SDK sections when no SDK packages', () => {
@@ -612,7 +459,6 @@ Gamma content.
         {
           name: '@test/pkg-a',
           version: '1.0.0',
-          meta: null,
           readme: null,
           claudeMd: null,
         },

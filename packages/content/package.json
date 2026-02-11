@@ -7,7 +7,6 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    ".claude-meta.json",
     "CLAUDE.md"
   ],
   "exports": {
