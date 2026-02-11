@@ -623,7 +623,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async listByIds(ids: string[]): Promise<ModelType[]> {
     if (ids.length === 0) return [];
-    return this.list({ where: { id: ids } as SmrtWhereClause<ModelType> });
+    return this.list({ where: { id: ids } });
   }
 
   /**
