@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-analytics",
-  "version": "0.19.76",
+  "version": "0.19.77",
   "description": "Analytics integration models for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,6 +9,11 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./svelte": {
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js",
+      "types": "./dist/svelte/index.d.ts"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"
@@ -27,6 +32,14 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
