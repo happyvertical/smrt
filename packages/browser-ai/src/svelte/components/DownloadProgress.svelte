@@ -62,38 +62,38 @@ function formatBytes(bytes: number): string {
 <style>
   .download-progress {
     width: 100%;
-    padding: 12px;
-    background: #f9fafb;
-    border-radius: 8px;
+    padding: var(--md-sys-spacing-md, 12px);
+    background: var(--md-sys-color-surface-container-low, #f9fafb);
+    border-radius: var(--md-sys-shape-corner-medium, 8px);
   }
 
   .label {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.875rem;
-    color: #374151;
-    margin-bottom: 8px;
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--md-sys-color-on-surface, #1a1c1e);
+    margin-bottom: var(--md-sys-spacing-sm, 8px);
   }
 
   .percent {
-    font-weight: 600;
-    color: #3b82f6;
+    font-weight: var(--md-sys-typescale-weight-semibold, 600);
+    color: var(--md-sys-color-primary, #005ac1);
   }
 
   .progress-bar {
     width: 100%;
     height: 8px;
-    background: #e5e7eb;
-    border-radius: 4px;
+    background: var(--md-sys-color-outline-variant, #c4c6cf);
+    border-radius: var(--md-sys-shape-corner-small, 4px);
     overflow: hidden;
   }
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #3b82f6, #60a5fa);
-    border-radius: 4px;
-    transition: width 0.3s ease;
+    background: linear-gradient(90deg, var(--md-sys-color-primary, #005ac1), var(--md-sys-color-primary-container, #d6e3ff));
+    border-radius: var(--md-sys-shape-corner-small, 4px);
+    transition: width var(--md-sys-motion-duration-medium1, 300ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .progress-fill.indeterminate {
@@ -107,15 +107,15 @@ function formatBytes(bytes: number): string {
   }
 
   .bytes {
-    font-size: 0.75rem;
-    color: #6b7280;
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
     margin-top: 6px;
     text-align: center;
   }
 
   .current-file {
-    font-size: 0.75rem;
-    color: #9ca3af;
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--md-sys-color-outline, #74777f);
     margin-top: 4px;
     text-align: center;
     white-space: nowrap;
@@ -124,8 +124,18 @@ function formatBytes(bytes: number): string {
   }
 
   .error {
-    font-size: 0.75rem;
-    color: #ef4444;
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--md-sys-color-error, #ba1a1a);
     margin-top: 6px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .progress-fill {
+      transition: none;
+    }
+    
+    .progress-fill.indeterminate {
+      animation: none;
+    }
   }
 </style>

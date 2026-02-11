@@ -136,69 +136,66 @@ const successRateFormatted = $derived(
   .job-stats__grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: var(--spacing-md, 1rem);
+    gap: var(--md-sys-spacing-md, 1rem);
   }
 
   .compact .job-stats__grid {
     grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    gap: var(--spacing-sm, 0.5rem);
+    gap: var(--md-sys-spacing-sm, 0.5rem);
   }
 
   .stat-card {
     text-align: center;
-    padding: var(--spacing-sm, 0.5rem);
+    padding: var(--md-sys-spacing-sm, 0.5rem);
   }
 
   .stat-card__value {
-    font-size: var(--font-size-2xl, 1.5rem);
-    font-weight: 700;
-    line-height: 1.2;
+    font: var(--md-sys-typescale-headline-small-font, 700 1.5rem / 1.2 sans-serif);
   }
 
   .compact .stat-card__value {
-    font-size: var(--font-size-xl, 1.25rem);
+    font: var(--md-sys-typescale-title-large-font, 1.25rem / 1.25 sans-serif);
   }
 
   .stat-card__label {
-    font-size: var(--font-size-sm, 0.875rem);
-    color: var(--color-text-secondary, #6b7280);
-    margin-top: var(--spacing-xs, 0.25rem);
+    font: var(--md-sys-typescale-body-small-font, 0.875rem / 1.25 sans-serif);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
+    margin-top: var(--md-sys-spacing-xs, 0.25rem);
   }
 
   .stat-card--pending .stat-card__value {
-    color: var(--color-text-primary, #111827);
+    color: var(--md-sys-color-on-surface, #1a1c1e);
   }
 
   .stat-card--running .stat-card__value {
-    color: var(--color-primary, #3b82f6);
+    color: var(--md-sys-color-primary, #005ac1);
   }
 
   .stat-card--completed .stat-card__value {
-    color: var(--color-success, #10b981);
+    color: var(--md-sys-color-tertiary, #006c4f);
   }
 
   .stat-card--failed .stat-card__value {
-    color: var(--color-error, #ef4444);
+    color: var(--md-sys-color-error, #ba1a1a);
   }
 
   .job-stats__queues {
-    margin-top: var(--spacing-lg, 1.5rem);
+    margin-top: var(--md-sys-spacing-lg, 1.5rem);
   }
 
   .job-stats__queues h3 {
-    margin: 0 0 var(--spacing-md, 1rem) 0;
-    font-size: var(--font-size-md, 1rem);
-    font-weight: 600;
+    margin: 0 0 var(--md-sys-spacing-md, 1rem) 0;
+    font: var(--md-sys-typescale-title-medium-font, 600 1rem / 1.5 sans-serif);
   }
 
   .queue-list {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: var(--spacing-md, 1rem);
+    gap: var(--md-sys-spacing-md, 1rem);
   }
 
   .queue-card {
-    padding: var(--spacing-xs, 0.25rem);
+    padding: var(--md-sys-spacing-xs, 0.25rem);
   }
 
   .queue-card__header {
@@ -209,18 +206,18 @@ const successRateFormatted = $derived(
   }
 
   .queue-card__name {
-    font-weight: 600;
-    font-family: var(--font-family-mono, monospace);
+    font-weight: var(--md-sys-typescale-weight-semibold, 600);
+    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
   }
 
   .queue-card__running {
-    font-size: var(--font-size-sm, 0.875rem);
-    color: var(--color-primary, #3b82f6);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--md-sys-color-primary, #005ac1);
   }
 
   .queue-card__stats {
     display: flex;
-    gap: var(--spacing-md, 1rem);
+    gap: var(--md-sys-spacing-md, 1rem);
   }
 
   .queue-stat {
@@ -230,12 +227,12 @@ const successRateFormatted = $derived(
   }
 
   .queue-stat__value {
-    font-weight: 600;
-    font-size: var(--font-size-md, 1rem);
+    font-weight: var(--md-sys-typescale-weight-semibold, 600);
+    font: var(--md-sys-typescale-title-medium-font, 1rem / 1.5 sans-serif);
   }
 
   .queue-stat__label {
-    font-size: var(--font-size-xs, 0.75rem);
-    color: var(--color-text-secondary, #6b7280);
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 </style>

@@ -59,23 +59,23 @@ const {
   .user-list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--md-sys-spacing-sm, 0.5rem);
   }
 
   .loading {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 2rem;
-    color: #6b7280;
+    gap: var(--md-sys-spacing-sm, 0.75rem);
+    padding: var(--md-sys-spacing-xl, 2rem);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .spinner {
     width: 1.25rem;
     height: 1.25rem;
-    border: 2px solid #e5e7eb;
-    border-top-color: #3b82f6;
+    border: 2px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-top-color: var(--md-sys-color-primary, #005ac1);
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
@@ -87,11 +87,17 @@ const {
   }
 
   .empty {
-    padding: 2rem;
+    padding: var(--md-sys-spacing-xl, 2rem);
     text-align: center;
-    color: #6b7280;
-    background: #f9fafb;
-    border: 1px dashed #d1d5db;
-    border-radius: 0.5rem;
+    color: var(--md-sys-color-on-surface-variant, #43474e);
+    background: var(--md-sys-color-surface-container-low, #f9fafb);
+    border: 1px dashed var(--md-sys-color-outline-variant, #c4c6cf);
+    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
   }
 </style>

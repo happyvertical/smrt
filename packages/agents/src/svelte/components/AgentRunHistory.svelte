@@ -112,8 +112,8 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
     width: 100%;
     border-collapse: collapse;
     border-spacing: 0;
-    font-size: var(--font-size-sm, 0.875rem);
-    background: var(--color-neutral-white, #ffffff);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    background: var(--md-sys-color-surface, #ffffff);
   }
 
   .run-history.loading {
@@ -122,43 +122,53 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
   }
 
   .run-history__head {
-    background: var(--color-neutral-gray100, #f3f4f6);
+    background: var(--md-sys-color-surface-container, #f3f4f6);
   }
 
   .run-history__head th {
-    padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
-    font-weight: 600;
+    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
+    font-weight: var(--md-sys-typescale-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 1px solid var(--color-neutral-gray200, #e5e7eb);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
   }
 
   .run-history__body tr {
-    border-bottom: 1px solid var(--color-neutral-gray200, #e5e7eb);
-    transition: background-color 150ms ease;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    transition: background-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .run-history__body tr:hover:not(.run-history__row--loading):not(.run-history__row--empty) {
-    background: var(--color-neutral-gray50, #f9fafb);
+    background: var(--md-sys-color-surface-container-low, #f9fafb);
     cursor: pointer;
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .run-history__body tr {
+      transition: none;
+    }
+    
+    .run-history__spinner {
+      animation: none;
+    }
+  }
+
   .run-history__cell {
-    padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
+    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
     vertical-align: middle;
   }
 
   .run-history__cell--agent {
-    font-weight: 500;
+    font-weight: var(--md-sys-typescale-weight-medium, 500);
   }
 
   .run-history__cell--date {
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
     white-space: nowrap;
   }
 
   .run-history__cell--duration {
-    font-family: var(--font-family-mono, monospace);
+    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
     text-align: center;
   }
 
@@ -167,18 +177,18 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
   }
 
   .error-text {
-    color: var(--color-error, #ef4444);
-    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--md-sys-color-error, #ba1a1a);
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
     cursor: help;
   }
 
   .no-error {
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .run-history__cell--loading,
   .run-history__cell--empty {
-    padding: var(--spacing-xl, 2rem);
+    padding: var(--md-sys-spacing-xl, 2rem);
     text-align: center;
   }
 
@@ -186,15 +196,15 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-sm, 0.5rem);
-    color: var(--color-text-secondary, #6b7280);
+    gap: var(--md-sys-spacing-sm, 0.5rem);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .run-history__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--color-neutral-gray200, #e5e7eb);
-    border-top-color: var(--color-primary, #3b82f6);
+    border: 2px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-top-color: var(--md-sys-color-primary, #005ac1);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -206,6 +216,6 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
   }
 
   .run-history__empty {
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 </style>

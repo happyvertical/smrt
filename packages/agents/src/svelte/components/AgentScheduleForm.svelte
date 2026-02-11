@@ -235,19 +235,19 @@ function handleCronPreset(preset: string) {
 
 <style>
   .schedule-form {
-    padding: var(--spacing-sm, 0.5rem) 0;
+    padding: var(--md-sys-spacing-sm, 0.5rem) 0;
   }
 
   .form-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: var(--spacing-md, 1rem);
+    gap: var(--md-sys-spacing-md, 1rem);
   }
 
   .form-field {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs, 0.25rem);
+    gap: var(--md-sys-spacing-xs, 0.25rem);
   }
 
   .form-field--full {
@@ -257,69 +257,69 @@ function handleCronPreset(preset: string) {
   .form-field--checkbox {
     flex-direction: row;
     align-items: center;
-    gap: var(--spacing-sm, 0.5rem);
+    gap: var(--md-sys-spacing-sm, 0.5rem);
   }
 
   .form-field--checkbox label {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm, 0.5rem);
+    gap: var(--md-sys-spacing-sm, 0.5rem);
     cursor: pointer;
   }
 
   .form-field label {
-    font-weight: 500;
-    font-size: var(--font-size-sm, 0.875rem);
-    color: var(--color-text-primary, #111827);
+    font-weight: var(--md-sys-typescale-weight-medium, 500);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--md-sys-color-on-surface, #1a1c1e);
   }
 
   .form-field input,
   .form-field select {
-    padding: var(--spacing-sm, 0.5rem);
-    border: 1px solid var(--color-neutral-gray300, #d1d5db);
-    border-radius: var(--radius-md, 0.375rem);
-    font-size: var(--font-size-sm, 0.875rem);
-    transition: border-color 150ms ease;
+    padding: var(--md-sys-spacing-sm, 0.5rem);
+    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    transition: border-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .form-field input:focus,
   .form-field select:focus {
     outline: none;
-    border-color: var(--color-primary, #3b82f6);
-    box-shadow: 0 0 0 3px var(--color-primary-light, rgba(59, 130, 246, 0.1));
+    border-color: var(--md-sys-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px var(--md-sys-color-primary-container, rgba(0, 90, 193, 0.1));
   }
 
   .form-field input:disabled,
   .form-field select:disabled {
-    background: var(--color-neutral-gray100, #f3f4f6);
+    background: var(--md-sys-color-surface-container, #f3f4f6);
     cursor: not-allowed;
   }
 
   .form-field small {
-    font-size: var(--font-size-xs, 0.75rem);
-    color: var(--color-text-secondary, #6b7280);
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .cron-presets {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacing-xs, 0.25rem);
-    margin-top: var(--spacing-xs, 0.25rem);
+    gap: var(--md-sys-spacing-xs, 0.25rem);
+    margin-top: var(--md-sys-spacing-xs, 0.25rem);
   }
 
   .preset-btn {
-    padding: 0.125rem var(--spacing-sm, 0.5rem);
-    border: 1px solid var(--color-neutral-gray300, #d1d5db);
-    border-radius: var(--radius-sm, 0.25rem);
-    background: var(--color-neutral-white, #ffffff);
-    font-size: var(--font-size-xs, 0.75rem);
+    padding: 0.125rem var(--md-sys-spacing-sm, 0.5rem);
+    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-radius: var(--md-sys-shape-corner-small, 0.25rem);
+    background: var(--md-sys-color-surface, #ffffff);
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: all var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .preset-btn:hover:not(:disabled) {
-    background: var(--color-neutral-gray100, #f3f4f6);
-    border-color: var(--color-primary, #3b82f6);
+    background: var(--md-sys-color-surface-container, #f3f4f6);
+    border-color: var(--md-sys-color-primary, #005ac1);
   }
 
   .preset-btn:disabled {
@@ -330,9 +330,17 @@ function handleCronPreset(preset: string) {
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--spacing-sm, 0.5rem);
-    margin-top: var(--spacing-lg, 1.5rem);
-    padding-top: var(--spacing-md, 1rem);
-    border-top: 1px solid var(--color-neutral-gray200, #e5e7eb);
+    gap: var(--md-sys-spacing-sm, 0.5rem);
+    margin-top: var(--md-sys-spacing-lg, 1.5rem);
+    padding-top: var(--md-sys-spacing-md, 1rem);
+    border-top: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .form-field input,
+    .form-field select,
+    .preset-btn {
+      transition: none;
+    }
   }
 </style>

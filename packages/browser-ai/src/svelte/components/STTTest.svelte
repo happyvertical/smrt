@@ -189,23 +189,23 @@ function clearLogs() {
 
 <style>
   .stt-test {
-    padding: 16px;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    background: #f9fafb;
+    padding: var(--md-sys-spacing-md, 16px);
+    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-radius: var(--md-sys-shape-corner-medium, 8px);
+    background: var(--md-sys-color-surface-container-low, #f9fafb);
     max-width: 500px;
   }
 
   h3 {
-    margin: 0 0 16px;
-    font-size: 1.125rem;
+    margin: 0 0 var(--md-sys-spacing-md, 16px);
+    font: var(--md-sys-typescale-title-large-font, 1.125rem / 1.25 sans-serif);
   }
 
   .controls {
     display: flex;
-    gap: 12px;
+    gap: var(--md-sys-spacing-sm, 12px);
     align-items: flex-end;
-    margin-bottom: 16px;
+    margin-bottom: var(--md-sys-spacing-md, 16px);
   }
 
   .adapter-select {
@@ -216,29 +216,30 @@ function clearLogs() {
   }
 
   .adapter-select label {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font: var(--md-sys-typescale-body-medium-font, 500 0.875rem / 1.25 sans-serif);
   }
 
   .adapter-select select {
-    padding: 8px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 0.875rem;
+    padding: var(--md-sys-spacing-sm, 8px);
+    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-radius: var(--md-sys-shape-corner-small, 6px);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
   .controls button {
-    padding: 8px 16px;
-    background: #3b82f6;
-    color: white;
+    padding: var(--md-sys-spacing-sm, 8px) var(--md-sys-spacing-md, 16px);
+    background: var(--md-sys-color-primary, #005ac1);
+    color: var(--md-sys-color-on-primary, #ffffff);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--md-sys-shape-corner-small, 6px);
     cursor: pointer;
-    font-size: 0.875rem;
+    font: var(--md-sys-typescale-label-large-font, 0.875rem / 1.25 sans-serif);
+    transition: all var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .controls button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--md-sys-color-primary-container, #005ac1);
+    opacity: 0.9;
   }
 
   .controls button:disabled {
@@ -248,12 +249,12 @@ function clearLogs() {
 
   .status {
     display: flex;
-    gap: 16px;
-    font-size: 0.875rem;
-    margin-bottom: 16px;
-    padding: 8px;
-    background: white;
-    border-radius: 4px;
+    gap: var(--md-sys-spacing-md, 16px);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    margin-bottom: var(--md-sys-spacing-md, 16px);
+    padding: var(--md-sys-spacing-sm, 8px);
+    background: var(--md-sys-color-surface, white);
+    border-radius: var(--md-sys-shape-corner-small, 4px);
   }
 
   .status-item {
@@ -264,27 +265,27 @@ function clearLogs() {
   .record-controls {
     display: flex;
     justify-content: center;
-    margin: 20px 0;
+    margin: var(--md-sys-spacing-md, 20px) 0;
   }
 
   .record-btn {
-    padding: 16px 32px;
-    font-size: 1rem;
-    font-weight: 500;
-    background: #10b981;
-    color: white;
+    padding: var(--md-sys-spacing-md, 16px) var(--md-sys-spacing-xl, 32px);
+    font: var(--md-sys-typescale-label-large-font, 500 1rem / 1.25 sans-serif);
+    background: var(--md-sys-color-tertiary, #006c4f);
+    color: var(--md-sys-color-on-tertiary, #ffffff);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--md-sys-shape-corner-medium, 8px);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--md-sys-motion-duration-short3, 200ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .record-btn:hover:not(:disabled) {
-    background: #059669;
+    background: var(--md-sys-color-tertiary-container, #006c4f);
+    opacity: 0.9;
   }
 
   .record-btn.recording {
-    background: #ef4444;
+    background: var(--md-sys-color-error, #ba1a1a);
     animation: pulse 1s infinite;
   }
 
@@ -299,60 +300,77 @@ function clearLogs() {
   }
 
   .error {
-    padding: 12px;
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    border-radius: 6px;
-    color: #991b1b;
-    font-size: 0.875rem;
-    margin-bottom: 16px;
+    padding: var(--md-sys-spacing-md, 12px);
+    background: var(--md-sys-color-error-container, #ffdad6);
+    border: 1px solid var(--md-sys-color-error, #ba1a1a);
+    border-radius: var(--md-sys-shape-corner-small, 6px);
+    color: var(--md-sys-color-on-error-container, #410002);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    margin-bottom: var(--md-sys-spacing-md, 16px);
   }
 
   .result {
-    margin-bottom: 16px;
+    margin-bottom: var(--md-sys-spacing-md, 16px);
   }
 
   .transcript {
-    margin-top: 8px;
-    padding: 12px;
-    background: white;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    margin-top: var(--md-sys-spacing-sm, 8px);
+    padding: var(--md-sys-spacing-md, 12px);
+    background: var(--md-sys-color-surface, white);
+    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-radius: var(--md-sys-shape-corner-small, 6px);
     min-height: 60px;
-    font-size: 1rem;
+    font: var(--md-sys-typescale-body-large-font, 1rem / 1.5 sans-serif);
   }
 
   .logs {
-    font-size: 0.75rem;
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
   }
 
   .logs-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: var(--md-sys-spacing-sm, 8px);
   }
 
   .logs-header button {
-    padding: 4px 8px;
-    font-size: 0.75rem;
-    background: #e5e7eb;
+    padding: 4px var(--md-sys-spacing-sm, 8px);
+    font: var(--md-sys-typescale-label-small-font, 0.75rem / 1 sans-serif);
+    background: var(--md-sys-color-surface-container, #e5e7eb);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--md-sys-shape-corner-small, 4px);
     cursor: pointer;
+    transition: background-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+  }
+
+  .logs-header button:hover {
+    background: var(--md-sys-color-surface-container-high, #d1d5db);
   }
 
   .log-list {
-    background: #1f2937;
-    color: #d1d5db;
-    padding: 8px;
-    border-radius: 4px;
+    background: var(--md-sys-color-inverse-surface, #1f2937);
+    color: var(--md-sys-color-inverse-on-surface, #d1d5db);
+    padding: var(--md-sys-spacing-sm, 8px);
+    border-radius: var(--md-sys-shape-corner-small, 4px);
     max-height: 150px;
     overflow-y: auto;
-    font-family: monospace;
+    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
   }
 
   .log-entry {
     padding: 2px 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .controls button,
+    .record-btn,
+    .logs-header button {
+      transition: none;
+    }
+    
+    .record-btn.recording {
+      animation: none;
+    }
   }
 </style>

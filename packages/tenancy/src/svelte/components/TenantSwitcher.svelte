@@ -42,20 +42,27 @@ function handleChange(event: Event) {
   }
 
   .tenant-name {
-    font-weight: 500;
+    font-weight: var(--md-sys-typescale-weight-medium, 500);
   }
 
   .tenant-select {
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 0.375rem;
-    background: var(--bg-color, white);
-    font-size: 0.875rem;
+    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
+    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
+    background: var(--md-sys-color-surface, white);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
     cursor: pointer;
+    transition: border-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .tenant-select:focus {
-    outline: 2px solid var(--focus-color, #3b82f6);
+    outline: 2px solid var(--md-sys-color-primary, #005ac1);
     outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tenant-select {
+      transition: none;
+    }
   }
 </style>

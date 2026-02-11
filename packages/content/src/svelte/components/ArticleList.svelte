@@ -60,12 +60,11 @@ const {
 <style>
   .empty-state {
     text-align: center;
-    padding: var(--spacing-3xl);
-    color: var(--color-text-secondary);
+    padding: var(--md-sys-spacing-3xl, 3rem);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .empty-state p {
-    font-size: var(--font-size-lg);
-    line-height: var(--line-height-normal);
+    font: var(--md-sys-typescale-body-large-font, 1.125rem / 1.5 sans-serif);
   }
 </style>

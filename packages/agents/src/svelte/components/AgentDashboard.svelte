@@ -168,12 +168,18 @@ const stats = $derived.by(() => {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-lg, 1.5rem);
+    gap: var(--md-sys-spacing-lg, 1.5rem);
   }
 
   .agent-dashboard.loading {
     opacity: 0.7;
     pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .agent-dashboard.loading {
+      transition: none;
+    }
   }
 
   .agent-dashboard__stats {
@@ -183,36 +189,34 @@ const stats = $derived.by(() => {
   .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: var(--spacing-md, 1rem);
+    gap: var(--md-sys-spacing-md, 1rem);
   }
 
   .stat-card {
     text-align: center;
-    padding: var(--spacing-xs, 0.25rem);
+    padding: var(--md-sys-spacing-xs, 0.25rem);
   }
 
   .stat-card__value {
-    font-size: var(--font-size-2xl, 1.5rem);
-    font-weight: 700;
-    line-height: 1.2;
+    font: var(--md-sys-typescale-headline-small-font, 700 1.5rem / 1.2 sans-serif);
   }
 
   .stat-card__label {
-    font-size: var(--font-size-sm, 0.875rem);
-    color: var(--color-text-secondary, #6b7280);
-    margin-top: var(--spacing-xs, 0.25rem);
+    font: var(--md-sys-typescale-body-small-font, 0.875rem / 1.25 sans-serif);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
+    margin-top: var(--md-sys-spacing-xs, 0.25rem);
   }
 
   .stat-card--active .stat-card__value {
-    color: var(--color-success, #10b981);
+    color: var(--md-sys-color-tertiary, #006c4f);
   }
 
   .stat-card--running .stat-card__value {
-    color: var(--color-primary, #3b82f6);
+    color: var(--md-sys-color-primary, #005ac1);
   }
 
   .stat-card--error .stat-card__value {
-    color: var(--color-error, #ef4444);
+    color: var(--md-sys-color-error, #ba1a1a);
   }
 
   .agent-dashboard__section {
@@ -227,17 +231,16 @@ const stats = $derived.by(() => {
 
   .panel-header h2 {
     margin: 0;
-    font-size: var(--font-size-md, 1rem);
-    font-weight: 600;
+    font: var(--md-sys-typescale-title-medium-font, 600 1rem / 1.5 sans-serif);
   }
 
   .empty-state {
-    padding: var(--spacing-lg, 1.5rem);
+    padding: var(--md-sys-spacing-lg, 1.5rem);
     text-align: center;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .empty-state p {
-    margin: 0 0 var(--spacing-md, 1rem) 0;
+    margin: 0 0 var(--md-sys-spacing-md, 1rem) 0;
   }
 </style>

@@ -193,7 +193,7 @@ function getInitials(name: string): string {
     border: none;
     border-radius: 20px;
     cursor: pointer;
-    transition: background-color 200ms;
+    transition: background-color var(--md-sys-motion-duration-short3, 200ms) var(--md-sys-motion-easing-standard, ease);
     color: var(--md-sys-color-on-surface);
     position: relative;
     overflow: hidden;
@@ -209,22 +209,22 @@ function getInitials(name: string): string {
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 50%;
+    border-radius: var(--md-sys-shape-corner-full, 50%);
     background-color: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
     font: var(--md-sys-typescale-label-large-font);
-    font-weight: 600;
+    font-weight: var(--md-sys-typescale-weight-semibold, 600);
   }
 
   .user-name {
     font: var(--md-sys-typescale-label-large-font);
-    font-weight: 500;
+    font-weight: var(--md-sys-typescale-weight-medium, 500);
   }
 
   .chevron {
     width: 18px;
     height: 18px;
-    transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: transform var(--md-sys-motion-duration-short3, 200ms) var(--md-sys-motion-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     opacity: 0.7;
   }
 
@@ -239,7 +239,7 @@ function getInitials(name: string): string {
     margin-top: 4px;
     min-width: 200px;
     background-color: var(--md-sys-color-surface-container);
-    border-radius: 4px;
+    border-radius: var(--md-sys-shape-corner-medium, 4px);
     box-shadow: var(--md-sys-elevation-level2);
     z-index: 50;
     padding: 4px 0;
@@ -254,7 +254,7 @@ function getInitials(name: string): string {
     font: var(--md-sys-typescale-body-medium-font);
     color: var(--md-sys-color-on-surface);
     text-decoration: none;
-    transition: background-color 200ms;
+    transition: background-color var(--md-sys-motion-duration-short3, 200ms) var(--md-sys-motion-easing-standard, ease);
     position: relative;
     overflow: hidden;
   }
@@ -282,7 +282,7 @@ function getInitials(name: string): string {
 
   .user-info-name {
     font: var(--md-sys-typescale-body-medium-font);
-    font-weight: 500;
+    font-weight: var(--md-sys-typescale-weight-medium, 500);
     color: var(--md-sys-color-on-surface);
   }
 
@@ -305,5 +305,17 @@ function getInitials(name: string): string {
     margin: 4px 0;
     border: none;
     border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .user-menu-trigger,
+    .chevron,
+    .dropdown-item {
+      transition: none;
+    }
+    
+    .chevron.open {
+      transform: none;
+    }
   }
 </style>

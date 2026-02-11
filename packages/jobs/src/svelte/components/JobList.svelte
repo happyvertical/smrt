@@ -217,8 +217,8 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     width: 100%;
     border-collapse: collapse;
     border-spacing: 0;
-    font-size: var(--font-size-sm, 0.875rem);
-    background: var(--color-neutral-white, #ffffff);
+    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    background: var(--md-sys-color-surface, #ffffff);
   }
 
   .job-list.loading {
@@ -227,33 +227,43 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   }
 
   .job-list__head {
-    background: var(--color-neutral-gray100, #f3f4f6);
+    background: var(--md-sys-color-surface-container, #f3f4f6);
   }
 
   .job-list__head th {
-    padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
-    font-weight: 600;
+    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
+    font-weight: var(--md-sys-typescale-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 1px solid var(--color-neutral-gray200, #e5e7eb);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
   }
 
   .job-list__body tr {
-    border-bottom: 1px solid var(--color-neutral-gray200, #e5e7eb);
-    transition: background-color 150ms ease;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    transition: background-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .job-list__body tr:hover:not(.job-list__row--loading):not(.job-list__row--empty) {
-    background: var(--color-neutral-gray50, #f9fafb);
+    background: var(--md-sys-color-surface-container-low, #f9fafb);
     cursor: pointer;
   }
 
   .job-list__row--selected {
-    background: var(--color-primary-light, #dbeafe) !important;
+    background: var(--md-sys-color-primary-container, #d6e3ff) !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .job-list__body tr {
+      transition: none;
+    }
+    
+    .job-list__spinner {
+      animation: none;
+    }
   }
 
   .job-list__cell {
-    padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
+    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
     vertical-align: middle;
   }
 
@@ -267,8 +277,8 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   }
 
   .job-list__cell--queue {
-    font-family: var(--font-family-mono, monospace);
-    font-size: var(--font-size-xs, 0.75rem);
+    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
   }
 
   .job-list__cell--object {
@@ -276,21 +286,21 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   }
 
   .object-type {
-    font-weight: 500;
+    font-weight: var(--md-sys-typescale-weight-medium, 500);
   }
 
   .object-id {
-    margin-left: var(--spacing-xs, 0.25rem);
-    color: var(--color-text-secondary, #6b7280);
-    font-family: var(--font-family-mono, monospace);
-    font-size: var(--font-size-xs, 0.75rem);
+    margin-left: var(--md-sys-spacing-xs, 0.25rem);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
+    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
   }
 
   .job-list__cell--method code {
     padding: 0.125rem 0.375rem;
-    background: var(--color-neutral-gray100, #f3f4f6);
-    border-radius: var(--radius-sm, 0.25rem);
-    font-size: var(--font-size-xs, 0.75rem);
+    background: var(--md-sys-color-surface-container, #f3f4f6);
+    border-radius: var(--md-sys-shape-corner-small, 0.25rem);
+    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
   }
 
   .job-list__cell--priority {
@@ -299,11 +309,11 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   .job-list__cell--attempts {
     text-align: center;
-    font-family: var(--font-family-mono, monospace);
+    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
   }
 
   .job-list__cell--date {
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
     white-space: nowrap;
   }
 
@@ -313,7 +323,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   .job-list__cell--loading,
   .job-list__cell--empty {
-    padding: var(--spacing-xl, 2rem);
+    padding: var(--md-sys-spacing-xl, 2rem);
     text-align: center;
   }
 
@@ -321,15 +331,15 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-sm, 0.5rem);
-    color: var(--color-text-secondary, #6b7280);
+    gap: var(--md-sys-spacing-sm, 0.5rem);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .job-list__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--color-neutral-gray200, #e5e7eb);
-    border-top-color: var(--color-primary, #3b82f6);
+    border: 2px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-top-color: var(--md-sys-color-primary, #005ac1);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -341,6 +351,6 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   }
 
   .job-list__empty {
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 </style>

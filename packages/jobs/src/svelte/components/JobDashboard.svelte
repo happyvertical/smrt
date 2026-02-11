@@ -117,12 +117,18 @@ let {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-lg, 1.5rem);
+    gap: var(--md-sys-spacing-lg, 1.5rem);
   }
 
   .job-dashboard.loading {
     opacity: 0.7;
     pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .job-dashboard.loading {
+      transition: none;
+    }
   }
 
   .job-dashboard__section {
@@ -132,7 +138,7 @@ let {
   .job-dashboard__panels {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: var(--spacing-lg, 1.5rem);
+    gap: var(--md-sys-spacing-lg, 1.5rem);
   }
 
   @media (max-width: 900px) {
@@ -149,37 +155,41 @@ let {
 
   .panel-header h2 {
     margin: 0;
-    font-size: var(--font-size-md, 1rem);
-    font-weight: 600;
+    font: var(--md-sys-typescale-title-medium-font, 600 1rem / 1.5 sans-serif);
   }
 
   .panel-header--error h2 {
-    color: var(--color-error, #ef4444);
+    color: var(--md-sys-color-error, #ba1a1a);
   }
 
   .view-all-btn {
-    padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
+    padding: var(--md-sys-spacing-xs, 0.25rem) var(--md-sys-spacing-sm, 0.5rem);
     border: none;
     background: none;
-    color: var(--color-primary, #3b82f6);
-    font-size: var(--font-size-sm, 0.875rem);
-    font-weight: 500;
+    color: var(--md-sys-color-primary, #005ac1);
+    font: var(--md-sys-typescale-label-large-font, 500 0.875rem / 1.25 sans-serif);
     cursor: pointer;
-    border-radius: var(--radius-sm, 0.25rem);
-    transition: background-color 150ms ease;
+    border-radius: var(--md-sys-shape-corner-small, 0.25rem);
+    transition: background-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
   }
 
   .view-all-btn:hover {
-    background: var(--color-primary-light, #dbeafe);
+    background: var(--md-sys-color-primary-container, #d6e3ff);
   }
 
   .empty-message {
-    padding: var(--spacing-md, 1rem);
+    padding: var(--md-sys-spacing-md, 1rem);
     text-align: center;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .empty-message--success {
-    color: var(--color-success, #10b981);
+    color: var(--md-sys-color-tertiary, #006c4f);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .view-all-btn {
+      transition: none;
+    }
   }
 </style>
