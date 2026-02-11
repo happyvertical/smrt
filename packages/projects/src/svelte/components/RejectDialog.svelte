@@ -4,7 +4,8 @@
  * Requires a reason to be entered before confirming
  */
 
-interface Props {
+/** Props for RejectDialog component */
+export interface Props {
   open: boolean;
   title?: string;
   message?: string;

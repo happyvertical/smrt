@@ -4,17 +4,43 @@
   "description": "Background job processing for SMRT objects with persistence and scheduling",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "CLAUDE.md"
   ],
   "exports": {
-    ".": "./dist/index.js",
-    "./runner": "./dist/runner.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./runner": {
+      "types": "./dist/runner.d.ts",
+      "import": "./dist/runner.js"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json",
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js"
+    }
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "svelte": "^5.18.0"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
+    }
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/generate-stub-from-manifest.js",
     "test": "npx vitest run"
   },
   "dependencies": {
@@ -27,9 +53,16 @@
     "@happyvertical/utils": "^0.66.9"
   },
   "devDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/package": "^2.5.7",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/node": "25.0.9",
-    "vite": "7.3.1",
-    "vite-plugin-dts": "4.5.4",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.0.17"
   },
   "publishConfig": {

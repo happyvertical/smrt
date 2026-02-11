@@ -4,9 +4,10 @@
  * Shows appropriate buttons based on current status
  */
 
-import type { ApprovalStatus } from '../utils.js';
+import type { ApprovalStatus } from './utils.js';
 
-interface Props {
+/** Props for ApprovalActions component */
+export interface Props {
   status: ApprovalStatus;
   onsubmit?: () => void;
   onapprove?: () => void;

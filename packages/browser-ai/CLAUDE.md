@@ -1,40 +1,56 @@
 # @happyvertical/browser-ai
 
-Browser-side AI utilities for speech-to-text (STT) and text-to-speech (TTS) with multiple adapter backends. Designed for client-side use in web applications.
+Framework-agnostic browser AI capabilities - STT, TTS, LLM with adapter pattern.
 
-## Architecture
+## Svelte Components
 
-```
-src/
-  index.ts              # Export barrel
-  core/
-    types.ts            # BaseBrowserAIOptions, InitState, OnProgress
-  adapters/
-    stt/
-      types.ts          # STTAdapter interface, STTResult, STTCapabilities
-      browser-speech.ts # Browser Web Speech API adapter
-      whisper-wasm.ts   # Whisper WASM adapter (whisper.cpp via WebAssembly)
-      whisper-cpp.ts    # Whisper.cpp adapter (@remotion/whisper-web)
-    tts/
-      types.ts          # TTSAdapter interface
-      browser-speech.ts # Browser SpeechSynthesis API adapter
+This package includes Svelte 5 UI components for AI capabilities.
+
+### Installation
+
+```bash
+npm install @happyvertical/browser-ai
 ```
 
-## Key Exports
+### Usage
 
-- `STTAdapter` — Speech-to-text interface with start/stop/onResult
-- `TTSAdapter` — Text-to-speech interface
-- `BrowserSpeechSTT` — Native Web Speech API (no download required)
-- `WhisperWasmSTT` — Whisper via WASM (offline, model download required)
-- `WhisperCppSTT` — Whisper.cpp via @remotion/whisper-web (highest accuracy)
+```typescript
+import {
+  AILoadingOverlay,
+  CapabilityGate,
+  DownloadProgress,
+  STTTest,
+  VoiceInput,
+} from '@happyvertical/browser-ai/svelte';
+```
 
-## Key Patterns
+### Components
 
-- **Two-phase initialization**: Create adapter, then call `ensureInitialized()` (downloads models if needed)
-- **Adapter pattern**: All STT/TTS backends implement common interfaces
-- **Progress callbacks**: `OnProgress` for model download tracking
-- **Browser-only**: No Node.js dependencies, designed for client-side bundles
+- **AILoadingOverlay** - Loading overlay for AI operations
+- **CapabilityGate** - Conditionally render content based on AI capabilities
+- **DownloadProgress** - Progress indicator for model downloads
+- **STTTest** - Speech-to-text testing component
+- **VoiceInput** - Voice input component with STT
 
-## Dependencies
+### Types
 
-- `@remotion/whisper-web` (optional peer dependency for whisper-cpp)
+```typescript
+import type {
+  AILoadingOverlayProps,
+  CapabilityGateProps,
+  DownloadProgressProps,
+  STTTestProps,
+  VoiceInputProps,
+} from '@happyvertical/browser-ai/svelte';
+```
+
+### Auto-registration
+
+Importing from `/svelte` auto-registers components with `ModuleUIRegistry`:
+
+```typescript
+import '@happyvertical/browser-ai/svelte'; // Auto-registers all components
+
+// Later, retrieve from registry
+const Component = ModuleUIRegistry.get('@happyvertical/browser-ai', 'voice-input');
+```

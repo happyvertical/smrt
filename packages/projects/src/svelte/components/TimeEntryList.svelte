@@ -11,9 +11,10 @@ import {
   formatHours,
   statusColors,
   type TimeEntry,
-} from '../utils.js';
+} from './utils.js';
 
-interface Props {
+/** Props for TimeEntryList component */
+export interface Props {
   entries: TimeEntry[];
   selectable?: boolean;
   selectedIds?: string[];

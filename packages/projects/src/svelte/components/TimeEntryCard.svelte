@@ -12,9 +12,10 @@ import {
   formatHours,
   statusColors,
   type TimeEntry,
-} from '../utils.js';
+} from './utils.js';
 
-interface Props {
+/** Props for TimeEntryCard component */
+export interface Props {
   entry: TimeEntry;
   href?: string;
   onclick?: () => void;

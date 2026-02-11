@@ -1,0 +1,71 @@
+<script lang="ts">
+/**
+ * ArticleList - Displays a grid of article cards
+ *
+ * Renders articles in a responsive grid layout with configurable columns.
+ */
+import { Grid } from '@happyvertical/smrt-svelte/layout';
+import ArticleCard from './ArticleCard.svelte';
+import type { Article } from './types.js';
+
+export interface Props {
+  /** Array of articles to display */
+  articles: Article[];
+  /** Number of columns in grid (or 'auto') */
+  columns?: number | 'auto';
+  /** Show article excerpts */
+  showExcerpt?: boolean;
+  /** Show publication dates */
+  showDate?: boolean;
+  /** Show author names */
+  showAuthor?: boolean;
+  /** Show tags */
+  showTags?: boolean;
+  /** Message when no articles */
+  emptyMessage?: string;
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: Variables used in Svelte template
+const {
+  articles,
+  columns = 'auto',
+  showExcerpt = true,
+  showDate = true,
+  showAuthor = true,
+  showTags = false,
+  emptyMessage = 'No articles published yet. Check back soon for updates!',
+}: Props = $props();
+</script>
+
+{#if articles.length === 0}
+  <div class="empty-state" role="status" aria-live="polite">
+    <p>{emptyMessage}</p>
+  </div>
+{:else}
+  <Grid {columns} role="list" aria-label="Articles">
+    {#each articles as article (article.id)}
+      <div role="listitem">
+        <ArticleCard
+          {article}
+          {showExcerpt}
+          {showDate}
+          {showAuthor}
+          {showTags}
+        />
+      </div>
+    {/each}
+  </Grid>
+{/if}
+
+<style>
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-3xl);
+    color: var(--color-text-secondary);
+  }
+
+  .empty-state p {
+    font-size: var(--font-size-lg);
+    line-height: var(--line-height-normal);
+  }
+</style>

@@ -4,7 +4,8 @@
  * Appears when items are selected in a list
  */
 
-interface Props {
+/** Props for BulkActions component */
+export interface Props {
   selectedCount: number;
   onapprove?: () => void;
   onreject?: () => void;

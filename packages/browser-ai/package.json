@@ -17,16 +17,25 @@
     "./llm": {
       "types": "./dist/adapters/llm/index.d.ts",
       "default": "./dist/adapters/llm/index.js"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json",
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "CLAUDE.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "dev": "tsc --watch",
     "test": "npx vitest run --passWithNoTests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "keywords": [
     "browser",
@@ -52,11 +61,16 @@
     "access": "public"
   },
   "peerDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@huggingface/transformers": ">=3.0.0",
     "@mlc-ai/web-llm": ">=0.2.0",
-    "@remotion/whisper-web": ">=4.0.0"
+    "@remotion/whisper-web": ">=4.0.0",
+    "svelte": "^5.18.0"
   },
   "peerDependenciesMeta": {
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    },
     "@mlc-ai/web-llm": {
       "optional": true
     },
@@ -65,13 +79,21 @@
     },
     "@remotion/whisper-web": {
       "optional": true
+    },
+    "svelte": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@huggingface/transformers": "^3.8.1",
     "@mlc-ai/web-llm": "^0.2.80",
     "@remotion/whisper-web": "^4.0.406",
+    "@sveltejs/package": "^2.5.7",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/dom-speech-recognition": "^0.0.7",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   },

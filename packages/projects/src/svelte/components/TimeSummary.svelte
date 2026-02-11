@@ -4,9 +4,10 @@
  * Shows total hours, amounts, and pending items
  */
 
-import { type Currency, formatCurrency, formatHours } from '../utils.js';
+import { type Currency, formatCurrency, formatHours } from './utils.js';
 
-interface Props {
+/** Props for TimeSummary component */
+export interface Props {
   totalHours: number;
   totalAmount: number;
   pendingHours?: number;

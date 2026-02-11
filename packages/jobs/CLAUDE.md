@@ -1,39 +1,58 @@
 # @happyvertical/smrt-jobs
 
-Background job processing and scheduling for SMRT objects. Provides persistent job queues with retries, priority, and concurrent execution.
+Background job processing for SMRT objects with persistence and scheduling.
 
-## Architecture
+## Svelte Components
 
-```
-src/
-  index.ts              # Export barrel
-  smrt-job.ts           # Persistent job model
-  job-builder.ts        # Fluent API for job configuration
-  job-handle.ts         # Tracking handle with .wait()
-  task-runner.ts        # Concurrent job processor (separate export: ./runner)
-  schedule-runner.ts    # Cron-like scheduling
-  job-context-logger.ts # Contextual logging during execution
-  mixin.ts              # withBackgroundJobs() mixin for SmrtObject
+This package includes Svelte 5 UI components for background job management.
+
+### Installation
+
+```bash
+npm install @happyvertical/smrt-jobs
 ```
 
-## Key Exports
+### Usage
 
-- `SmrtJob` — Persistent job record with status, retries, timeout
-- `TaskRunner` — Processes jobs concurrently with polling and heartbeat
-- `ScheduleRunner` — Executes schedule-based jobs
-- `JobBuilder` — Fluent configuration API (delay, retries, priority)
-- `JobHandle` — Tracking handle with `.wait()` for result polling
-- `withBackgroundJobs()` — Mixin that adds `.bg()` and `.background()` to any SmrtObject
+```typescript
+import {
+  JobDashboard,
+  JobList,
+  JobDetail,
+  JobStats,
+  JobActions,
+  JobStatusBadge,
+} from '@happyvertical/smrt-jobs/svelte';
+```
 
-## Key Patterns
+### Components
 
-- **Fluent API**: `obj.background().delay('5m').retries(3).priority('high').run('methodName', args)`
-- **Simple API**: `obj.bg('methodName', args)` for quick fire-and-forget
-- **Priority levels**: critical (100), high (75), normal (50), low (25)
-- **Delay parsing**: Supports `ms`, `s`, `m`, `h`, `d` suffixes
-- **TaskRunner export**: Available at `@happyvertical/smrt-jobs/runner` (separate entry point)
+- **JobDashboard** - Combined overview panel for background jobs
+- **JobList** - Filterable, sortable list of jobs
+- **JobDetail** - Detailed view of a single job
+- **JobStats** - Statistics dashboard for job queues
+- **JobActions** - Action buttons for job operations
+- **JobStatusBadge** - Status indicator for jobs
 
-## Dependencies
+### Types
 
-- `@happyvertical/smrt-core`, `@happyvertical/smrt-config`
-- `@happyvertical/jobs`, `@happyvertical/logger`, `@happyvertical/sql`, `@happyvertical/utils`
+```typescript
+import type {
+  JobData,
+  JobStats,
+  QueueStats,
+  JobStatus,
+  JobPriority,
+} from '@happyvertical/smrt-jobs/svelte';
+```
+
+### Auto-registration
+
+Importing from `/svelte` auto-registers components with `ModuleUIRegistry`:
+
+```typescript
+import '@happyvertical/smrt-jobs/svelte'; // Auto-registers all components
+
+// Later, retrieve from registry
+const Component = ModuleUIRegistry.get('@happyvertical/smrt-jobs', 'job-dashboard');
+```

@@ -4,9 +4,10 @@
  * Supports decimal (8.5) or HH:MM (8:30) formats
  */
 
-import { formatHoursHHMM } from '../utils.js';
+import { formatHoursHHMM } from './utils.js';
 
-interface Props {
+/** Props for DurationDisplay component */
+export interface Props {
   hours: number;
   format?: 'decimal' | 'hhmm';
   size?: 'sm' | 'md' | 'lg';
