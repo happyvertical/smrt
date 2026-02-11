@@ -42,6 +42,7 @@ import { AdEventType } from '../types/index.js';
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['create', 'list'] }, // No update/delete (immutable)
   mcp: { include: ['create'] },
   cli: false, // High volume, not useful in CLI
