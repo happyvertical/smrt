@@ -10,7 +10,7 @@ import {
 import { formatText } from '../../utils/forms/formatters.js';
 import { Icon } from '../display/index.js';
 
-interface Props {
+export interface Props {
   /** Field name */
   name: string;
   /** Field label */
@@ -271,7 +271,7 @@ function handleInput(e: Event) {
     border-radius: 4px 4px 0 0;
     min-height: 56px;
     padding: 0 16px;
-    transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   .container:hover {
@@ -292,7 +292,7 @@ function handleInput(e: Event) {
     letter-spacing: 0.5px;
     color: var(--field-color);
     pointer-events: none;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     transform-origin: top left;
     margin-bottom: 4px;
   }
@@ -327,7 +327,7 @@ function handleInput(e: Event) {
     right: 0;
     height: 1px;
     background-color: var(--field-color);
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   .focused .active-indicator {

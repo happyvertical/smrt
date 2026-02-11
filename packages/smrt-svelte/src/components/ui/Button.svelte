@@ -108,10 +108,10 @@ const linkProps = $derived(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-sm);
-    font-weight: var(--font-weight-medium);
-    border-radius: var(--radius-md);
-    transition: all var(--transition-base);
+    gap: var(--smrt-spacing-2);
+    font-weight: var(--smrt-typography-body-medium-weight);
+    border-radius: var(--smrt-radius-medium);
+    transition: all var(--smrt-duration-short2) var(--smrt-easing-standard);
     cursor: pointer;
     text-decoration: none;
     border: 1px solid transparent;
@@ -119,56 +119,56 @@ const linkProps = $derived(() => {
 
   /* Sizes */
   .sm {
-    padding: var(--spacing-sm) var(--spacing-md);
-    font-size: var(--font-size-sm);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    font-size: var(--smrt-typography-body-medium-size);
   }
 
   .md {
-    padding: var(--spacing-md) var(--spacing-lg);
-    font-size: var(--font-size-base);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+    font-size: var(--smrt-typography-body-large-size);
   }
 
   .lg {
-    padding: var(--spacing-lg) var(--spacing-xl);
-    font-size: var(--font-size-lg);
+    padding: var(--smrt-spacing-4) var(--smrt-spacing-6);
+    font-size: var(--smrt-typography-title-medium-size);
   }
 
   /* Variants */
   .primary {
-    background: var(--color-primary-main);
-    color: var(--color-text-inverse);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
   }
 
   .primary:hover:not(:disabled):not(.disabled) {
-    background: var(--color-primary-dark);
+    background: var(--smrt-color-primary);
   }
 
   .secondary {
-    background: var(--color-neutral-white);
-    color: var(--color-primary-main);
-    border-color: var(--color-primary-main);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
   }
 
   .secondary:hover:not(:disabled):not(.disabled) {
-    background: var(--color-primary-light);
+    background: var(--smrt-color-primary-container);
   }
 
   .ghost {
     background: transparent;
-    color: var(--color-primary-main);
+    color: var(--smrt-color-primary);
   }
 
   .ghost:hover:not(:disabled):not(.disabled) {
-    background: var(--color-primary-light);
+    background: var(--smrt-color-primary-container);
   }
 
   .danger {
-    background: var(--color-semantic-error);
-    color: var(--color-text-inverse);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
   }
 
   .danger:hover:not(:disabled):not(.disabled) {
-    background: var(--color-semantic-error-dark, #d32f2f);
+    background: var(--smrt-color-error);
   }
 
   /* Full width */
@@ -213,7 +213,7 @@ const linkProps = $derived(() => {
 
   /* Focus state */
   .button:focus-visible {
-    outline: 2px solid var(--color-primary-main);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 

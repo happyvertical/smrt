@@ -209,7 +209,7 @@ function handleKeydown(e: KeyboardEvent) {
 		height: 100%;
 		background: linear-gradient(90deg, #3b82f6, #60a5fa);
 		border-radius: 4px;
-		transition: width 0.3s ease;
+		transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
 	}
 
 	.progress-text {
@@ -253,7 +253,7 @@ function handleKeydown(e: KeyboardEvent) {
 		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
 		border-radius: 8px;
 		cursor: pointer;
-		transition: all 0.15s ease;
+		transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
 	}
 
 	.dismiss-btn:hover {

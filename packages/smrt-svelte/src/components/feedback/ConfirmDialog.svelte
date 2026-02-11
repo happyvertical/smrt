@@ -164,7 +164,7 @@ function handleKeydown(e: KeyboardEvent) {
     font-weight: 500;
     border-radius: 20px;
     cursor: pointer;
-    transition: all 200ms;
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     border: none;
     position: relative;
     overflow: hidden;

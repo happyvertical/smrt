@@ -9,7 +9,7 @@
 import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 
-interface Props {
+export interface Props {
   /** Main title text */
   title: string;
   /** Optional description */

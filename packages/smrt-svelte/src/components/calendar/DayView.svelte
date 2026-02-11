@@ -6,7 +6,7 @@
 
 import type { DayEventDetail, DayForecast } from '../../types-generic';
 
-interface Props {
+export interface Props {
   date: Date;
   events?: DayEventDetail[] | null;
   forecast?: DayForecast | null;
@@ -159,20 +159,20 @@ function getTypeLabel(type: string): string {
 
 <style>
   .day-view {
-    --view-bg: var(--color-neutral-white, #ffffff);
-    --view-border: var(--color-neutral-gray200, #e5e7eb);
-    --header-bg: var(--color-neutral-gray100, #f5f5f5);
-    --card-hover: var(--color-neutral-gray100, #f5f5f5);
+    --view-bg: var(--smrt-color-surface, #ffffff);
+    --view-border: var(--smrt-color-outline-variant, #e5e7eb);
+    --header-bg: var(--smrt-color-surface-container-low, #f5f5f5);
+    --card-hover: var(--smrt-color-surface-container-low, #f5f5f5);
 
     background: var(--view-bg);
   }
 
   /* Dark mode */
   :global([data-theme="dark"]) .day-view {
-    --view-bg: #242424;
-    --view-border: #3a3a3a;
-    --header-bg: #2e2e2e;
-    --card-hover: #3a3a3a;
+    --view-bg: var(--smrt-color-surface-dark, #242424);
+    --view-border: var(--smrt-color-outline-variant-dark, #3a3a3a);
+    --header-bg: var(--smrt-color-surface-container-low-dark, #2e2e2e);
+    --card-hover: var(--smrt-color-surface-container-high-dark, #3a3a3a);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -185,7 +185,7 @@ function getTypeLabel(type: string): string {
   }
 
   .day-header {
-    padding: var(--spacing-lg, 1.5rem);
+    padding: var(--smrt-spacing-6, 1.5rem);
     background: var(--header-bg);
     border-bottom: 1px solid var(--view-border);
   }
@@ -193,30 +193,30 @@ function getTypeLabel(type: string): string {
   .back-link {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-xs, 0.25rem);
-    color: var(--color-primary-main, #1976d2);
+    gap: var(--smrt-spacing-1, 0.25rem);
+    color: var(--smrt-color-primary, #005ac1);
     text-decoration: none;
-    font-size: var(--font-size-sm, 0.875rem);
-    margin-bottom: var(--spacing-md, 1rem);
-    transition: color var(--transition-fast, 150ms);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    margin-bottom: var(--smrt-spacing-4, 1rem);
+    transition: color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .back-link:hover {
-    color: var(--color-primary-dark, #0d47a1);
+    color: var(--smrt-color-on-primary-container, #1b1b1f);
   }
 
   .date-title {
     margin: 0;
-    font-size: var(--font-size-2xl, 1.5rem);
-    font-weight: var(--font-weight-semibold, 600);
-    color: var(--color-text-primary, #333);
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-headline-small-weight, 600);
+    color: var(--smrt-color-on-surface, #333);
   }
 
   .weather-summary {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm, 0.5rem);
-    margin-top: var(--spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
+    margin-top: var(--smrt-spacing-2, 0.5rem);
   }
 
   .weather-icon {
@@ -225,42 +225,42 @@ function getTypeLabel(type: string): string {
 
   .weather-temps {
     display: flex;
-    gap: var(--spacing-xs, 0.25rem);
-    font-size: var(--font-size-lg, 1.125rem);
+    gap: var(--smrt-spacing-1, 0.25rem);
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
   }
 
   .high {
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--smrt-typography-title-medium-weight, 600);
   }
 
   .low {
-    color: var(--color-text-secondary, #666);
+    color: var(--smrt-color-on-surface-variant, #666);
   }
 
   .day-content {
-    padding: var(--spacing-lg, 1.5rem);
+    padding: var(--smrt-spacing-6, 1.5rem);
   }
 
   .empty-state {
     text-align: center;
-    padding: var(--spacing-3xl, 4rem) var(--spacing-lg, 1.5rem);
-    color: var(--color-text-secondary, #666);
+    padding: var(--smrt-spacing-12, 3rem) var(--smrt-spacing-6, 1.5rem);
+    color: var(--smrt-color-on-surface-variant, #666);
   }
 
   .empty-icon {
     font-size: 48px;
     display: block;
-    margin-bottom: var(--spacing-md, 1rem);
+    margin-bottom: var(--smrt-spacing-4, 1rem);
     opacity: 0.5;
   }
 
   .empty-text {
     margin: 0;
-    font-size: var(--font-size-lg, 1.125rem);
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
   }
 
   .event-group {
-    margin-bottom: var(--spacing-xl, 2rem);
+    margin-bottom: var(--smrt-spacing-8, 2rem);
   }
 
   .event-group:last-child {
@@ -270,11 +270,11 @@ function getTypeLabel(type: string): string {
   .group-title {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm, 0.5rem);
-    margin: 0 0 var(--spacing-md, 1rem) 0;
-    font-size: var(--font-size-lg, 1.125rem);
-    font-weight: var(--font-weight-semibold, 600);
-    color: var(--color-text-primary, #333);
+    gap: var(--smrt-spacing-2, 0.5rem);
+    margin: 0 0 var(--smrt-spacing-4, 1rem) 0;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-title-medium-weight, 600);
+    color: var(--smrt-color-on-surface, #333);
   }
 
   .group-icon {
@@ -282,44 +282,45 @@ function getTypeLabel(type: string): string {
   }
 
   .group-count {
-    font-weight: var(--font-weight-normal, 400);
-    color: var(--color-text-secondary, #666);
+    font-weight: var(--smrt-typography-body-medium-weight, 400);
+    color: var(--smrt-color-on-surface-variant, #666);
   }
 
   .event-list {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 
   .event-card {
     display: flex;
     align-items: center;
-    gap: var(--spacing-md, 1rem);
-    padding: var(--spacing-md, 1rem);
+    gap: var(--smrt-spacing-4, 1rem);
+    padding: var(--smrt-spacing-4, 1rem);
     background: var(--view-bg);
     border: 1px solid var(--view-border);
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--smrt-radius-medium, 8px);
     text-decoration: none;
-    color: var(--color-text-primary, #333);
-    transition: all var(--transition-fast, 150ms);
+    color: var(--smrt-color-on-surface, #333);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .event-card--link:hover {
     background: var(--card-hover);
-    border-color: var(--color-neutral-gray300, #d1d5db);
+    border-color: var(--smrt-color-outline, #79747e);
   }
 
   .event-card--link:hover .event-arrow {
     transform: translateX(4px);
+    transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .event-time {
     flex-shrink: 0;
     width: 80px;
-    font-size: var(--font-size-sm, 0.875rem);
-    font-weight: var(--font-weight-medium, 500);
-    color: var(--color-text-secondary, #666);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-body-medium-weight, 500);
+    color: var(--smrt-color-on-surface-variant, #666);
   }
 
   .event-details {
@@ -329,7 +330,7 @@ function getTypeLabel(type: string): string {
 
   .event-name {
     display: block;
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--smrt-typography-body-medium-weight, 500);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -337,28 +338,28 @@ function getTypeLabel(type: string): string {
 
   .event-venue {
     display: block;
-    font-size: var(--font-size-sm, 0.875rem);
-    color: var(--color-text-secondary, #666);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant, #666);
     margin-top: 2px;
   }
 
   .event-arrow {
     flex-shrink: 0;
-    color: var(--color-text-secondary, #666);
-    transition: transform var(--transition-fast, 150ms);
+    color: var(--smrt-color-on-surface-variant, #666);
+    transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   @media (max-width: 640px) {
     .day-header {
-      padding: var(--spacing-md, 1rem);
+      padding: var(--smrt-spacing-4, 1rem);
     }
 
     .date-title {
-      font-size: var(--font-size-xl, 1.25rem);
+      font-size: var(--smrt-typography-title-medium-size, 1.25rem);
     }
 
     .day-content {
-      padding: var(--spacing-md, 1rem);
+      padding: var(--smrt-spacing-4, 1rem);
     }
 
     .event-card {

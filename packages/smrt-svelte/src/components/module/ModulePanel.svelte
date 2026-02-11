@@ -90,15 +90,15 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
     justify-content: center;
     padding: 2rem;
     text-align: center;
-    background: var(--color-surface-2, #f8fafc);
-    border: 1px dashed var(--color-border, #e2e8f0);
-    border-radius: 8px;
+    background: var(--smrt-color-surface-container-low, #f8fafc);
+    border: 1px dashed var(--smrt-color-outline-variant, #e2e8f0);
+    border-radius: var(--smrt-radius-medium, 8px);
     min-height: 150px;
     gap: 0.75rem;
   }
 
   .module-panel-placeholder__icon {
-    color: var(--color-text-muted, #94a3b8);
+    color: var(--smrt-color-on-surface-variant, #94a3b8);
     opacity: 0.6;
   }
 
@@ -106,27 +106,27 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
-    color: var(--color-text, #1e293b);
+    color: var(--smrt-color-on-surface, #1e293b);
   }
 
   .module-panel-placeholder__code {
-    font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
-    font-size: 0.875rem;
-    padding: 0.25rem 0.5rem;
-    background: var(--color-surface-3, #e2e8f0);
-    border-radius: 4px;
-    color: var(--color-text-muted, #64748b);
+    font-family: var(--smrt-typography-font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
+    background: var(--smrt-color-surface-container-high, #e2e8f0);
+    border-radius: var(--smrt-radius-small, 4px);
+    color: var(--smrt-color-on-surface-variant, #64748b);
   }
 
   .module-panel-placeholder__hint {
     margin: 0;
     font-size: 0.875rem;
-    color: var(--color-text-muted, #64748b);
+    color: var(--smrt-color-on-surface-variant, #64748b);
   }
 
   .module-panel-placeholder__meta {
     margin: 0;
     font-size: 0.75rem;
-    color: var(--color-text-muted, #94a3b8);
+    color: var(--smrt-color-on-surface-variant, #94a3b8);
   }
 </style>

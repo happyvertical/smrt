@@ -10,7 +10,7 @@ import { ripple } from '../../actions/ripple.js';
 import { Icon } from '../display/index.js';
 import type { FilterOption } from './types.js';
 
-interface Props {
+export interface Props {
   /** Available filter options */
   options: FilterOption[];
   /** Currently selected value */

@@ -131,7 +131,7 @@ const valueText = $derived(
     bottom: 0;
     background-color: var(--bar-color);
     opacity: 0.3;
-    transition: width 0.3s ease;
+    transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
   }
 
   .confidence-value {

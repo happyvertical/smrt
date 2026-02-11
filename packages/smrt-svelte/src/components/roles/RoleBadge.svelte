@@ -5,7 +5,7 @@
  */
 import type { Role } from '@happyvertical/smrt-users';
 
-interface Props {
+export interface Props {
   role: Role;
   size?: 'sm' | 'md' | 'lg';
 }

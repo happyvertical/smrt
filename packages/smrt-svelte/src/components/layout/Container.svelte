@@ -20,8 +20,8 @@ const { maxWidth = 'lg', children, ...rest }: Props = $props();
   .container {
     width: 100%;
     margin: 0 auto;
-    padding-left: var(--spacing-md);
-    padding-right: var(--spacing-md);
+    padding-left: var(--smrt-spacing-4);
+    padding-right: var(--smrt-spacing-4);
   }
 
   .max-w-sm {
@@ -46,8 +46,8 @@ const { maxWidth = 'lg', children, ...rest }: Props = $props();
 
   @media (min-width: 640px) {
     .container {
-      padding-left: var(--spacing-lg);
-      padding-right: var(--spacing-lg);
+      padding-left: var(--smrt-spacing-6);
+      padding-right: var(--smrt-spacing-6);
     }
   }
 </style>

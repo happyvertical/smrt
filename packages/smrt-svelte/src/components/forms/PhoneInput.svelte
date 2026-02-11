@@ -7,7 +7,7 @@ import {
   tryGetFormContext,
 } from '../../state/form-context.js';
 
-interface Props {
+export interface Props {
   /** Field name */
   name: string;
   /** Field label */
@@ -331,13 +331,13 @@ function handleInput(e: Event) {
   }
 
   .smrt-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #374151;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-body-medium-weight, 500);
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .smrt-label .required {
-    color: #ef4444;
+    color: var(--smrt-color-error, #ba1a1a);
     margin-left: 2px;
   }
 
@@ -348,18 +348,18 @@ function handleInput(e: Event) {
 
   .smrt-input {
     flex: 1;
-    padding: 8px 12px;
-    font-size: 1rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
-    transition: all 0.2s;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+    border-radius: var(--smrt-radius-small, 6px);
+    background: var(--smrt-color-surface, #fff);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .smrt-input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
   }
 
   .smrt-input.smrt-mode {
@@ -368,14 +368,14 @@ function handleInput(e: Event) {
   }
 
   .smrt-input:disabled {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
     cursor: not-allowed;
   }
 
   .smrt-phone.listening .smrt-input {
-    border-color: #22c55e;
+    border-color: var(--smrt-color-primary, #22c55e);
     box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
-    animation: pulse-green 1.5s ease-in-out infinite;
+    animation: pulse-green 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
 
   @keyframes pulse-green {
@@ -384,6 +384,12 @@ function handleInput(e: Event) {
     }
     50% {
       box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-phone.listening .smrt-input {
+      animation: none;
     }
   }
 
@@ -400,19 +406,19 @@ function handleInput(e: Event) {
     background: transparent;
     border: none;
     border-radius: 4px;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .mic-btn:hover {
     background: #f3f4f6;
-    color: #374151;
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .mic-btn.active {
-    background: #22c55e;
-    color: white;
+    background: var(--smrt-color-primary, #22c55e);
+    color: var(--smrt-color-on-primary, white);
   }
 
   .mic-btn:disabled {
@@ -421,11 +427,11 @@ function handleInput(e: Event) {
   }
 
   .smrt-input.invalid {
-    border-color: #ef4444;
+    border-color: var(--smrt-color-error, #ba1a1a);
   }
 
   .smrt-input.invalid:focus {
-    border-color: #ef4444;
+    border-color: var(--smrt-color-error, #ba1a1a);
     box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
   }
 
@@ -437,7 +443,7 @@ function handleInput(e: Event) {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: #22c55e;
     margin-top: 4px;
   }
@@ -461,12 +467,18 @@ function handleInput(e: Event) {
     }
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .listening-dot {
+      animation: none;
+    }
+  }
+
   .processing-indicator {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.75rem;
-    color: #6b7280;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     margin-top: 4px;
   }
 
@@ -474,7 +486,7 @@ function handleInput(e: Event) {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: #8b5cf6;
     margin-top: 4px;
   }
@@ -495,14 +507,14 @@ function handleInput(e: Event) {
   }
 
   .error-message {
-    font-size: 0.75rem;
-    color: #f97316;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-error, #f97316);
     margin-top: 4px;
   }
 
   .validation-error {
-    font-size: 0.75rem;
-    color: #ef4444;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-error, #ba1a1a);
     margin-top: 4px;
   }
 </style>

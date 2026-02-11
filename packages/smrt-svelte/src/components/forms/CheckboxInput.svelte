@@ -8,7 +8,7 @@ import {
 } from '../../state/form-context.js';
 import { parseSpokenBoolean } from '../../utils/forms/formatters.js';
 
-interface Props {
+export interface Props {
   /** Field name */
   name: string;
   /** Field label */
@@ -149,7 +149,7 @@ function handleChange(e: Event) {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     background-color: transparent;
   }
 
@@ -198,7 +198,7 @@ function handleChange(e: Event) {
     bottom: 0;
     border-radius: 50%;
     pointer-events: none;
-    transition: opacity 200ms;
+    transition: opacity var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
   }
 
   .container:hover .state-layer {

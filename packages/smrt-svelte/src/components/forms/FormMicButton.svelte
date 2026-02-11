@@ -2,7 +2,7 @@
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { tryGetFormContext } from '../../state/form-context.js';
 
-interface Props {
+export interface Props {
   /** Size of the mic icon */
   size?: number;
   /** Additional CSS class */
@@ -112,24 +112,24 @@ function handleClick() {
     align-items: center;
     justify-content: center;
     position: relative;
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant, #9ca3af);
     cursor: pointer;
-    transition: color 0.2s;
+    transition: color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
     vertical-align: middle;
     margin-left: 0.5rem;
   }
 
   .form-mic-icon:hover {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .form-mic-icon.listening {
-    color: #22c55e;
+    color: var(--smrt-color-primary, #22c55e);
     animation: pulse 1.5s ease-in-out infinite;
   }
 
   .form-mic-icon.extracting {
-    color: #22c55e;
+    color: var(--smrt-color-primary, #22c55e);
   }
 
   .tooltip {
@@ -139,7 +139,7 @@ function handleClick() {
     transform: translateX(-50%);
     margin-top: 0.5rem;
     padding: 0.5rem 0.75rem;
-    background: #1f2937;
+    background: var(--smrt-color-on-surface, #1f2937);
     color: white;
     font-size: 0.75rem;
     font-weight: 400;
@@ -164,6 +164,12 @@ function handleClick() {
     50% { opacity: 0.6; }
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .form-mic-icon.listening {
+      animation: none;
+    }
+  }
+
   .spinner {
     animation: spin 1s linear infinite;
   }
@@ -171,5 +177,11 @@ function handleClick() {
   @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
   }
 </style>

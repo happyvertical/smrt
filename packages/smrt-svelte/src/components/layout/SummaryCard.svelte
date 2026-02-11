@@ -8,7 +8,7 @@
 import { ripple } from '../../actions/ripple.js';
 import { Icon } from '../display/index.js';
 
-interface Props {
+export interface Props {
   /** Card label */
   label: string;
   /** Primary value to display */

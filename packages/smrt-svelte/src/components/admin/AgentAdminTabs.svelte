@@ -5,7 +5,7 @@ import type {
 } from '@happyvertical/smrt-agents/ui';
 import AgentAdminPanel from './AgentAdminPanel.svelte';
 
-interface Props {
+export interface Props {
   /** The registry to look up components from */
   registry: AgentUIComponentRegistry;
   /** The agent class name (e.g., 'Praeco') */
@@ -195,8 +195,8 @@ async function handleSave(config: unknown) {
 		border-bottom: 2px solid transparent;
 		margin-bottom: -1px;
 		transition:
-			color 0.15s,
-			border-color 0.15s;
+			color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease),
+			border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
 	}
 
 	.tab-button:hover:not(:disabled) {
@@ -232,7 +232,7 @@ async function handleSave(config: unknown) {
 	}
 
 	.tab-panel {
-		animation: fadeIn 0.15s ease-out;
+		animation: fadeIn var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-out);
 	}
 
 	@keyframes fadeIn {
@@ -243,6 +243,12 @@ async function handleSave(config: unknown) {
 		to {
 			opacity: 1;
 			transform: translateY(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.tab-panel {
+			animation: none;
 		}
 	}
 

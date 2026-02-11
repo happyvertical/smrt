@@ -15,7 +15,7 @@ import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 import type { Tab } from './types.js';
 
-interface Props {
+export interface Props {
   /** Available tabs */
   tabs: Tab[];
   /** Currently active tab id */

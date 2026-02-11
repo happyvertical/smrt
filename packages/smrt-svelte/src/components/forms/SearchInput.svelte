@@ -11,7 +11,7 @@
  * - Material 3 styling
  */
 
-interface SearchInputProps {
+export interface Props {
   /** Current search value */
   value?: string;
   /** Placeholder text */
@@ -51,7 +51,7 @@ let {
   onsearch,
   oninput,
   onsubmit,
-}: SearchInputProps = $props();
+}: Props = $props();
 
 let inputEl: HTMLInputElement | null = $state(null);
 let debounceTimer: ReturnType<typeof setTimeout> | null = $state(null);
@@ -213,16 +213,16 @@ const sizeClasses = {
     display: flex;
     align-items: center;
     width: 100%;
-    background: var(--smrt-surface-container-low, #f9fafb);
-    border: 1px solid var(--smrt-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-radius: var(--smrt-radius-md, 0.5rem);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .search-input:focus-within {
     background: var(--smrt-surface, #ffffff);
-    border-color: var(--smrt-primary, #3b82f6);
-    box-shadow: 0 0 0 3px var(--smrt-primary-container, rgba(59, 130, 246, 0.1));
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
 
   .search-input--disabled {
@@ -235,7 +235,7 @@ const sizeClasses = {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--smrt-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .search-input__spinner {
@@ -254,7 +254,7 @@ const sizeClasses = {
     border: none;
     background: transparent;
     font-family: inherit;
-    color: var(--smrt-on-surface, #111827);
+    color: var(--smrt-color-on-surface, #111827);
     outline: none;
   }
 
@@ -275,26 +275,26 @@ const sizeClasses = {
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--smrt-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
     border-radius: var(--smrt-radius-full, 9999px);
-    transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .search-input__clear:hover {
-    color: var(--smrt-on-surface, #111827);
-    background: var(--smrt-surface-container, #f3f4f6);
+    color: var(--smrt-color-on-surface, #111827);
+    background: var(--smrt-color-surface-container, #f3f4f6);
   }
 
   .search-input__clear:focus-visible {
-    outline: 2px solid var(--smrt-primary, #3b82f6);
+    outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: 2px;
   }
 
   /* Size: Small */
   .search-input--sm {
     height: 32px;
-    font-size: var(--smrt-font-size-sm, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   .search-input--sm .search-input__icon {
@@ -314,7 +314,7 @@ const sizeClasses = {
   /* Size: Medium (default) */
   .search-input--md {
     height: 40px;
-    font-size: var(--smrt-font-size-sm, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   .search-input--md .search-input__icon {
@@ -334,7 +334,7 @@ const sizeClasses = {
   /* Size: Large */
   .search-input--lg {
     height: 48px;
-    font-size: var(--smrt-font-size-md, 1rem);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .search-input--lg .search-input__icon {

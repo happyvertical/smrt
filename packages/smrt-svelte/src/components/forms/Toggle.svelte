@@ -11,7 +11,7 @@
  * - Material 3 styling
  */
 
-interface ToggleProps {
+export interface Props {
   /** Whether the toggle is checked */
   checked?: boolean;
   /** Whether the toggle is disabled */
@@ -45,7 +45,7 @@ let {
   id,
   ariaLabel,
   onchange,
-}: ToggleProps = $props();
+}: Props = $props();
 
 function handleChange(event: Event) {
   const target = event.target as HTMLInputElement;
@@ -100,8 +100,8 @@ const sizeClasses = {
   }
 
   .toggle__label {
-    font-size: var(--smrt-font-size-sm, 0.875rem);
-    color: var(--smrt-on-surface, #111827);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface, #111827);
     line-height: 1.5;
   }
 
@@ -126,38 +126,38 @@ const sizeClasses = {
 
   .toggle__thumb {
     position: relative;
-    background: var(--smrt-surface-container-highest, #e5e7eb);
+    background: var(--smrt-color-surface-container-highest, #e5e7eb);
     border-radius: var(--smrt-radius-full, 9999px);
-    transition: background-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
+    transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .toggle__thumb::after {
     content: '';
     position: absolute;
-    background: var(--smrt-surface, #ffffff);
+    background: var(--smrt-color-surface, #ffffff);
     border-radius: var(--smrt-radius-full, 9999px);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    transition: transform var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
+    transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   /* Checked state */
   .toggle__input:checked + .toggle__thumb {
-    background: var(--smrt-primary, #3b82f6);
+    background: var(--smrt-color-primary, #005ac1);
   }
 
   /* Focus state */
   .toggle__input:focus-visible + .toggle__thumb {
-    outline: 2px solid var(--smrt-primary, #3b82f6);
+    outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: 2px;
   }
 
   /* Hover state */
   .toggle:not(.toggle--disabled):hover .toggle__thumb {
-    background: var(--smrt-surface-container-high, #d1d5db);
+    background: var(--smrt-color-surface-container-high, #d1d5db);
   }
 
   .toggle:not(.toggle--disabled):hover .toggle__input:checked + .toggle__thumb {
-    background: var(--smrt-primary-hover, #2563eb);
+    background: var(--smrt-color-primary, #2563eb);
   }
 
   /* Size: Small */
@@ -212,6 +212,6 @@ const sizeClasses = {
   }
 
   .toggle--lg .toggle__label {
-    font-size: var(--smrt-font-size-md, 1rem);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 </style>

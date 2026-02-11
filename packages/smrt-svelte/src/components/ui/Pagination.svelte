@@ -198,16 +198,16 @@ const isLastPage = $derived(currentPage === totalPages);
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: var(--spacing-sm, 0.5rem);
-    margin-top: var(--spacing-xl, 2rem);
-    padding: var(--spacing-md, 1rem) 0;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    margin-top: var(--smrt-spacing-8, 2rem);
+    padding: var(--smrt-spacing-4, 1rem) 0;
     flex-wrap: wrap;
   }
 
   .page-numbers {
     display: flex;
     align-items: center;
-    gap: var(--spacing-xs, 0.25rem);
+    gap: var(--smrt-spacing-1, 0.25rem);
   }
 
   .page-link {
@@ -216,34 +216,34 @@ const isLastPage = $derived(currentPage === totalPages);
     justify-content: center;
     min-width: 2.25rem;
     height: 2.25rem;
-    padding: 0 var(--spacing-sm, 0.5rem);
-    border-radius: var(--radius-sm, 0.25rem);
-    font-size: 0.875rem;
+    padding: 0 var(--smrt-spacing-2, 0.5rem);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: 500;
     text-decoration: none;
-    transition: background-color 0.15s, color 0.15s;
+    transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease), color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .page-link:not(.current):not(.disabled) {
-    background: var(--color-neutral-gray100, #f3f4f6);
-    color: var(--color-neutral-gray700, #374151);
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .page-link:not(.current):not(.disabled):hover {
-    background: var(--color-primary, #2563eb);
-    color: white;
+    background: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-on-primary, white);
   }
 
   .page-link.current {
-    background: var(--color-primary, #2563eb);
+    background: var(--smrt-color-primary, #005ac1);
     color: white;
     cursor: default;
   }
 
   .page-link.disabled,
   .page-link:disabled {
-    background: var(--color-neutral-gray100, #f3f4f6);
-    color: var(--color-neutral-gray400, #9ca3af);
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
+    color: var(--smrt-color-on-surface-variant, #9ca3af);
     cursor: not-allowed;
   }
 
@@ -254,7 +254,7 @@ const isLastPage = $derived(currentPage === totalPages);
   }
 
   .nav-link {
-    padding: 0 var(--spacing-md, 1rem);
+    padding: 0 var(--smrt-spacing-4, 1rem);
   }
 
   .nav-link.first,
@@ -275,7 +275,7 @@ const isLastPage = $derived(currentPage === totalPages);
     justify-content: center;
     min-width: 2.25rem;
     height: 2.25rem;
-    color: var(--color-neutral-gray500, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   @media (max-width: 480px) {
@@ -286,7 +286,7 @@ const isLastPage = $derived(currentPage === totalPages);
     }
 
     .nav-link {
-      padding: 0 var(--spacing-sm, 0.5rem);
+      padding: 0 var(--smrt-spacing-2, 0.5rem);
     }
   }
 </style>

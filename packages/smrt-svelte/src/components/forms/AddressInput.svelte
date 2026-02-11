@@ -9,7 +9,7 @@ import type { AddressValue } from './types.js';
 
 type AddressField = keyof AddressValue;
 
-interface Props {
+export interface Props {
   /** Field name prefix */
   name: string;
   /** Field label */
@@ -377,35 +377,35 @@ function handleCountryChange(e: Event) {
   }
 
   .smrt-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #374151;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-body-medium-weight, 500);
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .smrt-label .required {
-    color: #ef4444;
+    color: var(--smrt-color-error, #ba1a1a);
     margin-left: 2px;
   }
 
   .address-fields {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px;
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    gap: var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-4, 16px);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-radius: var(--smrt-radius-medium, 8px);
   }
 
   .address-fields.smrt-mode {
-    border-color: #a855f7;
-    background: #faf5ff;
+    border-color: var(--smrt-color-tertiary, #6b5778);
+    background: var(--smrt-color-tertiary-container, #f3e5f5);
   }
 
   .field-row {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .field-row-group {
@@ -426,35 +426,35 @@ function handleCountryChange(e: Event) {
   }
 
   .field-label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #6b7280;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    font-weight: var(--smrt-typography-body-small-weight, 500);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
 
   .smrt-input {
-    padding: 8px 12px;
-    font-size: 1rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
-    transition: all 0.2s;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+    border-radius: var(--smrt-radius-small, 6px);
+    background: var(--smrt-color-surface, #fff);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .smrt-input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
   }
 
   .smrt-input:disabled {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
     cursor: not-allowed;
   }
 
   .smrt-input.invalid {
-    border-color: #ef4444;
+    border-color: var(--smrt-color-error, #ba1a1a);
   }
 
   .smrt-select {
@@ -463,7 +463,7 @@ function handleCountryChange(e: Event) {
 
   .validation-error {
     font-size: 0.75rem;
-    color: #ef4444;
+    color: var(--smrt-color-error, #ba1a1a);
     margin-top: 4px;
   }
 

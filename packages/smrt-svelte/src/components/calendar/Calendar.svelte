@@ -6,7 +6,7 @@
 
 import type { DayEventDetail, DayEventsData } from '../../types-generic';
 
-interface Props {
+export interface Props {
   events?: DayEventsData[] | null;
   year?: number;
   month?: number; // 0-indexed (0 = January)
@@ -262,29 +262,29 @@ const yearOptions = $derived(() => {
 
 <style>
   .calendar {
-    --calendar-bg: var(--color-neutral-white, #ffffff);
-    --calendar-border: var(--color-neutral-gray200, #e5e7eb);
-    --calendar-header-bg: var(--color-neutral-gray100, #f5f5f5);
-    --day-hover: var(--color-neutral-gray100, #f5f5f5);
-    --today-bg: var(--color-primary-light, #e3f2fd);
-    --today-border: var(--color-primary-main, #1976d2);
-    --other-month: var(--color-neutral-gray400, #9ca3af);
+    --calendar-bg: var(--smrt-color-surface, #ffffff);
+    --calendar-border: var(--smrt-color-outline-variant, #e5e7eb);
+    --calendar-header-bg: var(--smrt-color-surface-container-low, #f5f5f5);
+    --day-hover: var(--smrt-color-surface-container-low, #f5f5f5);
+    --today-bg: var(--smrt-color-primary-container, #e3f2fd);
+    --today-border: var(--smrt-color-primary, #005ac1);
+    --other-month: var(--smrt-color-on-surface-variant, #9ca3af);
 
     background: var(--calendar-bg);
     border: 1px solid var(--calendar-border);
-    border-radius: var(--radius-lg, 12px);
+    border-radius: var(--smrt-radius-large, 12px);
     overflow: hidden;
   }
 
   /* Dark mode */
   :global([data-theme="dark"]) .calendar {
-    --calendar-bg: #242424;
-    --calendar-border: #3a3a3a;
-    --calendar-header-bg: #2e2e2e;
-    --day-hover: #3a3a3a;
-    --today-bg: #1e3a5f;
-    --today-border: #64b5f6;
-    --other-month: #666666;
+    --calendar-bg: var(--smrt-color-surface-dark, #242424);
+    --calendar-border: var(--smrt-color-outline-variant-dark, #3a3a3a);
+    --calendar-header-bg: var(--smrt-color-surface-container-low-dark, #2e2e2e);
+    --day-hover: var(--smrt-color-surface-container-high-dark, #3a3a3a);
+    --today-bg: var(--smrt-color-primary-container-dark, #1e3a5f);
+    --today-border: var(--smrt-color-primary-dark, #64b5f6);
+    --other-month: var(--smrt-color-on-surface-variant-dark, #666666);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -303,17 +303,17 @@ const yearOptions = $derived(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--spacing-md, 1rem) var(--spacing-lg, 1.5rem);
+    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-6, 1.5rem);
     background: var(--calendar-header-bg);
     border-bottom: 1px solid var(--calendar-border);
     flex-wrap: wrap;
-    gap: var(--spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 
   .nav-buttons {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 
   .nav-btn {
@@ -322,20 +322,20 @@ const yearOptions = $derived(() => {
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: var(--radius-md, 8px);
-    color: var(--color-text-secondary, #666);
-    transition: all var(--transition-fast, 150ms);
+    border-radius: var(--smrt-radius-medium, 8px);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .nav-btn:hover {
     background: var(--day-hover);
-    color: var(--color-text-primary, #333);
+    color: var(--smrt-color-on-surface, #1b1b1f);
   }
 
   .current-month {
-    font-size: var(--font-size-lg, 1.125rem);
-    font-weight: var(--font-weight-semibold, 600);
-    color: var(--color-text-primary, #333);
+    font-size: var(--smrt-typography-title-large-size, 1.125rem);
+    font-weight: var(--smrt-typography-title-large-weight, 600);
+    color: var(--smrt-color-on-surface, #1b1b1f);
     min-width: 160px;
     text-align: center;
   }
@@ -343,51 +343,51 @@ const yearOptions = $derived(() => {
   .selectors {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 
   .month-select,
   .year-select {
-    padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
     border: 1px solid var(--calendar-border);
-    border-radius: var(--radius-sm, 4px);
-    font-size: var(--font-size-sm, 0.875rem);
+    border-radius: var(--smrt-radius-small, 4px);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     background: var(--calendar-bg);
     cursor: pointer;
   }
 
   .today-btn {
-    padding: var(--spacing-xs, 0.25rem) var(--spacing-md, 1rem);
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-4, 1rem);
     border: 1px solid var(--calendar-border);
     border-radius: var(--radius-sm, 4px);
-    font-size: var(--font-size-sm, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     background: var(--calendar-bg);
-    color: var(--color-primary-main, #1976d2);
-    font-weight: var(--font-weight-medium, 500);
-    transition: all var(--transition-fast, 150ms);
+    color: var(--smrt-color-primary, #005ac1);
+    font-weight: var(--smrt-typography-body-medium-weight, 500);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .today-btn:hover {
-    background: var(--color-primary-light, #e3f2fd);
+    background: var(--smrt-color-primary-container, #d6e3ff);
   }
 
   .calendar-grid {
-    padding: var(--spacing-sm, 0.5rem);
+    padding: var(--smrt-spacing-2, 0.5rem);
   }
 
   .day-headers {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
-    margin-bottom: var(--spacing-xs, 0.25rem);
+    margin-bottom: var(--smrt-spacing-1, 0.25rem);
   }
 
   .day-header {
-    padding: var(--spacing-sm, 0.5rem);
+    padding: var(--smrt-spacing-2, 0.5rem);
     text-align: center;
-    font-size: var(--font-size-sm, 0.875rem);
-    font-weight: var(--font-weight-medium, 500);
-    color: var(--color-text-secondary, #666);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-body-medium-weight, 500);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .days {
@@ -401,11 +401,11 @@ const yearOptions = $derived(() => {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: var(--spacing-xs, 0.25rem);
-    border-radius: var(--radius-sm, 4px);
+    padding: var(--smrt-spacing-1, 0.25rem);
+    border-radius: var(--smrt-radius-small, 4px);
     text-decoration: none;
-    color: var(--color-text-primary, #333);
-    transition: all var(--transition-fast, 150ms);
+    color: var(--smrt-color-on-surface, #1b1b1f);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
     min-height: 60px;
   }
 
@@ -418,7 +418,7 @@ const yearOptions = $derived(() => {
   }
 
   .day-cell.other-month:hover {
-    color: var(--color-text-secondary, #666);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .day-cell.today {
@@ -427,11 +427,11 @@ const yearOptions = $derived(() => {
   }
 
   .day-cell.has-events {
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--smrt-typography-body-medium-weight, 500);
   }
 
   .day-number {
-    font-size: var(--font-size-sm, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     line-height: 1;
   }
 
@@ -450,7 +450,7 @@ const yearOptions = $derived(() => {
 
   .event-more {
     font-size: 10px;
-    color: var(--color-text-secondary, #666);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   @media (max-width: 640px) {
@@ -468,8 +468,8 @@ const yearOptions = $derived(() => {
     }
 
     .day-header {
-      font-size: var(--font-size-xs, 0.75rem);
-      padding: var(--spacing-xs, 0.25rem);
+      font-size: var(--smrt-typography-body-small-size, 0.75rem);
+      padding: var(--smrt-spacing-1, 0.25rem);
     }
 
     .day-cell {
@@ -477,7 +477,7 @@ const yearOptions = $derived(() => {
     }
 
     .day-number {
-      font-size: var(--font-size-xs, 0.75rem);
+      font-size: var(--smrt-typography-body-small-size, 0.75rem);
     }
 
     .event-indicators {

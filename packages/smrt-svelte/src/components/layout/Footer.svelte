@@ -2,7 +2,7 @@
 import type { Snippet } from 'svelte';
 import Container from './Container.svelte';
 
-interface Props {
+export interface Props {
   children?: Snippet;
 }
 
@@ -27,30 +27,30 @@ const currentYear = new Date().getFullYear();
 
 <style>
   .site-footer {
-    background: var(--color-neutral-gray100);
-    border-top: 1px solid var(--color-neutral-gray200);
-    padding: var(--spacing-2xl) 0;
-    margin-top: var(--spacing-3xl);
+    background: var(--smrt-color-surface-container-low);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    padding: var(--smrt-spacing-8) 0;
+    margin-top: var(--smrt-spacing-12);
     text-align: center;
-    color: var(--color-text-secondary);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .footer-content {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--smrt-spacing-4);
     align-items: center;
   }
 
   .copyright {
     margin: 0;
-    font-size: var(--font-size-sm);
+    font-size: var(--smrt-typography-body-medium-size);
   }
 
   .footer-links :global(a) {
-    color: var(--color-primary-main);
+    color: var(--smrt-color-primary);
     text-decoration: none;
-    margin: 0 var(--spacing-sm);
+    margin: 0 var(--smrt-spacing-2);
   }
 
   .footer-links :global(a:hover) {

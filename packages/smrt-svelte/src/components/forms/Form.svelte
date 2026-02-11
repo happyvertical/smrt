@@ -10,7 +10,7 @@ import {
 } from '../../state/form-context.js';
 import type { LLMModelId, STTAdapterType } from './types.js';
 
-interface Props {
+export interface Props {
   /** Form children */
   children: Snippet;
   /** Show mode toggle button */
@@ -645,7 +645,7 @@ function getFormData(): Record<string, unknown> {
 
   .mode-toggle {
     display: flex;
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
     padding: 4px;
     border-radius: 8px;
   }
@@ -654,21 +654,21 @@ function getFormData(): Record<string, unknown> {
     padding: 8px 16px;
     border: none;
     background: transparent;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.875rem;
     font-weight: 500;
-    transition: all 0.2s;
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .mode-btn:hover {
-    color: #374151;
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .mode-btn.active {
-    background: #fff;
-    color: #3b82f6;
+    background: var(--smrt-color-surface, #fff);
+    color: var(--smrt-color-primary, #3b82f6);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 
@@ -677,31 +677,31 @@ function getFormData(): Record<string, unknown> {
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    border: 2px solid #3b82f6;
+    border: 2px solid var(--smrt-color-primary, #3b82f6);
     background: #fff;
     color: #3b82f6;
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.875rem;
     font-weight: 500;
-    transition: all 0.2s;
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .form-listen-btn:hover {
-    background: #eff6ff;
+    background: var(--smrt-color-primary-container, #eff6ff);
   }
 
   .form-listen-btn.listening {
-    background: #22c55e;
-    border-color: #22c55e;
-    color: #fff;
-    animation: pulse-btn 1.5s ease-in-out infinite;
+    background: var(--smrt-color-primary, #22c55e);
+    border-color: var(--smrt-color-primary, #22c55e);
+    color: var(--smrt-color-on-primary, #fff);
+    animation: pulse-btn 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
 
   .form-listen-btn.extracting {
-    background: #f59e0b;
-    border-color: #f59e0b;
-    color: #fff;
+    background: var(--smrt-color-secondary, #f59e0b);
+    border-color: var(--smrt-color-secondary, #f59e0b);
+    color: var(--smrt-color-on-secondary, #fff);
   }
 
   .form-listen-btn:disabled {
@@ -714,6 +714,12 @@ function getFormData(): Record<string, unknown> {
     }
     50% {
       box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .form-listen-btn.listening {
+      animation: none;
     }
   }
 
@@ -733,7 +739,7 @@ function getFormData(): Record<string, unknown> {
     left: 0;
     right: 0;
     padding: 12px 24px;
-    background: rgba(22, 101, 52, 0.9);
+    background: rgba(var(--smrt-color-primary-rgb, 22, 101, 52), 0.9);
     color: white;
     font-size: 0.875rem;
     box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
@@ -744,7 +750,7 @@ function getFormData(): Record<string, unknown> {
   }
 
   .spoken-toaster strong {
-    color: #bbf7d0;
+    color: var(--smrt-color-on-primary-container, #bbf7d0);
   }
 
   @keyframes slideUp {

@@ -11,7 +11,7 @@
  * - Material 3 styling
  */
 
-interface Props {
+export interface Props {
   /** Accepted file types (e.g., '.pdf,.csv' or 'application/pdf,text/csv') */
   accept?: string;
   /** Allow multiple files */
