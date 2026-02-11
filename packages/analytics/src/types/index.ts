@@ -84,6 +84,22 @@ export enum CountingMethod {
 }
 
 // ============================================================================
+// Analytics aggregation types
+// ============================================================================
+
+/**
+ * Day-over-day property stats with trend calculation
+ */
+export interface PropertyStatsWithTrend {
+  todayPageviews: number;
+  todayUsers: number;
+  yesterdayPageviews: number;
+  yesterdayUsers: number;
+  trend: 'up' | 'down' | 'flat';
+  trendPercent: number;
+}
+
+// ============================================================================
 // SDK-compatible type definitions
 // These mirror the types from @happyvertical/analytics for when SDK is not installed
 // ============================================================================
