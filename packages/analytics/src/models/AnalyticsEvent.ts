@@ -21,6 +21,7 @@ import { TrackingEventStatus } from '../types/index.js';
  * ```
  */
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get', 'track'] },
   cli: true,
