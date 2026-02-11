@@ -14,10 +14,12 @@ export {
 export { ripple } from './actions/ripple.js';
 // Admin components
 export * from './components/admin/index.js';
+// Agents components
+export * from './components/agents/index.js';
 // AI Components
 export * from './components/ai/index.js';
 // Auth components
-export { default as UserMenu } from './components/auth/UserMenu.svelte';
+export * from './components/auth/index.js';
 // Calendar components
 export * from './components/calendar/index.js';
 // Commerce components
@@ -32,6 +34,8 @@ export * from './components/display/index.js';
 export * from './components/feedback/index.js';
 // Form components
 export * from './components/forms/index.js';
+// Jobs components
+export * from './components/jobs/index.js';
 // Layout components
 export * from './components/layout/index.js';
 // Meeting components
