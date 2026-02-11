@@ -59,33 +59,33 @@ const statusConfig: Record<
 > = {
   draft: {
     label: 'Draft',
-    bg: 'var(--md-sys-color-surface-variant, #e7e0ec)',
-    text: 'var(--md-sys-color-on-surface-variant, #49454f)',
+    bg: 'var(--smrt-color-surface-variant, #e7e0ec)',
+    text: 'var(--smrt-color-on-surface-variant, #49454f)',
   },
   sent: {
     label: 'Sent',
-    bg: 'var(--md-sys-color-primary-container, #d3e3fd)',
-    text: 'var(--md-sys-color-on-primary-container, #041e49)',
+    bg: 'var(--smrt-color-primary-container, #d3e3fd)',
+    text: 'var(--smrt-color-on-primary-container, #041e49)',
   },
   viewed: {
     label: 'Viewed',
-    bg: 'var(--md-sys-color-secondary-container, #e3e0f9)',
-    text: 'var(--md-sys-color-on-secondary-container, #1d192b)',
+    bg: 'var(--smrt-color-secondary-container, #e3e0f9)',
+    text: 'var(--smrt-color-on-secondary-container, #1d192b)',
   },
   paid: {
     label: 'Paid',
-    bg: 'var(--md-sys-color-tertiary-container, #ddf5e5)',
-    text: 'var(--md-sys-color-on-tertiary-container, #0c1f15)',
+    bg: 'var(--smrt-color-tertiary-container, #ddf5e5)',
+    text: 'var(--smrt-color-on-tertiary-container, #0c1f15)',
   },
   overdue: {
     label: 'Overdue',
-    bg: 'var(--md-sys-color-error-container, #ffdad6)',
-    text: 'var(--md-sys-color-on-error-container, #410002)',
+    bg: 'var(--smrt-color-error-container, #ffdad6)',
+    text: 'var(--smrt-color-on-error-container, #410002)',
   },
   cancelled: {
     label: 'Cancelled',
-    bg: 'var(--md-sys-color-error-container, #ffdad6)',
-    text: 'var(--md-sys-color-error, #ba1a1a)',
+    bg: 'var(--smrt-color-error-container, #ffdad6)',
+    text: 'var(--smrt-color-error, #ba1a1a)',
   },
 };
 
@@ -164,55 +164,55 @@ const isOverdue = $derived.by(() => {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: var(--md-sys-spacing-6, 1.5rem);
-    padding: var(--md-sys-spacing-6, 1.5rem);
-    background: var(--md-sys-color-surface, #ffffff);
-    border: 1px solid var(--md-sys-color-outline-variant, #c4c6d0);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
+    gap: var(--smrt-spacing-6, 1.5rem);
+    padding: var(--smrt-spacing-6, 1.5rem);
+    background: var(--smrt-color-surface, #ffffff);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
     flex-wrap: wrap;
   }
 
   .header-main {
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-2, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 
   .invoice-title {
     display: flex;
     align-items: center;
-    gap: var(--md-sys-spacing-3, 0.75rem);
+    gap: var(--smrt-spacing-3, 0.75rem);
   }
 
   .invoice-number {
-    font: var(--md-sys-typescale-title-large-font);
+    font: var(--smrt-typography-title-large-font);
     font-weight: 600;
-    color: var(--md-sys-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface, #1c1b1f);
     margin: 0;
   }
 
   .status-badge {
     display: inline-flex;
     align-items: center;
-    padding: var(--md-sys-spacing-1, 0.25rem) var(--md-sys-spacing-3, 0.75rem);
-    font: var(--md-sys-typescale-label-small-font);
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
+    font: var(--smrt-typography-label-small-font);
     font-weight: 500;
-    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    border-radius: var(--smrt-radius-full, 9999px);
     text-transform: capitalize;
   }
 
   .invoice-context {
     display: flex;
-    gap: var(--md-sys-spacing-4, 1rem);
+    gap: var(--smrt-spacing-4, 1rem);
     flex-wrap: wrap;
   }
 
   .context-item {
     display: inline-flex;
     align-items: center;
-    gap: var(--md-sys-spacing-1-5, 0.375rem);
-    font: var(--md-sys-typescale-body-medium-font);
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    gap: var(--smrt-spacing-1-5, 0.375rem);
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .context-item svg {
@@ -221,34 +221,34 @@ const isOverdue = $derived.by(() => {
 
   .header-meta {
     display: flex;
-    gap: var(--md-sys-spacing-6, 1.5rem);
+    gap: var(--smrt-spacing-6, 1.5rem);
     flex-wrap: wrap;
   }
 
   .meta-item {
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-0-5, 0.125rem);
+    gap: var(--smrt-spacing-0-5, 0.125rem);
   }
 
   .meta-label {
-    font: var(--md-sys-typescale-label-small-font);
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    font: var(--smrt-typography-label-small-font);
+    color: var(--smrt-color-on-surface-variant, #49454f);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
 
   .meta-value {
-    font: var(--md-sys-typescale-body-medium-font);
+    font: var(--smrt-typography-body-medium-font);
     font-weight: 500;
-    color: var(--md-sys-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .meta-item.overdue .meta-value {
-    color: var(--md-sys-color-error, #ba1a1a);
+    color: var(--smrt-color-error, #ba1a1a);
   }
 
   .meta-item.paid .meta-value {
-    color: var(--md-sys-color-tertiary, #006c4c);
+    color: var(--smrt-color-tertiary, #006c4c);
   }
 </style>

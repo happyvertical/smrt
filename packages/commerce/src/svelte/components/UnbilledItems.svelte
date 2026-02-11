@@ -162,8 +162,8 @@ const someSelected = $derived(
   .unbilled-items {
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--md-sys-color-outline-variant, #c4c6d0);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
     overflow: hidden;
   }
 
@@ -171,8 +171,8 @@ const someSelected = $derived(
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--md-sys-spacing-8, 2rem) var(--md-sys-spacing-4, 1rem);
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    padding: var(--smrt-spacing-8, 2rem) var(--smrt-spacing-4, 1rem);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .empty-state p {
@@ -183,24 +183,24 @@ const someSelected = $derived(
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--md-sys-spacing-3, 0.75rem) var(--md-sys-spacing-4, 1rem);
-    background: var(--md-sys-color-surface-container-low, #f7f2fa);
-    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6d0);
+    padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
+    background: var(--smrt-color-surface-container-low, #f7f2fa);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
   }
 
   .select-all {
     display: flex;
     align-items: center;
-    gap: var(--md-sys-spacing-2, 0.5rem);
-    font: var(--md-sys-typescale-body-medium-font);
+    gap: var(--smrt-spacing-2, 0.5rem);
+    font: var(--smrt-typography-body-medium-font);
     font-weight: 500;
-    color: var(--md-sys-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface, #1c1b1f);
     cursor: pointer;
   }
 
   .selected-count {
-    font: var(--md-sys-typescale-label-small-font);
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    font: var(--smrt-typography-label-small-font);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .items-list {
@@ -208,17 +208,17 @@ const someSelected = $derived(
     flex-direction: column;
     max-height: 400px;
     overflow-y: auto;
-    background: var(--md-sys-color-surface, #ffffff);
+    background: var(--smrt-color-surface, #ffffff);
   }
 
   .item-row {
     display: flex;
     align-items: center;
-    gap: var(--md-sys-spacing-3, 0.75rem);
-    padding: var(--md-sys-spacing-3, 0.75rem) var(--md-sys-spacing-4, 1rem);
-    border-bottom: 1px solid var(--md-sys-color-surface-variant, #e7e0ec);
+    gap: var(--smrt-spacing-3, 0.75rem);
+    padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
+    border-bottom: 1px solid var(--smrt-color-surface-variant, #e7e0ec);
     cursor: pointer;
-    transition: background var(--md-sys-motion-duration-short, 150ms) var(--md-sys-motion-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: background var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -228,11 +228,11 @@ const someSelected = $derived(
   }
 
   .item-row:hover {
-    background: var(--md-sys-color-surface-container-low, #f7f2fa);
+    background: var(--smrt-color-surface-container-low, #f7f2fa);
   }
 
   .item-row.selected {
-    background: var(--md-sys-color-primary-container, #d3e3fd);
+    background: var(--smrt-color-primary-container, #d3e3fd);
   }
 
   .item-row:last-child {
@@ -243,39 +243,39 @@ const someSelected = $derived(
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-1, 0.25rem);
+    gap: var(--smrt-spacing-1, 0.25rem);
     min-width: 0;
   }
 
   .item-main {
     display: flex;
     align-items: center;
-    gap: var(--md-sys-spacing-2, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 
   .item-type {
     display: inline-flex;
-    padding: var(--md-sys-spacing-0-5, 0.125rem) var(--md-sys-spacing-2, 0.5rem);
-    font: var(--md-sys-typescale-label-small-font);
+    padding: var(--smrt-spacing-0-5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
+    font: var(--smrt-typography-label-small-font);
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .type-expense {
-    background: var(--md-sys-color-tertiary-container, #ddf5e5);
-    color: var(--md-sys-color-on-tertiary-container, #0c1f15);
+    background: var(--smrt-color-tertiary-container, #ddf5e5);
+    color: var(--smrt-color-on-tertiary-container, #0c1f15);
   }
 
   .type-time {
-    background: var(--md-sys-color-primary-container, #d3e3fd);
-    color: var(--md-sys-color-on-primary-container, #041e49);
+    background: var(--smrt-color-primary-container, #d3e3fd);
+    color: var(--smrt-color-on-primary-container, #041e49);
   }
 
   .item-description {
-    font: var(--md-sys-typescale-body-medium-font);
-    color: var(--md-sys-color-on-surface, #1c1b1f);
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface, #1c1b1f);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -283,19 +283,19 @@ const someSelected = $derived(
 
   .item-meta {
     display: flex;
-    gap: var(--md-sys-spacing-3, 0.75rem);
-    font: var(--md-sys-typescale-body-small-font);
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    gap: var(--smrt-spacing-3, 0.75rem);
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .item-category {
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .item-amount {
-    font: var(--md-sys-typescale-body-medium-font);
+    font: var(--smrt-typography-body-medium-font);
     font-weight: 500;
-    color: var(--md-sys-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface, #1c1b1f);
     font-variant-numeric: tabular-nums;
   }
 
@@ -303,40 +303,40 @@ const someSelected = $derived(
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--md-sys-spacing-4, 1rem);
-    background: var(--md-sys-color-surface-container-low, #f7f2fa);
-    border-top: 1px solid var(--md-sys-color-outline-variant, #c4c6d0);
+    padding: var(--smrt-spacing-4, 1rem);
+    background: var(--smrt-color-surface-container-low, #f7f2fa);
+    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
   }
 
   .selected-summary {
     display: flex;
     align-items: baseline;
-    gap: var(--md-sys-spacing-2, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 
   .summary-label {
-    font: var(--md-sys-typescale-body-medium-font);
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .summary-value {
-    font: var(--md-sys-typescale-title-large-font);
+    font: var(--smrt-typography-title-large-font);
     font-weight: 600;
-    color: var(--md-sys-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .create-btn {
     display: inline-flex;
     align-items: center;
-    padding: var(--md-sys-spacing-2, 0.5rem) var(--md-sys-spacing-4, 1rem);
-    font: var(--md-sys-typescale-label-large-font);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 500;
-    color: var(--md-sys-color-on-primary, #ffffff);
-    background: var(--md-sys-color-primary, #005ac1);
+    color: var(--smrt-color-on-primary, #ffffff);
+    background: var(--smrt-color-primary, #005ac1);
     border: none;
-    border-radius: var(--md-sys-shape-corner-small, 0.375rem);
+    border-radius: var(--smrt-radius-small, 0.375rem);
     cursor: pointer;
-    transition: background var(--md-sys-motion-duration-short, 150ms) var(--md-sys-motion-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: background var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -346,6 +346,6 @@ const someSelected = $derived(
   }
 
   .create-btn:hover {
-    background: var(--md-sys-color-primary-hover, #004493);
+    background: var(--smrt-color-primary-hover, #004493);
   }
 </style>

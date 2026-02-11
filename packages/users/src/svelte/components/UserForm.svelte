@@ -73,7 +73,7 @@ function handleSubmit(e: Event) {
   .user-form {
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
   }
 
   .field {
@@ -83,50 +83,50 @@ function handleSubmit(e: Event) {
   }
 
   label {
-    font: var(--md-sys-typescale-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   input,
   select {
-    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 0.75rem);
-    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
-    transition: border-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 0.75rem);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    transition: border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   input:focus,
   select:focus {
     outline: none;
-    border-color: var(--md-sys-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px var(--md-sys-color-primary-container, rgba(0, 90, 193, 0.1));
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
 
   input:disabled,
   select:disabled {
-    background: var(--md-sys-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container, #f3f4f6);
     cursor: not-allowed;
   }
 
   .hint {
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
-    margin-top: var(--md-sys-spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-sm, 0.5rem);
+    margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
 
   button {
-    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
-    font: var(--md-sys-typescale-label-large-font, 500 0.875rem / 1.25 sans-serif);
+    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   button:disabled {
@@ -135,24 +135,24 @@ function handleSubmit(e: Event) {
   }
 
   .btn-primary {
-    background: var(--md-sys-color-primary, #005ac1);
-    color: var(--md-sys-color-on-primary, #ffffff);
+    background: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-on-primary, #ffffff);
     border: none;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--md-sys-color-primary-container, #005ac1);
+    background: var(--smrt-color-primary-container, #005ac1);
     opacity: 0.9;
   }
 
   .btn-secondary {
-    background: var(--md-sys-color-surface, white);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
-    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    background: var(--smrt-color-surface, white);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--md-sys-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
   }
 
   @media (prefers-reduced-motion: reduce) {

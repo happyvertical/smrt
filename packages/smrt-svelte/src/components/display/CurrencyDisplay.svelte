@@ -88,19 +88,19 @@ const colorClass = $derived.by(() => {
   }
 
   .currency-display.sm {
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   .currency-display.lg {
-    font-size: var(--md-sys-typescale-title-large-size, 1.25rem);
-    font-weight: var(--md-sys-typescale-title-large-weight, 600);
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    font-weight: var(--smrt-typography-title-large-weight, 600);
   }
 
   .currency-display.negative {
-    color: var(--md-sys-color-error, #dc2626);
+    color: var(--smrt-color-error, #dc2626);
   }
 
   .currency-display.positive {
-    color: var(--md-sys-color-tertiary, #16a34a);
+    color: var(--smrt-color-tertiary, #16a34a);
   }
 </style>

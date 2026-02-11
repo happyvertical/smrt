@@ -114,8 +114,8 @@ const icons = {
     width: 96px;
     height: 96px;
     margin-bottom: 2rem;
-    background-color: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
     border-radius: 28px; /* M3 extra large shape */
     padding: 24px;
   }
@@ -137,23 +137,23 @@ const icons = {
   }
 
   .empty-title {
-    font: var(--md-sys-typescale-title-large-font);
-    color: var(--md-sys-color-on-surface);
+    font: var(--smrt-typography-title-large-font);
+    color: var(--smrt-color-on-surface);
     margin: 0 0 0.75rem;
     font-weight: 500;
   }
 
   .sm .empty-title {
-    font: var(--md-sys-typescale-title-medium-font);
+    font: var(--smrt-typography-title-medium-font);
   }
 
   .lg .empty-title {
-    font: var(--md-sys-typescale-headline-small-font);
+    font: var(--smrt-typography-headline-small-font);
   }
 
   .empty-description {
-    font: var(--md-sys-typescale-body-medium-font);
-    color: var(--md-sys-color-on-surface-variant);
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface-variant);
     margin: 0 0 2rem;
     max-width: 440px;
     line-height: 1.5;
@@ -166,10 +166,10 @@ const icons = {
     gap: 8px;
     padding: 0 24px;
     height: 40px;
-    font: var(--md-sys-typescale-label-large-font);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 500;
-    color: var(--md-sys-color-on-primary);
-    background-color: var(--md-sys-color-primary);
+    color: var(--smrt-color-on-primary);
+    background-color: var(--smrt-color-primary);
     border: none;
     border-radius: 20px;
     text-decoration: none;
@@ -177,11 +177,11 @@ const icons = {
     transition: box-shadow 200ms, background-color 200ms;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .action-button:hover {
-    background-color: var(--md-sys-color-primary);
-    box-shadow: var(--md-sys-elevation-level2);
+    background-color: var(--smrt-color-primary);
+    box-shadow: var(--smrt-elevation-level2);
   }
 </style>

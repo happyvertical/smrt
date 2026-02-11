@@ -144,7 +144,7 @@ function handleChange(e: Event) {
   .checkbox {
     width: 18px;
     height: 18px;
-    border: 2px solid var(--md-sys-color-on-surface-variant);
+    border: 2px solid var(--smrt-color-on-surface-variant);
     border-radius: 2px;
     display: flex;
     align-items: center;
@@ -154,29 +154,29 @@ function handleChange(e: Event) {
   }
 
   .checkbox.checked {
-    background-color: var(--md-sys-color-primary);
-    border-color: var(--md-sys-color-primary);
+    background-color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
   }
 
   /* Smrt mode styling */
   .smrt-mode .checkbox.checked {
-    background-color: var(--md-sys-color-tertiary);
-    border-color: var(--md-sys-color-tertiary);
+    background-color: var(--smrt-color-tertiary);
+    border-color: var(--smrt-color-tertiary);
   }
 
   .icon {
     width: 14px;
     height: 14px;
-    fill: var(--md-sys-color-on-primary);
+    fill: var(--smrt-color-on-primary);
   }
 
   .smrt-mode .icon {
-    fill: var(--md-sys-color-on-tertiary);
+    fill: var(--smrt-color-on-tertiary);
   }
 
   .label {
     font-size: 0.875rem;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
     cursor: inherit;
   }
 
@@ -186,7 +186,7 @@ function handleChange(e: Event) {
   }
 
   .input:focus-visible ~ .state-layer {
-    background-color: var(--md-sys-color-on-surface);
+    background-color: var(--smrt-color-on-surface);
     opacity: 0.12;
   }
 
@@ -202,7 +202,7 @@ function handleChange(e: Event) {
   }
 
   .container:hover .state-layer {
-    background-color: var(--md-sys-color-on-surface);
+    background-color: var(--smrt-color-on-surface);
     opacity: 0.08;
   }
 </style>

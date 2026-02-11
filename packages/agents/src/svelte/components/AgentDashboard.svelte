@@ -168,7 +168,7 @@ const stats = $derived.by(() => {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-lg, 1.5rem);
+    gap: var(--smrt-spacing-lg, 1.5rem);
   }
 
   .agent-dashboard.loading {
@@ -189,34 +189,34 @@ const stats = $derived.by(() => {
   .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
   }
 
   .stat-card {
     text-align: center;
-    padding: var(--md-sys-spacing-xs, 0.25rem);
+    padding: var(--smrt-spacing-xs, 0.25rem);
   }
 
   .stat-card__value {
-    font: var(--md-sys-typescale-headline-small-font, 700 1.5rem / 1.2 sans-serif);
+    font: var(--smrt-typography-headline-small-font, 700 1.5rem / 1.2 sans-serif);
   }
 
   .stat-card__label {
-    font: var(--md-sys-typescale-body-small-font, 0.875rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
-    margin-top: var(--md-sys-spacing-xs, 0.25rem);
+    font: var(--smrt-typography-body-small-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    margin-top: var(--smrt-spacing-xs, 0.25rem);
   }
 
   .stat-card--active .stat-card__value {
-    color: var(--md-sys-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary, #006c4f);
   }
 
   .stat-card--running .stat-card__value {
-    color: var(--md-sys-color-primary, #005ac1);
+    color: var(--smrt-color-primary, #005ac1);
   }
 
   .stat-card--error .stat-card__value {
-    color: var(--md-sys-color-error, #ba1a1a);
+    color: var(--smrt-color-error, #ba1a1a);
   }
 
   .agent-dashboard__section {
@@ -231,16 +231,16 @@ const stats = $derived.by(() => {
 
   .panel-header h2 {
     margin: 0;
-    font: var(--md-sys-typescale-title-medium-font, 600 1rem / 1.5 sans-serif);
+    font: var(--smrt-typography-title-medium-font, 600 1rem / 1.5 sans-serif);
   }
 
   .empty-state {
-    padding: var(--md-sys-spacing-lg, 1.5rem);
+    padding: var(--smrt-spacing-lg, 1.5rem);
     text-align: center;
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .empty-state p {
-    margin: 0 0 var(--md-sys-spacing-md, 1rem) 0;
+    margin: 0 0 var(--smrt-spacing-md, 1rem) 0;
   }
 </style>

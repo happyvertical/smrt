@@ -159,7 +159,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 
   .tabs-nav {
     display: flex;
-    border-bottom: 1px solid var(--md-sys-color-surface-variant);
+    border-bottom: 1px solid var(--smrt-color-surface-variant);
     width: 100%;
   }
 
@@ -171,9 +171,9 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     justify-content: center;
     padding: 0 16px;
     height: 48px;
-    font: var(--md-sys-typescale-title-small-font);
+    font: var(--smrt-typography-title-small-font);
     font-weight: 500;
-    color: var(--md-sys-color-on-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
     background: transparent;
     border: none;
     cursor: pointer;
@@ -185,26 +185,26 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
 
   .sm .tab-button {
     height: 40px;
-    font: var(--md-sys-typescale-label-large-font);
+    font: var(--smrt-typography-label-large-font);
   }
 
   .lg .tab-button {
     height: 56px;
-    font: var(--md-sys-typescale-title-medium-font);
+    font: var(--smrt-typography-title-medium-font);
   }
 
   .tab-button:hover:not(:disabled) {
-    background-color: var(--md-sys-color-surface-container-high);
-    color: var(--md-sys-color-on-surface);
+    background-color: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   .tab-button:focus-visible {
-    outline: 2px solid var(--md-sys-color-primary);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
   .tab-button.active {
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
   }
 
   .tab-button:disabled {
@@ -220,7 +220,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
   }
 
   .tab-count {
-    font: var(--md-sys-typescale-label-small-font);
+    font: var(--smrt-typography-label-small-font);
     opacity: 0.7;
   }
 
@@ -228,7 +228,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     position: absolute;
     bottom: 0;
     height: 3px;
-    background-color: var(--md-sys-color-primary);
+    background-color: var(--smrt-color-primary);
     border-radius: 3px 3px 0 0;
     transition: width 200ms, opacity 200ms;
     width: 0;

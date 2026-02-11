@@ -45,21 +45,21 @@ const colors = $derived.by(() => {
   switch (level) {
     case 'high':
       return {
-        bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-        text: 'var(--md-sys-color-on-primary-container, #166534)',
-        bar: 'var(--md-sys-color-primary, #22c55e)',
+        bg: 'var(--smrt-color-primary-container, #dcfce7)',
+        text: 'var(--smrt-color-on-primary-container, #166534)',
+        bar: 'var(--smrt-color-primary, #22c55e)',
       };
     case 'medium':
       return {
-        bg: 'var(--md-sys-color-secondary-container, #fef3c7)',
-        text: 'var(--md-sys-color-on-secondary-container, #92400e)',
-        bar: 'var(--md-sys-color-secondary, #f59e0b)',
+        bg: 'var(--smrt-color-secondary-container, #fef3c7)',
+        text: 'var(--smrt-color-on-secondary-container, #92400e)',
+        bar: 'var(--smrt-color-secondary, #f59e0b)',
       };
     case 'low':
       return {
-        bg: 'var(--md-sys-color-error-container, #fee2e2)',
-        text: 'var(--md-sys-color-on-error-container, #dc2626)',
-        bar: 'var(--md-sys-color-error, #ef4444)',
+        bg: 'var(--smrt-color-error-container, #fee2e2)',
+        text: 'var(--smrt-color-on-error-container, #dc2626)',
+        bar: 'var(--smrt-color-error, #ef4444)',
       };
   }
 });

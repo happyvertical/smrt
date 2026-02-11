@@ -147,20 +147,20 @@ function handleKeydown(event: KeyboardEvent) {
   .time-entry-card {
     display: flex;
     align-items: stretch;
-    background: var(--md-sys-color-surface);
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium, 12px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium, 12px);
     overflow: hidden;
-    transition: all 0.2s var(--md-sys-motion-easing-standard);
+    transition: all 0.2s var(--smrt-easing-standard);
   }
 
   .time-entry-card:hover {
-    border-color: var(--md-sys-color-outline);
+    border-color: var(--smrt-color-outline);
   }
 
   .time-entry-card.selected {
-    border-color: var(--md-sys-color-primary);
-    background: var(--md-sys-color-primary-container);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
   }
 
   .time-entry-card.clickable .card-content {
@@ -168,22 +168,22 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   .time-entry-card.clickable:hover {
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .checkbox-wrapper {
     display: flex;
     align-items: center;
     padding: 1rem;
-    background: var(--md-sys-color-surface-container-low);
-    border-right: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
+    border-right: 1px solid var(--smrt-color-outline-variant);
   }
 
   .checkbox-wrapper input[type='checkbox'] {
     width: 1.25rem;
     height: 1.25rem;
     cursor: pointer;
-    accent-color: var(--md-sys-color-primary);
+    accent-color: var(--smrt-color-primary);
   }
 
   .card-content {
@@ -202,9 +202,9 @@ function handleKeydown(event: KeyboardEvent) {
 
   a.card-content:focus,
   button.card-content:focus {
-    outline: 2px solid var(--md-sys-color-primary);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
-    border-radius: var(--md-sys-shape-corner-small, 8px);
+    border-radius: var(--smrt-radius-small, 8px);
   }
 
   .entry-header {
@@ -215,18 +215,18 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   .date {
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .status-badge {
-    font-size: var(--md-sys-typescale-label-small-size, 0.625rem);
-    font-weight: var(--md-sys-typescale-label-small-weight, 500);
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    font-weight: var(--smrt-typography-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--md-sys-shape-corner-small, 8px);
+    border-radius: var(--smrt-radius-small, 8px);
     background: var(--status-color);
-    color: var(--md-sys-color-on-primary);
-    letter-spacing: var(--md-sys-typescale-label-small-tracking, 0.5px);
+    color: var(--smrt-color-on-primary);
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
   }
 
   .entry-body {
@@ -235,15 +235,15 @@ function handleKeydown(event: KeyboardEvent) {
 
   .description {
     margin: 0;
-    font-size: var(--md-sys-typescale-body-large-size, 0.9375rem);
-    color: var(--md-sys-color-on-surface);
-    line-height: var(--md-sys-typescale-body-large-line-height, 1.5);
+    font-size: var(--smrt-typography-body-large-size, 0.9375rem);
+    color: var(--smrt-color-on-surface);
+    line-height: var(--smrt-typography-body-large-line-height, 1.5);
   }
 
   .worker {
     margin: 0.25rem 0 0;
-    font-size: var(--md-sys-typescale-body-small-size, 0.8125rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.8125rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .entry-footer {
@@ -259,32 +259,32 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   .hours-value {
-    font-size: var(--md-sys-typescale-body-large-size, 1rem);
-    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
-    color: var(--md-sys-color-primary);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
+    color: var(--smrt-color-primary);
   }
 
   .rate {
-    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .amount {
-    font-size: var(--md-sys-typescale-body-large-size, 1rem);
-    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
-    color: var(--md-sys-color-on-surface);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
+    color: var(--smrt-color-on-surface);
   }
 
   .mileage {
     margin-top: 0.5rem;
-    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .card-actions {
     display: flex;
     align-items: center;
     padding: 0.5rem;
-    border-left: 1px solid var(--md-sys-color-outline-variant);
+    border-left: 1px solid var(--smrt-color-outline-variant);
   }
 </style>

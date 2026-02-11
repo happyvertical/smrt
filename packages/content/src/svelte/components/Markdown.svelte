@@ -154,33 +154,33 @@ const rendered = $derived(renderMarkdown(content));
 
 <style>
   .markdown-content {
-    font-size: var(--md-sys-typescale-body-large-size, 1rem);
-    line-height: var(--md-sys-typescale-body-large-line-height, 1.5);
-    color: var(--md-sys-color-on-surface);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    line-height: var(--smrt-typography-body-large-line-height, 1.5);
+    color: var(--smrt-color-on-surface);
   }
 
   .markdown-content :global(h1) {
-    font-size: var(--md-sys-typescale-headline-large-size, 2rem);
+    font-size: var(--smrt-typography-headline-large-size, 2rem);
     margin: var(--spacing-2xl, 2rem) 0 var(--spacing-lg, 1rem) 0;
-    color: var(--md-sys-color-on-surface);
-    font-weight: var(--md-sys-typescale-headline-large-weight, 400);
-    line-height: var(--md-sys-typescale-headline-large-line-height, 2.5rem);
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-headline-large-weight, 400);
+    line-height: var(--smrt-typography-headline-large-line-height, 2.5rem);
   }
 
   .markdown-content :global(h2) {
-    font-size: var(--md-sys-typescale-headline-medium-size, 1.75rem);
+    font-size: var(--smrt-typography-headline-medium-size, 1.75rem);
     margin: var(--spacing-xl, 1.5rem) 0 var(--spacing-md, 0.75rem) 0;
-    color: var(--md-sys-color-on-surface);
-    font-weight: var(--md-sys-typescale-headline-medium-weight, 400);
-    line-height: var(--md-sys-typescale-headline-medium-line-height, 2.25rem);
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-headline-medium-weight, 400);
+    line-height: var(--smrt-typography-headline-medium-line-height, 2.25rem);
   }
 
   .markdown-content :global(h3) {
-    font-size: var(--md-sys-typescale-headline-small-size, 1.5rem);
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     margin: var(--spacing-lg, 1rem) 0 var(--spacing-sm, 0.5rem) 0;
-    color: var(--md-sys-color-on-surface);
-    font-weight: var(--md-sys-typescale-headline-small-weight, 400);
-    line-height: var(--md-sys-typescale-headline-small-line-height, 2rem);
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-headline-small-weight, 400);
+    line-height: var(--smrt-typography-headline-small-line-height, 2rem);
   }
 
   .markdown-content :global(p) {
@@ -205,8 +205,8 @@ const rendered = $derived(renderMarkdown(content));
   }
 
   .markdown-content :global(strong) {
-    font-weight: var(--md-sys-typescale-weight-bold, 700);
-    color: var(--md-sys-color-on-surface);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    color: var(--smrt-color-on-surface);
   }
 
   .markdown-content :global(em) {
@@ -216,16 +216,16 @@ const rendered = $derived(renderMarkdown(content));
   .markdown-content :global(code) {
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: 0.875em;
-    background: var(--md-sys-color-surface-container-high);
-    color: var(--md-sys-color-on-surface-variant);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
     padding: 0.125rem 0.375rem;
-    border-radius: var(--md-sys-shape-corner-small, 4px);
+    border-radius: var(--smrt-radius-small, 4px);
   }
 
   .markdown-content :global(pre) {
-    background: var(--md-sys-color-surface-container-high);
+    background: var(--smrt-color-surface-container-high);
     padding: var(--spacing-md, 0.75rem);
-    border-radius: var(--md-sys-shape-corner-medium, 8px);
+    border-radius: var(--smrt-radius-medium, 8px);
     overflow-x: auto;
     margin: var(--spacing-md, 0.75rem) 0;
   }

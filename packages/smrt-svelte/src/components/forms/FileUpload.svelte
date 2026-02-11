@@ -245,52 +245,52 @@ function formatFileSize(bytes: number): string {
     justify-content: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-8, 2rem) var(--smrt-spacing-6, 1.5rem);
-    border: 2px dashed var(--md-sys-color-outline, #79747e);
+    border: 2px dashed var(--smrt-color-outline, #79747e);
     border-radius: var(--smrt-radius-lg, 1rem);
-    background: var(--md-sys-color-surface-container-low, #f7f2fa);
+    background: var(--smrt-color-surface-container-low, #f7f2fa);
     cursor: pointer;
     transition: all 200ms;
     text-align: center;
   }
 
   .drop-zone:hover {
-    border-color: var(--md-sys-color-primary, #6750a4);
-    background: var(--md-sys-color-surface-container, #f3edf7);
+    border-color: var(--smrt-color-primary, #6750a4);
+    background: var(--smrt-color-surface-container, #f3edf7);
   }
 
   .drop-zone:focus-visible {
-    outline: 2px solid var(--md-sys-color-primary, #6750a4);
+    outline: 2px solid var(--smrt-color-primary, #6750a4);
     outline-offset: 2px;
   }
 
   .drop-zone.dragging {
-    border-color: var(--md-sys-color-primary, #6750a4);
-    background: var(--md-sys-color-primary-container, #eaddff);
+    border-color: var(--smrt-color-primary, #6750a4);
+    background: var(--smrt-color-primary-container, #eaddff);
     border-style: solid;
   }
 
   .drop-zone__icon {
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .drop-zone__label {
     margin: 0;
-    font: var(--md-sys-typescale-body-large-font);
-    color: var(--md-sys-color-on-surface, #1d1b20);
+    font: var(--smrt-typography-body-large-font);
+    color: var(--smrt-color-on-surface, #1d1b20);
   }
 
   .drop-zone__hint {
     margin: 0;
-    font: var(--md-sys-typescale-body-small-font);
+    font: var(--smrt-typography-body-small-font);
     font-size: 0.875rem;
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .file-upload__error {
     margin: 0;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    background: var(--md-sys-color-error-container, #f9dedc);
-    color: var(--md-sys-color-on-error-container, #410e0b);
+    background: var(--smrt-color-error-container, #f9dedc);
+    color: var(--smrt-color-on-error-container, #410e0b);
     border-radius: var(--smrt-radius-sm, 0.25rem);
     font-size: 0.875rem;
   }
@@ -299,7 +299,7 @@ function formatFileSize(bytes: number): string {
     list-style: none;
     margin: 0;
     padding: 0;
-    border: 1px solid var(--md-sys-color-outline-variant, #cac4d0);
+    border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
     border-radius: var(--smrt-radius-md, 0.5rem);
     overflow: hidden;
   }
@@ -309,7 +309,7 @@ function formatFileSize(bytes: number): string {
     align-items: center;
     gap: var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-bottom: 1px solid var(--md-sys-color-outline-variant, #cac4d0);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #cac4d0);
   }
 
   .file-list__item:last-child {
@@ -319,7 +319,7 @@ function formatFileSize(bytes: number): string {
   .file-list__name {
     flex: 1;
     font-size: 0.875rem;
-    color: var(--md-sys-color-on-surface, #1d1b20);
+    color: var(--smrt-color-on-surface, #1d1b20);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -327,7 +327,7 @@ function formatFileSize(bytes: number): string {
 
   .file-list__size {
     font-size: 0.75rem;
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant, #49454f);
     white-space: nowrap;
   }
 
@@ -341,13 +341,13 @@ function formatFileSize(bytes: number): string {
     border: none;
     border-radius: 50%;
     background: transparent;
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant, #49454f);
     cursor: pointer;
     transition: background-color 200ms;
   }
 
   .file-list__remove:hover {
-    background: var(--md-sys-color-error-container, #f9dedc);
-    color: var(--md-sys-color-error, #b3261e);
+    background: var(--smrt-color-error-container, #f9dedc);
+    color: var(--smrt-color-error, #b3261e);
   }
 </style>

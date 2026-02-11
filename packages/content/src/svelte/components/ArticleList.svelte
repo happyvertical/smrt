@@ -60,11 +60,11 @@ const {
 <style>
   .empty-state {
     text-align: center;
-    padding: var(--md-sys-spacing-3xl, 3rem);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    padding: var(--smrt-spacing-3xl, 3rem);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .empty-state p {
-    font: var(--md-sys-typescale-body-large-font, 1.125rem / 1.5 sans-serif);
+    font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
 </style>

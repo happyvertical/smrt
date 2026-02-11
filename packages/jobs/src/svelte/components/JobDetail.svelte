@@ -166,30 +166,30 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
   }
 
   .job-detail__title {
     display: flex;
     align-items: center;
-    gap: var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
   }
 
   .job-detail__title h2 {
     margin: 0;
-    font: var(--md-sys-typescale-title-large-font, 1.125rem / 1.25 sans-serif);
-    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
+    font: var(--smrt-typography-title-large-font, 1.125rem / 1.25 sans-serif);
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
   }
 
   .job-detail__content {
-    padding: var(--md-sys-spacing-md, 1rem) 0;
+    padding: var(--smrt-spacing-md, 1rem) 0;
   }
 
   .job-detail__grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: var(--md-sys-spacing-lg, 1.5rem);
-    margin-bottom: var(--md-sys-spacing-lg, 1.5rem);
+    gap: var(--smrt-spacing-lg, 1.5rem);
+    margin-bottom: var(--smrt-spacing-lg, 1.5rem);
   }
 
   .job-detail__section h3 {
@@ -212,41 +212,41 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
   .job-detail__list {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: var(--md-sys-spacing-xs, 0.25rem) var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 1rem);
     margin: 0;
   }
 
   .job-detail__list dt {
-    color: var(--md-sys-color-on-surface-variant, #43474e);
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
   .job-detail__list dd {
     margin: 0;
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
   .job-detail__list code {
     padding: 0.125rem 0.375rem;
-    background: var(--md-sys-color-surface-container, #f3f4f6);
-    border-radius: var(--md-sys-shape-corner-small, 0.25rem);
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
+    background: var(--smrt-color-surface-container, #f3f4f6);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
   }
 
   .job-detail__code {
     margin: 0;
-    padding: var(--md-sys-spacing-md, 1rem);
-    background: var(--md-sys-color-surface-container, #f3f4f6);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
-    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    padding: var(--smrt-spacing-md, 1rem);
+    background: var(--smrt-color-surface-container, #f3f4f6);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-word;
   }
 
   .job-detail__code--error {
-    background: var(--md-sys-color-error-container, #ffdad6);
-    color: var(--md-sys-color-on-error-container, #410002);
+    background: var(--smrt-color-error-container, #ffdad6);
+    color: var(--smrt-color-on-error-container, #410002);
   }
 </style>

@@ -116,7 +116,7 @@ const isoString = $derived(parsedDate?.toISOString() ?? '');
   }
 
   .date-fallback {
-    color: var(--md-sys-color-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant, #9ca3af);
     font-style: italic;
   }
 </style>

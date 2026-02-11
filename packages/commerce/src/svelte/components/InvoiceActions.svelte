@@ -111,21 +111,21 @@ const canDelete = $derived(status === 'draft');
 <style>
   .invoice-actions {
     display: flex;
-    gap: var(--md-sys-spacing-2, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
     flex-wrap: wrap;
   }
 
   .btn {
     display: inline-flex;
     align-items: center;
-    gap: var(--md-sys-spacing-2, 0.5rem);
-    padding: var(--md-sys-spacing-2, 0.5rem) var(--md-sys-spacing-4, 1rem);
-    font: var(--md-sys-typescale-label-large-font);
+    gap: var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 500;
     border: none;
-    border-radius: var(--md-sys-shape-corner-small, 0.375rem);
+    border-radius: var(--smrt-radius-small, 0.375rem);
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short, 150ms) var(--md-sys-motion-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: all var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     white-space: nowrap;
   }
 
@@ -136,52 +136,52 @@ const canDelete = $derived(status === 'draft');
   }
 
   .sm .btn {
-    padding: var(--md-sys-spacing-1-5, 0.375rem) var(--md-sys-spacing-3, 0.75rem);
-    font: var(--md-sys-typescale-label-medium-font);
+    padding: var(--smrt-spacing-1-5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
+    font: var(--smrt-typography-label-medium-font);
   }
 
   .btn:disabled {
-    opacity: var(--md-sys-state-disabled-opacity, 0.38);
+    opacity: var(--smrt-state-disabled-opacity, 0.38);
     cursor: not-allowed;
   }
 
   .btn-primary {
-    background: var(--md-sys-color-primary, #005ac1);
-    color: var(--md-sys-color-on-primary, #ffffff);
+    background: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-on-primary, #ffffff);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--md-sys-color-primary-hover, #004493);
+    background: var(--smrt-color-primary-hover, #004493);
   }
 
   .btn-success {
-    background: var(--md-sys-color-tertiary, #006c4c);
-    color: var(--md-sys-color-on-tertiary, #ffffff);
+    background: var(--smrt-color-tertiary, #006c4c);
+    color: var(--smrt-color-on-tertiary, #ffffff);
   }
 
   .btn-success:hover:not(:disabled) {
-    background: var(--md-sys-color-tertiary-hover, #005138);
+    background: var(--smrt-color-tertiary-hover, #005138);
   }
 
   .btn-secondary {
-    background: var(--md-sys-color-surface-container-lowest, #ffffff);
-    color: var(--md-sys-color-on-surface-variant, #44474e);
-    border: 1px solid var(--md-sys-color-outline, #74777f);
+    background: var(--smrt-color-surface-container-lowest, #ffffff);
+    color: var(--smrt-color-on-surface-variant, #44474e);
+    border: 1px solid var(--smrt-color-outline, #74777f);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--md-sys-color-surface-container-low, #f7f2fa);
-    border-color: var(--md-sys-color-on-surface-variant, #44474e);
+    background: var(--smrt-color-surface-container-low, #f7f2fa);
+    border-color: var(--smrt-color-on-surface-variant, #44474e);
   }
 
   .btn-danger {
-    background: var(--md-sys-color-surface-container-lowest, #ffffff);
-    color: var(--md-sys-color-error, #ba1a1a);
-    border: 1px solid var(--md-sys-color-error-container, #ffdad6);
+    background: var(--smrt-color-surface-container-lowest, #ffffff);
+    color: var(--smrt-color-error, #ba1a1a);
+    border: 1px solid var(--smrt-color-error-container, #ffdad6);
   }
 
   .btn-danger:hover:not(:disabled) {
-    background: var(--md-sys-color-error-container, #ffdad6);
-    border-color: var(--md-sys-color-error, #ba1a1a);
+    background: var(--smrt-color-error-container, #ffdad6);
+    border-color: var(--smrt-color-error, #ba1a1a);
   }
 </style>

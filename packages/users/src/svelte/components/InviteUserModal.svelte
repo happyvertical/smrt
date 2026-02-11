@@ -156,9 +156,9 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .modal {
-    background: var(--md-sys-color-surface, white);
-    border-radius: var(--md-sys-shape-corner-large, 0.5rem);
-    box-shadow: var(--md-sys-elevation-level3, 0 20px 25px -5px rgba(0, 0, 0, 0.1));
+    background: var(--smrt-color-surface, white);
+    border-radius: var(--smrt-radius-large, 0.5rem);
+    box-shadow: var(--smrt-elevation-level3, 0 20px 25px -5px rgba(0, 0, 0, 0.1));
     width: 100%;
     max-width: 28rem;
     max-height: 90vh;
@@ -169,14 +169,14 @@ function handleKeydown(e: KeyboardEvent) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--md-sys-spacing-md, 1rem) var(--md-sys-spacing-lg, 1.5rem);
-    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    padding: var(--smrt-spacing-md, 1rem) var(--smrt-spacing-lg, 1.5rem);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
   }
 
   h2 {
     margin: 0;
-    font: var(--md-sys-typescale-title-large-font, 600 1.125rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface, #1a1c1e);
+    font: var(--smrt-typography-title-large-font, 600 1.125rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
   .close-btn {
@@ -187,15 +187,15 @@ function handleKeydown(e: KeyboardEvent) {
     height: 2rem;
     background: none;
     border: none;
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
     cursor: pointer;
-    color: var(--md-sys-color-on-surface-variant, #43474e);
-    transition: background-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .close-btn:hover {
-    background: var(--md-sys-color-surface-container, #f3f4f6);
-    color: var(--md-sys-color-on-surface, #1a1c1e);
+    background: var(--smrt-color-surface-container, #f3f4f6);
+    color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
   .close-btn svg {
@@ -204,19 +204,19 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .body {
-    padding: var(--md-sys-spacing-lg, 1.5rem);
+    padding: var(--smrt-spacing-lg, 1.5rem);
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
   }
 
   .error {
-    padding: var(--md-sys-spacing-sm, 0.75rem);
-    background: var(--md-sys-color-error-container, #ffdad6);
-    border: 1px solid var(--md-sys-color-error, #ba1a1a);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
-    color: var(--md-sys-color-on-error-container, #410002);
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    padding: var(--smrt-spacing-sm, 0.75rem);
+    background: var(--smrt-color-error-container, #ffdad6);
+    border: 1px solid var(--smrt-color-error, #ba1a1a);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    color: var(--smrt-color-on-error-container, #410002);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
   .field {
@@ -226,68 +226,68 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   label {
-    font: var(--md-sys-typescale-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   input[type='email'] {
-    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 0.75rem);
-    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
-    transition: border-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 0.75rem);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    transition: border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   input[type='email']:focus {
     outline: none;
-    border-color: var(--md-sys-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px var(--md-sys-color-primary-container, rgba(0, 90, 193, 0.1));
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
 
   input[type='email']:disabled {
-    background: var(--md-sys-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container, #f3f4f6);
     cursor: not-allowed;
   }
 
   .checkbox-field {
     display: flex;
     align-items: center;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-sm, 0.5rem);
   }
 
   .checkbox-field input {
     width: 1rem;
     height: 1rem;
-    accent-color: var(--md-sys-color-primary, #005ac1);
+    accent-color: var(--smrt-color-primary, #005ac1);
   }
 
   .checkbox-field label {
-    font-weight: var(--md-sys-typescale-weight-regular, 400);
+    font-weight: var(--smrt-typography-weight-regular, 400);
   }
 
   .hint {
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
-    padding: var(--md-sys-spacing-sm, 0.5rem);
-    background: var(--md-sys-color-surface-container-low, #f9fafb);
-    border-radius: var(--md-sys-shape-corner-small, 0.25rem);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    padding: var(--smrt-spacing-sm, 0.5rem);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    border-radius: var(--smrt-radius-small, 0.25rem);
   }
 
   .footer {
     display: flex;
     justify-content: flex-end;
-    gap: var(--md-sys-spacing-sm, 0.75rem);
-    padding: var(--md-sys-spacing-md, 1rem) var(--md-sys-spacing-lg, 1.5rem);
-    background: var(--md-sys-color-surface-container-low, #f9fafb);
-    border-top: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    gap: var(--smrt-spacing-sm, 0.75rem);
+    padding: var(--smrt-spacing-md, 1rem) var(--smrt-spacing-lg, 1.5rem);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
   }
 
   button {
-    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
-    font: var(--md-sys-typescale-label-large-font, 500 0.875rem / 1.25 sans-serif);
+    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   button:disabled {
@@ -296,24 +296,24 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .btn-primary {
-    background: var(--md-sys-color-primary, #005ac1);
-    color: var(--md-sys-color-on-primary, #ffffff);
+    background: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-on-primary, #ffffff);
     border: none;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--md-sys-color-primary-container, #005ac1);
+    background: var(--smrt-color-primary-container, #005ac1);
     opacity: 0.9;
   }
 
   .btn-secondary {
-    background: var(--md-sys-color-surface, white);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
-    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    background: var(--smrt-color-surface, white);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--md-sys-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
   }
 
   @media (prefers-reduced-motion: reduce) {

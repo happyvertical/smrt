@@ -58,7 +58,7 @@ function getColor(name: string): string {
   .user-avatar {
     display: inline-flex;
     align-items: center;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-sm, 0.5rem);
   }
 
   .avatar {
@@ -67,35 +67,35 @@ function getColor(name: string): string {
     justify-content: center;
     width: 2.5rem;
     height: 2.5rem;
-    border-radius: var(--md-sys-shape-corner-full, 9999px);
-    color: var(--md-sys-color-on-primary, white);
-    font: var(--md-sys-typescale-label-large-font, 600 0.875rem / 1.25 sans-serif);
+    border-radius: var(--smrt-radius-full, 9999px);
+    color: var(--smrt-color-on-primary, white);
+    font: var(--smrt-typography-label-large-font, 600 0.875rem / 1.25 sans-serif);
   }
 
   .sm .avatar {
     width: 2rem;
     height: 2rem;
-    font: var(--md-sys-typescale-label-medium-font, 0.75rem / 1 sans-serif);
+    font: var(--smrt-typography-label-medium-font, 0.75rem / 1 sans-serif);
   }
 
   .lg .avatar {
     width: 3rem;
     height: 3rem;
-    font: var(--md-sys-typescale-title-medium-font, 1rem / 1.5 sans-serif);
+    font: var(--smrt-typography-title-medium-font, 1rem / 1.5 sans-serif);
   }
 
   .xl .avatar {
     width: 4rem;
     height: 4rem;
-    font: var(--md-sys-typescale-title-large-font, 1.25rem / 1.25 sans-serif);
+    font: var(--smrt-typography-title-large-font, 1.25rem / 1.25 sans-serif);
   }
 
   .name {
-    font: var(--md-sys-typescale-body-medium-font, 500 0.875rem / 1.25 sans-serif);
+    font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
   }
 
   .lg .name,
   .xl .name {
-    font: var(--md-sys-typescale-body-large-font, 1rem / 1.5 sans-serif);
+    font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
   }
 </style>

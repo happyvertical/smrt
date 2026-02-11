@@ -193,14 +193,14 @@ function getInitials(name: string): string {
     border: none;
     border-radius: 20px;
     cursor: pointer;
-    transition: background-color var(--md-sys-motion-duration-short3, 200ms) var(--md-sys-motion-easing-standard, ease);
-    color: var(--md-sys-color-on-surface);
+    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
+    color: var(--smrt-color-on-surface);
     position: relative;
     overflow: hidden;
   }
 
   .user-menu-trigger:hover {
-    background-color: var(--md-sys-color-surface-container-high);
+    background-color: var(--smrt-color-surface-container-high);
   }
 
   .avatar {
@@ -209,22 +209,22 @@ function getInitials(name: string): string {
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: var(--md-sys-shape-corner-full, 50%);
-    background-color: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
-    font: var(--md-sys-typescale-label-large-font);
-    font-weight: var(--md-sys-typescale-weight-semibold, 600);
+    border-radius: var(--smrt-radius-full, 50%);
+    background-color: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    font: var(--smrt-typography-label-large-font);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .user-name {
-    font: var(--md-sys-typescale-label-large-font);
-    font-weight: var(--md-sys-typescale-weight-medium, 500);
+    font: var(--smrt-typography-label-large-font);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .chevron {
     width: 18px;
     height: 18px;
-    transition: transform var(--md-sys-motion-duration-short3, 200ms) var(--md-sys-motion-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: transform var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     opacity: 0.7;
   }
 
@@ -238,9 +238,9 @@ function getInitials(name: string): string {
     right: 0;
     margin-top: 4px;
     min-width: 200px;
-    background-color: var(--md-sys-color-surface-container);
-    border-radius: var(--md-sys-shape-corner-medium, 4px);
-    box-shadow: var(--md-sys-elevation-level2);
+    background-color: var(--smrt-color-surface-container);
+    border-radius: var(--smrt-radius-medium, 4px);
+    box-shadow: var(--smrt-elevation-level2);
     z-index: 50;
     padding: 4px 0;
     overflow: hidden;
@@ -251,16 +251,16 @@ function getInitials(name: string): string {
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
-    font: var(--md-sys-typescale-body-medium-font);
-    color: var(--md-sys-color-on-surface);
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface);
     text-decoration: none;
-    transition: background-color var(--md-sys-motion-duration-short3, 200ms) var(--md-sys-motion-easing-standard, ease);
+    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     position: relative;
     overflow: hidden;
   }
 
   .dropdown-item:hover {
-    background-color: var(--md-sys-color-surface-container-highest);
+    background-color: var(--smrt-color-surface-container-highest);
   }
 
   .dropdown-item svg {
@@ -270,7 +270,7 @@ function getInitials(name: string): string {
   }
 
   .dropdown-item.danger {
-    color: var(--md-sys-color-error);
+    color: var(--smrt-color-error);
   }
 
   .user-info {
@@ -281,30 +281,30 @@ function getInitials(name: string): string {
   }
 
   .user-info-name {
-    font: var(--md-sys-typescale-body-medium-font);
-    font-weight: var(--md-sys-typescale-weight-medium, 500);
-    color: var(--md-sys-color-on-surface);
+    font: var(--smrt-typography-body-medium-font);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface);
   }
 
   .user-info-email {
-    font: var(--md-sys-typescale-body-small-font);
-    color: var(--md-sys-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .user-menu-trigger:focus-visible {
-    outline: 2px solid var(--md-sys-color-primary);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
 
   .dropdown-item:focus-visible {
-    outline: 2px solid var(--md-sys-color-primary);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
   .divider {
     margin: 4px 0;
     border: none;
-    border-top: 1px solid var(--md-sys-color-outline-variant);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -103,7 +103,7 @@ function formatMoney(cents: number): string {
   .invoice-totals {
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-2, 0.5rem);
+    gap: var(--smrt-spacing-2, 0.5rem);
     width: 100%;
     max-width: 280px;
     margin-left: auto;
@@ -111,78 +111,78 @@ function formatMoney(cents: number): string {
 
   .invoice-totals.sm {
     max-width: 220px;
-    gap: var(--md-sys-spacing-1-5, 0.375rem);
+    gap: var(--smrt-spacing-1-5, 0.375rem);
   }
 
   .invoice-totals.lg {
     max-width: 320px;
-    gap: var(--md-sys-spacing-3, 0.75rem);
+    gap: var(--smrt-spacing-3, 0.75rem);
   }
 
   .totals-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font: var(--md-sys-typescale-body-medium-font);
-    color: var(--md-sys-color-on-surface, #1c1b1f);
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .sm .totals-row {
-    font: var(--md-sys-typescale-body-small-font);
+    font: var(--smrt-typography-body-small-font);
   }
 
   .lg .totals-row {
-    font: var(--md-sys-typescale-body-large-font);
+    font: var(--smrt-typography-body-large-font);
   }
 
   .totals-label {
-    color: var(--md-sys-color-on-surface-variant, #49454f);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .totals-value {
     font-variant-numeric: tabular-nums;
     font-weight: 500;
-    color: var(--md-sys-color-on-surface, #1c1b1f);
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .totals-row.total {
-    padding-top: var(--md-sys-spacing-2, 0.5rem);
-    border-top: 2px solid var(--md-sys-color-outline-variant, #c4c6d0);
+    padding-top: var(--smrt-spacing-2, 0.5rem);
+    border-top: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
     font-weight: 600;
   }
 
   .totals-row.total .totals-label,
   .totals-row.total .totals-value {
-    color: var(--md-sys-color-on-surface, #1c1b1f);
-    font: var(--md-sys-typescale-title-medium-font);
+    color: var(--smrt-color-on-surface, #1c1b1f);
+    font: var(--smrt-typography-title-medium-font);
   }
 
   .lg .totals-row.total .totals-label,
   .lg .totals-row.total .totals-value {
-    font: var(--md-sys-typescale-title-large-font);
+    font: var(--smrt-typography-title-large-font);
   }
 
   .totals-row.paid {
-    color: var(--md-sys-color-tertiary, #006c4c);
+    color: var(--smrt-color-tertiary, #006c4c);
   }
 
   .totals-row.paid .totals-label {
-    color: var(--md-sys-color-tertiary, #006c4c);
+    color: var(--smrt-color-tertiary, #006c4c);
   }
 
   .totals-row.balance {
-    padding-top: var(--md-sys-spacing-2, 0.5rem);
-    border-top: 1px solid var(--md-sys-color-outline-variant, #c4c6d0);
+    padding-top: var(--smrt-spacing-2, 0.5rem);
+    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     font-weight: 600;
   }
 
   .totals-row.balance.due .totals-label,
   .totals-row.balance.due .totals-value {
-    color: var(--md-sys-color-error, #ba1a1a);
+    color: var(--smrt-color-error, #ba1a1a);
   }
 
   .totals-row.balance.credit .totals-label,
   .totals-row.balance.credit .totals-value {
-    color: var(--md-sys-color-tertiary, #006c4c);
+    color: var(--smrt-color-tertiary, #006c4c);
   }
 </style>

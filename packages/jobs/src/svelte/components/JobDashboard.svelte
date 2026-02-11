@@ -117,7 +117,7 @@ let {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-lg, 1.5rem);
+    gap: var(--smrt-spacing-lg, 1.5rem);
   }
 
   .job-dashboard.loading {
@@ -138,7 +138,7 @@ let {
   .job-dashboard__panels {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: var(--md-sys-spacing-lg, 1.5rem);
+    gap: var(--smrt-spacing-lg, 1.5rem);
   }
 
   @media (max-width: 900px) {
@@ -155,36 +155,36 @@ let {
 
   .panel-header h2 {
     margin: 0;
-    font: var(--md-sys-typescale-title-medium-font, 600 1rem / 1.5 sans-serif);
+    font: var(--smrt-typography-title-medium-font, 600 1rem / 1.5 sans-serif);
   }
 
   .panel-header--error h2 {
-    color: var(--md-sys-color-error, #ba1a1a);
+    color: var(--smrt-color-error, #ba1a1a);
   }
 
   .view-all-btn {
-    padding: var(--md-sys-spacing-xs, 0.25rem) var(--md-sys-spacing-sm, 0.5rem);
+    padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-sm, 0.5rem);
     border: none;
     background: none;
-    color: var(--md-sys-color-primary, #005ac1);
-    font: var(--md-sys-typescale-label-large-font, 500 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-primary, #005ac1);
+    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
     cursor: pointer;
-    border-radius: var(--md-sys-shape-corner-small, 0.25rem);
-    transition: background-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .view-all-btn:hover {
-    background: var(--md-sys-color-primary-container, #d6e3ff);
+    background: var(--smrt-color-primary-container, #d6e3ff);
   }
 
   .empty-message {
-    padding: var(--md-sys-spacing-md, 1rem);
+    padding: var(--smrt-spacing-md, 1rem);
     text-align: center;
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .empty-message--success {
-    color: var(--md-sys-color-tertiary, #006c4f);
+    color: var(--smrt-color-tertiary, #006c4f);
   }
 
   @media (prefers-reduced-motion: reduce) {

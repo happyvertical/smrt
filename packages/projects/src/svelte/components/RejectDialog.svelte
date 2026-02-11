@@ -129,9 +129,9 @@ $effect(() => {
   }
 
   .dialog {
-    background: var(--md-sys-color-surface);
-    border-radius: var(--md-sys-shape-corner-extra-large, 28px);
-    box-shadow: var(--md-sys-elevation-level3);
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-extra-large, 28px);
+    box-shadow: var(--smrt-elevation-level3);
     width: 100%;
     max-width: 28rem;
     padding: 1.5rem;
@@ -139,49 +139,49 @@ $effect(() => {
 
   .dialog-title {
     margin: 0 0 0.5rem;
-    font-size: var(--md-sys-typescale-headline-small-size, 1.5rem);
-    font-weight: var(--md-sys-typescale-headline-small-weight, 400);
-    color: var(--md-sys-color-on-surface);
-    line-height: var(--md-sys-typescale-headline-small-line-height, 2rem);
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-headline-small-weight, 400);
+    color: var(--smrt-color-on-surface);
+    line-height: var(--smrt-typography-headline-small-line-height, 2rem);
   }
 
   .dialog-message {
     margin: 0 0 1rem;
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
-    color: var(--md-sys-color-on-surface-variant);
-    line-height: var(--md-sys-typescale-body-medium-line-height, 1.25rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.25rem);
   }
 
   .reason-input {
     width: 100%;
     padding: 0.75rem;
-    font-size: var(--md-sys-typescale-body-large-size, 1rem);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     font-family: inherit;
-    border: 1px solid var(--md-sys-color-outline);
-    border-radius: var(--md-sys-shape-corner-small, 8px);
+    border: 1px solid var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-small, 8px);
     resize: vertical;
     min-height: 80px;
-    background: var(--md-sys-color-surface);
-    color: var(--md-sys-color-on-surface);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
   }
 
   .reason-input:focus {
     outline: none;
-    border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary);
   }
 
   .reason-input:disabled {
-    background: var(--md-sys-color-surface-container-highest);
-    color: var(--md-sys-color-on-surface);
+    background: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-on-surface);
     opacity: 0.38;
     cursor: not-allowed;
   }
 
   .hint {
     margin: 0.5rem 0 0;
-    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .dialog-actions {
@@ -196,13 +196,13 @@ $effect(() => {
     align-items: center;
     justify-content: center;
     padding: 0.625rem 1.5rem;
-    font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
-    font-weight: var(--md-sys-typescale-label-large-weight, 500);
-    letter-spacing: var(--md-sys-typescale-label-large-tracking, 0.1px);
-    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-label-large-weight, 500);
+    letter-spacing: var(--smrt-typography-label-large-tracking, 0.1px);
+    border-radius: var(--smrt-radius-full, 9999px);
     border: none;
     cursor: pointer;
-    transition: all 0.2s var(--md-sys-motion-easing-standard);
+    transition: all 0.2s var(--smrt-easing-standard);
   }
 
   .btn:disabled {
@@ -212,20 +212,20 @@ $effect(() => {
 
   .btn-secondary {
     background: transparent;
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--md-sys-color-primary);
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+    background: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
   }
 
   .btn-error {
-    background: var(--md-sys-color-error);
-    color: var(--md-sys-color-on-error);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
   }
 
   .btn-error:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 </style>

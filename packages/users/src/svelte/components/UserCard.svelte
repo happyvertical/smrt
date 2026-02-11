@@ -74,7 +74,7 @@ const statusClass = $derived.by(() => {
     align-items: center;
     gap: 16px;
     padding: 12px 16px;
-    background-color: var(--md-sys-color-surface-container-low);
+    background-color: var(--smrt-color-surface-container-low);
     border-radius: 12px;
     width: 100%;
     text-align: left;
@@ -83,8 +83,8 @@ const statusClass = $derived.by(() => {
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     position: relative;
     overflow: hidden;
-    color: var(--md-sys-color-on-surface);
-    box-shadow: var(--md-sys-elevation-level1);
+    color: var(--smrt-color-on-surface);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .user-card.clickable {
@@ -92,13 +92,13 @@ const statusClass = $derived.by(() => {
   }
 
   .user-card.clickable:hover {
-    background-color: var(--md-sys-color-surface-container-high);
-    box-shadow: var(--md-sys-elevation-level2);
+    background-color: var(--smrt-color-surface-container-high);
+    box-shadow: var(--smrt-elevation-level2);
   }
 
   .user-card.selected {
-    background-color: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .info {
@@ -107,7 +107,7 @@ const statusClass = $derived.by(() => {
   }
 
   .name {
-    font: var(--md-sys-typescale-title-small-font);
+    font: var(--smrt-typography-title-small-font);
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
@@ -115,15 +115,15 @@ const statusClass = $derived.by(() => {
   }
 
   .email {
-    font: var(--md-sys-typescale-body-small-font);
-    color: var(--md-sys-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .selected .email {
-    color: var(--md-sys-color-on-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
     opacity: 0.8;
   }
 
@@ -135,19 +135,19 @@ const statusClass = $derived.by(() => {
   }
 
   .role {
-    font: var(--md-sys-typescale-label-small-font);
+    font: var(--smrt-typography-label-small-font);
     padding: 0 8px;
     height: 20px;
     display: inline-flex;
     align-items: center;
-    background-color: var(--md-sys-color-surface-container-highest);
-    color: var(--md-sys-color-on-surface-variant);
+    background-color: var(--smrt-color-surface-container-highest);
+    color: var(--smrt-color-on-surface-variant);
     border-radius: 10px;
     text-transform: capitalize;
   }
 
   .status {
-    font: var(--md-sys-typescale-label-small-font);
+    font: var(--smrt-typography-label-small-font);
     padding: 0 8px;
     height: 20px;
     display: inline-flex;
@@ -158,22 +158,22 @@ const statusClass = $derived.by(() => {
   }
 
   .status-active {
-    background-color: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
+    background-color: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .status-pending {
-    background-color: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .status-error {
-    background-color: var(--md-sys-color-error-container);
-    color: var(--md-sys-color-on-error-container);
+    background-color: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .status-disabled {
-    background-color: var(--md-sys-color-surface-variant);
-    color: var(--md-sys-color-on-surface-variant);
+    background-color: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 </style>

@@ -111,24 +111,24 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     align-items: center;
     gap: 1rem;
     padding: 1rem 1.25rem;
-    background-color: var(--md-sys-color-surface-container-low);
+    background-color: var(--smrt-color-surface-container-low);
     border-radius: 12px;
     text-decoration: none;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     position: relative;
     overflow: hidden;
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .clickable:hover {
-    background-color: var(--md-sys-color-surface-container-high);
-    box-shadow: var(--md-sys-elevation-level2);
+    background-color: var(--smrt-color-surface-container-high);
+    box-shadow: var(--smrt-elevation-level2);
   }
 
   .summary-card.highlight {
-    background-color: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .card-icon {
@@ -137,15 +137,15 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     justify-content: center;
     width: 3rem;
     height: 3rem;
-    background-color: var(--md-sys-color-surface-container-high);
+    background-color: var(--smrt-color-surface-container-high);
     border-radius: 12px;
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
     flex-shrink: 0;
   }
 
   .highlight .card-icon {
-    background-color: var(--md-sys-color-on-secondary-container);
-    color: var(--md-sys-color-secondary-container);
+    background-color: var(--smrt-color-on-secondary-container);
+    color: var(--smrt-color-secondary-container);
   }
 
   .card-content {
@@ -156,15 +156,15 @@ const isSvg = $derived(icon?.startsWith('<svg'));
   }
 
   .card-label {
-    font: var(--md-sys-typescale-label-large-font);
-    color: var(--md-sys-color-on-surface-variant);
+    font: var(--smrt-typography-label-large-font);
+    color: var(--smrt-color-on-surface-variant);
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
 
   .highlight .card-label {
-    color: var(--md-sys-color-on-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
     opacity: 0.8;
   }
 
@@ -175,29 +175,29 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     min-width: 1.25rem;
     height: 1.25rem;
     padding: 0 0.375rem;
-    font: var(--md-sys-typescale-label-small-font);
-    background-color: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
+    font: var(--smrt-typography-label-small-font);
+    background-color: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     border-radius: 9999px;
   }
 
   .card-value {
-    font: var(--md-sys-typescale-headline-small-font);
+    font: var(--smrt-typography-headline-small-font);
     font-weight: 600;
   }
 
-  .color-default { color: var(--md-sys-color-on-surface); }
-  .color-success { color: var(--md-sys-color-primary); }
-  .color-warning { color: var(--md-sys-color-error-container); } /* M3 Warning is often custom, using error container as proxy */
-  .color-error { color: var(--md-sys-color-error); }
+  .color-default { color: var(--smrt-color-on-surface); }
+  .color-success { color: var(--smrt-color-primary); }
+  .color-warning { color: var(--smrt-color-error-container); } /* M3 Warning is often custom, using error container as proxy */
+  .color-error { color: var(--smrt-color-error); }
 
   .trailing {
-    color: var(--md-sys-color-on-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
     opacity: 0.5;
   }
 
   .clickable:hover .trailing {
     opacity: 1;
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
   }
 </style>

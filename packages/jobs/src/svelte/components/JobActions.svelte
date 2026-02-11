@@ -93,11 +93,11 @@ function handleDelete() {
 <style>
   .job-actions {
     display: flex;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-sm, 0.5rem);
     align-items: center;
   }
 
   .compact {
-    gap: var(--md-sys-spacing-xs, 0.25rem);
+    gap: var(--smrt-spacing-xs, 0.25rem);
   }
 </style>

@@ -235,19 +235,19 @@ function handleCronPreset(preset: string) {
 
 <style>
   .schedule-form {
-    padding: var(--md-sys-spacing-sm, 0.5rem) 0;
+    padding: var(--smrt-spacing-sm, 0.5rem) 0;
   }
 
   .form-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
   }
 
   .form-field {
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-xs, 0.25rem);
+    gap: var(--smrt-spacing-xs, 0.25rem);
   }
 
   .form-field--full {
@@ -257,69 +257,69 @@ function handleCronPreset(preset: string) {
   .form-field--checkbox {
     flex-direction: row;
     align-items: center;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-sm, 0.5rem);
   }
 
   .form-field--checkbox label {
     display: flex;
     align-items: center;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-sm, 0.5rem);
     cursor: pointer;
   }
 
   .form-field label {
-    font-weight: var(--md-sys-typescale-weight-medium, 500);
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface, #1a1c1e);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
   .form-field input,
   .form-field select {
-    padding: var(--md-sys-spacing-sm, 0.5rem);
-    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
-    transition: border-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    padding: var(--smrt-spacing-sm, 0.5rem);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    transition: border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .form-field input:focus,
   .form-field select:focus {
     outline: none;
-    border-color: var(--md-sys-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px var(--md-sys-color-primary-container, rgba(0, 90, 193, 0.1));
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
 
   .form-field input:disabled,
   .form-field select:disabled {
-    background: var(--md-sys-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container, #f3f4f6);
     cursor: not-allowed;
   }
 
   .form-field small {
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .cron-presets {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--md-sys-spacing-xs, 0.25rem);
-    margin-top: var(--md-sys-spacing-xs, 0.25rem);
+    gap: var(--smrt-spacing-xs, 0.25rem);
+    margin-top: var(--smrt-spacing-xs, 0.25rem);
   }
 
   .preset-btn {
-    padding: 0.125rem var(--md-sys-spacing-sm, 0.5rem);
-    border: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
-    border-radius: var(--md-sys-shape-corner-small, 0.25rem);
-    background: var(--md-sys-color-surface, #ffffff);
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
+    padding: 0.125rem var(--smrt-spacing-sm, 0.5rem);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    background: var(--smrt-color-surface, #ffffff);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .preset-btn:hover:not(:disabled) {
-    background: var(--md-sys-color-surface-container, #f3f4f6);
-    border-color: var(--md-sys-color-primary, #005ac1);
+    background: var(--smrt-color-surface-container, #f3f4f6);
+    border-color: var(--smrt-color-primary, #005ac1);
   }
 
   .preset-btn:disabled {
@@ -330,10 +330,10 @@ function handleCronPreset(preset: string) {
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
-    margin-top: var(--md-sys-spacing-lg, 1.5rem);
-    padding-top: var(--md-sys-spacing-md, 1rem);
-    border-top: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    gap: var(--smrt-spacing-sm, 0.5rem);
+    margin-top: var(--smrt-spacing-lg, 1.5rem);
+    padding-top: var(--smrt-spacing-md, 1rem);
+    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -145,7 +145,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 	.overlay-content {
 		position: relative;
-		background: var(--md-sys-color-surface-container-high, white);
+		background: var(--smrt-color-surface-container-high, white);
 		border-radius: 16px;
 		padding: 32px 40px;
 		max-width: 400px;
@@ -166,12 +166,12 @@ function handleKeydown(e: KeyboardEvent) {
 	}
 
 	.icon.spinner {
-		color: var(--md-sys-color-primary, #3b82f6);
+		color: var(--smrt-color-primary, #3b82f6);
 		animation: spin 1s linear infinite;
 	}
 
 	.icon.error {
-		color: var(--md-sys-color-error, #ef4444);
+		color: var(--smrt-color-error, #ef4444);
 	}
 
 	@keyframes spin {
@@ -186,7 +186,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.title {
 		font-size: 1.25rem;
 		font-weight: 600;
-		color: var(--md-sys-color-on-surface, #1f2937);
+		color: var(--smrt-color-on-surface, #1f2937);
 		margin: 0 0 16px;
 	}
 
@@ -200,7 +200,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.progress-bar {
 		flex: 1;
 		height: 8px;
-		background: var(--md-sys-color-surface-container-highest, #e5e7eb);
+		background: var(--smrt-color-surface-container-highest, #e5e7eb);
 		border-radius: 4px;
 		overflow: hidden;
 	}
@@ -215,7 +215,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.progress-text {
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: var(--md-sys-color-primary, #3b82f6);
+		color: var(--smrt-color-primary, #3b82f6);
 		min-width: 40px;
 	}
 
@@ -231,16 +231,16 @@ function handleKeydown(e: KeyboardEvent) {
 		font-size: 0.75rem;
 		padding: 4px 10px;
 		border-radius: 9999px;
-		background: var(--md-sys-color-primary-container, #dcfce7);
-		color: var(--md-sys-color-on-primary-container, #166534);
+		background: var(--smrt-color-primary-container, #dcfce7);
+		color: var(--smrt-color-on-primary-container, #166534);
 	}
 
 	.error-message {
 		font-size: 0.875rem;
-		color: var(--md-sys-color-error, #ef4444);
+		color: var(--smrt-color-error, #ef4444);
 		margin: 16px 0 0;
 		padding: 12px;
-		background: var(--md-sys-color-error-container, #fef2f2);
+		background: var(--smrt-color-error-container, #fef2f2);
 		border-radius: 8px;
 	}
 
@@ -248,21 +248,21 @@ function handleKeydown(e: KeyboardEvent) {
 		margin-top: 20px;
 		padding: 10px 20px;
 		font-size: 0.875rem;
-		color: var(--md-sys-color-on-surface-variant, #6b7280);
+		color: var(--smrt-color-on-surface-variant, #6b7280);
 		background: transparent;
-		border: 1px solid var(--md-sys-color-outline-variant, #d1d5db);
+		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
 		border-radius: 8px;
 		cursor: pointer;
 		transition: all 0.15s ease;
 	}
 
 	.dismiss-btn:hover {
-		background: var(--md-sys-color-surface-container-highest, #f3f4f6);
-		border-color: var(--md-sys-color-outline, #9ca3af);
+		background: var(--smrt-color-surface-container-highest, #f3f4f6);
+		border-color: var(--smrt-color-outline, #9ca3af);
 	}
 
 	.dismiss-btn:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
+		outline: 2px solid var(--smrt-color-primary);
 		outline-offset: 2px;
 	}
 

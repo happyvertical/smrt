@@ -106,39 +106,39 @@ const _tags = $derived.by(() => {
   article {
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
   }
 
   .title {
     margin: 0;
-    font: var(--md-sys-typescale-title-large-font, 600 1.375rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface, #1a1c1e);
-    transition: color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    font: var(--smrt-typography-title-large-font, 600 1.375rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface, #1a1c1e);
+    transition: color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .article-link:hover .title {
-    color: var(--md-sys-color-primary, #005ac1);
+    color: var(--smrt-color-primary, #005ac1);
   }
 
   .article-link:focus-visible {
-    outline: 2px solid var(--md-sys-color-primary, #005ac1);
+    outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: 2px;
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
   }
 
   .excerpt {
-    color: var(--md-sys-color-on-surface-variant, #43474e);
-    line-height: var(--md-sys-typescale-body-large-line-height, 1.5);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    line-height: var(--smrt-typography-body-large-line-height, 1.5);
     margin: 0;
   }
 
   .meta {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--md-sys-spacing-md, 1rem);
+    gap: var(--smrt-spacing-md, 1rem);
     align-items: center;
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .author {
@@ -148,7 +148,7 @@ const _tags = $derived.by(() => {
   .tags {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-sm, 0.5rem);
   }
 
   @media (prefers-reduced-motion: reduce) {

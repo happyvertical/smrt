@@ -59,23 +59,23 @@ const {
   .user-list {
     display: flex;
     flex-direction: column;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
+    gap: var(--smrt-spacing-sm, 0.5rem);
   }
 
   .loading {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--md-sys-spacing-sm, 0.75rem);
-    padding: var(--md-sys-spacing-xl, 2rem);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    gap: var(--smrt-spacing-sm, 0.75rem);
+    padding: var(--smrt-spacing-xl, 2rem);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .spinner {
     width: 1.25rem;
     height: 1.25rem;
-    border: 2px solid var(--md-sys-color-outline-variant, #c4c6cf);
-    border-top-color: var(--md-sys-color-primary, #005ac1);
+    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-top-color: var(--smrt-color-primary, #005ac1);
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
@@ -87,12 +87,12 @@ const {
   }
 
   .empty {
-    padding: var(--md-sys-spacing-xl, 2rem);
+    padding: var(--smrt-spacing-xl, 2rem);
     text-align: center;
-    color: var(--md-sys-color-on-surface-variant, #43474e);
-    background: var(--md-sys-color-surface-container-low, #f9fafb);
-    border: 1px dashed var(--md-sys-color-outline-variant, #c4c6cf);
-    border-radius: var(--md-sys-shape-corner-medium, 0.5rem);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    border: 1px dashed var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
   }
 
   @media (prefers-reduced-motion: reduce) {

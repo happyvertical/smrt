@@ -87,26 +87,26 @@ async function handleToggle() {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--md-sys-spacing-sm, 8px);
+    gap: var(--smrt-spacing-sm, 8px);
   }
 
   .mic-button {
     width: 3rem;
     height: 3rem;
-    border-radius: var(--md-sys-shape-corner-full, 50%);
+    border-radius: var(--smrt-radius-full, 50%);
     border: none;
-    background: var(--md-sys-color-primary, #005ac1);
-    color: var(--md-sys-color-on-primary, #ffffff);
+    background: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-on-primary, #ffffff);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all var(--md-sys-motion-duration-short3, 200ms) var(--md-sys-motion-easing-standard, ease);
-    box-shadow: var(--md-sys-elevation-level1, 0 2px 4px rgba(0, 0, 0, 0.1));
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
+    box-shadow: var(--smrt-elevation-level1, 0 2px 4px rgba(0, 0, 0, 0.1));
   }
 
   .mic-button:hover:not(:disabled) {
-    background: var(--md-sys-color-primary-container, #005ac1);
+    background: var(--smrt-color-primary-container, #005ac1);
     opacity: 0.9;
     transform: scale(1.05);
   }
@@ -117,7 +117,7 @@ async function handleToggle() {
   }
 
   .mic-button.listening {
-    background: var(--md-sys-color-error, #ba1a1a);
+    background: var(--smrt-color-error, #ba1a1a);
     animation: pulse 1.5s ease-in-out infinite;
   }
 
@@ -161,13 +161,13 @@ async function handleToggle() {
   .error {
     display: flex;
     align-items: center;
-    gap: var(--md-sys-spacing-sm, 8px);
-    padding: var(--md-sys-spacing-md, 12px) var(--md-sys-spacing-md, 16px);
-    background: var(--md-sys-color-error-container, #ffdad6);
-    border: 1px solid var(--md-sys-color-error, #ba1a1a);
-    border-radius: var(--md-sys-shape-corner-medium, 8px);
-    color: var(--md-sys-color-on-error-container, #410002);
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
+    gap: var(--smrt-spacing-sm, 8px);
+    padding: var(--smrt-spacing-md, 12px) var(--smrt-spacing-md, 16px);
+    background: var(--smrt-color-error-container, #ffdad6);
+    border: 1px solid var(--smrt-color-error, #ba1a1a);
+    border-radius: var(--smrt-radius-medium, 8px);
+    color: var(--smrt-color-on-error-container, #410002);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
   .error-icon {
@@ -176,11 +176,11 @@ async function handleToggle() {
     justify-content: center;
     width: 20px;
     height: 20px;
-    background: var(--md-sys-color-error, #ba1a1a);
-    color: var(--md-sys-color-on-error, #ffffff);
-    border-radius: var(--md-sys-shape-corner-full, 50%);
-    font-weight: var(--md-sys-typescale-weight-bold, 700);
-    font: var(--md-sys-typescale-label-small-font, 0.75rem / 1 sans-serif);
+    background: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-on-error, #ffffff);
+    border-radius: var(--smrt-radius-full, 50%);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    font: var(--smrt-typography-label-small-font, 0.75rem / 1 sans-serif);
   }
 
   @media (prefers-reduced-motion: reduce) {

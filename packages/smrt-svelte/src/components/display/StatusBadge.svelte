@@ -37,160 +37,160 @@ const colorSchemes: Record<
 > = {
   default: {
     active: {
-      bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-      text: 'var(--md-sys-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container, #dcfce7)',
+      text: 'var(--smrt-color-on-primary-container, #166534)',
     },
     inactive: {
-      bg: 'var(--md-sys-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--md-sys-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
+      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
     },
     pending: {
-      bg: 'var(--md-sys-color-secondary-container, #fef3c7)',
-      text: 'var(--md-sys-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
+      text: 'var(--smrt-color-on-secondary-container, #92400e)',
     },
     error: {
-      bg: 'var(--md-sys-color-error-container, #fee2e2)',
-      text: 'var(--md-sys-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container, #fee2e2)',
+      text: 'var(--smrt-color-on-error-container, #dc2626)',
     },
     success: {
-      bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-      text: 'var(--md-sys-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container, #dcfce7)',
+      text: 'var(--smrt-color-on-primary-container, #166534)',
     },
     warning: {
-      bg: 'var(--md-sys-color-secondary-container, #fef3c7)',
-      text: 'var(--md-sys-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
+      text: 'var(--smrt-color-on-secondary-container, #92400e)',
     },
   },
   invoice: {
     draft: {
-      bg: 'var(--md-sys-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--md-sys-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
+      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
     },
     sent: {
-      bg: 'var(--md-sys-color-tertiary-container, #dbeafe)',
-      text: 'var(--md-sys-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
+      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
     },
     viewed: {
-      bg: 'var(--md-sys-color-primary-container, #e0e7ff)',
-      text: 'var(--md-sys-color-on-primary-container, #4338ca)',
+      bg: 'var(--smrt-color-primary-container, #e0e7ff)',
+      text: 'var(--smrt-color-on-primary-container, #4338ca)',
     },
     paid: {
-      bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-      text: 'var(--md-sys-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container, #dcfce7)',
+      text: 'var(--smrt-color-on-primary-container, #166534)',
     },
     overdue: {
-      bg: 'var(--md-sys-color-error-container, #fee2e2)',
-      text: 'var(--md-sys-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container, #fee2e2)',
+      text: 'var(--smrt-color-on-error-container, #dc2626)',
     },
     cancelled: {
-      bg: 'var(--md-sys-color-error-container, #fecaca)',
-      text: 'var(--md-sys-color-on-error-container, #991b1b)',
+      bg: 'var(--smrt-color-error-container, #fecaca)',
+      text: 'var(--smrt-color-on-error-container, #991b1b)',
     },
   },
   project: {
     lead: {
-      bg: 'var(--md-sys-color-primary-container, #e0e7ff)',
-      text: 'var(--md-sys-color-on-primary-container, #4338ca)',
+      bg: 'var(--smrt-color-primary-container, #e0e7ff)',
+      text: 'var(--smrt-color-on-primary-container, #4338ca)',
     },
     quoted: {
-      bg: 'var(--md-sys-color-secondary-container, #fef3c7)',
-      text: 'var(--md-sys-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
+      text: 'var(--smrt-color-on-secondary-container, #92400e)',
     },
     active: {
-      bg: 'var(--md-sys-color-tertiary-container, #dbeafe)',
-      text: 'var(--md-sys-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
+      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
     },
     on_hold: {
-      bg: 'var(--md-sys-color-secondary-container, #fef3c7)',
-      text: 'var(--md-sys-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
+      text: 'var(--smrt-color-on-secondary-container, #92400e)',
     },
     completed: {
-      bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-      text: 'var(--md-sys-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container, #dcfce7)',
+      text: 'var(--smrt-color-on-primary-container, #166534)',
     },
     archived: {
-      bg: 'var(--md-sys-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--md-sys-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
+      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
     },
   },
   expense: {
     unbilled: {
-      bg: 'var(--md-sys-color-secondary-container, #fef3c7)',
-      text: 'var(--md-sys-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
+      text: 'var(--smrt-color-on-secondary-container, #92400e)',
     },
     billed: {
-      bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-      text: 'var(--md-sys-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container, #dcfce7)',
+      text: 'var(--smrt-color-on-primary-container, #166534)',
     },
     reimbursed: {
-      bg: 'var(--md-sys-color-tertiary-container, #dbeafe)',
-      text: 'var(--md-sys-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
+      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
     },
     rejected: {
-      bg: 'var(--md-sys-color-error-container, #fee2e2)',
-      text: 'var(--md-sys-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container, #fee2e2)',
+      text: 'var(--smrt-color-on-error-container, #dc2626)',
     },
   },
   time: {
     draft: {
-      bg: 'var(--md-sys-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--md-sys-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
+      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
     },
     submitted: {
-      bg: 'var(--md-sys-color-tertiary-container, #dbeafe)',
-      text: 'var(--md-sys-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
+      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
     },
     approved: {
-      bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-      text: 'var(--md-sys-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container, #dcfce7)',
+      text: 'var(--smrt-color-on-primary-container, #166534)',
     },
     rejected: {
-      bg: 'var(--md-sys-color-error-container, #fee2e2)',
-      text: 'var(--md-sys-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container, #fee2e2)',
+      text: 'var(--smrt-color-on-error-container, #dc2626)',
     },
     billed: {
-      bg: 'var(--md-sys-color-primary-container, #e0e7ff)',
-      text: 'var(--md-sys-color-on-primary-container, #4338ca)',
+      bg: 'var(--smrt-color-primary-container, #e0e7ff)',
+      text: 'var(--smrt-color-on-primary-container, #4338ca)',
     },
   },
   compliance: {
     valid: {
-      bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-      text: 'var(--md-sys-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container, #dcfce7)',
+      text: 'var(--smrt-color-on-primary-container, #166534)',
     },
     expiring: {
-      bg: 'var(--md-sys-color-secondary-container, #fef3c7)',
-      text: 'var(--md-sys-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
+      text: 'var(--smrt-color-on-secondary-container, #92400e)',
     },
     expired: {
-      bg: 'var(--md-sys-color-error-container, #fee2e2)',
-      text: 'var(--md-sys-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container, #fee2e2)',
+      text: 'var(--smrt-color-on-error-container, #dc2626)',
     },
     pending: {
-      bg: 'var(--md-sys-color-tertiary-container, #dbeafe)',
-      text: 'var(--md-sys-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
+      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
     },
   },
   estimate: {
     draft: {
-      bg: 'var(--md-sys-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--md-sys-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
+      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
     },
     presented: {
-      bg: 'var(--md-sys-color-tertiary-container, #dbeafe)',
-      text: 'var(--md-sys-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
+      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
     },
     accepted: {
-      bg: 'var(--md-sys-color-primary-container, #dcfce7)',
-      text: 'var(--md-sys-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container, #dcfce7)',
+      text: 'var(--smrt-color-on-primary-container, #166534)',
     },
     declined: {
-      bg: 'var(--md-sys-color-error-container, #fee2e2)',
-      text: 'var(--md-sys-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container, #fee2e2)',
+      text: 'var(--smrt-color-on-error-container, #dc2626)',
     },
     expired: {
-      bg: 'var(--md-sys-color-error-container, #fecaca)',
-      text: 'var(--md-sys-color-on-error-container, #991b1b)',
+      bg: 'var(--smrt-color-error-container, #fecaca)',
+      text: 'var(--smrt-color-on-error-container, #991b1b)',
     },
   },
 };
@@ -203,8 +203,8 @@ const colors = $derived.by(() => {
   const scheme = colorSchemes[type] ?? colorSchemes.default;
   return (
     scheme[normalizedStatus] ?? {
-      bg: 'var(--md-sys-color-surface-container-highest, #e5e7eb)',
-      text: 'var(--md-sys-color-on-surface-variant, #374151)',
+      bg: 'var(--smrt-color-surface-container-highest, #e5e7eb)',
+      text: 'var(--smrt-color-on-surface-variant, #374151)',
     }
   );
 });
@@ -229,9 +229,9 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
     display: inline-flex;
     align-items: center;
     padding: 0.25rem 0.75rem;
-    font-size: var(--md-sys-typescale-label-medium-size, 0.75rem);
-    font-weight: var(--md-sys-typescale-label-medium-weight, 500);
-    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-label-medium-weight, 500);
+    border-radius: var(--smrt-radius-full, 9999px);
     white-space: nowrap;
     text-transform: capitalize;
     background-color: var(--badge-bg);
@@ -241,12 +241,12 @@ const displayLabel = $derived(label ?? status.replace(/_/g, ' '));
 
   .status-badge.sm {
     padding: 0.125rem 0.5rem;
-    font-size: var(--md-sys-typescale-label-small-size, 0.625rem);
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
   }
 
   .status-badge.lg {
     padding: 0.375rem 1rem;
-    font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .status-badge.outline {

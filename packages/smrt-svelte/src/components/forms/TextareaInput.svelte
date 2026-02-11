@@ -254,9 +254,9 @@ function handleInput(e: Event) {
 
 <style>
   .smrt-text-field {
-    --field-color: var(--md-sys-color-on-surface-variant);
-    --field-bg: var(--md-sys-color-surface-container-highest);
-    --field-active: var(--md-sys-color-primary);
+    --field-color: var(--smrt-color-on-surface-variant);
+    --field-bg: var(--smrt-color-surface-container-highest);
+    --field-active: var(--smrt-color-primary);
     
     display: flex;
     flex-direction: column;
@@ -275,7 +275,7 @@ function handleInput(e: Event) {
   }
 
   .container:hover {
-    background-color: var(--md-sys-color-surface-container-high);
+    background-color: var(--smrt-color-surface-container-high);
   }
 
   .content {
@@ -308,7 +308,7 @@ function handleInput(e: Event) {
     font-size: 1rem;
     line-height: 1.5;
     letter-spacing: 0.5px;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
     width: 100%;
     padding: 0;
     margin: 0;
@@ -352,8 +352,8 @@ function handleInput(e: Event) {
   }
 
   .mic-btn.active {
-    color: var(--md-sys-color-primary);
-    background-color: var(--md-sys-color-primary-container);
+    color: var(--smrt-color-primary);
+    background-color: var(--smrt-color-primary-container);
   }
 
   .supporting-text {
@@ -362,12 +362,12 @@ function handleInput(e: Event) {
     min-height: 16px;
   }
 
-  .info { color: var(--md-sys-color-on-surface-variant); }
-  .error { color: var(--md-sys-color-error); }
-  .success { color: var(--md-sys-color-primary); }
+  .info { color: var(--smrt-color-on-surface-variant); }
+  .error { color: var(--smrt-color-error); }
+  .success { color: var(--smrt-color-primary); }
 
   .listening {
-    background-color: var(--md-sys-color-primary-container);
+    background-color: var(--smrt-color-primary-container);
   }
 
   .disabled {
@@ -376,6 +376,6 @@ function handleInput(e: Event) {
   }
 
   .smrt-mode {
-    --field-active: var(--md-sys-color-tertiary);
+    --field-active: var(--smrt-color-tertiary);
   }
 </style>

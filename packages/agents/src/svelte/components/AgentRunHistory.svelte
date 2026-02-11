@@ -112,8 +112,8 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
     width: 100%;
     border-collapse: collapse;
     border-spacing: 0;
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
-    background: var(--md-sys-color-surface, #ffffff);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    background: var(--smrt-color-surface, #ffffff);
   }
 
   .run-history.loading {
@@ -122,24 +122,24 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
   }
 
   .run-history__head {
-    background: var(--md-sys-color-surface-container, #f3f4f6);
+    background: var(--smrt-color-surface-container, #f3f4f6);
   }
 
   .run-history__head th {
-    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
-    font-weight: var(--md-sys-typescale-weight-semibold, 600);
+    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
   }
 
   .run-history__body tr {
-    border-bottom: 1px solid var(--md-sys-color-outline-variant, #c4c6cf);
-    transition: background-color var(--md-sys-motion-duration-short2, 150ms) var(--md-sys-motion-easing-standard, ease);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .run-history__body tr:hover:not(.run-history__row--loading):not(.run-history__row--empty) {
-    background: var(--md-sys-color-surface-container-low, #f9fafb);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
     cursor: pointer;
   }
 
@@ -154,21 +154,21 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
   }
 
   .run-history__cell {
-    padding: var(--md-sys-spacing-sm, 0.5rem) var(--md-sys-spacing-md, 1rem);
+    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
     vertical-align: middle;
   }
 
   .run-history__cell--agent {
-    font-weight: var(--md-sys-typescale-weight-medium, 500);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .run-history__cell--date {
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant, #43474e);
     white-space: nowrap;
   }
 
   .run-history__cell--duration {
-    font-family: var(--md-sys-font-family-mono, ui-monospace, monospace);
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     text-align: center;
   }
 
@@ -177,18 +177,18 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
   }
 
   .error-text {
-    color: var(--md-sys-color-error, #ba1a1a);
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-error, #ba1a1a);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     cursor: help;
   }
 
   .no-error {
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .run-history__cell--loading,
   .run-history__cell--empty {
-    padding: var(--md-sys-spacing-xl, 2rem);
+    padding: var(--smrt-spacing-xl, 2rem);
     text-align: center;
   }
 
@@ -196,15 +196,15 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--md-sys-spacing-sm, 0.5rem);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    gap: var(--smrt-spacing-sm, 0.5rem);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .run-history__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--md-sys-color-outline-variant, #c4c6cf);
-    border-top-color: var(--md-sys-color-primary, #005ac1);
+    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-top-color: var(--smrt-color-primary, #005ac1);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -216,6 +216,6 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
   }
 
   .run-history__empty {
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 </style>

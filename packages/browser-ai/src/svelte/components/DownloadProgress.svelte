@@ -62,38 +62,38 @@ function formatBytes(bytes: number): string {
 <style>
   .download-progress {
     width: 100%;
-    padding: var(--md-sys-spacing-md, 12px);
-    background: var(--md-sys-color-surface-container-low, #f9fafb);
-    border-radius: var(--md-sys-shape-corner-medium, 8px);
+    padding: var(--smrt-spacing-md, 12px);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    border-radius: var(--smrt-radius-medium, 8px);
   }
 
   .label {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font: var(--md-sys-typescale-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface, #1a1c1e);
-    margin-bottom: var(--md-sys-spacing-sm, 8px);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface, #1a1c1e);
+    margin-bottom: var(--smrt-spacing-sm, 8px);
   }
 
   .percent {
-    font-weight: var(--md-sys-typescale-weight-semibold, 600);
-    color: var(--md-sys-color-primary, #005ac1);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-primary, #005ac1);
   }
 
   .progress-bar {
     width: 100%;
     height: 8px;
-    background: var(--md-sys-color-outline-variant, #c4c6cf);
-    border-radius: var(--md-sys-shape-corner-small, 4px);
+    background: var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: var(--smrt-radius-small, 4px);
     overflow: hidden;
   }
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--md-sys-color-primary, #005ac1), var(--md-sys-color-primary-container, #d6e3ff));
-    border-radius: var(--md-sys-shape-corner-small, 4px);
-    transition: width var(--md-sys-motion-duration-medium1, 300ms) var(--md-sys-motion-easing-standard, ease);
+    background: linear-gradient(90deg, var(--smrt-color-primary, #005ac1), var(--smrt-color-primary-container, #d6e3ff));
+    border-radius: var(--smrt-radius-small, 4px);
+    transition: width var(--smrt-duration-medium1, 300ms) var(--smrt-easing-standard, ease);
   }
 
   .progress-fill.indeterminate {
@@ -107,15 +107,15 @@ function formatBytes(bytes: number): string {
   }
 
   .bytes {
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--md-sys-color-on-surface-variant, #43474e);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
     margin-top: 6px;
     text-align: center;
   }
 
   .current-file {
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--md-sys-color-outline, #74777f);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-outline, #74777f);
     margin-top: 4px;
     text-align: center;
     white-space: nowrap;
@@ -124,8 +124,8 @@ function formatBytes(bytes: number): string {
   }
 
   .error {
-    font: var(--md-sys-typescale-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--md-sys-color-error, #ba1a1a);
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-error, #ba1a1a);
     margin-top: 6px;
   }
 

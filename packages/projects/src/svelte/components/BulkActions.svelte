@@ -94,9 +94,9 @@ const visible = $derived(selectedCount > 0);
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    background: var(--md-sys-color-secondary-container);
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium, 12px);
+    background: var(--smrt-color-secondary-container);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium, 12px);
     margin-bottom: 1rem;
   }
 
@@ -107,28 +107,28 @@ const visible = $derived(selectedCount > 0);
   }
 
   .count {
-    font-size: var(--md-sys-typescale-title-medium-size, 1rem);
-    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
-    color: var(--md-sys-color-on-secondary-container);
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .label {
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
-    color: var(--md-sys-color-on-secondary-container);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .clear-btn {
     background: none;
     border: none;
     padding: 0.25rem 0.5rem;
-    font-size: var(--md-sys-typescale-label-medium-size, 0.75rem);
-    color: var(--md-sys-color-primary);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    color: var(--smrt-color-primary);
     cursor: pointer;
     text-decoration: underline;
   }
 
   .clear-btn:hover:not(:disabled) {
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
     opacity: 0.8;
   }
 
@@ -148,13 +148,13 @@ const visible = $derived(selectedCount > 0);
     justify-content: center;
     gap: 0.5rem;
     padding: 0.5rem 1rem;
-    font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
-    font-weight: var(--md-sys-typescale-label-large-weight, 500);
-    letter-spacing: var(--md-sys-typescale-label-large-tracking, 0.1px);
-    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-label-large-weight, 500);
+    letter-spacing: var(--smrt-typography-label-large-tracking, 0.1px);
+    border-radius: var(--smrt-radius-full, 9999px);
     border: none;
     cursor: pointer;
-    transition: all 0.2s var(--md-sys-motion-easing-standard);
+    transition: all 0.2s var(--smrt-easing-standard);
   }
 
   .btn:disabled {
@@ -163,41 +163,41 @@ const visible = $derived(selectedCount > 0);
   }
 
   .btn-filled {
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
   }
 
   .btn-filled:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .btn-error {
-    background: var(--md-sys-color-error);
-    color: var(--md-sys-color-on-error);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
   }
 
   .btn-error:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .btn-error-outlined {
     background: transparent;
-    border: 1px solid var(--md-sys-color-error);
-    color: var(--md-sys-color-error);
+    border: 1px solid var(--smrt-color-error);
+    color: var(--smrt-color-error);
   }
 
   .btn-error-outlined:hover:not(:disabled) {
-    background: var(--md-sys-color-error-container);
+    background: var(--smrt-color-error-container);
   }
 
   .btn-outlined {
     background: transparent;
-    border: 1px solid var(--md-sys-color-outline);
-    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--smrt-color-outline);
+    color: var(--smrt-color-on-surface);
   }
 
   .btn-outlined:hover:not(:disabled) {
-    background: var(--md-sys-color-surface-container-highest);
+    background: var(--smrt-color-surface-container-highest);
   }
 
   @media (max-width: 640px) {
