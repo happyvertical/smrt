@@ -117,6 +117,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@happyvertical/browser-ai": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "chrono-node": "^2.9.0"
   },
