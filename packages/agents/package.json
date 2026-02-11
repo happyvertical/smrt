@@ -47,17 +47,17 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.66.9",
-    "@happyvertical/files": "^0.66.9",
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/files": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
-    "@happyvertical/utils": "^0.66.9"
+    "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
-    "@happyvertical/logger": "^0.66.9",
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@happyvertical/sql": "^0.67.7",
+    "@happyvertical/sql": "catalog:",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
     "typescript": "^5.9.3",

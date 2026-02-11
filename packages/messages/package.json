@@ -21,15 +21,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@happyvertical/ai": "^0.66.9",
-    "@happyvertical/email": "^0.66.9",
-    "@happyvertical/files": "^0.66.9",
-    "@happyvertical/logger": "^0.66.9",
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/email": "catalog:",
+    "@happyvertical/files": "catalog:",
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
-    "@happyvertical/sql": "^0.67.7",
-    "@happyvertical/utils": "^0.66.9"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/utils": "catalog:"
   },
   "peerDependencies": {
     "@happyvertical/encryption": "*"
