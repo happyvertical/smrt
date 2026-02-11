@@ -9,7 +9,8 @@
 import { ripple } from '@happyvertical/smrt-svelte';
 import type { InvoiceData, InvoiceStatus } from '../types.js';
 
-interface Props {
+/** Props for InvoiceCard component */
+export interface Props {
   /** Invoice data */
   invoice: InvoiceData;
   /** Currency code */
@@ -127,20 +128,28 @@ const isOverdue = $derived.by(() => {
   .invoice-card {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px;
+    gap: var(--md-sys-spacing-3, 12px);
+    padding: var(--md-sys-spacing-4, 16px);
     background-color: var(--md-sys-color-surface-container-low);
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-large, 12px);
     text-decoration: none;
     color: var(--md-sys-color-on-surface);
     cursor: pointer;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: 
+      background-color var(--md-sys-motion-duration-medium, 200ms) var(--md-sys-motion-easing-standard, cubic-bezier(0.2, 0, 0, 1)),
+      box-shadow var(--md-sys-motion-duration-medium, 200ms) var(--md-sys-motion-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     text-align: left;
     width: 100%;
     border: none;
     position: relative;
     overflow: hidden;
     box-shadow: var(--md-sys-elevation-level1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .invoice-card {
+      transition: none;
+    }
   }
 
   .invoice-card:hover {
@@ -162,12 +171,12 @@ const isOverdue = $derived.by(() => {
 
   .status-badge {
     display: inline-flex;
-    padding: 0 8px;
+    padding: 0 var(--md-sys-spacing-2, 8px);
     height: 20px;
     align-items: center;
     font: var(--md-sys-typescale-label-small-font);
     font-weight: 600;
-    border-radius: 10px;
+    border-radius: var(--md-sys-shape-corner-full, 10px);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -193,7 +202,7 @@ const isOverdue = $derived.by(() => {
   .card-body {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--md-sys-spacing-1, 4px);
   }
 
   .customer-name {
