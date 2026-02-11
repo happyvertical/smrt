@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.81
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: bump SDK catalog to 0.68.6, external packages to latest (#919) (deps)
+  - @happyvertical/smrt-scanner@0.19.81
+  - @happyvertical/smrt-config@0.19.81
+  - @happyvertical/smrt-types@0.19.81
+
 ## 0.19.80
 
 ### Patch Changes

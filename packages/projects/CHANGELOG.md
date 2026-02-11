@@ -1,5 +1,16 @@
 # @happyvertical/smrt-projects
 
+## 0.19.81
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.19.81
+  - @happyvertical/smrt-tenancy@0.19.81
+  - @happyvertical/smrt-svelte@0.19.81
+  - @happyvertical/smrt-config@0.19.81
+  - @happyvertical/smrt-types@0.19.81
+
 ## 0.19.80
 
 ### Patch Changes
