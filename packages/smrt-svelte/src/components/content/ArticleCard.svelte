@@ -1,23 +1,24 @@
 <script lang="ts">
+/**
+ * ArticleCard - Displays an article preview card
+ *
+ * Shows article title, excerpt, metadata, and tags in a card format.
+ * Links to the full article page.
+ */
 import Badge from '../ui/Badge.svelte';
 import Card from '../ui/Card.svelte';
-
-// biome-ignore lint/style/useNamingConvention: Database column names use snake_case
-interface Article {
-  id: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  publish_date: string | null;
-  author: string | null;
-  tags: string;
-}
+import type { Article } from './types.js';
 
 interface Props {
+  /** Article data to display */
   article: Article;
+  /** Show article excerpt/description */
   showExcerpt?: boolean;
+  /** Show publication date */
   showDate?: boolean;
+  /** Show author name */
   showAuthor?: boolean;
+  /** Show tags */
   showTags?: boolean;
 }
 
@@ -28,6 +29,14 @@ const {
   showAuthor = true,
   showTags = false,
 }: Props = $props();
+
+/**
+ * Handle click event for analytics/tracking
+ */
+function handleClick(_event: MouseEvent) {
+  // Allow default navigation but could dispatch event for analytics
+  // dispatch('click', { article, event });
+}
 
 const _formattedDate = $derived(
   article.publish_date
@@ -63,7 +72,11 @@ const _tags = $derived.by(() => {
 });
 </script>
 
-<a href="/articles/{article.slug}" class="article-link">
+<a 
+  href="/articles/{article.slug}" 
+  class="article-link"
+  onclick={handleClick}
+>
   <Card hoverable>
     <article>
       <h3 class="title">{article.title}</h3>
@@ -117,6 +130,12 @@ const _tags = $derived.by(() => {
 
   .article-link:hover .title {
     color: var(--color-primary-main);
+  }
+
+  .article-link:focus-visible {
+    outline: 2px solid var(--color-primary-main);
+    outline-offset: 2px;
+    border-radius: var(--radius-md);
   }
 
   .excerpt {

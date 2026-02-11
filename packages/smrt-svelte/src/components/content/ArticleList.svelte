@@ -1,25 +1,27 @@
 <script lang="ts">
+/**
+ * ArticleList - Displays a grid of article cards
+ *
+ * Renders articles in a responsive grid layout with configurable columns.
+ */
 import Grid from '../layout/Grid.svelte';
 import ArticleCard from './ArticleCard.svelte';
-
-// biome-ignore lint/style/useNamingConvention: Database column names use snake_case
-interface Article {
-  id: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  publish_date: string | null;
-  author: string | null;
-  tags: string;
-}
+import type { Article } from './types.js';
 
 interface Props {
+  /** Array of articles to display */
   articles: Article[];
+  /** Number of columns in grid (or 'auto') */
   columns?: number | 'auto';
+  /** Show article excerpts */
   showExcerpt?: boolean;
+  /** Show publication dates */
   showDate?: boolean;
+  /** Show author names */
   showAuthor?: boolean;
+  /** Show tags */
   showTags?: boolean;
+  /** Message when no articles */
   emptyMessage?: string;
 }
 
@@ -36,19 +38,21 @@ const {
 </script>
 
 {#if articles.length === 0}
-  <div class="empty-state">
+  <div class="empty-state" role="status" aria-live="polite">
     <p>{emptyMessage}</p>
   </div>
 {:else}
-  <Grid {columns}>
+  <Grid {columns} role="list" aria-label="Articles">
     {#each articles as article (article.id)}
-      <ArticleCard
-        {article}
-        {showExcerpt}
-        {showDate}
-        {showAuthor}
-        {showTags}
-      />
+      <div role="listitem">
+        <ArticleCard
+          {article}
+          {showExcerpt}
+          {showDate}
+          {showAuthor}
+          {showTags}
+        />
+      </div>
     {/each}
   </Grid>
 {/if}
