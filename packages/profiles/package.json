@@ -35,7 +35,6 @@
     "@happyvertical/files": "catalog:",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
     "@noble/curves": "^1.8.1",
