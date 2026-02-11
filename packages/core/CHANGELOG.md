@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.79
+
+### Patch Changes
+
+- ### Features
+
+  - core type safety, deprecate .claude-meta.json, add CLAUDE.md docs (#889)
+  - @happyvertical/smrt-scanner@0.19.79
+  - @happyvertical/smrt-config@0.19.79
+  - @happyvertical/smrt-types@0.19.79
+
 ## 0.19.78
 
 ### Patch Changes
