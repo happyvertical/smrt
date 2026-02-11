@@ -7,7 +7,8 @@
  * Useful for budget tracking, task completion, etc.
  */
 
-interface Props {
+/** Props for ProgressBar component */
+export interface Props {
   /** Current value (0-100 or custom range) */
   value: number;
   /** Maximum value (default 100) */
@@ -108,7 +109,7 @@ const displayLabel = $derived.by(() => {
 
   .progress-label {
     font: var(--md-sys-typescale-label-large-font);
-    color: var(--md-sys-color-on-surface-variant);
+    color: var(--md-sys-color-on-surface-variant, #43474e);
   }
 
   .sm .progress-label {
@@ -118,13 +119,13 @@ const displayLabel = $derived.by(() => {
   .over-badge {
     font: var(--md-sys-typescale-label-small-font);
     font-weight: 600;
-    color: var(--md-sys-color-error);
+    color: var(--md-sys-color-error, #ba1a1a);
   }
 
   .progress-track {
     width: 100%;
     height: 4px;
-    background-color: var(--md-sys-color-surface-container-highest);
+    background-color: var(--md-sys-color-surface-container-highest, #e0e2ec);
     border-radius: 2px;
     overflow: hidden;
   }
@@ -140,10 +141,16 @@ const displayLabel = $derived.by(() => {
 
   .progress-bar {
     height: 100%;
-    transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
+    transition: width var(--md-sys-motion-duration-medium2, 300ms) var(--md-sys-motion-easing-standard, cubic-bezier(0.4, 0, 0.2, 1));
   }
 
-  .color-primary { background-color: var(--md-sys-color-primary); }
-  .color-tertiary { background-color: var(--md-sys-color-tertiary); }
-  .color-error { background-color: var(--md-sys-color-error); }
+  @media (prefers-reduced-motion: reduce) {
+    .progress-bar {
+      transition: none;
+    }
+  }
+
+  .color-primary { background-color: var(--md-sys-color-primary, #005ac1); }
+  .color-tertiary { background-color: var(--md-sys-color-tertiary, #6b5778); }
+  .color-error { background-color: var(--md-sys-color-error, #ba1a1a); }
 </style>

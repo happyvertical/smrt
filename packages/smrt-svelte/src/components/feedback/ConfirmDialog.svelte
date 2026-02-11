@@ -8,7 +8,8 @@
  */
 import { ripple } from '../../actions/ripple.js';
 
-interface Props {
+/** Props for ConfirmDialog component */
+export interface Props {
   /** Whether the dialog is open */
   open: boolean;
   /** Dialog title */
@@ -105,7 +106,7 @@ function handleKeydown(e: KeyboardEvent) {
     align-items: center;
     justify-content: center;
     background-color: rgba(0, 0, 0, 0.4);
-    z-index: var(--smrt-dialog-z-index, 1000);
+    z-index: var(--md-sys-z-index-dialog, 1000);
     padding: 1rem;
     backdrop-filter: blur(2px);
   }
@@ -211,6 +212,15 @@ function handleKeydown(e: KeyboardEvent) {
   @keyframes spin {
     to {
       transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dialog-content {
+      animation: none;
+    }
+    .spinner {
+      animation: none;
     }
   }
 </style>
