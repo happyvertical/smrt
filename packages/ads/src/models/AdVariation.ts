@@ -31,6 +31,7 @@ import { AdVariationStatus } from '../types/index.js';
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
