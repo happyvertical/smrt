@@ -39,12 +39,12 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-video": "workspace:*",
-    "@happyvertical/utils": "^0.66.9"
+    "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
-    "@happyvertical/logger": "^0.66.9",
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@happyvertical/sql": "^0.67.7",
+    "@happyvertical/sql": "catalog:",
     "@types/node": "25.0.9",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
