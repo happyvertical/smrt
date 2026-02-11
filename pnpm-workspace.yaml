@@ -4,22 +4,22 @@ packages:
   - 'packages/browser-ai'
 
 catalog:
-  '@happyvertical/ai': ^0.68.5
-  '@happyvertical/cache': ^0.68.5
-  '@happyvertical/documents': ^0.68.5
-  '@happyvertical/email': ^0.68.5
-  '@happyvertical/encryption': ^0.68.5
-  '@happyvertical/files': ^0.68.5
-  '@happyvertical/geo': ^0.68.5
-  '@happyvertical/images': ^0.68.5
-  '@happyvertical/jobs': ^0.68.5
-  '@happyvertical/json': ^0.68.5
-  '@happyvertical/logger': ^0.68.5
-  '@happyvertical/ocr': ^0.60.6
-  '@happyvertical/pdf': ^0.62.0
-  '@happyvertical/projects': ^0.68.5
-  '@happyvertical/repos': ^0.68.5
-  '@happyvertical/secrets': ^0.68.5
-  '@happyvertical/spider': ^0.60.7
-  '@happyvertical/sql': ^0.68.5
-  '@happyvertical/utils': ^0.68.5
+  '@happyvertical/ai': ^0.68.6
+  '@happyvertical/cache': ^0.68.6
+  '@happyvertical/documents': ^0.68.6
+  '@happyvertical/email': ^0.68.6
+  '@happyvertical/encryption': ^0.68.6
+  '@happyvertical/files': ^0.68.6
+  '@happyvertical/geo': ^0.68.6
+  '@happyvertical/images': ^0.68.6
+  '@happyvertical/jobs': ^0.68.6
+  '@happyvertical/json': ^0.68.6
+  '@happyvertical/logger': ^0.68.6
+  '@happyvertical/ocr': ^0.60.8
+  '@happyvertical/pdf': ^0.62.2
+  '@happyvertical/projects': ^0.68.6
+  '@happyvertical/repos': ^0.68.6
+  '@happyvertical/secrets': ^0.68.6
+  '@happyvertical/spider': ^0.60.8
+  '@happyvertical/sql': ^0.68.6
+  '@happyvertical/utils': ^0.68.6
