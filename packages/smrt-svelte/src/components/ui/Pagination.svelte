@@ -77,7 +77,7 @@ const hasNextPage = $derived(currentPage < totalPages);
 {#if totalPages > 1}
   <nav class="pagination" aria-label="Pagination">
     {#if onPageChange}
-      <button class="page-link nav-link" disabled={!hasPrevPage} onclick={() => onPageChange(currentPage - 1)} aria-label="Previous page">
+      <button class="page-link nav-link" type="button" disabled={!hasPrevPage} onclick={() => onPageChange(currentPage - 1)} aria-label="Previous page">
         &larr; Prev
       </button>
     {:else if hasPrevPage}
@@ -95,7 +95,7 @@ const hasNextPage = $derived(currentPage < totalPages);
         {:else if page === currentPage}
           <span class="page-link current" aria-current="page">{page}</span>
         {:else if onPageChange}
-          <button class="page-link" onclick={() => onPageChange(page as number)}>{page}</button>
+          <button class="page-link" type="button" onclick={() => onPageChange(page as number)}>{page}</button>
         {:else}
           <a href={getPageUrl(page)} class="page-link">{page}</a>
         {/if}
@@ -103,7 +103,7 @@ const hasNextPage = $derived(currentPage < totalPages);
     </div>
 
     {#if onPageChange}
-      <button class="page-link nav-link" disabled={!hasNextPage} onclick={() => onPageChange(currentPage + 1)} aria-label="Next page">
+      <button class="page-link nav-link" type="button" disabled={!hasNextPage} onclick={() => onPageChange(currentPage + 1)} aria-label="Next page">
         Next &rarr;
       </button>
     {:else if hasNextPage}

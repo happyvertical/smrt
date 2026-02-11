@@ -89,18 +89,56 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 }
 
+function isFileAccepted(file: File): boolean {
+  if (!accept?.trim()) return true;
+
+  const acceptList = accept
+    .split(',')
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+
+  if (acceptList.length === 0) return true;
+
+  const fileName = file.name.toLowerCase();
+  const fileType = (file.type || '').toLowerCase();
+  const fileExtIndex = fileName.lastIndexOf('.');
+  const fileExt = fileExtIndex !== -1 ? fileName.slice(fileExtIndex) : '';
+
+  return acceptList.some((rule) => {
+    const r = rule.toLowerCase();
+    if (r.startsWith('.')) return fileExt === r;
+    if (r.endsWith('/*'))
+      return fileType.startsWith(`${r.slice(0, r.indexOf('/'))}/`);
+    return fileType === r;
+  });
+}
+
 function addFiles(newFiles: File[]) {
   error = null;
 
   let filtered = newFiles;
+  const errorMessages: string[] = [];
+
+  // Validate accepted types
+  const rejected = filtered.filter((f) => !isFileAccepted(f));
+  if (rejected.length > 0) {
+    errorMessages.push(`${rejected.length} file(s) rejected: type not allowed`);
+    filtered = filtered.filter((f) => isFileAccepted(f));
+  }
 
   // Validate max size
   if (maxSize) {
     const oversized = filtered.filter((f) => f.size > maxSize!);
     if (oversized.length > 0) {
-      error = `${oversized.length} file(s) exceed the maximum size of ${formatFileSize(maxSize)}`;
+      errorMessages.push(
+        `${oversized.length} file(s) exceed the maximum size of ${formatFileSize(maxSize)}`,
+      );
       filtered = filtered.filter((f) => f.size <= maxSize!);
     }
+  }
+
+  if (errorMessages.length > 0) {
+    error = errorMessages.join('. ');
   }
 
   if (!multiple) {
@@ -175,6 +213,7 @@ function formatFileSize(bytes: number): string {
             onclick={() => removeFile(i)}
             aria-label="Remove {file.name}"
             type="button"
+            {disabled}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18" />

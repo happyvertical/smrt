@@ -2,7 +2,8 @@
 /**
  * CurrencyDisplay - Formats and displays monetary values
  *
- * Takes amount in cents and displays formatted currency.
+ * Displays formatted currency with configurable unit.
+ * Use `unit="cents"` (default) when amount is in cents, or `unit="dollars"` for dollar values.
  * Supports CAD/USD with appropriate symbols and locale formatting.
  */
 
