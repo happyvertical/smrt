@@ -5,7 +5,10 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { AnalyticsEvent } from '../models/AnalyticsEvent.js';
-import { TrackingEventStatus } from '../types/index.js';
+import {
+  type PropertyStatsWithTrend,
+  TrackingEventStatus,
+} from '../types/index.js';
 
 export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
   static readonly _itemClass = AnalyticsEvent;
@@ -224,5 +227,143 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
       conversions: events.filter((e) => e.isConversion()).length,
       pageviews: events.filter((e) => e.isPageview()).length,
     };
+  }
+
+  /**
+   * Get day-over-day pageview stats with trend for a property.
+   *
+   * Compares today's pageview count against yesterday's to produce a
+   * trend direction and percentage change. A threshold of 5% is used
+   * to classify 'up' vs 'down' vs 'flat'.
+   *
+   * @param propertyId - Property ID
+   * @param now - Optional current date (for testing)
+   * @returns Stats with trend
+   */
+  async getPropertyStatsWithTrend(
+    propertyId: string,
+    now?: Date,
+  ): Promise<PropertyStatsWithTrend> {
+    const currentTime = now || new Date();
+    const todayStart = new Date(
+      currentTime.getFullYear(),
+      currentTime.getMonth(),
+      currentTime.getDate(),
+    );
+    const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayEnd = new Date(todayStart.getTime() - 1);
+
+    const [todayEvents, yesterdayEvents] = await Promise.all([
+      this.findByDateRange(todayStart, currentTime),
+      this.findByDateRange(yesterdayStart, yesterdayEnd),
+    ]);
+
+    // Filter to pageviews for this property
+    const todayPageviewEvents = todayEvents.filter(
+      (e) => e.propertyId === propertyId && e.eventName === 'page_view',
+    );
+    const yesterdayPageviewEvents = yesterdayEvents.filter(
+      (e) => e.propertyId === propertyId && e.eventName === 'page_view',
+    );
+
+    // Count unique clients (users)
+    const todayClients = new Set(todayPageviewEvents.map((e) => e.clientId));
+    const yesterdayClients = new Set(
+      yesterdayPageviewEvents.map((e) => e.clientId),
+    );
+
+    const todayPageviews = todayPageviewEvents.length;
+    const yesterdayPageviews = yesterdayPageviewEvents.length;
+
+    // Calculate trend
+    let trend: 'up' | 'down' | 'flat' = 'flat';
+    let trendPercent = 0;
+
+    if (yesterdayPageviews > 0) {
+      const change =
+        ((todayPageviews - yesterdayPageviews) / yesterdayPageviews) * 100;
+      trendPercent = Math.round(change);
+      if (change > 5) trend = 'up';
+      else if (change < -5) trend = 'down';
+    }
+
+    return {
+      todayPageviews,
+      todayUsers: todayClients.size,
+      yesterdayPageviews,
+      yesterdayUsers: yesterdayClients.size,
+      trend,
+      trendPercent,
+    };
+  }
+
+  /**
+   * Get day-over-day stats for multiple properties in batch.
+   *
+   * @param propertyIds - Array of property IDs
+   * @param now - Optional current date (for testing)
+   * @returns Map of propertyId to stats
+   */
+  async getBatchPropertyStats(
+    propertyIds: string[],
+    now?: Date,
+  ): Promise<Map<string, PropertyStatsWithTrend>> {
+    const results = new Map<string, PropertyStatsWithTrend>();
+
+    // Fetch all date-ranged events once to avoid N+1 queries
+    const currentTime = now || new Date();
+    const todayStart = new Date(
+      currentTime.getFullYear(),
+      currentTime.getMonth(),
+      currentTime.getDate(),
+    );
+    const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayEnd = new Date(todayStart.getTime() - 1);
+
+    const [todayEvents, yesterdayEvents] = await Promise.all([
+      this.findByDateRange(todayStart, currentTime),
+      this.findByDateRange(yesterdayStart, yesterdayEnd),
+    ]);
+
+    const propertyIdSet = new Set(propertyIds);
+
+    for (const propertyId of propertyIds) {
+      const todayPageviewEvents = todayEvents.filter(
+        (e) => e.propertyId === propertyId && e.eventName === 'page_view',
+      );
+      const yesterdayPageviewEvents = yesterdayEvents.filter(
+        (e) => e.propertyId === propertyId && e.eventName === 'page_view',
+      );
+
+      const todayClients = new Set(todayPageviewEvents.map((e) => e.clientId));
+      const yesterdayClients = new Set(
+        yesterdayPageviewEvents.map((e) => e.clientId),
+      );
+
+      const todayPageviews = todayPageviewEvents.length;
+      const yesterdayPageviews = yesterdayPageviewEvents.length;
+
+      let trend: 'up' | 'down' | 'flat' = 'flat';
+      let trendPercent = 0;
+
+      if (yesterdayPageviews > 0) {
+        const change =
+          ((todayPageviews - yesterdayPageviews) / yesterdayPageviews) * 100;
+        trendPercent = Math.round(change);
+        if (change > 5) trend = 'up';
+        else if (change < -5) trend = 'down';
+      }
+
+      results.set(propertyId, {
+        todayPageviews,
+        todayUsers: todayClients.size,
+        yesterdayPageviews,
+        yesterdayUsers: yesterdayClients.size,
+        trend,
+        trendPercent,
+      });
+    }
+
+    return results;
   }
 }

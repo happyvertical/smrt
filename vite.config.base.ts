@@ -2,15 +2,33 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 
+interface PackageConfigOptions {
+  /**
+   * Svelte component subdirectory (relative to src/).
+   * When set, vite externalizes .svelte imports and skips that directory
+   * for dts generation. Use `svelte-package` in a secondary build step
+   * to generate proper .svelte.d.ts type declarations.
+   *
+   * Example build script: `vite build --mode library && svelte-package -i src/svelte -o dist/svelte -p`
+   */
+  svelte?: string;
+}
+
 /**
  * Shared Vite configuration factory for all SMRT packages
  *
  * Creates a standardized build configuration for Node.js-only packages
  * with TypeScript declaration generation.
  *
+ * For packages with Svelte components, pass `{ svelte: 'svelte' }` and add
+ * a `svelte-package` step to the build script. See smrt-analytics for example.
+ *
  * Adapted from @have/sdk vite.config.base.ts pattern (PR 238)
  */
-export function createPackageConfig(packageName: string) {
+export function createPackageConfig(
+  packageName: string,
+  options: PackageConfigOptions = {},
+) {
   const packageDir = resolve(__dirname, 'packages', packageName);
 
   // Packages that should NOT use smrtPlugin (framework infrastructure)
@@ -141,6 +159,12 @@ export function createPackageConfig(packageName: string) {
             '@smrt/client',
             '@smrt/mcp',
             '@smrt/manifest',
+
+            // When svelte option is set, externalize .svelte imports
+            // (they're handled by svelte-package in a secondary build step)
+            ...(options.svelte
+              ? [/\.svelte$/, 'svelte', 'svelte/internal', 'svelte/store']
+              : []),
           ],
         },
         minify: false, // Keep code readable for library usage
@@ -174,9 +198,12 @@ export function createPackageConfig(packageName: string) {
             '**/*.config.js',
             // Declaration files
             '**/*.d.ts',
+            // Svelte dir is handled by svelte-package
+            ...(options.svelte ? [`**/${options.svelte}/**`] : []),
           ],
           insertTypesEntry: false, // We handle this in package.json
-          rollupTypes: true, // Bundle types to preserve type-only exports
+          // Don't rollup types when svelte subdir exists (separate entry points)
+          rollupTypes: !options.svelte,
           // Use package-specific tsconfig
           tsconfigPath: resolve(packageDir, 'tsconfig.json'),
         }),

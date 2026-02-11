@@ -19,7 +19,7 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "scripts": {
-    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte -p && node ../../scripts/generate-stub-from-manifest.js",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
@@ -44,8 +44,10 @@
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "^0.67.7",
+    "@sveltejs/package": "^2.5.7",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
+    "svelte": "^5.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"

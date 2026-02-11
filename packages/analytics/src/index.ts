@@ -27,6 +27,7 @@ export {
 export type {
   AnalyticsCapabilities,
   AnalyticsInterface,
+  PropertyStatsWithTrend,
   SDKCustomDimension,
   SDKCustomMetric,
   SDKDataStream,
