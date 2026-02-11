@@ -570,7 +570,7 @@ describe.skipIf(skipTests)(
         expect(statsB).toBeDefined();
         expect(statsB?.todayPageviews).toBe(0);
         expect(statsB?.yesterdayPageviews).toBe(3);
-        expect(statsB?.trend).toBe('flat'); // 0 yesterday means no % calc
+        expect(statsB?.trend).toBe('down'); // 0 today vs 3 yesterday = -100%
       });
     });
   },

@@ -139,8 +139,8 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
   ): Promise<AnalyticsEvent[]> {
     return await this.list({
       where: {
-        'eventTimestamp >=': startDate.toISOString(),
-        'eventTimestamp <=': endDate.toISOString(),
+        'eventTimestamp >=': startDate,
+        'eventTimestamp <=': endDate,
       },
       orderBy: 'eventTimestamp DESC',
     });
@@ -258,16 +258,16 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
         where: {
           propertyId,
           eventName: 'page_view',
-          'eventTimestamp >=': todayStart.toISOString(),
-          'eventTimestamp <=': currentTime.toISOString(),
+          'eventTimestamp >=': todayStart,
+          'eventTimestamp <=': currentTime,
         },
       }),
       this.list({
         where: {
           propertyId,
           eventName: 'page_view',
-          'eventTimestamp >=': yesterdayStart.toISOString(),
-          'eventTimestamp <=': yesterdayEnd.toISOString(),
+          'eventTimestamp >=': yesterdayStart,
+          'eventTimestamp <=': yesterdayEnd,
         },
       }),
     ]);
@@ -330,15 +330,15 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
       this.list({
         where: {
           eventName: 'page_view',
-          'eventTimestamp >=': todayStart.toISOString(),
-          'eventTimestamp <=': currentTime.toISOString(),
+          'eventTimestamp >=': todayStart,
+          'eventTimestamp <=': currentTime,
         },
       }),
       this.list({
         where: {
           eventName: 'page_view',
-          'eventTimestamp >=': yesterdayStart.toISOString(),
-          'eventTimestamp <=': yesterdayEnd.toISOString(),
+          'eventTimestamp >=': yesterdayStart,
+          'eventTimestamp <=': yesterdayEnd,
         },
       }),
     ]);
