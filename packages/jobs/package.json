@@ -18,13 +18,13 @@
     "test": "npx vitest run"
   },
   "dependencies": {
-    "@happyvertical/jobs": "^0.66.9",
-    "@happyvertical/logger": "^0.66.9",
+    "@happyvertical/jobs": "catalog:",
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "^0.67.7",
-    "@happyvertical/utils": "^0.66.9"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
     "@types/node": "25.0.9",
