@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.19.82
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve import aliases in extends clauses (#920) (scanner)
+  - @happyvertical/smrt-scanner@0.19.82
+  - @happyvertical/smrt-config@0.19.82
+  - @happyvertical/smrt-types@0.19.82
+
 ## 0.19.81
 
 ### Patch Changes

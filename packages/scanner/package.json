@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-scanner",
-  "version": "0.19.81",
+  "version": "0.19.82",
   "description": "High-performance TypeScript scanner using OXC for SMRT manifest generation",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
