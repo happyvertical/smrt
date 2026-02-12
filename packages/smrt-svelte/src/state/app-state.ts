@@ -4,6 +4,7 @@
  * Framework-agnostic state shape - Svelte bindings are in app-state.svelte.ts
  */
 
+import type { User } from '@happyvertical/smrt-users';
 import type {
   BrowserAICapabilities,
   DownloadProgress,
@@ -11,8 +12,7 @@ import type {
   LLMAdapter,
   STTAdapter,
   TTSAdapter,
-} from '@happyvertical/browser-ai';
-import type { User } from '@happyvertical/smrt-users';
+} from '../browser-ai/index.js';
 
 // Re-export User type for convenience
 export type { User } from '@happyvertical/smrt-users';

@@ -23,54 +23,41 @@ export {
   permission,
 } from './actions/permission.js';
 export { ripple } from './actions/ripple.js';
-
+// Browser AI (moved from @happyvertical/browser-ai)
+export * from './browser-ai/index.js';
+export * from './browser-ai/svelte/index.js';
 // Admin components
 export * from './components/admin/index.js';
-
 // Calendar components
 export * from './components/calendar/index.js';
-
 // Data Components
 export * from './components/data/index.js';
-
 // Display components
 export * from './components/display/index.js';
-
 // Feedback components
 export * from './components/feedback/index.js';
-
 // Form components
 export * from './components/forms/index.js';
-
 // Layout components
 export * from './components/layout/index.js';
-
 // Membership components
 export { default as MembershipCard } from './components/memberships/MembershipCard.svelte';
 export { default as MembershipList } from './components/memberships/MembershipList.svelte';
-
 // Module components (for dynamic module UI rendering)
 export * from './components/module/index.js';
-
 // Navigation components
 export * from './components/nav/index.js';
-
 // Permission components
 export { default as PermissionCheck } from './components/permissions/PermissionCheck.svelte';
-
 // Role components
 export { default as RoleBadge } from './components/roles/RoleBadge.svelte';
 export { default as RoleSelector } from './components/roles/RoleSelector.svelte';
-
 // Theme components
 export type { ThemeMode } from './components/theme/index.js';
-
 // UI components
 export * from './components/ui/index.js';
-
 // Hooks
 export * from './hooks/index.js';
-
 // Core - App wrapper/provider
 export { default as Provider } from './Provider.svelte';
 

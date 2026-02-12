@@ -9,8 +9,9 @@
     "preview": "vite preview"
   },
   "devDependencies": {
-    "@happyvertical/browser-ai": "workspace:*",
+    "@happyvertical/smrt-commerce": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
     "@mlc-ai/web-llm": "^0.2.80",
     "@remotion/whisper-web": "^4.0.406",
     "@sveltejs/adapter-static": "^3.0.10",

@@ -1306,6 +1306,18 @@ importers:
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users
+      '@huggingface/transformers':
+        specifier: '>=3.0.0'
+        version: 3.8.1
+      '@mlc-ai/web-llm':
+        specifier: '>=0.2.0'
+        version: 0.2.80
+      '@remotion/whisper-web':
+        specifier: '>=4.0.0'
+        version: 4.0.406
+      '@xenova/transformers':
+        specifier: ^2.17.2
+        version: 2.17.2
       chrono-node:
         specifier: ^2.9.0
         version: 2.9.0
@@ -1337,12 +1349,15 @@ importers:
 
   packages/smrt-svelte/playground:
     devDependencies:
-      '@happyvertical/browser-ai':
+      '@happyvertical/smrt-commerce':
         specifier: workspace:*
-        version: link:../../browser-ai
+        version: link:../../commerce
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:..
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../../users
       '@mlc-ai/web-llm':
         specifier: ^0.2.80
         version: 0.2.80

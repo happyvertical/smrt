@@ -6,9 +6,9 @@
  * Wraps the generic LoadingOverlay with AI-specific state management.
  */
 
-import { LoadingOverlay } from '@happyvertical/smrt-svelte';
-import type { AILoadingState } from '@happyvertical/smrt-svelte/state';
-import { getAppStateContext } from '@happyvertical/smrt-svelte/state';
+import LoadingOverlay from '../../../components/feedback/LoadingOverlay.svelte';
+import type { AILoadingState } from '../../../state/app-state.js';
+import { getAppStateContext } from '../../../state/context.js';
 
 export interface Props {
   /** Custom loading message (overrides auto-detected phase label) */

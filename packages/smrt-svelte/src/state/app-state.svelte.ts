@@ -19,7 +19,7 @@ import {
   type STTAdapter,
   type TTSAdapter,
   type TTSOptions,
-} from '@happyvertical/browser-ai';
+} from '../browser-ai/index.js';
 
 import {
   type AIConfig,

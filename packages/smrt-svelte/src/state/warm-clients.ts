@@ -41,7 +41,7 @@ import type {
   LLMAdapter,
   STTAdapter,
   TTSAdapter,
-} from '@happyvertical/browser-ai';
+} from '../browser-ai/index.js';
 
 /**
  * Adapter cache entry with metadata

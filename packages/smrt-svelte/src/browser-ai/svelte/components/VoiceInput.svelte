@@ -1,6 +1,6 @@
 <script lang="ts">
-import { useSTT } from '@happyvertical/smrt-svelte';
 import { untrack } from 'svelte';
+import { useSTT } from '../../../hooks/useSTT.svelte.js';
 import DownloadProgress from './DownloadProgress.svelte';
 
 export interface Props {

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { UserCard } from '@happyvertical/smrt-svelte';
+import { UserCard } from '@happyvertical/smrt-users/svelte';
 
 // Mock data
 const users = [

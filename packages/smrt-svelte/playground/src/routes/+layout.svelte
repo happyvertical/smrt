@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { AppMode, User } from '@happyvertical/smrt-svelte';
-import { smrt } from '@happyvertical/smrt-svelte';
+import { Provider } from '@happyvertical/smrt-svelte';
 import {
   ColorSchemeToggle,
   getThemeContext,
@@ -40,7 +40,7 @@ function toggleLogin() {
 }
 </script>
 
-<smrt
+<Provider
   {mode}
   user={isLoggedIn ? mockUser : null}
   permissions={isLoggedIn ? mockPermissions : []}
@@ -139,7 +139,7 @@ function toggleLogin() {
     </main>
     </div>
   </ThemeProvider>
-</smrt>
+</Provider>
 
 <style>
   .layout {

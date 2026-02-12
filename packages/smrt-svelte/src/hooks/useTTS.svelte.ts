@@ -2,8 +2,8 @@
  * Hook for Text-to-Speech functionality
  */
 
-import type { TTSOptions, TTSVoice } from '@happyvertical/browser-ai';
 import { onDestroy } from 'svelte';
+import type { TTSOptions, TTSVoice } from '../browser-ai/index.js';
 import { getAppStateContext } from '../state/context.js';
 
 /**

@@ -31,7 +31,6 @@ const nodeOnlyPackages = [
   '@happyvertical/smrt-core',
   '@happyvertical/smrt-agents',
   '@happyvertical/smrt-profiles',
-  '@happyvertical/smrt-users',
 ];
 
 export default defineConfig({
@@ -48,8 +47,12 @@ export default defineConfig({
     // External packages with Node.js-only dependencies
     // These will be loaded from node_modules at runtime during SSR
     external: nodeOnlyPackages,
-    // Don't externalize smrt-svelte so it can be properly compiled
-    noExternal: ['@happyvertical/smrt-svelte', '@happyvertical/browser-ai'],
+    // Don't externalize packages with .svelte files so they can be properly compiled
+    noExternal: [
+      '@happyvertical/smrt-svelte',
+      '@happyvertical/smrt-users',
+      '@happyvertical/smrt-commerce',
+    ],
   },
   build: {
     rollupOptions: {

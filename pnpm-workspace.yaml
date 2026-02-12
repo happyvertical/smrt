@@ -1,7 +1,6 @@
 packages:
   - 'packages/*'
   - 'packages/smrt-svelte/playground'
-  - 'packages/browser-ai'
 
 catalog:
   '@happyvertical/ai': ^0.68.5

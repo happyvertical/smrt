@@ -1,6 +1,8 @@
 <script lang="ts">
+import { RoleBadge } from '@happyvertical/smrt-svelte';
+
 // Mock roles
-const _roles = [
+const roles = [
   { id: '1', name: 'Owner', slug: 'owner' },
   { id: '2', name: 'Admin', slug: 'admin' },
   { id: '3', name: 'Member', slug: 'member' },
@@ -8,7 +10,7 @@ const _roles = [
   { id: '5', name: 'Custom Role', slug: 'custom' },
 ];
 
-const _sizes = ['sm', 'md', 'lg'] as const;
+const sizes = ['sm', 'md', 'lg'] as const;
 </script>
 
 <h1>RoleBadge</h1>

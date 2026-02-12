@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { GetSTTOptions } from '@happyvertical/browser-ai';
-import { useAppState } from '@happyvertical/smrt-svelte';
+import { useAppState } from '../../../hooks/useAppState.svelte.js';
+import type { GetSTTOptions } from '../../index.js';
 import DownloadProgress from './DownloadProgress.svelte';
 
 /** Props for STTTest component */

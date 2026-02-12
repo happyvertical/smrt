@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { DownloadProgress } from '@happyvertical/browser-ai';
+import type { DownloadProgress } from '../../index.js';
 
 export interface Props {
   /** Progress data */

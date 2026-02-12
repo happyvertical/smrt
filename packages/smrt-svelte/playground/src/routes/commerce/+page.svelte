@@ -4,7 +4,7 @@ import type {
   InvoiceStatus,
   LineItem,
   UnbilledItem,
-} from '@happyvertical/smrt-svelte';
+} from '@happyvertical/smrt-commerce/svelte';
 import {
   InvoiceActions,
   InvoiceCard,
@@ -12,7 +12,7 @@ import {
   InvoiceLineItems,
   InvoiceTotals,
   UnbilledItems,
-} from '@happyvertical/smrt-svelte';
+} from '@happyvertical/smrt-commerce/svelte';
 
 // Sample invoice data
 const invoices: InvoiceData[] = [

@@ -9,6 +9,7 @@ export default defineConfig({
       entry: {
         index: resolve(__dirname, 'src/index.ts'),
         sveltekit: resolve(__dirname, 'src/sveltekit/index.ts'),
+        ui: resolve(__dirname, 'src/ui.ts'),
       },
       formats: ['es'] as const,
     },

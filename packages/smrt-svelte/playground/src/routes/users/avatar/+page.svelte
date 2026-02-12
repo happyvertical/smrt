@@ -1,6 +1,8 @@
 <script lang="ts">
+import { UserAvatar } from '@happyvertical/smrt-users/svelte';
+
 // Mock profiles
-const _profiles = [
+const profiles = [
   { id: '1', name: 'Alice Johnson' },
   { id: '2', name: 'Bob Smith' },
   { id: '3', name: 'Carol Williams' },
@@ -8,7 +10,7 @@ const _profiles = [
   { id: '5', name: 'Eve Davis' },
 ];
 
-const _sizes = ['sm', 'md', 'lg', 'xl'] as const;
+const sizes = ['sm', 'md', 'lg', 'xl'] as const;
 </script>
 
 <h1>UserAvatar</h1>

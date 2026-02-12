@@ -1,6 +1,6 @@
 <script lang="ts">
-import { useAppState } from '@happyvertical/smrt-svelte';
 import type { Snippet } from 'svelte';
+import { useAppState } from '../../../hooks/useAppState.svelte.js';
 
 export interface Props {
   /** Require 'smrt' mode to be enabled */

@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
-import AILoadingOverlay from './components/ai/AILoadingOverlay.svelte';
+import AILoadingOverlay from './browser-ai/svelte/components/AILoadingOverlay.svelte';
 import type {
   AIConfig,
   AILoadingState,
