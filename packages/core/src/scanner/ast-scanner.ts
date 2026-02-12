@@ -83,6 +83,7 @@ function findPackageContext(filePath: string): {
 export class ASTScanner {
   private program: ts.Program;
   private options: ScanOptions;
+  private importAliasesByFile = new Map<string, Map<string, string>>(); // fileName → (localAlias → originalName)
 
   /**
    * Framework internal fields that should NOT be included in manifests.
@@ -181,6 +182,31 @@ export class ASTScanner {
    */
   scanFiles(): ScanResult[] {
     const results: ScanResult[] = [];
+
+    // Pre-pass: collect import aliases per file (e.g., import { Performer as PerformerBase })
+    // so extends clauses using the alias resolve to the original class name.
+    // Per-file maps avoid collisions when different files use the same alias for different classes.
+    for (const sourceFile of this.program.getSourceFiles()) {
+      if (sourceFile.isDeclarationFile) continue;
+      const fileAliases = new Map<string, string>();
+      ts.forEachChild(sourceFile, (node) => {
+        if (
+          ts.isImportDeclaration(node) &&
+          node.importClause?.namedBindings &&
+          ts.isNamedImports(node.importClause.namedBindings)
+        ) {
+          for (const element of node.importClause.namedBindings.elements) {
+            if (element.propertyName) {
+              // import { Original as Alias } → map Alias → Original
+              fileAliases.set(element.name.text, element.propertyName.text);
+            }
+          }
+        }
+      });
+      if (fileAliases.size > 0) {
+        this.importAliasesByFile.set(sourceFile.fileName, fileAliases);
+      }
+    }
 
     const sourceFilePaths: string[] = [];
     for (const sourceFile of this.program.getSourceFiles()) {
@@ -375,7 +401,10 @@ export class ASTScanner {
     const collection = this.pluralize(className.toLowerCase());
 
     // Extract parent class name and generic type argument from extends clause
-    const { parentClass, typeArg } = this.extractExtendsInfo(node);
+    const { parentClass, typeArg } = this.extractExtendsInfo(
+      node,
+      sourceFile.fileName,
+    );
 
     // Detect package context for qualified name generation
     const { packageName, packageVersion } = findPackageContext(
@@ -609,7 +638,10 @@ export class ASTScanner {
    * @param node - Class declaration node
    * @returns Object with parentClass and optional typeArg
    */
-  private extractExtendsInfo(node: ts.ClassDeclaration): {
+  private extractExtendsInfo(
+    node: ts.ClassDeclaration,
+    fileName?: string,
+  ): {
     parentClass?: string;
     typeArg?: string;
   } {
@@ -633,6 +665,15 @@ export class ASTScanner {
           // Try to extract text from any expression
           const expressionText = type.expression.getText?.();
           parentClass = expressionText?.split('.').pop()?.trim();
+        }
+
+        // Resolve import aliases (e.g., import { Performer as PerformerBase })
+        // Uses per-file alias maps to avoid collisions between files
+        const fileAliases = fileName
+          ? this.importAliasesByFile.get(fileName)
+          : undefined;
+        if (parentClass && fileAliases?.has(parentClass)) {
+          parentClass = fileAliases.get(parentClass)!;
         }
 
         // Extract generic type argument (e.g., <Meeting> from SmrtCollection<Meeting>)

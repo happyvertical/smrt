@@ -1117,8 +1117,13 @@ export class SchemaGenerator {
   private findDescendantsInManifest(
     baseClassName: string,
     manifest: SmartObjectManifest,
+    visited: Set<string> = new Set(),
   ): string[] {
     const descendants: string[] = [];
+
+    // Prevent infinite recursion (e.g., class extends same-named class from another package)
+    if (visited.has(baseClassName)) return descendants;
+    visited.add(baseClassName);
 
     // Extract the simple class name from qualified name if needed
     // e.g., '@happyvertical/smrt-core:PolyEvent' -> 'PolyEvent'
@@ -1128,6 +1133,13 @@ export class SchemaGenerator {
     const baseClassLower = simpleBaseClassName.toLowerCase();
 
     for (const [name, obj] of Object.entries(manifest.objects)) {
+      // Skip self-references (class extending same-named class from another package)
+      if (
+        obj.className.toLowerCase() === baseClassLower &&
+        obj.extends?.toLowerCase() === baseClassLower
+      ) {
+        continue;
+      }
       // obj.extends is a simple class name (e.g., 'PolyEvent')
       // Compare with the simple (non-qualified) version of the base class name
       if (obj.extends?.toLowerCase() === baseClassLower) {
@@ -1135,7 +1147,7 @@ export class SchemaGenerator {
         // Recursively find descendants of this class
         // Pass the qualified name (manifest key) for recursive lookup
         descendants.push(
-          ...this.findDescendantsInManifest(obj.className, manifest),
+          ...this.findDescendantsInManifest(name, manifest, visited),
         );
       }
     }

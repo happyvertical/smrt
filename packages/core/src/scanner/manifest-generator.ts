@@ -664,6 +664,14 @@ export class ManifestGenerator {
 
         let parentObj = objectsByName.get(currentClass);
 
+        // Skip self-reference: when a local class has the same name as its
+        // imported parent (e.g., local Performer extends external Performer),
+        // objectsByName returns the child itself. Skip it so we fall through
+        // to the external package lookup.
+        if (parentObj === obj) {
+          parentObj = undefined;
+        }
+
         // If parent not in current manifest, try loading from external SMRT packages
         if (
           !parentObj &&
@@ -1007,6 +1015,11 @@ export class ManifestGenerator {
 
       let parentDef = objectsByName.get(currentClass);
 
+      // Skip self-reference (local class with same name as imported parent)
+      if (parentDef === obj) {
+        parentDef = undefined;
+      }
+
       // If parent not in current manifest, try loading from external SMRT packages
       if (
         !parentDef &&
@@ -1068,6 +1081,11 @@ export class ManifestGenerator {
       visited.add(currentClass);
 
       let parentDef = objectsByName.get(currentClass);
+
+      // Skip self-reference (local class with same name as imported parent)
+      if (parentDef === obj) {
+        parentDef = undefined;
+      }
 
       // If parent not in current manifest, try loading from external SMRT packages
       if (

@@ -111,10 +111,23 @@ interface Comment extends BaseNode {
   value: string;
 }
 
+interface ImportDeclaration extends BaseNode {
+  type: 'ImportDeclaration';
+  specifiers?: ImportSpecifier[];
+  source: Literal;
+}
+
+interface ImportSpecifier extends BaseNode {
+  type: 'ImportSpecifier';
+  imported: Identifier;
+  local: Identifier;
+}
+
 type Statement =
   | ClassDeclaration
   | ExportNamedDeclaration
   | ExportDefaultDeclaration
+  | ImportDeclaration
   | any;
 
 interface ClassDeclaration extends BaseNode {
@@ -435,8 +448,14 @@ export function parseFile(filePath: string): FileScanResult {
     // Extract classes from AST
     const program = result.program as Program;
     if (program?.body) {
+      const importAliases = extractImportAliases(program.body);
       for (const node of program.body) {
-        const extracted = extractClassFromNode(node, filePath, sourceText);
+        const extracted = extractClassFromNode(
+          node,
+          filePath,
+          sourceText,
+          importAliases,
+        );
         if (extracted) {
           classes.push(extracted);
         }
@@ -492,8 +511,14 @@ export function parseSource(
 
     const program = result.program as Program;
     if (program?.body) {
+      const importAliases = extractImportAliases(program.body);
       for (const node of program.body) {
-        const extracted = extractClassFromNode(node, filename, sourceText);
+        const extracted = extractClassFromNode(
+          node,
+          filename,
+          sourceText,
+          importAliases,
+        );
         if (extracted) {
           classes.push(extracted);
         }
@@ -520,28 +545,58 @@ export function parseSource(
 // ============================================================================
 
 /**
+ * Extract import aliases from program body.
+ * Maps local alias names to their original imported names.
+ * e.g., `import { Performer as PerformerBase }` → Map { "PerformerBase" → "Performer" }
+ */
+function extractImportAliases(body: Statement[]): Map<string, string> {
+  const aliases = new Map<string, string>();
+  for (const node of body) {
+    if (node.type === 'ImportDeclaration' && node.specifiers) {
+      for (const spec of node.specifiers) {
+        if (spec.type === 'ImportSpecifier' && spec.imported && spec.local) {
+          const original = spec.imported.name;
+          const local = spec.local.name;
+          if (original !== local) {
+            aliases.set(local, original);
+          }
+        }
+      }
+    }
+  }
+  return aliases;
+}
+
+/**
  * Extract class definition from an AST node
  */
 function extractClassFromNode(
   node: Statement,
   filePath: string,
   sourceText: string,
+  importAliases: Map<string, string>,
 ): RawClassDefinition | null {
   // Handle export declarations
   if (node.type === 'ExportNamedDeclaration' && node.declaration) {
-    return extractClassFromNode(node.declaration, filePath, sourceText);
+    return extractClassFromNode(
+      node.declaration,
+      filePath,
+      sourceText,
+      importAliases,
+    );
   }
   if (node.type === 'ExportDefaultDeclaration' && node.declaration) {
     return extractClassFromNode(
       node.declaration as Statement,
       filePath,
       sourceText,
+      importAliases,
     );
   }
 
   // Handle class declaration
   if (node.type === 'ClassDeclaration') {
-    return extractClassDeclaration(node, filePath, sourceText);
+    return extractClassDeclaration(node, filePath, sourceText, importAliases);
   }
 
   return null;
@@ -554,6 +609,7 @@ function extractClassDeclaration(
   node: ClassDeclaration,
   filePath: string,
   sourceText: string,
+  importAliases: Map<string, string>,
 ): RawClassDefinition {
   const className = node.id?.name || 'AnonymousClass';
 
@@ -566,7 +622,10 @@ function extractClassDeclaration(
     : null;
 
   // Extract extends clause
-  const { extendsClause, extendsTypeArg } = extractExtendsClause(node);
+  const { extendsClause, extendsTypeArg } = extractExtendsClause(
+    node,
+    importAliases,
+  );
 
   // Extract fields and methods
   const fields: RawFieldDefinition[] = [];
@@ -734,7 +793,10 @@ function extractValue(node: Expression, sourceText: string): unknown {
 /**
  * Extract extends clause information
  */
-function extractExtendsClause(node: ClassDeclaration): {
+function extractExtendsClause(
+  node: ClassDeclaration,
+  importAliases: Map<string, string>,
+): {
   extendsClause: string | null;
   extendsTypeArg: string | null;
 } {
@@ -751,6 +813,11 @@ function extractExtendsClause(node: ClassDeclaration): {
   } else if (node.superClass.type === 'MemberExpression') {
     // Handle Namespace.Class
     extendsClause = getMemberExpressionString(node.superClass);
+  }
+
+  // Resolve import aliases (e.g., import { Performer as PerformerBase })
+  if (extendsClause && importAliases.has(extendsClause)) {
+    extendsClause = importAliases.get(extendsClause)!;
   }
 
   // Get type argument (e.g., Meeting from SmrtCollection<Meeting>)
