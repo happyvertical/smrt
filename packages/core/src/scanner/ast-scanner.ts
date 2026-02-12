@@ -83,6 +83,7 @@ function findPackageContext(filePath: string): {
 export class ASTScanner {
   private program: ts.Program;
   private options: ScanOptions;
+  private importAliases = new Map<string, string>(); // localAlias → originalName
 
   /**
    * Framework internal fields that should NOT be included in manifests.
@@ -181,6 +182,29 @@ export class ASTScanner {
    */
   scanFiles(): ScanResult[] {
     const results: ScanResult[] = [];
+
+    // Pre-pass: collect import aliases (e.g., import { Performer as PerformerBase })
+    // so extends clauses using the alias resolve to the original class name
+    for (const sourceFile of this.program.getSourceFiles()) {
+      if (sourceFile.isDeclarationFile) continue;
+      ts.forEachChild(sourceFile, (node) => {
+        if (
+          ts.isImportDeclaration(node) &&
+          node.importClause?.namedBindings &&
+          ts.isNamedImports(node.importClause.namedBindings)
+        ) {
+          for (const element of node.importClause.namedBindings.elements) {
+            if (element.propertyName) {
+              // import { Original as Alias } → map Alias → Original
+              this.importAliases.set(
+                element.name.text,
+                element.propertyName.text,
+              );
+            }
+          }
+        }
+      });
+    }
 
     const sourceFilePaths: string[] = [];
     for (const sourceFile of this.program.getSourceFiles()) {
@@ -633,6 +657,11 @@ export class ASTScanner {
           // Try to extract text from any expression
           const expressionText = type.expression.getText?.();
           parentClass = expressionText?.split('.').pop()?.trim();
+        }
+
+        // Resolve import aliases (e.g., import { Performer as PerformerBase })
+        if (parentClass && this.importAliases.has(parentClass)) {
+          parentClass = this.importAliases.get(parentClass)!;
         }
 
         // Extract generic type argument (e.g., <Meeting> from SmrtCollection<Meeting>)
