@@ -1,5 +1,7 @@
 # @happyvertical/smrt-template-site-static-json
 
+## 0.20.2
+
 ## 0.20.1
 
 ### Patch Changes

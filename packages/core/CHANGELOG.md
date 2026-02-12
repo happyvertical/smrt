@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.2
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - cycle detection for self-referential extends in registry (#928) (core)
+  - @happyvertical/smrt-scanner@0.20.2
+  - @happyvertical/smrt-config@0.20.2
+  - @happyvertical/smrt-types@0.20.2
+
 ## 0.20.1
 
 ### Patch Changes
