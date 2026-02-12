@@ -1147,7 +1147,7 @@ export class SchemaGenerator {
         // Recursively find descendants of this class
         // Pass the qualified name (manifest key) for recursive lookup
         descendants.push(
-          ...this.findDescendantsInManifest(obj.className, manifest, visited),
+          ...this.findDescendantsInManifest(name, manifest, visited),
         );
       }
     }
