@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 0.19.81
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: bump SDK catalog to 0.68.6, external packages to latest (#919) (deps)
+  - @happyvertical/smrt-scanner@0.19.81
+  - @happyvertical/smrt-config@0.19.81
+  - @happyvertical/smrt-types@0.19.81
+
+## 0.19.80
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - handle multi-line commit bodies in auto-changeset (#918) (ci)
+
+  ### Other Changes
+
+  - chore: centralize SDK dependency versions with pnpm catalog (#917)
+  - @happyvertical/smrt-scanner@0.19.80
+  - @happyvertical/smrt-config@0.19.80
+  - @happyvertical/smrt-types@0.19.80
+
 ## 0.19.79
 
 ### Patch Changes
