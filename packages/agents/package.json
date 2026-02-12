@@ -25,12 +25,21 @@
       "types": "./dist/server.d.ts"
     },
     "./manifest": "./dist/manifest.json",
-    "./manifest.json": "./dist/manifest.json"
+    "./manifest.json": "./dist/manifest.json",
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js"
+    }
   },
   "peerDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
     "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    },
     "svelte": {
       "optional": true
     }
@@ -40,7 +49,7 @@
     "CLAUDE.md"
   ],
   "scripts": {
-    "build": "vite build && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/generate-stub-from-manifest.js",
     "build:watch": "vite build --watch",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "pnpm run generate:test && npx vitest run",
@@ -56,10 +65,13 @@
   },
   "devDependencies": {
     "@happyvertical/logger": "catalog:",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
+    "@sveltejs/package": "^2.5.7",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
+    "svelte": "^5.18.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"

@@ -1,3 +1,3 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
-export default createPackageConfig('projects');
+export default createPackageConfig('projects', { entries: ['ui'] });

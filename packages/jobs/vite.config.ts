@@ -8,6 +8,7 @@ export default defineConfig({
       entry: {
         index: resolve(__dirname, 'src/index.ts'),
         runner: resolve(__dirname, 'src/runner.ts'),
+        ui: resolve(__dirname, 'src/ui.ts'),
       },
       formats: ['es'],
     },
