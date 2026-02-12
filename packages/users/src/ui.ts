@@ -61,7 +61,7 @@ export const USERS_UI_SLOTS: Record<string, ModuleUISlot> = {
     label: 'User Menu',
     description: 'User profile menu dropdown',
     icon: 'menu',
-    category: 'navigation',
+    category: 'action',
     order: 6,
     propsInterface: 'UserMenuProps',
   },
