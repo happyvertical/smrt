@@ -388,4 +388,60 @@ describe('OXC Parser', () => {
       expect(getLineColumn(source, 14)).toEqual({ line: 2, column: 3 });
     });
   });
+
+  describe('import alias resolution', () => {
+    it('should resolve aliased import in extends clause', () => {
+      const source = `
+        import { Performer as PerformerBase } from '@happyvertical/smrt-video';
+
+        @smrt({ tableStrategy: 'sti' })
+        export class Performer extends PerformerBase {}
+      `;
+
+      const result = parseSource(source);
+      expect(result.classes).toHaveLength(1);
+      expect(result.classes[0].className).toBe('Performer');
+      expect(result.classes[0].extendsClause).toBe('Performer'); // Resolved from alias
+    });
+
+    it('should not alter non-aliased imports', () => {
+      const source = `
+        import { SmrtObject } from '@happyvertical/smrt-core';
+
+        @smrt()
+        export class Product extends SmrtObject {}
+      `;
+
+      const result = parseSource(source);
+      expect(result.classes).toHaveLength(1);
+      expect(result.classes[0].extendsClause).toBe('SmrtObject');
+    });
+
+    it('should handle multiple aliases in one file', () => {
+      const source = `
+        import { Character as CharacterBase } from '@happyvertical/smrt-video';
+        import { Scene as SceneBase } from '@happyvertical/smrt-video';
+
+        @smrt()
+        export class Character extends CharacterBase {}
+
+        @smrt()
+        export class Scene extends SceneBase {}
+
+        @smrt()
+        export class Plain extends SmrtObject {}
+      `;
+
+      const result = parseSource(source);
+      expect(result.classes).toHaveLength(3);
+
+      const character = result.classes.find((c) => c.className === 'Character');
+      const scene = result.classes.find((c) => c.className === 'Scene');
+      const plain = result.classes.find((c) => c.className === 'Plain');
+
+      expect(character?.extendsClause).toBe('Character');
+      expect(scene?.extendsClause).toBe('Scene');
+      expect(plain?.extendsClause).toBe('SmrtObject'); // Unchanged
+    });
+  });
 });
