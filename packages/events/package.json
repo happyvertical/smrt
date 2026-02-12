@@ -18,6 +18,10 @@
       "types": "./dist/utils.d.ts",
       "default": "./dist/utils.js"
     },
+    "./ui": {
+      "import": "./dist/ui.js",
+      "types": "./dist/ui.d.ts"
+    },
     "./manifest.json": "./dist/manifest.json",
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",

@@ -10,6 +10,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./ui": {
+      "import": "./dist/ui.js",
+      "types": "./dist/ui.d.ts"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
     "./svelte": {

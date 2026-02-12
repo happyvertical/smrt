@@ -19,6 +19,10 @@
       "types": "./dist/runner.d.ts",
       "import": "./dist/runner.js"
     },
+    "./ui": {
+      "import": "./dist/ui.js",
+      "types": "./dist/ui.d.ts"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
     "./svelte": {
