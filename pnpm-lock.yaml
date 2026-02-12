@@ -221,25 +221,31 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.68.6
         version: 0.68.6
-      svelte:
-        specifier: ^5.0.0
-        version: 5.45.5
     devDependencies:
       '@happyvertical/logger':
         specifier: ^0.68.6
         version: 0.68.6
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
         specifier: ^0.68.6
         version: 0.68.6
+      '@sveltejs/package':
+        specifier: ^2.5.7
+        version: 2.5.7(svelte@5.46.4)(typescript@5.9.3)
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
       fast-glob:
         specifier: 3.3.3
         version: 3.3.3
+      svelte:
+        specifier: ^5.18.0
+        version: 5.46.4
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -5820,9 +5826,6 @@ packages:
   detect-node@2.1.0:
     resolution: {integrity: sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==}
 
-  devalue@5.5.0:
-    resolution: {integrity: sha512-69sM5yrHfFLJt0AZ9QqZXGCPfJ7fQjvpln3Rq5+PS03LD32Ost1Q9N+eEnaQwGRIriKkMImXD56ocjQmfjbV3w==}
-
   devalue@5.6.2:
     resolution: {integrity: sha512-nPRkjWzzDQlsejL1WVifk5rvcFi/y1onBRxjaFMjZeR9mFpqu2gmAZ9xUB9/IEanEP/vBtGeGganC/GO1fmufg==}
 
@@ -8856,10 +8859,6 @@ packages:
     peerDependencies:
       svelte: ^3.55 || ^4.0.0-next.0 || ^4.0 || ^5.0.0-next.0
       typescript: ^4.9.4 || ^5.0.0
-
-  svelte@5.45.5:
-    resolution: {integrity: sha512-2074U+vObO5Zs8/qhxtBwdi6ZXNIhEBTzNmUFjiZexLxTdt9vq96D/0pnQELl6YcpLMD7pZ2dhXKByfGS8SAdg==}
-    engines: {node: '>=18'}
 
   svelte@5.46.4:
     resolution: {integrity: sha512-VJwdXrmv9L8L7ZasJeWcCjoIuMRVbhuxbss0fpVnR8yorMmjNDwcjIH08vS6wmSzzzgAG5CADQ1JuXPS2nwt9w==}
@@ -14863,8 +14862,6 @@ snapshots:
 
   detect-node@2.1.0: {}
 
-  devalue@5.5.0: {}
-
   devalue@5.6.2: {}
 
   devtools-protocol@0.0.1568893: {}
@@ -18242,24 +18239,6 @@ snapshots:
       scule: 1.3.0
       svelte: 5.46.4
       typescript: 5.9.3
-
-  svelte@5.45.5:
-    dependencies:
-      '@jridgewell/remapping': 2.3.5
-      '@jridgewell/sourcemap-codec': 1.5.5
-      '@sveltejs/acorn-typescript': 1.0.8(acorn@8.15.0)
-      '@types/estree': 1.0.8
-      acorn: 8.15.0
-      aria-query: 5.3.2
-      axobject-query: 4.1.0
-      clsx: 2.1.1
-      devalue: 5.5.0
-      esm-env: 1.2.2
-      esrap: 2.2.1
-      is-reference: 3.0.3
-      locate-character: 3.0.0
-      magic-string: 0.30.21
-      zimmerframe: 1.1.4
 
   svelte@5.46.4:
     dependencies:

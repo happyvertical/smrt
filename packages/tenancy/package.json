@@ -22,6 +22,10 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     },
+    "./ui": {
+      "import": "./dist/ui.js",
+      "types": "./dist/ui.d.ts"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
     "./svelte": {

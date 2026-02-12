@@ -1,3 +1,3 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
-export default createPackageConfig('tenancy');
+export default createPackageConfig('tenancy', { entries: ['ui'] });

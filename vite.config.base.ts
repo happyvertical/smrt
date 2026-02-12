@@ -12,6 +12,11 @@ interface PackageConfigOptions {
    * Example build script: `vite build --mode library && svelte-package -i src/svelte -o dist/svelte -p`
    */
   svelte?: string;
+  /**
+   * Additional entry points beyond the default `index.ts`.
+   * Each entry is emitted as a separate file in dist/ (e.g., `ui` → `dist/ui.js`).
+   */
+  entries?: string[];
 }
 
 /**
@@ -46,12 +51,21 @@ export function createPackageConfig(
       smrtPlugin = plugin;
     }
 
+    // Build entry points map
+    const entryPoints: Record<string, string> = {
+      index: resolve(packageDir, 'src/index.ts'),
+    };
+    if (options.entries) {
+      for (const name of options.entries) {
+        entryPoints[name] = resolve(packageDir, `src/${name}.ts`);
+      }
+    }
+
     return {
       build: {
         lib: {
-          entry: resolve(packageDir, 'src/index.ts'),
+          entry: entryPoints,
           formats: ['es'] as const,
-          fileName: () => 'index.js',
         },
         rollupOptions: {
           output: {
