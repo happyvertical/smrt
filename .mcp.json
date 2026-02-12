@@ -48,9 +48,9 @@
       "command": "npx",
       "args": [
         "-y",
-        "chrome-devtools-mcp@latest"
-      ],
-      "env": {}
+        "chrome-devtools-mcp@latest",
+        "--browserUrl=http://127.0.0.1:9227"
+      ]
     },
     "gemini": {
       "type": "stdio",

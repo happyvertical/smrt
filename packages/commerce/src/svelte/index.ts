@@ -29,14 +29,20 @@ import InvoiceLineItems from './components/InvoiceLineItems.svelte';
 import InvoiceTotals from './components/InvoiceTotals.svelte';
 import UnbilledItems from './components/UnbilledItems.svelte';
 
+// Export component Props types
+export type { Props as InvoiceActionsProps } from './components/InvoiceActions.svelte';
 // Export components
 export { default as InvoiceActions } from './components/InvoiceActions.svelte';
+export type { Props as InvoiceCardProps } from './components/InvoiceCard.svelte';
 export { default as InvoiceCard } from './components/InvoiceCard.svelte';
+export type { Props as InvoiceHeaderProps } from './components/InvoiceHeader.svelte';
 export { default as InvoiceHeader } from './components/InvoiceHeader.svelte';
+export type { Props as InvoiceLineItemsProps } from './components/InvoiceLineItems.svelte';
 export { default as InvoiceLineItems } from './components/InvoiceLineItems.svelte';
+export type { Props as InvoiceTotalsProps } from './components/InvoiceTotals.svelte';
 export { default as InvoiceTotals } from './components/InvoiceTotals.svelte';
+export type { Props as UnbilledItemsProps } from './components/UnbilledItems.svelte';
 export { default as UnbilledItems } from './components/UnbilledItems.svelte';
-
 // Export types
 export type {
   InvoiceData,

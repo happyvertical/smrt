@@ -21,31 +21,31 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-weight: var(--font-weight-medium);
-    border-radius: var(--radius-full);
+    font-weight: var(--smrt-typography-body-medium-weight);
+    border-radius: var(--smrt-radius-full);
     white-space: nowrap;
   }
 
   /* Sizes */
   .sm {
-    padding: 0.125rem var(--spacing-sm);
-    font-size: var(--font-size-xs);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    font-size: var(--smrt-typography-body-small-size);
   }
 
   .md {
-    padding: 0.25rem var(--spacing-md);
-    font-size: var(--font-size-sm);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
+    font-size: var(--smrt-typography-body-medium-size);
   }
 
   /* Variants */
   .default {
-    background: var(--color-neutral-gray200);
-    color: var(--color-text-primary);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
   }
 
   .primary {
-    background: var(--color-primary-light);
-    color: var(--color-primary-dark);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .success {
@@ -64,7 +64,7 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
   }
 
   .info {
-    background: var(--color-primary-light);
-    color: var(--color-primary-dark);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 </style>

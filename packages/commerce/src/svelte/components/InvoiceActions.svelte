@@ -7,7 +7,8 @@
 
 import type { InvoiceStatus } from '../types.js';
 
-interface Props {
+/** Props for InvoiceActions component */
+export interface Props {
   /** Current invoice status */
   status: InvoiceStatus;
   /** Loading state */
@@ -110,71 +111,77 @@ const canDelete = $derived(status === 'draft');
 <style>
   .invoice-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--smrt-spacing-2, 0.5rem);
     flex-wrap: wrap;
   }
 
   .btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 500;
     border: none;
-    border-radius: 0.375rem;
+    border-radius: var(--smrt-radius-small, 0.375rem);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     white-space: nowrap;
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .btn {
+      transition: none;
+    }
+  }
+
   .sm .btn {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
+    padding: var(--smrt-spacing-1-5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
+    font: var(--smrt-typography-label-medium-font);
   }
 
   .btn:disabled {
-    opacity: 0.5;
+    opacity: var(--smrt-state-disabled-opacity, 0.38);
     cursor: not-allowed;
   }
 
   .btn-primary {
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary, #005ac1);
+    color: var(--smrt-color-on-primary, #ffffff);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--smrt-color-primary-hover, #004493);
   }
 
   .btn-success {
-    background: #16a34a;
-    color: white;
+    background: var(--smrt-color-tertiary, #006c4c);
+    color: var(--smrt-color-on-tertiary, #ffffff);
   }
 
   .btn-success:hover:not(:disabled) {
-    background: #15803d;
+    background: var(--smrt-color-tertiary-hover, #005138);
   }
 
   .btn-secondary {
-    background: white;
-    color: #374151;
-    border: 1px solid #d1d5db;
+    background: var(--smrt-color-surface-container-lowest, #ffffff);
+    color: var(--smrt-color-on-surface-variant, #44474e);
+    border: 1px solid var(--smrt-color-outline, #74777f);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: #f9fafb;
-    border-color: #9ca3af;
+    background: var(--smrt-color-surface-container-low, #f7f2fa);
+    border-color: var(--smrt-color-on-surface-variant, #44474e);
   }
 
   .btn-danger {
-    background: white;
-    color: #dc2626;
-    border: 1px solid #fecaca;
+    background: var(--smrt-color-surface-container-lowest, #ffffff);
+    color: var(--smrt-color-error, #ba1a1a);
+    border: 1px solid var(--smrt-color-error-container, #ffdad6);
   }
 
   .btn-danger:hover:not(:disabled) {
-    background: #fee2e2;
-    border-color: #fca5a5;
+    background: var(--smrt-color-error-container, #ffdad6);
+    border-color: var(--smrt-color-error, #ba1a1a);
   }
 </style>

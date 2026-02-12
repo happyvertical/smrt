@@ -1,5 +1,5 @@
 <script lang="ts">
-interface Props {
+export interface Props {
   id?: string;
   type?: 'text' | 'email' | 'password' | 'number' | 'url' | 'tel' | 'search';
   value?: string | number;
@@ -43,28 +43,28 @@ let {
 		padding: 0.5rem 0.75rem;
 		font-size: 0.875rem;
 		line-height: 1.5;
-		color: #1f2937;
-		background-color: #fff;
-		border: 1px solid #d1d5db;
-		border-radius: 0.375rem;
+		color: var(--smrt-color-on-surface, #1f2937);
+		background-color: var(--smrt-color-surface, #fff);
+		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+		border-radius: var(--smrt-radius-small, 0.375rem);
 		transition:
-			border-color 0.15s ease-in-out,
-			box-shadow 0.15s ease-in-out;
+			border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-in-out),
+			box-shadow var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-in-out);
 	}
 
 	.input:focus {
 		outline: none;
-		border-color: #3b82f6;
-		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+		border-color: var(--smrt-color-primary, #005ac1);
+		box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
 	}
 
 	.input:disabled {
-		background-color: #f3f4f6;
+		background-color: var(--smrt-color-surface-container-high, #f3f4f6);
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
 
 	.input::placeholder {
-		color: #9ca3af;
+		color: var(--smrt-color-on-surface-variant, #9ca3af);
 	}
 </style>

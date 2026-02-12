@@ -1,6 +1,8 @@
 <script lang="ts">
+import { UserAvatar } from '@happyvertical/smrt-users/svelte';
+
 // Mock profiles
-const _profiles = [
+const profiles = [
   { id: '1', name: 'Alice Johnson' },
   { id: '2', name: 'Bob Smith' },
   { id: '3', name: 'Carol Williams' },
@@ -8,7 +10,7 @@ const _profiles = [
   { id: '5', name: 'Eve Davis' },
 ];
 
-const _sizes = ['sm', 'md', 'lg', 'xl'] as const;
+const sizes = ['sm', 'md', 'lg', 'xl'] as const;
 </script>
 
 <h1>UserAvatar</h1>
@@ -85,7 +87,7 @@ const _sizes = ['sm', 'md', 'lg', 'xl'] as const;
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -95,10 +97,10 @@ const _sizes = ['sm', 'md', 'lg', 'xl'] as const;
 
   h2 {
     font-size: 1rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 16px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .demo-row {
@@ -123,7 +125,7 @@ const _sizes = ['sm', 'md', 'lg', 'xl'] as const;
 
   .label {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .props-table {
@@ -136,16 +138,16 @@ const _sizes = ['sm', 'md', 'lg', 'xl'] as const;
   .props-table td {
     text-align: left;
     padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .props-table th {
-    background: #f9f9f9;
+    background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
 
   code {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.8rem;

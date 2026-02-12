@@ -36,12 +36,12 @@
  */
 
 import type {
-  DownloadProgress,
+  DownloadProgressInfo,
   InitState,
   LLMAdapter,
   STTAdapter,
   TTSAdapter,
-} from '@happyvertical/browser-ai';
+} from '../browser-ai/index.js';
 
 /**
  * Adapter cache entry with metadata
@@ -54,7 +54,7 @@ export interface CachedAdapter<T> {
   /** Initialization state */
   initState: InitState;
   /** Current download progress (if initializing) */
-  downloadProgress: DownloadProgress | null;
+  downloadProgress: DownloadProgressInfo | null;
   /** Error if initialization failed */
   error: Error | null;
   /** Adapter type identifier (for cache key matching) */

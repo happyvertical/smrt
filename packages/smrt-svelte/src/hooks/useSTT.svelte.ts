@@ -2,8 +2,8 @@
  * Hook for Speech-to-Text functionality
  */
 
-import type { GetSTTOptions, STTOptions } from '@happyvertical/browser-ai';
 import { onDestroy } from 'svelte';
+import type { GetSTTOptions, STTOptions } from '../browser-ai/index.js';
 import { getAppStateContext } from '../state/context.js';
 
 /**

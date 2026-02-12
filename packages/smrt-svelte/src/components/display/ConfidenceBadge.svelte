@@ -4,18 +4,31 @@
  *
  * Shows a visual indicator for confidence scores (0-100).
  * Useful for OCR results, AI predictions, etc.
+ *
+ * Accessibility: Uses role="meter" with aria-valuenow for screen readers
  */
 
-interface Props {
+/** Props for ConfidenceBadge component */
+export interface Props {
   /** Confidence value (0-100) */
   confidence: number;
   /** Show percentage value */
   showPercent?: boolean;
   /** Size variant */
   size?: 'sm' | 'md' | 'lg';
+  /** Optional CSS class */
+  class?: string;
+  /** Accessible label */
+  'aria-label'?: string;
 }
 
-const { confidence, showPercent = true, size = 'md' }: Props = $props();
+const {
+  confidence,
+  showPercent = true,
+  size = 'md',
+  class: className = '',
+  'aria-label': ariaLabel,
+}: Props = $props();
 
 // Clamp confidence to valid range
 const clampedConfidence = $derived(Math.max(0, Math.min(100, confidence)));
@@ -27,33 +40,59 @@ const level = $derived.by(() => {
   return 'low';
 });
 
-// Color scheme based on level
+// Color scheme based on level - uses CSS variables with fallbacks
 const colors = $derived.by(() => {
   switch (level) {
     case 'high':
-      return { bg: '#dcfce7', text: '#166534', bar: '#22c55e' };
+      return {
+        bg: 'var(--smrt-color-primary-container, #dcfce7)',
+        text: 'var(--smrt-color-on-primary-container, #166534)',
+        bar: 'var(--smrt-color-primary, #22c55e)',
+      };
     case 'medium':
-      return { bg: '#fef3c7', text: '#92400e', bar: '#f59e0b' };
+      return {
+        bg: 'var(--smrt-color-secondary-container, #fef3c7)',
+        text: 'var(--smrt-color-on-secondary-container, #92400e)',
+        bar: 'var(--smrt-color-secondary, #f59e0b)',
+      };
     case 'low':
-      return { bg: '#fee2e2', text: '#dc2626', bar: '#ef4444' };
+      return {
+        bg: 'var(--smrt-color-error-container, #fee2e2)',
+        text: 'var(--smrt-color-on-error-container, #dc2626)',
+        bar: 'var(--smrt-color-error, #ef4444)',
+      };
   }
 });
 
 // Format percentage
 const percentText = $derived(`${Math.round(clampedConfidence)}%`);
+
+// Accessible label
+const defaultLabel = $derived(`Confidence: ${Math.round(clampedConfidence)}%`);
+
+// Human-readable value text for screen readers
+const valueText = $derived(
+  `${level} confidence (${Math.round(clampedConfidence)}%)`,
+);
 </script>
 
 <span
-  class="confidence-badge"
+  class="confidence-badge {className}"
   class:sm={size === 'sm'}
   class:lg={size === 'lg'}
   style:--badge-bg={colors.bg}
   style:--badge-text={colors.text}
   style:--bar-color={colors.bar}
+  role="meter"
+  aria-valuenow={clampedConfidence}
+  aria-valuemin={0}
+  aria-valuemax={100}
+  aria-valuetext={valueText}
+  aria-label={ariaLabel ?? defaultLabel}
 >
   <span class="confidence-bar" style:width="{clampedConfidence}%"></span>
   {#if showPercent}
-    <span class="confidence-value">{percentText}</span>
+    <span class="confidence-value" aria-hidden="true">{percentText}</span>
   {/if}
 </span>
 
@@ -92,7 +131,7 @@ const percentText = $derived(`${Math.round(clampedConfidence)}%`);
     bottom: 0;
     background-color: var(--bar-color);
     opacity: 0.3;
-    transition: width 0.3s ease;
+    transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
   }
 
   .confidence-value {

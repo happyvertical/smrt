@@ -252,46 +252,46 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
 
   h1 {
     font-size: 1.75rem;
-    color: #1f2937;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
   }
 
   h2 {
     font-size: 1.25rem;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 16px;
   }
 
   h3 {
     font-size: 1rem;
-    color: #4b5563;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 12px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   h4 {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     margin-top: 12px;
     margin-bottom: 4px;
   }
 
   .description {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
   .control-panel {
-    background: linear-gradient(135deg, #059669 0%, #047857 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--smrt-color-success) 0%, var(--smrt-color-success) 100%);
+    color: var(--smrt-color-on-success);
     border-radius: 12px;
     padding: 24px;
     margin-bottom: 24px;
   }
 
   .control-panel h2 {
-    color: white;
+    color: var(--smrt-color-on-success);
     margin-bottom: 16px;
     font-size: 1rem;
     text-transform: uppercase;
@@ -306,7 +306,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   .clear-btn {
     padding: 8px 16px;
     background: rgba(255, 255, 255, 0.2);
-    color: white;
+    color: var(--smrt-color-on-success);
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 6px;
     font-size: 0.875rem;
@@ -319,8 +319,8 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   }
 
   .demo-section {
-    background: #fff;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 12px;
     padding: 24px;
     margin-bottom: 24px;
@@ -329,7 +329,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   .form-section {
     margin-bottom: 24px;
     padding-bottom: 16px;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .form-section:last-of-type {
@@ -356,19 +356,19 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
     gap: 12px;
     margin-top: 16px;
     padding: 12px 16px;
-    background: #f0fdf4;
+    background: var(--smrt-color-success-container, #f0fdf4);
     border-radius: 8px;
   }
 
   .total-label {
     font-weight: 500;
-    color: #166534;
+    color: var(--smrt-color-on-success-container, #166534);
   }
 
   .total-value {
     font-size: 1.25rem;
     font-weight: 600;
-    color: #166534;
+    color: var(--smrt-color-on-success-container, #166534);
   }
 
   .form-actions {
@@ -379,8 +379,8 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
 
   .submit-btn {
     padding: 12px 32px;
-    background: #059669;
-    color: white;
+    background: var(--smrt-color-success);
+    color: var(--smrt-color-on-success);
     border: none;
     border-radius: 8px;
     font-size: 1rem;
@@ -390,26 +390,26 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   }
 
   .submit-btn:hover {
-    background: #047857;
+    background: var(--smrt-color-success);
   }
 
   .submitted-data {
     margin-top: 24px;
     padding: 16px;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
+    background: var(--smrt-color-success-container, #f0fdf4);
+    border: 1px solid var(--smrt-color-success, #bbf7d0);
     border-radius: 8px;
   }
 
   .submitted-data h3 {
-    color: #166534;
+    color: var(--smrt-color-on-success-container, #166534);
     margin-bottom: 8px;
     border-bottom: none;
     padding-bottom: 0;
   }
 
   .submitted-data pre {
-    background: #fff;
+    background: var(--smrt-color-surface);
     padding: 12px;
     border-radius: 4px;
     font-size: 0.875rem;
@@ -418,7 +418,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
 
   .examples {
     font-size: 0.875rem;
-    color: #4b5563;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .examples ul {
@@ -429,7 +429,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   .examples li {
     margin: 4px 0;
     font-family: monospace;
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 4px 8px;
     border-radius: 4px;
     display: inline-block;

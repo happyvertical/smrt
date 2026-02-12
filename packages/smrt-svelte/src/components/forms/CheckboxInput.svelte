@@ -8,7 +8,7 @@ import {
 } from '../../state/form-context.js';
 import { parseSpokenBoolean } from '../../utils/forms/formatters.js';
 
-interface Props {
+export interface Props {
   /** Field name */
   name: string;
   /** Field label */
@@ -144,39 +144,39 @@ function handleChange(e: Event) {
   .checkbox {
     width: 18px;
     height: 18px;
-    border: 2px solid var(--md-sys-color-on-surface-variant);
+    border: 2px solid var(--smrt-color-on-surface-variant);
     border-radius: 2px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     background-color: transparent;
   }
 
   .checkbox.checked {
-    background-color: var(--md-sys-color-primary);
-    border-color: var(--md-sys-color-primary);
+    background-color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
   }
 
   /* Smrt mode styling */
   .smrt-mode .checkbox.checked {
-    background-color: var(--md-sys-color-tertiary);
-    border-color: var(--md-sys-color-tertiary);
+    background-color: var(--smrt-color-tertiary);
+    border-color: var(--smrt-color-tertiary);
   }
 
   .icon {
     width: 14px;
     height: 14px;
-    fill: var(--md-sys-color-on-primary);
+    fill: var(--smrt-color-on-primary);
   }
 
   .smrt-mode .icon {
-    fill: var(--md-sys-color-on-tertiary);
+    fill: var(--smrt-color-on-tertiary);
   }
 
   .label {
     font-size: 0.875rem;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
     cursor: inherit;
   }
 
@@ -186,7 +186,7 @@ function handleChange(e: Event) {
   }
 
   .input:focus-visible ~ .state-layer {
-    background-color: var(--md-sys-color-on-surface);
+    background-color: var(--smrt-color-on-surface);
     opacity: 0.12;
   }
 
@@ -198,11 +198,11 @@ function handleChange(e: Event) {
     bottom: 0;
     border-radius: 50%;
     pointer-events: none;
-    transition: opacity 200ms;
+    transition: opacity var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
   }
 
   .container:hover .state-layer {
-    background-color: var(--md-sys-color-on-surface);
+    background-color: var(--smrt-color-on-surface);
     opacity: 0.08;
   }
 </style>

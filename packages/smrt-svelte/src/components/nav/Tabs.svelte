@@ -4,12 +4,18 @@
  * refactored for Material 3
  *
  * Provides tabbed navigation with optional counts and content slots.
+ *
+ * Accessibility:
+ * - Supports keyboard navigation with Arrow keys
+ * - Proper ARIA roles: tablist, tab, tabpanel
+ * - aria-selected indicates active tab
+ * - aria-controls links tab to panel
  */
 import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 import type { Tab } from './types.js';
 
-interface Props {
+export interface Props {
   /** Available tabs */
   tabs: Tab[];
   /** Currently active tab id */
@@ -22,6 +28,8 @@ interface Props {
   variant?: 'primary' | 'secondary';
   /** Tab content slot */
   children?: Snippet;
+  /** Accessible label for the tablist */
+  'aria-label'?: string;
 }
 
 const {
@@ -31,11 +39,64 @@ const {
   size = 'md',
   variant = 'primary',
   children,
+  'aria-label': ariaLabel,
 }: Props = $props();
+
+/** Get enabled tabs only */
+const enabledTabs = $derived(tabs.filter((t) => !t.disabled));
+
+let tablistEl: HTMLElement | null = $state(null);
+
+// Generate unique ID for this tabs instance
+const instanceId = $props.id();
 
 function handleClick(id: string) {
   if (id !== active) {
     onchange?.(id);
+  }
+}
+
+/**
+ * Handle keyboard navigation for accessibility
+ * ArrowRight/ArrowLeft: Move between tabs
+ * Home: Go to first tab
+ * End: Go to last tab
+ */
+function handleKeydown(event: KeyboardEvent, tabId: string) {
+  const currentIndex = enabledTabs.findIndex((t) => t.id === tabId);
+  let nextIndex: number | null = null;
+
+  switch (event.key) {
+    case 'ArrowRight':
+      event.preventDefault();
+      nextIndex = (currentIndex + 1) % enabledTabs.length;
+      break;
+    case 'ArrowLeft':
+      event.preventDefault();
+      nextIndex = (currentIndex - 1 + enabledTabs.length) % enabledTabs.length;
+      break;
+    case 'Home':
+      event.preventDefault();
+      nextIndex = 0;
+      break;
+    case 'End':
+      event.preventDefault();
+      nextIndex = enabledTabs.length - 1;
+      break;
+  }
+
+  if (nextIndex !== null && nextIndex !== currentIndex) {
+    const nextTab = enabledTabs[nextIndex];
+    if (nextTab) {
+      onchange?.(nextTab.id);
+      // Focus the next tab button after the DOM updates
+      requestAnimationFrame(() => {
+        const tabButton = tablistEl?.querySelector(
+          `[data-tab-id="${CSS.escape(nextTab.id)}"]`,
+        ) as HTMLElement;
+        tabButton?.focus();
+      });
+    }
   }
 }
 </script>
@@ -47,6 +108,8 @@ function handleClick(id: string) {
     class:lg={size === 'lg'}
     class:secondary={variant === 'secondary'}
     role="tablist"
+    aria-label={ariaLabel}
+    bind:this={tablistEl}
   >
     {#each tabs as tab (tab.id)}
       <button
@@ -55,9 +118,13 @@ function handleClick(id: string) {
         class:active={tab.id === active}
         disabled={tab.disabled}
         role="tab"
+        id="tab-{instanceId}-{tab.id}"
         aria-selected={tab.id === active}
-        aria-controls="tab-panel-{tab.id}"
+        aria-controls="tab-panel-{instanceId}"
+        tabindex={tab.id === active ? 0 : -1}
+        data-tab-id={tab.id}
         onclick={() => handleClick(tab.id)}
+        onkeydown={(e) => handleKeydown(e, tab.id)}
         use:ripple
       >
         <span class="tab-content-wrapper">
@@ -72,7 +139,12 @@ function handleClick(id: string) {
   </div>
 
   {#if children}
-    <div class="tab-panel" role="tabpanel" id="tab-panel-{active}">
+    <div 
+      class="tab-panel" 
+      role="tabpanel" 
+      id="tab-panel-{instanceId}"
+      aria-labelledby="tab-{instanceId}-{active}"
+    >
       {@render children()}
     </div>
   {/if}
@@ -87,7 +159,7 @@ function handleClick(id: string) {
 
   .tabs-nav {
     display: flex;
-    border-bottom: 1px solid var(--md-sys-color-surface-variant);
+    border-bottom: 1px solid var(--smrt-color-surface-variant);
     width: 100%;
   }
 
@@ -99,9 +171,9 @@ function handleClick(id: string) {
     justify-content: center;
     padding: 0 16px;
     height: 48px;
-    font: var(--md-sys-typescale-title-small-font);
+    font: var(--smrt-typography-title-small-font);
     font-weight: 500;
-    color: var(--md-sys-color-on-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
     background: transparent;
     border: none;
     cursor: pointer;
@@ -113,21 +185,26 @@ function handleClick(id: string) {
 
   .sm .tab-button {
     height: 40px;
-    font: var(--md-sys-typescale-label-large-font);
+    font: var(--smrt-typography-label-large-font);
   }
 
   .lg .tab-button {
     height: 56px;
-    font: var(--md-sys-typescale-title-medium-font);
+    font: var(--smrt-typography-title-medium-font);
   }
 
   .tab-button:hover:not(:disabled) {
-    background-color: var(--md-sys-color-surface-container-high);
-    color: var(--md-sys-color-on-surface);
+    background-color: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface);
+  }
+
+  .tab-button:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
   }
 
   .tab-button.active {
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
   }
 
   .tab-button:disabled {
@@ -143,7 +220,7 @@ function handleClick(id: string) {
   }
 
   .tab-count {
-    font: var(--md-sys-typescale-label-small-font);
+    font: var(--smrt-typography-label-small-font);
     opacity: 0.7;
   }
 
@@ -151,7 +228,7 @@ function handleClick(id: string) {
     position: absolute;
     bottom: 0;
     height: 3px;
-    background-color: var(--md-sys-color-primary);
+    background-color: var(--smrt-color-primary);
     border-radius: 3px 3px 0 0;
     transition: width 200ms, opacity 200ms;
     width: 0;

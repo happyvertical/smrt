@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { TTSVoice } from '@happyvertical/browser-ai';
 import { CapabilityGate, useTTS } from '@happyvertical/smrt-svelte';
+import type { TTSVoice } from '@happyvertical/smrt-svelte/browser-ai';
 
 const tts = useTTS();
 
@@ -163,7 +163,7 @@ async function loadVoices() {
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -173,10 +173,10 @@ async function loadVoices() {
 
   h2 {
     font-size: 1rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 16px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .input-section {
@@ -184,15 +184,15 @@ async function loadVoices() {
     flex-direction: column;
     gap: 16px;
     padding: 24px;
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 12px;
   }
 
   textarea {
     width: 100%;
     padding: 12px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     font-family: inherit;
     font-size: 1rem;
@@ -202,8 +202,8 @@ async function loadVoices() {
 
   textarea:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 3px var(--smrt-color-primary-container);
   }
 
   .controls {
@@ -214,8 +214,8 @@ async function loadVoices() {
 
   .speak-btn {
     padding: 12px 32px;
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     border: none;
     border-radius: 8px;
     font-size: 1rem;
@@ -225,21 +225,21 @@ async function loadVoices() {
   }
 
   .speak-btn:hover {
-    background: #2563eb;
+    background: var(--smrt-color-primary);
   }
 
   .speak-btn.speaking {
-    background: #ef4444;
+    background: var(--smrt-color-error);
   }
 
   .speak-btn.speaking:hover {
-    background: #dc2626;
+    background: var(--smrt-color-error);
   }
 
   .pause-btn {
     padding: 12px 24px;
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
     border: none;
     border-radius: 8px;
     font-size: 1rem;
@@ -248,7 +248,7 @@ async function loadVoices() {
   }
 
   .pause-btn:hover {
-    background: #e5e7eb;
+    background: var(--smrt-color-surface-container-high);
   }
 
   .settings {
@@ -256,8 +256,8 @@ async function loadVoices() {
     flex-direction: column;
     gap: 20px;
     padding: 24px;
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 12px;
   }
 
@@ -270,25 +270,25 @@ async function loadVoices() {
   .setting label {
     font-size: 0.875rem;
     font-weight: 500;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
   }
 
   .setting select {
     padding: 8px 12px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 6px;
     font-size: 0.875rem;
   }
 
   .setting input[type="range"] {
     width: 100%;
-    accent-color: #3b82f6;
+    accent-color: var(--smrt-color-primary);
   }
 
   .load-voices-btn {
     padding: 8px 16px;
-    background: #f3f4f6;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 6px;
     font-size: 0.875rem;
     cursor: pointer;
@@ -296,16 +296,16 @@ async function loadVoices() {
   }
 
   .load-voices-btn:hover {
-    background: #e5e7eb;
+    background: var(--smrt-color-surface-container-high);
   }
 
   .not-available {
     padding: 40px;
     text-align: center;
-    background: #fef2f2;
-    border: 1px solid #fecaca;
+    background: var(--smrt-color-error-container);
+    border: 1px solid var(--smrt-color-error);
     border-radius: 8px;
-    color: #991b1b;
+    color: var(--smrt-color-on-error-container);
   }
 
   .info-table {
@@ -315,16 +315,16 @@ async function loadVoices() {
 
   .info-table td {
     padding: 8px 12px;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .info-table td:first-child {
     font-weight: 500;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     width: 120px;
   }
 
   .info-table .error {
-    color: #ef4444;
+    color: var(--smrt-color-error);
   }
 </style>

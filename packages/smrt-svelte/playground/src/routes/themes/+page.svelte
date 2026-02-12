@@ -212,7 +212,7 @@ const surfaceTokens = [
       {#if theme.state.preset === 'glass'}
         <Card class="showcase-card full-width">
           <h3 slot="header">Glass Effects</h3>
-          <div class="glass-showcase" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 2rem;">
+          <div class="glass-showcase" style="background: linear-gradient(135deg, var(--smrt-color-primary) 0%, var(--smrt-color-tertiary, #764ba2) 100%); padding: 2rem;">
             <div class="smrt-glass" style="padding: 2rem; border-radius: var(--smrt-radius-lg);">
               <h4>Glass Surface</h4>
               <p>This card uses the glass effect with backdrop blur and translucency.</p>

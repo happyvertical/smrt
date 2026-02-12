@@ -4,9 +4,10 @@
  * Supports decimal (8.5) or HH:MM (8:30) formats
  */
 
-import { formatHoursHHMM } from '../utils.js';
+import { formatHoursHHMM } from './utils.js';
 
-interface Props {
+/** Props for DurationDisplay component */
+export interface Props {
   hours: number;
   format?: 'decimal' | 'hhmm';
   size?: 'sm' | 'md' | 'lg';
@@ -39,29 +40,29 @@ const formattedValue = $derived(
     align-items: baseline;
     gap: 0.125rem;
     font-variant-numeric: tabular-nums;
-    font-size: var(--md-sys-typescale-body-large-size, 1rem);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .value {
-    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
-    color: var(--md-sys-color-on-surface);
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
+    color: var(--smrt-color-on-surface);
   }
 
   .unit {
-    font-weight: var(--md-sys-typescale-body-medium-weight, 400);
-    color: var(--md-sys-color-on-surface-variant);
+    font-weight: var(--smrt-typography-body-medium-weight, 400);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* Size variants */
   .duration.sm {
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   .duration.sm .value {
-    font-weight: var(--md-sys-typescale-body-medium-weight, 400);
+    font-weight: var(--smrt-typography-body-medium-weight, 400);
   }
 
   .duration.lg {
-    font-size: var(--md-sys-typescale-headline-small-size, 1.5rem);
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
   }
 </style>

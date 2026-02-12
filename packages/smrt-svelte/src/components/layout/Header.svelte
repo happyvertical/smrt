@@ -2,7 +2,7 @@
 import type { Snippet } from 'svelte';
 import Container from './Container.svelte';
 
-interface Props {
+export interface Props {
   logo?: Snippet;
   nav?: Snippet;
 }
@@ -30,41 +30,41 @@ const { logo, nav }: Props = $props();
 
 <style>
   .site-header {
-    background: var(--color-primary-main);
-    color: var(--color-text-inverse);
-    padding: var(--spacing-md) 0;
-    box-shadow: var(--shadow-md);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    padding: var(--smrt-spacing-4) 0;
+    box-shadow: var(--smrt-elevation-level2);
   }
 
   .header-content {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--smrt-spacing-4);
   }
 
   .logo :global(h1) {
     margin: 0;
-    font-size: var(--font-size-3xl);
-    font-weight: var(--font-weight-semibold);
+    font-size: var(--smrt-typography-display-small-size);
+    font-weight: var(--smrt-typography-display-small-weight);
   }
 
   .logo :global(a) {
-    color: var(--color-text-inverse);
+    color: var(--smrt-color-on-primary);
     text-decoration: none;
   }
 
   .logo :global(a:hover) {
-    color: var(--color-text-inverse);
+    color: var(--smrt-color-on-primary);
     opacity: 0.9;
   }
 
   .nav :global(a) {
-    color: var(--color-text-inverse);
+    color: var(--smrt-color-on-primary);
     text-decoration: none;
-    margin-right: var(--spacing-lg);
+    margin-right: var(--smrt-spacing-6);
     opacity: 0.95;
-    transition: opacity var(--transition-fast);
-    font-weight: var(--font-weight-medium);
+    transition: opacity var(--smrt-duration-short2) var(--smrt-easing-standard);
+    font-weight: var(--smrt-typography-body-medium-weight);
   }
 
   .nav :global(a:hover) {
@@ -80,7 +80,7 @@ const { logo, nav }: Props = $props();
     }
 
     .logo :global(h1) {
-      font-size: var(--font-size-2xl);
+      font-size: var(--smrt-typography-headline-medium-size);
     }
   }
 </style>

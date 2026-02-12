@@ -30,6 +30,15 @@ export {
   TimeSummary,
 };
 
+// Export component prop types
+export type { Props as ApprovalActionsProps } from './components/ApprovalActions.svelte';
+export type { Props as BulkActionsProps } from './components/BulkActions.svelte';
+export type { Props as DurationDisplayProps } from './components/DurationDisplay.svelte';
+export type { Props as RejectDialogProps } from './components/RejectDialog.svelte';
+export type { Props as TimeEntryCardProps } from './components/TimeEntryCard.svelte';
+export type { Props as TimeEntryListProps } from './components/TimeEntryList.svelte';
+export type { Props as TimeSummaryProps } from './components/TimeSummary.svelte';
+
 // Export types and utilities
 export {
   type ApprovalStatus,

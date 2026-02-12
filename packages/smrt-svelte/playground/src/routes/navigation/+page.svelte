@@ -223,7 +223,7 @@ let activeProjectTab = $state('all');
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -233,33 +233,33 @@ let activeProjectTab = $state('all');
 
   h2 {
     font-size: 1.25rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   h3 {
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin: 24px 0 12px;
     font-weight: 500;
   }
 
   h4 {
     margin: 0 0 8px;
-    color: #333;
+    color: var(--smrt-color-on-surface);
   }
 
   .section-desc {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
     margin-bottom: 16px;
   }
 
   .demo-box {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 16px;
@@ -274,33 +274,33 @@ let activeProjectTab = $state('all');
   .selected-value {
     margin-top: 12px;
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .tab-content-demo {
     margin-top: 16px;
     padding: 16px;
-    background: white;
+    background: var(--smrt-color-surface);
     border-radius: 6px;
-    border: 1px solid #e5e7eb;
-    color: #374151;
+    border: 1px solid var(--smrt-color-outline-variant);
+    color: var(--smrt-color-on-surface);
   }
 
   .content-panel {
     padding: 16px;
-    background: white;
+    background: var(--smrt-color-surface);
     border-radius: 6px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .content-panel p {
     margin: 0;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .size-label {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 8px;
     display: block;
   }
@@ -317,16 +317,16 @@ let activeProjectTab = $state('all');
   .props-table td {
     text-align: left;
     padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .props-table th {
-    background: #f9f9f9;
+    background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
 
   code {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.8rem;

@@ -9,7 +9,8 @@
 import type { Snippet } from 'svelte';
 import type { LineItem } from '../types.js';
 
-interface Props {
+/** Props for InvoiceLineItems component */
+export interface Props {
   /** Line items to display */
   items: LineItem[];
   /** Enable editing mode */
@@ -152,35 +153,35 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 2rem 1rem;
-    background: #f9fafb;
-    border: 1px dashed #d1d5db;
-    border-radius: 0.5rem;
+    padding: var(--smrt-spacing-8, 2rem) var(--smrt-spacing-4, 1rem);
+    background: var(--smrt-color-surface-container-low, #f7f2fa);
+    border: 1px dashed var(--smrt-color-outline, #79747e);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
     text-align: center;
   }
 
   .empty-state p {
-    color: #6b7280;
-    margin: 0 0 1rem;
+    color: var(--smrt-color-on-surface-variant, #49454f);
+    margin: 0 0 var(--smrt-spacing-4, 1rem);
   }
 
   .line-items-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
+    font: var(--smrt-typography-body-medium-font);
   }
 
   .line-items-table th {
     text-align: left;
     font-weight: 500;
-    color: #6b7280;
-    padding: 0.75rem 0.5rem;
-    border-bottom: 1px solid #e5e7eb;
+    color: var(--smrt-color-on-surface-variant, #49454f);
+    padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-2, 0.5rem);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
   }
 
   .line-items-table td {
-    padding: 0.75rem 0.5rem;
-    border-bottom: 1px solid #f3f4f6;
+    padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-2, 0.5rem);
+    border-bottom: 1px solid var(--smrt-color-surface-variant, #e7e0ec);
     vertical-align: top;
   }
 
@@ -211,49 +212,49 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 
   .item-category {
     display: block;
-    font-size: 0.75rem;
-    color: #9ca3af;
+    font: var(--smrt-typography-label-small-font);
+    color: var(--smrt-color-on-surface-variant, #49454f);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
 
   .item-description {
-    color: #111827;
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .source-badge {
     display: inline-block;
-    padding: 0.125rem 0.5rem;
-    font-size: 0.75rem;
+    padding: var(--smrt-spacing-0-5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
+    font: var(--smrt-typography-label-small-font);
     font-weight: 500;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .source-expense {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--smrt-color-tertiary-container, #ddf5e5);
+    color: var(--smrt-color-on-tertiary-container, #0c1f15);
   }
 
   .source-time {
-    background: #dbeafe;
-    color: #1e40af;
+    background: var(--smrt-color-primary-container, #d3e3fd);
+    color: var(--smrt-color-on-primary-container, #041e49);
   }
 
   .source-manual {
-    background: #f3f4f6;
-    color: #6b7280;
+    background: var(--smrt-color-surface-variant, #e7e0ec);
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .total-row td {
-    border-top: 2px solid #e5e7eb;
+    border-top: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-bottom: none;
     font-weight: 600;
-    padding-top: 1rem;
+    padding-top: var(--smrt-spacing-4, 1rem);
   }
 
   .total-label {
     text-align: right;
-    color: #374151;
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .action-btn {
@@ -264,42 +265,54 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     height: 28px;
     background: transparent;
     border: none;
-    border-radius: 0.25rem;
+    border-radius: var(--smrt-radius-extra-small, 0.25rem);
     cursor: pointer;
-    color: #9ca3af;
-    transition: all 0.15s;
+    color: var(--smrt-color-on-surface-variant, #49454f);
+    transition: all var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .action-btn {
+      transition: none;
+    }
   }
 
   .action-btn:hover {
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--smrt-color-surface-variant, #e7e0ec);
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .action-btn.delete:hover {
-    background: #fee2e2;
-    color: #dc2626;
+    background: var(--smrt-color-error-container, #ffdad6);
+    color: var(--smrt-color-error, #ba1a1a);
   }
 
   .add-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 500;
-    color: #3b82f6;
+    color: var(--smrt-color-primary, #005ac1);
     background: transparent;
-    border: 1px dashed #3b82f6;
-    border-radius: 0.375rem;
+    border: 1px dashed var(--smrt-color-primary, #005ac1);
+    border-radius: var(--smrt-radius-small, 0.375rem);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .add-btn {
+      transition: none;
+    }
   }
 
   .add-btn:hover {
-    background: #eff6ff;
+    background: var(--smrt-color-primary-container, #d3e3fd);
   }
 
   .add-btn-below {
-    margin-top: 0.75rem;
+    margin-top: var(--smrt-spacing-3, 0.75rem);
   }
 </style>

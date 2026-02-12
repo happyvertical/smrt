@@ -2,7 +2,7 @@
 import type { Snippet } from 'svelte';
 import Container from './Container.svelte';
 
-interface Props {
+export interface Props {
   date?: string;
   dateHref?: string;
   location?: string;
@@ -78,16 +78,16 @@ const {
 
 <style>
   .masthead {
-    border-bottom: 1px solid var(--color-neutral-gray300);
-    background: var(--color-neutral-white);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
   }
 
   .subheader {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    padding: var(--spacing-md) 0;
-    font-size: var(--font-size-sm);
+    padding: var(--smrt-spacing-4) 0;
+    font-size: var(--smrt-typography-body-medium-size);
   }
 
   .subheader.desktop {
@@ -111,52 +111,52 @@ const {
   }
 
   time {
-    color: var(--color-text-secondary);
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
   .date-link {
     text-decoration: none;
-    transition: color var(--transition-fast);
+    transition: color var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
 
   .date-link:hover {
-    color: var(--color-primary-main);
+    color: var(--smrt-color-primary);
   }
 
   .date-link:hover time {
-    color: var(--color-primary-main);
+    color: var(--smrt-color-primary);
   }
 
   .location {
-    color: var(--color-text-secondary);
-    font-weight: var(--font-weight-medium);
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: var(--smrt-typography-body-medium-weight);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    font-size: var(--font-size-xs);
+    font-size: var(--smrt-typography-body-small-size);
     text-decoration: none;
-    transition: color var(--transition-fast);
+    transition: color var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
 
   .location:hover {
-    color: var(--color-primary-main);
+    color: var(--smrt-color-primary);
   }
 
   .nav {
     display: flex;
-    gap: var(--spacing-lg);
+    gap: var(--smrt-spacing-6);
   }
 
   .nav :global(a) {
-    color: var(--color-text-primary);
+    color: var(--smrt-color-on-surface);
     text-decoration: none;
-    font-weight: var(--font-weight-medium);
-    transition: color var(--transition-fast);
-    font-size: var(--font-size-sm);
+    font-weight: var(--smrt-typography-body-medium-weight);
+    transition: color var(--smrt-duration-short2) var(--smrt-easing-standard);
+    font-size: var(--smrt-typography-body-medium-size);
   }
 
   .nav :global(a:hover) {
-    color: var(--color-primary-main);
+    color: var(--smrt-color-primary);
   }
 
   /* Mobile icon nav */
@@ -164,14 +164,14 @@ const {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--color-text-primary);
+    color: var(--smrt-color-on-surface);
     text-decoration: none;
-    padding: var(--spacing-xs);
-    transition: color var(--transition-fast);
+    padding: var(--smrt-spacing-1);
+    transition: color var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
 
   .home-icon:hover {
-    color: var(--color-primary-main);
+    color: var(--smrt-color-primary);
   }
 
   .home-icon svg {
@@ -180,14 +180,14 @@ const {
   }
 
   .mobile-nav {
-    gap: var(--spacing-lg);
+    gap: var(--smrt-spacing-6);
   }
 
   .mobile-nav :global(a) {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--spacing-xs);
+    padding: var(--smrt-spacing-1);
   }
 
   .mobile-nav :global(svg) {

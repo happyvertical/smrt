@@ -6,7 +6,8 @@
  * Shows progress, completed items, and error states.
  */
 
-interface LoadingOverlayProps {
+/** Props for LoadingOverlay component */
+export interface Props {
   /** Whether to show the overlay */
   show?: boolean;
   /** Loading message to display */
@@ -34,7 +35,7 @@ let {
   dismissible = false,
   class: className = '',
   ondismiss,
-}: LoadingOverlayProps = $props();
+}: Props = $props();
 
 let dismissed = $state(false);
 
@@ -51,7 +52,16 @@ function handleDismiss() {
     ondismiss?.();
   }
 }
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && dismissible) {
+    e.preventDefault();
+    handleDismiss();
+  }
+}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 {#if show && !dismissed}
 	<div
@@ -59,6 +69,8 @@ function handleDismiss() {
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="loading-title"
+		aria-describedby={items.length > 0 ? 'loading-items' : undefined}
+		aria-busy={!error}
 	>
 		<div class="overlay-backdrop"></div>
 
@@ -94,7 +106,7 @@ function handleDismiss() {
 			{/if}
 
 			{#if items.length > 0}
-				<div class="items-container">
+				<div class="items-container" id="loading-items">
 					{#each items as item}
 						<span class="item-badge">{item}</span>
 					{/each}
@@ -133,7 +145,7 @@ function handleDismiss() {
 
 	.overlay-content {
 		position: relative;
-		background: white;
+		background: var(--smrt-color-surface-container-high, white);
 		border-radius: 16px;
 		padding: 32px 40px;
 		max-width: 400px;
@@ -154,12 +166,12 @@ function handleDismiss() {
 	}
 
 	.icon.spinner {
-		color: #3b82f6;
+		color: var(--smrt-color-primary, #3b82f6);
 		animation: spin 1s linear infinite;
 	}
 
 	.icon.error {
-		color: #ef4444;
+		color: var(--smrt-color-error, #ef4444);
 	}
 
 	@keyframes spin {
@@ -174,7 +186,7 @@ function handleDismiss() {
 	.title {
 		font-size: 1.25rem;
 		font-weight: 600;
-		color: #1f2937;
+		color: var(--smrt-color-on-surface, #1f2937);
 		margin: 0 0 16px;
 	}
 
@@ -188,7 +200,7 @@ function handleDismiss() {
 	.progress-bar {
 		flex: 1;
 		height: 8px;
-		background: #e5e7eb;
+		background: var(--smrt-color-surface-container-highest, #e5e7eb);
 		border-radius: 4px;
 		overflow: hidden;
 	}
@@ -197,13 +209,13 @@ function handleDismiss() {
 		height: 100%;
 		background: linear-gradient(90deg, #3b82f6, #60a5fa);
 		border-radius: 4px;
-		transition: width 0.3s ease;
+		transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
 	}
 
 	.progress-text {
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: #3b82f6;
+		color: var(--smrt-color-primary, #3b82f6);
 		min-width: 40px;
 	}
 
@@ -219,16 +231,16 @@ function handleDismiss() {
 		font-size: 0.75rem;
 		padding: 4px 10px;
 		border-radius: 9999px;
-		background: #dcfce7;
-		color: #166534;
+		background: var(--smrt-color-primary-container, #dcfce7);
+		color: var(--smrt-color-on-primary-container, #166534);
 	}
 
 	.error-message {
 		font-size: 0.875rem;
-		color: #ef4444;
+		color: var(--smrt-color-error, #ef4444);
 		margin: 16px 0 0;
 		padding: 12px;
-		background: #fef2f2;
+		background: var(--smrt-color-error-container, #fef2f2);
 		border-radius: 8px;
 	}
 
@@ -236,16 +248,30 @@ function handleDismiss() {
 		margin-top: 20px;
 		padding: 10px 20px;
 		font-size: 0.875rem;
-		color: #6b7280;
+		color: var(--smrt-color-on-surface-variant, #6b7280);
 		background: transparent;
-		border: 1px solid #d1d5db;
+		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
 		border-radius: 8px;
 		cursor: pointer;
-		transition: all 0.15s ease;
+		transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
 	}
 
 	.dismiss-btn:hover {
-		background: #f3f4f6;
-		border-color: #9ca3af;
+		background: var(--smrt-color-surface-container-highest, #f3f4f6);
+		border-color: var(--smrt-color-outline, #9ca3af);
+	}
+
+	.dismiss-btn:focus-visible {
+		outline: 2px solid var(--smrt-color-primary);
+		outline-offset: 2px;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.icon.spinner {
+			animation: none;
+		}
+		.progress-fill {
+			transition: none;
+		}
 	}
 </style>

@@ -9,7 +9,7 @@ import { matchOption } from '../../utils/forms/formatters.js';
 import { Icon } from '../display/index.js';
 import type { SelectOption } from './types.js';
 
-interface Props {
+export interface Props {
   /** Field name */
   name: string;
   /** Field label */
@@ -142,9 +142,9 @@ function handleChange(e: Event) {
 
 <style>
   .smrt-select-field {
-    --field-color: var(--md-sys-color-on-surface-variant);
-    --field-bg: var(--md-sys-color-surface-container-highest);
-    --field-active: var(--md-sys-color-primary);
+    --field-color: var(--smrt-color-on-surface-variant);
+    --field-bg: var(--smrt-color-surface-container-highest);
+    --field-active: var(--smrt-color-primary);
     
     display: flex;
     flex-direction: column;
@@ -160,11 +160,11 @@ function handleChange(e: Event) {
     border-radius: 4px 4px 0 0;
     min-height: 56px;
     padding: 0 16px;
-    transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   .container:hover {
-    background-color: var(--md-sys-color-surface-container-high);
+    background-color: var(--smrt-color-surface-container-high);
   }
 
   .content {
@@ -182,7 +182,7 @@ function handleChange(e: Event) {
     letter-spacing: 0.5px;
     color: var(--field-color);
     pointer-events: none;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     transform-origin: top left;
   }
 
@@ -197,7 +197,7 @@ function handleChange(e: Event) {
     font-size: 1rem;
     line-height: 1.5;
     letter-spacing: 0.5px;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
     width: 100%;
     padding: 0;
     margin: 0;
@@ -239,7 +239,7 @@ function handleChange(e: Event) {
     font-size: 0.75rem;
   }
 
-  .info { color: var(--md-sys-color-on-surface-variant); }
+  .info { color: var(--smrt-color-on-surface-variant); }
 
   .disabled {
     opacity: 0.38;
@@ -248,6 +248,6 @@ function handleChange(e: Event) {
 
   /* Smrt mode overrides */
   .smrt-mode {
-    --field-active: var(--md-sys-color-tertiary);
+    --field-active: var(--smrt-color-tertiary);
   }
 </style>

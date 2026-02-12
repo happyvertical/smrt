@@ -172,7 +172,7 @@ function clearChat() {
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -182,16 +182,16 @@ function clearChat() {
 
   h2 {
     font-size: 1rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 16px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .loading-note {
     margin-top: 12px;
     font-size: 0.875rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .chat-header {
@@ -214,8 +214,8 @@ function clearChat() {
 
   .model-badge {
     padding: 4px 8px;
-    background: #dbeafe;
-    color: #1e40af;
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
     border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 500;
@@ -223,17 +223,17 @@ function clearChat() {
 
   .clear-btn {
     padding: 4px 12px;
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     border: none;
     border-radius: 4px;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     font-size: 0.75rem;
   }
 
   .chat-container {
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 12px;
     overflow: hidden;
   }
@@ -248,7 +248,7 @@ function clearChat() {
   .empty-state {
     text-align: center;
     padding: 60px 20px;
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-state .hint {
@@ -263,28 +263,28 @@ function clearChat() {
   .message-role {
     font-size: 0.75rem;
     font-weight: 600;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 4px;
   }
 
   .message.user .message-role {
-    color: #3b82f6;
+    color: var(--smrt-color-primary);
   }
 
   .message.assistant .message-role {
-    color: #10b981;
+    color: var(--smrt-color-success);
   }
 
   .message-content {
     padding: 12px 16px;
     border-radius: 8px;
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container);
     line-height: 1.5;
     white-space: pre-wrap;
   }
 
   .message.user .message-content {
-    background: #eff6ff;
+    background: var(--smrt-color-primary-container);
   }
 
   .cursor {
@@ -300,27 +300,27 @@ function clearChat() {
     display: flex;
     gap: 8px;
     padding: 16px;
-    border-top: 1px solid #e5e7eb;
-    background: #f9fafb;
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container);
   }
 
   .input-form input {
     flex: 1;
     padding: 12px 16px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     font-size: 0.875rem;
   }
 
   .input-form input:focus {
     outline: none;
-    border-color: #3b82f6;
+    border-color: var(--smrt-color-primary);
   }
 
   .input-form button {
     padding: 12px 24px;
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     border: none;
     border-radius: 8px;
     font-weight: 500;
@@ -335,10 +335,10 @@ function clearChat() {
   .not-available {
     padding: 40px;
     text-align: center;
-    background: #fef2f2;
-    border: 1px solid #fecaca;
+    background: var(--smrt-color-error-container);
+    border: 1px solid var(--smrt-color-error);
     border-radius: 8px;
-    color: #991b1b;
+    color: var(--smrt-color-on-error-container);
   }
 
   .info-table {
@@ -349,42 +349,42 @@ function clearChat() {
 
   .info-table td {
     padding: 8px 12px;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .info-table td:first-child {
     font-weight: 500;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     width: 120px;
   }
 
   .info-table .error {
-    color: #ef4444;
+    color: var(--smrt-color-error);
   }
 
   .unload-btn,
   .load-btn {
     padding: 8px 16px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 6px;
-    background: white;
-    color: #374151;
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
     cursor: pointer;
     font-size: 0.875rem;
   }
 
   .unload-btn:hover,
   .load-btn:hover {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
   }
 
   .load-btn {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    border-color: var(--smrt-color-primary);
   }
 
   .load-btn:hover {
-    background: #2563eb;
+    background: var(--smrt-color-primary);
   }
 </style>

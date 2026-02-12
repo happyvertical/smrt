@@ -4,9 +4,10 @@
  * Shows appropriate buttons based on current status
  */
 
-import type { ApprovalStatus } from '../utils.js';
+import type { ApprovalStatus } from './utils.js';
 
-interface Props {
+/** Props for ApprovalActions component */
+export interface Props {
   status: ApprovalStatus;
   onsubmit?: () => void;
   onapprove?: () => void;
@@ -128,13 +129,13 @@ const canDelete = $derived(status === 'draft' && ondelete);
     justify-content: center;
     gap: 0.5rem;
     padding: 0.625rem 1.5rem;
-    font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
-    font-weight: var(--md-sys-typescale-label-large-weight, 500);
-    letter-spacing: var(--md-sys-typescale-label-large-tracking, 0.1px);
-    border-radius: var(--md-sys-shape-corner-full, 9999px);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-label-large-weight, 500);
+    letter-spacing: var(--smrt-typography-label-large-tracking, 0.1px);
+    border-radius: var(--smrt-radius-full, 9999px);
     border: none;
     cursor: pointer;
-    transition: all 0.2s var(--md-sys-motion-easing-standard);
+    transition: all 0.2s var(--smrt-easing-standard);
   }
 
   .btn:disabled {
@@ -143,66 +144,66 @@ const canDelete = $derived(status === 'draft' && ondelete);
   }
 
   .btn-filled {
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
   }
 
   .btn-filled:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .btn-filled-tonal {
-    background: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .btn-filled-tonal:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .btn-error {
-    background: var(--md-sys-color-error);
-    color: var(--md-sys-color-on-error);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
   }
 
   .btn-error:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .btn-error-outlined {
     background: transparent;
-    border: 1px solid var(--md-sys-color-error);
-    color: var(--md-sys-color-error);
+    border: 1px solid var(--smrt-color-error);
+    color: var(--smrt-color-error);
   }
 
   .btn-error-outlined:hover:not(:disabled) {
-    background: var(--md-sys-color-error-container);
+    background: var(--smrt-color-error-container);
   }
 
   .btn-outlined {
     background: transparent;
-    border: 1px solid var(--md-sys-color-outline);
-    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--smrt-color-outline);
+    color: var(--smrt-color-on-surface);
   }
 
   .btn-outlined:hover:not(:disabled) {
-    background: var(--md-sys-color-surface-container-highest);
+    background: var(--smrt-color-surface-container-highest);
   }
 
   .status-message {
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
-    font-weight: var(--md-sys-typescale-label-large-weight, 500);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-label-large-weight, 500);
     padding: 0.5rem 1rem;
-    border-radius: var(--md-sys-shape-corner-small, 8px);
+    border-radius: var(--smrt-radius-small, 8px);
   }
 
   .status-message.success {
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .status-message.error {
-    background: var(--md-sys-color-error-container);
-    color: var(--md-sys-color-on-error-container);
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 </style>

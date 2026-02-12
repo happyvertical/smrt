@@ -162,7 +162,7 @@ const gridClasses = $derived.by(() => {
 
   .grid-header {
     width: 100%;
-    margin-bottom: var(--spacing-md);
+    margin-bottom: var(--smrt-spacing-4);
   }
 
   /* Responsive grid - uses CSS variables set via inline styles */
@@ -190,52 +190,52 @@ const gridClasses = $derived.by(() => {
 
   /* Uniform gap */
   .gap-sm {
-    gap: var(--spacing-md);
+    gap: var(--smrt-spacing-4);
   }
 
   .gap-md {
-    gap: var(--spacing-lg);
+    gap: var(--smrt-spacing-6);
   }
 
   .gap-lg {
-    gap: var(--spacing-xl);
+    gap: var(--smrt-spacing-8);
   }
 
   .gap-xl {
-    gap: var(--spacing-2xl);
+    gap: var(--smrt-spacing-12);
   }
 
   /* Row gap */
   .row-gap-sm {
-    row-gap: var(--spacing-md);
+    row-gap: var(--smrt-spacing-4);
   }
 
   .row-gap-md {
-    row-gap: var(--spacing-lg);
+    row-gap: var(--smrt-spacing-6);
   }
 
   .row-gap-lg {
-    row-gap: var(--spacing-xl);
+    row-gap: var(--smrt-spacing-8);
   }
 
   .row-gap-xl {
-    row-gap: var(--spacing-2xl);
+    row-gap: var(--smrt-spacing-12);
   }
 
   /* Column gap */
   .col-gap-sm {
-    column-gap: var(--spacing-md);
+    column-gap: var(--smrt-spacing-4);
   }
 
   .col-gap-md {
-    column-gap: var(--spacing-lg);
+    column-gap: var(--smrt-spacing-6);
   }
 
   .col-gap-lg {
-    column-gap: var(--spacing-xl);
+    column-gap: var(--smrt-spacing-8);
   }
 
   .col-gap-xl {
-    column-gap: var(--spacing-2xl);
+    column-gap: var(--smrt-spacing-12);
   }
 </style>

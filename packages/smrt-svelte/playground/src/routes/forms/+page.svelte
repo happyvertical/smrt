@@ -430,46 +430,46 @@ function handleSearch(value: string) {
 
   h1 {
     font-size: 1.75rem;
-    color: #1f2937;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
   }
 
   h2 {
     font-size: 1.25rem;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 16px;
   }
 
   h3 {
     font-size: 1rem;
-    color: #4b5563;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 8px;
   }
 
   .description {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
   .hint {
     font-size: 0.875rem;
-    color: #6b7280;
-    background: #f9fafb;
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-container);
     padding: 12px 16px;
     border-radius: 8px;
     margin-bottom: 24px;
   }
 
   .control-panel {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--smrt-color-primary) 0%, var(--smrt-color-tertiary, #764ba2) 100%);
+    color: var(--smrt-color-on-primary);
     border-radius: 12px;
     padding: 24px;
     margin-bottom: 24px;
   }
 
   .control-panel h2 {
-    color: white;
+    color: var(--smrt-color-on-primary);
     margin-bottom: 16px;
     font-size: 1rem;
     text-transform: uppercase;
@@ -505,7 +505,7 @@ function handleSearch(value: string) {
     border-radius: 8px;
     font-size: 0.875rem;
     background: rgba(255, 255, 255, 0.9);
-    color: #1f2937;
+    color: var(--smrt-color-on-surface);
     cursor: pointer;
   }
 
@@ -528,7 +528,7 @@ function handleSearch(value: string) {
   .clear-btn {
     padding: 8px 16px;
     background: rgba(255, 255, 255, 0.2);
-    color: white;
+    color: var(--smrt-color-on-primary);
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 6px;
     font-size: 0.875rem;
@@ -541,8 +541,8 @@ function handleSearch(value: string) {
   }
 
   .demo-section {
-    background: #fff;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 12px;
     padding: 24px;
     margin-bottom: 24px;
@@ -556,8 +556,8 @@ function handleSearch(value: string) {
 
   .submit-btn {
     padding: 10px 24px;
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     border: none;
     border-radius: 8px;
     font-size: 1rem;
@@ -567,24 +567,24 @@ function handleSearch(value: string) {
   }
 
   .submit-btn:hover {
-    background: #2563eb;
+    background: var(--smrt-color-primary);
   }
 
   .submitted-data {
     margin-top: 24px;
     padding: 16px;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
+    background: var(--smrt-color-success-container, #f0fdf4);
+    border: 1px solid var(--smrt-color-success, #bbf7d0);
     border-radius: 8px;
   }
 
   .submitted-data h3 {
-    color: #166534;
+    color: var(--smrt-color-on-success-container, #166534);
     margin-bottom: 8px;
   }
 
   .submitted-data pre {
-    background: #fff;
+    background: var(--smrt-color-surface);
     padding: 12px;
     border-radius: 4px;
     font-size: 0.875rem;
@@ -600,7 +600,7 @@ function handleSearch(value: string) {
     display: flex;
     gap: 8px;
     padding: 8px 0;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .value-item:last-child {
@@ -609,12 +609,12 @@ function handleSearch(value: string) {
 
   .value-item .label {
     font-weight: 500;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
     min-width: 80px;
   }
 
   .value-item .value {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     font-family: monospace;
   }
 
@@ -632,14 +632,14 @@ function handleSearch(value: string) {
 
   .feature {
     padding: 16px;
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container);
     border-radius: 8px;
   }
 
   .feature ul {
     margin: 0;
     padding-left: 20px;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
   }
 
@@ -649,7 +649,7 @@ function handleSearch(value: string) {
 
   .examples {
     font-size: 0.875rem;
-    color: #4b5563;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .examples ul {
@@ -660,7 +660,7 @@ function handleSearch(value: string) {
   .examples li {
     margin: 4px 0;
     font-family: monospace;
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 4px 8px;
     border-radius: 4px;
     display: inline-block;
@@ -670,7 +670,7 @@ function handleSearch(value: string) {
 
   .append-toggle {
     padding: 12px;
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container);
     border-radius: 8px;
     font-size: 0.875rem;
   }
@@ -680,7 +680,7 @@ function handleSearch(value: string) {
     align-items: center;
     gap: 8px;
     cursor: pointer;
-    color: #4b5563;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .append-toggle input[type="checkbox"] {
@@ -708,13 +708,13 @@ function handleSearch(value: string) {
   .size-label {
     display: block;
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 4px;
   }
 
   .search-state {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     margin-top: 8px;
     font-family: monospace;
   }
@@ -722,14 +722,14 @@ function handleSearch(value: string) {
   .search-results {
     margin-top: 12px;
     padding: 12px;
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container);
     border-radius: 8px;
     list-style: none;
   }
 
   .search-results li {
     padding: 8px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .search-results li:last-child {
@@ -745,7 +745,7 @@ function handleSearch(value: string) {
 
   .toggle-state {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     font-family: monospace;
   }
 </style>

@@ -9,7 +9,8 @@
 import { ripple } from '@happyvertical/smrt-svelte';
 import type { InvoiceData, InvoiceStatus } from '../types.js';
 
-interface Props {
+/** Props for InvoiceCard component */
+export interface Props {
   /** Invoice data */
   invoice: InvoiceData;
   /** Currency code */
@@ -127,25 +128,33 @@ const isOverdue = $derived.by(() => {
   .invoice-card {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px;
-    background-color: var(--md-sys-color-surface-container-low);
-    border-radius: 12px;
+    gap: var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-4, 16px);
+    background-color: var(--smrt-color-surface-container-low);
+    border-radius: var(--smrt-radius-large, 12px);
     text-decoration: none;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
     cursor: pointer;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: 
+      background-color var(--smrt-duration-medium, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1)),
+      box-shadow var(--smrt-duration-medium, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     text-align: left;
     width: 100%;
     border: none;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--md-sys-elevation-level1);
+    box-shadow: var(--smrt-elevation-level1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .invoice-card {
+      transition: none;
+    }
   }
 
   .invoice-card:hover {
-    background-color: var(--md-sys-color-surface-container-high);
-    box-shadow: var(--md-sys-elevation-level2);
+    background-color: var(--smrt-color-surface-container-high);
+    box-shadow: var(--smrt-elevation-level2);
   }
 
   .card-header {
@@ -155,56 +164,56 @@ const isOverdue = $derived.by(() => {
   }
 
   .invoice-number {
-    font: var(--md-sys-typescale-label-large-font);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 600;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
   }
 
   .status-badge {
     display: inline-flex;
-    padding: 0 8px;
+    padding: 0 var(--smrt-spacing-2, 8px);
     height: 20px;
     align-items: center;
-    font: var(--md-sys-typescale-label-small-font);
+    font: var(--smrt-typography-label-small-font);
     font-weight: 600;
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-full, 10px);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
 
   /* Status Badge Colors */
   .status-default { 
-    background-color: var(--md-sys-color-surface-variant);
-    color: var(--md-sys-color-on-surface-variant);
+    background-color: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
   .status-paid {
-    background-color: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
   .status-info {
-    background-color: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
+    background-color: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
   .status-error {
-    background-color: var(--md-sys-color-error-container);
-    color: var(--md-sys-color-on-error-container);
+    background-color: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .card-body {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .customer-name {
-    font: var(--md-sys-typescale-body-small-font);
-    color: var(--md-sys-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .invoice-amount {
-    font: var(--md-sys-typescale-headline-small-font);
+    font: var(--smrt-typography-headline-small-font);
     font-weight: 600;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
     font-variant-numeric: tabular-nums;
   }
 
@@ -212,13 +221,13 @@ const isOverdue = $derived.by(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font: var(--md-sys-typescale-body-small-font);
-    color: var(--md-sys-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
     opacity: 0.8;
   }
 
   .due-date.overdue {
-    color: var(--md-sys-color-error);
+    color: var(--smrt-color-error);
     font-weight: 600;
   }
 </style>

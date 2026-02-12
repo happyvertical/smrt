@@ -10,7 +10,7 @@ import { ripple } from '../../actions/ripple.js';
 import { Icon } from '../display/index.js';
 import type { FilterOption } from './types.js';
 
-interface Props {
+export interface Props {
   /** Available filter options */
   options: FilterOption[];
   /** Currently selected value */
@@ -93,11 +93,11 @@ function handleClick(value: string) {
     gap: 8px;
     height: 32px;
     padding: 0 16px;
-    font: var(--md-sys-typescale-label-large-font);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 500;
-    color: var(--md-sys-color-on-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
     background-color: transparent;
-    border: 1px solid var(--md-sys-color-outline);
+    border: 1px solid var(--smrt-color-outline);
     border-radius: 8px;
     cursor: pointer;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
@@ -109,18 +109,18 @@ function handleClick(value: string) {
   .sm .filter-chip {
     height: 28px;
     padding: 0 12px;
-    font: var(--md-sys-typescale-label-medium-font);
+    font: var(--smrt-typography-label-medium-font);
     gap: 6px;
   }
 
   .filter-chip:hover:not(:disabled) {
-    background-color: var(--md-sys-color-surface-container-high);
+    background-color: var(--smrt-color-surface-container-high);
   }
 
   .filter-chip.active {
-    background-color: var(--md-sys-color-secondary-container);
+    background-color: var(--smrt-color-secondary-container);
     border-color: transparent;
-    color: var(--md-sys-color-on-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
     padding-left: 12px;
   }
 
@@ -137,16 +137,16 @@ function handleClick(value: string) {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--md-sys-color-on-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .chip-count {
-    font: var(--md-sys-typescale-label-small-font);
+    font: var(--smrt-typography-label-small-font);
     opacity: 0.7;
     margin-left: -2px;
   }
 
   .active .chip-count {
-    color: var(--md-sys-color-on-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 </style>

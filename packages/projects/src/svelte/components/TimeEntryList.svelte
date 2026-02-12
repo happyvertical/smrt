@@ -11,9 +11,10 @@ import {
   formatHours,
   statusColors,
   type TimeEntry,
-} from '../utils.js';
+} from './utils.js';
 
-interface Props {
+/** Props for TimeEntryList component */
+export interface Props {
   entries: TimeEntry[];
   selectable?: boolean;
   selectedIds?: string[];
@@ -167,14 +168,14 @@ function getEntryHref(entry: TimeEntry): string | undefined {
   .empty-state {
     padding: 3rem 1rem;
     text-align: center;
-    color: var(--md-sys-color-on-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .time-entry-list {
-    background: var(--md-sys-color-surface);
-    border-radius: var(--md-sys-shape-corner-large, 16px);
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-large, 16px);
     overflow: hidden;
-    border: 1px solid var(--md-sys-color-outline-variant);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .list-header {
@@ -182,8 +183,8 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    background: var(--md-sys-color-surface-container-low);
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .select-all {
@@ -191,20 +192,20 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
-    font-weight: var(--md-sys-typescale-label-large-weight, 500);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-label-large-weight, 500);
   }
 
   .select-all input[type='checkbox'] {
     width: 1rem;
     height: 1rem;
     cursor: pointer;
-    accent-color: var(--md-sys-color-primary);
+    accent-color: var(--smrt-color-primary);
   }
 
   .selection-count {
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .entries {
@@ -215,8 +216,8 @@ function getEntryHref(entry: TimeEntry): string | undefined {
   .entry-row {
     display: flex;
     align-items: center;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-    transition: background 0.15s var(--md-sys-motion-easing-standard);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    transition: background 0.15s var(--smrt-easing-standard);
   }
 
   .entry-row:last-child {
@@ -224,11 +225,11 @@ function getEntryHref(entry: TimeEntry): string | undefined {
   }
 
   .entry-row:hover {
-    background: var(--md-sys-color-surface-container-lowest);
+    background: var(--smrt-color-surface-container-lowest);
   }
 
   .entry-row.selected {
-    background: var(--md-sys-color-primary-container);
+    background: var(--smrt-color-primary-container);
   }
 
   .checkbox-cell {
@@ -241,7 +242,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     width: 1rem;
     height: 1rem;
     cursor: pointer;
-    accent-color: var(--md-sys-color-primary);
+    accent-color: var(--smrt-color-primary);
   }
 
   .entry-content {
@@ -255,15 +256,15 @@ function getEntryHref(entry: TimeEntry): string | undefined {
   }
 
   a.entry-content:focus {
-    outline: 2px solid var(--md-sys-color-primary);
+    outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
 
   .date-cell {
     width: 4.5rem;
     flex-shrink: 0;
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .description-cell {
@@ -274,8 +275,8 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 
   .description {
     display: block;
-    font-size: var(--md-sys-typescale-body-large-size, 0.9375rem);
-    color: var(--md-sys-color-on-surface);
+    font-size: var(--smrt-typography-body-large-size, 0.9375rem);
+    color: var(--smrt-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -283,17 +284,17 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 
   .worker {
     display: block;
-    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
     margin-top: 0.125rem;
   }
 
   .hours-cell {
     width: 4rem;
     flex-shrink: 0;
-    font-size: var(--md-sys-typescale-body-large-size, 0.9375rem);
-    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
-    color: var(--md-sys-color-primary);
+    font-size: var(--smrt-typography-body-large-size, 0.9375rem);
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
+    color: var(--smrt-color-primary);
     text-align: right;
     padding-right: 1rem;
   }
@@ -306,21 +307,21 @@ function getEntryHref(entry: TimeEntry): string | undefined {
 
   .status-badge {
     display: inline-block;
-    font-size: var(--md-sys-typescale-label-small-size, 0.625rem);
-    font-weight: var(--md-sys-typescale-label-small-weight, 500);
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    font-weight: var(--smrt-typography-label-small-weight, 500);
     padding: 0.25rem 0.5rem;
-    border-radius: var(--md-sys-shape-corner-small, 8px);
+    border-radius: var(--smrt-radius-small, 8px);
     background: var(--status-color);
-    color: var(--md-sys-color-on-primary);
+    color: var(--smrt-color-on-primary);
     text-transform: uppercase;
-    letter-spacing: var(--md-sys-typescale-label-small-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
   }
 
   .amount-cell {
     width: 6rem;
     flex-shrink: 0;
-    font-size: var(--md-sys-typescale-body-large-size, 0.9375rem);
-    font-weight: var(--md-sys-typescale-title-medium-weight, 500);
+    font-size: var(--smrt-typography-body-large-size, 0.9375rem);
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
     text-align: right;
   }
 

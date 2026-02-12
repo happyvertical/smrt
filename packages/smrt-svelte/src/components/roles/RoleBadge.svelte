@@ -5,7 +5,7 @@
  */
 import type { Role } from '@happyvertical/smrt-users';
 
-interface Props {
+export interface Props {
   role: Role;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -40,7 +40,7 @@ const variantClass = $derived.by(() => {
     align-items: center;
     padding: 0 12px;
     height: 24px;
-    font: var(--md-sys-typescale-label-large-font);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 600;
     border-radius: 6px;
     white-space: nowrap;
@@ -50,35 +50,35 @@ const variantClass = $derived.by(() => {
   .role-badge.sm {
     padding: 0 8px;
     height: 20px;
-    font: var(--md-sys-typescale-label-small-font);
+    font: var(--smrt-typography-label-small-font);
     font-weight: 600;
   }
 
   .role-badge.lg {
     padding: 0 16px;
     height: 32px;
-    font: var(--md-sys-typescale-title-small-font);
+    font: var(--smrt-typography-title-small-font);
     font-weight: 600;
   }
 
   /* Variant Colors using M3 roles */
   .variant-owner {
-    background-color: var(--md-sys-color-tertiary-container);
-    color: var(--md-sys-color-on-tertiary-container);
+    background-color: var(--smrt-color-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
   }
 
   .variant-admin {
-    background-color: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
+    background-color: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .variant-member {
-    background-color: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
   }
 
   .variant-default {
-    background-color: var(--md-sys-color-surface-variant);
-    color: var(--md-sys-color-on-surface-variant);
+    background-color: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
   }
 </style>

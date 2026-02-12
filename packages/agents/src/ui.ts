@@ -1,3 +1,5 @@
+import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
+
 /**
  * UI type definitions for SMRT Agents
  *
@@ -354,3 +356,66 @@ export function createUIRegistry(): AgentUIComponentRegistry {
  * ```
  */
 export const AgentUIRegistry: AgentUIComponentRegistry = createUIRegistry();
+
+/**
+ * Agents module UI slots (for ModuleUIRegistry)
+ */
+export const AGENTS_UI_SLOTS: Record<string, ModuleUISlot> = {
+  'agent-dashboard': {
+    id: 'agent-dashboard',
+    label: 'Agent Dashboard',
+    description: 'Combined overview panel for agent schedules',
+    icon: 'activity',
+    category: 'dashboard',
+    order: 1,
+    propsInterface: 'AgentDashboardProps',
+  },
+  'agent-schedule-list': {
+    id: 'agent-schedule-list',
+    label: 'Agent Schedule List',
+    description: 'List of scheduled agents',
+    icon: 'calendar',
+    category: 'list',
+    order: 2,
+    propsInterface: 'AgentScheduleListProps',
+  },
+  'agent-schedule-form': {
+    id: 'agent-schedule-form',
+    label: 'Agent Schedule Form',
+    description: 'Form for creating or editing agent schedules',
+    icon: 'edit',
+    category: 'form',
+    order: 3,
+    propsInterface: 'AgentScheduleFormProps',
+  },
+  'agent-run-history': {
+    id: 'agent-run-history',
+    label: 'Agent Run History',
+    description: 'History of agent runs',
+    icon: 'clock',
+    category: 'list',
+    order: 4,
+    propsInterface: 'AgentRunHistoryProps',
+  },
+  'schedule-status-badge': {
+    id: 'schedule-status-badge',
+    label: 'Schedule Status Badge',
+    description: 'Status indicator for schedule states',
+    icon: 'tag',
+    category: 'display',
+    order: 5,
+    propsInterface: 'ScheduleStatusBadgeProps',
+  },
+};
+
+/**
+ * Agents module metadata
+ */
+export const AGENTS_MODULE_META: SmrtModuleMeta = {
+  name: '@happyvertical/smrt-agents',
+  displayName: 'Agents',
+  description: 'Agent framework for building autonomous actors',
+  uiSlots: AGENTS_UI_SLOTS,
+  models: ['Agent', 'AgentSchedule', 'AgentRun'],
+  collections: ['AgentCollection', 'AgentScheduleCollection'],
+};

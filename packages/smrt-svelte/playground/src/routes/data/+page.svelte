@@ -232,7 +232,7 @@ function handleRowClick(row: User) {
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -242,34 +242,34 @@ function handleRowClick(row: User) {
 
   h2 {
     font-size: 1.25rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   h3 {
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin: 24px 0 12px;
     font-weight: 500;
   }
 
   h4 {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant);
     margin: 16px 0 8px;
   }
 
   .section-desc {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
     margin-bottom: 16px;
   }
 
   .demo-box {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 16px;
@@ -283,15 +283,15 @@ function handleRowClick(row: User) {
 
   .state-display {
     font-size: 0.75rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-top: 8px;
     font-family: monospace;
   }
 
   .btn-primary {
     padding: 8px 16px;
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     border: none;
     border-radius: 6px;
     font-size: 0.875rem;
@@ -300,7 +300,7 @@ function handleRowClick(row: User) {
   }
 
   .btn-primary:hover {
-    background: #2563eb;
+    background: var(--smrt-color-primary);
   }
 
   .props-table {
@@ -314,16 +314,16 @@ function handleRowClick(row: User) {
   .props-table td {
     text-align: left;
     padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .props-table th {
-    background: #f9f9f9;
+    background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
 
   code {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.8rem;

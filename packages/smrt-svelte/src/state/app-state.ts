@@ -4,15 +4,15 @@
  * Framework-agnostic state shape - Svelte bindings are in app-state.svelte.ts
  */
 
+import type { User } from '@happyvertical/smrt-users';
 import type {
   BrowserAICapabilities,
-  DownloadProgress,
+  DownloadProgressInfo,
   InitState,
   LLMAdapter,
   STTAdapter,
   TTSAdapter,
-} from '@happyvertical/browser-ai';
-import type { User } from '@happyvertical/smrt-users';
+} from '../browser-ai/index.js';
 
 // Re-export User type for convenience
 export type { User } from '@happyvertical/smrt-users';
@@ -194,7 +194,7 @@ export interface STTState {
   /** Initialization state */
   initState: InitState;
   /** Download progress if initializing */
-  downloadProgress: DownloadProgress | null;
+  downloadProgress: DownloadProgressInfo | null;
   /** Whether currently listening */
   isListening: boolean;
   /** Last final transcribed text */
@@ -214,7 +214,7 @@ export interface TTSState {
   /** Initialization state */
   initState: InitState;
   /** Download progress if initializing */
-  downloadProgress: DownloadProgress | null;
+  downloadProgress: DownloadProgressInfo | null;
   /** Whether currently speaking */
   isSpeaking: boolean;
   /** Whether paused */
@@ -232,7 +232,7 @@ export interface LLMState {
   /** Initialization state */
   initState: InitState;
   /** Download progress if initializing */
-  downloadProgress: DownloadProgress | null;
+  downloadProgress: DownloadProgressInfo | null;
   /** Currently loaded model */
   currentModel: string | null;
   /** Whether currently generating */

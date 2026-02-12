@@ -18,7 +18,7 @@ interface AgentData {
   slots: AgentUISlots;
 }
 
-interface Props {
+export interface Props {
   /** The registry to look up components from */
   registry: AgentUIComponentRegistry;
   /** List of agents to display (serialized data, not instances) */
@@ -133,10 +133,10 @@ async function handleSave(slotId: string, config: unknown) {
 	}
 
 	.agents-sidebar {
-		background: #f8fafc;
-		border-radius: 8px;
-		padding: 1rem;
-		border: 1px solid #e2e8f0;
+		background: var(--smrt-color-surface-container-low, #f8fafc);
+		border-radius: var(--smrt-radius-medium, 8px);
+		padding: var(--smrt-spacing-4, 1rem);
+		border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
 	}
 
 	.sidebar-title {
@@ -146,8 +146,8 @@ async function handleSave(slotId: string, config: unknown) {
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: #64748b;
-		border-bottom: 1px solid #e2e8f0;
+		color: var(--smrt-color-on-surface-variant, #64748b);
+		border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
 	}
 
 	.agents-list {
@@ -169,32 +169,32 @@ async function handleSave(slotId: string, config: unknown) {
 		text-align: left;
 		width: 100%;
 		transition:
-			background-color 0.15s,
-			color 0.15s;
+			background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease),
+			color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
 	}
 
 	.agent-button:hover {
-		background: #e2e8f0;
+		background: var(--smrt-color-surface-container-high, #e2e8f0);
 	}
 
 	.agent-button.active {
-		background: #3b82f6;
+		background: var(--smrt-color-primary, #3b82f6);
 	}
 
 	.agent-button.active .agent-class,
 	.agent-button.active .agent-name {
-		color: white;
+		color: var(--smrt-color-on-primary, white);
 	}
 
 	.agent-class {
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: #1e293b;
+		color: var(--smrt-color-on-surface, #1e293b);
 	}
 
 	.agent-name {
 		font-size: 0.75rem;
-		color: #64748b;
+		color: var(--smrt-color-on-surface-variant, #64748b);
 	}
 
 	.agent-content {
@@ -204,20 +204,20 @@ async function handleSave(slotId: string, config: unknown) {
 	.agent-header {
 		margin-bottom: 1.5rem;
 		padding-bottom: 1rem;
-		border-bottom: 1px solid #e2e8f0;
+		border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
 	}
 
 	.agent-title {
 		margin: 0;
-		font-size: 1.5rem;
+		font-size: var(--smrt-typography-headline-medium-size, 1.5rem);
 		font-weight: 600;
 		color: #1e293b;
 	}
 
 	.agent-subtitle {
 		margin: 0.25rem 0 0;
-		font-size: 0.9375rem;
-		color: #64748b;
+		font-size: var(--smrt-typography-body-medium-size, 0.9375rem);
+		color: var(--smrt-color-on-surface-variant, #64748b);
 	}
 
 	.no-agents {
@@ -242,13 +242,13 @@ async function handleSave(slotId: string, config: unknown) {
 	.no-agents-message {
 		margin: 0 0 0.5rem 0;
 		font-size: 1rem;
-		color: #64748b;
+		color: var(--smrt-color-on-surface-variant, #64748b);
 	}
 
 	.no-agents-hint {
 		margin: 0;
 		font-size: 0.875rem;
-		color: #94a3b8;
+		color: var(--smrt-color-on-surface-variant, #94a3b8);
 		max-width: 400px;
 	}
 </style>

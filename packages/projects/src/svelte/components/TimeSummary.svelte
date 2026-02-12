@@ -4,9 +4,10 @@
  * Shows total hours, amounts, and pending items
  */
 
-import { type Currency, formatCurrency, formatHours } from '../utils.js';
+import { type Currency, formatCurrency, formatHours } from './utils.js';
 
-interface Props {
+/** Props for TimeSummary component */
+export interface Props {
   totalHours: number;
   totalAmount: number;
   pendingHours?: number;
@@ -85,9 +86,9 @@ let {
   }
 
   .summary-card {
-    background: var(--md-sys-color-surface);
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium, 12px);
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium, 12px);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -95,61 +96,61 @@ let {
   }
 
   .summary-card.highlight {
-    background: var(--md-sys-color-tertiary-container);
-    border-color: var(--md-sys-color-tertiary);
+    background: var(--smrt-color-tertiary-container);
+    border-color: var(--smrt-color-tertiary);
   }
 
   .summary-card.success {
-    background: var(--md-sys-color-primary-container);
-    border-color: var(--md-sys-color-primary);
+    background: var(--smrt-color-primary-container);
+    border-color: var(--smrt-color-primary);
   }
 
   .label {
-    font-size: var(--md-sys-typescale-label-small-size, 0.75rem);
-    font-weight: var(--md-sys-typescale-label-small-weight, 500);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    font-weight: var(--smrt-typography-label-small-weight, 500);
+    color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: var(--md-sys-typescale-label-small-tracking, 0.5px);
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
   }
 
   .value {
-    font-size: var(--md-sys-typescale-headline-small-size, 1.5rem);
-    font-weight: var(--md-sys-typescale-headline-small-weight, 400);
-    color: var(--md-sys-color-on-surface);
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-headline-small-weight, 400);
+    color: var(--smrt-color-on-surface);
   }
 
   .sub-value {
-    font-size: var(--md-sys-typescale-body-medium-size, 0.875rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .count {
-    font-size: var(--md-sys-typescale-body-small-size, 0.75rem);
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .highlight .label {
-    color: var(--md-sys-color-on-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
   }
 
   .highlight .value {
-    color: var(--md-sys-color-tertiary);
+    color: var(--smrt-color-tertiary);
   }
 
   .highlight .sub-value {
-    color: var(--md-sys-color-on-tertiary-container);
+    color: var(--smrt-color-on-tertiary-container);
   }
 
   .success .label {
-    color: var(--md-sys-color-on-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .success .value {
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
   }
 
   .success .sub-value {
-    color: var(--md-sys-color-on-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   @media (max-width: 480px) {

@@ -4,7 +4,7 @@ import type {
   InvoiceStatus,
   LineItem,
   UnbilledItem,
-} from '@happyvertical/smrt-svelte';
+} from '@happyvertical/smrt-commerce/svelte';
 import {
   InvoiceActions,
   InvoiceCard,
@@ -12,7 +12,7 @@ import {
   InvoiceLineItems,
   InvoiceTotals,
   UnbilledItems,
-} from '@happyvertical/smrt-svelte';
+} from '@happyvertical/smrt-commerce/svelte';
 
 // Sample invoice data
 const invoices: InvoiceData[] = [
@@ -325,7 +325,7 @@ function handleCreateInvoice(ids: string[]) {
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -335,29 +335,29 @@ function handleCreateInvoice(ids: string[]) {
 
   h2 {
     font-size: 1.25rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   h3 {
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin: 24px 0 12px;
     font-weight: 500;
   }
 
   h4 {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant);
     margin: 0 0 12px;
     font-weight: 500;
     text-transform: uppercase;
   }
 
   .section-desc {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
     margin-bottom: 16px;
   }
@@ -369,8 +369,8 @@ function handleCreateInvoice(ids: string[]) {
   }
 
   .invoice-demo {
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     padding: 24px;
     display: flex;
@@ -383,21 +383,21 @@ function handleCreateInvoice(ids: string[]) {
     align-items: center;
     gap: 12px;
     padding-top: 16px;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--smrt-color-outline-variant);
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .status-controls select {
     padding: 6px 12px;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 4px;
     font-size: 0.875rem;
   }
 
   .demo-box {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     padding: 16px;
   }
@@ -420,16 +420,16 @@ function handleCreateInvoice(ids: string[]) {
   .props-table td {
     text-align: left;
     padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .props-table th {
-    background: #f9f9f9;
+    background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
 
   code {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.8rem;

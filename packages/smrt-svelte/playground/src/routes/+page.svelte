@@ -123,7 +123,7 @@ const components = [
   }
 
   .intro {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -134,7 +134,7 @@ const components = [
   }
 
   .card {
-    background: #fff;
+    background: var(--smrt-color-surface);
     border-radius: 8px;
     padding: 20px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -142,7 +142,7 @@ const components = [
 
   .card h2 {
     font-size: 1rem;
-    color: #60a5fa;
+    color: var(--smrt-color-primary);
     margin-bottom: 12px;
   }
 
@@ -152,7 +152,7 @@ const components = [
 
   .card li {
     font-size: 0.875rem;
-    color: #444;
+    color: var(--smrt-color-on-surface);
     padding: 4px 0;
   }
 </style>

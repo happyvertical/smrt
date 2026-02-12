@@ -10,7 +10,7 @@ import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 import { Icon } from '../display/index.js';
 
-interface Props {
+export interface Props {
   /** Page title */
   title: string;
   /** Optional subtitle/description */
@@ -90,8 +90,8 @@ const {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    color: var(--md-sys-color-primary);
-    font: var(--md-sys-typescale-label-large-font);
+    color: var(--smrt-color-primary);
+    font: var(--smrt-typography-label-large-font);
     text-decoration: none;
     margin-bottom: 0.75rem;
     padding: 4px 8px 4px 4px;
@@ -101,19 +101,19 @@ const {
   }
 
   .back-link:hover {
-    background-color: var(--md-sys-color-surface-container-high);
+    background-color: var(--smrt-color-surface-container-high);
   }
 
   .page-title {
-    font: var(--md-sys-typescale-headline-medium-font);
-    color: var(--md-sys-color-on-surface);
+    font: var(--smrt-typography-headline-medium-font);
+    color: var(--smrt-color-on-surface);
     margin: 0;
     letter-spacing: -0.5px;
   }
 
   .page-subtitle {
-    font: var(--md-sys-typescale-body-medium-font);
-    color: var(--md-sys-color-on-surface-variant);
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface-variant);
     margin: 0;
     margin-top: 4px;
   }

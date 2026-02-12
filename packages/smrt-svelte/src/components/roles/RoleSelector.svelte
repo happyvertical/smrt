@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Role } from '@happyvertical/smrt-users';
 
-interface Props {
+export interface Props {
   roles: Role[];
   value?: string | null;
   onchange: (roleId: string) => void;
@@ -107,9 +107,9 @@ function handleKeydown(e: KeyboardEvent) {
     justify-content: space-between;
     width: 100%;
     padding: 0.5rem 0.75rem;
-    background: white;
-    border: 1px solid #d1d5db;
-    border-radius: 0.375rem;
+    background: var(--smrt-color-surface, white);
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+    border-radius: var(--smrt-radius-small, 0.375rem);
     font-size: 0.875rem;
     cursor: pointer;
     text-align: left;
@@ -117,16 +117,16 @@ function handleKeydown(e: KeyboardEvent) {
 
   .trigger:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
   }
 
   .trigger.open {
-    border-color: #3b82f6;
+    border-color: var(--smrt-color-primary, #005ac1);
   }
 
   .trigger:disabled {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
     cursor: not-allowed;
   }
 
@@ -137,14 +137,14 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .placeholder {
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant, #9ca3af);
   }
 
   .chevron {
     width: 1.25rem;
     height: 1.25rem;
-    color: #6b7280;
-    transition: transform 0.15s;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
+    transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .trigger.open .chevron {
@@ -157,12 +157,10 @@ function handleKeydown(e: KeyboardEvent) {
     left: 0;
     right: 0;
     margin-top: 0.25rem;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.375rem;
-    box-shadow:
-      0 4px 6px -1px rgba(0, 0, 0, 0.1),
-      0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    background: var(--smrt-color-surface, white);
+    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    border-radius: var(--smrt-radius-small, 0.375rem);
+    box-shadow: var(--smrt-elevation-level2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
     z-index: 50;
     max-height: 15rem;
     overflow-y: auto;
@@ -182,11 +180,11 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .option:hover {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
   }
 
   .option.selected {
-    background: #eff6ff;
+    background: var(--smrt-color-primary-container, #eff6ff);
   }
 
   .option-content {
@@ -197,15 +195,15 @@ function handleKeydown(e: KeyboardEvent) {
 
   .role-name {
     font-weight: 500;
-    color: #111827;
+    color: var(--smrt-color-on-surface, #111827);
     text-transform: capitalize;
   }
 
   .system-badge {
     font-size: 0.625rem;
     padding: 0.125rem 0.375rem;
-    background: #dbeafe;
-    color: #1e40af;
+    background: var(--smrt-color-primary-container, #dbeafe);
+    color: var(--smrt-color-on-primary-container, #1e40af);
     border-radius: 9999px;
     text-transform: uppercase;
     font-weight: 600;
@@ -213,6 +211,6 @@ function handleKeydown(e: KeyboardEvent) {
 
   .description {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 </style>

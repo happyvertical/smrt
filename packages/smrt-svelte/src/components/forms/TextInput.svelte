@@ -10,7 +10,7 @@ import {
 import { formatEmail, formatText } from '../../utils/forms/formatters.js';
 import { Icon } from '../display/index.js';
 
-interface Props {
+export interface Props {
   /** Field name */
   name: string;
   /** Field label */
@@ -278,9 +278,9 @@ function handleInput(e: Event) {
 
 <style>
   .smrt-text-field {
-    --field-color: var(--md-sys-color-on-surface-variant);
-    --field-bg: var(--md-sys-color-surface-container-highest);
-    --field-active: var(--md-sys-color-primary);
+    --field-color: var(--smrt-color-on-surface-variant);
+    --field-bg: var(--smrt-color-surface-container-highest);
+    --field-active: var(--smrt-color-primary);
     
     display: flex;
     flex-direction: column;
@@ -296,11 +296,11 @@ function handleInput(e: Event) {
     border-radius: 4px 4px 0 0;
     min-height: 56px;
     padding: 0 16px;
-    transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   .container:hover {
-    background-color: var(--md-sys-color-surface-container-high);
+    background-color: var(--smrt-color-surface-container-high);
   }
 
   .content {
@@ -318,7 +318,7 @@ function handleInput(e: Event) {
     letter-spacing: 0.5px;
     color: var(--field-color);
     pointer-events: none;
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     transform-origin: top left;
   }
 
@@ -334,7 +334,7 @@ function handleInput(e: Event) {
     font-size: 1rem;
     line-height: 1.5;
     letter-spacing: 0.5px;
-    color: var(--md-sys-color-on-surface);
+    color: var(--smrt-color-on-surface);
     width: 100%;
     padding: 0;
     margin: 0;
@@ -352,7 +352,7 @@ function handleInput(e: Event) {
     right: 0;
     height: 1px;
     background-color: var(--field-color);
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   .focused .active-indicator {
@@ -376,8 +376,8 @@ function handleInput(e: Event) {
   }
 
   .mic-btn.active {
-    color: var(--md-sys-color-primary);
-    background-color: var(--md-sys-color-primary-container);
+    color: var(--smrt-color-primary);
+    background-color: var(--smrt-color-primary-container);
   }
 
   .supporting-text {
@@ -386,18 +386,18 @@ function handleInput(e: Event) {
     min-height: 16px;
   }
 
-  .info { color: var(--md-sys-color-on-surface-variant); }
-  .error { color: var(--md-sys-color-error); }
-  .success { color: var(--md-sys-color-primary); }
+  .info { color: var(--smrt-color-on-surface-variant); }
+  .error { color: var(--smrt-color-error); }
+  .success { color: var(--smrt-color-primary); }
 
   /* States */
   .invalid {
-    --field-active: var(--md-sys-color-error);
-    --field-color: var(--md-sys-color-error);
+    --field-active: var(--smrt-color-error);
+    --field-color: var(--smrt-color-error);
   }
 
   .listening {
-    background-color: var(--md-sys-color-primary-container);
+    background-color: var(--smrt-color-primary-container);
   }
 
   .disabled {

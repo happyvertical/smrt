@@ -294,7 +294,7 @@ async function handleLoadingConfirm() {
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -304,34 +304,34 @@ async function handleLoadingConfirm() {
 
   h2 {
     font-size: 1.25rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   h3 {
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin: 24px 0 12px;
     font-weight: 500;
   }
 
   .section-desc {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
     margin-bottom: 16px;
   }
 
   .hint {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 12px;
   }
 
   .demo-box {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 16px;
@@ -352,7 +352,7 @@ async function handleLoadingConfirm() {
   .progress-demo .progress-label {
     width: 60px;
     font-size: 0.75rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     text-align: right;
   }
 
@@ -362,8 +362,8 @@ async function handleLoadingConfirm() {
 
   .btn-primary {
     padding: 8px 16px;
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     border: none;
     border-radius: 6px;
     font-size: 0.875rem;
@@ -372,13 +372,13 @@ async function handleLoadingConfirm() {
   }
 
   .btn-primary:hover {
-    background: #2563eb;
+    background: var(--smrt-color-primary);
   }
 
   .btn-danger {
     padding: 8px 16px;
-    background: #dc2626;
-    color: white;
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
     border: none;
     border-radius: 6px;
     font-size: 0.875rem;
@@ -387,14 +387,14 @@ async function handleLoadingConfirm() {
   }
 
   .btn-danger:hover {
-    background: #b91c1c;
+    background: var(--smrt-color-error);
   }
 
   .btn-secondary {
     padding: 8px 16px;
-    background: #f3f4f6;
-    color: #374151;
-    border: 1px solid #d1d5db;
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 6px;
     font-size: 0.875rem;
     font-weight: 500;
@@ -402,7 +402,7 @@ async function handleLoadingConfirm() {
   }
 
   .btn-secondary:hover {
-    background: #e5e7eb;
+    background: var(--smrt-color-surface-container-high);
   }
 
   .size-demos {
@@ -423,16 +423,16 @@ async function handleLoadingConfirm() {
   .props-table td {
     text-align: left;
     padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .props-table th {
-    background: #f9f9f9;
+    background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
 
   code {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.8rem;

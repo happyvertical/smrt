@@ -6,7 +6,7 @@ import {
   tryGetFormContext,
 } from '../../state/form-context.js';
 
-interface Props {
+export interface Props {
   /** Field name */
   name: string;
   /** Field label */
@@ -330,13 +330,13 @@ function handleBlur() {
   }
 
   .smrt-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #374151;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-body-medium-weight, 500);
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .smrt-label .required {
-    color: #ef4444;
+    color: var(--smrt-color-error, #ba1a1a);
     margin-left: 2px;
   }
 
@@ -349,7 +349,7 @@ function handleBlur() {
   .currency-symbol {
     position: absolute;
     left: 12px;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     font-size: 1rem;
     pointer-events: none;
   }
@@ -357,7 +357,7 @@ function handleBlur() {
   .currency-code {
     position: absolute;
     right: 12px;
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant, #9ca3af);
     font-size: 0.75rem;
     text-transform: uppercase;
     pointer-events: none;
@@ -365,42 +365,42 @@ function handleBlur() {
 
   .smrt-input {
     flex: 1;
-    padding: 8px 48px 8px 28px;
-    font-size: 1rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
-    transition: all 0.2s;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-12, 48px) var(--smrt-spacing-2, 8px) var(--smrt-spacing-7, 28px);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+    border-radius: var(--smrt-radius-small, 6px);
+    background: var(--smrt-color-surface, #fff);
+    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
     text-align: right;
   }
 
   .smrt-input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
   }
 
   .smrt-input:disabled {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
     cursor: not-allowed;
   }
 
   .smrt-input.smrt-mode {
-    border-color: #a855f7;
+    border-color: var(--smrt-color-tertiary, #6b5778);
   }
 
   .smrt-input.invalid {
-    border-color: #ef4444;
+    border-color: var(--smrt-color-error, #ba1a1a);
   }
 
   .smrt-input.invalid:focus {
     border-color: #ef4444;
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+    box-shadow: 0 0 0 3px rgba(186, 26, 26, 0.1);
   }
 
   .validation-error {
-    font-size: 0.75rem;
-    color: #ef4444;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-error, #ba1a1a);
     margin-top: 4px;
   }
 </style>

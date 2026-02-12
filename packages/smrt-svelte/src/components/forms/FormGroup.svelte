@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 
-interface Props {
+export interface Props {
   label: string;
   id?: string;
   error?: string;
@@ -38,24 +38,24 @@ const { label, id, error, hint, required = false, children }: Props = $props();
 		display: block;
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: #374151;
+		color: var(--smrt-color-on-surface, #374151);
 		margin-bottom: 0.375rem;
 	}
 
 	.required {
-		color: #dc2626;
+		color: var(--smrt-color-error, #ba1a1a);
 		margin-left: 0.125rem;
 	}
 
 	.form-hint {
 		margin: 0.25rem 0 0;
 		font-size: 0.75rem;
-		color: #6b7280;
+		color: var(--smrt-color-on-surface-variant, #6b7280);
 	}
 
 	.form-error {
 		margin: 0.25rem 0 0;
 		font-size: 0.75rem;
-		color: #dc2626;
+		color: var(--smrt-color-error, #ba1a1a);
 	}
 </style>

@@ -8,7 +8,8 @@
  */
 import { ripple } from '../../actions/ripple.js';
 
-interface Props {
+/** Props for ConfirmDialog component */
+export interface Props {
   /** Whether the dialog is open */
   open: boolean;
   /** Dialog title */
@@ -105,18 +106,18 @@ function handleKeydown(e: KeyboardEvent) {
     align-items: center;
     justify-content: center;
     background-color: rgba(0, 0, 0, 0.4);
-    z-index: var(--smrt-dialog-z-index, 1000);
+    z-index: var(--smrt-z-index-dialog, 1000);
     padding: 1rem;
     backdrop-filter: blur(2px);
   }
 
   .dialog-content {
-    background-color: var(--md-sys-color-surface-container-high);
+    background-color: var(--smrt-color-surface-container-high);
     border-radius: 28px;
     padding: 24px;
     max-width: 400px;
     width: 100%;
-    box-shadow: var(--md-sys-elevation-level3);
+    box-shadow: var(--smrt-elevation-level3);
     animation: dialogEnter 300ms cubic-bezier(0.2, 0, 0, 1);
     display: flex;
     flex-direction: column;
@@ -134,14 +135,14 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .dialog-title {
-    font: var(--md-sys-typescale-headline-small-font);
-    color: var(--md-sys-color-on-surface);
+    font: var(--smrt-typography-headline-small-font);
+    color: var(--smrt-color-on-surface);
     margin: 0 0 16px;
   }
 
   .dialog-message {
-    font: var(--md-sys-typescale-body-medium-font);
-    color: var(--md-sys-color-on-surface-variant);
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface-variant);
     margin: 0 0 24px;
     line-height: 1.5;
   }
@@ -159,11 +160,11 @@ function handleKeydown(e: KeyboardEvent) {
     gap: 8px;
     height: 40px;
     padding: 0 24px;
-    font: var(--md-sys-typescale-label-large-font);
+    font: var(--smrt-typography-label-large-font);
     font-weight: 500;
     border-radius: 20px;
     cursor: pointer;
-    transition: all 200ms;
+    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     border: none;
     position: relative;
     overflow: hidden;
@@ -176,27 +177,27 @@ function handleKeydown(e: KeyboardEvent) {
 
   .btn-text {
     background: transparent;
-    color: var(--md-sys-color-primary);
+    color: var(--smrt-color-primary);
     padding: 0 12px;
   }
 
   .btn-text:hover:not(:disabled) {
-    background-color: var(--md-sys-color-surface-container-highest);
+    background-color: var(--smrt-color-surface-container-highest);
   }
 
   .btn-filled {
-    background-color: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
-    box-shadow: var(--md-sys-elevation-level1);
+    background-color: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    box-shadow: var(--smrt-elevation-level1);
   }
 
   .btn-filled:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-level2);
+    box-shadow: var(--smrt-elevation-level2);
   }
 
   .btn-filled.destructive {
-    background-color: var(--md-sys-color-error);
-    color: var(--md-sys-color-on-error);
+    background-color: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
   }
 
   .spinner {
@@ -211,6 +212,15 @@ function handleKeydown(e: KeyboardEvent) {
   @keyframes spin {
     to {
       transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dialog-content {
+      animation: none;
+    }
+    .spinner {
+      animation: none;
     }
   }
 </style>

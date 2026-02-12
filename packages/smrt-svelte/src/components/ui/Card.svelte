@@ -47,76 +47,76 @@ const {
 
 <style>
   .card {
-    background: var(--color-neutral-white);
-    border-radius: var(--radius-md);
-    transition: all var(--transition-base);
+    background: var(--smrt-color-surface);
+    border-radius: var(--smrt-radius-medium);
+    transition: all var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
 
   /* Variants */
   .default {
-    border: 1px solid var(--color-neutral-gray200);
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .outlined {
-    border: 2px solid var(--color-neutral-gray300);
+    border: 2px solid var(--smrt-color-outline);
   }
 
   .elevated {
-    border: 1px solid var(--color-neutral-gray200);
-    box-shadow: var(--shadow-md);
+    border: 1px solid var(--smrt-color-outline-variant);
+    box-shadow: var(--smrt-elevation-level2);
   }
 
   /* Hoverable state */
   .hoverable:hover {
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--smrt-elevation-level3);
     transform: translateY(-2px);
   }
 
   /* Padding */
   .padding-none .card-content {
-    padding: 0;
+    padding: var(--smrt-spacing-0);
   }
 
   .padding-sm .card-content {
-    padding: var(--spacing-md);
+    padding: var(--smrt-spacing-4);
   }
 
   .padding-md .card-content {
-    padding: var(--spacing-lg);
+    padding: var(--smrt-spacing-6);
   }
 
   .padding-lg .card-content {
-    padding: var(--spacing-xl);
+    padding: var(--smrt-spacing-8);
   }
 
   /* Header */
   .card-header {
-    padding: var(--spacing-lg);
-    border-bottom: 1px solid var(--color-neutral-gray200);
+    padding: var(--smrt-spacing-6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .padding-sm .card-header {
-    padding: var(--spacing-md);
+    padding: var(--smrt-spacing-4);
   }
 
   .padding-lg .card-header {
-    padding: var(--spacing-xl);
+    padding: var(--smrt-spacing-8);
   }
 
   /* Footer */
   .card-footer {
-    padding: var(--spacing-lg);
-    border-top: 1px solid var(--color-neutral-gray200);
-    background: var(--color-neutral-gray100);
+    padding: var(--smrt-spacing-6);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
     border-bottom-left-radius: var(--radius-md);
     border-bottom-right-radius: var(--radius-md);
   }
 
   .padding-sm .card-footer {
-    padding: var(--spacing-md);
+    padding: var(--smrt-spacing-4);
   }
 
   .padding-lg .card-footer {
-    padding: var(--spacing-xl);
+    padding: var(--smrt-spacing-8);
   }
 </style>

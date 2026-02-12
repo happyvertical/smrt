@@ -5,7 +5,8 @@
  * Displays subtotal, tax, total, and optional amount paid/balance due.
  */
 
-interface Props {
+/** Props for InvoiceTotals component */
+export interface Props {
   /** Subtotal in cents */
   subtotal: number;
   /** Tax rate as percentage (e.g., 5 for 5%) */
@@ -102,7 +103,7 @@ function formatMoney(cents: number): string {
   .invoice-totals {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--smrt-spacing-2, 0.5rem);
     width: 100%;
     max-width: 280px;
     margin-left: auto;
@@ -110,77 +111,78 @@ function formatMoney(cents: number): string {
 
   .invoice-totals.sm {
     max-width: 220px;
-    gap: 0.375rem;
+    gap: var(--smrt-spacing-1-5, 0.375rem);
   }
 
   .invoice-totals.lg {
     max-width: 320px;
-    gap: 0.75rem;
+    gap: var(--smrt-spacing-3, 0.75rem);
   }
 
   .totals-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.875rem;
-    color: #374151;
+    font: var(--smrt-typography-body-medium-font);
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .sm .totals-row {
-    font-size: 0.75rem;
+    font: var(--smrt-typography-body-small-font);
   }
 
   .lg .totals-row {
-    font-size: 1rem;
+    font: var(--smrt-typography-body-large-font);
   }
 
   .totals-label {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
   .totals-value {
     font-variant-numeric: tabular-nums;
     font-weight: 500;
+    color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .totals-row.total {
-    padding-top: 0.5rem;
-    border-top: 2px solid #e5e7eb;
+    padding-top: var(--smrt-spacing-2, 0.5rem);
+    border-top: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
     font-weight: 600;
   }
 
   .totals-row.total .totals-label,
   .totals-row.total .totals-value {
-    color: #111827;
-    font-size: 1rem;
+    color: var(--smrt-color-on-surface, #1c1b1f);
+    font: var(--smrt-typography-title-medium-font);
   }
 
   .lg .totals-row.total .totals-label,
   .lg .totals-row.total .totals-value {
-    font-size: 1.125rem;
+    font: var(--smrt-typography-title-large-font);
   }
 
   .totals-row.paid {
-    color: #16a34a;
+    color: var(--smrt-color-tertiary, #006c4c);
   }
 
   .totals-row.paid .totals-label {
-    color: #16a34a;
+    color: var(--smrt-color-tertiary, #006c4c);
   }
 
   .totals-row.balance {
-    padding-top: 0.5rem;
-    border-top: 1px solid #e5e7eb;
+    padding-top: var(--smrt-spacing-2, 0.5rem);
+    border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     font-weight: 600;
   }
 
   .totals-row.balance.due .totals-label,
   .totals-row.balance.due .totals-value {
-    color: #dc2626;
+    color: var(--smrt-color-error, #ba1a1a);
   }
 
   .totals-row.balance.credit .totals-label,
   .totals-row.balance.credit .totals-value {
-    color: #16a34a;
+    color: var(--smrt-color-tertiary, #006c4c);
   }
 </style>
