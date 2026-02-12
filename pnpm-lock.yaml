@@ -324,49 +324,6 @@ importers:
         specifier: ^4.0.17
         version: 4.0.17(@types/node@24.10.9)(happy-dom@20.3.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.0.1))(tsx@4.21.0)(yaml@2.8.2)
 
-  packages/browser-ai:
-    dependencies:
-      '@happyvertical/smrt-types':
-        specifier: workspace:*
-        version: link:../types
-      '@xenova/transformers':
-        specifier: ^2.17.2
-        version: 2.17.2
-    devDependencies:
-      '@happyvertical/smrt-svelte':
-        specifier: workspace:*
-        version: link:../smrt-svelte
-      '@huggingface/transformers':
-        specifier: ^3.8.1
-        version: 3.8.1
-      '@mlc-ai/web-llm':
-        specifier: ^0.2.80
-        version: 0.2.80
-      '@remotion/whisper-web':
-        specifier: ^4.0.406
-        version: 4.0.406
-      '@sveltejs/package':
-        specifier: ^2.5.7
-        version: 2.5.7(svelte@5.46.4)(typescript@5.9.3)
-      '@sveltejs/vite-plugin-svelte':
-        specifier: ^6.2.4
-        version: 6.2.4(svelte@5.46.4)(vite@7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
-      '@types/dom-speech-recognition':
-        specifier: ^0.0.7
-        version: 0.0.7
-      svelte:
-        specifier: ^5.46.4
-        version: 5.46.4
-      svelte-check:
-        specifier: ^4.3.5
-        version: 4.3.5(picomatch@4.0.3)(svelte@5.46.4)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.0.17
-        version: 4.0.17(@types/node@24.10.9)(happy-dom@20.3.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.0.1))(tsx@4.21.0)(yaml@2.8.2)
-
   packages/cli:
     dependencies:
       '@happyvertical/ai':
@@ -999,6 +956,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/sql':
         specifier: ^0.68.5
         version: 0.68.5
@@ -4849,9 +4809,6 @@ packages:
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
-
-  '@types/dom-speech-recognition@0.0.7':
-    resolution: {integrity: sha512-NjiUoJbBlKhyufNsMZLSp+pbPNtPAFnR738RCJvtZy/HVQ2TZjmqpMyaeOSMXgxdfZM60nt8QGbtfmQrJAH2sw==}
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
@@ -13505,8 +13462,6 @@ snapshots:
       '@types/ms': 2.1.0
 
   '@types/deep-eql@4.0.2': {}
-
-  '@types/dom-speech-recognition@0.0.7': {}
 
   '@types/estree@1.0.8': {}
 

@@ -40,6 +40,9 @@
     "@noble/curves": "^1.8.1",
     "bech32": "^2.0.0"
   },
+  "peerDependencies": {
+    "@happyvertical/smrt-tenancy": "workspace:*"
+  },
   "devDependencies": {
     "@faker-js/faker": "^10.2.0",
     "@happyvertical/smrt-vitest": "workspace:*",
