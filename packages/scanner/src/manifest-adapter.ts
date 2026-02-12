@@ -602,10 +602,15 @@ export class ManifestAdapter {
       return inference;
     }
 
-    // Default to text for unknown types
+    // Default to json for unknown/complex types
+    // Matches the TS scanner behavior: custom interfaces, type aliases,
+    // and other non-primitive types are stored as JSON
     return {
-      type: 'text',
+      type: 'json',
       required: isRequired,
+      defaultValue: field.initializer?.trimStart().startsWith('{')
+        ? {}
+        : undefined,
       source: 'default',
     };
   }

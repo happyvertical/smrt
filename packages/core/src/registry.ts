@@ -2346,7 +2346,12 @@ export class ObjectRegistry {
       );
 
       // If this is an STI class, also register the parent class
-      if (objectDef.extends) {
+      // Skip if extends points to the same className (self-referential):
+      // This happens when a child class in one package extends a parent with the
+      // same name from another package (e.g., histrio:Performer extends smrt-video:Performer)
+      // and only the child package is installed
+      const childClassName = objectDef.className || className;
+      if (objectDef.extends && objectDef.extends !== childClassName) {
         const parentName = objectDef.extends;
         const lowerParentName = parentName.toLowerCase();
         let parentDef =
@@ -4039,9 +4044,20 @@ export class ObjectRegistry {
     // that only extend SmrtObject, not their actual parent class.
     // The `extends` field IS stored correctly during registerFromManifest().
     const chain: string[] = [];
+    const visited = new Set<string>(); // Cycle detection for self-referential extends
     let current: any = registered;
     while (current) {
-      chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
+      const currentName = current.name;
+
+      // Cycle detection: if we've already visited this class, break
+      // This handles cases like Performer extends Performer where child and parent
+      // share the same className but come from different packages, and only one is installed
+      if (visited.has(currentName)) {
+        break;
+      }
+      visited.add(currentName);
+
+      chain.unshift(currentName); // Add at start to build [ancestor, ..., descendant]
       if (!current.extends) break;
 
       // Skip framework base classes that are never registered
