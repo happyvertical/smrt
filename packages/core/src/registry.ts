@@ -4062,7 +4062,7 @@ export class ObjectRegistry {
       }
       visited.add(current);
 
-      chain.unshift(currentName); // Add at start to build [ancestor, ..., descendant]
+      chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
       if (!current.extends) break;
 
       // Skip framework base classes that are never registered
