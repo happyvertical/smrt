@@ -34,7 +34,7 @@
   },
   "peerDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
-    "svelte": "^5.0.0"
+    "svelte": "^5.18.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/smrt-svelte": {
