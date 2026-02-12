@@ -159,6 +159,7 @@ async function findPackageManifests(
       cwd: nodeModulesPath,
       ignore: ['**/node_modules/**'],
       absolute: true,
+      followSymbolicLinks: false,
     });
 
     for (const pkgPath of packageJsonFiles) {
