@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - Address critical accessibility and security issues (#916) (smrt-svelte)
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@1.0.0
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+
 ## 0.19.82
 
 ### Patch Changes
