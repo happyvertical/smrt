@@ -9,6 +9,6 @@
     "types": ["svelte"],
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "web-speech.d.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

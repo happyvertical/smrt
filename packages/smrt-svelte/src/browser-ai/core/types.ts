@@ -5,7 +5,7 @@
 /**
  * Download progress tracking for large models/WASM files
  */
-export interface DownloadProgress {
+export interface DownloadProgressInfo {
   /** Current download state */
   state: 'idle' | 'downloading' | 'extracting' | 'complete' | 'error';
   /** Bytes downloaded so far */
@@ -25,7 +25,7 @@ export interface DownloadProgress {
 /**
  * Callback for download progress updates
  */
-export type OnProgress = (progress: DownloadProgress) => void;
+export type OnProgress = (progress: DownloadProgressInfo) => void;
 
 /**
  * Initialization state for adapters with two-phase init
@@ -113,7 +113,7 @@ export interface BrowserAICapabilities {
 /**
  * Create a default "idle" progress state
  */
-export function createIdleProgress(): DownloadProgress {
+export function createIdleProgress(): DownloadProgressInfo {
   return {
     state: 'idle',
     bytesLoaded: 0,
@@ -125,7 +125,7 @@ export function createIdleProgress(): DownloadProgress {
 /**
  * Create an error progress state
  */
-export function createErrorProgress(error: string): DownloadProgress {
+export function createErrorProgress(error: string): DownloadProgressInfo {
   return {
     state: 'error',
     bytesLoaded: 0,

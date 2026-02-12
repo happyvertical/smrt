@@ -11,7 +11,7 @@ import {
   ModelLoadError,
 } from '../../core/errors.js';
 import type {
-  DownloadProgress,
+  DownloadProgressInfo,
   InitState,
   OnProgress,
 } from '../../core/types.js';
@@ -100,7 +100,7 @@ export class WebLLMAdapter implements LLMAdapter {
       const progressCallback = (report: any) => {
         if (!onProgress) return;
 
-        const progress: DownloadProgress = {
+        const progress: DownloadProgressInfo = {
           state: 'downloading',
           bytesLoaded: 0,
           bytesTotal: 0,

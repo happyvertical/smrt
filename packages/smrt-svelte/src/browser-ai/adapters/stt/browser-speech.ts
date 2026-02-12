@@ -108,9 +108,12 @@ export class BrowserSpeechSTTAdapter implements STTAdapter {
           confidence: result[0].confidence,
           isFinal: result.isFinal,
           timestamp: Date.now(),
-          alternatives: Array.from(result)
+          alternatives: Array.from(
+            { length: result.length },
+            (_, index) => result[index],
+          )
             .slice(1)
-            .map((alt) => ({
+            .map((alt: SpeechRecognitionAlternative) => ({
               text: alt.transcript,
               confidence: alt.confidence,
             })),

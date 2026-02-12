@@ -1,9 +1,9 @@
 <script lang="ts">
-import type { DownloadProgress } from '../../index.js';
+import type { DownloadProgressInfo } from '../../index.js';
 
 export interface Props {
   /** Progress data */
-  progress: DownloadProgress | null;
+  progress: DownloadProgressInfo | null;
   /** Label to show above progress bar */
   label?: string;
   /** Show percentage text */

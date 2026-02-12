@@ -26,12 +26,9 @@ export {
   VoiceInput,
 };
 
-// Export component prop types
-export type { Props as AILoadingOverlayProps } from './components/AILoadingOverlay.svelte';
-export type { Props as CapabilityGateProps } from './components/CapabilityGate.svelte';
-export type { Props as DownloadProgressProps } from './components/DownloadProgress.svelte';
-export type { Props as STTTestProps } from './components/STTTest.svelte';
-export type { Props as VoiceInputProps } from './components/VoiceInput.svelte';
+// Note: Component prop types (AILoadingOverlayProps, etc.) are available
+// via svelte-package build output but cannot be re-exported here because
+// tsc --noEmit cannot resolve type exports from .svelte files.
 
 // Auto-register with ModuleUIRegistry
 ModuleUIRegistry.registerModule(BROWSER_AI_MODULE_META);

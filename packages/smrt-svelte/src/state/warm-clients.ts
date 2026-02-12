@@ -36,7 +36,7 @@
  */
 
 import type {
-  DownloadProgress,
+  DownloadProgressInfo,
   InitState,
   LLMAdapter,
   STTAdapter,
@@ -54,7 +54,7 @@ export interface CachedAdapter<T> {
   /** Initialization state */
   initState: InitState;
   /** Current download progress (if initializing) */
-  downloadProgress: DownloadProgress | null;
+  downloadProgress: DownloadProgressInfo | null;
   /** Error if initialization failed */
   error: Error | null;
   /** Adapter type identifier (for cache key matching) */
