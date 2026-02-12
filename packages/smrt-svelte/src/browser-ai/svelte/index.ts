@@ -36,23 +36,27 @@ export type { Props as VoiceInputProps } from './components/VoiceInput.svelte';
 // Auto-register with ModuleUIRegistry
 ModuleUIRegistry.registerModule(BROWSER_AI_MODULE_META);
 ModuleUIRegistry.register(
-  '@happyvertical/browser-ai',
+  '@happyvertical/smrt-svelte/browser-ai',
   'ai-loading-overlay',
   AILoadingOverlay,
 );
 ModuleUIRegistry.register(
-  '@happyvertical/browser-ai',
+  '@happyvertical/smrt-svelte/browser-ai',
   'capability-gate',
   CapabilityGate,
 );
 ModuleUIRegistry.register(
-  '@happyvertical/browser-ai',
+  '@happyvertical/smrt-svelte/browser-ai',
   'download-progress',
   DownloadProgress,
 );
-ModuleUIRegistry.register('@happyvertical/browser-ai', 'stt-test', STTTest);
 ModuleUIRegistry.register(
-  '@happyvertical/browser-ai',
+  '@happyvertical/smrt-svelte/browser-ai',
+  'stt-test',
+  STTTest,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-svelte/browser-ai',
   'voice-input',
   VoiceInput,
 );

@@ -145,18 +145,18 @@ function clearMessages() {
   h2 {
     font-size: 1.25rem;
     margin-bottom: 16px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
     padding-bottom: 8px;
   }
 
   h3 {
     font-size: 1rem;
     margin: 16px 0 12px;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .demo-section {
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container);
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 24px;
@@ -175,36 +175,36 @@ function clearMessages() {
 
   .label {
     font-weight: 500;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
     min-width: 140px;
   }
 
   .value {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .positive {
-    color: #059669;
+    color: var(--smrt-color-success);
     font-weight: 500;
   }
 
   .negative {
-    color: #dc2626;
+    color: var(--smrt-color-error);
     font-weight: 500;
   }
 
   .status-connected {
-    color: #059669;
+    color: var(--smrt-color-success);
     font-weight: 500;
   }
 
   .status-connecting, .status-reconnecting {
-    color: #d97706;
+    color: var(--smrt-color-warning);
     font-weight: 500;
   }
 
   .status-disconnected {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     font-weight: 500;
   }
 
@@ -215,10 +215,10 @@ function clearMessages() {
   }
 
   .check {
-    background: white;
+    background: var(--smrt-color-surface);
     padding: 8px 16px;
     border-radius: 4px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--smrt-color-outline-variant);
   }
 
   .check code {
@@ -236,16 +236,16 @@ function clearMessages() {
   button {
     padding: 8px 16px;
     border-radius: 6px;
-    border: 1px solid #d1d5db;
-    background: white;
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
     cursor: pointer;
     font-size: 0.875rem;
     transition: all 0.15s;
   }
 
   button:hover:not(:disabled) {
-    background: #f3f4f6;
-    border-color: #9ca3af;
+    background: var(--smrt-color-surface-container);
+    border-color: var(--smrt-color-on-surface-variant);
   }
 
   button:disabled {
@@ -255,10 +255,10 @@ function clearMessages() {
 
   .message-log {
     margin-top: 20px;
-    background: #1f2937;
+    background: var(--smrt-color-surface-container);
     border-radius: 6px;
     padding: 16px;
-    color: #e5e7eb;
+    color: var(--smrt-color-on-surface-variant);
     font-family: monospace;
     font-size: 0.875rem;
     max-height: 200px;
@@ -266,13 +266,13 @@ function clearMessages() {
   }
 
   .message-log h3 {
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant);
     margin: 0 0 12px;
   }
 
   .message {
     padding: 4px 0;
-    border-bottom: 1px solid #374151;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .message:last-child {
@@ -280,13 +280,13 @@ function clearMessages() {
   }
 
   .empty {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
 
   pre {
-    background: #1f2937;
-    color: #e5e7eb;
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
     padding: 16px;
     border-radius: 6px;
     overflow-x: auto;
@@ -298,9 +298,9 @@ function clearMessages() {
   }
 
   p code {
-    background: #e5e7eb;
+    background: var(--smrt-color-surface-container-high);
     padding: 2px 6px;
     border-radius: 4px;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
   }
 </style>

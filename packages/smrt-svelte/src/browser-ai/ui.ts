@@ -62,7 +62,7 @@ export const BROWSER_AI_UI_SLOTS: Record<string, ModuleUISlot> = {
  * Browser AI module metadata
  */
 export const BROWSER_AI_MODULE_META: SmrtModuleMeta = {
-  name: '@happyvertical/browser-ai',
+  name: '@happyvertical/smrt-svelte/browser-ai',
   displayName: 'Browser AI',
   description: 'Browser AI capabilities: STT, TTS, LLM with adapter pattern',
   uiSlots: BROWSER_AI_UI_SLOTS,

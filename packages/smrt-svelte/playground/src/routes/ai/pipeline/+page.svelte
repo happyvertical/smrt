@@ -189,7 +189,7 @@ function clearConversation() {
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -199,10 +199,10 @@ function clearConversation() {
 
   h2 {
     font-size: 1rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 16px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .voice-section {
@@ -211,8 +211,8 @@ function clearConversation() {
     align-items: center;
     gap: 16px;
     padding: 40px;
-    background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
-    border: 1px solid #e5e7eb;
+    background: linear-gradient(135deg, var(--smrt-color-primary-container) 0%, var(--smrt-color-success-container, #f0fdf4) 100%);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 16px;
   }
 
@@ -222,19 +222,19 @@ function clearConversation() {
   }
 
   .status .listening {
-    color: #ef4444;
+    color: var(--smrt-color-error);
   }
 
   .status .processing {
-    color: #3b82f6;
+    color: var(--smrt-color-primary);
   }
 
   .status .loading {
-    color: #f59e0b;
+    color: var(--smrt-color-warning);
   }
 
   .status .ready {
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .section-header {
@@ -251,17 +251,17 @@ function clearConversation() {
 
   .clear-btn {
     padding: 4px 12px;
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     border: none;
     border-radius: 4px;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     font-size: 0.75rem;
   }
 
   .conversation {
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 12px;
     min-height: 300px;
     padding: 16px;
@@ -270,7 +270,7 @@ function clearConversation() {
   .empty-state {
     text-align: center;
     padding: 60px 20px;
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .empty-state .examples {
@@ -293,17 +293,17 @@ function clearConversation() {
     flex: 1;
     padding: 12px 16px;
     border-radius: 12px;
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     line-height: 1.5;
     white-space: pre-wrap;
   }
 
   .message.user .message-content {
-    background: #eff6ff;
+    background: var(--smrt-color-primary-container);
   }
 
   .message.assistant .message-content {
-    background: #f0fdf4;
+    background: var(--smrt-color-success-container, #f0fdf4);
   }
 
   .cursor {
@@ -318,10 +318,10 @@ function clearConversation() {
   .not-available {
     padding: 40px;
     text-align: center;
-    background: #fef2f2;
-    border: 1px solid #fecaca;
+    background: var(--smrt-color-error-container);
+    border: 1px solid var(--smrt-color-error);
     border-radius: 8px;
-    color: #991b1b;
+    color: var(--smrt-color-on-error-container);
   }
 
   .pipeline-status {
@@ -330,8 +330,8 @@ function clearConversation() {
     justify-content: center;
     gap: 16px;
     padding: 24px;
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 12px;
   }
 
@@ -341,14 +341,14 @@ function clearConversation() {
     align-items: center;
     gap: 4px;
     padding: 16px 24px;
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container);
     border-radius: 8px;
     transition: all 0.2s;
   }
 
   .pipeline-step.active {
-    background: #eff6ff;
-    box-shadow: 0 0 0 2px #3b82f6;
+    background: var(--smrt-color-primary-container);
+    box-shadow: 0 0 0 2px var(--smrt-color-primary);
   }
 
   .step-icon {
@@ -358,16 +358,16 @@ function clearConversation() {
   .step-label {
     font-weight: 600;
     font-size: 0.875rem;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
   }
 
   .step-status {
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .pipeline-arrow {
     font-size: 1.5rem;
-    color: #d1d5db;
+    color: var(--smrt-color-outline-variant);
   }
 </style>

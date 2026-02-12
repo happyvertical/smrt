@@ -72,7 +72,7 @@ const sizes = ['sm', 'md', 'lg'] as const;
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -82,10 +82,10 @@ const sizes = ['sm', 'md', 'lg'] as const;
 
   h2 {
     font-size: 1rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 16px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .demo-row {
@@ -104,7 +104,7 @@ const sizes = ['sm', 'md', 'lg'] as const;
 
   .label {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .props-table {
@@ -117,16 +117,16 @@ const sizes = ['sm', 'md', 'lg'] as const;
   .props-table td {
     text-align: left;
     padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .props-table th {
-    background: #f9f9f9;
+    background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
 
   code {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.8rem;

@@ -115,7 +115,7 @@ const caps = $derived(app.state.capabilities);
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -125,10 +125,10 @@ const caps = $derived(app.state.capabilities);
 
   h2 {
     font-size: 1rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 16px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .mode-display {
@@ -139,19 +139,19 @@ const caps = $derived(app.state.capabilities);
 
   .mode-badge {
     padding: 8px 16px;
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
     border-radius: 8px;
     font-weight: 600;
   }
 
   .mode-badge.smrt {
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
   }
 
   .mode-source {
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
   }
 
@@ -162,8 +162,8 @@ const caps = $derived(app.state.capabilities);
   }
 
   .cap-card {
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     padding: 16px;
   }
@@ -172,7 +172,7 @@ const caps = $derived(app.state.capabilities);
     font-size: 0.875rem;
     font-weight: 600;
     margin-bottom: 12px;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
   }
 
   .cap-card ul {
@@ -182,22 +182,22 @@ const caps = $derived(app.state.capabilities);
   .cap-card li {
     padding: 4px 0;
     font-size: 0.875rem;
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .cap-card li::before {
     content: '✗';
     margin-right: 8px;
-    color: #ef4444;
+    color: var(--smrt-color-error);
   }
 
   .cap-card li.available {
-    color: #374151;
+    color: var(--smrt-color-on-surface);
   }
 
   .cap-card li.available::before {
     content: '✓';
-    color: #22c55e;
+    color: var(--smrt-color-success);
   }
 
   .demo-links {
@@ -210,16 +210,16 @@ const caps = $derived(app.state.capabilities);
     display: flex;
     flex-direction: column;
     padding: 20px;
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     text-decoration: none;
     transition: all 0.2s;
   }
 
   .demo-link:hover {
-    border-color: #3b82f6;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 4px 12px var(--smrt-color-primary-container);
   }
 
   .demo-link .icon {
@@ -229,12 +229,12 @@ const caps = $derived(app.state.capabilities);
 
   .demo-link .label {
     font-weight: 600;
-    color: #374151;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 4px;
   }
 
   .demo-link .desc {
     font-size: 0.875rem;
-    color: #9ca3af;
+    color: var(--smrt-color-on-surface-variant);
   }
 </style>

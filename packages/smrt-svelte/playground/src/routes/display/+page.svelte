@@ -287,7 +287,7 @@ const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -297,21 +297,21 @@ const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   h2 {
     font-size: 1.25rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   h3 {
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin: 24px 0 12px;
     font-weight: 500;
   }
 
   .section-desc {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
     margin-bottom: 16px;
   }
@@ -338,7 +338,7 @@ const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   .label {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .props-table {
@@ -353,16 +353,16 @@ const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   .props-table td {
     text-align: left;
     padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .props-table th {
-    background: #f9f9f9;
+    background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
 
   code {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.8rem;

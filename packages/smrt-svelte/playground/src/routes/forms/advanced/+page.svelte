@@ -264,7 +264,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
   }
 
   .description {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin-bottom: 32px;
   }
 
@@ -274,28 +274,28 @@ let measureUnit = $state<MeasurementUnit>('ft');
 
   h2 {
     font-size: 1.25rem;
-    color: #333;
+    color: var(--smrt-color-on-surface);
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   h3 {
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     margin: 24px 0 12px;
     font-weight: 500;
   }
 
   .section-desc {
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
     margin-bottom: 16px;
   }
 
   .demo-box {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface-container);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 16px;
@@ -304,17 +304,17 @@ let measureUnit = $state<MeasurementUnit>('ft');
   .value-display {
     margin-top: 16px;
     padding-top: 16px;
-    border-top: 1px dashed #e5e7eb;
+    border-top: 1px dashed var(--smrt-color-outline-variant);
     display: flex;
     gap: 24px;
     font-size: 0.875rem;
-    color: #666;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .value-display pre {
     margin: 0;
     font-size: 0.75rem;
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 12px;
     border-radius: 4px;
     overflow-x: auto;
@@ -322,7 +322,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
 
   .hint {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--smrt-color-on-surface-variant);
     margin-top: 8px;
   }
 
@@ -338,16 +338,16 @@ let measureUnit = $state<MeasurementUnit>('ft');
   .props-table td {
     text-align: left;
     padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
   .props-table th {
-    background: #f9f9f9;
+    background: var(--smrt-color-surface-container);
     font-weight: 500;
   }
 
   code {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.8rem;
