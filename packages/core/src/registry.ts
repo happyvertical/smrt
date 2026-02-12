@@ -4044,18 +4044,23 @@ export class ObjectRegistry {
     // that only extend SmrtObject, not their actual parent class.
     // The `extends` field IS stored correctly during registerFromManifest().
     const chain: string[] = [];
-    const visited = new Set<string>(); // Cycle detection for self-referential extends
+    const visited = new Set<any>(); // Cycle detection using object identity
     let current: any = registered;
     while (current) {
-      const currentName = current.name;
-
-      // Cycle detection: if we've already visited this class, break
-      // This handles cases like Performer extends Performer where child and parent
-      // share the same className but come from different packages, and only one is installed
-      if (visited.has(currentName)) {
+      // Cycle detection: use object identity to handle cases where distinct
+      // classes share the same name (e.g., histrio:Performer vs smrt-video:Performer)
+      if (visited.has(current)) {
+        // Self-referential (chain length 1) is expected when a child package
+        // extends a parent with the same className and only one is installed.
+        // Longer cycles indicate misconfigured manifests.
+        if (chain.length > 1) {
+          console.warn(
+            `[ObjectRegistry] Circular inheritance detected in chain: ${chain.join(' -> ')} -> ${current.name}`,
+          );
+        }
         break;
       }
-      visited.add(currentName);
+      visited.add(current);
 
       chain.unshift(currentName); // Add at start to build [ancestor, ..., descendant]
       if (!current.extends) break;

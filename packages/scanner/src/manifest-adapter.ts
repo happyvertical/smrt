@@ -608,9 +608,6 @@ export class ManifestAdapter {
     return {
       type: 'json',
       required: isRequired,
-      defaultValue: field.initializer?.trimStart().startsWith('{')
-        ? {}
-        : undefined,
       source: 'default',
     };
   }
