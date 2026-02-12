@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add ui entry points for domain package svelte exports (#921)
+  - @happyvertical/smrt-scanner@0.20.1
+  - @happyvertical/smrt-config@0.20.1
+  - @happyvertical/smrt-types@0.20.1
+
 ## 1.0.0
 
 ### Minor Changes
