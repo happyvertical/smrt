@@ -196,58 +196,35 @@ export class CLIGenerator {
     if (verbose) {
       console.log('[CLI] tryLoadUserClasses() called');
     }
-
+    // 1. Load local classes (existing code)
+    // Wrap in try/catch so failures don't prevent loading external classes
     try {
-      // 1. Load local classes (existing code)
-      // Wrap in try/catch so failures don't prevent loading external classes
-      try {
-        if (verbose) {
-          console.log('[CLI] Loading local classes...');
-        }
-        await this.loadLocalClasses();
-      } catch (localError) {
-        if (verbose) {
-          console.log(
-            '[CLI] Local class loading failed (this is OK if using external packages only):',
-            localError instanceof Error ? localError.message : 'Unknown error',
-          );
-        }
-      }
-
-      // 2. Load classes from external packages
       if (verbose) {
-        console.log('[CLI] Loading external classes...');
+        console.log('[CLI] Loading local classes...');
       }
-      await this.loadExternalClasses();
-
-      const { getPackageConfig } = await import('@happyvertical/smrt-config');
-      const { DEFAULT_CLI_CONFIG } = await import('./config.js');
-      const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
-
-      const registeredCount = ObjectRegistry.getAllClasses().size;
-      if (verbose || config.verbose) {
-        console.log(
-          `[CLI] Successfully loaded ${registeredCount} SMRT objects`,
-        );
-      }
-    } catch (error) {
+      await this.loadLocalClasses();
+    } catch (localError) {
       if (verbose) {
-        console.error('[CLI] ERROR in tryLoadUserClasses:', error);
-      }
-
-      const { getPackageConfig } = await import('@happyvertical/smrt-config');
-      const { DEFAULT_CLI_CONFIG } = await import('./config.js');
-      const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
-
-      if (config.verbose) {
-        console.warn(
-          '[CLI] Failed to load classes:',
-          error instanceof Error ? error.message : 'Unknown error',
-        );
         console.log(
-          '[CLI] Using manifest-only mode (some commands may not work)',
+          '[CLI] Local class loading failed (this is OK if using external packages only):',
+          localError instanceof Error ? localError.message : 'Unknown error',
         );
       }
+    }
+
+    // 2. Load classes from external packages
+    if (verbose) {
+      console.log('[CLI] Loading external classes...');
+    }
+    await this.loadExternalClasses();
+
+    const { getPackageConfig } = await import('@happyvertical/smrt-config');
+    const { DEFAULT_CLI_CONFIG } = await import('./config.js');
+    const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+
+    const registeredCount = ObjectRegistry.getAllClasses().size;
+    if (verbose || config.verbose) {
+      console.log(`[CLI] Successfully loaded ${registeredCount} SMRT objects`);
     }
   }
 
@@ -381,14 +358,13 @@ export class CLIGenerator {
         console.log(`[CLI] Loaded ${count} objects from .smrt/register.js`);
       }
     } catch (error) {
-      console.warn(
-        '[CLI] Failed to load .smrt/register.js:',
-        error instanceof Error ? error.message : 'Unknown error',
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`\n❌ Failed to load .smrt/register.js: ${msg}`);
+      console.error(
+        '\nThis usually means an installed package has non-Node.js exports (e.g., .svelte files).',
       );
-      console.warn('[CLI] Try running: npm run build');
-      if (config.verbose && error instanceof Error) {
-        console.warn('[CLI] Error details:', error.stack);
-      }
+      console.error('Fix the offending package, then re-run.\n');
+      throw error;
     }
   }
 
@@ -2319,6 +2295,33 @@ export async function main() {
   const timing: Record<string, number> = {};
 
   const startTime = timingEnabled ? performance.now() : 0;
+
+  // Load .env from the project directory (where smrt.config.js lives)
+  // before loading config, since config may reference process.env
+  {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const configNames = [
+      'smrt.config.js',
+      'smrt.config.mjs',
+      'smrt.config.cjs',
+      'smrt.config.json',
+    ];
+    let dir = process.cwd();
+    const { root } = path.parse(dir);
+    while (dir !== root) {
+      if (configNames.some((name) => fs.existsSync(path.join(dir, name)))) {
+        try {
+          const { loadEnvFile } = await import('node:process');
+          loadEnvFile(path.join(dir, '.env'));
+        } catch {
+          // .env doesn't exist or Node < 20.12, continue without it
+        }
+        break;
+      }
+      dir = path.dirname(dir);
+    }
+  }
 
   // Initialize smrt-config (loads smrt.config.js if present)
   const configStart = timingEnabled ? performance.now() : 0;
