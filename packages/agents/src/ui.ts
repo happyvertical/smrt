@@ -340,6 +340,10 @@ export function createUIRegistry(): AgentUIComponentRegistry {
  * Agent UI packages register their components here at import time,
  * enabling discovery by host applications.
  *
+ * Uses `globalThis` + `Symbol.for()` to guarantee a single registry
+ * instance even when bundlers (Vite, webpack) duplicate this module
+ * across optimized dependency chunks or package versions.
+ *
  * @example
  * ```typescript
  * // In agent package (e.g., @happyvertical/praeco/admin)
@@ -355,7 +359,16 @@ export function createUIRegistry(): AgentUIComponentRegistry {
  * const Component = AgentUIRegistry.get('Praeco', 'sources');
  * ```
  */
-export const AgentUIRegistry: AgentUIComponentRegistry = createUIRegistry();
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtAgentUIRegistry: AgentUIComponentRegistry | undefined;
+}
+
+if (!globalThis.__smrtAgentUIRegistry) {
+  globalThis.__smrtAgentUIRegistry = createUIRegistry();
+}
+export const AgentUIRegistry: AgentUIComponentRegistry =
+  globalThis.__smrtAgentUIRegistry;
 
 /**
  * Agents module UI slots (for ModuleUIRegistry)
