@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.20.4
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - globalThis singleton for AgentUIRegistry + CLI env loading (#930) (agents)
+
+  ### Other Changes
+
+  - refactor: make AI and heavy deps optional for lite usage (#931) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.20.4
+  - @happyvertical/smrt-config@0.20.4
+  - @happyvertical/smrt-types@0.20.4
+
 ## 0.20.3
 
 ### Patch Changes
