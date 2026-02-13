@@ -132,7 +132,14 @@ async function parseNaturalLanguage(text: string): Promise<string> {
   console.log('[SMRTDateTime] Parsing text:', text);
 
   // Dynamically import chrono-node only when needed
-  const chrono = await import('chrono-node');
+  let chrono: typeof import('chrono-node');
+  try {
+    chrono = await import('chrono-node');
+  } catch {
+    throw new Error(
+      'Natural-language date parsing requires the optional dependency "chrono-node". Install it with: pnpm add chrono-node',
+    );
+  }
 
   // Use chrono-node to parse natural language dates
   const results = chrono.parse(text);
