@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.3
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - load .env before config, hard fail on broken register.js, fix URL display (#929) (cli)
+  - @happyvertical/smrt-scanner@0.20.3
+  - @happyvertical/smrt-config@0.20.3
+  - @happyvertical/smrt-types@0.20.3
+
 ## 0.20.2
 
 ### Patch Changes
