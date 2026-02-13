@@ -52,7 +52,10 @@ export const dbStatusCommand: CLICommand = {
 
       if (!options.json) {
         console.log('\n📊 Migration Status\n');
-        console.log(`Database: ${dbType}://${dbUrl}\n`);
+        const displayUrl = /^[a-z]+:\/\//.test(dbUrl)
+          ? dbUrl
+          : `${dbType}://${dbUrl}`;
+        console.log(`Database: ${displayUrl}\n`);
       }
 
       // 3. Connect to database
