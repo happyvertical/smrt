@@ -1,6 +1,7 @@
 <script lang="ts">
-import { CapabilityGate, useTTS } from '@happyvertical/smrt-svelte';
+import { useTTS } from '@happyvertical/smrt-svelte';
 import type { TTSVoice } from '@happyvertical/smrt-svelte/browser-ai';
+import { CapabilityGate } from '@happyvertical/smrt-svelte/browser-ai/svelte';
 
 const tts = useTTS();
 

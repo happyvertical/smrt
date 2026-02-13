@@ -1,5 +1,4 @@
 <script lang="ts">
-import * as chrono from 'chrono-node';
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
@@ -107,10 +106,20 @@ function updateValue(start: string, end: string) {
 }
 
 // Parse date range from natural language using chrono-node
-function parseNaturalLanguageRange(
+async function parseNaturalLanguageRange(
   text: string,
-): { start: string; end: string } | null {
+): Promise<{ start: string; end: string } | null> {
   console.log('[SMRTDateRange] Parsing text:', text);
+
+  // Dynamically import chrono-node only when needed
+  let chrono: typeof import('chrono-node');
+  try {
+    chrono = await import('chrono-node');
+  } catch {
+    throw new Error(
+      'Natural-language date parsing requires the optional dependency "chrono-node". Install it with: pnpm add chrono-node',
+    );
+  }
 
   // Try to parse as a range first (e.g., "January 15th to March 30th")
   const rangePatterns = [
@@ -185,10 +194,13 @@ onMount(() => {
           return;
         }
         // Try to parse spoken date range
-        const parsed = parseNaturalLanguageRange(String(v));
-        if (parsed) {
-          updateValue(parsed.start, parsed.end);
-        }
+        parseNaturalLanguageRange(String(v))
+          .then((parsed) => {
+            if (parsed) {
+              updateValue(parsed.start, parsed.end);
+            }
+          })
+          .catch(() => {});
       },
       getValue: () => ({ startDate, endDate }),
     };
@@ -247,7 +259,7 @@ async function stopRecording() {
   parseError = null;
 
   try {
-    const parsed = parseNaturalLanguageRange(finalTranscript);
+    const parsed = await parseNaturalLanguageRange(finalTranscript);
     if (parsed) {
       updateValue(parsed.start, parsed.end);
     } else {

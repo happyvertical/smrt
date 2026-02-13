@@ -23,9 +23,6 @@ export {
   permission,
 } from './actions/permission.js';
 export { ripple } from './actions/ripple.js';
-// Browser AI (moved from @happyvertical/browser-ai)
-export * from './browser-ai/index.js';
-export * from './browser-ai/svelte/index.js';
 // Admin components
 export * from './components/admin/index.js';
 // Calendar components
