@@ -1,9 +1,9 @@
 <script lang="ts">
+import { useLLM } from '@happyvertical/smrt-svelte';
 import {
   CapabilityGate,
   DownloadProgress,
-  useLLM,
-} from '@happyvertical/smrt-svelte';
+} from '@happyvertical/smrt-svelte/browser-ai/svelte';
 
 const llm = useLLM({
   systemPrompt: 'You are a helpful assistant. Keep responses concise.',

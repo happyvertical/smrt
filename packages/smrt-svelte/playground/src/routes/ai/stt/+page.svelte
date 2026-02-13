@@ -1,10 +1,10 @@
 <script lang="ts">
+import { useSTT } from '@happyvertical/smrt-svelte';
 import {
   CapabilityGate,
   STTTest,
-  useSTT,
   VoiceInput,
-} from '@happyvertical/smrt-svelte';
+} from '@happyvertical/smrt-svelte/browser-ai/svelte';
 
 const stt = useSTT();
 

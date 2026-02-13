@@ -1,5 +1,4 @@
 <script lang="ts">
-import * as chrono from 'chrono-node';
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
@@ -129,8 +128,11 @@ onDestroy(() => {
 });
 
 // Parse natural language to ISO date using chrono-node (no LLM needed)
-function parseNaturalLanguage(text: string): string {
+async function parseNaturalLanguage(text: string): Promise<string> {
   console.log('[SMRTDateTime] Parsing text:', text);
+
+  // Dynamically import chrono-node only when needed
+  const chrono = await import('chrono-node');
 
   // Use chrono-node to parse natural language dates
   const results = chrono.parse(text);
@@ -217,7 +219,7 @@ async function stopHoldRecording() {
   parseError = null;
 
   try {
-    const isoDate = parseNaturalLanguage(finalTranscript);
+    const isoDate = await parseNaturalLanguage(finalTranscript);
     updateValue(isoDate);
   } catch (err) {
     parseError = err instanceof Error ? err.message : 'Failed to parse date';
