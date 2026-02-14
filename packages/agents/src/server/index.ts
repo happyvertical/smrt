@@ -27,6 +27,11 @@
  * @module @happyvertical/smrt-agents/server
  */
 
+export type {
+  AgentActionContext,
+  AgentActionHandler,
+  AgentActionMap,
+} from './action-types.js';
 export { loadSlotConfigs } from './config-loader.js';
 export {
   extractAgentManifest,
