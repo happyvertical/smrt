@@ -163,6 +163,7 @@ function createQualifiedName(
  */
 export class ManifestAdapter {
   private typeAliases: Record<string, string> = {};
+  private _aliasDepth?: number;
 
   /**
    * Convert resolved classes to manifest format
@@ -617,24 +618,36 @@ export class ManifestAdapter {
       };
     }
 
-    // Inline number literal union: 1 | 2 | 3
-    if (type && /^\d+(\s*\|\s*\d+)+$/.test(type)) {
-      return { type: 'integer', required: isRequired, source: 'annotation' };
+    // Inline number literal union: 1 | 2 | 3 (supports negatives: -1 | 0 | 1)
+    if (type && /^-?\d+(\s*\|\s*-?\d+)+$/.test(type)) {
+      return {
+        type: 'integer',
+        required: isRequired,
+        defaultValue: field.numericValue ?? undefined,
+        source: 'annotation',
+      };
     }
 
     // Type alias resolution: look up single-identifier types in typeAliases
+    // Guard against circular aliases (e.g., type A = B; type B = A) with depth limit
     if (
       type &&
       !type.includes(' ') &&
       !type.includes('<') &&
-      this.typeAliases[type]
+      this.typeAliases[type] &&
+      (this._aliasDepth ?? 0) < 5
     ) {
       const resolved = this.typeAliases[type];
-      return this.inferFromAnnotation({ ...field, typeAnnotation: resolved });
+      this._aliasDepth = (this._aliasDepth ?? 0) + 1;
+      try {
+        return this.inferFromAnnotation({ ...field, typeAnnotation: resolved });
+      } finally {
+        this._aliasDepth = (this._aliasDepth ?? 0) - 1;
+      }
     }
 
     // String initializer heuristic: if initializer is a quoted string, infer text
-    if (field.initializer?.match(/^['"].*['"]$/)) {
+    if (field.initializer?.match(/^(['"]).*\1$/)) {
       return {
         type: 'text',
         required: isRequired,
