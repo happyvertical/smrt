@@ -162,6 +162,8 @@ function createQualifiedName(
  * Converts OXC scanner output to smrt-core manifest format
  */
 export class ManifestAdapter {
+  private typeAliases: Record<string, string> = {};
+
   /**
    * Convert resolved classes to manifest format
    *
@@ -169,14 +171,17 @@ export class ManifestAdapter {
    * @param options - Configuration options
    * @param options.packageName - Package name for qualified name generation (Issue #713)
    * @param options.packageVersion - Package version for manifest metadata
+   * @param options.typeAliases - Type alias declarations for resolving custom type names
    */
   toManifest(
     resolved: ResolvedClassDefinition[],
     options: {
       packageName?: string;
       packageVersion?: string;
+      typeAliases?: Record<string, string>;
     } = {},
   ): SmartObjectManifest {
+    this.typeAliases = options.typeAliases || {};
     const objects: Record<string, SmartObjectDefinition> = {};
 
     for (const classDef of resolved) {
@@ -600,6 +605,42 @@ export class ManifestAdapter {
         optional: true,
       });
       return inference;
+    }
+
+    // Inline string literal union: 'pending' | 'ready' | 'archived'
+    if (type && /^'[^']*'(\s*\|\s*'[^']*')+$/.test(type)) {
+      return {
+        type: 'text',
+        required: isRequired,
+        defaultValue: this.parseDefaultValue(field.initializer, 'string'),
+        source: 'annotation',
+      };
+    }
+
+    // Inline number literal union: 1 | 2 | 3
+    if (type && /^\d+(\s*\|\s*\d+)+$/.test(type)) {
+      return { type: 'integer', required: isRequired, source: 'annotation' };
+    }
+
+    // Type alias resolution: look up single-identifier types in typeAliases
+    if (
+      type &&
+      !type.includes(' ') &&
+      !type.includes('<') &&
+      this.typeAliases[type]
+    ) {
+      const resolved = this.typeAliases[type];
+      return this.inferFromAnnotation({ ...field, typeAnnotation: resolved });
+    }
+
+    // String initializer heuristic: if initializer is a quoted string, infer text
+    if (field.initializer?.match(/^['"].*['"]$/)) {
+      return {
+        type: 'text',
+        required: isRequired,
+        defaultValue: this.parseDefaultValue(field.initializer, 'string'),
+        source: 'heuristic',
+      };
     }
 
     // Default to json for unknown/complex types

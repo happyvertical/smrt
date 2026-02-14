@@ -546,6 +546,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       const newManifest = adapter.toManifest(resolved, {
         packageName,
         packageVersion,
+        typeAliases: results.typeAliases,
       });
 
       // Add moduleType identifier

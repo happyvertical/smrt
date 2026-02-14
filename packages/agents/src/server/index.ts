@@ -32,6 +32,12 @@ export type {
   AgentActionHandler,
   AgentActionMap,
 } from './action-types.js';
+export {
+  type AgentAPIRouteInfo,
+  buildRouteMap,
+  type ResolvedAPIRoute,
+  resolveAPIRoute,
+} from './api-routes.js';
 export { loadSlotConfigs } from './config-loader.js';
 export {
   extractAgentManifest,

@@ -329,6 +329,87 @@ describe('OxcScanner', () => {
     });
   });
 
+  describe('type alias resolution (end-to-end)', () => {
+    it('should resolve type alias to text in manifest', async () => {
+      // Write a file with a type alias and a class using it
+      writeFileSync(
+        join(tempDir, 'performer.ts'),
+        `
+        import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+        export type PerformerStatus = 'pending' | 'ready' | 'archived';
+
+        @smrt()
+        export class Performer extends SmrtObject {
+          name: string = '';
+          status: PerformerStatus = 'pending';
+        }
+        `,
+      );
+
+      const scanner = new OxcScanner({
+        cwd: tempDir,
+        include: ['performer.ts'],
+      });
+
+      const { results, resolved } = await scanner.scanAndResolve();
+
+      // Verify type aliases were collected
+      expect(results.typeAliases).toBeDefined();
+      expect(results.typeAliases.PerformerStatus).toBe(
+        "'pending' | 'ready' | 'archived'",
+      );
+
+      // Verify manifest output
+      const { ManifestAdapter } = await import('../manifest-adapter.js');
+      const adapter = new ManifestAdapter();
+      const manifest = adapter.toManifest(resolved, {
+        packageName: '@test/performer-pkg',
+        typeAliases: results.typeAliases,
+      });
+
+      const performerDef = manifest.objects['@test/performer-pkg:Performer'];
+      expect(performerDef).toBeDefined();
+
+      // status should be text, not json
+      expect(performerDef.fields.status).toBeDefined();
+      expect(performerDef.fields.status.type).toBe('text');
+      expect(performerDef.fields.status.default).toBe('pending');
+    });
+
+    it('should handle inline literal union without alias', async () => {
+      writeFileSync(
+        join(tempDir, 'inline-union.ts'),
+        `
+        import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+        @smrt()
+        export class Widget extends SmrtObject {
+          visibility: 'public' | 'private' | 'unlisted' = 'public';
+        }
+        `,
+      );
+
+      const scanner = new OxcScanner({
+        cwd: tempDir,
+        include: ['inline-union.ts'],
+      });
+
+      const { results, resolved } = await scanner.scanAndResolve();
+
+      const { ManifestAdapter } = await import('../manifest-adapter.js');
+      const adapter = new ManifestAdapter();
+      const manifest = adapter.toManifest(resolved, {
+        packageName: '@test/widget-pkg',
+        typeAliases: results.typeAliases,
+      });
+
+      const widgetDef = manifest.objects['@test/widget-pkg:Widget'];
+      expect(widgetDef.fields.visibility.type).toBe('text');
+      expect(widgetDef.fields.visibility.default).toBe('public');
+    });
+  });
+
   describe('getStats', () => {
     it('should return scan statistics', async () => {
       const scanner = new OxcScanner({
@@ -341,7 +422,7 @@ describe('OxcScanner', () => {
 
       expect(stats.fileCount).toBeGreaterThan(0);
       expect(stats.totalClasses).toBeGreaterThan(0);
-      expect(stats.smrtClasses).toBe(6); // Product, Category, TestAgent, Event, Meeting, Conference
+      expect(stats.smrtClasses).toBe(8); // Product, Category, TestAgent, Event, Meeting, Conference, Performer, Widget
       expect(stats.stiClasses).toBe(3); // Event, Meeting, Conference
       expect(stats.parseTimeMs).toBeGreaterThanOrEqual(0);
     });

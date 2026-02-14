@@ -421,6 +421,7 @@ export function parseFile(filePath: string): FileScanResult {
   const startTime = performance.now();
   const errors: ScanError[] = [];
   const classes: RawClassDefinition[] = [];
+  let typeAliases: Record<string, string> = {};
 
   try {
     const sourceText = readFileSync(filePath, 'utf-8');
@@ -449,6 +450,7 @@ export function parseFile(filePath: string): FileScanResult {
     const program = result.program as Program;
     if (program?.body) {
       const importAliases = extractImportAliases(program.body);
+      typeAliases = extractTypeAliases(program.body);
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
@@ -474,6 +476,7 @@ export function parseFile(filePath: string): FileScanResult {
     classes,
     errors,
     parseTimeMs: performance.now() - startTime,
+    typeAliases,
   };
 }
 
@@ -487,6 +490,7 @@ export function parseSource(
   const startTime = performance.now();
   const errors: ScanError[] = [];
   const classes: RawClassDefinition[] = [];
+  let typeAliases: Record<string, string> = {};
 
   try {
     const result = parseSync(filename, sourceText, {
@@ -512,6 +516,7 @@ export function parseSource(
     const program = result.program as Program;
     if (program?.body) {
       const importAliases = extractImportAliases(program.body);
+      typeAliases = extractTypeAliases(program.body);
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
@@ -537,6 +542,7 @@ export function parseSource(
     classes,
     errors,
     parseTimeMs: performance.now() - startTime,
+    typeAliases,
   };
 }
 
@@ -562,6 +568,38 @@ function extractImportAliases(body: Statement[]): Map<string, string> {
           }
         }
       }
+    }
+  }
+  return aliases;
+}
+
+/**
+ * Extract type alias declarations from program body.
+ * Maps alias names to their resolved type strings.
+ * e.g., `type Status = 'active' | 'inactive'` → { Status: "'active' | 'inactive'" }
+ * @internal Exported for testing
+ */
+export function extractTypeAliases(body: Statement[]): Record<string, string> {
+  const aliases: Record<string, string> = {};
+  for (const node of body) {
+    if (node.type === 'TSTypeAliasDeclaration') {
+      const name = node.id?.name;
+      const resolved = node.typeAnnotation
+        ? extractTypeName(node.typeAnnotation)
+        : null;
+      if (name && resolved) aliases[name] = resolved;
+    }
+    // Also check `export type X = ...` (ExportNamedDeclaration wrapping)
+    if (
+      node.type === 'ExportNamedDeclaration' &&
+      node.declaration?.type === 'TSTypeAliasDeclaration'
+    ) {
+      const decl = node.declaration;
+      const name = decl.id?.name;
+      const resolved = decl.typeAnnotation
+        ? extractTypeName(decl.typeAnnotation)
+        : null;
+      if (name && resolved) aliases[name] = resolved;
     }
   }
   return aliases;
@@ -1031,6 +1069,16 @@ function extractTypeName(type: TSType): string | null {
       return 'null';
     case 'TSUndefinedKeyword':
       return 'undefined';
+
+    case 'TSLiteralType': {
+      const literal = (type as any).literal;
+      if (!literal) return null;
+      // oxc-parser uses generic 'Literal' node type — distinguish by value type
+      if (typeof literal.value === 'string') return `'${literal.value}'`;
+      if (typeof literal.value === 'number') return String(literal.value);
+      if (typeof literal.value === 'boolean') return String(literal.value);
+      return null;
+    }
 
     case 'TSArrayType': {
       const elementType = extractTypeName(type.elementType);
