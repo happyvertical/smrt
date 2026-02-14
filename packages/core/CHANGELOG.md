@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.20.5
+
+### Patch Changes
+
+- ### Features
+
+  - add AgentActionContext types for agent action handlers (#933) (agents)
+
+  ### Bug Fixes
+
+  - handle string literal union types in OXC parser (#932) (scanner)
+  - @happyvertical/smrt-scanner@0.20.5
+  - @happyvertical/smrt-config@0.20.5
+  - @happyvertical/smrt-types@0.20.5
+
 ## 0.20.4
 
 ### Patch Changes
