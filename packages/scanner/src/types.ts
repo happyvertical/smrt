@@ -222,6 +222,9 @@ export interface FileScanResult {
 
   /** Parse time in milliseconds */
   parseTimeMs: number;
+
+  /** Type alias declarations found in file (name → resolved type string) */
+  typeAliases: Record<string, string>;
 }
 
 /**
@@ -262,6 +265,9 @@ export interface ScanResults {
 
   /** Number of files scanned */
   fileCount: number;
+
+  /** Accumulated type aliases across all files */
+  typeAliases: Record<string, string>;
 }
 
 // ============================================================================

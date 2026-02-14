@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getLineColumn, parseSource } from '../oxc-parser.js';
+import {
+  extractTypeAliases,
+  getLineColumn,
+  parseSource,
+} from '../oxc-parser.js';
 
 describe('OXC Parser', () => {
   describe('parseSource', () => {
@@ -386,6 +390,111 @@ describe('OXC Parser', () => {
 
       // 'n' in 'name' on line 2
       expect(getLineColumn(source, 14)).toEqual({ line: 2, column: 3 });
+    });
+  });
+
+  describe('TSLiteralType in unions', () => {
+    it('should extract inline string literal union type annotation', () => {
+      const source = `
+        @smrt()
+        class Performer extends SmrtObject {
+          status: 'pending' | 'ready' | 'archived' = 'pending';
+        }
+      `;
+
+      const result = parseSource(source);
+      expect(result.errors).toHaveLength(0);
+      expect(result.classes).toHaveLength(1);
+
+      const statusField = result.classes[0].fields.find(
+        (f) => f.name === 'status',
+      );
+      expect(statusField).toBeDefined();
+      expect(statusField?.typeAnnotation).toBe(
+        "'pending' | 'ready' | 'archived'",
+      );
+    });
+
+    it('should extract number literal union type annotation', () => {
+      const source = `
+        @smrt()
+        class Config extends SmrtObject {
+          priority: 1 | 2 | 3 = 1;
+        }
+      `;
+
+      const result = parseSource(source);
+      const priorityField = result.classes[0].fields.find(
+        (f) => f.name === 'priority',
+      );
+      expect(priorityField?.typeAnnotation).toBe('1 | 2 | 3');
+    });
+
+    it('should handle type alias reference as annotation', () => {
+      const source = `
+        type PerformerStatus = 'pending' | 'ready';
+
+        @smrt()
+        class Performer extends SmrtObject {
+          status: PerformerStatus = 'pending';
+        }
+      `;
+
+      const result = parseSource(source);
+      const statusField = result.classes[0].fields.find(
+        (f) => f.name === 'status',
+      );
+      // The field annotation is the alias name (opaque to syntactic parser)
+      expect(statusField?.typeAnnotation).toBe('PerformerStatus');
+    });
+  });
+
+  describe('type alias extraction', () => {
+    it('should extract exported type aliases', () => {
+      const source = `
+        export type PerformerStatus = 'pending' | 'ready';
+        export type Visibility = 'public' | 'private' | 'unlisted';
+      `;
+
+      const result = parseSource(source);
+      expect(result.typeAliases).toEqual({
+        PerformerStatus: "'pending' | 'ready'",
+        Visibility: "'public' | 'private' | 'unlisted'",
+      });
+    });
+
+    it('should extract non-exported type aliases', () => {
+      const source = `
+        type Status = 'active' | 'inactive';
+      `;
+
+      const result = parseSource(source);
+      expect(result.typeAliases).toEqual({
+        Status: "'active' | 'inactive'",
+      });
+    });
+
+    it('should extract primitive type aliases', () => {
+      const source = `
+        type Name = string;
+        type Count = number;
+      `;
+
+      const result = parseSource(source);
+      expect(result.typeAliases).toEqual({
+        Name: 'string',
+        Count: 'number',
+      });
+    });
+
+    it('should skip complex type aliases that cannot be resolved', () => {
+      const source = `
+        type Config = { key: string; value: number };
+      `;
+
+      const result = parseSource(source);
+      // TSTypeLiteral (object shape) returns null from extractTypeName
+      expect(result.typeAliases.Config).toBeUndefined();
     });
   });
 

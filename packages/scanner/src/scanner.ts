@@ -93,9 +93,10 @@ export class OxcScanner {
       errors: [],
       totalParseTimeMs: performance.now() - startTime,
       fileCount: files.length,
+      typeAliases: {},
     };
 
-    // Flatten classes and errors
+    // Flatten classes, errors, and type aliases
     for (const file of fileResults) {
       for (const classDef of file.classes) {
         results.classes.push(classDef);
@@ -103,6 +104,7 @@ export class OxcScanner {
       for (const error of file.errors) {
         results.errors.push(error);
       }
+      Object.assign(results.typeAliases, file.typeAliases);
     }
 
     // Add classes to resolver

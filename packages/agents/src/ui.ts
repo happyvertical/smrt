@@ -340,9 +340,10 @@ export function createUIRegistry(): AgentUIComponentRegistry {
  * Agent UI packages register their components here at import time,
  * enabling discovery by host applications.
  *
- * Uses `globalThis` + `Symbol.for()` to guarantee a single registry
- * instance even when bundlers (Vite, webpack) duplicate this module
- * across optimized dependency chunks or package versions.
+ * Uses a `globalThis.__smrtAgentUIRegistry` property to guarantee a
+ * single registry instance per JavaScript runtime, even when bundlers
+ * (Vite, webpack) duplicate this module across optimized dependency
+ * chunks or package versions.
  *
  * @example
  * ```typescript

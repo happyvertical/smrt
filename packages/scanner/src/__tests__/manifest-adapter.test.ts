@@ -79,6 +79,152 @@ describe('ManifestAdapter', () => {
       });
     });
 
+    describe('string literal union types', () => {
+      it('should infer text for inline string literal union', () => {
+        const field: RawFieldDefinition = {
+          name: 'status',
+          accessibility: 'public',
+          typeAnnotation: "'pending' | 'ready' | 'archived'",
+          initializer: "'pending'",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        // Need to call toManifest first to set typeAliases (even empty)
+        const adapterWithAliases = new ManifestAdapter();
+        adapterWithAliases.toManifest([], { typeAliases: {} });
+
+        const result = adapterWithAliases.inferFieldType(field);
+        expect(result.type).toBe('text');
+        expect(result.defaultValue).toBe('pending');
+        expect(result.source).toBe('annotation');
+      });
+
+      it('should infer integer for number literal union', () => {
+        const field: RawFieldDefinition = {
+          name: 'priority',
+          accessibility: 'public',
+          typeAnnotation: '1 | 2 | 3',
+          initializer: null,
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const adapterWithAliases = new ManifestAdapter();
+        adapterWithAliases.toManifest([], { typeAliases: {} });
+
+        const result = adapterWithAliases.inferFieldType(field);
+        expect(result.type).toBe('integer');
+        expect(result.source).toBe('annotation');
+      });
+
+      it('should resolve type alias to underlying literal union', () => {
+        const field: RawFieldDefinition = {
+          name: 'status',
+          accessibility: 'public',
+          typeAnnotation: 'PerformerStatus',
+          initializer: "'pending'",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const adapterWithAliases = new ManifestAdapter();
+        adapterWithAliases.toManifest([], {
+          typeAliases: { PerformerStatus: "'pending' | 'ready'" },
+        });
+
+        const result = adapterWithAliases.inferFieldType(field);
+        expect(result.type).toBe('text');
+        expect(result.defaultValue).toBe('pending');
+      });
+
+      it('should resolve type alias to primitive type', () => {
+        const field: RawFieldDefinition = {
+          name: 'label',
+          accessibility: 'public',
+          typeAnnotation: 'DisplayName',
+          initializer: "''",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const adapterWithAliases = new ManifestAdapter();
+        adapterWithAliases.toManifest([], {
+          typeAliases: { DisplayName: 'string' },
+        });
+
+        const result = adapterWithAliases.inferFieldType(field);
+        expect(result.type).toBe('text');
+      });
+
+      it('should use string initializer heuristic as fallback', () => {
+        const field: RawFieldDefinition = {
+          name: 'status',
+          accessibility: 'public',
+          typeAnnotation: 'UnknownType',
+          initializer: "'pending'",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        // No type aliases — UnknownType won't resolve
+        const adapterWithAliases = new ManifestAdapter();
+        adapterWithAliases.toManifest([], { typeAliases: {} });
+
+        const result = adapterWithAliases.inferFieldType(field);
+        expect(result.type).toBe('text');
+        expect(result.defaultValue).toBe('pending');
+        expect(result.source).toBe('heuristic');
+      });
+
+      it('should still default to json for non-string complex types', () => {
+        const field: RawFieldDefinition = {
+          name: 'config',
+          accessibility: 'public',
+          typeAnnotation: 'SomeInterface',
+          initializer: null,
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const adapterWithAliases = new ManifestAdapter();
+        adapterWithAliases.toManifest([], { typeAliases: {} });
+
+        const result = adapterWithAliases.inferFieldType(field);
+        expect(result.type).toBe('json');
+      });
+    });
+
     describe('@oneToMany and @manyToMany decorators', () => {
       it('should always set @oneToMany fields as not required', () => {
         const field: RawFieldDefinition = {

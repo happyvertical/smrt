@@ -238,6 +238,7 @@ async function main(): Promise<void> {
   const manifest = adapter.toManifest(resolved, {
     packageName,
     packageVersion,
+    typeAliases: results.typeAliases,
   });
 
   const output = JSON.stringify(manifest, null, 2);
