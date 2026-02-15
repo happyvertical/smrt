@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - sync video, voice, social package versions to 0.20.7 (#938)
+  - @happyvertical/smrt-scanner@0.20.9
+  - @happyvertical/smrt-config@0.20.9
+  - @happyvertical/smrt-types@0.20.9
+
 ## 0.20.8
 
 ### Patch Changes
