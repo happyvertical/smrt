@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.6
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: remove legacy dynamic schema creation code (#934)
+  - @happyvertical/smrt-scanner@0.20.6
+  - @happyvertical/smrt-config@0.20.6
+  - @happyvertical/smrt-types@0.20.6
+
 ## 0.20.5
 
 ### Patch Changes
