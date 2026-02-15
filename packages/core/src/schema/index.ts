@@ -7,7 +7,6 @@ export { SchemaCodeGenerator } from './code-generator';
 export * from './ddl';
 export { SchemaGenerator } from './generator';
 export { SchemaOverrideSystem } from './override-system';
-export { RuntimeSchemaManager } from './runtime-manager';
 export { createSchemaManager, SchemaManager } from './schema-manager';
 
 // Re-export for easy access

@@ -2173,13 +2173,22 @@ export class CLIGenerator {
 
       await collection.initialize();
 
-      // CRITICAL FIX for issues #603/#607: For JSON adapter, ensure ALL tables exist upfront.
-      // Issue #603: JSON adapter doesn't pre-load related tables for cross-table queries.
-      // Issue #607: CLI initialization bypasses SmrtObject.initialize() where the #603 fix lives.
-      // This mirrors the fix in class.ts to ensure cross-table queries (JOINs, NOT EXISTS) work.
-      // Detection: JSON adapter has exportTable method (see schema-manager.ts:50-54)
+      // For JSON adapter, ensure ALL tables exist upfront (issues #603/#607).
+      // JSON adapter doesn't pre-load related tables for cross-table queries.
       if ((db as any).exportTable) {
-        await ObjectRegistry.ensureAllSchemas(db);
+        const { ensureSchema } = await import(
+          '@happyvertical/smrt-core/schema/utils'
+        );
+        const classNames = ObjectRegistry.getClassNames();
+        for (const className of classNames) {
+          const registered = ObjectRegistry.getClass(className);
+          if (registered?.extends === 'SmrtCollection') continue;
+          try {
+            await ensureSchema(db, className);
+          } catch {
+            // Non-critical: some classes may not have schemas yet
+          }
+        }
       }
 
       this.collections.set(objectName, collection);

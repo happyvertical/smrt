@@ -488,7 +488,8 @@ export default testManifest;
 
   'db:setup': {
     name: 'db:setup',
-    description: 'Initialize database schema for all registered SMRT objects',
+    description:
+      '[DEPRECATED] Use db:migrate instead. Initialize database schema for all registered SMRT objects',
     aliases: ['db-setup', 'setup-db'],
     args: [],
     options: {
@@ -509,7 +510,12 @@ export default testManifest;
       },
     },
     handler: async (_args: string[], options: any) => {
-      console.log('\n🔍 Discovering SMRT objects...\n');
+      console.warn(
+        '\n⚠️  db:setup is deprecated. Use "smrt db:migrate" instead.\n' +
+          '   db:migrate now creates new tables automatically.\n' +
+          '   db:setup will be removed in a future version.\n',
+      );
+      console.log('🔍 Discovering SMRT objects...\n');
 
       try {
         // 1. Load CLI config
@@ -1198,13 +1204,6 @@ export default testManifest;
         const comparer = new SchemaComparer(db);
         const diff = await comparer.compare(manifestSchemas);
 
-        // Report tables that need db:setup
-        for (const schema of diff.added_tables) {
-          console.log(
-            `  ⚠️  ${schema.tableName}: Table does not exist (use db:setup to create)`,
-          );
-        }
-
         // Helper to get class name for a table (for reporting)
         const getClassForTable = (tableName: string): string => {
           for (const className of initOrder) {
@@ -1214,6 +1213,66 @@ export default testManifest;
           }
           return tableName;
         };
+
+        // Create new tables that don't exist yet
+        if (diff.added_tables.length > 0) {
+          const { ensureSchema } = await import(
+            '@happyvertical/smrt-core/schema/utils'
+          );
+
+          for (const schema of diff.added_tables) {
+            const className = getClassForTable(schema.tableName);
+
+            if (options['dry-run']) {
+              const fields = Object.keys(schema.columns).length;
+              console.log(
+                `  📦 ${schema.tableName} (${className}): Would create table (${fields} columns)`,
+              );
+              if (options.verbose && schema.ddl) {
+                console.log(`     ${schema.ddl}`);
+              }
+            } else {
+              try {
+                await ensureSchema(db, className);
+
+                // Track table creation as a migration
+                const migrationName = `create_table_${schema.tableName}`;
+                const upSql =
+                  schema.ddl || `-- CREATE TABLE ${schema.tableName}`;
+                const migrationDef = {
+                  id: migrationName,
+                  description: `Create table ${schema.tableName}`,
+                  version: '1.0.0',
+                  up: [upSql],
+                  down: [`DROP TABLE IF EXISTS "${schema.tableName}"`],
+                };
+
+                const result = await tracker.apply(migrationDef, {
+                  postgresSafe: options['postgres-safe'] ?? false,
+                  force: options.force ?? false,
+                });
+
+                if (result.success) {
+                  const fields = Object.keys(schema.columns).length;
+                  console.log(
+                    `  ✓ Created table ${schema.tableName} (${fields} columns, ${shortChecksum(result.checksum)})`,
+                  );
+                }
+              } catch (error) {
+                const errorMsg =
+                  error instanceof Error ? error.message : String(error);
+                console.error(
+                  `  ✗ Failed to create ${schema.tableName}: ${errorMsg}`,
+                );
+                if (options.verbose && error instanceof Error && error.stack) {
+                  console.error(`\n${error.stack}\n`);
+                }
+              }
+            }
+          }
+
+          console.log();
+        }
 
         // Convert SchemaDiff changes to CLI MigrationAction format
         for (const change of diff.changes) {
@@ -1298,16 +1357,26 @@ export default testManifest;
         }
 
         // 10. Handle no migrations needed
-        // Only return early if there are no migrations AND --upgrade-sti is not requested (Issue #749)
-        if (migrations.length === 0 && !options['upgrade-sti']) {
+        // Only return early if there are no column/index migrations AND no tables were created
+        // AND --upgrade-sti is not requested (Issue #749)
+        const tablesCreated = diff.added_tables.length > 0;
+        if (
+          migrations.length === 0 &&
+          !tablesCreated &&
+          !options['upgrade-sti']
+        ) {
           console.log(
             '✅ Database schema is up to date - no migrations needed\n',
           );
           return;
         }
 
-        // If no schema migrations but upgrade-sti is requested, skip to upgrade-sti section
-        if (migrations.length === 0 && options['upgrade-sti']) {
+        // If no column/index migrations but upgrade-sti is requested, skip to upgrade-sti section
+        if (
+          migrations.length === 0 &&
+          !tablesCreated &&
+          options['upgrade-sti']
+        ) {
           console.log(
             '✅ Database schema is up to date - no migrations needed\n',
           );

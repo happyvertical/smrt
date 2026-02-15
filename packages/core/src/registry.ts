@@ -30,7 +30,6 @@
 
 import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 import { getModuleConfig } from '@happyvertical/smrt-config';
-import type { DatabaseInterface } from '@happyvertical/sql';
 import { SmrtCollection } from './collection';
 import type {
   ClassEmbeddingConfig,
@@ -801,17 +800,6 @@ export class ObjectRegistry {
       globalThis.__smrtRegistryStiSiblingsLoaded = new Set<string>();
     }
     return globalThis.__smrtRegistryStiSiblingsLoaded;
-  }
-
-  /**
-   * Track database instances that have had ensureAllSchemas called
-   * Prevents redundant calls and deprecation warning spam
-   */
-  private static get schemasInitialized(): WeakSet<object> {
-    if (!globalThis.__smrtRegistrySchemasInitialized) {
-      globalThis.__smrtRegistrySchemasInitialized = new WeakSet<object>();
-    }
-    return globalThis.__smrtRegistrySchemasInitialized;
   }
 
   /**
@@ -2232,51 +2220,6 @@ export class ObjectRegistry {
   }
 
   /**
-   * Ensure all registered SMRT classes have their database tables created.
-   *
-   * @deprecated Use `getTestDatabase()` from `@happyvertical/smrt-core/testing` for tests,
-   * or run `smrt db:setup` / `smrt db:migrate` for production databases.
-   * This method will be removed in a future version. See issue #665.
-   *
-   * This method was originally for JSON adapter to ensure cross-table queries work.
-   * Unlike SQLite/Postgres where all tables exist in the database file,
-   * JSON adapter loads tables on-demand which causes issues with subqueries
-   * and JOINs that reference tables not yet loaded.
-   *
-   * @param db - Database interface to create tables in
-   */
-  static async ensureAllSchemas(db: DatabaseInterface): Promise<void> {
-    // Skip if already initialized for this database instance
-    if (this.schemasInitialized.has(db)) {
-      return;
-    }
-
-    console.warn(
-      '[DEPRECATED] ObjectRegistry.ensureAllSchemas() is deprecated. ' +
-        'Use getTestDatabase() from @happyvertical/smrt-core/testing for tests, ' +
-        'or run "smrt db:setup" / "smrt db:migrate" for production databases. ' +
-        'See issue #665.',
-    );
-
-    // Mark as initialized before processing to prevent re-entry
-    this.schemasInitialized.add(db);
-
-    const { ensureSchema } = await import('./schema/utils.js');
-    const classNames = this.getClassNames();
-
-    for (const className of classNames) {
-      // Skip collection classes - they don't have their own tables
-      // Collections wrap item classes and share the item class's table
-      const registered = ObjectRegistry.classes.get(className);
-      if (registered?.extends === 'SmrtCollection') {
-        continue;
-      }
-
-      await ensureSchema(db, className);
-    }
-  }
-
-  /**
    * Try to load and register a class from external SMRT packages
    *
    * This method attempts to auto-discover classes from @happyvertical/smrt-* packages
@@ -2605,14 +2548,22 @@ export class ObjectRegistry {
       options,
     )) as SmrtCollection<T>;
 
-    // CRITICAL FIX for issue #603: For JSON adapter, ensure ALL tables exist upfront
-    // This enables cross-table queries (JOINs, NOT EXISTS, etc.) to work correctly.
-    // Unlike SQLite/Postgres where all tables exist in the database file,
-    // JSON adapter loads tables on-demand which causes issues with subqueries.
-    // Detection: JSON adapter has exportTable method (see schema-manager.ts:50-54)
+    // For JSON adapter, ensure ALL tables exist upfront (issue #603).
+    // JSON adapter loads tables on-demand which causes issues with cross-table
+    // queries (JOINs, NOT EXISTS subqueries).
     const db = (collection as any).db;
     if (db && (db as any).exportTable) {
-      await ObjectRegistry.ensureAllSchemas(db);
+      const { ensureSchema } = await import('./schema/utils.js');
+      const classNames = ObjectRegistry.getClassNames();
+      for (const className of classNames) {
+        const registered = ObjectRegistry.getClass(className);
+        if (registered?.extends === 'SmrtCollection') continue;
+        try {
+          await ensureSchema(db, className);
+        } catch {
+          // Non-critical: some classes may not have schemas yet
+        }
+      }
     }
 
     // Cache the initialized instance
