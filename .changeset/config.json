@@ -34,7 +34,10 @@
       "@happyvertical/smrt-users",
       "@happyvertical/smrt-vitest",
       "@happyvertical/smrt-svelte",
-      "@happyvertical/smrt-scanner"
+      "@happyvertical/smrt-scanner",
+      "@happyvertical/smrt-social",
+      "@happyvertical/smrt-video",
+      "@happyvertical/smrt-voice"
     ]
   ],
   "linked": [],
