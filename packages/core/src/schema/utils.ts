@@ -174,10 +174,10 @@ const _memoryDbSetupPromises = new WeakMap<
 >();
 
 /**
- * Clears the schema setup cache - useful for testing
+ * Clears the ensureSchema cache - useful for testing
  * @internal
  */
-export function _clearSetupTableCache() {
+export function _clearSchemaCache() {
   Object.keys(_ensureSchemaPromises).forEach((key) => {
     delete _ensureSchemaPromises[key];
   });

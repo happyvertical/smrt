@@ -1235,10 +1235,14 @@ export default testManifest;
               try {
                 await ensureSchema(db, className);
 
-                // Track table creation as a migration
+                // Track table creation as a migration.
+                // Note: ensureSchema generates and executes its own DDL.
+                // We record schema.ddl (from SchemaComparer) for reference;
+                // it should match what ensureSchema produced.
                 const migrationName = `create_table_${schema.tableName}`;
                 const upSql =
-                  schema.ddl || `-- CREATE TABLE ${schema.tableName}`;
+                  schema.ddl ||
+                  `-- Table created via ensureSchema('${className}')`;
                 const migrationDef = {
                   id: migrationName,
                   description: `Create table ${schema.tableName}`,
