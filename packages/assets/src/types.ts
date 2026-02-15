@@ -46,16 +46,26 @@ export interface AssetOptions extends SmrtObjectOptions {
   statusSlug?: string;
   ownerProfileId?: string | null;
   parentId?: string | null;
+  folderId?: string | null;
+  sourceType?: string;
+  externalId?: string;
   tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
 /**
- * Options for creating an Image instance
+ * Options for creating an AssetAssociation instance
  */
-export interface ImageOptions extends AssetOptions {
-  width?: number;
-  height?: number;
-  alt?: string;
+export interface AssetAssociationOptions extends SmrtObjectOptions {
+  assetId?: string;
+  metaType?: string;
+  metaId?: string;
+  role?: string;
+  sortOrder?: number;
 }
+
+/**
+ * Options for creating a Folder instance
+ */
+export interface FolderOptions extends AssetOptions {}

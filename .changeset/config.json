@@ -16,6 +16,7 @@
       "@happyvertical/smrt-dev-mcp",
       "@happyvertical/smrt-events",
       "@happyvertical/smrt-gnode",
+      "@happyvertical/smrt-images",
       "@happyvertical/smrt-jobs",
       "@happyvertical/smrt-ledgers",
       "@happyvertical/smrt-messages",

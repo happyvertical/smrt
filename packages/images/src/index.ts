@@ -1,0 +1,32 @@
+/**
+ * @happyvertical/smrt-images
+ *
+ * Image asset management with AI-powered categorization, search,
+ * editing, and metadata extraction.
+ *
+ * @packageDocumentation
+ */
+
+// Operations
+export { ImageCategorizer } from './categorizer';
+export { ImageDeriver } from './deriver';
+export { ImageEditor } from './editor';
+// Model (moved from smrt-assets)
+export { Image } from './image';
+export { ImageCollection } from './images';
+export { ImageMetadataExtractor } from './metadata';
+export { ImageSearch } from './search';
+// Types
+export type {
+  CategoryResult,
+  DeriveOptions,
+  ImageMetadataResult,
+  ImageOptions,
+  ImageSearchOptions,
+} from './types';
+export {
+  type AssetSourceAdapter,
+  type SourceAsset,
+  type SourceAssetMetadata,
+  UpstreamManager,
+} from './upstream';

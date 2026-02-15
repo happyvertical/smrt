@@ -247,4 +247,41 @@ export class AssetCollection extends SmrtCollection<Asset> {
       return asset;
     });
   }
+
+  /**
+   * Rollback to a previous version by creating a new version with the target's content.
+   * Does NOT delete intermediate versions (safe rollback).
+   *
+   * @param primaryVersionId - The primary version ID of the version chain
+   * @param targetVersion - The version number to rollback to
+   * @returns The newly created asset version with content copied from target
+   */
+  async rollbackToVersion(
+    primaryVersionId: string,
+    targetVersion: number,
+  ): Promise<Asset> {
+    const versions = await this.listVersions(primaryVersionId);
+    const target = versions.find((v) => v.version === targetVersion);
+
+    if (!target) {
+      throw new Error(
+        `Version ${targetVersion} not found for asset ${primaryVersionId}`,
+      );
+    }
+
+    // Create a new version that copies the target's sourceUri
+    return await this.createNewVersion(primaryVersionId, target.sourceUri, {
+      description: `Rollback to version ${targetVersion}`,
+    } as Partial<Asset>);
+  }
+
+  /**
+   * Get assets in a specific folder
+   *
+   * @param folderId - The folder ID to list contents for
+   * @returns Array of assets in this folder
+   */
+  async getByFolder(folderId: string): Promise<Asset[]> {
+    return (await this.list({ where: { folderId } })) as Asset[];
+  }
 }

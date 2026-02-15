@@ -59,6 +59,7 @@
     { "path": "./packages/content" },
     { "path": "./packages/events" },
     { "path": "./packages/gnode" },
+    { "path": "./packages/images" },
     { "path": "./packages/messages" },
     { "path": "./packages/places" },
     { "path": "./packages/products" },

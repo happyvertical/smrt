@@ -13,9 +13,9 @@ import {
   generateHeadlineCard,
   type HeadlineCardTemplate,
 } from '@happyvertical/images';
-import type { Image } from '@happyvertical/smrt-assets';
-import { ImageCollection } from '@happyvertical/smrt-assets';
 import type { DatabaseConfig } from '@happyvertical/smrt-core';
+import type { Image } from '@happyvertical/smrt-images';
+import { ImageCollection } from '@happyvertical/smrt-images';
 import type { Content } from './content';
 
 // ============================================================================

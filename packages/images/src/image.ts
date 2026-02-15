@@ -8,8 +8,8 @@
  * @smrt({ embeddings: { fields: ['alt', 'description'] } })
  */
 
+import { Asset } from '@happyvertical/smrt-assets';
 import { smrt } from '@happyvertical/smrt-core';
-import { Asset } from './asset';
 import type { ImageOptions } from './types';
 
 @smrt({

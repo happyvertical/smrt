@@ -1,30 +1,39 @@
 /**
  * @have/assets
  *
- * Asset management system with versioning, metadata, and AI-powered operations
+ * Asset management system with versioning, metadata, folders, associations,
+ * and provider-agnostic storage.
  *
  * @packageDocumentation
  */
 
+// Models
 export { Asset } from './asset';
+export { AssetAssociation } from './asset-association';
+// Collections
+export { AssetAssociationCollection } from './asset-associations';
 export { AssetMetafield } from './asset-metafield';
 export { AssetMetafieldCollection } from './asset-metafields';
 export { AssetStatus } from './asset-status';
 export { AssetStatusCollection } from './asset-statuses';
-export { AssetStore, type StoreOptions } from './asset-store';
-// Export models
+// Utilities
+export {
+  AssetStore,
+  type ProviderOptions,
+  type StoreOptions,
+} from './asset-store';
 export { AssetType } from './asset-type';
-// Export collections
 export { AssetTypeCollection } from './asset-types';
 export { AssetCollection } from './assets';
-export { Image } from './image';
-export { ImageCollection } from './images';
+export { Folder } from './folder';
+export { FolderCollection } from './folders';
 
 // Export types
 export type {
+  AssetAssociationOptions,
   AssetMetafieldOptions,
   AssetOptions,
   AssetStatusOptions,
   AssetTypeOptions,
-  ImageOptions,
+  FolderOptions,
 } from './types';

@@ -1,0 +1,40 @@
+/**
+ * AssetAssociation model - Links assets to any SmrtObject via polymorphic join
+ *
+ * Enables many-to-many relationships between assets and arbitrary objects
+ * (e.g., Article, Profile, Event) with role-based categorization.
+ */
+
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { AssetAssociationOptions } from './types';
+
+@smrt({
+  api: { include: ['list', 'get', 'create', 'delete'] },
+  mcp: { include: ['list', 'get', 'create'] },
+  cli: true,
+})
+export class AssetAssociation extends SmrtObject {
+  /** FK to Asset.id */
+  assetId = '';
+
+  /** Target class name (e.g., 'Article', 'Profile') */
+  metaType = '';
+
+  /** Target object ID */
+  metaId = '';
+
+  /** Role of this association (e.g., 'hero', 'thumbnail', 'attachment') */
+  role = 'default';
+
+  /** Sort order for ordering assets within a role */
+  sortOrder: number = 0;
+
+  constructor(options: AssetAssociationOptions = {}) {
+    super(options);
+    if (options.assetId) this.assetId = options.assetId;
+    if (options.metaType) this.metaType = options.metaType;
+    if (options.metaId) this.metaId = options.metaId;
+    if (options.role) this.role = options.role;
+    if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
+  }
+}

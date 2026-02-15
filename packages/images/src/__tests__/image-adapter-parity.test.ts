@@ -17,10 +17,10 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AssetCollection } from '@happyvertical/smrt-assets';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AssetCollection } from '../assets';
 import { Image } from '../image';
 import { ImageCollection } from '../images';
 

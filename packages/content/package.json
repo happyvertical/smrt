@@ -58,6 +58,7 @@
     "@happyvertical/pdf": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-images": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/spider": "catalog:",
     "@happyvertical/sql": "catalog:",
