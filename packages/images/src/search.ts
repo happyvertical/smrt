@@ -27,50 +27,36 @@ export class ImageSearch {
     query: string,
     searchOptions: ImageSearchOptions = {},
   ): Promise<Image[]> {
-    // Build where clause from filters
+    // Build where clause from dimension filters
     const where: Record<string, unknown> = {};
 
     if (searchOptions.minWidth) where['width >='] = searchOptions.minWidth;
     if (searchOptions.minHeight) where['height >='] = searchOptions.minHeight;
 
-    // Text search on name, description, alt
-    if (query) {
-      where['name like'] = `%${query}%`;
-    }
+    // Single DB query with dimension filters; text matching done in-memory
+    // to avoid multiple queries and dedup issues
+    const fetchLimit = query
+      ? (searchOptions.limit ?? 100) * 3
+      : searchOptions.limit;
 
     let results = (await this.collection.list({
       where,
-      limit: searchOptions.limit,
+      limit: fetchLimit,
       offset: searchOptions.offset,
     })) as Image[];
 
-    // Also search description and alt if query didn't match name
+    // Text filter across name, description, and alt
     if (query) {
-      const descResults = (await this.collection.list({
-        where: {
-          ...where,
-          'name like': undefined,
-          'description like': `%${query}%`,
-        },
-        limit: searchOptions.limit,
-      })) as Image[];
-
-      const altResults = (await this.collection.list({
-        where: { ...where, 'name like': undefined, 'alt like': `%${query}%` },
-        limit: searchOptions.limit,
-      })) as Image[];
-
-      // Merge and deduplicate
-      const seen = new Set(results.map((r) => r.id));
-      for (const img of [...descResults, ...altResults]) {
-        if (!seen.has(img.id)) {
-          seen.add(img.id);
-          results.push(img);
-        }
-      }
+      const lowerQuery = query.toLowerCase();
+      results = results.filter(
+        (img) =>
+          img.name.toLowerCase().includes(lowerQuery) ||
+          img.description?.toLowerCase().includes(lowerQuery) ||
+          img.alt?.toLowerCase().includes(lowerQuery),
+      );
     }
 
-    // Apply orientation filter in-memory
+    // Apply orientation filter
     if (searchOptions.orientation) {
       results = results.filter((img) => {
         switch (searchOptions.orientation) {
@@ -86,7 +72,7 @@ export class ImageSearch {
       });
     }
 
-    // Apply limit after merging
+    // Apply final limit
     if (searchOptions.limit && results.length > searchOptions.limit) {
       results = results.slice(0, searchOptions.limit);
     }

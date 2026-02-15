@@ -67,18 +67,17 @@ export class ImageDeriver {
       const derived = (await this.collection.create({
         name: `derived-${sources[0].name}-${i + 1}`,
         mimeType: 'image/png',
+        sourceUri: '',
         parentId: sources[0].id,
         typeSlug: 'image',
         description: `Derived: ${prompt}`,
       })) as Image;
 
-      const stored = await this.store.store(derived.name, result, {
+      const sourceUri = await this.store.storeFile(derived, result, {
         mimeType: 'image/png',
         typeSlug: 'image',
-        parentId: sources[0].id!,
       });
-
-      derived.sourceUri = stored.sourceUri;
+      derived.sourceUri = sourceUri;
       await derived.save();
 
       results.push(derived);

@@ -100,16 +100,10 @@ export class UpstreamManager {
     // Download from upstream
     const { data, metadata } = await adapter.download(sourceAsset.externalId);
 
-    // Store locally
-    const stored = await this.store.store(sourceAsset.name, data, {
-      mimeType: sourceAsset.mimeType,
-      typeSlug: 'image',
-    });
-
-    // Create the Image with provenance
+    // Create the Image record with provenance
     const image = (await this.collection.create({
       name: sourceAsset.name,
-      sourceUri: stored.sourceUri,
+      sourceUri: '',
       mimeType: sourceAsset.mimeType,
       width: metadata.width ?? 0,
       height: metadata.height ?? 0,
@@ -121,6 +115,14 @@ export class UpstreamManager {
       externalId: sourceAsset.externalId,
       typeSlug: 'image',
     })) as Image;
+
+    // Write file data for the existing record
+    const sourceUri = await this.store.storeFile(image, data, {
+      mimeType: sourceAsset.mimeType,
+      typeSlug: 'image',
+    });
+    image.sourceUri = sourceUri;
+    await image.save();
 
     return image;
   }

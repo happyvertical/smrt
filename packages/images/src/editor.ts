@@ -246,16 +246,10 @@ export class ImageEditor {
     const mimeType = overrides.mimeType ?? source.mimeType;
     const typeSlug = source.typeSlug || 'image';
 
-    const stored = await this.store.store(overrides.name, data, {
-      mimeType,
-      typeSlug,
-      parentId: source.id!,
-      description: overrides.description,
-    });
-
+    // Create only the Image record (not a plain Asset via store.store())
     const derivative = (await this.collection.create({
       name: overrides.name,
-      sourceUri: stored.sourceUri,
+      sourceUri: '',
       mimeType,
       width: overrides.width ?? source.width,
       height: overrides.height ?? source.height,
@@ -264,6 +258,14 @@ export class ImageEditor {
       typeSlug,
       description: overrides.description ?? '',
     })) as Image;
+
+    // Write file data for the existing record
+    const sourceUri = await this.store.storeFile(derivative, data, {
+      mimeType,
+      typeSlug,
+    });
+    derivative.sourceUri = sourceUri;
+    await derivative.save();
 
     return derivative;
   }

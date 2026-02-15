@@ -30,6 +30,7 @@ export class FolderCollection extends SmrtCollection<Folder> {
     // All descendants — walk the tree breadth-first
     const result: Folder[] = [];
     const queue: string[] = [rootId];
+    const visited = new Set<string>([rootId]);
 
     while (queue.length > 0) {
       const currentId = queue.shift()!;
@@ -39,8 +40,11 @@ export class FolderCollection extends SmrtCollection<Folder> {
       })) as Folder[];
 
       for (const child of children) {
-        result.push(child);
-        queue.push(child.id!);
+        if (child.id && !visited.has(child.id)) {
+          visited.add(child.id);
+          result.push(child);
+          queue.push(child.id);
+        }
       }
     }
 
@@ -56,8 +60,10 @@ export class FolderCollection extends SmrtCollection<Folder> {
   async getPath(folderId: string): Promise<Folder[]> {
     const path: Folder[] = [];
     let currentId: string | null = folderId;
+    const visited = new Set<string>();
 
-    while (currentId) {
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
       const folder = (await this.get({ id: currentId })) as Folder | null;
       if (!folder) break;
       path.unshift(folder);

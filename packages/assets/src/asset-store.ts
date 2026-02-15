@@ -146,6 +146,31 @@ export class AssetStore {
   }
 
   /**
+   * Write file data for an existing Asset record (no DB record created).
+   *
+   * Use this when you've already created the record (e.g., via a
+   * collection.create()) and only need to persist the file data.
+   *
+   * @param asset - The existing asset to write data for
+   * @param data - File data as a Buffer
+   * @param opts - Storage options (mimeType required)
+   * @returns The sourceUri for the written file
+   */
+  async storeFile(
+    asset: Asset,
+    data: Buffer,
+    opts: { mimeType: string; typeSlug?: string },
+  ): Promise<string> {
+    const fs = this.getFs();
+    const ext = MIME_TO_EXT[opts.mimeType] ?? 'bin';
+    const typeSlug = opts.typeSlug ?? 'file';
+    const filePath = `${typeSlug}/${asset.id}.${ext}`;
+    const sourceUri = this.buildSourceUri(filePath);
+    await fs.write(filePath, data, { createParents: true });
+    return sourceUri;
+  }
+
+  /**
    * Write buffer to disk and create an Asset record.
    *
    * @param name - Human-readable name for the asset

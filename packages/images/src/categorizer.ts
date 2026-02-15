@@ -20,9 +20,12 @@ export class ImageCategorizer {
    * @param buffer - Optional raw image data for vision analysis
    * @returns Categorization results with tags, description, and subjects
    */
-  async categorize(image: Image, _buffer?: Buffer): Promise<CategoryResult> {
+  async categorize(image: Image, buffer?: Buffer): Promise<CategoryResult> {
     const { getAI } = await import('@happyvertical/ai');
     const ai = await getAI(this.options.ai);
+
+    // TODO: When AI vision API is available, pass buffer for visual analysis
+    void buffer;
 
     const prompt = `Analyze this image and provide categorization.
 Image name: ${image.name}
