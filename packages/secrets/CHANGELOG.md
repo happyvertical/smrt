@@ -1,5 +1,13 @@
 # @happyvertical/smrt-secrets
 
+## 0.20.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.20.8
+  - @happyvertical/smrt-tenancy@0.20.8
+
 ## 0.20.7
 
 ### Patch Changes

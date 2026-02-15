@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.8
+
+### Patch Changes
+
+- ### Features
+
+  - extract Image into new package, enhance smrt-assets infrastructure (#937) (smrt-images)
+  - @happyvertical/smrt-scanner@0.20.8
+  - @happyvertical/smrt-config@0.20.8
+  - @happyvertical/smrt-types@0.20.8
+
 ## 0.20.7
 
 ### Patch Changes
