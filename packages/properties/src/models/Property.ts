@@ -11,6 +11,7 @@ import type { PropertyOptions, PropertyStatus } from '../types';
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
