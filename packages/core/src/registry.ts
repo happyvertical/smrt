@@ -3107,7 +3107,11 @@ export class ObjectRegistry {
           // (Issue #690: db:diff needs these columns to detect schema changes)
           const isSTI = tableStrategy === 'sti';
           if (isSTI) {
-            baseColumns._meta_type = { type: 'TEXT', notNull: true };
+            baseColumns._meta_type = {
+              type: 'TEXT',
+              notNull: true,
+              defaultValue: '',
+            };
             baseColumns._meta_data = { type: 'JSON' };
           }
 
@@ -3285,7 +3289,11 @@ export class ObjectRegistry {
 
           const isSTI = tableStrategy === 'sti';
           if (isSTI) {
-            baseColumns._meta_type = { type: 'TEXT', notNull: true };
+            baseColumns._meta_type = {
+              type: 'TEXT',
+              notNull: true,
+              defaultValue: '',
+            };
             baseColumns._meta_data = { type: 'JSON' };
           }
 

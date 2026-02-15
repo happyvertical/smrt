@@ -5,13 +5,33 @@
  * 1. Property CRUD operations
  * 2. Property status management
  * 3. Property-Zone relationships
+ * 4. STI polymorphic save/load
  */
 
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  type Meta,
+  ObjectRegistry,
+  SmrtCollection,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PropertyCollection } from '../collections/Properties';
+import { Property } from '../models/Property';
+
+// STI subclass for testing
+@smrt()
+class TestSite extends Property {
+  static readonly _meta_type = 'TestSite';
+  databaseUrl: Meta<string> = '';
+  agents: Meta<string[]> = [];
+}
+
+class TestSiteCollection extends SmrtCollection<TestSite> {
+  static readonly _itemClass = TestSite;
+}
 
 describe('Property', () => {
   let dbPath: string;
@@ -210,6 +230,86 @@ describe('Property', () => {
       expect(loaded?.metadata.analyticsId).toBe('UA-12345');
       expect(loaded?.metadata.theme).toBe('dark');
       expect(loaded?.metadata.features).toEqual(['comments', 'newsletter']);
+    });
+  });
+
+  describe('STI (Single Table Inheritance)', () => {
+    beforeEach(() => {
+      ObjectRegistry.registerCollection('TestSite', TestSiteCollection);
+    });
+
+    it('should save and load STI subclass with _meta_type', async () => {
+      const properties = await PropertyCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+      });
+
+      const site = await properties.create({
+        _meta_type: 'TestSite',
+        name: 'My News Site',
+        domain: 'news.example.com',
+        databaseUrl: 'postgres://localhost/news',
+        agents: ['crawler', 'publisher'],
+      });
+      await site.save();
+
+      const loaded = await properties.get({ id: site.id });
+      expect(loaded).toBeInstanceOf(TestSite);
+      expect(loaded?.name).toBe('My News Site');
+      expect(loaded?.domain).toBe('news.example.com');
+      expect((loaded as TestSite).databaseUrl).toBe(
+        'postgres://localhost/news',
+      );
+      expect((loaded as TestSite).agents).toEqual(['crawler', 'publisher']);
+    });
+
+    it('should load base Property with empty _meta_type', async () => {
+      const properties = await PropertyCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+      });
+
+      const property = await properties.create({
+        name: 'Plain Property',
+        domain: 'plain.example.com',
+      });
+      await property.save();
+
+      const loaded = await properties.get({ id: property.id });
+      expect(loaded).toBeInstanceOf(Property);
+      expect(loaded).not.toBeInstanceOf(TestSite);
+      expect(loaded?.name).toBe('Plain Property');
+    });
+
+    it('should return mixed types in polymorphic list', async () => {
+      const properties = await PropertyCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+      });
+
+      await (
+        await properties.create({
+          name: 'Base Property',
+          domain: 'base.example.com',
+        })
+      ).save();
+
+      await (
+        await properties.create({
+          _meta_type: 'TestSite',
+          name: 'Site Property',
+          domain: 'site.example.com',
+          databaseUrl: 'postgres://localhost/site',
+        })
+      ).save();
+
+      const all = await properties.list({});
+      expect(all).toHaveLength(2);
+
+      const base = all.find((p) => p.domain === 'base.example.com');
+      const site = all.find((p) => p.domain === 'site.example.com');
+
+      expect(base).toBeInstanceOf(Property);
+      expect(base).not.toBeInstanceOf(TestSite);
+      expect(site).toBeInstanceOf(TestSite);
+      expect((site as TestSite).databaseUrl).toBe('postgres://localhost/site');
     });
   });
 });
