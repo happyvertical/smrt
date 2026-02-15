@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.7
+
+### Patch Changes
+
+- ### Features
+
+  - add STI support to Property class (#936) (smrt-properties)
+  - @happyvertical/smrt-scanner@0.20.7
+  - @happyvertical/smrt-config@0.20.7
+  - @happyvertical/smrt-types@0.20.7
+
 ## 0.20.6
 
 ### Patch Changes
