@@ -181,7 +181,7 @@ export async function fieldsFromClass(
   return fields;
 }
 
-// NOTE: generateSchema and setupTableFromClass moved to schema/utils.ts
+// NOTE: generateSchema moved to schema/utils.ts
 // to prevent bundling Node.js-only code (SchemaGenerator with node:crypto) in browser builds.
 // Import from './schema/utils' in Node.js code that needs schema generation.
 

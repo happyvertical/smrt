@@ -507,7 +507,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Perform async initialization
     await instance.initialize();
 
-    // Verify table exists (tables must be created via smrt db:setup or smrt db:migrate)
+    // Verify table exists (tables must be created via smrt db:migrate)
     // This replaces automatic schema creation which caused race conditions (issue #665)
     if (instance.db && (this as any)._itemClass) {
       const className = (this as any)._itemClass.name;

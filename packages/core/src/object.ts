@@ -966,7 +966,7 @@ export class SmrtObject extends SmrtClass {
         this.created_at = new Date();
       }
 
-      // Verify table exists (tables must be created via smrt db:setup or smrt db:migrate)
+      // Verify table exists (tables must be created via smrt db:migrate)
       // This replaces automatic schema creation which caused race conditions (issue #665)
       if (this.db) {
         const tableName = this.tableName;

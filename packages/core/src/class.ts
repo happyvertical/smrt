@@ -255,13 +255,23 @@ export class SmrtClass {
        */
       this.options.db = this._db;
 
-      // CRITICAL FIX for issue #603: For JSON adapter, ensure ALL tables exist upfront
-      // This enables cross-table queries (JOINs, NOT EXISTS, etc.) to work correctly.
-      // Unlike SQLite/Postgres where all tables exist in the database file,
-      // JSON adapter loads tables on-demand which causes issues with subqueries.
+      // For JSON adapter, ensure ALL tables exist upfront (issue #603).
+      // JSON adapter loads tables on-demand which causes issues with cross-table
+      // queries (JOINs, NOT EXISTS subqueries). Unlike SQLite/Postgres where all
+      // tables exist in the database file, JSON needs explicit table creation.
       // Detection: JSON adapter has exportTable method (see schema-manager.ts:50-54)
       if ((this._db as any).exportTable) {
-        await ObjectRegistry.ensureAllSchemas(this._db);
+        const { ensureSchema } = await import('./schema/utils.js');
+        const classNames = ObjectRegistry.getClassNames();
+        for (const className of classNames) {
+          const registered = ObjectRegistry.getClass(className);
+          if (registered?.extends === 'SmrtCollection') continue;
+          try {
+            await ensureSchema(this._db, className);
+          } catch {
+            // Non-critical: some classes may not have schemas yet
+          }
+        }
       }
 
       await this.ensureSystemTables();

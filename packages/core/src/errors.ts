@@ -153,7 +153,7 @@ export class DatabaseError extends SmrtError {
   static schemaMissing(tableName: string, className: string): DatabaseError {
     return new DatabaseError(
       `Table '${tableName}' does not exist for class '${className}'. ` +
-        `Run 'smrt db:setup' or 'smrt db:migrate' to create database schema.`,
+        `Run 'smrt db:migrate' to create database schema.`,
       'DB_SCHEMA_MISSING',
       { tableName, className },
     );
