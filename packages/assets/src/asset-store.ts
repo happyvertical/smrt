@@ -3,9 +3,15 @@
  *
  * Writes buffers to disk via @happyvertical/files and creates
  * corresponding Asset records in the database via AssetCollection.
+ *
+ * Supports provider-agnostic storage (local, S3, etc.) via @happyvertical/files.
  */
 
-import { type FilesystemInterface, getFilesystem } from '@happyvertical/files';
+import {
+  type FilesystemInterface,
+  type GetFilesystemOptions,
+  getFilesystem,
+} from '@happyvertical/files';
 import type { Asset } from './asset';
 import type { AssetCollection } from './assets';
 
@@ -50,17 +56,28 @@ export interface StoreOptions {
 }
 
 /**
+ * Provider options for configuring the filesystem backend.
+ * Accepts any @happyvertical/files options or a simple basePath string for local storage.
+ */
+export type ProviderOptions = GetFilesystemOptions | string;
+
+/**
  * AssetStore manages file storage and Asset record creation.
  *
- * Files are stored on disk using @happyvertical/files with the convention:
- * `{basePath}/{typeSlug}/{assetId}.{ext}`
+ * Files are stored using @happyvertical/files with the convention:
+ * `{typeSlug}/{assetId}.{ext}`
  *
  * @example
  * ```typescript
  * import { AssetStore } from '@happyvertical/smrt-assets';
  *
+ * // Local storage (backward-compatible)
  * const store = new AssetStore('dev/data/assets', assetCollection);
  * await store.initialize();
+ *
+ * // Provider-agnostic storage
+ * const s3Store = new AssetStore({ type: 's3', bucket: 'my-bucket' }, assetCollection);
+ * await s3Store.initialize();
  *
  * // Store a video buffer
  * const asset = await store.store('my-video', videoBuffer, {
@@ -77,21 +94,30 @@ export interface StoreOptions {
  */
 export class AssetStore {
   private fs: FilesystemInterface | null = null;
+  private readonly fsOptions: GetFilesystemOptions;
 
   constructor(
-    private readonly basePath: string,
+    providerOrBasePath: ProviderOptions,
     private readonly collection: AssetCollection,
-  ) {}
+  ) {
+    if (typeof providerOrBasePath === 'string') {
+      this.fsOptions = { type: 'local', basePath: providerOrBasePath };
+    } else {
+      this.fsOptions = providerOrBasePath;
+    }
+  }
+
+  /** The base path for local storage, or empty string for non-local providers */
+  get basePath(): string {
+    return (this.fsOptions as any).basePath ?? '';
+  }
 
   /**
    * Initialize the filesystem adapter.
    * Must be called before any file operations.
    */
   async initialize(): Promise<this> {
-    this.fs = await getFilesystem({
-      type: 'local',
-      basePath: this.basePath,
-    });
+    this.fs = await getFilesystem(this.fsOptions);
     return this;
   }
 
@@ -103,6 +129,45 @@ export class AssetStore {
       throw new Error('AssetStore not initialized. Call initialize() first.');
     }
     return this.fs;
+  }
+
+  /**
+   * Build a sourceUri for the given file path based on the provider type.
+   */
+  private buildSourceUri(filePath: string): string {
+    const type = this.fsOptions.type;
+    if (type === 's3') {
+      const bucket = (this.fsOptions as any).bucket ?? '';
+      return `s3://${bucket}/${filePath}`;
+    }
+    // Default to file:// for local and other types
+    const base = this.basePath;
+    return base ? `file://${base}/${filePath}` : `file://${filePath}`;
+  }
+
+  /**
+   * Write file data for an existing Asset record (no DB record created).
+   *
+   * Use this when you've already created the record (e.g., via a
+   * collection.create()) and only need to persist the file data.
+   *
+   * @param asset - The existing asset to write data for
+   * @param data - File data as a Buffer
+   * @param opts - Storage options (mimeType required)
+   * @returns The sourceUri for the written file
+   */
+  async storeFile(
+    asset: Asset,
+    data: Buffer,
+    opts: { mimeType: string; typeSlug?: string },
+  ): Promise<string> {
+    const fs = this.getFs();
+    const ext = MIME_TO_EXT[opts.mimeType] ?? 'bin';
+    const typeSlug = opts.typeSlug ?? 'file';
+    const filePath = `${typeSlug}/${asset.id}.${ext}`;
+    const sourceUri = this.buildSourceUri(filePath);
+    await fs.write(filePath, data, { createParents: true });
+    return sourceUri;
   }
 
   /**
@@ -131,10 +196,10 @@ export class AssetStore {
 
     // Build file path: {typeSlug}/{assetId}.{ext}
     const filePath = `${typeSlug}/${asset.id}.${ext}`;
-    const sourceUri = `file://${this.basePath}/${filePath}`;
+    const sourceUri = this.buildSourceUri(filePath);
 
     try {
-      // Write file to disk
+      // Write file to storage
       await fs.write(filePath, data, { createParents: true });
     } catch (err) {
       // Clean up orphaned Asset record on file write failure
@@ -150,6 +215,68 @@ export class AssetStore {
   }
 
   /**
+   * Store a new version of an existing asset.
+   *
+   * @param asset - The existing asset to version
+   * @param data - File data for the new version
+   * @param opts - Optional overrides for store options
+   * @returns The newly created version Asset
+   */
+  async storeVersion(
+    asset: Asset,
+    data: Buffer,
+    opts: Partial<StoreOptions> = {},
+  ): Promise<Asset> {
+    const primaryVersionId = asset.primaryVersionId ?? asset.id!;
+    const newVersion = await this.collection.createNewVersion(
+      primaryVersionId,
+      '', // sourceUri will be set by store
+      { ...opts },
+    );
+
+    const fs = this.getFs();
+    const mimeType = opts.mimeType ?? asset.mimeType;
+    const ext = MIME_TO_EXT[mimeType] ?? 'bin';
+    const typeSlug = opts.typeSlug ?? asset.typeSlug ?? 'file';
+    const filePath = `${typeSlug}/${newVersion.id}.${ext}`;
+    const sourceUri = this.buildSourceUri(filePath);
+
+    try {
+      await fs.write(filePath, data, { createParents: true });
+    } catch (err) {
+      await newVersion.delete();
+      throw err;
+    }
+
+    newVersion.sourceUri = sourceUri;
+    if (opts.mimeType) newVersion.mimeType = opts.mimeType;
+    await newVersion.save();
+
+    return newVersion;
+  }
+
+  /**
+   * Read file data for a specific version of an asset.
+   *
+   * @param asset - The asset (any version in the chain)
+   * @param version - The version number to read
+   * @returns File data as a Buffer
+   */
+  async readVersion(asset: Asset, version: number): Promise<Buffer> {
+    const primaryVersionId = asset.primaryVersionId ?? asset.id!;
+    const versions = await this.collection.listVersions(primaryVersionId);
+    const targetVersion = versions.find((v) => v.version === version);
+
+    if (!targetVersion) {
+      throw new Error(
+        `Version ${version} not found for asset ${primaryVersionId}`,
+      );
+    }
+
+    return this.read(targetVersion);
+  }
+
+  /**
    * Read file data from an Asset's sourceUri.
    *
    * @param asset - Asset to read data for
@@ -158,9 +285,11 @@ export class AssetStore {
   async read(asset: Asset): Promise<Buffer> {
     const fs = this.getFs();
     const filePath = AssetStore.pathFromUri(asset.sourceUri);
-    const relativePath = filePath.startsWith(this.basePath)
-      ? filePath.slice(this.basePath.length + 1)
-      : filePath;
+    const base = this.basePath;
+    const relativePath =
+      base && filePath.startsWith(base)
+        ? filePath.slice(base.length + 1)
+        : filePath;
     return (await fs.read(relativePath, { raw: true })) as Buffer;
   }
 
@@ -193,9 +322,11 @@ export class AssetStore {
     // Delete the file if it exists
     if (asset.sourceUri) {
       const filePath = AssetStore.pathFromUri(asset.sourceUri);
-      const relativePath = filePath.startsWith(this.basePath)
-        ? filePath.slice(this.basePath.length + 1)
-        : filePath;
+      const base = this.basePath;
+      const relativePath =
+        base && filePath.startsWith(base)
+          ? filePath.slice(base.length + 1)
+          : filePath;
       try {
         await fs.delete(relativePath);
       } catch {
@@ -208,14 +339,21 @@ export class AssetStore {
   }
 
   /**
-   * Extract filesystem path from a file:// sourceUri.
+   * Extract filesystem path from a sourceUri.
+   * Handles file://, s3://, and plain paths.
    *
-   * @param sourceUri - Asset sourceUri (e.g., 'file:///path/to/file.mp4')
+   * @param sourceUri - Asset sourceUri (e.g., 'file:///path/to/file.mp4', 's3://bucket/key')
    * @returns Filesystem path
    */
   static pathFromUri(sourceUri: string): string {
     if (sourceUri.startsWith('file://')) {
       return sourceUri.slice(7);
+    }
+    if (sourceUri.startsWith('s3://')) {
+      // Return everything after s3://bucket/
+      const withoutScheme = sourceUri.slice(5);
+      const slashIdx = withoutScheme.indexOf('/');
+      return slashIdx >= 0 ? withoutScheme.slice(slashIdx + 1) : withoutScheme;
     }
     return sourceUri;
   }

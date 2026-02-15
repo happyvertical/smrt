@@ -8,6 +8,7 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { Tag } from '@happyvertical/smrt-tags';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type { AssetAssociation } from './asset-association';
 import type { AssetStatus } from './asset-status';
 import type { AssetType } from './asset-type';
 import type { AssetOptions } from './types';
@@ -38,6 +39,11 @@ export class Asset extends SmrtObject {
   statusSlug = ''; // FK to AssetStatus.slug
   ownerProfileId: string | null = null; // FK to Profile.id (nullable)
   parentId: string | null = null; // FK to Asset.id (for derivatives)
+  folderId: string | null = null; // FK to Folder Asset.id
+
+  // Provenance fields
+  sourceType = ''; // 'local', 'shutterstock', 'google-photos', 'upstream-smrt'
+  externalId = ''; // Original ID in upstream source
 
   // Timestamps
   createdAt = new Date();
@@ -58,6 +64,9 @@ export class Asset extends SmrtObject {
     if (options.ownerProfileId !== undefined)
       this.ownerProfileId = options.ownerProfileId;
     if (options.parentId !== undefined) this.parentId = options.parentId;
+    if (options.folderId !== undefined) this.folderId = options.folderId;
+    if (options.sourceType) this.sourceType = options.sourceType;
+    if (options.externalId) this.externalId = options.externalId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
@@ -158,6 +167,39 @@ export class Asset extends SmrtObject {
 
     const { AssetStatus } = await import('./asset-status');
     return await AssetStatus.getBySlug(this.statusSlug);
+  }
+
+  /**
+   * Get all associations for this asset
+   *
+   * @returns Array of AssetAssociation instances
+   */
+  async getAssociations(): Promise<AssetAssociation[]> {
+    const { AssetAssociationCollection } = await import('./asset-associations');
+    const associations = await AssetAssociationCollection.create({
+      db: this.db,
+    });
+    return await associations.getForAsset(this.id!);
+  }
+
+  /**
+   * Associate this asset with a target object
+   *
+   * @param metaType - Target class name (e.g., 'Article')
+   * @param metaId - Target object ID
+   * @param role - Association role (default: 'default')
+   * @returns The created AssetAssociation
+   */
+  async associateWith(
+    metaType: string,
+    metaId: string,
+    role = 'default',
+  ): Promise<AssetAssociation> {
+    const { AssetAssociationCollection } = await import('./asset-associations');
+    const associations = await AssetAssociationCollection.create({
+      db: this.db,
+    });
+    return await associations.associate(this.id!, metaType, metaId, role);
   }
 
   /**

@@ -15,9 +15,8 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Asset } from '../asset';
-import { AssetCollection } from '../assets';
 import { Image } from '../image';
 import { ImageCollection } from '../images';
 

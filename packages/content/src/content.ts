@@ -1,7 +1,8 @@
-import type { Asset, Image } from '@happyvertical/smrt-assets';
-import { ImageCollection } from '@happyvertical/smrt-assets';
+import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { Image } from '@happyvertical/smrt-images';
+import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';

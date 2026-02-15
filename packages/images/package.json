@@ -1,0 +1,54 @@
+{
+  "name": "@happyvertical/smrt-images",
+  "version": "0.20.7",
+  "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "test": "npx vitest run --passWithNoTests",
+    "test:watch": "npx vitest"
+  },
+  "dependencies": {
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/images": "catalog:",
+    "@happyvertical/smrt-assets": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/utils": "catalog:"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "@types/node": "25.0.9",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
+  },
+  "keywords": [
+    "ai",
+    "smrt",
+    "images",
+    "image-processing",
+    "categorization",
+    "search"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}
