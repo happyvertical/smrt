@@ -42,7 +42,7 @@ export class MessageCollection extends SmrtCollection<Message> {
       if (filters.messageType) {
         messages = messages.filter((m) => {
           const metaType = (m as any)._meta_type || '';
-          return metaType.includes(filters.messageType!);
+          return metaType.includes(filters.messageType as string);
         });
       }
       if (filters.from) {

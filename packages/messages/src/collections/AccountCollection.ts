@@ -65,7 +65,7 @@ export class AccountCollection extends SmrtCollection<Account> {
       if (filters.accountType) {
         accounts = accounts.filter((a) => {
           const metaType = (a as any)._meta_type || '';
-          return metaType.includes(filters.accountType!);
+          return metaType.includes(filters.accountType as string);
         });
       }
     }
