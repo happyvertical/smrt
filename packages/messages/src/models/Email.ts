@@ -1,40 +1,32 @@
 /**
- * Email model - Core email message with AI methods
+ * Email model - Email message extending the Message STI base
+ *
+ * Retains all email-specific fields (RFC 822 compliance, folders, etc.)
+ * while inheriting common message fields from Message.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { smrt } from '@happyvertical/smrt-core';
 import type { EmailOptions } from '../types';
+import { Message } from './Message';
 
-@TenantScoped({ mode: 'optional' })
 @smrt({
+  tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
-export class Email extends SmrtObject {
-  @tenantId({ nullable: true })
-  tenantId: string | null = null;
-
-  accountId = '';
+export class Email extends Message {
+  // RFC 822 fields
   messageId = ''; // RFC 822 Message-ID header
-  threadId = '';
   inReplyTo = '';
 
-  // Sender
-  fromAddress = '';
-  fromName = '';
-
-  // Recipients (JSON arrays)
-  toAddresses = ''; // JSON array of {address, name}
+  // Additional recipients
   ccAddresses = '';
   bccAddresses = '';
   replyToAddress = '';
   replyToName = '';
 
-  // Content
-  subject = '';
-  date: Date | null = null;
+  // Email-specific content
   textBody = '';
   htmlBody = '';
 
@@ -44,35 +36,19 @@ export class Email extends SmrtObject {
   labels = ''; // JSON array (Gmail)
   flags = ''; // JSON array (IMAP)
 
-  // Status flags
-  isRead = false;
-  isFlagged = false;
+  // Email-specific status flags
   isAnswered = false;
   isDraft = false;
-  hasAttachments = false;
 
-  // Metadata
-  size = 0;
+  // Raw data
   rawMessage = '';
   headers = ''; // JSON object
-
-  // Timestamps
-  createdAt = new Date();
-  updatedAt = new Date();
 
   constructor(options: EmailOptions = {}) {
     super(options);
 
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
-    if (options.accountId !== undefined) this.accountId = options.accountId;
     if (options.messageId !== undefined) this.messageId = options.messageId;
-    if (options.threadId !== undefined) this.threadId = options.threadId;
     if (options.inReplyTo !== undefined) this.inReplyTo = options.inReplyTo;
-    if (options.fromAddress !== undefined)
-      this.fromAddress = options.fromAddress;
-    if (options.fromName !== undefined) this.fromName = options.fromName;
-    if (options.toAddresses !== undefined)
-      this.toAddresses = options.toAddresses;
     if (options.ccAddresses !== undefined)
       this.ccAddresses = options.ccAddresses;
     if (options.bccAddresses !== undefined)
@@ -81,44 +57,21 @@ export class Email extends SmrtObject {
       this.replyToAddress = options.replyToAddress;
     if (options.replyToName !== undefined)
       this.replyToName = options.replyToName;
-    if (options.subject !== undefined) this.subject = options.subject;
-    if (options.date !== undefined) this.date = options.date || null;
     if (options.textBody !== undefined) this.textBody = options.textBody;
     if (options.htmlBody !== undefined) this.htmlBody = options.htmlBody;
     if (options.folderId !== undefined) this.folderId = options.folderId;
     if (options.folderPath !== undefined) this.folderPath = options.folderPath;
     if (options.labels !== undefined) this.labels = options.labels;
     if (options.flags !== undefined) this.flags = options.flags;
-    if (options.isRead !== undefined) this.isRead = options.isRead;
-    if (options.isFlagged !== undefined) this.isFlagged = options.isFlagged;
     if (options.isAnswered !== undefined) this.isAnswered = options.isAnswered;
     if (options.isDraft !== undefined) this.isDraft = options.isDraft;
-    if (options.hasAttachments !== undefined)
-      this.hasAttachments = options.hasAttachments;
-    if (options.size !== undefined) this.size = options.size;
     if (options.rawMessage !== undefined) this.rawMessage = options.rawMessage;
     if (options.headers !== undefined) this.headers = options.headers;
-    if (options.createdAt) this.createdAt = options.createdAt;
-    if (options.updatedAt) this.updatedAt = options.updatedAt;
-  }
 
-  /**
-   * Get to addresses as parsed array
-   */
-  getToAddresses(): Array<{ address: string; name?: string }> {
-    if (!this.toAddresses) return [];
-    try {
-      return JSON.parse(this.toAddresses);
-    } catch {
-      return [];
+    // Populate base body from textBody for unified access
+    if (options.textBody && !options.body) {
+      this.body = options.textBody;
     }
-  }
-
-  /**
-   * Set to addresses from array
-   */
-  setToAddresses(addresses: Array<{ address: string; name?: string }>): void {
-    this.toAddresses = JSON.stringify(addresses);
   }
 
   /**
@@ -203,36 +156,9 @@ export class Email extends SmrtObject {
   }
 
   /**
-   * Mark email as read
+   * Get the email account (typed as EmailAccount)
    */
-  async markRead(): Promise<void> {
-    this.isRead = true;
-    this.updatedAt = new Date();
-    await this.save();
-  }
-
-  /**
-   * Mark email as unread
-   */
-  async markUnread(): Promise<void> {
-    this.isRead = false;
-    this.updatedAt = new Date();
-    await this.save();
-  }
-
-  /**
-   * Toggle flagged status
-   */
-  async toggleFlagged(): Promise<void> {
-    this.isFlagged = !this.isFlagged;
-    this.updatedAt = new Date();
-    await this.save();
-  }
-
-  /**
-   * Get the email account
-   */
-  async getAccount() {
+  override async getAccount() {
     if (!this.accountId) return null;
 
     const { EmailAccountCollection } = await import(
@@ -262,20 +188,6 @@ export class Email extends SmrtObject {
   }
 
   /**
-   * Get attachments for this email
-   */
-  async getAttachments() {
-    const { EmailAttachmentCollection } = await import(
-      '../collections/EmailAttachmentCollection'
-    );
-    const collection = await (EmailAttachmentCollection as any).create(
-      this.options,
-    );
-
-    return await collection.list({ where: { emailId: this.id } });
-  }
-
-  /**
    * Get emails in the same thread
    */
   async getThreadEmails(): Promise<Email[]> {
@@ -288,16 +200,9 @@ export class Email extends SmrtObject {
   }
 
   /**
-   * Check if email is unread
-   */
-  isUnread(): boolean {
-    return !this.isRead;
-  }
-
-  /**
    * Get a short preview of the email body
    */
-  getPreview(maxLength = 200): string {
+  override getPreview(maxLength = 200): string {
     const body = this.textBody || this.htmlBody?.replace(/<[^>]*>/g, '') || '';
     if (body.length <= maxLength) return body;
     return `${body.slice(0, maxLength)}...`;

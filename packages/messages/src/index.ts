@@ -1,25 +1,60 @@
 /**
  * @happyvertical/smrt-messages
  *
- * SMRT-based email message persistence with AI integration
+ * Unified multi-channel messaging with STI-based hierarchies
  *
  * @packageDocumentation
  */
 
-// Export collections
+// ─────────────────────────────────────────────────────────────────────────
+// Base classes (new)
+// ─────────────────────────────────────────────────────────────────────────
+
+export { AccountCollection } from './collections/AccountCollection';
+export { AttachmentCollection } from './collections/AttachmentCollection';
+// Base collections
+export { MessageCollection } from './collections/MessageCollection';
+export { Account } from './models/Account';
+export { Attachment } from './models/Attachment';
+// Base models
+export { Message } from './models/Message';
+
+// ─────────────────────────────────────────────────────────────────────────
+// Email (backward-compatible)
+// ─────────────────────────────────────────────────────────────────────────
+
 export { EmailAccountCollection } from './collections/EmailAccountCollection';
 export { EmailAttachmentCollection } from './collections/EmailAttachmentCollection';
+// Email collections
 export { EmailCollection } from './collections/EmailCollection';
 export { EmailFolderCollection } from './collections/EmailFolderCollection';
-
-// Export models
+// Email models
 export { Email } from './models/Email';
 export { EmailAccount } from './models/EmailAccount';
 export { EmailAttachment } from './models/EmailAttachment';
 export { EmailFolder } from './models/EmailFolder';
 
-// Export types
+// ─────────────────────────────────────────────────────────────────────────
+// Provider stubs
+// ─────────────────────────────────────────────────────────────────────────
+
+// Account types
+export { SlackAccount } from './models/SlackAccount';
+export { SlackMessage } from './models/SlackMessage';
+// Message types
+export { Tweet } from './models/Tweet';
+export { TwitterAccount } from './models/TwitterAccount';
+
+// ─────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────
+
 export type {
+  AccountOptions,
+  AccountSearchFilters,
+  AccountType,
+  AttachmentOptions,
+  // Email options (backward compat)
   EmailAccountOptions,
   EmailAccountSearchFilters,
   EmailAttachmentOptions,
@@ -27,8 +62,20 @@ export type {
   EmailFolderSearchFilters,
   EmailOptions,
   EmailSearchFilters,
+  // Base options
+  MessageOptions,
+  // Search filters
+  MessageSearchFilters,
+  // Discriminator types
+  MessageType,
   ProviderType,
+  SlackAccountOptions,
+  SlackMessageOptions,
+  // Sync types
   SyncOptions,
   SyncProgress,
   SyncResult,
+  // Provider options
+  TweetOptions,
+  TwitterAccountOptions,
 } from './types';

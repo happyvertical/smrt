@@ -8,5 +8,5 @@
     "declarationMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.spec.ts", "node_modules", "dist"]
+  "exclude": ["src/svelte/**/*", "src/**/*.test.ts", "src/**/*.spec.ts", "node_modules", "dist"]
 }

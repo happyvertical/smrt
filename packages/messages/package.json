@@ -1,7 +1,7 @@
 {
   "name": "@happyvertical/smrt-messages",
   "version": "0.20.9",
-  "description": "SMRT-based email message persistence with AI integration",
+  "description": "Unified multi-channel messaging with STI-based hierarchies",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,10 +10,19 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./manifest": "./dist/manifest.json"
+    "./manifest": "./dist/manifest.json",
+    "./ui": {
+      "import": "./dist/ui.js",
+      "types": "./dist/ui.d.ts"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js"
+    }
   },
   "scripts": {
-    "build": "VITE_BUILD_PACKAGE=messages vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "VITE_BUILD_PACKAGE=messages vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "dev": "vite",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "npx vitest run --passWithNoTests",
@@ -26,22 +35,36 @@
     "@happyvertical/files": "catalog:",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:"
   },
   "peerDependencies": {
-    "@happyvertical/encryption": "*"
+    "@happyvertical/encryption": "*",
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "svelte": "^5.18.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/encryption": {
       "optional": true
+    },
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/package": "^2.5.7",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/node": "25.0.9",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"
@@ -49,6 +72,9 @@
   "keywords": [
     "email",
     "messages",
+    "slack",
+    "twitter",
+    "messaging",
     "smrt",
     "ai",
     "typescript"
