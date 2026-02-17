@@ -46,6 +46,14 @@ export { Tweet } from './models/Tweet';
 export { TwitterAccount } from './models/TwitterAccount';
 
 // ─────────────────────────────────────────────────────────────────────────
+// Senders
+// ─────────────────────────────────────────────────────────────────────────
+
+export { EmailSender } from './senders/EmailSender';
+export { SlackSender } from './senders/SlackSender';
+export { TweetSender } from './senders/TweetSender';
+
+// ─────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -66,9 +74,17 @@ export type {
   MessageOptions,
   // Search filters
   MessageSearchFilters,
+  MessageSenderInterface,
+  // Send types
+  MessageSendResult,
   // Discriminator types
   MessageType,
   ProviderType,
+  SendEmailOptions,
+  SendMessageOptions,
+  SendSlackOptions,
+  SendStatus,
+  SendTweetOptions,
   SlackAccountOptions,
   SlackMessageOptions,
   // Sync types

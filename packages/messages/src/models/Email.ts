@@ -207,4 +207,157 @@ export class Email extends Message {
     if (body.length <= maxLength) return body;
     return `${body.slice(0, maxLength)}...`;
   }
+
+  /**
+   * Get References header values as array
+   */
+  getReferences(): string[] {
+    const headers = this.getHeaders();
+    const refs = headers.references;
+    if (!refs) return [];
+    if (Array.isArray(refs)) return refs;
+    return refs.split(/\s+/).filter(Boolean);
+  }
+
+  /**
+   * Create a reply to this email with RFC 822 threading
+   */
+  override createReply(options?: { replyAll?: boolean }): Email {
+    const reply = new Email({
+      ...this.options,
+      id: undefined,
+      accountId: this.accountId,
+      threadId: this.threadId || this.id,
+      subject: this.subject.startsWith('Re:')
+        ? this.subject
+        : `Re: ${this.subject}`,
+      fromAddress: '',
+      fromName: '',
+      inReplyToMessageId: this.id,
+      sendStatus: 'draft',
+      isRead: true,
+      isDraft: true,
+      date: null,
+      createdAt: undefined,
+      updatedAt: undefined,
+
+      // RFC 822 threading
+      inReplyTo: this.messageId,
+
+      // To: original sender
+      toAddresses: JSON.stringify([
+        { address: this.fromAddress, name: this.fromName },
+      ]),
+    });
+
+    // RFC 822 References: original references + original Message-ID
+    const refs = [...this.getReferences()];
+    if (this.messageId && !refs.includes(this.messageId)) {
+      refs.push(this.messageId);
+    }
+    reply.setHeaders({ references: refs.join(' ') });
+
+    // Reply-All: add original To/CC as CC (excluding self)
+    if (options?.replyAll) {
+      const allRecipients = [
+        ...this.getToAddresses(),
+        ...this.getCcAddresses(),
+      ];
+      // Remove original sender (already in To:) and any duplicates
+      const seen = new Set([this.fromAddress.toLowerCase()]);
+      const ccAddresses = allRecipients.filter((r) => {
+        const addr = r.address.toLowerCase();
+        if (seen.has(addr)) return false;
+        seen.add(addr);
+        return true;
+      });
+      reply.ccAddresses = JSON.stringify(ccAddresses);
+    }
+
+    reply.body = this.buildQuotedBody();
+    reply.textBody = reply.body;
+
+    return reply;
+  }
+
+  /**
+   * Create a forward of this email
+   */
+  override createForward(): Email {
+    const forwardBody = this.buildForwardBody();
+
+    const forward = new Email({
+      ...this.options,
+      id: undefined,
+      accountId: this.accountId,
+      threadId: '',
+      subject: this.subject.startsWith('Fwd:')
+        ? this.subject
+        : `Fwd: ${this.subject}`,
+      toAddresses: '[]',
+      ccAddresses: '[]',
+      bccAddresses: '[]',
+      fromAddress: '',
+      fromName: '',
+      body: forwardBody,
+      textBody: forwardBody,
+      hasAttachments: this.hasAttachments,
+      inReplyToMessageId: '',
+      inReplyTo: '',
+      sendStatus: 'draft',
+      isDraft: true,
+      isRead: true,
+      date: null,
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+
+    return forward;
+  }
+
+  /**
+   * Build email-specific quoted body for replies
+   */
+  protected override buildQuotedBody(): string {
+    const dateStr = this.date ? this.date.toLocaleString() : 'unknown date';
+    const from = this.fromName
+      ? `${this.fromName} <${this.fromAddress}>`
+      : this.fromAddress;
+
+    const bodyText = this.textBody || this.body || '';
+    const quotedLines = bodyText
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n');
+
+    return `\n\nOn ${dateStr}, ${from} wrote:\n${quotedLines}`;
+  }
+
+  /**
+   * Build forwarded message body
+   */
+  private buildForwardBody(): string {
+    const dateStr = this.date ? this.date.toLocaleString() : 'unknown date';
+    const from = this.fromName
+      ? `${this.fromName} <${this.fromAddress}>`
+      : this.fromAddress;
+
+    const toStr = this.getToAddresses()
+      .map((r) => (r.name ? `${r.name} <${r.address}>` : r.address))
+      .join(', ');
+
+    const bodyText = this.textBody || this.body || '';
+
+    return [
+      '',
+      '',
+      '---------- Forwarded message ----------',
+      `From: ${from}`,
+      `Date: ${dateStr}`,
+      `Subject: ${this.subject}`,
+      `To: ${toStr}`,
+      '',
+      bodyText,
+    ].join('\n');
+  }
 }

@@ -43,6 +43,14 @@ export interface MessageData {
   folderPath?: string;
   labels?: string[];
   meta?: Record<string, any>;
+  sendStatus?:
+    | 'draft'
+    | 'pending'
+    | 'sending'
+    | 'sent'
+    | 'failed'
+    | 'scheduled';
+  isDraft?: boolean;
 }
 
 /**
@@ -102,4 +110,59 @@ export interface MessageFilterState {
 export interface MessageSort {
   field: 'date' | 'sender' | 'subject' | 'type';
   direction: 'asc' | 'desc';
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Send / Compose Types
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Send status display configuration
+ */
+export interface SendStatusDisplay {
+  status: 'draft' | 'pending' | 'sending' | 'sent' | 'failed' | 'scheduled';
+  label: string;
+  color: string;
+  icon: string;
+}
+
+/**
+ * Recipient entry for compose forms
+ */
+export interface RecipientEntry {
+  address: string;
+  name?: string;
+  isValid: boolean;
+}
+
+/**
+ * Compose form state
+ */
+export interface ComposeState {
+  accountId: string;
+  to: RecipientEntry[];
+  cc: RecipientEntry[];
+  bcc: RecipientEntry[];
+  subject: string;
+  body: string;
+  attachments: AttachmentData[];
+  channelId?: string;
+  isDirty: boolean;
+  isSending: boolean;
+}
+
+/**
+ * Draft data for persistence
+ */
+export interface DraftData {
+  id?: string;
+  accountId: string;
+  type: MessageType;
+  to: Array<{ address: string; name?: string }>;
+  cc?: Array<{ address: string; name?: string }>;
+  bcc?: Array<{ address: string; name?: string }>;
+  subject: string;
+  body: string;
+  channelId?: string;
+  inReplyToMessageId?: string;
 }

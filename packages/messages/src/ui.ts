@@ -62,6 +62,24 @@ export const MESSAGES_UI_SLOTS: Record<string, ModuleUISlot> = {
     order: 6,
     propsInterface: 'ThreadViewProps',
   },
+  'compose-form': {
+    id: 'compose-form',
+    label: 'Compose Form',
+    description: 'Full message compose form with type-adaptive fields',
+    icon: 'edit',
+    category: 'action',
+    order: 7,
+    propsInterface: 'ComposeFormProps',
+  },
+  'reply-form': {
+    id: 'reply-form',
+    label: 'Reply Form',
+    description: 'Inline reply form with quoted original',
+    icon: 'reply',
+    category: 'action',
+    order: 8,
+    propsInterface: 'ReplyFormProps',
+  },
 };
 
 export const MESSAGES_MODULE_META: SmrtModuleMeta = {

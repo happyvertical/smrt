@@ -188,6 +188,61 @@ export class MessageCollection extends SmrtCollection<Message> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Send / Draft Queries
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get draft messages
+   */
+  async getDrafts(accountId?: string): Promise<Message[]> {
+    const where: Record<string, any> = { sendStatus: 'draft' };
+    if (accountId) where.accountId = accountId;
+    return await this.list({ where });
+  }
+
+  /**
+   * Get sent messages
+   */
+  async getSent(accountId?: string): Promise<Message[]> {
+    const where: Record<string, any> = { sendStatus: 'sent' };
+    if (accountId) where.accountId = accountId;
+    return await this.list({ where });
+  }
+
+  /**
+   * Get scheduled messages
+   */
+  async getScheduled(accountId?: string): Promise<Message[]> {
+    const where: Record<string, any> = { sendStatus: 'scheduled' };
+    if (accountId) where.accountId = accountId;
+    return await this.list({ where });
+  }
+
+  /**
+   * Get messages that failed to send
+   */
+  async getFailedSends(accountId?: string): Promise<Message[]> {
+    const where: Record<string, any> = { sendStatus: 'failed' };
+    if (accountId) where.accountId = accountId;
+    return await this.list({ where });
+  }
+
+  /**
+   * Get outbox (pending + sending + scheduled)
+   */
+  async getOutbox(accountId?: string): Promise<Message[]> {
+    const allMessages = await this.list({
+      where: accountId ? { accountId } : undefined,
+    });
+    return allMessages.filter(
+      (m) =>
+        m.sendStatus === 'pending' ||
+        m.sendStatus === 'sending' ||
+        m.sendStatus === 'scheduled',
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Tenant Helper Methods
   // ─────────────────────────────────────────────────────────────────────────
 

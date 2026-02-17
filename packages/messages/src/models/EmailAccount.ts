@@ -7,6 +7,7 @@
 import { smrt } from '@happyvertical/smrt-core';
 import type {
   EmailAccountOptions,
+  MessageSenderInterface,
   ProviderType,
   SyncOptions,
   SyncResult,
@@ -31,6 +32,16 @@ export class EmailAccount extends Account {
       this.providerType = options.providerType;
     if (options.syncIntervalMinutes !== undefined)
       this.syncIntervalMinutes = options.syncIntervalMinutes;
+  }
+
+  /**
+   * Create a sender for this email account
+   */
+  override async createSender(): Promise<MessageSenderInterface> {
+    const client = await this.createClient();
+    await client.connect();
+    const { EmailSender } = await import('../senders/EmailSender');
+    return new EmailSender(client, this);
   }
 
   /**

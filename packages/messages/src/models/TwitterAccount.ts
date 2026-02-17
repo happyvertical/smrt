@@ -3,7 +3,7 @@
  */
 
 import { smrt } from '@happyvertical/smrt-core';
-import type { TwitterAccountOptions } from '../types';
+import type { MessageSenderInterface, TwitterAccountOptions } from '../types';
 import { Account } from './Account';
 
 @smrt({
@@ -25,5 +25,13 @@ export class TwitterAccount extends Account {
 
     // Default provider type
     if (!this.providerType) this.providerType = 'twitter';
+  }
+
+  /**
+   * Create a sender for this Twitter account
+   */
+  override async createSender(): Promise<MessageSenderInterface> {
+    const { TweetSender } = await import('../senders/TweetSender');
+    return new TweetSender(this);
   }
 }

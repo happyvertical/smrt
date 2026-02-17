@@ -3,7 +3,7 @@
  */
 
 import { smrt } from '@happyvertical/smrt-core';
-import type { SlackAccountOptions } from '../types';
+import type { MessageSenderInterface, SlackAccountOptions } from '../types';
 import { Account } from './Account';
 
 @smrt({
@@ -28,5 +28,13 @@ export class SlackAccount extends Account {
 
     // Default provider type
     if (!this.providerType) this.providerType = 'slack';
+  }
+
+  /**
+   * Create a sender for this Slack account
+   */
+  override async createSender(): Promise<MessageSenderInterface> {
+    const { SlackSender } = await import('../senders/SlackSender');
+    return new SlackSender(this);
   }
 }

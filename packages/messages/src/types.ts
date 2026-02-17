@@ -5,6 +5,75 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 
 // ─────────────────────────────────────────────────────────────────────────
+// Send Status & Sender Types
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Status of a message in the send lifecycle
+ */
+export type SendStatus =
+  | 'draft'
+  | 'pending'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'scheduled';
+
+/**
+ * Interface for channel-specific message senders
+ */
+export interface MessageSenderInterface {
+  send(message: any, options?: SendMessageOptions): Promise<MessageSendResult>;
+  isReady(): boolean;
+  readonly providerType: string;
+}
+
+/**
+ * Base send options
+ */
+export interface SendMessageOptions {
+  trackSend?: boolean;
+  retry?: { maxRetries?: number; backoffMs?: number };
+  scheduledAt?: Date;
+}
+
+/**
+ * Email-specific send options
+ */
+export interface SendEmailOptions extends SendMessageOptions {
+  saveToCopy?: boolean;
+  sentFolder?: string;
+}
+
+/**
+ * Slack-specific send options
+ */
+export interface SendSlackOptions extends SendMessageOptions {
+  unfurlLinks?: boolean;
+  unfurlMedia?: boolean;
+}
+
+/**
+ * Tweet-specific send options
+ */
+export interface SendTweetOptions extends SendMessageOptions {
+  quoteTweetId?: string;
+}
+
+/**
+ * Result of sending a message
+ */
+export interface MessageSendResult {
+  success: boolean;
+  providerMessageId?: string;
+  accepted?: string[];
+  rejected?: string[];
+  error?: string;
+  providerResponse?: Record<string, any>;
+  sentAt: Date;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Discriminator Types
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -48,6 +117,15 @@ export interface MessageOptions extends SmrtObjectOptions {
   metadata?: string;
   createdAt?: Date;
   updatedAt?: Date;
+
+  // Send fields
+  sendStatus?: SendStatus;
+  sentAt?: Date | null;
+  sendError?: string;
+  retryCount?: number;
+  maxRetries?: number;
+  scheduledSendAt?: Date | null;
+  inReplyToMessageId?: string;
 }
 
 /**

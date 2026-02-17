@@ -6,7 +6,7 @@
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { AccountOptions } from '../types';
+import type { AccountOptions, MessageSenderInterface } from '../types';
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -115,6 +115,16 @@ export class Account extends SmrtObject {
       this.updatedAt = new Date();
       await this.save();
     }
+  }
+
+  /**
+   * Create a sender for this account.
+   * Subclasses must override to return a concrete sender.
+   */
+  async createSender(): Promise<MessageSenderInterface> {
+    throw new Error(
+      `createSender() not implemented for account type '${this.providerType}'`,
+    );
   }
 
   /**

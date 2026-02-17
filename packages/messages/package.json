@@ -34,6 +34,7 @@
     "@happyvertical/email": "catalog:",
     "@happyvertical/files": "catalog:",
     "@happyvertical/logger": "catalog:",
+    "@happyvertical/messages": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",

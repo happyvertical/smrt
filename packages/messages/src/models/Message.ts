@@ -6,7 +6,12 @@
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { MessageOptions } from '../types';
+import type {
+  MessageOptions,
+  MessageSendResult,
+  SendMessageOptions,
+  SendStatus,
+} from '../types';
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -33,6 +38,15 @@ export class Message extends SmrtObject {
   size = 0;
   metadata = ''; // JSON extension bag
 
+  // Send lifecycle fields
+  sendStatus: SendStatus = 'draft';
+  sentAt: Date | null = null;
+  sendError = '';
+  retryCount = 0;
+  maxRetries = 3;
+  scheduledSendAt: Date | null = null;
+  inReplyToMessageId = '';
+
   // Timestamps
   createdAt = new Date();
   updatedAt = new Date();
@@ -57,6 +71,15 @@ export class Message extends SmrtObject {
       this.hasAttachments = options.hasAttachments;
     if (options.size !== undefined) this.size = options.size;
     if (options.metadata !== undefined) this.metadata = options.metadata;
+    if (options.sendStatus !== undefined) this.sendStatus = options.sendStatus;
+    if (options.sentAt !== undefined) this.sentAt = options.sentAt || null;
+    if (options.sendError !== undefined) this.sendError = options.sendError;
+    if (options.retryCount !== undefined) this.retryCount = options.retryCount;
+    if (options.maxRetries !== undefined) this.maxRetries = options.maxRetries;
+    if (options.scheduledSendAt !== undefined)
+      this.scheduledSendAt = options.scheduledSendAt || null;
+    if (options.inReplyToMessageId !== undefined)
+      this.inReplyToMessageId = options.inReplyToMessageId;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
   }
@@ -180,5 +203,168 @@ export class Message extends SmrtObject {
     const collection = await (AttachmentCollection as any).create(this.options);
 
     return await collection.list({ where: { messageId: this.id } });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Send Lifecycle
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Send this message via its account's sender
+   */
+  async send(options?: SendMessageOptions): Promise<MessageSendResult> {
+    // Resolve account
+    const account = await this.getAccount();
+    if (!account) {
+      const result: MessageSendResult = {
+        success: false,
+        error: 'No account associated with this message',
+        sentAt: new Date(),
+      };
+      this.sendStatus = 'failed';
+      this.sendError = result.error ?? '';
+      this.updatedAt = new Date();
+      await this.save();
+      return result;
+    }
+
+    // Get sender from account
+    const sender = await (account as any).createSender();
+
+    // Update status to sending
+    this.sendStatus = 'sending';
+    this.updatedAt = new Date();
+    await this.save();
+
+    try {
+      const result = await sender.send(this, options);
+
+      if (result.success) {
+        this.sendStatus = 'sent';
+        this.sentAt = result.sentAt;
+        this.sendError = '';
+      } else {
+        this.sendStatus = 'failed';
+        this.sendError = result.error ?? 'Send failed';
+      }
+
+      this.updatedAt = new Date();
+      await this.save();
+      return result;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.sendStatus = 'failed';
+      this.sendError = errorMessage;
+      this.updatedAt = new Date();
+      await this.save();
+
+      return {
+        success: false,
+        error: errorMessage,
+        sentAt: new Date(),
+      };
+    }
+  }
+
+  /**
+   * Retry sending a failed message
+   */
+  async retrySend(options?: SendMessageOptions): Promise<MessageSendResult> {
+    if (this.sendStatus !== 'failed') {
+      return {
+        success: false,
+        error: `Cannot retry: message status is '${this.sendStatus}', expected 'failed'`,
+        sentAt: new Date(),
+      };
+    }
+
+    if (this.retryCount >= this.maxRetries) {
+      return {
+        success: false,
+        error: `Retry budget exhausted (${this.retryCount}/${this.maxRetries})`,
+        sentAt: new Date(),
+      };
+    }
+
+    this.retryCount++;
+    this.updatedAt = new Date();
+    await this.save();
+
+    return this.send(options);
+  }
+
+  /**
+   * Create a reply to this message (returns unsaved draft)
+   */
+  createReply(_options?: { replyAll?: boolean }): Message {
+    const reply = new (this.constructor as typeof Message)({
+      ...this.options,
+      id: undefined,
+      accountId: this.accountId,
+      threadId: this.threadId || this.id || '',
+      subject: this.subject.startsWith('Re:')
+        ? this.subject
+        : `Re: ${this.subject}`,
+      toAddresses: JSON.stringify([
+        { address: this.fromAddress, name: this.fromName },
+      ]),
+      fromAddress: '',
+      fromName: '',
+      body: this.buildQuotedBody(),
+      inReplyToMessageId: this.id || '',
+      sendStatus: 'draft',
+      isRead: true,
+      date: null,
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+
+    return reply;
+  }
+
+  /**
+   * Create a forward of this message (returns unsaved draft)
+   */
+  createForward(): Message {
+    const forward = new (this.constructor as typeof Message)({
+      ...this.options,
+      id: undefined,
+      accountId: this.accountId,
+      threadId: '',
+      subject: this.subject.startsWith('Fwd:')
+        ? this.subject
+        : `Fwd: ${this.subject}`,
+      toAddresses: '[]',
+      fromAddress: '',
+      fromName: '',
+      body: this.buildQuotedBody(),
+      hasAttachments: this.hasAttachments,
+      inReplyToMessageId: '',
+      sendStatus: 'draft',
+      isRead: true,
+      date: null,
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+
+    return forward;
+  }
+
+  /**
+   * Build quoted body for reply/forward
+   */
+  protected buildQuotedBody(): string {
+    const dateStr = this.date ? this.date.toLocaleString() : 'unknown date';
+    const from = this.fromName
+      ? `${this.fromName} <${this.fromAddress}>`
+      : this.fromAddress;
+
+    const quotedLines = (this.body || '')
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n');
+
+    return `\n\nOn ${dateStr}, ${from} wrote:\n${quotedLines}`;
   }
 }

@@ -14,6 +14,7 @@ catalog:
   '@happyvertical/jobs': ^0.68.6
   '@happyvertical/json': ^0.68.6
   '@happyvertical/logger': ^0.68.6
+  '@happyvertical/messages': ^0.68.6
   '@happyvertical/ocr': ^0.60.8
   '@happyvertical/pdf': ^0.62.2
   '@happyvertical/projects': ^0.68.6
