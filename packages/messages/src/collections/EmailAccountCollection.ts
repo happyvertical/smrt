@@ -1,41 +1,45 @@
 /**
  * EmailAccountCollection - Collection manager for EmailAccount objects
+ *
+ * Extends AccountCollection with email-specific query methods.
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
 import { EmailAccount } from '../models/EmailAccount';
 import type { EmailAccountSearchFilters, ProviderType } from '../types';
+import { AccountCollection } from './AccountCollection';
 
-export class EmailAccountCollection extends SmrtCollection<EmailAccount> {
-  static readonly _itemClass = EmailAccount;
+export class EmailAccountCollection extends AccountCollection {
+  static override readonly _itemClass = EmailAccount;
 
   /**
    * Get account by email address
    */
   async getByEmail(email: string): Promise<EmailAccount | null> {
     const accounts = await this.list({ where: { email } });
-    return accounts[0] || null;
+    return (accounts[0] as EmailAccount) || null;
   }
 
   /**
-   * Get accounts by provider type
+   * Get accounts by email provider type
    */
-  async getByProviderType(providerType: ProviderType): Promise<EmailAccount[]> {
-    return await this.list({ where: { providerType } });
+  async getByEmailProviderType(
+    providerType: ProviderType,
+  ): Promise<EmailAccount[]> {
+    return (await this.list({ where: { providerType } })) as EmailAccount[];
   }
 
   /**
-   * Get active accounts
+   * Get active email accounts
    */
-  async getActive(): Promise<EmailAccount[]> {
-    return await this.list({ where: { isActive: true } });
+  override async getActive(): Promise<EmailAccount[]> {
+    return (await this.list({ where: { isActive: true } })) as EmailAccount[];
   }
 
   /**
-   * Get inactive accounts
+   * Get inactive email accounts
    */
-  async getInactive(): Promise<EmailAccount[]> {
-    return await this.list({ where: { isActive: false } });
+  override async getInactive(): Promise<EmailAccount[]> {
+    return (await this.list({ where: { isActive: false } })) as EmailAccount[];
   }
 
   /**
@@ -47,17 +51,57 @@ export class EmailAccountCollection extends SmrtCollection<EmailAccount> {
 
     return allAccounts.filter(
       (account) => !account.lastSyncAt || account.lastSyncAt < cutoffTime,
-    );
+    ) as EmailAccount[];
   }
 
   /**
-   * Search accounts with filters
+   * Search email accounts with filters.
+   * Alias: `search()` for backward compatibility.
    */
-  async search(
+  override async search(
     query: string,
     filters?: EmailAccountSearchFilters,
   ): Promise<EmailAccount[]> {
-    let accounts = await this.list({});
+    return this.searchEmailAccounts(query, filters);
+  }
+
+  /**
+   * Get accounts by email provider type.
+   * Alias: `getByProviderType()` for backward compatibility.
+   */
+  override async getByProviderType(
+    providerType: string,
+  ): Promise<EmailAccount[]> {
+    return this.getByEmailProviderType(providerType as ProviderType);
+  }
+
+  /**
+   * Get email account statistics.
+   * Alias: `getStats()` for backward compatibility.
+   */
+  override async getStats(): Promise<{
+    total: number;
+    active: number;
+    inactive: number;
+    byType: Record<string, number>;
+  }> {
+    const stats = await this.getEmailStats();
+    return {
+      total: stats.total,
+      active: stats.active,
+      inactive: stats.inactive,
+      byType: stats.byProvider as unknown as Record<string, number>,
+    };
+  }
+
+  /**
+   * Search email accounts with filters
+   */
+  async searchEmailAccounts(
+    query: string,
+    filters?: EmailAccountSearchFilters,
+  ): Promise<EmailAccount[]> {
+    let accounts = (await this.list({})) as EmailAccount[];
 
     // Filter by query
     if (query) {
@@ -91,7 +135,7 @@ export class EmailAccountCollection extends SmrtCollection<EmailAccount> {
   }
 
   /**
-   * Sync all active accounts
+   * Sync all active email accounts
    */
   async syncAll(
     options?: Record<string, any>,
@@ -100,9 +144,10 @@ export class EmailAccountCollection extends SmrtCollection<EmailAccount> {
     const accounts = await this.getActive();
 
     for (const account of accounts) {
-      const accountId = account.id ?? account.email ?? 'unknown';
+      const ea = account as EmailAccount;
+      const accountId = ea.id ?? ea.email ?? 'unknown';
       try {
-        await account.syncFrom(options);
+        await ea.syncFrom(options);
         results.set(accountId, { success: true });
       } catch (error) {
         results.set(accountId, {
@@ -116,29 +161,29 @@ export class EmailAccountCollection extends SmrtCollection<EmailAccount> {
   }
 
   /**
-   * Get total unread count across all accounts
+   * Get total unread count across all email accounts
    */
   async getTotalUnreadCount(): Promise<number> {
     const accounts = await this.getActive();
     let total = 0;
 
     for (const account of accounts) {
-      total += await account.getUnreadCount();
+      total += await (account as EmailAccount).getUnreadCount();
     }
 
     return total;
   }
 
   /**
-   * Get account statistics
+   * Get email account statistics
    */
-  async getStats(): Promise<{
+  async getEmailStats(): Promise<{
     total: number;
     active: number;
     inactive: number;
     byProvider: Record<ProviderType, number>;
   }> {
-    const accounts = await this.list({});
+    const accounts = (await this.list({})) as EmailAccount[];
 
     const byProvider: Record<ProviderType, number> = {
       smtp: 0,
@@ -148,7 +193,10 @@ export class EmailAccountCollection extends SmrtCollection<EmailAccount> {
     };
 
     for (const account of accounts) {
-      byProvider[account.providerType]++;
+      const pt = account.providerType as ProviderType;
+      if (pt in byProvider) {
+        byProvider[pt]++;
+      }
     }
 
     return {
@@ -163,27 +211,18 @@ export class EmailAccountCollection extends SmrtCollection<EmailAccount> {
   // Tenant Helper Methods
   // ─────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Find all email accounts belonging to a specific tenant
-   */
-  async findByTenant(tenantId: string): Promise<EmailAccount[]> {
-    return this.list({ where: { tenantId } });
+  override async findByTenant(tenantId: string): Promise<EmailAccount[]> {
+    return this.list({ where: { tenantId } }) as Promise<EmailAccount[]>;
   }
 
-  /**
-   * Find all global email accounts (no tenant)
-   */
-  async findGlobal(): Promise<EmailAccount[]> {
-    return this.list({ where: { tenantId: null } });
+  override async findGlobal(): Promise<EmailAccount[]> {
+    return this.list({ where: { tenantId: null } }) as Promise<EmailAccount[]>;
   }
 
-  /**
-   * Find email accounts for a tenant including global accounts
-   */
-  async findWithGlobals(tenantId: string): Promise<EmailAccount[]> {
+  override async findWithGlobals(tenantId: string): Promise<EmailAccount[]> {
     return this.query(
       `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
       [tenantId],
-    );
+    ) as Promise<EmailAccount[]>;
   }
 }

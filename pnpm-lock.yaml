@@ -4,6 +4,12 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@happyvertical/messages':
+      specifier: ^0.68.6
+      version: 0.68.13
+
 overrides:
   '@types/node': 24.10.9
   '@happyvertical/smrt-types': workspace:*
@@ -867,6 +873,9 @@ importers:
       '@happyvertical/logger':
         specifier: ^0.68.6
         version: 0.68.6
+      '@happyvertical/messages':
+        specifier: 'catalog:'
+        version: 0.68.13
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -876,6 +885,9 @@ importers:
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
       '@happyvertical/sql':
         specifier: ^0.68.6
         version: 0.68.6
@@ -883,12 +895,27 @@ importers:
         specifier: ^0.68.6
         version: 0.68.6
     devDependencies:
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
+      '@sveltejs/package':
+        specifier: ^2.5.7
+        version: 2.5.7(svelte@5.46.4)(typescript@5.9.3)
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^6.2.4
+        version: 6.2.4(svelte@5.46.4)(vite@7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
+      svelte:
+        specifier: ^5.46.4
+        version: 5.46.4
+      svelte-check:
+        specifier: ^4.3.5
+        version: 4.3.5(picomatch@4.0.3)(svelte@5.46.4)(typescript@5.9.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -2765,6 +2792,9 @@ packages:
     resolution: {integrity: sha512-xk2seZQ5CcML4iXUip+4p0OxcNzG58nYGUVsFnyMyC9PSr0ggyw4rNKZHnQjT1mba0TBFxpbI/iA4zY9ZsPENg==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.68.6/fe6d65df01e81c8864fc7ade155c734cde0c6643}
     hasBin: true
 
+  '@happyvertical/messages@0.68.13':
+    resolution: {integrity: sha512-ElhUAIdQdrOO9zkill/khWDGPEn2E4puV0xBvGI03iK10CUzNsMjAMhaO41uXTEBaCJ94vacxw8t6ozBLm4aBg==, tarball: https://npm.pkg.github.com/download/@happyvertical/messages/0.68.13/c2b0f1b2ca60883c9de4f5505908d982a3f17f97}
+
   '@happyvertical/ocr@0.60.8':
     resolution: {integrity: sha512-6YH3TCnI5gAIw2ZCdmUffPQE8kjRBZauAsktGGU3wCT+vhQeu5F3Q/JdcqD3fD110bFC3jRnLnrA4Mv3ls+jCg==, tarball: https://npm.pkg.github.com/download/@happyvertical/ocr/0.60.8/5e90e0cea8b2169d55815f1432a5d7d47602cac6}
     engines: {node: '>=24', pnpm: '>=9'}
@@ -4624,6 +4654,18 @@ packages:
     resolution: {integrity: sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ==}
     engines: {node: '>=18'}
 
+  '@slack/logger@4.0.0':
+    resolution: {integrity: sha512-Wz7QYfPAlG/DR+DfABddUZeNgoeY7d1J39OCR2jR+v7VBsB8ezulDK5szTnDDPDwLH5IWhLvXIHlCFZV7MSKgA==}
+    engines: {node: '>= 18', npm: '>= 8.6.0'}
+
+  '@slack/types@2.20.0':
+    resolution: {integrity: sha512-PVF6P6nxzDMrzPC8fSCsnwaI+kF8YfEpxf3MqXmdyjyWTYsZQURpkK7WWUWvP5QpH55pB7zyYL9Qem/xSgc5VA==}
+    engines: {node: '>= 12.13.0', npm: '>= 6.12.0'}
+
+  '@slack/web-api@7.14.1':
+    resolution: {integrity: sha512-RoygyteJeFswxDPJjUMESn9dldWVMD2xUcHHd9DenVavSfVC6FeVnSdDerOO7m8LLvw4Q132nQM4hX8JiF7dng==}
+    engines: {node: '>= 18', npm: '>= 8.6.0'}
+
   '@smithy/abort-controller@4.2.8':
     resolution: {integrity: sha512-peuVfkYHAmS5ybKxWcfraK7WBBP0J+rkfUcbHJJKQ4ir3UAUNQI+Y4Vt/PqSzGqgloJ5O1dk7+WzNL8wcCSXbw==}
     engines: {node: '>=18.0.0'}
@@ -5246,6 +5288,9 @@ packages:
 
   axios@1.13.2:
     resolution: {integrity: sha512-VPk9ebNqPcy5lRGuSlKx752IlDatOjT9paPlm8A7yOuW2Fbvp4X3JznJtT4f0GzGLLiWE9W8onz51SqLYwzGaA==}
+
+  axios@1.13.5:
+    resolution: {integrity: sha512-cz4ur7Vb0xS4/KUN0tPWe44eqxrIu31me+fbang3ijiNscE129POzipJJA6zniq2C/Z6sJCjMimjS8Lc/GAs8Q==}
 
   axobject-query@4.1.0:
     resolution: {integrity: sha512-qIj0G9wZbMGNLjLmg1PT6v2mE9AH2zlnADJD/2tC6E00hgmhUOfEB6greHPAfLRSufHqROIUTkw6E+M3lH0PTQ==}
@@ -6082,6 +6127,9 @@ packages:
   eventemitter3@4.0.7:
     resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
 
+  eventemitter3@5.0.4:
+    resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
+
   events-universal@1.0.1:
     resolution: {integrity: sha512-LUd5euvbMLpwOF8m6ivPCbhQeSiYVNb8Vs0fQ8QjXo0JTkEHpz8pxdQf0gStltaPpw0Cca8b39KxvK9cfKRiAw==}
 
@@ -6792,6 +6840,9 @@ packages:
   is-core-module@2.16.1:
     resolution: {integrity: sha512-UfoeMA6fIJ8wTYFEUjelnaGI67v6+N7qXJEvQuIGa99l4xsCruSYOVSQ0uPANn4dAzm8lkYPaKLrrijLq7x23w==}
     engines: {node: '>= 0.4'}
+
+  is-electron@2.2.2:
+    resolution: {integrity: sha512-FO/Rhvz5tuw4MCWkpMzHFKWD2LsfHzIb7i6MdPYZ/KW7AlxawyLkqdy+jPZP1WubqEADE3O4FUENlJHDfQASRg==}
 
   is-extglob@2.1.1:
     resolution: {integrity: sha512-SbKbANkN603Vi4jEZv49LeVJMn4yGwsbzZworEoyEiutsN3nJYdbO36zfhGJ6QEDpOZIFkDtnq5JRxmvl3jsoQ==}
@@ -11841,6 +11892,16 @@ snapshots:
     dependencies:
       '@happyvertical/utils': 0.68.6
 
+  '@happyvertical/messages@0.68.13':
+    dependencies:
+      '@happyvertical/email': 0.68.6
+      '@happyvertical/logger': 0.68.6
+      '@happyvertical/utils': 0.68.6
+      '@slack/web-api': 7.14.1
+    transitivePeerDependencies:
+      - debug
+      - supports-color
+
   '@happyvertical/ocr@0.60.8(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.3.5))(ws@8.19.0)(zod@4.3.5)':
     dependencies:
       '@gutenye/ocr-node': 1.4.8
@@ -13467,6 +13528,29 @@ snapshots:
 
   '@sindresorhus/merge-streams@4.0.0': {}
 
+  '@slack/logger@4.0.0':
+    dependencies:
+      '@types/node': 24.10.9
+
+  '@slack/types@2.20.0': {}
+
+  '@slack/web-api@7.14.1':
+    dependencies:
+      '@slack/logger': 4.0.0
+      '@slack/types': 2.20.0
+      '@types/node': 24.10.9
+      '@types/retry': 0.12.0
+      axios: 1.13.5
+      eventemitter3: 5.0.4
+      form-data: 4.0.5
+      is-electron: 2.2.2
+      is-stream: 2.0.1
+      p-queue: 6.6.2
+      p-retry: 4.6.2
+      retry: 0.13.1
+    transitivePeerDependencies:
+      - debug
+
   '@smithy/abort-controller@4.2.8':
     dependencies:
       '@smithy/types': 4.12.0
@@ -14244,6 +14328,14 @@ snapshots:
     optional: true
 
   axios@1.13.2(debug@4.4.3):
+    dependencies:
+      follow-redirects: 1.15.11(debug@4.4.3)
+      form-data: 4.0.5
+      proxy-from-env: 1.1.0
+    transitivePeerDependencies:
+      - debug
+
+  axios@1.13.5:
     dependencies:
       follow-redirects: 1.15.11(debug@4.4.3)
       form-data: 4.0.5
@@ -15118,6 +15210,8 @@ snapshots:
   event-target-shim@5.0.1: {}
 
   eventemitter3@4.0.7: {}
+
+  eventemitter3@5.0.4: {}
 
   events-universal@1.0.1:
     dependencies:
@@ -16056,6 +16150,8 @@ snapshots:
   is-core-module@2.16.1:
     dependencies:
       hasown: 2.0.2
+
+  is-electron@2.2.2: {}
 
   is-extglob@2.1.1: {}
 

@@ -1,13 +1,16 @@
 /**
  * EmailCollection - Collection manager for Email objects
+ *
+ * Extends MessageCollection with email-specific query methods.
+ * STI framework auto-filters to Email instances.
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Email } from '../models/Email';
 import type { EmailSearchFilters } from '../types';
+import { MessageCollection } from './MessageCollection';
 
-export class EmailCollection extends SmrtCollection<Email> {
-  static readonly _itemClass = Email;
+export class EmailCollection extends MessageCollection {
+  static override readonly _itemClass = Email;
 
   /**
    * Get email by RFC 822 Message-ID
@@ -20,50 +23,50 @@ export class EmailCollection extends SmrtCollection<Email> {
       where: { accountId, messageId },
       limit: 1,
     });
-    return emails[0] || null;
+    return (emails[0] as Email) || null;
   }
 
   /**
    * Get emails by account
    */
   async getByAccount(accountId: string): Promise<Email[]> {
-    return await this.list({ where: { accountId } });
+    return (await this.list({ where: { accountId } })) as Email[];
   }
 
   /**
    * Get emails by folder
    */
   async getByFolder(folderId: string): Promise<Email[]> {
-    return await this.list({ where: { folderId } });
+    return (await this.list({ where: { folderId } })) as Email[];
   }
 
   /**
    * Get emails by thread
    */
-  async getByThread(threadId: string): Promise<Email[]> {
-    return await this.list({ where: { threadId } });
+  override async getByThread(threadId: string): Promise<Email[]> {
+    return (await this.list({ where: { threadId } })) as Email[];
   }
 
   /**
    * Get unread emails
    */
-  async getUnread(accountId?: string): Promise<Email[]> {
+  override async getUnread(accountId?: string): Promise<Email[]> {
     const where: Record<string, any> = { isRead: false };
     if (accountId) {
       where.accountId = accountId;
     }
-    return await this.list({ where });
+    return (await this.list({ where })) as Email[];
   }
 
   /**
    * Get flagged emails
    */
-  async getFlagged(accountId?: string): Promise<Email[]> {
+  override async getFlagged(accountId?: string): Promise<Email[]> {
     const where: Record<string, any> = { isFlagged: true };
     if (accountId) {
       where.accountId = accountId;
     }
-    return await this.list({ where });
+    return (await this.list({ where })) as Email[];
   }
 
   /**
@@ -74,16 +77,16 @@ export class EmailCollection extends SmrtCollection<Email> {
     if (accountId) {
       where.accountId = accountId;
     }
-    return await this.list({ where });
+    return (await this.list({ where })) as Email[];
   }
 
   /**
    * Get recent emails
    */
-  async getRecent(limit = 20, accountId?: string): Promise<Email[]> {
-    const allEmails = await this.list({
+  override async getRecent(limit = 20, accountId?: string): Promise<Email[]> {
+    const allEmails = (await this.list({
       where: accountId ? { accountId } : undefined,
-    });
+    })) as Email[];
 
     return allEmails
       .sort((a, b) => {
@@ -119,10 +122,24 @@ export class EmailCollection extends SmrtCollection<Email> {
   }
 
   /**
-   * Search emails with filters
+   * Search emails with email-specific filters.
+   * Alias: `search()` for backward compatibility.
    */
-  async search(query: string, filters?: EmailSearchFilters): Promise<Email[]> {
-    let emails = await this.list({});
+  override async search(
+    query: string,
+    filters?: EmailSearchFilters,
+  ): Promise<Email[]> {
+    return this.searchEmails(query, filters);
+  }
+
+  /**
+   * Search emails with email-specific filters
+   */
+  async searchEmails(
+    query: string,
+    filters?: EmailSearchFilters,
+  ): Promise<Email[]> {
+    let emails = (await this.list({})) as Email[];
 
     // Filter by query
     if (query) {
@@ -194,22 +211,10 @@ export class EmailCollection extends SmrtCollection<Email> {
   }
 
   /**
-   * Mark multiple emails as read
-   */
-  async markAllRead(emailIds: string[]): Promise<void> {
-    for (const id of emailIds) {
-      const email = await this.get({ id });
-      if (email) {
-        await email.markRead();
-      }
-    }
-  }
-
-  /**
    * Mark all emails in a folder as read
    */
   async markFolderRead(folderId: string): Promise<void> {
-    const emails = await this.getUnread();
+    const emails = (await this.getUnread()) as Email[];
     const folderEmails = emails.filter((e) => e.folderId === folderId);
 
     for (const email of folderEmails) {
@@ -235,11 +240,12 @@ export class EmailCollection extends SmrtCollection<Email> {
   /**
    * Get email statistics for an account
    */
-  async getAccountStats(accountId: string): Promise<{
+  override async getAccountStats(accountId: string): Promise<{
     total: number;
     unread: number;
     flagged: number;
     withAttachments: number;
+    byType: Record<string, number>;
   }> {
     const emails = await this.getByAccount(accountId);
 
@@ -248,6 +254,7 @@ export class EmailCollection extends SmrtCollection<Email> {
       unread: emails.filter((e) => !e.isRead).length,
       flagged: emails.filter((e) => e.isFlagged).length,
       withAttachments: emails.filter((e) => e.hasAttachments).length,
+      byType: { Email: emails.length },
     };
   }
 
@@ -255,27 +262,18 @@ export class EmailCollection extends SmrtCollection<Email> {
   // Tenant Helper Methods
   // ─────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Find all emails belonging to a specific tenant
-   */
-  async findByTenant(tenantId: string): Promise<Email[]> {
-    return this.list({ where: { tenantId } });
+  override async findByTenant(tenantId: string): Promise<Email[]> {
+    return this.list({ where: { tenantId } }) as Promise<Email[]>;
   }
 
-  /**
-   * Find all global emails (no tenant)
-   */
-  async findGlobal(): Promise<Email[]> {
-    return this.list({ where: { tenantId: null } });
+  override async findGlobal(): Promise<Email[]> {
+    return this.list({ where: { tenantId: null } }) as Promise<Email[]>;
   }
 
-  /**
-   * Find emails for a tenant including global emails
-   */
-  async findWithGlobals(tenantId: string): Promise<Email[]> {
+  override async findWithGlobals(tenantId: string): Promise<Email[]> {
     return this.query(
       `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
       [tenantId],
-    );
+    ) as Promise<Email[]>;
   }
 }
