@@ -4,8 +4,8 @@
  */
 
 import { Badge } from '@happyvertical/smrt-svelte/ui';
-import type { JobStatus } from './types.js';
-import { getStatusVariant } from './types.js';
+import type { JobStatus } from '../types.js';
+import { getStatusVariant } from '../types.js';
 
 export interface Props {
   status: JobStatus;

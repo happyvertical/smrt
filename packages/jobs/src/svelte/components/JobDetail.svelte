@@ -4,14 +4,14 @@
  */
 
 import { Card } from '@happyvertical/smrt-svelte/ui';
-import JobActions from './JobActions.svelte';
-import JobStatusBadge from './JobStatusBadge.svelte';
-import type { JobData } from './types.js';
+import type { JobData } from '../types.js';
 import {
   formatDuration,
   formatRelativeTime,
   getPriorityLabel,
-} from './types.js';
+} from '../types.js';
+import JobActions from './JobActions.svelte';
+import JobStatusBadge from './JobStatusBadge.svelte';
 
 export interface Props {
   /** Job to display */
