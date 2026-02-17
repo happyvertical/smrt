@@ -227,13 +227,13 @@ export class Email extends Message {
       ...this.options,
       id: undefined,
       accountId: this.accountId,
-      threadId: this.threadId || this.id,
+      threadId: this.threadId || this.id || undefined,
       subject: this.subject.startsWith('Re:')
         ? this.subject
         : `Re: ${this.subject}`,
       fromAddress: '',
       fromName: '',
-      inReplyToMessageId: this.id,
+      inReplyToMessageId: this.id || undefined,
       sendStatus: 'draft',
       isRead: true,
       isDraft: true,
