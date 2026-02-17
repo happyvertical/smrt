@@ -31,10 +31,20 @@ export class AccountCollection extends SmrtCollection<Account> {
   }
 
   /**
-   * Get accounts by STI type
+   * Get accounts by STI type.
+   *
+   * Accepts either the full discriminator (e.g. "@happyvertical/smrt-messages:EmailAccount")
+   * or the short type name (e.g. "EmailAccount").
    */
   async getByType(accountType: string): Promise<Account[]> {
-    return await this.list({ where: { _meta_type: accountType } });
+    if (accountType.includes(':') || accountType.startsWith('@')) {
+      return await this.list({ where: { _meta_type: accountType } });
+    }
+    const allAccounts = await this.list({});
+    return allAccounts.filter((a) => {
+      const metaType = (a as any)._meta_type || '';
+      return metaType.endsWith(`:${accountType}`);
+    });
   }
 
   /**

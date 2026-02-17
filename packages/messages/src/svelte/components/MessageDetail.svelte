@@ -68,6 +68,17 @@ const _slackMeta = $derived.by(() => {
   if (message.type !== 'slack') return null;
   return message.meta || {};
 });
+
+const _sanitizedHtml = $derived.by(() => {
+  if (!message.htmlBody) return '';
+  return message.htmlBody
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/javascript\s*:/gi, 'blocked:')
+    .replace(/<link[^>]*>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '');
+});
 </script>
 
 <article class="message-detail">
@@ -134,7 +145,7 @@ const _slackMeta = $derived.by(() => {
 
     <div class="body">
       {#if showHtml && message.htmlBody}
-        {@html message.htmlBody}
+        {@html _sanitizedHtml}
       {:else}
         <pre class="body-text">{message.body}</pre>
       {/if}

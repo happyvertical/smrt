@@ -36,7 +36,10 @@ const {
     <Grid columns="auto" role="list" aria-label="Accounts">
       {#each accounts as account (account.id)}
         <div role="listitem">
-          <AccountCard {account} {onsync} {onremove} />
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div onclick={() => onaccountclick?.(account)}>
+            <AccountCard {account} {onsync} {onremove} />
+          </div>
         </div>
       {/each}
     </Grid>

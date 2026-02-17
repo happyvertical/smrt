@@ -55,6 +55,46 @@ export class EmailAccountCollection extends AccountCollection {
   }
 
   /**
+   * Search email accounts with filters.
+   * Alias: `search()` for backward compatibility.
+   */
+  override async search(
+    query: string,
+    filters?: EmailAccountSearchFilters,
+  ): Promise<EmailAccount[]> {
+    return this.searchEmailAccounts(query, filters);
+  }
+
+  /**
+   * Get accounts by email provider type.
+   * Alias: `getByProviderType()` for backward compatibility.
+   */
+  override async getByProviderType(
+    providerType: string,
+  ): Promise<EmailAccount[]> {
+    return this.getByEmailProviderType(providerType as ProviderType);
+  }
+
+  /**
+   * Get email account statistics.
+   * Alias: `getStats()` for backward compatibility.
+   */
+  override async getStats(): Promise<{
+    total: number;
+    active: number;
+    inactive: number;
+    byType: Record<string, number>;
+  }> {
+    const stats = await this.getEmailStats();
+    return {
+      total: stats.total,
+      active: stats.active,
+      inactive: stats.inactive,
+      byType: stats.byProvider as unknown as Record<string, number>,
+    };
+  }
+
+  /**
    * Search email accounts with filters
    */
   async searchEmailAccounts(

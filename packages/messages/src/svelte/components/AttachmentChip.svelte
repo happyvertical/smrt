@@ -37,14 +37,14 @@ const _formattedSize = $derived.by(() => {
     class="chip"
     type="button"
     onclick={() => onclick?.(attachment)}
-    title="{attachment.filename} ({_formattedSize})"
+    title={`${attachment.filename} (${_formattedSize})`}
   >
     <span class="icon">{_icon}</span>
     <span class="name">{attachment.filename}</span>
     <span class="size">{_formattedSize}</span>
   </button>
 {:else}
-  <span class="chip" title="{attachment.filename} ({_formattedSize})">
+  <span class="chip" title={`${attachment.filename} (${_formattedSize})`}>
     <span class="icon">{_icon}</span>
     <span class="name">{attachment.filename}</span>
     <span class="size">{_formattedSize}</span>

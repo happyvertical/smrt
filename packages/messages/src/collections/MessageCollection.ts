@@ -97,10 +97,20 @@ export class MessageCollection extends SmrtCollection<Message> {
   }
 
   /**
-   * Get messages by STI type
+   * Get messages by STI type.
+   *
+   * Accepts either the full discriminator (e.g. "@happyvertical/smrt-messages:Email")
+   * or the short type name (e.g. "Email").
    */
   async getByType(messageType: string): Promise<Message[]> {
-    return await this.list({ where: { _meta_type: messageType } });
+    if (messageType.includes(':') || messageType.startsWith('@')) {
+      return await this.list({ where: { _meta_type: messageType } });
+    }
+    const allMessages = await this.list({});
+    return allMessages.filter((m) => {
+      const metaType = (m as any)._meta_type || '';
+      return metaType.endsWith(`:${messageType}`);
+    });
   }
 
   /**

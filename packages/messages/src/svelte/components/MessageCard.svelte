@@ -3,7 +3,6 @@
  * MessageCard - Single message row with type-adaptive rendering
  */
 
-import { Card } from '@happyvertical/smrt-svelte/ui';
 import type { Snippet } from 'svelte';
 import type { AccountData, MessageData } from '../types.js';
 import MessageStatusIndicator from './MessageStatusIndicator.svelte';

@@ -122,6 +122,17 @@ export class EmailCollection extends MessageCollection {
   }
 
   /**
+   * Search emails with email-specific filters.
+   * Alias: `search()` for backward compatibility.
+   */
+  override async search(
+    query: string,
+    filters?: EmailSearchFilters,
+  ): Promise<Email[]> {
+    return this.searchEmails(query, filters);
+  }
+
+  /**
    * Search emails with email-specific filters
    */
   async searchEmails(

@@ -8,7 +8,7 @@ import MessageDetail from './MessageDetail.svelte';
 export interface Props {
   messages: MessageData[];
   activeMessageId?: string;
-  collapsed?: Set<string>;
+  initialCollapsed?: Set<string>;
   onmessageclick?: (message: MessageData) => void;
   onreply?: (message: MessageData) => void;
 }
@@ -16,10 +16,12 @@ export interface Props {
 const {
   messages,
   activeMessageId,
-  collapsed = new Set(),
+  initialCollapsed,
   onmessageclick,
   onreply,
 }: Props = $props();
+
+let collapsed: Set<string> = $state(new Set(initialCollapsed));
 
 function toggleCollapse(messageId: string) {
   if (collapsed.has(messageId)) {
@@ -27,6 +29,7 @@ function toggleCollapse(messageId: string) {
   } else {
     collapsed.add(messageId);
   }
+  collapsed = new Set(collapsed);
 }
 
 const _sortedMessages = $derived(
@@ -83,10 +86,13 @@ const _sortedMessages = $derived(
               ▼
             </button>
           {/if}
-          <MessageDetail
-            {message}
-            onreply={onreply}
-          />
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div onclick={() => onmessageclick?.(message)}>
+            <MessageDetail
+              {message}
+              onreply={onreply}
+            />
+          </div>
         </div>
       {/if}
 
