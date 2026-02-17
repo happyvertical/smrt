@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.10
+
+### Patch Changes
+
+- ### Features
+
+  - unified multi-channel messaging with send support (#939) (smrt-messages)
+  - @happyvertical/smrt-scanner@0.20.10
+  - @happyvertical/smrt-config@0.20.10
+  - @happyvertical/smrt-types@0.20.10
+
 ## 0.20.9
 
 ### Patch Changes
