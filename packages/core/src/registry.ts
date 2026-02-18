@@ -1928,7 +1928,18 @@ export class ObjectRegistry {
       return registered;
     }
 
-    // Fall back to case-insensitive search
+    // Try classNameMap lookup (Issue #847 follow-up)
+    // registerFromManifest stores simple→qualified mappings, e.g. 'tenant' → '@happyvertical/smrt-users:Tenant'
+    // This enables findClass('Tenant') to resolve manifest-registered classes
+    const canonicalName = ObjectRegistry.classNameMap.get(name.toLowerCase());
+    if (canonicalName && canonicalName !== name) {
+      const mapped = ObjectRegistry.classes.get(canonicalName);
+      if (mapped) {
+        return mapped;
+      }
+    }
+
+    // Fall back to case-insensitive search over classes map
     const lowerName = name.toLowerCase();
     for (const [key, value] of ObjectRegistry.classes.entries()) {
       if (key.toLowerCase() === lowerName) {

@@ -185,4 +185,84 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
       class CollisionTest2 extends SmrtObject {}
     }).toThrow(/Class Name Collision.*case-insensitive/);
   });
+
+  it('should resolve simple class name to qualified manifest key via classNameMap', () => {
+    // Simulate manifest registration with a qualified key (how external packages are registered)
+    // e.g., smrt-users registers Tenant as '@happyvertical/smrt-users:Tenant'
+    const manifestDef = {
+      className: 'TestTenant',
+      fields: {
+        slug: { type: 'text', _meta: { required: true } },
+        context: { type: 'text', _meta: {} },
+      },
+      methods: {},
+      decoratorConfig: {
+        collection: 'tenants',
+        sti: { discriminator: '_meta_type' },
+      },
+    };
+
+    const qualifiedKey = '@test/users:TestTenant';
+    ObjectRegistry.registerFromManifest(
+      qualifiedKey,
+      manifestDef,
+      '@test/users',
+    );
+
+    // classNameMap should have both the qualified key and the simple className mapped
+    // Verify simple name resolves via findClass (the fix for PR #941)
+    const bySimpleName = ObjectRegistry.findClass('TestTenant');
+    expect(bySimpleName).toBeDefined();
+    expect((bySimpleName?.constructor as any)?._isManifestStub).toBe(true);
+
+    // Verify case-insensitive simple name also resolves
+    const byLowerName = ObjectRegistry.findClass('testtenant');
+    expect(byLowerName).toBeDefined();
+    expect(byLowerName).toBe(bySimpleName);
+
+    // Verify qualified key still resolves directly
+    const byQualified = ObjectRegistry.findClass(qualifiedKey);
+    expect(byQualified).toBeDefined();
+    expect(byQualified).toBe(bySimpleName);
+
+    // Verify getClass (public API) also works with simple name
+    const viaGetClass = ObjectRegistry.getClass('TestTenant');
+    expect(viaGetClass).toBeDefined();
+    expect(viaGetClass?.constructor).toBe(bySimpleName?.constructor);
+  });
+
+  it('should resolve simple name after real class replaces qualified manifest stub', () => {
+    // Register manifest stub under qualified key
+    const manifestDef = {
+      className: 'TestEntity',
+      fields: {
+        name: { type: 'text', _meta: {} },
+      },
+      methods: {},
+      decoratorConfig: {},
+    };
+
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:TestEntity',
+      manifestDef,
+      '@test/pkg',
+    );
+
+    // Verify stub is accessible via simple name
+    const stub = ObjectRegistry.findClass('TestEntity');
+    expect(stub).toBeDefined();
+    expect((stub?.constructor as any)?._isManifestStub).toBe(true);
+
+    // Register real class (simulates @smrt() decorator loading the actual module)
+    @smrt()
+    class TestEntity extends SmrtObject {
+      name: string = '';
+    }
+
+    // Real class should now be accessible via simple name
+    const real = ObjectRegistry.findClass('TestEntity');
+    expect(real).toBeDefined();
+    expect((real?.constructor as any)?._isManifestStub).toBeUndefined();
+    expect(real?.constructor).toBe(TestEntity);
+  });
 });
