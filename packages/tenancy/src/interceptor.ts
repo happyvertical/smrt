@@ -333,9 +333,10 @@ export function createTenantInterceptor(
 
       // Stash isNew flag for afterSave dispatch detection
       if (opts.directoryClasses?.includes(className)) {
+        const id = (instance as any).id;
         context.metadata = {
           ...context.metadata,
-          _directoryIsNew: !(instance as any).id,
+          _directoryIsNew: id === undefined || id === null,
         };
       }
 
@@ -464,7 +465,9 @@ export function createTenantInterceptor(
       )
         return;
 
-      const isNew = context.metadata?._directoryIsNew;
+      const rawIsNew = context.metadata?._directoryIsNew;
+      const isNew =
+        typeof rawIsNew === 'boolean' ? rawIsNew : (instance as any).id == null;
       const event = isNew
         ? `directory.${context.className.toLowerCase()}.created`
         : `directory.${context.className.toLowerCase()}.updated`;
