@@ -487,9 +487,92 @@ function extractForeignKeyDependencies(ddl: string): string[] {
 }
 
 /**
+ * Parse column definitions from a CREATE TABLE DDL statement
+ *
+ * Returns a Map of column name → full column definition line.
+ */
+function parseColumnsFromDDL(ddl: string): Map<string, string> {
+  const columns = new Map<string, string>();
+  // Match the body between CREATE TABLE ... ( ... )
+  const bodyMatch = ddl.match(
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?\w+"?\s*\(([\s\S]+)\)/i,
+  );
+  if (!bodyMatch) return columns;
+
+  const body = bodyMatch[1];
+  // Split on commas that are followed by a newline + optional whitespace + quote (column start)
+  const lines = body
+    .split(/,\s*\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    // Extract column name (first quoted or unquoted identifier)
+    const colMatch = line.match(/^"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+/);
+    if (colMatch) {
+      columns.set(colMatch[1], line);
+    }
+  }
+
+  return columns;
+}
+
+/**
+ * Merge two DDL statements for the same table (STI subclasses)
+ *
+ * Takes the union of all columns from both DDLs.
+ * When a column exists in both, the existing definition is kept.
+ */
+function mergeDDL(existingDDL: string, newDDL: string): string {
+  const existingCols = parseColumnsFromDDL(existingDDL);
+  const newCols = parseColumnsFromDDL(newDDL);
+
+  // Find columns in newDDL that are missing from existingDDL
+  const missingCols: string[] = [];
+  for (const [name, def] of newCols) {
+    if (!existingCols.has(name)) {
+      missingCols.push(def);
+    }
+  }
+
+  if (missingCols.length === 0) return existingDDL;
+
+  // Insert missing columns before the closing paren
+  const closingIdx = existingDDL.lastIndexOf(')');
+  if (closingIdx === -1) return existingDDL;
+
+  const before = existingDDL.substring(0, closingIdx).trimEnd();
+  const after = existingDDL.substring(closingIdx);
+  const additions = missingCols.map((col) => `  ${col}`).join(',\n');
+
+  return `${before},\n${additions}\n${after}`;
+}
+
+/**
+ * Merge indexes from multiple STI subclasses sharing the same table
+ *
+ * Deduplicates by index name, keeping the first occurrence.
+ */
+function mergeIndexes(
+  existing: ManifestIndex[],
+  incoming: ManifestIndex[],
+): ManifestIndex[] {
+  const names = new Set(existing.map((i) => i.name));
+  const merged = [...existing];
+  for (const idx of incoming) {
+    if (!names.has(idx.name)) {
+      names.add(idx.name);
+      merged.push(idx);
+    }
+  }
+  return merged;
+}
+
+/**
  * Extract DDL from manifest objects with STI deduplication
  *
  * Multiple classes may share the same table (STI), so we deduplicate by tableName.
+ * When STI subclasses add columns, DDLs are merged to include all columns.
  * Also extracts indexes for generating CREATE INDEX statements.
  */
 function extractDDLFromManifest(
@@ -518,14 +601,26 @@ function extractDDLFromManifest(
 
     const { tableName, ddl, indexes = [] } = objectDef.schema;
 
-    // Deduplicate by tableName (STI classes share tables)
-    if (!tableMap.has(tableName)) {
+    // Merge by tableName — STI subclasses may add columns to the same table
+    const existing = tableMap.get(tableName);
+    if (!existing) {
       tableMap.set(tableName, {
         tableName,
         ddl,
         indexes,
         dependencies: extractForeignKeyDependencies(ddl),
       });
+    } else {
+      // Merge DDL columns and indexes from this STI subclass
+      existing.ddl = mergeDDL(existing.ddl, ddl);
+      existing.indexes = mergeIndexes(existing.indexes, indexes);
+      // Merge FK dependencies
+      const newDeps = extractForeignKeyDependencies(ddl);
+      for (const dep of newDeps) {
+        if (!existing.dependencies.includes(dep)) {
+          existing.dependencies.push(dep);
+        }
+      }
     }
   }
 
