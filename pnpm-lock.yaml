@@ -336,6 +336,55 @@ importers:
         specifier: ^4.0.17
         version: 4.0.17(@types/node@24.10.9)(happy-dom@20.3.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.0.1))(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/chat:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@sveltejs/package':
+        specifier: ^2.5.7
+        version: 2.5.7(svelte@5.46.4)(typescript@5.9.3)
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^6.2.4
+        version: 6.2.4(svelte@5.46.4)(vite@7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      fast-glob:
+        specifier: ^3.3.3
+        version: 3.3.3
+      svelte:
+        specifier: ^5.46.4
+        version: 5.46.4
+      svelte-check:
+        specifier: ^4.3.5
+        version: 4.3.5(picomatch@4.0.3)(svelte@5.46.4)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@types/node@24.10.9)(happy-dom@20.3.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.0.1))(tsx@4.21.0)(yaml@2.8.2)
+
   packages/cli:
     dependencies:
       '@happyvertical/ai':
@@ -11731,7 +11780,7 @@ snapshots:
     dependencies:
       '@googlemaps/url-signature': 1.0.40
       agentkeepalive: 4.6.0
-      axios: 1.13.2(debug@4.4.3)
+      axios: 1.13.2
       query-string: 7.1.3
       retry-axios: 2.6.0(axios@1.13.2)
     transitivePeerDependencies:
@@ -13540,7 +13589,7 @@ snapshots:
       '@slack/types': 2.20.0
       '@types/node': 24.10.9
       '@types/retry': 0.12.0
-      axios: 1.13.5
+      axios: 1.13.5(debug@4.4.3)
       eventemitter3: 5.0.4
       form-data: 4.0.5
       is-electron: 2.2.2
@@ -14327,7 +14376,7 @@ snapshots:
   await-to-js@3.0.0:
     optional: true
 
-  axios@1.13.2(debug@4.4.3):
+  axios@1.13.2:
     dependencies:
       follow-redirects: 1.15.11(debug@4.4.3)
       form-data: 4.0.5
@@ -14335,7 +14384,7 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  axios@1.13.5:
+  axios@1.13.5(debug@4.4.3):
     dependencies:
       follow-redirects: 1.15.11(debug@4.4.3)
       form-data: 4.0.5
@@ -15988,7 +16037,7 @@ snapshots:
       '@types/debug': 4.1.12
       '@types/node': 24.10.9
       '@types/tough-cookie': 4.0.5
-      axios: 1.13.2(debug@4.4.3)
+      axios: 1.13.5(debug@4.4.3)
       camelcase: 6.3.0
       debug: 4.4.3
       dotenv: 16.6.1
@@ -15998,7 +16047,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.5(debug@4.4.3))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -17755,7 +17804,11 @@ snapshots:
 
   retry-axios@2.6.0(axios@1.13.2):
     dependencies:
-      axios: 1.13.2(debug@4.4.3)
+      axios: 1.13.2
+
+  retry-axios@2.6.0(axios@1.13.5(debug@4.4.3)):
+    dependencies:
+      axios: 1.13.5(debug@4.4.3)
 
   retry-request@8.0.2:
     dependencies:
