@@ -487,9 +487,60 @@ function extractForeignKeyDependencies(ddl: string): string[] {
 }
 
 /**
+ * Tokenize CREATE TABLE body into individual column/constraint definitions.
+ *
+ * Splits on top-level commas (not inside parentheses or quotes) so it works
+ * for both multi-line and single-line DDL strings.
+ */
+function tokenizeDDLBody(body: string): string[] {
+  const segments: string[] = [];
+  let current = '';
+  let parenDepth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let prevChar = '';
+
+  for (const ch of body) {
+    if (ch === "'" && !inDoubleQuote && prevChar !== '\\') {
+      inSingleQuote = !inSingleQuote;
+    } else if (ch === '"' && !inSingleQuote && prevChar !== '\\') {
+      inDoubleQuote = !inDoubleQuote;
+    } else if (!inSingleQuote && !inDoubleQuote) {
+      if (ch === '(') parenDepth += 1;
+      else if (ch === ')' && parenDepth > 0) parenDepth -= 1;
+    }
+
+    if (ch === ',' && parenDepth === 0 && !inSingleQuote && !inDoubleQuote) {
+      const trimmed = current.trim();
+      if (trimmed) segments.push(trimmed);
+      current = '';
+    } else {
+      current += ch;
+    }
+
+    prevChar = ch;
+  }
+
+  const last = current.trim();
+  if (last) segments.push(last);
+
+  return segments;
+}
+
+/** Keywords that indicate a table-level constraint, not a column definition */
+const CONSTRAINT_KEYWORDS = new Set([
+  'CONSTRAINT',
+  'PRIMARY',
+  'FOREIGN',
+  'UNIQUE',
+  'CHECK',
+]);
+
+/**
  * Parse column definitions from a CREATE TABLE DDL statement
  *
  * Returns a Map of column name → full column definition line.
+ * Skips table-level constraints (FOREIGN KEY, PRIMARY KEY, etc.).
  */
 function parseColumnsFromDDL(ddl: string): Map<string, string> {
   const columns = new Map<string, string>();
@@ -499,19 +550,17 @@ function parseColumnsFromDDL(ddl: string): Map<string, string> {
   );
   if (!bodyMatch) return columns;
 
-  const body = bodyMatch[1];
-  // Split on commas that are followed by a newline + optional whitespace + quote (column start)
-  const lines = body
-    .split(/,\s*\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const segments = tokenizeDDLBody(bodyMatch[1]);
 
-  for (const line of lines) {
-    // Extract column name (first quoted or unquoted identifier)
-    const colMatch = line.match(/^"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+/);
-    if (colMatch) {
-      columns.set(colMatch[1], line);
-    }
+  for (const segment of segments) {
+    // Extract first identifier and check if it's a constraint keyword
+    const colMatch = segment.match(/^"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+/);
+    if (!colMatch) continue;
+
+    const firstToken = colMatch[1].toUpperCase();
+    if (CONSTRAINT_KEYWORDS.has(firstToken)) continue;
+
+    columns.set(colMatch[1], segment);
   }
 
   return columns;
