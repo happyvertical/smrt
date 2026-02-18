@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.16
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve broken types.js import in Svelte component dist (#942) (jobs)
+  - @happyvertical/smrt-scanner@0.20.16
+  - @happyvertical/smrt-config@0.20.16
+  - @happyvertical/smrt-types@0.20.16
+
 ## 0.20.15
 
 ### Patch Changes
