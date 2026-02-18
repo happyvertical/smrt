@@ -3,10 +3,10 @@
  * JobList - Display a filterable, sortable list of background jobs
  */
 import type { Snippet } from 'svelte';
-import type { JobData, JobFilter, JobSort } from '../types.js';
-import { formatRelativeTime, getPriorityLabel } from '../types.js';
 import JobActions from './JobActions.svelte';
 import JobStatusBadge from './JobStatusBadge.svelte';
+import type { JobData, JobFilter, JobSort } from './types.js';
+import { formatRelativeTime, getPriorityLabel } from './types.js';
 
 export interface Props {
   /** Jobs to display */

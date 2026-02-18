@@ -4,7 +4,7 @@
  */
 
 import { Button } from '@happyvertical/smrt-svelte/ui';
-import type { JobData } from '../types.js';
+import type { JobData } from './types.js';
 
 export interface Props {
   /** Job to perform actions on */
