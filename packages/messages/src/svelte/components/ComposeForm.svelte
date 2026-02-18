@@ -67,7 +67,7 @@ export interface Props {
   }
 </script>
 
-<form class="compose-form" onsubmit|preventDefault={handleSend}>
+<form class="compose-form" onsubmit={(e) => { e.preventDefault(); handleSend(); }}>
   {#if accounts.length > 1}
     <div class="field">
       <label class="field-label" for="compose-account">From</label>
