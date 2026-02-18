@@ -12,6 +12,7 @@
 import type { SmrtObject } from '@happyvertical/smrt-core';
 import {
   type CollectionInterceptor,
+  type DispatchBus,
   GlobalInterceptors,
   type InterceptorContext,
   type ListOptions,
@@ -73,11 +74,43 @@ export interface TenantInterceptorOptions {
     actualTenantId: string,
     context: InterceptorContext,
   ) => void;
+
+  /**
+   * DispatchBus instance for emitting provisioning events on lifecycle changes.
+   * When provided along with directoryClasses, afterSave/afterDelete hooks
+   * emit dispatches like `directory.membership.created`.
+   */
+  dispatchBus?: DispatchBus;
+
+  /**
+   * Class names to emit directory dispatches for on save/delete lifecycle events.
+   * Only classes listed here will trigger dispatch emissions.
+   * @example ['Tenant', 'Membership', 'User']
+   */
+  directoryClasses?: string[];
 }
 
 const DEFAULT_OPTIONS: TenantInterceptorOptions = {
   rawQueryPolicy: 'throw',
 };
+
+/**
+ * Extract a plain-object snapshot of an instance for dispatch payloads.
+ * Copies own enumerable properties, skipping functions and internal symbols.
+ */
+function serializeInstance(
+  instance: SmrtObject,
+  className: string,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { className };
+  for (const key of Object.keys(instance)) {
+    const value = (instance as any)[key];
+    if (typeof value !== 'function') {
+      result[key] = value;
+    }
+  }
+  return result;
+}
 
 /**
  * Create a tenant interceptor instance
@@ -298,6 +331,14 @@ export function createTenantInterceptor(
       // (instance.constructor.name may not match for proxies or plain objects in tests)
       const className = context.className;
 
+      // Stash isNew flag for afterSave dispatch detection
+      if (opts.directoryClasses?.includes(className)) {
+        context.metadata = {
+          ...context.metadata,
+          _directoryIsNew: !(instance as any).id,
+        };
+      }
+
       if (!isTenantScopedClass(className)) {
         return;
       }
@@ -408,6 +449,57 @@ export function createTenantInterceptor(
           },
         );
       }
+    },
+
+    /**
+     * After save: Emit directory dispatch for configured classes
+     */
+    async afterSave(
+      instance: SmrtObject,
+      context: InterceptorContext,
+    ): Promise<void> {
+      if (
+        !opts.dispatchBus ||
+        !opts.directoryClasses?.includes(context.className)
+      )
+        return;
+
+      const isNew = context.metadata?._directoryIsNew;
+      const event = isNew
+        ? `directory.${context.className.toLowerCase()}.created`
+        : `directory.${context.className.toLowerCase()}.updated`;
+
+      await opts.dispatchBus.emit(
+        event,
+        serializeInstance(instance, context.className),
+        {
+          source: 'smrt-tenancy',
+          sourceId: (instance as any).id,
+        },
+      );
+    },
+
+    /**
+     * After delete: Emit directory dispatch for configured classes
+     */
+    async afterDelete(
+      instance: SmrtObject,
+      context: InterceptorContext,
+    ): Promise<void> {
+      if (
+        !opts.dispatchBus ||
+        !opts.directoryClasses?.includes(context.className)
+      )
+        return;
+
+      await opts.dispatchBus.emit(
+        `directory.${context.className.toLowerCase()}.deleted`,
+        serializeInstance(instance, context.className),
+        {
+          source: 'smrt-tenancy',
+          sourceId: (instance as any).id,
+        },
+      );
     },
   };
 }
