@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.19
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - merge DDL columns across STI subclasses in test DB (#945) (vitest)
+  - @happyvertical/smrt-scanner@0.20.19
+  - @happyvertical/smrt-config@0.20.19
+  - @happyvertical/smrt-types@0.20.19
+
 ## 0.20.18
 
 ### Patch Changes
