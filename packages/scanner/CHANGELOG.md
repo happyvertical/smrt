@@ -1,5 +1,12 @@
 # @happyvertical/smrt-scanner
 
+## 0.20.17
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.20.17
+
 ## 0.20.16
 
 ### Patch Changes

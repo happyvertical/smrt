@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.17
+
+### Patch Changes
+
+- ### Features
+
+  - DispatchBus integration for directory provisioning (#943) (tenancy)
+  - @happyvertical/smrt-scanner@0.20.17
+  - @happyvertical/smrt-config@0.20.17
+  - @happyvertical/smrt-types@0.20.17
+
 ## 0.20.16
 
 ### Patch Changes
