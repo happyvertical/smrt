@@ -368,6 +368,143 @@ describe('createIsolatedTestDbFromManifest', () => {
         await cleanup();
       }
     });
+
+    it('should merge columns from STI subclasses that add extra fields', async () => {
+      const manifestPath = join(testDir, 'sti-merge-test.json');
+      const manifest = {
+        objects: {
+          // Base class with core columns
+          Tenant: {
+            className: 'Tenant',
+            schema: {
+              tableName: 'sti_tenants',
+              ddl: 'CREATE TABLE IF NOT EXISTS "sti_tenants" ("id" TEXT PRIMARY KEY NOT NULL, "_meta_type" TEXT NOT NULL, "name" TEXT DEFAULT \'\', "status" TEXT);',
+              indexes: [
+                { name: 'sti_tenants_meta_type_idx', columns: ['_meta_type'] },
+              ],
+            },
+          },
+          // STI subclass adding timezone and editorial_email
+          Publication: {
+            className: 'Publication',
+            schema: {
+              tableName: 'sti_tenants',
+              ddl: 'CREATE TABLE IF NOT EXISTS "sti_tenants" ("id" TEXT PRIMARY KEY NOT NULL, "_meta_type" TEXT NOT NULL, "name" TEXT DEFAULT \'\', "status" TEXT, "timezone" TEXT DEFAULT \'UTC\', "editorial_email" TEXT DEFAULT \'\');',
+              indexes: [
+                { name: 'sti_tenants_meta_type_idx', columns: ['_meta_type'] },
+                { name: 'sti_tenants_timezone_idx', columns: ['timezone'] },
+              ],
+            },
+          },
+          // Another STI subclass adding repo_template and github_org
+          Network: {
+            className: 'Network',
+            schema: {
+              tableName: 'sti_tenants',
+              ddl: 'CREATE TABLE IF NOT EXISTS "sti_tenants" ("id" TEXT PRIMARY KEY NOT NULL, "_meta_type" TEXT NOT NULL, "name" TEXT DEFAULT \'\', "status" TEXT, "repo_template" TEXT DEFAULT \'\', "github_org" TEXT DEFAULT \'\');',
+              indexes: [
+                { name: 'sti_tenants_meta_type_idx', columns: ['_meta_type'] },
+              ],
+            },
+          },
+        },
+      };
+
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+      });
+
+      try {
+        // Should be able to insert with ALL columns from ALL subclasses
+        await db.insert('sti_tenants', {
+          id: 'tenant-1',
+          _meta_type: 'Tenant',
+          name: 'Base Tenant',
+          status: 'active',
+        });
+
+        await db.insert('sti_tenants', {
+          id: 'pub-1',
+          _meta_type: 'Publication',
+          name: 'My Publication',
+          status: 'active',
+          timezone: 'America/Edmonton',
+          editorial_email: 'editor@example.com',
+        });
+
+        await db.insert('sti_tenants', {
+          id: 'net-1',
+          _meta_type: 'Network',
+          name: 'My Network',
+          status: 'active',
+          repo_template: 'template-repo',
+          github_org: 'my-org',
+        });
+
+        const all = await db.list('sti_tenants', {});
+        expect(all).toHaveLength(3);
+
+        // Verify Publication columns exist
+        const pub = await db.get('sti_tenants', { id: 'pub-1' });
+        expect(pub?.timezone).toBe('America/Edmonton');
+        expect(pub?.editorial_email).toBe('editor@example.com');
+
+        // Verify Network columns exist
+        const net = await db.get('sti_tenants', { id: 'net-1' });
+        expect(net?.repo_template).toBe('template-repo');
+        expect(net?.github_org).toBe('my-org');
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('should merge indexes from STI subclasses', async () => {
+      const manifestPath = join(testDir, 'sti-index-merge-test.json');
+      const manifest = {
+        objects: {
+          BaseEvent: {
+            className: 'BaseEvent',
+            schema: {
+              tableName: 'sti_events',
+              ddl: 'CREATE TABLE IF NOT EXISTS "sti_events" ("id" TEXT PRIMARY KEY NOT NULL, "_meta_type" TEXT NOT NULL, "title" TEXT);',
+              indexes: [
+                { name: 'sti_events_meta_type_idx', columns: ['_meta_type'] },
+              ],
+            },
+          },
+          SpecialEvent: {
+            className: 'SpecialEvent',
+            schema: {
+              tableName: 'sti_events',
+              ddl: 'CREATE TABLE IF NOT EXISTS "sti_events" ("id" TEXT PRIMARY KEY NOT NULL, "_meta_type" TEXT NOT NULL, "title" TEXT, "venue" TEXT);',
+              indexes: [
+                { name: 'sti_events_meta_type_idx', columns: ['_meta_type'] },
+                { name: 'sti_events_venue_idx', columns: ['venue'] },
+              ],
+            },
+          },
+        },
+      };
+
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+      });
+
+      try {
+        // Both indexes should exist
+        const indexes =
+          await db.many`SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='sti_events'`;
+        const indexNames = indexes.map((i: any) => i.name);
+        expect(indexNames).toContain('sti_events_meta_type_idx');
+        expect(indexNames).toContain('sti_events_venue_idx');
+      } finally {
+        await cleanup();
+      }
+    });
   });
 
   describe('foreign key dependency ordering', () => {
