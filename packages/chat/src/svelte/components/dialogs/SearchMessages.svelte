@@ -55,10 +55,20 @@ function formatDate(date: string | Date): string {
   });
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function highlightMatch(text: string, search: string): string {
-  if (!search.trim()) return text;
+  const safe = escapeHtml(text);
+  if (!search.trim()) return safe;
   const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return text.replace(
+  return safe.replace(
     new RegExp(`(${escaped})`, 'gi'),
     '<mark class="highlight">$1</mark>',
   );
