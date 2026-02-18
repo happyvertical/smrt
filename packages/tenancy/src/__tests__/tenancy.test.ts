@@ -620,4 +620,255 @@ describe('TenantInterceptor', () => {
       warnSpy.mockRestore();
     });
   });
+
+  describe('directory dispatch hooks', () => {
+    function createMockDispatchBus() {
+      const emitted: Array<{
+        type: string;
+        payload: unknown;
+        options: unknown;
+      }> = [];
+      return {
+        emitted,
+        bus: {
+          emit: vi.fn(
+            async (type: string, payload: unknown, options: unknown) => {
+              emitted.push({ type, payload, options });
+            },
+          ),
+        } as any,
+      };
+    }
+
+    it('should not emit dispatch when dispatchBus not provided (backwards compat)', async () => {
+      const interceptor = createTenantInterceptor({
+        directoryClasses: ['Membership'],
+      });
+      const instance = { id: 'mem-1', tenantId: 't-1', userId: 'u-1' } as any;
+      const context = {
+        className: 'Membership',
+        operation: 'save' as const,
+        timestamp: new Date(),
+        metadata: { _directoryIsNew: true },
+      };
+
+      // Should not throw — just silently skip
+      await interceptor.afterSave?.(instance, context);
+    });
+
+    it('should not emit dispatch for unconfigured classes', async () => {
+      const { bus, emitted } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Membership'],
+      });
+      const instance = { id: 'doc-1', title: 'test' } as any;
+      const context = {
+        className: 'Document',
+        operation: 'save' as const,
+        timestamp: new Date(),
+      };
+
+      await interceptor.afterSave?.(instance, context);
+      expect(emitted).toHaveLength(0);
+    });
+
+    it('should emit directory.*.created for new instances', async () => {
+      const { bus, emitted } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Membership'],
+      });
+      const instance = {
+        id: 'mem-1',
+        tenantId: 't-1',
+        userId: 'u-1',
+        status: 'active',
+      } as any;
+      const context = {
+        className: 'Membership',
+        operation: 'save' as const,
+        timestamp: new Date(),
+        metadata: { _directoryIsNew: true },
+      };
+
+      await interceptor.afterSave?.(instance, context);
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].type).toBe('directory.membership.created');
+      expect(emitted[0].payload).toMatchObject({
+        className: 'Membership',
+        id: 'mem-1',
+        tenantId: 't-1',
+        userId: 'u-1',
+      });
+      expect(emitted[0].options).toMatchObject({
+        source: 'smrt-tenancy',
+        sourceId: 'mem-1',
+      });
+    });
+
+    it('should emit directory.*.updated for existing instances', async () => {
+      const { bus, emitted } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Membership'],
+      });
+      const instance = {
+        id: 'mem-1',
+        tenantId: 't-1',
+        userId: 'u-1',
+        status: 'suspended',
+      } as any;
+      const context = {
+        className: 'Membership',
+        operation: 'save' as const,
+        timestamp: new Date(),
+        metadata: { _directoryIsNew: false },
+      };
+
+      await interceptor.afterSave?.(instance, context);
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].type).toBe('directory.membership.updated');
+    });
+
+    it('should detect isNew via beforeSave metadata stashing', () => {
+      const { bus } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Tenant'],
+      });
+
+      // New instance (no id)
+      const newInstance = { name: 'Acme Corp' } as any;
+      const newContext = {
+        className: 'Tenant',
+        operation: 'save' as const,
+        timestamp: new Date(),
+      };
+      interceptor.beforeSave?.(newInstance, newContext);
+      expect(newContext.metadata?._directoryIsNew).toBe(true);
+
+      // Existing instance (has id)
+      const existingInstance = { id: 'tenant-1', name: 'Acme Corp' } as any;
+      const existingContext = {
+        className: 'Tenant',
+        operation: 'save' as const,
+        timestamp: new Date(),
+      };
+      interceptor.beforeSave?.(existingInstance, existingContext);
+      expect(existingContext.metadata?._directoryIsNew).toBe(false);
+    });
+
+    it('should not stash isNew for unconfigured classes', () => {
+      const { bus } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Membership'],
+      });
+
+      const instance = { name: 'test doc' } as any;
+      const context = {
+        className: 'Document',
+        operation: 'save' as const,
+        timestamp: new Date(),
+      };
+      interceptor.beforeSave?.(instance, context);
+      expect(context.metadata?._directoryIsNew).toBeUndefined();
+    });
+
+    it('should emit directory.*.deleted on afterDelete', async () => {
+      const { bus, emitted } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Membership'],
+      });
+      const instance = {
+        id: 'mem-1',
+        tenantId: 't-1',
+        userId: 'u-1',
+      } as any;
+      const context = {
+        className: 'Membership',
+        operation: 'delete' as const,
+        timestamp: new Date(),
+      };
+
+      await interceptor.afterDelete?.(instance, context);
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].type).toBe('directory.membership.deleted');
+      expect(emitted[0].payload).toMatchObject({
+        className: 'Membership',
+        id: 'mem-1',
+      });
+      expect(emitted[0].options).toMatchObject({
+        source: 'smrt-tenancy',
+        sourceId: 'mem-1',
+      });
+    });
+
+    it('should not emit delete dispatch for unconfigured classes', async () => {
+      const { bus, emitted } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Membership'],
+      });
+      const instance = { id: 'doc-1' } as any;
+      const context = {
+        className: 'Document',
+        operation: 'delete' as const,
+        timestamp: new Date(),
+      };
+
+      await interceptor.afterDelete?.(instance, context);
+      expect(emitted).toHaveLength(0);
+    });
+
+    it('should not emit delete dispatch when dispatchBus not provided', async () => {
+      const interceptor = createTenantInterceptor({
+        directoryClasses: ['Membership'],
+      });
+      const instance = { id: 'mem-1' } as any;
+      const context = {
+        className: 'Membership',
+        operation: 'delete' as const,
+        timestamp: new Date(),
+      };
+
+      // Should not throw
+      await interceptor.afterDelete?.(instance, context);
+    });
+
+    it('should serialize instance without functions', async () => {
+      const { bus, emitted } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Tenant'],
+      });
+      const instance = {
+        id: 'tenant-1',
+        name: 'Acme',
+        slug: 'acme',
+        save: () => {},
+        validate: () => {},
+      } as any;
+      const context = {
+        className: 'Tenant',
+        operation: 'save' as const,
+        timestamp: new Date(),
+        metadata: { _directoryIsNew: true },
+      };
+
+      await interceptor.afterSave?.(instance, context);
+
+      const payload = emitted[0].payload as Record<string, unknown>;
+      expect(payload.id).toBe('tenant-1');
+      expect(payload.name).toBe('Acme');
+      expect(payload.className).toBe('Tenant');
+      expect(payload.save).toBeUndefined();
+      expect(payload.validate).toBeUndefined();
+    });
+  });
 });
