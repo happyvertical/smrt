@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.14
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - fix Svelte component import paths and event handler (#940) (jobs,messages)
+  - @happyvertical/smrt-scanner@0.20.14
+  - @happyvertical/smrt-config@0.20.14
+  - @happyvertical/smrt-types@0.20.14
+
 ## 0.20.10
 
 ### Patch Changes
