@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - findClass resolves simple names via classNameMap (#941) (core)
+  - @happyvertical/smrt-scanner@0.20.15
+  - @happyvertical/smrt-config@0.20.15
+  - @happyvertical/smrt-types@0.20.15
+
 ## 0.20.14
 
 ### Patch Changes
