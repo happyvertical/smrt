@@ -4,9 +4,9 @@
  */
 
 import { Card } from '@happyvertical/smrt-svelte/ui';
-import type { JobData, JobStats, QueueStats } from '../types.js';
 import JobList from './JobList.svelte';
 import JobStatsSummary from './JobStats.svelte';
+import type { JobData, JobStats, QueueStats } from './types.js';
 
 export interface Props {
   /** Statistics data */
