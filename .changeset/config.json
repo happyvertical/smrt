@@ -8,6 +8,7 @@
       "@happyvertical/smrt-agents",
       "@happyvertical/smrt-analytics",
       "@happyvertical/smrt-assets",
+      "@happyvertical/smrt-chat",
       "@happyvertical/smrt-cli",
       "@happyvertical/smrt-commerce",
       "@happyvertical/smrt-config",
