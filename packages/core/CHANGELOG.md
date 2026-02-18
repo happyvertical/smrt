@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.18
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-chat package (#944) (chat)
+  - @happyvertical/smrt-scanner@0.20.18
+  - @happyvertical/smrt-config@0.20.18
+  - @happyvertical/smrt-types@0.20.18
+
 ## 0.20.17
 
 ### Patch Changes
