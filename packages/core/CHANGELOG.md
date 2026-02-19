@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.21
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - review fixes, PG compat, manifest dedup, email sync (#948) (chat,jobs,core,messages)
+  - @happyvertical/smrt-scanner@0.20.21
+  - @happyvertical/smrt-config@0.20.21
+  - @happyvertical/smrt-types@0.20.21
+
 ## 0.20.20
 
 ### Patch Changes
