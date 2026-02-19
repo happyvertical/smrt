@@ -82,6 +82,7 @@ export class ChatService {
       profileId: params.createdByProfileId,
       role: 'owner' as ChatParticipantRole,
       status: 'active',
+      joinedAt: new Date(),
     });
 
     return room;
@@ -234,13 +235,17 @@ export class ChatService {
       params.agentId,
       params.participantProfileId,
     );
-    if (existingSession?.chatRoomId) {
-      const existingRoom = await this.rooms.get({
-        id: existingSession.chatRoomId,
-      });
-      if (existingRoom) {
-        return { session: existingSession, room: existingRoom };
+    if (existingSession && existingSession.tenantId === params.tenantId) {
+      if (existingSession.chatRoomId) {
+        const existingRoom = await this.rooms.get({
+          id: existingSession.chatRoomId,
+        });
+        if (existingRoom) {
+          return { session: existingSession, room: existingRoom };
+        }
       }
+      // Session exists but room is missing/orphaned — expire it so we create fresh
+      await existingSession.expire();
     }
 
     // Create an agent-type room for this session
@@ -295,12 +300,18 @@ export class ChatService {
     if (!session.isActive()) throw new Error('Agent session is not active');
     if (!session.chatRoomId) throw new Error('Agent session has no chat room');
 
-    // Default senderProfileId to session's agentId for assistant/tool roles
-    const senderProfileId =
-      params.senderProfileId ??
-      (params.role === 'assistant' || params.role === 'tool'
-        ? session.agentId
-        : '');
+    // Default senderProfileId to session's agentId for assistant/tool roles.
+    // For all other roles, senderProfileId must be explicitly provided.
+    let senderProfileId = params.senderProfileId;
+    if (!senderProfileId) {
+      if (params.role === 'assistant' || params.role === 'tool') {
+        senderProfileId = session.agentId;
+      } else {
+        throw new Error(
+          'senderProfileId is required for non-assistant/tool roles in agent sessions',
+        );
+      }
+    }
 
     return this.sendMessage({
       tenantId: params.tenantId,

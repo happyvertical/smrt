@@ -1259,7 +1259,7 @@ export async function discoverManifestEntry(
     if (uniqueByFile.size === 1) {
       // All entries point to the same source file — not a real collision.
       // Use the first (highest priority) entry.
-      foundEntries.length = 1;
+      foundEntries.splice(1);
     } else if (uniqueByFile.size > 1) {
       // True collision: different source files define the same class name
       const collisionInfo = foundEntries.map(

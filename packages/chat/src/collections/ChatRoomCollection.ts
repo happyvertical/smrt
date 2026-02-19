@@ -61,9 +61,8 @@ export class ChatRoomCollection extends SmrtCollection<ChatRoom> {
       roomType: 'dm',
       status: 'active',
       maxParticipants: 2,
+      metadata: JSON.stringify({ participantIds: [profileId1, profileId2] }),
     });
-    room.setMetadata({ participantIds: [profileId1, profileId2] });
-    await room.save();
     return room;
   }
 }

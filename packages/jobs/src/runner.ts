@@ -265,9 +265,10 @@ export class TaskRunner extends EventEmitter {
     }
 
     // Get the constructor from the registry entry
-    const ObjectClass = (registeredClass as any).constructor as new (options: {
-      db: DatabaseInterface | null;
-    }) => SmrtObject;
+    const ObjectClass =
+      registeredClass.constructor as unknown as new (options: {
+        db: DatabaseInterface | null;
+      }) => SmrtObject;
 
     // Create or load the object instance
     let instance: SmrtObject;
