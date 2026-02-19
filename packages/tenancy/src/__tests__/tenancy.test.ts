@@ -870,5 +870,94 @@ describe('TenantInterceptor', () => {
       expect(payload.save).toBeUndefined();
       expect(payload.validate).toBeUndefined();
     });
+
+    it('should produce JSON-serializable payload when instance has circular _db handle (issue #946)', async () => {
+      const { bus, emitted } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Membership'],
+      });
+
+      // Simulate a real SmrtObject with a _db handle containing
+      // circular references (connection pool with Timeout objects)
+      const circularPool: Record<string, unknown> = {};
+      const timeout = { _idlePrev: circularPool };
+      circularPool._idleNext = timeout;
+      timeout._idlePrev = circularPool; // circular!
+
+      const instance = {
+        id: 'mem-1',
+        tenantId: 't-1',
+        userId: 'u-1',
+        status: 'active',
+        // Internal framework handles that cause the crash
+        _db: { pool: circularPool },
+        _ai: { client: {} },
+        _fs: { adapter: {} },
+        // toJSON() returns only data fields, like a real SmrtObject
+        toJSON() {
+          return {
+            id: this.id,
+            tenantId: this.tenantId,
+            userId: this.userId,
+            status: this.status,
+          };
+        },
+      } as any;
+
+      const context = {
+        className: 'Membership',
+        operation: 'save' as const,
+        timestamp: new Date(),
+        metadata: { _directoryIsNew: true },
+      };
+
+      await interceptor.afterSave?.(instance, context);
+
+      expect(emitted).toHaveLength(1);
+
+      const payload = emitted[0].payload as Record<string, unknown>;
+      expect(payload.className).toBe('Membership');
+      expect(payload.id).toBe('mem-1');
+      expect(payload.userId).toBe('u-1');
+
+      // The critical assertion: payload must be JSON-serializable
+      // (this is what DispatchBus.emit() does internally)
+      expect(() => JSON.stringify(payload)).not.toThrow();
+
+      // Internal handles must NOT leak into the payload
+      expect(payload._db).toBeUndefined();
+      expect(payload._ai).toBeUndefined();
+      expect(payload._fs).toBeUndefined();
+    });
+
+    it('should fall back to Object.keys when toJSON is not available', async () => {
+      const { bus, emitted } = createMockDispatchBus();
+      const interceptor = createTenantInterceptor({
+        dispatchBus: bus,
+        directoryClasses: ['Tenant'],
+      });
+
+      // Plain object stub without toJSON (backwards compat)
+      const instance = {
+        id: 'tenant-1',
+        name: 'Acme',
+        status: 'active',
+      } as any;
+
+      const context = {
+        className: 'Tenant',
+        operation: 'save' as const,
+        timestamp: new Date(),
+        metadata: { _directoryIsNew: true },
+      };
+
+      await interceptor.afterSave?.(instance, context);
+
+      const payload = emitted[0].payload as Record<string, unknown>;
+      expect(payload.className).toBe('Tenant');
+      expect(payload.id).toBe('tenant-1');
+      expect(payload.name).toBe('Acme');
+    });
   });
 });

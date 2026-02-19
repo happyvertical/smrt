@@ -96,12 +96,24 @@ const DEFAULT_OPTIONS: TenantInterceptorOptions = {
 
 /**
  * Extract a plain-object snapshot of an instance for dispatch payloads.
- * Copies own enumerable properties, skipping functions and internal symbols.
+ *
+ * Prefers `toJSON()` when available (all real SmrtObject instances) because
+ * it returns only data fields and excludes internal handles like `_db`, `_ai`,
+ * and `_fs` which may contain circular references (e.g. connection pools with
+ * Timeout objects).
+ *
+ * @see https://github.com/happyvertical/smrt/issues/946
  */
 function serializeInstance(
   instance: SmrtObject,
   className: string,
 ): Record<string, unknown> {
+  if (typeof (instance as any).toJSON === 'function') {
+    return { className, ...(instance as any).toJSON() };
+  }
+
+  // Fallback for plain-object stubs (e.g. in unit tests):
+  // skip functions and framework-internal properties
   const result: Record<string, unknown> = { className };
   for (const key of Object.keys(instance)) {
     const value = (instance as any)[key];
