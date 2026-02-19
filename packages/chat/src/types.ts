@@ -29,7 +29,7 @@ export interface ChatRoomOptions extends SmrtObjectOptions {
   avatarUrl?: string;
   isArchived?: boolean;
   maxParticipants?: number;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | string;
   createdByProfileId?: string;
   lastMessageAt?: Date | null;
 }
@@ -58,8 +58,8 @@ export interface ChatMessageOptions extends SmrtObjectOptions {
   isEdited?: boolean;
   isDeleted?: boolean;
   replyToMessageId?: string | null;
-  metadata?: Record<string, unknown>;
-  toolCallData?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | string;
+  toolCallData?: Record<string, unknown> | string | null;
   attachments?: string;
 }
 
@@ -72,7 +72,7 @@ export interface ChatParticipantOptions extends SmrtObjectOptions {
   onlineStatus?: OnlineStatus;
   lastReadMessageId?: string | null;
   lastSeenAt?: Date | null;
-  joinedAt?: Date;
+  joinedAt?: Date | null;
   nickname?: string;
   isMuted?: boolean;
   isPinned?: boolean;

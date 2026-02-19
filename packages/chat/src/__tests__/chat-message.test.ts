@@ -273,6 +273,140 @@ describe('ChatMessage', () => {
       expect(threadMsgs).toHaveLength(2);
     });
 
+    it('should count unread messages excluding thread replies', async () => {
+      const msg1 = await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'Root message 1',
+      });
+
+      // Small delay to ensure distinct created_at timestamps
+      await new Promise((r) => setTimeout(r, 10));
+
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'Root message 2',
+      });
+
+      // Thread reply should NOT count toward unread
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p2',
+        content: 'Thread reply',
+        threadId: 'thread-1',
+      });
+
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p2',
+        content: 'Root message 3',
+      });
+
+      // Unread since msg1 — should be 2 (msg2 + msg3, not thread reply)
+      const unread = await messages.getUnreadCount('room-1', msg1.id as string);
+      expect(unread).toBe(2);
+    });
+
+    it('should return total count when no lastReadMessageId', async () => {
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'Message 1',
+      });
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'Message 2',
+      });
+      // Thread reply should still be excluded
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p2',
+        content: 'Thread reply',
+        threadId: 'thread-1',
+      });
+
+      const unread = await messages.getUnreadCount('room-1', null);
+      expect(unread).toBe(2);
+    });
+
+    it('should get latest message per room', async () => {
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'First in room 1',
+      });
+
+      // Small delay to ensure distinct created_at timestamps
+      await new Promise((r) => setTimeout(r, 10));
+
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'Latest in room 1',
+      });
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-2',
+        senderProfileId: 'p1',
+        content: 'Only in room 2',
+      });
+
+      const latest = await messages.getLatestPerRoom(['room-1', 'room-2']);
+      expect(latest.size).toBe(2);
+      expect(latest.get('room-1')?.content).toBe('Latest in room 1');
+      expect(latest.get('room-2')?.content).toBe('Only in room 2');
+    });
+
+    it('should filter by hasAttachments in search', async () => {
+      const withAtt = await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'Has attachment',
+      });
+      withAtt.setAttachments([
+        {
+          id: 'att-1',
+          filename: 'file.txt',
+          contentType: 'text/plain',
+          size: 100,
+        },
+      ]);
+      await withAtt.save();
+
+      await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'No attachment',
+      });
+
+      const withAttResults = await messages.search({
+        roomId: 'room-1',
+        hasAttachments: true,
+      });
+      expect(withAttResults).toHaveLength(1);
+      expect(withAttResults[0].content).toBe('Has attachment');
+
+      const noAttResults = await messages.search({
+        roomId: 'room-1',
+        hasAttachments: false,
+      });
+      expect(noAttResults).toHaveLength(1);
+      expect(noAttResults[0].content).toBe('No attachment');
+    });
+
     it('should search messages with filters', async () => {
       await (
         await messages.create({

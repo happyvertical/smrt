@@ -25,7 +25,7 @@ export class ChatParticipant extends SmrtObject {
   onlineStatus: OnlineStatus = 'offline';
   lastReadMessageId: string | null = null;
   lastSeenAt: Date | null = null;
-  joinedAt: Date = new Date();
+  joinedAt: Date | null = null;
   nickname: string = '';
   isMuted: boolean = false;
   isPinned: boolean = false;

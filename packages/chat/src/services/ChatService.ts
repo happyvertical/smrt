@@ -75,16 +75,14 @@ export class ChatService {
       topic: params.topic ?? '',
       status: 'active',
     });
-    await room.save();
 
-    const participant = await this.participants.create({
+    await this.participants.create({
       tenantId: params.tenantId,
       roomId: room.id as string,
       profileId: params.createdByProfileId,
       role: 'owner' as ChatParticipantRole,
       status: 'active',
     });
-    await participant.save();
 
     return room;
   }
@@ -112,9 +110,10 @@ export class ChatService {
       threadId: params.threadId ?? null,
       agentSessionId: params.agentSessionId ?? null,
       replyToMessageId: params.replyToMessageId ?? null,
-      toolCallData: params.toolCallData ?? null,
+      toolCallData: params.toolCallData
+        ? JSON.stringify(params.toolCallData)
+        : null,
     });
-    await message.save();
 
     // Update room's lastMessageAt
     const room = await this.rooms.get({ id: params.roomId });
@@ -160,7 +159,6 @@ export class ChatService {
       title: params.title ?? '',
       messageCount: 0,
     });
-    await thread.save();
     return thread;
   }
 
@@ -190,8 +188,8 @@ export class ChatService {
       profileId: params.profileId,
       role: params.role ?? 'member',
       status: 'active',
+      joinedAt: new Date(),
     });
-    await participant.save();
     return participant;
   }
 
@@ -231,6 +229,20 @@ export class ChatService {
     maxTokens?: number;
     maxMessages?: number;
   }) {
+    // Check for existing active session first to avoid orphaned rooms
+    const existingSession = await this.agentSessions.findActiveSession(
+      params.agentId,
+      params.participantProfileId,
+    );
+    if (existingSession?.chatRoomId) {
+      const existingRoom = await this.rooms.get({
+        id: existingSession.chatRoomId,
+      });
+      if (existingRoom) {
+        return { session: existingSession, room: existingRoom };
+      }
+    }
+
     // Create an agent-type room for this session
     const room = await this.rooms.create({
       tenantId: params.tenantId,
@@ -240,7 +252,6 @@ export class ChatService {
       status: 'active',
       maxParticipants: 2,
     });
-    await room.save();
 
     // Add participant
     await this.addParticipant({
@@ -271,7 +282,7 @@ export class ChatService {
   async sendAgentMessage(params: {
     tenantId: string;
     agentSessionId: string;
-    senderProfileId: string;
+    senderProfileId?: string;
     content: string;
     role: ChatMessageRole;
     messageType?: ChatMessageType;
@@ -284,10 +295,17 @@ export class ChatService {
     if (!session.isActive()) throw new Error('Agent session is not active');
     if (!session.chatRoomId) throw new Error('Agent session has no chat room');
 
+    // Default senderProfileId to session's agentId for assistant/tool roles
+    const senderProfileId =
+      params.senderProfileId ??
+      (params.role === 'assistant' || params.role === 'tool'
+        ? session.agentId
+        : '');
+
     return this.sendMessage({
       tenantId: params.tenantId,
       roomId: session.chatRoomId,
-      senderProfileId: params.senderProfileId,
+      senderProfileId,
       content: params.content,
       role: params.role,
       messageType: params.messageType ?? 'text',

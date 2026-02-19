@@ -84,17 +84,26 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
       );
     }
 
+    if (filters.hasAttachments !== undefined) {
+      messages = messages.filter(
+        (m) => m.hasAttachments() === filters.hasAttachments,
+      );
+    }
+
     return messages;
   }
 
-  /** Get unread count for a participant in a room */
+  /** Get unread count for a participant in a room (excludes thread replies) */
   async getUnreadCount(
     roomId: string,
     lastReadMessageId: string | null,
   ): Promise<number> {
-    const messages = await this.list({
+    const allMessages = await this.list({
       where: { roomId, isDeleted: false },
     });
+
+    // Only count root messages (not thread replies)
+    const messages = allMessages.filter((m) => !m.threadId);
 
     if (!lastReadMessageId) return messages.length;
 
