@@ -1243,35 +1243,53 @@ export async function discoverManifestEntry(
     }
   }
 
-  // Detect collisions: multiple packages defining the same class name
+  // Deduplicate entries that reference the same source file.
+  // Consumer manifests (e.g. smrt-users, dashboard) re-export classes from
+  // upstream packages (e.g. smrt-profiles). These appear in multiple manifests
+  // but point to the same filePath — they are NOT real collisions.
   if (foundEntries.length > 1) {
-    const collisionInfo = foundEntries.map(
-      (f) =>
-        `  - ${f.packageName} (${f.filePath || 'unknown file'}) from ${f.manifestSource}`,
-    );
+    const uniqueByFile = new Map<string, (typeof foundEntries)[0]>();
+    for (const entry of foundEntries) {
+      const key = entry.filePath || `${entry.packageName}:${className}`;
+      if (!uniqueByFile.has(key)) {
+        uniqueByFile.set(key, entry);
+      }
+    }
 
-    // Store collision info for reporting
-    getManifestCollisionsMap().set(
-      className,
-      foundEntries.map((f) => ({
-        packageName: f.packageName,
-        filePath: f.filePath,
-        manifestSource: f.manifestSource,
-      })),
-    );
+    if (uniqueByFile.size === 1) {
+      // All entries point to the same source file — not a real collision.
+      // Use the first (highest priority) entry.
+      foundEntries.length = 1;
+    } else if (uniqueByFile.size > 1) {
+      // True collision: different source files define the same class name
+      const collisionInfo = foundEntries.map(
+        (f) =>
+          `  - ${f.packageName} (${f.filePath || 'unknown file'}) from ${f.manifestSource}`,
+      );
 
-    // Throw error on collision
-    throw new Error(
-      `SMRT Class Name Collision Detected: "${className}"\n\n` +
-        `This class is defined in multiple packages:\n${collisionInfo.join('\n')}\n\n` +
-        `The collision will cause the wrong field definitions to be used,\n` +
-        `leading to properties not being initialized correctly.\n\n` +
-        `To fix:\n` +
-        `  1. Use unique class names across packages (e.g., ${className}_${constructorPackage?.split('/').pop() || 'Unique'})\n` +
-        `  2. Or use @smrt({ name: 'unique_name' }) to override the registration name\n` +
-        `  3. Remove test classes with conflicting names from production manifests\n\n` +
-        `If this is a test class collision, ensure test manifests are not included in production builds.`,
-    );
+      // Store collision info for reporting
+      getManifestCollisionsMap().set(
+        className,
+        foundEntries.map((f) => ({
+          packageName: f.packageName,
+          filePath: f.filePath,
+          manifestSource: f.manifestSource,
+        })),
+      );
+
+      // Throw error on collision
+      throw new Error(
+        `SMRT Class Name Collision Detected: "${className}"\n\n` +
+          `This class is defined in multiple packages:\n${collisionInfo.join('\n')}\n\n` +
+          `The collision will cause the wrong field definitions to be used,\n` +
+          `leading to properties not being initialized correctly.\n\n` +
+          `To fix:\n` +
+          `  1. Use unique class names across packages (e.g., ${className}_${constructorPackage?.split('/').pop() || 'Unique'})\n` +
+          `  2. Or use @smrt({ name: 'unique_name' }) to override the registration name\n` +
+          `  3. Remove test classes with conflicting names from production manifests\n\n` +
+          `If this is a test class collision, ensure test manifests are not included in production builds.`,
+      );
+    }
   }
 
   // Return the found entry (priority given to constructor's package)
