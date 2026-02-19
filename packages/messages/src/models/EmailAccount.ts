@@ -321,6 +321,24 @@ export class EmailAccount extends Account {
   }
 
   /**
+   * Sync all active email accounts (for job runner)
+   *
+   * This instance method delegates to EmailAccountCollection.syncAll() so that
+   * the TaskRunner can invoke it via `objectType: 'EmailAccount', method: 'syncAll'`.
+   */
+  async syncAll(
+    args?: Record<string, unknown>,
+  ): Promise<Map<string, { success: boolean; error?: Error }>> {
+    const { EmailAccountCollection } = await import(
+      '../collections/EmailAccountCollection'
+    );
+    const collection = await (EmailAccountCollection as any).create({
+      db: this.db,
+    });
+    return collection.syncAll(args);
+  }
+
+  /**
    * Migrate from plain-text settings to secrets
    */
   async migrateToSecrets(): Promise<void> {

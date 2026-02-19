@@ -225,7 +225,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       : 'SELECT status, COUNT(*) as count FROM _smrt_jobs GROUP BY status';
     const params = queue ? [queue] : [];
 
-    const result = await this._db.query(query, params);
+    const result = await this._db.query(query, ...params);
 
     const counts: Record<string, number> = {};
     for (const row of result.rows) {
@@ -284,7 +284,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       params.push(options.limit);
     }
 
-    const result = await this._db.query(query, params);
+    const result = await this._db.query(query, ...params);
     return result.rowCount ?? 0;
   }
 }

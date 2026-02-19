@@ -31,8 +31,8 @@ export class ChatMessage extends SmrtObject {
   isDeleted: boolean = false;
   replyToMessageId: string | null = null;
 
-  metadata: Record<string, unknown> = {};
-  toolCallData: Record<string, unknown> | null = null;
+  metadata: string = '{}';
+  toolCallData: string | null = null;
   attachments: string = '[]';
 
   constructor(options: ChatMessageOptions = {}) {
@@ -53,9 +53,18 @@ export class ChatMessage extends SmrtObject {
     if (options.isDeleted !== undefined) this.isDeleted = options.isDeleted;
     if (options.replyToMessageId !== undefined)
       this.replyToMessageId = options.replyToMessageId;
-    if (options.metadata !== undefined) this.metadata = options.metadata;
+    if (options.metadata !== undefined)
+      this.metadata =
+        typeof options.metadata === 'string'
+          ? options.metadata
+          : JSON.stringify(options.metadata);
     if (options.toolCallData !== undefined)
-      this.toolCallData = options.toolCallData;
+      this.toolCallData =
+        options.toolCallData === null
+          ? null
+          : typeof options.toolCallData === 'string'
+            ? options.toolCallData
+            : JSON.stringify(options.toolCallData);
     if (options.attachments !== undefined)
       this.attachments = options.attachments;
   }
@@ -84,6 +93,31 @@ export class ChatMessage extends SmrtObject {
     }>,
   ): void {
     this.attachments = JSON.stringify(items);
+  }
+
+  getMetadata(): Record<string, unknown> {
+    try {
+      return JSON.parse(this.metadata);
+    } catch {
+      return {};
+    }
+  }
+
+  setMetadata(data: Record<string, unknown>): void {
+    this.metadata = JSON.stringify(data);
+  }
+
+  getToolCallData(): Record<string, unknown> | null {
+    if (!this.toolCallData) return null;
+    try {
+      return JSON.parse(this.toolCallData);
+    } catch {
+      return null;
+    }
+  }
+
+  setToolCallData(data: Record<string, unknown> | null): void {
+    this.toolCallData = data ? JSON.stringify(data) : null;
   }
 
   hasAttachments(): boolean {

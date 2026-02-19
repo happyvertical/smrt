@@ -45,8 +45,9 @@ export class ChatRoomCollection extends SmrtCollection<ChatRoom> {
     // Check each DM room to see if both profiles are participants
     // This is a simplified approach; in production you'd use a SQL join
     for (const dm of dms) {
-      if (dm.metadata?.participantIds) {
-        const pids = dm.metadata.participantIds as string[];
+      const meta = dm.getMetadata();
+      if (meta.participantIds) {
+        const pids = meta.participantIds as string[];
         if (pids.includes(profileId1) && pids.includes(profileId2)) {
           return dm;
         }
@@ -60,9 +61,8 @@ export class ChatRoomCollection extends SmrtCollection<ChatRoom> {
       roomType: 'dm',
       status: 'active',
       maxParticipants: 2,
-      metadata: { participantIds: [profileId1, profileId2] },
+      metadata: JSON.stringify({ participantIds: [profileId1, profileId2] }),
     });
-    await room.save();
     return room;
   }
 }

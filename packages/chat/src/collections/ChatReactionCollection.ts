@@ -47,13 +47,12 @@ export class ChatReactionCollection extends SmrtCollection<ChatReaction> {
       return { added: false };
     }
 
-    const reaction = await this.create({
+    await this.create({
       tenantId,
       messageId,
       profileId,
       emoji,
     });
-    await reaction.save();
     return { added: true };
   }
 }

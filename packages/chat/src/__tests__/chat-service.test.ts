@@ -241,6 +241,28 @@ describe('ChatService', () => {
       expect(membership?.role).toBe('owner');
     });
 
+    it('should return existing session when called twice', async () => {
+      const result1 = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        participantProfileId: 'profile-1',
+      });
+
+      const result2 = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        participantProfileId: 'profile-1',
+      });
+
+      // Should return the same session and room (no orphaned rooms)
+      expect(result2.session.id).toBe(result1.session.id);
+      expect(result2.room.id).toBe(result1.room.id);
+
+      // Verify only one agent room was created
+      const agentRooms = await chat.rooms.findAgentRooms();
+      expect(agentRooms).toHaveLength(1);
+    });
+
     it('should send messages within an agent session', async () => {
       const { session, room } = await chat.createAgentSession({
         tenantId: 'tenant-1',

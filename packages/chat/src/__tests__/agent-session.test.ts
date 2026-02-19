@@ -272,6 +272,51 @@ describe('AgentSession', () => {
       expect(s2.id).toBe(s1.id);
     });
 
+    it('should expire stale sessions by lastMessageAt', async () => {
+      const s1 = await sessions.create({
+        agentId: 'agent-1',
+        participantProfileId: 'p1',
+        status: 'active',
+      });
+      // Simulate old message
+      s1.lastMessageAt = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 hours ago
+      await s1.save();
+
+      const s2 = await sessions.create({
+        agentId: 'agent-2',
+        participantProfileId: 'p1',
+        status: 'active',
+      });
+      s2.lastMessageAt = new Date(); // just now
+      await s2.save();
+
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const expired = await sessions.expireStale(oneHourAgo);
+
+      expect(expired).toBe(1);
+
+      const loaded = await sessions.get({ id: s1.id });
+      expect(loaded?.status).toBe('expired');
+
+      const loaded2 = await sessions.get({ id: s2.id });
+      expect(loaded2?.status).toBe('active');
+    });
+
+    it('should expire sessions with no messages using created_at', async () => {
+      // Session with no messages at all — should still be expirable
+      await sessions.create({
+        agentId: 'agent-old',
+        participantProfileId: 'p1',
+        status: 'active',
+      });
+
+      // Expire anything "older than 1 second from now in the future" — everything
+      const future = new Date(Date.now() + 1000);
+      const expired = await sessions.expireStale(future);
+
+      expect(expired).toBe(1);
+    });
+
     it('should find sessions by agent', async () => {
       await (
         await sessions.create({

@@ -6,6 +6,8 @@ import type {
   ChatRoomType,
 } from '../types.js';
 
+type ChatRoomMetadata = Record<string, unknown>;
+
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'chat_rooms',
@@ -25,7 +27,7 @@ export class ChatRoom extends SmrtObject {
   avatarUrl: string = '';
   isArchived: boolean = false;
   maxParticipants: number = 0;
-  metadata: Record<string, unknown> = {};
+  metadata: string = '{}';
   createdByProfileId: string = '';
   lastMessageAt: Date | null = null;
 
@@ -42,11 +44,32 @@ export class ChatRoom extends SmrtObject {
     if (options.isArchived !== undefined) this.isArchived = options.isArchived;
     if (options.maxParticipants !== undefined)
       this.maxParticipants = options.maxParticipants;
-    if (options.metadata !== undefined) this.metadata = options.metadata;
+    if (options.metadata !== undefined)
+      this.metadata =
+        typeof options.metadata === 'string'
+          ? options.metadata
+          : JSON.stringify(options.metadata);
     if (options.createdByProfileId !== undefined)
       this.createdByProfileId = options.createdByProfileId;
     if (options.lastMessageAt !== undefined)
       this.lastMessageAt = options.lastMessageAt;
+  }
+
+  getMetadata(): ChatRoomMetadata {
+    try {
+      return JSON.parse(this.metadata);
+    } catch {
+      return {};
+    }
+  }
+
+  setMetadata(data: ChatRoomMetadata): void {
+    this.metadata = JSON.stringify(data);
+  }
+
+  updateMetadata(updates: ChatRoomMetadata): void {
+    const current = this.getMetadata();
+    this.metadata = JSON.stringify({ ...current, ...updates });
   }
 
   isDM(): boolean {

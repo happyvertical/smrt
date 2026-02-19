@@ -47,7 +47,6 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
       systemPrompt: params.systemPrompt ?? '',
       status: 'active',
     });
-    await session.save();
     return session;
   }
 
@@ -59,7 +58,13 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
     const sessions = await this.list({ where: { status: 'active' } });
     let expired = 0;
     for (const session of sessions) {
-      if (session.lastMessageAt && session.lastMessageAt < olderThan) {
+      // Use lastMessageAt if available, otherwise fall back to created_at
+      const sessionAge = session.lastMessageAt
+        ? new Date(session.lastMessageAt)
+        : session.created_at
+          ? new Date(session.created_at)
+          : null;
+      if (sessionAge && sessionAge < olderThan) {
         await session.expire();
         expired++;
       }
