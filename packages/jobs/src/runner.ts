@@ -264,8 +264,8 @@ export class TaskRunner extends EventEmitter {
       throw new Error(`Unknown object type: ${job.objectType}`);
     }
 
-    // Cast to a constructable type
-    const ObjectClass = registeredClass as unknown as new (options: {
+    // Get the constructor from the registry entry
+    const ObjectClass = (registeredClass as any).constructor as new (options: {
       db: DatabaseInterface | null;
     }) => SmrtObject;
 

@@ -22,6 +22,8 @@ export interface ScheduleRunnerConfig {
 export interface ScheduleRunnerEvents {
   'schedule:triggered': (schedule: ScheduleInfo) => void;
   'schedule:error': (schedule: ScheduleInfo, error: Error) => void;
+  'schedule:completed': (scheduleId: string) => void;
+  'schedule:failed': (scheduleId: string, error: string) => void;
   'runner:started': () => void;
   'runner:stopped': () => void;
   'runner:error': (error: Error) => void;
@@ -53,12 +55,23 @@ const DEFAULT_CONFIG: Required<ScheduleRunnerConfig> = {
  * 1. ScheduleRunner checks for due schedules based on cron expressions
  * 2. When a schedule is due, it creates a SmrtJob for the agent
  * 3. TaskRunner picks up and executes the job
+ * 4. On job completion/failure, call handleJobCompletion() to update the schedule
  *
  * @example
  * ```typescript
  * const scheduleRunner = new ScheduleRunner({ pollInterval: 30000 });
  * await scheduleRunner.initialize(db);
  * await scheduleRunner.start();
+ *
+ * // Wire up TaskRunner events to update schedule state
+ * taskRunner.on('job:completed', (job) => {
+ *   const scheduleId = job.args?._scheduleId;
+ *   if (scheduleId) scheduleRunner.handleJobCompletion(scheduleId, true);
+ * });
+ * taskRunner.on('job:failed', (job, error) => {
+ *   const scheduleId = job.args?._scheduleId;
+ *   if (scheduleId) scheduleRunner.handleJobCompletion(scheduleId, false, error.message);
+ * });
  *
  * // Graceful shutdown
  * process.on('SIGTERM', () => scheduleRunner.stop());
@@ -140,6 +153,62 @@ export class ScheduleRunner extends EventEmitter {
   }
 
   /**
+   * Handle job completion for a scheduled job.
+   *
+   * Call this from TaskRunner's job:completed / job:failed events
+   * when the job has a `_scheduleId` in its args.
+   */
+  async handleJobCompletion(
+    scheduleId: string,
+    success: boolean,
+    errorMessage?: string,
+  ): Promise<void> {
+    if (!this.db) return;
+
+    try {
+      if (success) {
+        await this.db.query(
+          `UPDATE _smrt_agent_schedules
+           SET running_count = CASE WHEN running_count > 0 THEN running_count - 1 ELSE 0 END,
+               last_run = ?,
+               last_status = 'success',
+               last_error = NULL,
+               run_count = run_count + 1,
+               success_count = success_count + 1
+           WHERE id = ?`,
+          new Date().toISOString(),
+          scheduleId,
+        );
+        this.emit('schedule:completed', scheduleId);
+      } else {
+        await this.db.query(
+          `UPDATE _smrt_agent_schedules
+           SET running_count = CASE WHEN running_count > 0 THEN running_count - 1 ELSE 0 END,
+               last_run = ?,
+               last_status = 'failed',
+               last_error = ?,
+               run_count = run_count + 1,
+               failure_count = failure_count + 1
+           WHERE id = ?`,
+          new Date().toISOString(),
+          errorMessage ?? 'Unknown error',
+          scheduleId,
+        );
+        this.emit(
+          'schedule:failed',
+          scheduleId,
+          errorMessage ?? 'Unknown error',
+        );
+      }
+    } catch (err) {
+      this.logger.error('Failed to update schedule after job completion', {
+        scheduleId,
+        error: err,
+      });
+    }
+  }
+
+  /**
    * Start the polling loop
    */
   private startPolling(): void {
@@ -180,7 +249,8 @@ export class ScheduleRunner extends EventEmitter {
        AND running_count < max_concurrent
        ORDER BY next_run ASC
        LIMIT ?`,
-      [now, this.config.batchSize],
+      now,
+      this.config.batchSize,
     );
 
     for (const row of result.rows) {
@@ -202,12 +272,33 @@ export class ScheduleRunner extends EventEmitter {
     };
 
     try {
-      // Increment running count
+      // Parse method_args and agent_config from JSON strings if needed
+      let methodArgs: Record<string, unknown> = {};
+      if (schedule.method_args) {
+        methodArgs =
+          typeof schedule.method_args === 'string'
+            ? JSON.parse(schedule.method_args as string)
+            : (schedule.method_args as Record<string, unknown>);
+      }
+      let agentConfig: Record<string, unknown> = {};
+      if (schedule.agent_config) {
+        agentConfig =
+          typeof schedule.agent_config === 'string'
+            ? JSON.parse(schedule.agent_config as string)
+            : (schedule.agent_config as Record<string, unknown>);
+      }
+
+      // Compute next run time from cron before creating the job
+      const nextRun = getNextCronDate(schedule.cron as string);
+
+      // Increment running count and advance next_run in one update
       await this.db.query(
         `UPDATE _smrt_agent_schedules
-         SET running_count = running_count + 1
+         SET running_count = running_count + 1,
+             next_run = ?
          WHERE id = ?`,
-        [schedule.id],
+        nextRun.toISOString(),
+        schedule.id,
       );
 
       // Create a job for this schedule
@@ -217,8 +308,8 @@ export class ScheduleRunner extends EventEmitter {
         objectId: schedule.agent_id as string | null,
         method: (schedule.method as string) || 'run',
         args: {
-          ...((schedule.method_args as Record<string, unknown>) || {}),
-          ...((schedule.agent_config as Record<string, unknown>) || {}),
+          ...methodArgs,
+          ...agentConfig,
           _scheduleId: schedule.id,
         },
         priority: 75, // High priority for scheduled agents
@@ -233,6 +324,7 @@ export class ScheduleRunner extends EventEmitter {
         scheduleId: schedule.id,
         agentType: schedule.agent_type,
         jobId: job.id,
+        nextRun: nextRun.toISOString(),
       });
     } catch (error) {
       // Decrement running count on failure
@@ -242,7 +334,8 @@ export class ScheduleRunner extends EventEmitter {
              status = 'error',
              last_error = ?
          WHERE id = ?`,
-        [(error as Error).message, schedule.id],
+        (error as Error).message,
+        schedule.id,
       );
 
       this.emit('schedule:error', scheduleInfo, error as Error);
@@ -266,6 +359,87 @@ interface ScheduleRow {
   method: unknown;
   method_args: unknown;
   timeout: unknown;
+}
+
+// --- Cron helpers (self-contained, no external dependency) ---
+
+/**
+ * Parse a cron expression and get the next run date.
+ * Supports standard 5-field cron: minute hour day-of-month month day-of-week
+ */
+function getNextCronDate(cron: string): Date {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    throw new Error(
+      `Invalid cron expression: expected 5 fields, got ${parts.length}`,
+    );
+  }
+
+  const [minuteExpr, hourExpr, dayExpr, monthExpr, dowExpr] = parts;
+
+  const now = new Date();
+  const candidate = new Date(now);
+  candidate.setSeconds(0);
+  candidate.setMilliseconds(0);
+
+  // Move to next minute at minimum
+  candidate.setMinutes(candidate.getMinutes() + 1);
+
+  // Search for next matching date (limit to 1 year)
+  const maxIterations = 525600;
+  for (let i = 0; i < maxIterations; i++) {
+    if (
+      matchesCronField(candidate.getMonth() + 1, monthExpr) &&
+      matchesCronField(candidate.getDate(), dayExpr) &&
+      matchesCronField(candidate.getDay(), dowExpr) &&
+      matchesCronField(candidate.getHours(), hourExpr) &&
+      matchesCronField(candidate.getMinutes(), minuteExpr)
+    ) {
+      return candidate;
+    }
+
+    candidate.setMinutes(candidate.getMinutes() + 1);
+  }
+
+  throw new Error(`Could not find next run date for cron: ${cron}`);
+}
+
+/**
+ * Check if a value matches a cron field expression
+ */
+function matchesCronField(value: number, expr: string): boolean {
+  if (expr === '*') return true;
+
+  // Step values (*/5, 0-30/2)
+  if (expr.includes('/')) {
+    const [range, stepStr] = expr.split('/');
+    const step = parseInt(stepStr, 10);
+    if (range === '*') return value % step === 0;
+    if (range.includes('-')) {
+      const [startStr, endStr] = range.split('-');
+      const start = parseInt(startStr, 10);
+      const end = parseInt(endStr, 10);
+      if (value < start || value > end) return false;
+      return (value - start) % step === 0;
+    }
+  }
+
+  // Ranges (1-5)
+  if (expr.includes('-')) {
+    const [startStr, endStr] = expr.split('-');
+    const start = parseInt(startStr, 10);
+    const end = parseInt(endStr, 10);
+    return value >= start && value <= end;
+  }
+
+  // Lists (1,3,5)
+  if (expr.includes(',')) {
+    const values = expr.split(',').map((v) => parseInt(v.trim(), 10));
+    return values.includes(value);
+  }
+
+  // Exact match
+  return value === parseInt(expr, 10);
 }
 
 /**
