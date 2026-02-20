@@ -1092,6 +1092,31 @@ export class ObjectRegistry {
         return;
       }
 
+      // Allow subclass to replace parent class with the same name (STI child-wins).
+      // This happens when a downstream package extends a base class with the same
+      // name to customize behavior (e.g., histrio's Character extends smrt-video's Character).
+      try {
+        if (ctor.prototype instanceof existing.constructor) {
+          // New class extends existing — child wins
+          existing.constructor = ctor;
+          existing.config = { ...existing.config, ...config };
+          ObjectRegistry.constructorIndex.set(ctor, name);
+          verboseLog(
+            `[registry] Subclass '${name}' from ${newPackageName || 'unknown'} replaced parent from ${existing.packageName || 'unknown'}`,
+          );
+          return;
+        }
+        if (existing.constructor.prototype instanceof ctor) {
+          // Existing class extends new — existing (child) already wins, skip
+          verboseLog(
+            `[registry] Skipping parent '${name}' — subclass already registered`,
+          );
+          return;
+        }
+      } catch {
+        // instanceof can throw if constructors are not proper functions — fall through to collision error
+      }
+
       // Different constructors with same name from different source files - this is a collision!
       // This will cause silent bugs where the wrong fields are used
       throw new Error(
@@ -1171,6 +1196,31 @@ export class ObjectRegistry {
           // Index constructor for O(1) reverse lookups (Issue #713)
           ObjectRegistry.constructorIndex.set(ctor, name);
           return;
+        }
+
+        // Allow subclass to replace parent class (STI child-wins, case-insensitive)
+        try {
+          if (ctor.prototype instanceof existing.constructor) {
+            ObjectRegistry.classes.delete(existingKey);
+            existing.constructor = ctor;
+            existing.name = name;
+            existing.config = { ...existing.config, ...config };
+            ObjectRegistry.classes.set(name, existing);
+            ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+            ObjectRegistry.constructorIndex.set(ctor, name);
+            verboseLog(
+              `[registry] Subclass '${name}' replaced parent '${existingKey}'`,
+            );
+            return;
+          }
+          if (existing.constructor.prototype instanceof ctor) {
+            verboseLog(
+              `[registry] Skipping parent '${name}' — subclass '${existingKey}' already registered`,
+            );
+            return;
+          }
+        } catch {
+          // instanceof can throw if constructors are not proper functions — fall through
         }
 
         // Different constructors with case-insensitive name match from different source files
