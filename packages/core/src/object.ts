@@ -5,7 +5,7 @@ import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import { ContentHasher } from './embeddings/hash';
 import { EmbeddingProvider } from './embeddings/provider';
-import { EmbeddingStorage, getVectorCapability } from './embeddings/storage';
+import { EmbeddingStorage } from './embeddings/storage';
 import type { GenerateEmbeddingsOptions } from './embeddings/types';
 import {
   DatabaseError,
@@ -2060,9 +2060,7 @@ export class SmrtObject extends SmrtClass {
     // Resolve vector capabilities for native storage
     const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
     const vector =
-      projectConfig?.storage === 'native'
-        ? getVectorCapability(this.systemDb)
-        : undefined;
+      projectConfig?.storage === 'native' ? this.systemDb.vector : undefined;
 
     // Process each field
     for (const fieldName of fieldsToProcess) {

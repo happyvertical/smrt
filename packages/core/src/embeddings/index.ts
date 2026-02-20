@@ -34,9 +34,8 @@ export { ContentHasher } from './hash';
 // Provider
 export { DEFAULT_EMBEDDING_CONFIG, EmbeddingProvider } from './provider';
 export { CosineSimilarity } from './similarity';
-export type { VectorCapabilityLike } from './storage';
 // Storage
-export { EmbeddingStorage, getVectorCapability } from './storage';
+export { EmbeddingStorage } from './storage';
 // Types
 export type {
   BatchGenerateOptions,

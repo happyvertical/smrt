@@ -415,10 +415,8 @@ export class SmrtClass {
         const { ObjectRegistry } = await import('./registry.js');
         const embeddingConfig = ObjectRegistry.getProjectEmbeddingConfig();
         if (embeddingConfig?.storage === 'native') {
-          const { getVectorCapability, EmbeddingStorage } = await import(
-            './embeddings/storage.js'
-          );
-          const vector = getVectorCapability(this._db);
+          const { EmbeddingStorage } = await import('./embeddings/storage.js');
+          const vector = this._db.vector;
           if (vector) {
             const dimensions = embeddingConfig.dimensions || 768;
             await EmbeddingStorage.ensureVectorStorage(

@@ -2,7 +2,7 @@ import { buildWhere } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import { EmbeddingProvider } from './embeddings/provider';
-import { EmbeddingStorage, getVectorCapability } from './embeddings/storage';
+import { EmbeddingStorage } from './embeddings/storage';
 import {
   createInterceptorContext,
   GlobalInterceptors,
@@ -2093,8 +2093,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Resolve storage strategy
     const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
     const storage = projectConfig?.storage || 'json';
-    const vector =
-      storage === 'native' ? getVectorCapability(this.systemDb) : undefined;
+    const vector = storage === 'native' ? this.systemDb.vector : undefined;
 
     // Use unified search method (delegates to native or in-memory)
     const scored = await EmbeddingStorage.searchSimilar(

@@ -2,10 +2,11 @@
  * Tests for EmbeddingStorage
  */
 
+import type { VectorCapabilities } from '@happyvertical/sql';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CREATE_SMRT_EMBEDDINGS_TABLE } from '../../system/schema';
-import { EmbeddingStorage, type VectorCapabilityLike } from '../storage';
+import { EmbeddingStorage } from '../storage';
 
 describe('EmbeddingStorage', () => {
   let db: DatabaseInterface;
@@ -552,7 +553,7 @@ describe('EmbeddingStorage', () => {
 
   describe('searchSimilar (with mock vector capability)', () => {
     it('should delegate to vector.search when capability is provided', async () => {
-      const mockVector: VectorCapabilityLike = {
+      const mockVector: VectorCapabilities = {
         search: vi.fn().mockResolvedValue([
           { id: 'emb-1', object_id: 'article-1', distance: 0.1 },
           { id: 'emb-2', object_id: 'article-2', distance: 0.5 },
@@ -592,7 +593,7 @@ describe('EmbeddingStorage', () => {
         dimensions: 3,
       });
 
-      const mockVector: VectorCapabilityLike = {
+      const mockVector: VectorCapabilities = {
         search: vi.fn().mockRejectedValue(new Error('pgvector not installed')),
         ensureColumn: vi.fn(),
         ensureIndex: vi.fn(),
@@ -613,7 +614,7 @@ describe('EmbeddingStorage', () => {
     });
 
     it('should convert cosine distance to similarity correctly', async () => {
-      const mockVector: VectorCapabilityLike = {
+      const mockVector: VectorCapabilities = {
         search: vi.fn().mockResolvedValue([
           { id: 'e1', object_id: 'obj-identical', distance: 0.0 },
           { id: 'e2', object_id: 'obj-orthogonal', distance: 1.0 },
@@ -642,7 +643,7 @@ describe('EmbeddingStorage', () => {
     });
 
     it('should filter by minSimilarity after distance conversion', async () => {
-      const mockVector: VectorCapabilityLike = {
+      const mockVector: VectorCapabilities = {
         search: vi.fn().mockResolvedValue([
           { id: 'e1', object_id: 'obj-close', distance: 0.1 },
           { id: 'e2', object_id: 'obj-far', distance: 1.5 },
@@ -668,7 +669,7 @@ describe('EmbeddingStorage', () => {
 
   describe('upsert with vector capability', () => {
     it('should call vector.upsertVector when capability is provided', async () => {
-      const mockVector: VectorCapabilityLike = {
+      const mockVector: VectorCapabilities = {
         search: vi.fn(),
         ensureColumn: vi.fn(),
         ensureIndex: vi.fn(),
@@ -714,7 +715,7 @@ describe('EmbeddingStorage', () => {
     });
 
     it('should not fail if vector.upsertVector throws', async () => {
-      const mockVector: VectorCapabilityLike = {
+      const mockVector: VectorCapabilities = {
         search: vi.fn(),
         ensureColumn: vi.fn(),
         ensureIndex: vi.fn(),
@@ -773,7 +774,7 @@ describe('EmbeddingStorage', () => {
 
   describe('ensureVectorStorage', () => {
     it('should call ensureColumn and ensureIndex on the vector capability', async () => {
-      const mockVector: VectorCapabilityLike = {
+      const mockVector: VectorCapabilities = {
         search: vi.fn(),
         ensureColumn: vi.fn().mockResolvedValue(undefined),
         ensureIndex: vi.fn().mockResolvedValue(undefined),

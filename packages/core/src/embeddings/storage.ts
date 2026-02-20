@@ -6,63 +6,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import type { DatabaseInterface, VectorCapabilities } from '@happyvertical/sql';
 import { CosineSimilarity } from './similarity';
 import type { StoredEmbedding } from './types';
 
-/**
- * Vector capabilities interface (mirrors @happyvertical/sql VectorCapabilities).
- * Defined locally so smrt-core doesn't require a specific SDK version.
- */
-export interface VectorCapabilityLike {
-  search(
-    table: string,
-    column: string,
-    embedding: number[],
-    options?: {
-      limit?: number;
-      metric?: 'cosine' | 'l2' | 'ip';
-      where?: string;
-      params?: any[];
-    },
-  ): Promise<Array<{ id: string; distance: number; [key: string]: any }>>;
-
-  ensureColumn(
-    table: string,
-    column: string,
-    dimensions: number,
-  ): Promise<void>;
-
-  ensureIndex(
-    table: string,
-    column: string,
-    options?: {
-      dimensions: number;
-      metric?: 'cosine' | 'l2' | 'ip';
-      type?: 'hnsw' | 'ivfflat';
-    },
-  ): Promise<void>;
-
-  upsertVector(
-    table: string,
-    where: Record<string, any>,
-    column: string,
-    embedding: number[],
-  ): Promise<void>;
-}
-
 /** Column name for native vector storage */
 const VECTOR_COLUMN = 'embedding_vector';
-
-/**
- * Extract vector capabilities from a database interface (if available).
- * Uses runtime check to support both old and new SDK versions.
- */
-export function getVectorCapability(
-  db: DatabaseInterface,
-): VectorCapabilityLike | undefined {
-  return (db as any).vector as VectorCapabilityLike | undefined;
-}
 
 /**
  * Storage operations for embeddings in _smrt_embeddings table
@@ -87,7 +36,7 @@ export class EmbeddingStorage {
       dimensions: number;
       provider?: string;
     },
-    vector?: VectorCapabilityLike,
+    vector?: VectorCapabilities,
   ): Promise<void> {
     const now = new Date().toISOString();
     const id = randomUUID();
@@ -157,7 +106,7 @@ export class EmbeddingStorage {
       limit?: number;
       minSimilarity?: number;
     } = {},
-    vector?: VectorCapabilityLike,
+    vector?: VectorCapabilities,
   ): Promise<Array<{ objectId: string; similarity: number }>> {
     const { field, model, limit = 10, minSimilarity = 0 } = options;
 
@@ -238,7 +187,7 @@ export class EmbeddingStorage {
   static async ensureVectorStorage(
     _db: DatabaseInterface,
     dimensions: number,
-    vector: VectorCapabilityLike,
+    vector: VectorCapabilities,
   ): Promise<void> {
     await vector.ensureColumn('_smrt_embeddings', VECTOR_COLUMN, dimensions);
     await vector.ensureIndex('_smrt_embeddings', VECTOR_COLUMN, {
