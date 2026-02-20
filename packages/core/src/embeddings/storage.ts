@@ -2,11 +2,67 @@
  * Embedding Storage Operations
  *
  * CRUD operations for the _smrt_embeddings system table.
+ * Supports both JSON-based and native vector storage strategies.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { CosineSimilarity } from './similarity';
 import type { StoredEmbedding } from './types';
+
+/**
+ * Vector capabilities interface (mirrors @happyvertical/sql VectorCapabilities).
+ * Defined locally so smrt-core doesn't require a specific SDK version.
+ */
+export interface VectorCapabilityLike {
+  search(
+    table: string,
+    column: string,
+    embedding: number[],
+    options?: {
+      limit?: number;
+      metric?: 'cosine' | 'l2' | 'ip';
+      where?: string;
+      params?: any[];
+    },
+  ): Promise<Array<{ id: string; distance: number; [key: string]: any }>>;
+
+  ensureColumn(
+    table: string,
+    column: string,
+    dimensions: number,
+  ): Promise<void>;
+
+  ensureIndex(
+    table: string,
+    column: string,
+    options?: {
+      dimensions: number;
+      metric?: 'cosine' | 'l2' | 'ip';
+      type?: 'hnsw' | 'ivfflat';
+    },
+  ): Promise<void>;
+
+  upsertVector(
+    table: string,
+    where: Record<string, any>,
+    column: string,
+    embedding: number[],
+  ): Promise<void>;
+}
+
+/** Column name for native vector storage */
+const VECTOR_COLUMN = 'embedding_vector';
+
+/**
+ * Extract vector capabilities from a database interface (if available).
+ * Uses runtime check to support both old and new SDK versions.
+ */
+export function getVectorCapability(
+  db: DatabaseInterface,
+): VectorCapabilityLike | undefined {
+  return (db as any).vector as VectorCapabilityLike | undefined;
+}
 
 /**
  * Storage operations for embeddings in _smrt_embeddings table
@@ -17,6 +73,7 @@ export class EmbeddingStorage {
    *
    * @param db - Database interface
    * @param data - Embedding data to store
+   * @param vector - Optional vector capabilities for native storage
    */
   static async upsert(
     db: DatabaseInterface,
@@ -30,6 +87,7 @@ export class EmbeddingStorage {
       dimensions: number;
       provider?: string;
     },
+    vector?: VectorCapabilityLike,
   ): Promise<void> {
     const now = new Date().toISOString();
     const id = randomUUID();
@@ -51,6 +109,143 @@ export class EmbeddingStorage {
         updated_at: now,
       },
     );
+
+    // Also store native vector if capability is available
+    if (vector) {
+      try {
+        await vector.upsertVector(
+          '_smrt_embeddings',
+          {
+            object_class: data.objectClass,
+            object_id: data.objectId,
+            field_name: data.fieldName,
+            model: data.model,
+          },
+          VECTOR_COLUMN,
+          data.embedding,
+        );
+      } catch (error) {
+        // Log but don't fail — JSON fallback is always available
+        console.warn(
+          `[embeddings] Failed to store native vector: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Search for similar embeddings using the best available strategy.
+   *
+   * When vector capabilities are provided, delegates to database-level
+   * vector search. Otherwise falls back to loading all embeddings and
+   * computing cosine similarity in memory.
+   *
+   * @param db - Database interface
+   * @param objectClass - Class name to search within
+   * @param embedding - Query embedding vector
+   * @param options - Search options
+   * @param vector - Optional vector capabilities for native search
+   * @returns Array of { objectId, similarity } ranked by similarity (highest first)
+   */
+  static async searchSimilar(
+    db: DatabaseInterface,
+    objectClass: string,
+    embedding: number[],
+    options: {
+      field?: string;
+      model?: string;
+      limit?: number;
+      minSimilarity?: number;
+    } = {},
+    vector?: VectorCapabilityLike,
+  ): Promise<Array<{ objectId: string; similarity: number }>> {
+    const { field, model, limit = 10, minSimilarity = 0 } = options;
+
+    // Native vector search path
+    if (vector) {
+      try {
+        // Build WHERE clause for class/field/model filtering
+        const conditions: string[] = ['object_class = $2'];
+        const params: any[] = [objectClass];
+
+        if (field) {
+          conditions.push(`field_name = $${params.length + 2}`);
+          params.push(field);
+        }
+
+        if (model) {
+          conditions.push(`model = $${params.length + 2}`);
+          params.push(model);
+        }
+
+        const results = await vector.search(
+          '_smrt_embeddings',
+          VECTOR_COLUMN,
+          embedding,
+          {
+            limit,
+            metric: 'cosine',
+            where: conditions.join(' AND '),
+            params,
+          },
+        );
+
+        // Convert cosine distance (0=identical, 2=opposite) to similarity (1=identical, -1=opposite)
+        return results
+          .map((r) => ({
+            objectId: r.object_id as string,
+            similarity: 1 - r.distance,
+          }))
+          .filter((r) => r.similarity >= minSimilarity);
+      } catch (error) {
+        // Fall back to in-memory search on vector search failure
+        console.warn(
+          `[embeddings] Native vector search failed, falling back to in-memory: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    // In-memory fallback: load all embeddings and compute cosine similarity
+    const storedEmbeddings = await EmbeddingStorage.listForClass(
+      db,
+      objectClass,
+      field,
+      model,
+    );
+
+    if (storedEmbeddings.length === 0) {
+      return [];
+    }
+
+    return storedEmbeddings
+      .map((stored) => ({
+        objectId: stored.object_id,
+        similarity: CosineSimilarity.calculate(embedding, stored.embedding),
+      }))
+      .filter((item) => item.similarity >= minSimilarity)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+  }
+
+  /**
+   * Ensure the native vector column and index exist on _smrt_embeddings.
+   * Called once during initialization when storage: 'native' is configured.
+   *
+   * @param db - Database interface
+   * @param dimensions - Vector dimensions
+   * @param vector - Vector capabilities
+   */
+  static async ensureVectorStorage(
+    _db: DatabaseInterface,
+    dimensions: number,
+    vector: VectorCapabilityLike,
+  ): Promise<void> {
+    await vector.ensureColumn('_smrt_embeddings', VECTOR_COLUMN, dimensions);
+    await vector.ensureIndex('_smrt_embeddings', VECTOR_COLUMN, {
+      dimensions,
+      metric: 'cosine',
+      type: 'hnsw',
+    });
   }
 
   /**

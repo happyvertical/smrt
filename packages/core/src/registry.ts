@@ -5207,6 +5207,7 @@ export class ObjectRegistry {
       localModel: embeddingConfig?.localModel ?? 'Xenova/bge-base-en-v1.5',
       aiModel: embeddingConfig?.aiModel ?? 'text-embedding-3-small',
       fallbackToAI: embeddingConfig?.fallbackToAI ?? true,
+      storage: embeddingConfig?.storage ?? 'json',
     };
   }
 
