@@ -34,7 +34,6 @@ export { ContentHasher } from './hash';
 // Provider
 export { DEFAULT_EMBEDDING_CONFIG, EmbeddingProvider } from './provider';
 export { CosineSimilarity } from './similarity';
-
 // Storage
 export { EmbeddingStorage } from './storage';
 // Types

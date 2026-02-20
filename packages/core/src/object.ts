@@ -2057,6 +2057,11 @@ export class SmrtObject extends SmrtClass {
       this._ai,
     );
 
+    // Resolve vector capabilities for native storage
+    const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
+    const vector =
+      projectConfig?.storage === 'native' ? this.systemDb.vector : undefined;
+
     // Process each field
     for (const fieldName of fieldsToProcess) {
       const content = this.getPropertyValue(fieldName);
@@ -2085,17 +2090,21 @@ export class SmrtObject extends SmrtClass {
       const embeddings = await embeddingProvider.embed(content);
       const embedding = embeddings[0];
 
-      // Store embedding
-      await EmbeddingStorage.upsert(this.systemDb, {
-        objectClass: this.constructor.name,
-        objectId: this.id,
-        fieldName,
-        contentHash,
-        embedding,
-        model: embeddingProvider.getModelName(),
-        dimensions: config.dimensions,
-        provider,
-      });
+      // Store embedding (with optional native vector storage)
+      await EmbeddingStorage.upsert(
+        this.systemDb,
+        {
+          objectClass: this.constructor.name,
+          objectId: this.id,
+          fieldName,
+          contentHash,
+          embedding,
+          model: embeddingProvider.getModelName(),
+          dimensions: config.dimensions,
+          provider,
+        },
+        vector,
+      );
     }
 
     // Handle combined field if configured
@@ -2132,16 +2141,20 @@ export class SmrtObject extends SmrtClass {
         const embeddings = await embeddingProvider.embed(combinedContent);
         const embedding = embeddings[0];
 
-        await EmbeddingStorage.upsert(this.systemDb, {
-          objectClass: this.constructor.name,
-          objectId: this.id,
-          fieldName: name,
-          contentHash,
-          embedding,
-          model: embeddingProvider.getModelName(),
-          dimensions: config.dimensions,
-          provider,
-        });
+        await EmbeddingStorage.upsert(
+          this.systemDb,
+          {
+            objectClass: this.constructor.name,
+            objectId: this.id,
+            fieldName: name,
+            contentHash,
+            embedding,
+            model: embeddingProvider.getModelName(),
+            dimensions: config.dimensions,
+            provider,
+          },
+          vector,
+        );
       }
     }
   }

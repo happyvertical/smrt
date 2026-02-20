@@ -45,6 +45,14 @@ export interface ProjectEmbeddingConfig {
    * @default true
    */
   fallbackToAI?: boolean;
+
+  /**
+   * Storage mode for embeddings
+   * - 'json': Store as JSON text, in-memory similarity (works everywhere)
+   * - 'native': Use database vector operations when available, fallback to json
+   * @default 'json'
+   */
+  storage?: 'json' | 'native';
 }
 
 /**

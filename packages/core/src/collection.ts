@@ -2,7 +2,6 @@ import { buildWhere } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import { EmbeddingProvider } from './embeddings/provider';
-import { CosineSimilarity } from './embeddings/similarity';
 import { EmbeddingStorage } from './embeddings/storage';
 import {
   createInterceptorContext,
@@ -2091,27 +2090,24 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const model = provider.getModelName();
 
-    // Get all embeddings for this class and field
-    const storedEmbeddings = await EmbeddingStorage.listForClass(
+    // Resolve storage strategy
+    const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
+    const storage = projectConfig?.storage || 'json';
+    const vector = storage === 'native' ? this.systemDb.vector : undefined;
+
+    // Use unified search method (delegates to native or in-memory)
+    const scored = await EmbeddingStorage.searchSimilar(
       this.systemDb,
       this._itemClass.name,
-      searchField,
-      model,
+      embedding,
+      {
+        field: searchField,
+        model,
+        limit,
+        minSimilarity,
+      },
+      vector,
     );
-
-    if (storedEmbeddings.length === 0) {
-      return [];
-    }
-
-    // Calculate similarity scores
-    const scored = storedEmbeddings
-      .map((stored) => ({
-        objectId: stored.object_id,
-        similarity: CosineSimilarity.calculate(embedding, stored.embedding),
-      }))
-      .filter((item) => item.similarity >= minSimilarity)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, limit);
 
     if (scored.length === 0) {
       return [];

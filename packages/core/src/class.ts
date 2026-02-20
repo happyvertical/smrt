@@ -410,6 +410,33 @@ export class SmrtClass {
         ON CONFLICT(version) DO NOTHING
       `;
 
+      // Initialize native vector storage if configured
+      try {
+        const { ObjectRegistry } = await import('./registry.js');
+        const embeddingConfig = ObjectRegistry.getProjectEmbeddingConfig();
+        if (embeddingConfig?.storage === 'native') {
+          const { EmbeddingStorage } = await import('./embeddings/storage.js');
+          const vector = this._db.vector;
+          if (vector) {
+            const dimensions = embeddingConfig.dimensions || 768;
+            await EmbeddingStorage.ensureVectorStorage(
+              this._db,
+              dimensions,
+              vector,
+            );
+          } else {
+            console.warn(
+              '[smrt] Embedding storage set to "native" but database has no vector capability. Falling back to JSON storage.',
+            );
+          }
+        }
+      } catch (error) {
+        // Don't fail system table initialization for vector setup errors
+        console.warn(
+          `[smrt] Failed to initialize vector storage: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
       // Mark as initialized using appropriate tracking mechanism
       if (useInstanceTracking) {
         SmrtClass._systemTablesInitialized.add(this._db);
