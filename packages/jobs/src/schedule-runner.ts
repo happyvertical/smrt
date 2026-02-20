@@ -169,12 +169,12 @@ export class ScheduleRunner extends EventEmitter {
       if (success) {
         await this.db.query(
           `UPDATE _smrt_agent_schedules
-           SET running_count = CASE WHEN running_count > 0 THEN running_count - 1 ELSE 0 END,
+           SET running_count = CASE WHEN COALESCE(running_count, 0) > 0 THEN running_count - 1 ELSE 0 END,
                last_run = ?,
                last_status = 'success',
                last_error = NULL,
-               run_count = run_count + 1,
-               success_count = success_count + 1
+               run_count = COALESCE(run_count, 0) + 1,
+               success_count = COALESCE(success_count, 0) + 1
            WHERE id = ?`,
           new Date().toISOString(),
           scheduleId,
@@ -183,12 +183,12 @@ export class ScheduleRunner extends EventEmitter {
       } else {
         await this.db.query(
           `UPDATE _smrt_agent_schedules
-           SET running_count = CASE WHEN running_count > 0 THEN running_count - 1 ELSE 0 END,
+           SET running_count = CASE WHEN COALESCE(running_count, 0) > 0 THEN running_count - 1 ELSE 0 END,
                last_run = ?,
                last_status = 'failed',
                last_error = ?,
-               run_count = run_count + 1,
-               failure_count = failure_count + 1
+               run_count = COALESCE(run_count, 0) + 1,
+               failure_count = COALESCE(failure_count, 0) + 1
            WHERE id = ?`,
           new Date().toISOString(),
           errorMessage ?? 'Unknown error',
@@ -243,10 +243,10 @@ export class ScheduleRunner extends EventEmitter {
     // Find due schedules
     const result = await this.db.query(
       `SELECT * FROM _smrt_agent_schedules
-       WHERE enabled = 1
+       WHERE enabled = true
        AND status = 'active'
        AND next_run <= ?
-       AND running_count < max_concurrent
+       AND COALESCE(running_count, 0) < COALESCE(max_concurrent, 1)
        ORDER BY next_run ASC
        LIMIT ?`,
       now,
@@ -366,6 +366,11 @@ interface ScheduleRow {
 /**
  * Parse a cron expression and get the next run date.
  * Supports standard 5-field cron: minute hour day-of-month month day-of-week
+ *
+ * Limitations:
+ * - Numeric values only (no abbreviated names like JAN, MON)
+ * - No field range validation (e.g., minute=70 won't error, just won't match)
+ * - Day-of-week accepts 0-7 where both 0 and 7 represent Sunday
  */
 function getNextCronDate(cron: string): Date {
   const parts = cron.trim().split(/\s+/);
@@ -385,13 +390,36 @@ function getNextCronDate(cron: string): Date {
   // Move to next minute at minimum
   candidate.setMinutes(candidate.getMinutes() + 1);
 
+  // Standard cron DOM/DOW semantics:
+  // When both day-of-month and day-of-week are restricted (not *),
+  // a date matches if EITHER condition is met (OR logic).
+  const dayIsWildcard = dayExpr === '*';
+  const dowIsWildcard = dowExpr === '*';
+
   // Search for next matching date (limit to 1 year)
   const maxIterations = 525600;
   for (let i = 0; i < maxIterations; i++) {
+    const dayMatches = matchesCronField(candidate.getDate(), dayExpr);
+    // getDay() returns 0 for Sunday; standard cron accepts both 0 and 7
+    const dow = candidate.getDay();
+    const dowMatches =
+      matchesCronField(dow, dowExpr) ||
+      (dow === 0 && matchesCronField(7, dowExpr));
+
+    let dayOfMonthOrWeekMatches: boolean;
+    if (!dayIsWildcard && !dowIsWildcard) {
+      dayOfMonthOrWeekMatches = dayMatches || dowMatches;
+    } else if (!dayIsWildcard) {
+      dayOfMonthOrWeekMatches = dayMatches;
+    } else if (!dowIsWildcard) {
+      dayOfMonthOrWeekMatches = dowMatches;
+    } else {
+      dayOfMonthOrWeekMatches = true;
+    }
+
     if (
       matchesCronField(candidate.getMonth() + 1, monthExpr) &&
-      matchesCronField(candidate.getDate(), dayExpr) &&
-      matchesCronField(candidate.getDay(), dowExpr) &&
+      dayOfMonthOrWeekMatches &&
       matchesCronField(candidate.getHours(), hourExpr) &&
       matchesCronField(candidate.getMinutes(), minuteExpr)
     ) {

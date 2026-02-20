@@ -181,7 +181,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 
     return this.list({
       where,
-      orderBy: 'priority DESC, run_at ASC',
+      orderBy: ['priority DESC', 'run_at ASC'],
       limit: options.limit,
     });
   }

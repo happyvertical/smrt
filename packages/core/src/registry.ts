@@ -1092,6 +1092,31 @@ export class ObjectRegistry {
         return;
       }
 
+      // Allow subclass to replace parent class with the same name (STI child-wins).
+      // This happens when a downstream package extends a base class with the same
+      // name to customize behavior (e.g., histrio's Character extends smrt-video's Character).
+      try {
+        if (ctor.prototype instanceof existing.constructor) {
+          // New class extends existing — child wins
+          existing.constructor = ctor;
+          existing.config = { ...existing.config, ...config };
+          ObjectRegistry.constructorIndex.set(ctor, name);
+          verboseLog(
+            `[registry] Subclass '${name}' from ${newPackageName || 'unknown'} replaced parent from ${existing.packageName || 'unknown'}`,
+          );
+          return;
+        }
+        if (existing.constructor.prototype instanceof ctor) {
+          // Existing class extends new — existing (child) already wins, skip
+          verboseLog(
+            `[registry] Skipping parent '${name}' — subclass already registered`,
+          );
+          return;
+        }
+      } catch {
+        // instanceof can throw if constructors are not proper functions — fall through to collision error
+      }
+
       // Different constructors with same name from different source files - this is a collision!
       // This will cause silent bugs where the wrong fields are used
       throw new Error(
@@ -1171,6 +1196,31 @@ export class ObjectRegistry {
           // Index constructor for O(1) reverse lookups (Issue #713)
           ObjectRegistry.constructorIndex.set(ctor, name);
           return;
+        }
+
+        // Allow subclass to replace parent class (STI child-wins, case-insensitive)
+        try {
+          if (ctor.prototype instanceof existing.constructor) {
+            ObjectRegistry.classes.delete(existingKey);
+            existing.constructor = ctor;
+            existing.name = name;
+            existing.config = { ...existing.config, ...config };
+            ObjectRegistry.classes.set(name, existing);
+            ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+            ObjectRegistry.constructorIndex.set(ctor, name);
+            verboseLog(
+              `[registry] Subclass '${name}' replaced parent '${existingKey}'`,
+            );
+            return;
+          }
+          if (existing.constructor.prototype instanceof ctor) {
+            verboseLog(
+              `[registry] Skipping parent '${name}' — subclass '${existingKey}' already registered`,
+            );
+            return;
+          }
+        } catch {
+          // instanceof can throw if constructors are not proper functions — fall through
         }
 
         // Different constructors with case-insensitive name match from different source files
@@ -1698,6 +1748,72 @@ export class ObjectRegistry {
    * }
    * ```
    */
+
+  /**
+   * Resolve a manifest-path name collision using string-based inheritance checks.
+   *
+   * Unlike the decorator-based `register()` path which uses `instanceof` on real
+   * constructors, manifest stubs don't have real prototype chains. Instead, we
+   * compare the `extends` field from the manifest's SmartObjectDefinition.
+   *
+   * @returns 'child-wins' if the new entry should replace the existing one,
+   *          'skip' if the existing entry should be kept
+   * @see https://github.com/happyvertical/smrt/issues/950
+   */
+  private static resolveManifestCollision(
+    name: string,
+    objectDef: any,
+    packageName: string | undefined,
+    existing: RegisteredClass,
+    existingKey: string,
+  ): 'child-wins' | 'skip' {
+    const newClassName = objectDef.className || name;
+    const newExtends = objectDef.extends;
+
+    // Same source file → re-export from a consumer manifest, not a real collision
+    if (
+      existing.sourceFilePath &&
+      objectDef.filePath &&
+      existing.sourceFilePath === objectDef.filePath
+    ) {
+      return 'skip';
+    }
+
+    // STI child-wins: new class extends the existing one
+    if (
+      newExtends &&
+      (newExtends === existing.name ||
+        newExtends === existingKey ||
+        newExtends.toLowerCase() === existing.name.toLowerCase())
+    ) {
+      verboseLog(
+        `[registry] Manifest child-wins: "${newClassName}" from ${packageName || 'unknown'} ` +
+          `replaces parent "${existingKey}" from ${existing.packageName || 'unknown'}`,
+      );
+      return 'child-wins';
+    }
+
+    // Existing is already the child of the new class → keep existing
+    if (
+      existing.extends &&
+      (existing.extends === newClassName ||
+        existing.extends === name ||
+        existing.extends.toLowerCase() === newClassName.toLowerCase())
+    ) {
+      verboseLog(
+        `[registry] Skipping manifest parent "${name}" — child "${existingKey}" already registered`,
+      );
+      return 'skip';
+    }
+
+    // True collision — different classes, no inheritance relationship
+    verboseLog(
+      `[registry] Manifest collision: "${name}" from ${packageName || 'unknown'} ` +
+        `conflicts with "${existingKey}" from ${existing.packageName || 'unknown'} ` +
+        `(no inheritance relationship)`,
+    );
+    return 'skip';
+  }
   static registerFromManifest(
     name: string,
     objectDef: any,
@@ -1706,15 +1822,53 @@ export class ObjectRegistry {
     // Prevent duplicate registrations (case-insensitive)
     // This prevents both 'praeco' and 'Praeco' from being registered separately
     // which caused race conditions in PostgreSQL due to duplicate command execution
+    //
+    // Issue #950: Before silently returning, check if the collision is an STI
+    // child-wins scenario. The decorator-based register() path uses instanceof
+    // checks, but manifest stubs don't have real prototype chains — so we use
+    // the objectDef.extends field for string-based inheritance comparison.
     const existingCanonical = ObjectRegistry.getCanonicalClassName(name);
     if (existingCanonical) {
-      // Case-insensitive match found (e.g., 'praeco' exists, trying to register 'Praeco')
-      // Early return prevents adding a duplicate entry to classNameMap
-      return;
+      const existing = ObjectRegistry.classes.get(existingCanonical);
+      if (existing) {
+        const resolution = ObjectRegistry.resolveManifestCollision(
+          name,
+          objectDef,
+          packageName,
+          existing,
+          existingCanonical,
+        );
+        if (resolution === 'child-wins') {
+          // Remove old entry so the child can be registered below
+          ObjectRegistry.classes.delete(existingCanonical);
+          ObjectRegistry.classNameMap.delete(existingCanonical.toLowerCase());
+          ObjectRegistry.classNameMap.delete(existing.name.toLowerCase());
+        } else {
+          // 'skip' — existing wins (parent after child, same file, or true collision)
+          return;
+        }
+      } else {
+        // Stale classNameMap entry (key exists but class was removed) — allow registration
+      }
     }
     if (ObjectRegistry.classes.has(name)) {
-      // Exact match found - already registered with same casing
-      return;
+      const existing = ObjectRegistry.classes.get(name)!;
+      const resolution = ObjectRegistry.resolveManifestCollision(
+        name,
+        objectDef,
+        packageName,
+        existing,
+        name,
+      );
+      if (resolution === 'child-wins') {
+        ObjectRegistry.classes.delete(name);
+        ObjectRegistry.classNameMap.delete(name.toLowerCase());
+        if (existing.name.toLowerCase() !== name.toLowerCase()) {
+          ObjectRegistry.classNameMap.delete(existing.name.toLowerCase());
+        }
+      } else {
+        return;
+      }
     }
 
     // Track this class name for case-insensitive lookups

@@ -323,8 +323,10 @@ export class EmailAccount extends Account {
   /**
    * Sync all active email accounts (for job runner)
    *
-   * This instance method delegates to EmailAccountCollection.syncAll() so that
-   * the TaskRunner can invoke it via `objectType: 'EmailAccount', method: 'syncAll'`.
+   * NOTE: This is a class-wide operation, not per-instance. It syncs ALL active
+   * accounts, ignoring `this` instance. It exists as an instance method because
+   * the TaskRunner dispatches via `objectType: 'EmailAccount', method: 'syncAll'`
+   * which requires an instance method signature.
    */
   async syncAll(
     args?: Record<string, unknown>,
