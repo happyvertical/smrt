@@ -6,9 +6,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import fg from 'fast-glob';
-import { ASTScanner } from '../scanner/ast-scanner.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
-import type { ScanResult, SmartObjectManifest } from '../scanner/types.js';
+import type { SmartObjectManifest } from '../scanner/types.js';
 import { discoverSmrtPackages } from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
 import { loadExternalManifestSync } from './manifest-loader.js';
@@ -106,20 +105,21 @@ export class ManifestBuilder {
     // 2. Configure scanner (baseClasses, external packages, vite config)
     const scannerConfig = await this.configureScanner(options);
 
-    // 3. Scan files with AST scanner (includes import scanning if tree shaking enabled)
-    const { results: scanResults, smrtImports } = this.scanFiles(
-      files,
-      scannerConfig,
-      options,
-    );
+    // 3. Scan files with OXC scanner (includes import scanning if tree shaking enabled)
+    const { manifest: scannedManifest, smrtImports } =
+      await this.scanAndBuildManifest(scannerConfig, options);
 
-    // Store imports in scanner config for use in createManifest
+    // Store imports in scanner config for use in enrichManifest
     if (smrtImports) {
       scannerConfig.smrtImports = smrtImports;
     }
 
-    // 4. Generate manifest from scan results
-    const manifest = this.createManifest(scanResults, options, scannerConfig);
+    // 4. Enrich manifest with external packages, metadata, etc.
+    const manifest = this.enrichManifest(
+      scannedManifest,
+      options,
+      scannerConfig,
+    );
 
     // 5. Write output files
     await this.writeOutput(manifest, options);
@@ -196,21 +196,67 @@ export class ManifestBuilder {
   }
 
   /**
-   * Scan files with AST scanner
+   * Scan files using OxcScanner and build manifest via ManifestAdapter.
+   *
+   * This replaces the old ASTScanner-based scanFiles() method.
+   * Uses the same OXC pipeline as the Vite plugin's scanWithOxc().
    */
-  private scanFiles(
-    files: string[],
+  private async scanAndBuildManifest(
     config: ScannerConfig,
     options: ManifestBuilderOptions,
-  ): { results: ScanResult[]; smrtImports?: Map<string, Set<string>> } {
-    const scanner = new ASTScanner(files, {
+  ): Promise<{
+    manifest: SmartObjectManifest;
+    smrtImports?: Map<string, Set<string>>;
+  }> {
+    const { OxcScanner, ManifestAdapter } = await import(
+      '@happyvertical/smrt-scanner'
+    );
+
+    const scanner = new OxcScanner({
+      cwd: process.cwd(),
+      include: options.include || ['src/**/*.ts'],
+      exclude: options.exclude || ['src/**/*.d.ts', 'node_modules/**'],
       baseClasses: config.baseClasses,
       includePrivateMethods: config.includePrivateMethods,
       includeStaticMethods: config.includeStaticMethods,
       followImports: config.followImports,
     });
 
-    const results = scanner.scanFiles();
+    const { results, resolved } = await scanner.scanAndResolve();
+
+    // Read package.json for metadata
+    let packageName: string | undefined;
+    let packageVersion: string | undefined;
+    let packageJson: any;
+    try {
+      const pkgPath = resolve(process.cwd(), 'package.json');
+      const pkgContent = readFileSync(pkgPath, 'utf-8');
+      packageJson = JSON.parse(pkgContent);
+      packageName = packageJson.name || undefined;
+      packageVersion = packageJson.version || undefined;
+    } catch {
+      // package.json not found - continue without packageName
+    }
+
+    // Convert to manifest format
+    const adapter = new ManifestAdapter();
+    const manifest = adapter.toManifest(resolved, {
+      packageName,
+      packageVersion,
+      typeAliases: results.typeAliases,
+    });
+
+    // Set smrtDependencies BEFORE mergeInheritedFields so external packages can be loaded
+    if (config.smrtDependencies && config.smrtDependencies.length > 0) {
+      manifest.smrtDependencies = config.smrtDependencies;
+    }
+
+    // Run manifest generation passes (same as Vite plugin path)
+    const manifestGen = new ManifestGenerator();
+    manifestGen.mergeInheritedFields(manifest);
+    manifestGen.generateValidationRules(manifest);
+    manifestGen.generateSchemas(manifest);
+    manifestGen.generateAgentManifests(manifest, packageName, packageJson);
 
     // Scan for SMRT imports if tree shaking is enabled
     let smrtImports: Map<string, Set<string>> | undefined;
@@ -223,24 +269,17 @@ export class ManifestBuilder {
       smrtImports = scanner.scanSmrtImports();
     }
 
-    return { results, smrtImports };
+    return { manifest, smrtImports };
   }
 
   /**
-   * Create manifest from scan results with metadata
+   * Enrich manifest with external packages, metadata, and tree shaking
    */
-  private createManifest(
-    scanResults: ScanResult[],
+  private enrichManifest(
+    manifest: SmartObjectManifest,
     options: ManifestBuilderOptions,
     scannerConfig: ScannerConfig,
   ): SmartObjectManifest {
-    const generator = new ManifestGenerator();
-    // Issue #850: Pass smrtDependencies so mergeInheritedFields() can load parent
-    // definitions from external packages during STI inheritance resolution
-    const manifest = generator.generateManifest(scanResults, {
-      smrtDependencies: scannerConfig.smrtDependencies,
-    });
-
     // Add module type
     manifest.moduleType = options.moduleType || 'smrt';
 

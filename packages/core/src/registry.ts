@@ -125,7 +125,7 @@ declare global {
   // eslint-disable-next-line no-var
   var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
   // eslint-disable-next-line no-var
-  var __smrtRegistryClassNameMap: Map<string, string> | undefined;
+  var __smrtRegistryClassNameMap: Map<string, string[]> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistrySchemasInitialized: WeakSet<object> | undefined;
   // eslint-disable-next-line no-var
@@ -807,11 +807,43 @@ export class ObjectRegistry {
    * Used for case-insensitive duplicate detection to prevent
    * both 'praeco' and 'Praeco' from being registered separately
    */
-  private static get classNameMap(): Map<string, string> {
+  private static get classNameMap(): Map<string, string[]> {
     if (!globalThis.__smrtRegistryClassNameMap) {
-      globalThis.__smrtRegistryClassNameMap = new Map<string, string>();
+      globalThis.__smrtRegistryClassNameMap = new Map<string, string[]>();
     }
     return globalThis.__smrtRegistryClassNameMap;
+  }
+
+  /**
+   * Add a mapping from a lowercase simple name to a qualified key in classNameMap.
+   * Supports multiple qualified keys per simple name (for ambiguity detection).
+   */
+  private static addToClassNameMap(
+    simpleNameLower: string,
+    qualifiedKey: string,
+  ): void {
+    const existing = ObjectRegistry.classNameMap.get(simpleNameLower) || [];
+    if (!existing.includes(qualifiedKey)) {
+      existing.push(qualifiedKey);
+      ObjectRegistry.classNameMap.set(simpleNameLower, existing);
+    }
+  }
+
+  /**
+   * Remove a qualified key from a classNameMap entry.
+   * Cleans up empty arrays.
+   */
+  private static removeFromClassNameMap(
+    simpleNameLower: string,
+    qualifiedKey: string,
+  ): void {
+    const existing = ObjectRegistry.classNameMap.get(simpleNameLower);
+    if (existing) {
+      const idx = existing.indexOf(qualifiedKey);
+      if (idx !== -1) existing.splice(idx, 1);
+      if (existing.length === 0)
+        ObjectRegistry.classNameMap.delete(simpleNameLower);
+    }
   }
 
   /**
@@ -819,14 +851,19 @@ export class ObjectRegistry {
    * Returns the canonical name if found, undefined otherwise
    */
   static getCanonicalClassName(name: string): string | undefined {
-    return ObjectRegistry.classNameMap.get(name.toLowerCase());
+    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
+    if (!entries || entries.length === 0) return undefined;
+    if (entries.length === 1) return entries[0];
+    // Ambiguous — multiple entries, return undefined
+    return undefined;
   }
 
   /**
    * Check if a class exists by name (case-insensitive)
    */
   static hasClassCaseInsensitive(name: string): boolean {
-    return ObjectRegistry.classNameMap.has(name.toLowerCase());
+    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
+    return !!entries && entries.length > 0;
   }
 
   /**
@@ -1154,13 +1191,29 @@ export class ObjectRegistry {
           existing.name = name; // Update to PascalCase
           // Merge config from decorator (new) with manifest config (existing)
           existing.config = { ...existing.config, ...config };
-          ObjectRegistry.classes.set(name, existing);
-          // Update classNameMap to point to the new canonical name
-          ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+          // Issue #951: Compute qualified name for the new key
+          const newPkg = getPackageName(ctor, true) || existing.packageName;
+          const newKey = newPkg ? createQualifiedName(newPkg, name) : name;
+          existing.qualifiedName = newPkg
+            ? (createQualifiedName(newPkg, name) as any)
+            : undefined;
+          ObjectRegistry.classes.set(newKey, existing);
+          // Update classNameMap: remove old, add new
+          ObjectRegistry.removeFromClassNameMap(
+            existingKey.toLowerCase(),
+            existingKey,
+          );
+          if (existing.name.toLowerCase() !== existingKey.toLowerCase()) {
+            ObjectRegistry.removeFromClassNameMap(
+              existing.name.toLowerCase(),
+              existingKey,
+            );
+          }
+          ObjectRegistry.addToClassNameMap(name.toLowerCase(), newKey);
           // Index constructor for O(1) reverse lookups (Issue #713)
-          ObjectRegistry.constructorIndex.set(ctor, name);
+          ObjectRegistry.constructorIndex.set(ctor, newKey);
           verboseLog(
-            `[registry] Replaced manifest stub '${existingKey}' with real class '${name}'`,
+            `[registry] Replaced manifest stub '${existingKey}' with real class '${name}' (key: ${newKey})`,
           );
           return;
         }
@@ -1186,30 +1239,54 @@ export class ObjectRegistry {
 
         if (sourceFilesMatch || cannotCompareSourceFiles) {
           // Same source file or can't compare = allow constructor update
+          const oldName = existing.name;
           ObjectRegistry.classes.delete(existingKey);
           existing.constructor = ctor;
           existing.name = name;
           existing.config = { ...existing.config, ...config };
-          ObjectRegistry.classes.set(name, existing);
-          // Update classNameMap to point to the new canonical name
-          ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+          // Issue #951: Compute qualified key for re-registration
+          const reregPkg = getPackageName(ctor, true) || existing.packageName;
+          const reregKey = reregPkg
+            ? createQualifiedName(reregPkg, name)
+            : name;
+          existing.qualifiedName = reregPkg
+            ? (createQualifiedName(reregPkg, name) as any)
+            : undefined;
+          ObjectRegistry.classes.set(reregKey, existing);
+          // Update classNameMap: remove old key reference, add new
+          ObjectRegistry.removeFromClassNameMap(
+            oldName.toLowerCase(),
+            existingKey,
+          );
+          ObjectRegistry.addToClassNameMap(name.toLowerCase(), reregKey);
           // Index constructor for O(1) reverse lookups (Issue #713)
-          ObjectRegistry.constructorIndex.set(ctor, name);
+          ObjectRegistry.constructorIndex.set(ctor, reregKey);
           return;
         }
 
         // Allow subclass to replace parent class (STI child-wins, case-insensitive)
         try {
           if (ctor.prototype instanceof existing.constructor) {
+            const oldName = existing.name;
             ObjectRegistry.classes.delete(existingKey);
             existing.constructor = ctor;
             existing.name = name;
             existing.config = { ...existing.config, ...config };
-            ObjectRegistry.classes.set(name, existing);
-            ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
-            ObjectRegistry.constructorIndex.set(ctor, name);
+            // Issue #951: Compute qualified key for STI child-wins
+            const stiPkg = getPackageName(ctor, true) || existing.packageName;
+            const stiKey = stiPkg ? createQualifiedName(stiPkg, name) : name;
+            existing.qualifiedName = stiPkg
+              ? (createQualifiedName(stiPkg, name) as any)
+              : undefined;
+            ObjectRegistry.classes.set(stiKey, existing);
+            ObjectRegistry.removeFromClassNameMap(
+              oldName.toLowerCase(),
+              existingKey,
+            );
+            ObjectRegistry.addToClassNameMap(name.toLowerCase(), stiKey);
+            ObjectRegistry.constructorIndex.set(ctor, stiKey);
             verboseLog(
-              `[registry] Subclass '${name}' replaced parent '${existingKey}'`,
+              `[registry] Subclass '${name}' replaced parent '${existingKey}' (key: ${stiKey})`,
             );
             return;
           }
@@ -1506,7 +1583,7 @@ export class ObjectRegistry {
     if (inheritanceChain.length > 1) {
       // This class has a parent - validate strategy compatibility
       const parentName = inheritanceChain[inheritanceChain.length - 2]; // Second-to-last is parent
-      const parentEntry = ObjectRegistry.classes.get(parentName);
+      const parentEntry = ObjectRegistry.findClass(parentName);
 
       if (parentEntry) {
         const parentStrategy = parentEntry.config?.tableStrategy || 'default';
@@ -1628,9 +1705,12 @@ export class ObjectRegistry {
     const visibility: SmrtVisibility =
       config.visibility || manifestEntry?.visibility || 'public';
 
-    ObjectRegistry.classes.set(name, {
+    // Issue #951: Use qualified name as primary key when available
+    const registrationKey = qualifiedName || name;
+
+    ObjectRegistry.classes.set(registrationKey, {
       name,
-      qualifiedName, // New: Qualified name for cross-package identification
+      qualifiedName, // Qualified name for cross-package identification
       constructor: ctor,
       config: mergedConfig,
       fields,
@@ -1642,20 +1722,21 @@ export class ObjectRegistry {
       sourceFilePath, // Store source file for collision detection (Issue #555)
       extends: extendsClass, // Capture parent class name from manifest OR prototype chain
       tenantScopedConfig, // Multi-tenancy config (Issue #688)
-      visibility, // New: Visibility control for manifest filtering
+      visibility, // Visibility control for manifest filtering
       // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
       // it lazily using the `extends` field. This ensures correct chain for both
       // decorator-registered and manifest-loaded classes.
     });
 
-    // Track this class name for case-insensitive duplicate detection
-    ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
+    // Track this class name for case-insensitive lookups
+    // Maps lowercase simple name → array of qualified keys
+    ObjectRegistry.addToClassNameMap(name.toLowerCase(), registrationKey);
 
     // Index constructor for O(1) reverse lookups (Issue #713: constructor-based lookup)
-    ObjectRegistry.constructorIndex.set(ctor, name);
+    ObjectRegistry.constructorIndex.set(ctor, registrationKey);
 
     verboseLog(
-      `🎯 Registered smrt object: ${name} with schema for ${schema.tableName} and ${(validators?.length || 0) + (validationRules?.length || 0)} validators/rules`,
+      `🎯 Registered smrt object: ${name} (key: ${registrationKey}) with schema for ${schema.tableName} and ${(validators?.length || 0) + (validationRules?.length || 0)} validators/rules`,
     );
 
     // STI sibling auto-loading (Issue #430)
@@ -1722,7 +1803,7 @@ export class ObjectRegistry {
     objectName: string,
     collectionConstructor: new (options: any) => SmrtCollection<any>,
   ): void {
-    const registered = ObjectRegistry.classes.get(objectName);
+    const registered = ObjectRegistry.findClass(objectName);
     if (registered) {
       registered.collectionConstructor = collectionConstructor;
     }
@@ -1819,6 +1900,15 @@ export class ObjectRegistry {
     objectDef: any,
     packageName?: string,
   ): void {
+    // Issue #951: Compute simple class name and registration key early
+    // `name` may be a qualified key from manifest (e.g., '@happyvertical/smrt-events:Event')
+    // `simpleClassName` is always the plain class name (e.g., 'Event')
+    const simpleClassName = objectDef.className || name;
+    const qualifiedNameEarly = packageName
+      ? createQualifiedName(packageName, simpleClassName)
+      : (objectDef.qualifiedName as QualifiedClassName | undefined);
+    const registrationKey = (qualifiedNameEarly || name) as string;
+
     // Prevent duplicate registrations (case-insensitive)
     // This prevents both 'praeco' and 'Praeco' from being registered separately
     // which caused race conditions in PostgreSQL due to duplicate command execution
@@ -1827,7 +1917,11 @@ export class ObjectRegistry {
     // child-wins scenario. The decorator-based register() path uses instanceof
     // checks, but manifest stubs don't have real prototype chains — so we use
     // the objectDef.extends field for string-based inheritance comparison.
-    const existingCanonical = ObjectRegistry.getCanonicalClassName(name);
+    //
+    // Issue #951: Look up by simple class name (not the qualified key) so
+    // cross-package STI child-wins is detected.
+    const existingCanonical =
+      ObjectRegistry.getCanonicalClassName(simpleClassName);
     if (existingCanonical) {
       const existing = ObjectRegistry.classes.get(existingCanonical);
       if (existing) {
@@ -1841,46 +1935,51 @@ export class ObjectRegistry {
         if (resolution === 'child-wins') {
           // Remove old entry so the child can be registered below
           ObjectRegistry.classes.delete(existingCanonical);
-          ObjectRegistry.classNameMap.delete(existingCanonical.toLowerCase());
-          ObjectRegistry.classNameMap.delete(existing.name.toLowerCase());
+          ObjectRegistry.removeFromClassNameMap(
+            existing.name.toLowerCase(),
+            existingCanonical,
+          );
         } else {
           // 'skip' — existing wins (parent after child, same file, or true collision)
-          return;
+          // Issue #951: With qualified keys, allow coexistence of different packages
+          if (registrationKey !== existingCanonical) {
+            // Different qualified keys → allow both to be registered
+            // (ambiguity will be detected at findClass time)
+          } else {
+            return;
+          }
         }
       } else {
         // Stale classNameMap entry (key exists but class was removed) — allow registration
       }
     }
-    if (ObjectRegistry.classes.has(name)) {
-      const existing = ObjectRegistry.classes.get(name)!;
+    // Check exact key match (handles re-registration with same qualified key)
+    if (ObjectRegistry.classes.has(registrationKey)) {
+      const existing = ObjectRegistry.classes.get(registrationKey)!;
       const resolution = ObjectRegistry.resolveManifestCollision(
         name,
         objectDef,
         packageName,
         existing,
-        name,
+        registrationKey,
       );
       if (resolution === 'child-wins') {
-        ObjectRegistry.classes.delete(name);
-        ObjectRegistry.classNameMap.delete(name.toLowerCase());
-        if (existing.name.toLowerCase() !== name.toLowerCase()) {
-          ObjectRegistry.classNameMap.delete(existing.name.toLowerCase());
-        }
+        ObjectRegistry.classes.delete(registrationKey);
+        ObjectRegistry.removeFromClassNameMap(
+          existing.name.toLowerCase(),
+          registrationKey,
+        );
       } else {
         return;
       }
     }
 
     // Track this class name for case-insensitive lookups
-    // Only reached if no case-insensitive match exists
-    ObjectRegistry.classNameMap.set(name.toLowerCase(), name);
-
-    // Issue #847: Also map the simple class name for lookups
-    // This enables getCanonicalClassName('Council') to find '@happyvertical/praeco:Council'
-    const simpleClassName = objectDef.className || name;
-    if (simpleClassName.toLowerCase() !== name.toLowerCase()) {
-      ObjectRegistry.classNameMap.set(simpleClassName.toLowerCase(), name);
-    }
+    // Maps lowercase simple name → array of registration keys
+    ObjectRegistry.addToClassNameMap(
+      simpleClassName.toLowerCase(),
+      registrationKey,
+    );
 
     // Create stub constructor - not needed for CLI command generation
     // The CLI only needs metadata (fields, methods, config)
@@ -1981,10 +2080,9 @@ export class ObjectRegistry {
       );
     }
 
-    // Generate qualified name if we have package context
-    const qualifiedName = packageName
-      ? createQualifiedName(packageName, name)
-      : (objectDef.qualifiedName as QualifiedClassName | undefined);
+    // Issue #951: Use qualifiedNameEarly computed at the top of this function
+    // (uses simpleClassName, not the manifest key which may already be qualified)
+    const qualifiedName = qualifiedNameEarly;
 
     // Get visibility from manifest (defaults to 'public')
     const visibility: SmrtVisibility =
@@ -1997,9 +2095,11 @@ export class ObjectRegistry {
     // Issue #847: Use className from objectDef (simple name like 'Council') for the name
     // property, not the qualified name key. This enables getFields() lookups by simple
     // class name to work correctly. simpleClassName is defined earlier in this function.
-    ObjectRegistry.classes.set(name, {
+    //
+    // Issue #951: Use registrationKey (qualified when available) as the primary key
+    ObjectRegistry.classes.set(registrationKey, {
       name: simpleClassName,
-      qualifiedName, // New: Qualified name for cross-package identification
+      qualifiedName, // Qualified name for cross-package identification
       constructor: stubConstructor,
       config,
       fields,
@@ -2014,7 +2114,7 @@ export class ObjectRegistry {
     });
 
     verboseLog(
-      `📦 Registered ${name} from manifest (${fields.size} fields, ${methods.size} methods)`,
+      `📦 Registered ${simpleClassName} from manifest (key: ${registrationKey}, ${fields.size} fields, ${methods.size} methods)`,
     );
 
     // STI sibling auto-loading (Issue #430)
@@ -2068,35 +2168,54 @@ export class ObjectRegistry {
   }
 
   /**
-   * Helper method for case-insensitive class lookup
-   * Tries exact match first, then falls back to case-insensitive search
+   * Helper method for class lookup with qualified name support.
    *
-   * @param name - Name of the class to find
+   * Lookup priority:
+   * 1. Direct hit on classes map (works for qualified names as keys)
+   * 2. If input contains ':', treat as qualified name — direct only, no fallback
+   * 3. classNameMap lookup by simple name (lowercase)
+   *    - Unambiguous (1 entry) → return it
+   *    - Ambiguous (>1 entry) → throw descriptive error
+   * 4. Case-insensitive iteration fallback (backward compat)
+   *
+   * @param name - Name of the class to find (simple or qualified)
    * @returns Registered class information or undefined if not found
+   * @throws Error if the name is ambiguous (multiple packages define it)
    * @private
    */
   private static findClass(name: string): RegisteredClass | undefined {
-    // Try exact match first (fast path)
+    // 1. Direct hit on classes map (fast path, works for qualified keys)
     const registered = ObjectRegistry.classes.get(name);
     if (registered) {
       return registered;
     }
 
-    // Try classNameMap lookup (Issue #847 follow-up)
-    // registerFromManifest stores simple→qualified mappings, e.g. 'tenant' → '@happyvertical/smrt-users:Tenant'
-    // This enables findClass('Tenant') to resolve manifest-registered classes
-    const canonicalName = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    if (canonicalName && canonicalName !== name) {
-      const mapped = ObjectRegistry.classes.get(canonicalName);
-      if (mapped) {
-        return mapped;
-      }
+    // 2. If input looks like a qualified name, no fallback — it's not found
+    if (name.includes(':') && name.startsWith('@')) {
+      return undefined;
     }
 
-    // Fall back to case-insensitive search over classes map
+    // 3. classNameMap lookup by simple name
+    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
+    if (entries && entries.length > 0) {
+      if (entries.length === 1) {
+        // Unambiguous — return the single match
+        return ObjectRegistry.classes.get(entries[0]);
+      }
+      // Ambiguous — multiple packages define this class name
+      // Return first match but log a warning (use resolveType() for strict behavior)
+      verboseLog(
+        `[registry] findClass("${name}") is ambiguous — ${entries.length} matches. ` +
+          `Use qualified name (e.g., ${entries[0]}) for precision.`,
+      );
+      return ObjectRegistry.classes.get(entries[0]);
+    }
+
+    // 4. Case-insensitive iteration fallback (backward compat for simple names)
     const lowerName = name.toLowerCase();
     for (const [key, value] of ObjectRegistry.classes.entries()) {
-      if (key.toLowerCase() === lowerName) {
+      // Only match by the registered simple name, not by the full key
+      if (value.name?.toLowerCase() === lowerName) {
         return value;
       }
     }
@@ -2169,13 +2288,8 @@ export class ObjectRegistry {
   static getClassByQualifiedName(
     qualifiedName: string,
   ): RegisteredClass | undefined {
-    // Iterate through all classes and find one with matching qualified name
-    for (const registered of ObjectRegistry.classes.values()) {
-      if (registered.qualifiedName === qualifiedName) {
-        return registered;
-      }
-    }
-    return undefined;
+    // Issue #951: O(1) lookup — qualified names are now used as primary keys
+    return ObjectRegistry.classes.get(qualifiedName);
   }
 
   /**
@@ -2194,8 +2308,9 @@ export class ObjectRegistry {
     packageName: string,
     className: string,
   ): RegisteredClass | undefined {
+    // Issue #951: O(1) — both getClassByQualifiedName and classes.get are direct lookups
     const qualifiedName = createQualifiedName(packageName, className);
-    return ObjectRegistry.getClassByQualifiedName(qualifiedName);
+    return ObjectRegistry.classes.get(qualifiedName);
   }
 
   /**
@@ -2381,7 +2496,12 @@ export class ObjectRegistry {
    * Get class names
    */
   static getClassNames(): string[] {
-    return Array.from(ObjectRegistry.classes.keys());
+    // Issue #951: Return simple class names (not qualified keys) for backward compatibility.
+    // Qualified keys are used internally for collision prevention, but the public API
+    // should return simple names that can be passed to findClass(), getConfig(), etc.
+    return Array.from(ObjectRegistry.classes.values()).map(
+      (entry) => entry.name,
+    );
   }
 
   /**
@@ -2556,16 +2676,16 @@ export class ObjectRegistry {
     ObjectRegistry.getInheritanceCache().delete(className);
 
     // Clear merged fields/methods cache
-    const registered = ObjectRegistry.classes.get(className);
+    const registered = ObjectRegistry.findClass(className);
     if (registered) {
       registered.inheritedFields = undefined;
       registered.inheritedMethods = undefined;
     }
 
     // Also invalidate all descendants (they depend on this class's fields)
-    for (const [childName, childClass] of ObjectRegistry.classes) {
+    for (const [_key, childClass] of ObjectRegistry.classes) {
       if (childClass.extends === className) {
-        ObjectRegistry.invalidateInheritanceCache(childName);
+        ObjectRegistry.invalidateInheritanceCache(childClass.name || _key);
       }
     }
   }
@@ -2921,22 +3041,9 @@ export class ObjectRegistry {
    * Supports both qualified names and simple class names.
    */
   static getFields(name: string): Map<string, any> {
-    // Try direct lookup first (handles qualified names)
-    const registered = ObjectRegistry.classes.get(name);
-    if (registered) {
-      return registered.fields;
-    }
-
-    // For simple names, search by className property (case-insensitive)
-    // Issue #713: Registry now uses qualified keys
-    const lowerName = name.toLowerCase();
-    for (const entry of ObjectRegistry.classes.values()) {
-      if (entry.name?.toLowerCase() === lowerName) {
-        return entry.fields;
-      }
-    }
-
-    return new Map();
+    // Issue #951: Use findClass for multi-strategy lookup (qualified key, classNameMap, case-insensitive)
+    const registered = ObjectRegistry.findClass(name);
+    return registered ? registered.fields : new Map();
   }
 
   /**
@@ -2960,19 +3067,10 @@ export class ObjectRegistry {
    * ```
    */
   static getMethods(name: string): Map<string, any> {
-    // Try direct lookup first (handles qualified names)
-    const registered = ObjectRegistry.classes.get(name);
+    // Issue #951: Use findClass for multi-strategy lookup (qualified key, classNameMap, case-insensitive)
+    const registered = ObjectRegistry.findClass(name);
     if (registered) {
       return registered.methods;
-    }
-
-    // For simple names, search by className property (case-insensitive)
-    // Issue #713: Registry now uses qualified keys
-    const lowerName = name.toLowerCase();
-    for (const entry of ObjectRegistry.classes.values()) {
-      if (entry.name?.toLowerCase() === lowerName) {
-        return entry.methods;
-      }
     }
 
     return new Map();
@@ -2997,7 +3095,7 @@ export class ObjectRegistry {
    * ```
    */
   static async ensureManifestLoaded(className: string): Promise<void> {
-    const registered = ObjectRegistry.classes.get(className);
+    const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       // Detect if running in test environment
       const isTestEnv =
@@ -3098,7 +3196,8 @@ export class ObjectRegistry {
    * Get configuration for a registered class
    */
   static getConfig(name: string): SmartObjectConfig {
-    const registered = ObjectRegistry.classes.get(name);
+    // Issue #951: Use findClass for multi-strategy lookup
+    const registered = ObjectRegistry.findClass(name);
     return registered ? registered.config : {};
   }
 
@@ -3115,7 +3214,8 @@ export class ObjectRegistry {
    * ```
    */
   static getSchema(name: string): SchemaDefinition | undefined {
-    const registered = ObjectRegistry.classes.get(name);
+    // Issue #951: Use findClass for multi-strategy lookup
+    const registered = ObjectRegistry.findClass(name);
     return registered?.schema;
   }
 
@@ -3198,15 +3298,18 @@ export class ObjectRegistry {
         continue;
       }
 
+      // Issue #951: Use simple name for STI comparisons (map key may be qualified)
+      const simpleName = registered.name || _className;
+
       // Issue #703: Handle STI subclasses with null tableName from external manifests
       // When loaded from external manifests, tableName may be null, causing
       // registerFromManifest() to derive a tableName from class name.
       // For STI subclasses, we need to use the STI base's tableName instead.
       if (!registered.schema?.tableName && registered.extends) {
-        const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
         if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(_className);
-          if (stiBaseName && stiBaseName !== _className) {
+          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
+          if (stiBaseName && stiBaseName !== simpleName) {
             const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
             if (stiBaseClass?.schema?.tableName) {
               // Ensure we have a schema object to modify
@@ -3234,10 +3337,10 @@ export class ObjectRegistry {
         // This ensures all STI subclass columns are merged into the parent table
         // (Issue #693: STI subclasses with separate tableName still serialize to parent table)
         let tableName = registered.schema.tableName;
-        const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
         if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(_className);
-          if (stiBaseName && stiBaseName !== _className) {
+          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
+          if (stiBaseName && stiBaseName !== simpleName) {
             // This is an STI subclass - use the base class's tableName
             const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
             if (stiBaseClass?.schema?.tableName) {
@@ -3393,12 +3496,15 @@ export class ObjectRegistry {
         continue;
       }
 
+      // Issue #951: Use simple name for STI comparisons (map key may be qualified)
+      const simpleName = registered.name || _className;
+
       // Handle STI subclasses with null tableName from external manifests
       if (!registered.schema?.tableName && registered.extends) {
-        const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
         if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(_className);
-          if (stiBaseName && stiBaseName !== _className) {
+          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
+          if (stiBaseName && stiBaseName !== simpleName) {
             const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
             if (stiBaseClass?.schema?.tableName) {
               if (!registered.schema) {
@@ -3422,10 +3528,10 @@ export class ObjectRegistry {
       if (registered.schema?.tableName) {
         // For STI subclasses, use the STI base class's tableName
         let tableName = registered.schema.tableName;
-        const tableStrategy = ObjectRegistry.getTableStrategy(_className);
+        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
         if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(_className);
-          if (stiBaseName && stiBaseName !== _className) {
+          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
+          if (stiBaseName && stiBaseName !== simpleName) {
             const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
             if (stiBaseClass?.schema?.tableName) {
               tableName = stiBaseClass.schema.tableName;
@@ -3754,7 +3860,8 @@ export class ObjectRegistry {
    * ```
    */
   static getValidators(name: string): ValidatorFunction[] | undefined {
-    const registered = ObjectRegistry.classes.get(name);
+    // Issue #951: Use findClass for multi-strategy lookup
+    const registered = ObjectRegistry.findClass(name);
     return registered?.validators;
   }
 
@@ -3770,7 +3877,8 @@ export class ObjectRegistry {
    * @see https://github.com/happyvertical/smrt/issues/782
    */
   static getValidationRules(name: string): ValidationRule[] | undefined {
-    const registered = ObjectRegistry.classes.get(name);
+    // Issue #951: Use findClass for multi-strategy lookup
+    const registered = ObjectRegistry.findClass(name);
     return registered?.validationRules;
   }
 
@@ -3910,12 +4018,14 @@ export class ObjectRegistry {
     const graph = new Map<string, string[]>();
 
     // Initialize graph with all registered classes
-    for (const [className] of ObjectRegistry.classes) {
-      graph.set(className, []);
+    // Issue #951: Use simple names for graph keys (map keys may be qualified)
+    for (const [_key, entry] of ObjectRegistry.classes) {
+      graph.set(entry.name || _key, []);
     }
 
     // Scan all fields for foreignKey relationships
-    for (const [className, registered] of ObjectRegistry.classes) {
+    for (const [_key, registered] of ObjectRegistry.classes) {
+      const simpleName = registered.name || _key;
       const dependencies: string[] = [];
 
       for (const [_fieldName, field] of registered.fields) {
@@ -3924,15 +4034,15 @@ export class ObjectRegistry {
           // Skip self-references (table can reference itself after creation)
           // Only add if the related class is registered and not self
           if (
-            relatedClass !== className &&
-            ObjectRegistry.classes.has(relatedClass)
+            relatedClass !== simpleName &&
+            ObjectRegistry.findClass(relatedClass) !== undefined
           ) {
             dependencies.push(relatedClass);
           }
         }
       }
 
-      graph.set(className, dependencies);
+      graph.set(simpleName, dependencies);
     }
 
     return graph;
@@ -4022,19 +4132,21 @@ export class ObjectRegistry {
     const relationshipMap = new Map<string, RelationshipMetadata[]>();
 
     // Initialize map with all registered classes
-    for (const [className] of ObjectRegistry.classes) {
-      relationshipMap.set(className, []);
+    // Issue #951: Use simple names for map keys (map keys may be qualified)
+    for (const [_key, entry] of ObjectRegistry.classes) {
+      relationshipMap.set(entry.name || _key, []);
     }
 
     // Scan all fields for relationship types
-    for (const [className, registered] of ObjectRegistry.classes) {
+    for (const [_key, registered] of ObjectRegistry.classes) {
+      const simpleName = registered.name || _key;
       const relationships: RelationshipMetadata[] = [];
 
       for (const [fieldName, field] of registered.fields) {
         // Check for foreignKey relationships
         if (field.type === 'foreignKey' && field.related) {
           relationships.push({
-            sourceClass: className,
+            sourceClass: simpleName,
             fieldName,
             targetClass: field.related,
             type: 'foreignKey',
@@ -4045,7 +4157,7 @@ export class ObjectRegistry {
         // Check for oneToMany relationships
         if (field.type === 'oneToMany' && field.related) {
           relationships.push({
-            sourceClass: className,
+            sourceClass: simpleName,
             fieldName,
             targetClass: field.related,
             type: 'oneToMany',
@@ -4056,7 +4168,7 @@ export class ObjectRegistry {
         // Check for manyToMany relationships
         if (field.type === 'manyToMany' && field.related) {
           relationships.push({
-            sourceClass: className,
+            sourceClass: simpleName,
             fieldName,
             targetClass: field.related,
             type: 'manyToMany',
@@ -4065,7 +4177,7 @@ export class ObjectRegistry {
         }
       }
 
-      relationshipMap.set(className, relationships);
+      relationshipMap.set(simpleName, relationships);
     }
 
     return relationshipMap;
@@ -4638,8 +4750,9 @@ export class ObjectRegistry {
   }> {
     const allMetadata: Array<any> = [];
 
-    for (const [className] of ObjectRegistry.classes) {
-      const metadata = ObjectRegistry.getObjectMetadata(className);
+    // Issue #951: Use simple names (map keys may be qualified)
+    for (const [_key, entry] of ObjectRegistry.classes) {
+      const metadata = ObjectRegistry.getObjectMetadata(entry.name || _key);
       if (metadata) {
         allMetadata.push(metadata);
       }
@@ -4890,10 +5003,12 @@ export class ObjectRegistry {
     const descendants: string[] = [];
 
     // Find all classes that extend the given class
-    for (const [childName, childClass] of ObjectRegistry.classes) {
-      const chain = ObjectRegistry.getInheritanceChain(childName);
-      if (chain.includes(className) && childName !== className) {
-        descendants.push(childName);
+    // Issue #951: Use simple name for comparison since inheritance chains contain simple names
+    for (const [_key, childClass] of ObjectRegistry.classes) {
+      const simpleName = childClass.name || _key;
+      const chain = ObjectRegistry.getInheritanceChain(simpleName);
+      if (chain.includes(className) && simpleName !== className) {
+        descendants.push(simpleName);
       }
     }
 
@@ -5048,9 +5163,11 @@ export class ObjectRegistry {
    */
   static getEmbeddingClasses(): string[] {
     const embeddingClasses: string[] = [];
-    for (const [className] of ObjectRegistry.classes) {
-      if (ObjectRegistry.hasEmbeddings(className)) {
-        embeddingClasses.push(className);
+    // Issue #951: Use simple names (map keys may be qualified)
+    for (const [_key, entry] of ObjectRegistry.classes) {
+      const simpleName = entry.name || _key;
+      if (ObjectRegistry.hasEmbeddings(simpleName)) {
+        embeddingClasses.push(simpleName);
       }
     }
     return embeddingClasses;

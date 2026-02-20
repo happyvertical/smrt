@@ -447,8 +447,9 @@ export class CLIGenerator {
     // This handles cases where manifest-discovered objects might not have
     // all their commands in the static command list yet
     const registeredClasses = ObjectRegistry.getAllClasses();
-    const isKnownObject = Array.from(registeredClasses.keys()).some(
-      (name) => name.toLowerCase() === firstArg.toLowerCase(),
+    // Issue #951: Match by simple name (info.name), not the qualified map key
+    const isKnownObject = Array.from(registeredClasses.values()).some(
+      (info) => (info.name || '').toLowerCase() === firstArg.toLowerCase(),
     );
 
     if (isKnownObject) {
@@ -504,9 +505,12 @@ export class CLIGenerator {
     }
 
     // Build set of registered object names for quick lookup
+    // Issue #951: Use simple names (info.name), not qualified map keys
     const registeredClasses = ObjectRegistry.getAllClasses();
     this.registeredObjectNames = new Set(
-      Array.from(registeredClasses.keys()).map((name) => name.toLowerCase()),
+      Array.from(registeredClasses.values()).map((info) =>
+        (info.name || '').toLowerCase(),
+      ),
     );
 
     this.manifestLoaded = true;
@@ -525,22 +529,25 @@ export class CLIGenerator {
       return this.objectCommandsCache.get(lowerName)!;
     }
 
-    // Find the actual registered name (may have different casing)
+    // Find the actual registered class (may have different casing)
+    // Issue #951: Match by simple name (info.name), not the qualified map key
     const registeredClasses = ObjectRegistry.getAllClasses();
     let actualName: string | undefined;
-    for (const name of registeredClasses.keys()) {
-      if (name.toLowerCase() === lowerName) {
-        actualName = name;
+    let matchedKey: string | undefined;
+    for (const [key, info] of registeredClasses) {
+      if ((info.name || key).toLowerCase() === lowerName) {
+        actualName = info.name || key;
+        matchedKey = key;
         break;
       }
     }
 
-    if (!actualName) {
+    if (!actualName || !matchedKey) {
       return [];
     }
 
-    // Generate commands for this object
-    const classInfo = registeredClasses.get(actualName);
+    // Generate commands for this object using simple name
+    const classInfo = registeredClasses.get(matchedKey);
     const commands = await this.generateObjectCommands(actualName, classInfo);
 
     // Cache the commands
@@ -670,9 +677,12 @@ export class CLIGenerator {
     }
 
     // Generate all object commands
+    // Issue #951: Use simple name for command lookup
     const registeredClasses = ObjectRegistry.getAllClasses();
-    for (const [name, classInfo] of registeredClasses) {
-      const objectCommands = await this.getObjectCommandsLazy(name);
+    for (const [_key, classInfo] of registeredClasses) {
+      const objectCommands = await this.getObjectCommandsLazy(
+        classInfo.name || _key,
+      );
       for (const cmd of objectCommands) {
         if (!commandNames.has(cmd.name)) {
           commandNames.add(cmd.name);
@@ -1099,11 +1109,16 @@ export class CLIGenerator {
     }
 
     // Check if the command matches a registered object name (show help for that object)
+    // Issue #951: Match by simple name, not qualified map key
     await this.ensureManifestLoaded();
     const registeredClasses = ObjectRegistry.getAllClasses();
-    const matchingObject = Array.from(registeredClasses.keys()).find(
-      (name) => name.toLowerCase() === parsed.command?.toLowerCase(),
-    );
+    let matchingObject: string | undefined;
+    for (const [_key, info] of registeredClasses) {
+      if ((info.name || _key).toLowerCase() === parsed.command?.toLowerCase()) {
+        matchingObject = info.name || _key;
+        break;
+      }
+    }
 
     if (matchingObject) {
       // Lazy load just this object's commands for help
@@ -1209,12 +1224,14 @@ export class CLIGenerator {
         if (options.json) {
           // JSON output mode
           const output: Record<string, any> = {};
-          for (const [name, classInfo] of registeredClasses) {
-            const config = ObjectRegistry.getConfig(name);
-            const fields = ObjectRegistry.getFields(name);
-            const methods = await ObjectRegistry.getAllMethods(name);
+          for (const [key, classInfo] of registeredClasses) {
+            // Issue #951: Use simple name for display, map key for lookups
+            const displayName = classInfo.name || key;
+            const config = ObjectRegistry.getConfig(key);
+            const fields = ObjectRegistry.getFields(key);
+            const methods = await ObjectRegistry.getAllMethods(key);
 
-            output[name] = {
+            output[displayName] = {
               package: classInfo.packageName || 'project',
               hasConstructor: !!classInfo.constructor,
               hasCollection: !!classInfo.collectionConstructor,
@@ -1230,26 +1247,30 @@ export class CLIGenerator {
         console.log('Registered SMRT objects:\n');
 
         // Group by package name
-        const byPackage = new Map<string, string[]>();
-        for (const [name, classInfo] of registeredClasses) {
+        // Issue #951: Track both simple name (display) and map key (lookups)
+        const byPackage = new Map<
+          string,
+          Array<{ display: string; key: string }>
+        >();
+        for (const [key, classInfo] of registeredClasses) {
           const pkg = classInfo.packageName || 'project';
           if (!byPackage.has(pkg)) {
             byPackage.set(pkg, []);
           }
-          byPackage.get(pkg)?.push(name);
+          byPackage.get(pkg)?.push({ display: classInfo.name || key, key });
         }
 
-        for (const [pkg, names] of byPackage) {
+        for (const [pkg, entries] of byPackage) {
           console.log(`  ${pkg}:`);
 
-          for (const objName of names) {
-            const config = ObjectRegistry.getConfig(objName);
+          for (const { display: objName, key: objKey } of entries) {
+            const config = ObjectRegistry.getConfig(objKey);
             const cliConfig = config.cli;
 
             // Get CLI-enabled methods
             let cliMethods: string[] = [];
             if (cliConfig) {
-              const methods = await ObjectRegistry.getAllMethods(objName);
+              const methods = await ObjectRegistry.getAllMethods(objKey);
               const methodNames = Array.from(methods.keys());
 
               if (typeof cliConfig === 'object' && cliConfig.include) {
@@ -1272,7 +1293,7 @@ export class CLIGenerator {
                 console.log(`      CLI: ${cliMethods.join(', ')}`);
               }
               // Show fields
-              const fields = ObjectRegistry.getFields(objName);
+              const fields = ObjectRegistry.getFields(objKey);
               const fieldNames = Array.from(fields.keys()).slice(0, 5);
               if (fieldNames.length > 0) {
                 console.log(
@@ -1903,8 +1924,8 @@ export class CLIGenerator {
       const classInfo = ObjectRegistry.getClass(objectName);
       if (!classInfo || !classInfo.constructor) {
         const availableObjects = Array.from(
-          ObjectRegistry.getAllClasses().keys(),
-        );
+          ObjectRegistry.getAllClasses().values(),
+        ).map((info) => info.name);
         const availableList =
           availableObjects.length > 0
             ? `Available objects:\n  ${availableObjects.join('\n  ')}`
@@ -2129,8 +2150,8 @@ export class CLIGenerator {
       if (!classInfo || !classInfo.collectionConstructor) {
         // Enhanced error message with troubleshooting
         const availableObjects = Array.from(
-          ObjectRegistry.getAllClasses().keys(),
-        );
+          ObjectRegistry.getAllClasses().values(),
+        ).map((info) => info.name);
 
         throw new Error(
           `Object '${objectName}' not found or has no collection constructor.\n\n` +

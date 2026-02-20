@@ -113,13 +113,28 @@ interface Comment extends BaseNode {
 
 interface ImportDeclaration extends BaseNode {
   type: 'ImportDeclaration';
-  specifiers?: ImportSpecifier[];
+  specifiers?: ImportSpecifierLike[];
   source: Literal;
 }
+
+type ImportSpecifierLike =
+  | ImportSpecifier
+  | ImportNamespaceSpecifier
+  | ImportDefaultSpecifier;
 
 interface ImportSpecifier extends BaseNode {
   type: 'ImportSpecifier';
   imported: Identifier;
+  local: Identifier;
+}
+
+interface ImportNamespaceSpecifier extends BaseNode {
+  type: 'ImportNamespaceSpecifier';
+  local: Identifier;
+}
+
+interface ImportDefaultSpecifier extends BaseNode {
+  type: 'ImportDefaultSpecifier';
   local: Identifier;
 }
 
@@ -422,6 +437,7 @@ export function parseFile(filePath: string): FileScanResult {
   const errors: ScanError[] = [];
   const classes: RawClassDefinition[] = [];
   let typeAliases: Record<string, string> = {};
+  let smrtImports: Map<string, Set<string>> | undefined;
 
   try {
     const sourceText = readFileSync(filePath, 'utf-8');
@@ -451,6 +467,7 @@ export function parseFile(filePath: string): FileScanResult {
     if (program?.body) {
       const importAliases = extractImportAliases(program.body);
       typeAliases = extractTypeAliases(program.body);
+      smrtImports = extractSmrtImports(program.body);
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
@@ -471,13 +488,17 @@ export function parseFile(filePath: string): FileScanResult {
     });
   }
 
-  return {
+  const result2: FileScanResult = {
     filePath,
     classes,
     errors,
     parseTimeMs: performance.now() - startTime,
     typeAliases,
   };
+  if (smrtImports && smrtImports.size > 0) {
+    result2.smrtImports = smrtImports;
+  }
+  return result2;
 }
 
 /**
@@ -491,6 +512,7 @@ export function parseSource(
   const errors: ScanError[] = [];
   const classes: RawClassDefinition[] = [];
   let typeAliases: Record<string, string> = {};
+  let smrtImports: Map<string, Set<string>> | undefined;
 
   try {
     const result = parseSync(filename, sourceText, {
@@ -517,6 +539,7 @@ export function parseSource(
     if (program?.body) {
       const importAliases = extractImportAliases(program.body);
       typeAliases = extractTypeAliases(program.body);
+      smrtImports = extractSmrtImports(program.body);
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
@@ -537,13 +560,17 @@ export function parseSource(
     });
   }
 
-  return {
+  const result2: FileScanResult = {
     filePath: filename,
     classes,
     errors,
     parseTimeMs: performance.now() - startTime,
     typeAliases,
   };
+  if (smrtImports && smrtImports.size > 0) {
+    result2.smrtImports = smrtImports;
+  }
+  return result2;
 }
 
 // ============================================================================
@@ -571,6 +598,69 @@ function extractImportAliases(body: Statement[]): Map<string, string> {
     }
   }
   return aliases;
+}
+
+/**
+ * Extract SMRT package imports from program body.
+ * Returns a map of package name → Set of imported class names.
+ *
+ * Handles:
+ * - Named imports: `import { Person, Organization } from '@happyvertical/smrt-profiles'`
+ * - Namespace imports: `import * as Profiles from '@happyvertical/smrt-profiles'` (marked as '*')
+ * - Default imports: `import SomeClass from '@happyvertical/smrt-profiles'`
+ * - Renamed imports: `import { Person as PersonBase } from '...'` (uses original name 'Person')
+ *
+ * Only PascalCase identifiers are included (likely classes, not utility functions).
+ *
+ * @internal Exported for testing
+ */
+export function extractSmrtImports(
+  body: Statement[],
+): Map<string, Set<string>> {
+  const imports = new Map<string, Set<string>>();
+
+  for (const node of body) {
+    if (node.type !== 'ImportDeclaration') continue;
+
+    // Get module specifier string
+    const source = node.source;
+    if (!source || !source.value) continue;
+
+    const moduleName = source.value;
+
+    // Only process @happyvertical/smrt-* packages
+    if (!moduleName.startsWith('@happyvertical/smrt-')) continue;
+
+    // Get or create the set for this package
+    if (!imports.has(moduleName)) {
+      imports.set(moduleName, new Set());
+    }
+    const classSet = imports.get(moduleName)!;
+
+    if (!node.specifiers) continue;
+
+    for (const spec of node.specifiers) {
+      if (spec.type === 'ImportSpecifier' && spec.imported && spec.local) {
+        // Named import: use original (imported) name, not local alias
+        const importedName = spec.imported.name;
+        // Only include PascalCase names (likely classes)
+        if (/^[A-Z][A-Za-z0-9]*$/.test(importedName)) {
+          classSet.add(importedName);
+        }
+      } else if (spec.type === 'ImportNamespaceSpecifier') {
+        // Namespace import: import * as X from '...'
+        classSet.add('*');
+      } else if (spec.type === 'ImportDefaultSpecifier' && spec.local) {
+        // Default import: import SomeClass from '...'
+        const defaultName = spec.local.name;
+        if (/^[A-Z][A-Za-z0-9]*$/.test(defaultName)) {
+          classSet.add(defaultName);
+        }
+      }
+    }
+  }
+
+  return imports;
 }
 
 /**

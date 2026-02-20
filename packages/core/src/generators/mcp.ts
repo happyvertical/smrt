@@ -104,8 +104,10 @@ export class MCPGenerator {
     const tools: MCPTool[] = [];
     const registeredClasses = ObjectRegistry.getAllClasses();
 
-    for (const [name, _classInfo] of registeredClasses) {
-      const config = ObjectRegistry.getConfig(name);
+    for (const [key, classInfo] of registeredClasses) {
+      // Issue #951: Use simple name for tool naming, map key for registry lookups
+      const simpleName = classInfo.name || key;
+      const config = ObjectRegistry.getConfig(simpleName);
       const mcpConfig = config.mcp;
 
       // Handle boolean vs object config
@@ -122,7 +124,10 @@ export class MCPGenerator {
         return true;
       };
 
-      const objectTools = await this.generateObjectTools(name, shouldInclude);
+      const objectTools = await this.generateObjectTools(
+        simpleName,
+        shouldInclude,
+      );
       tools.push(...objectTools);
     }
 
@@ -471,10 +476,12 @@ export class MCPGenerator {
       let classInfo = null;
       let actualObjectName = '';
 
-      for (const [registeredName, info] of registeredClasses) {
-        if (registeredName.toLowerCase() === objectName.toLowerCase()) {
+      for (const [_key, info] of registeredClasses) {
+        // Issue #951: Match by simple name, not the qualified map key
+        const simpleName = info.name || _key;
+        if (simpleName.toLowerCase() === objectName.toLowerCase()) {
           classInfo = info;
-          actualObjectName = registeredName;
+          actualObjectName = simpleName;
           break;
         }
       }

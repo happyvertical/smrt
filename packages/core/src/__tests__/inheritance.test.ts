@@ -452,7 +452,8 @@ describe('Multi-level Class Inheritance', () => {
     it('should warn about missing ancestors by default', async () => {
       // Manually set extends to non-existent parent and clear inheritance chain
       // (OrphanClass is defined at top level of file)
-      const registered = ObjectRegistry.classes.get('OrphanClass');
+      // Issue #951: Use findClass for qualified-key-aware lookup
+      const registered = ObjectRegistry.getClass('OrphanClass');
       if (registered) {
         registered.extends = 'NonExistentParent';
         // SmrtObject is excluded from chains (fixed in #265)

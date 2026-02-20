@@ -8,7 +8,6 @@
  *   import { OxcScanner, ManifestAdapter } from '@happyvertical/smrt-scanner';
  */
 
-export { ASTScanner } from './ast-scanner';
 export { generateManifest, ManifestGenerator } from './manifest-generator';
 export type {
   AgentAdminRouteManifest,

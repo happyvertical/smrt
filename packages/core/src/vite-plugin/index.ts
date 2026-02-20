@@ -40,10 +40,7 @@ export interface SmrtPluginOptions {
   /** Path to static manifest file for client mode */
   manifestPath?: string;
   /**
-   * Use OXC-based scanner for faster manifest generation.
-   * 2-3x faster than TypeScript Compiler API based scanner.
-   *
-   * @default true
+   * @deprecated OXC scanner is now the only scanner. This option is ignored.
    */
   experimentalFastScanner?: boolean;
   /** SvelteKit route auto-generation options */
@@ -84,7 +81,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     typeDeclarationsPath = 'src/types',
     mode = 'auto',
     manifestPath,
-    experimentalFastScanner = true,
     svelteKit = {
       enabled: false,
       routesDir: 'src/routes/api',
@@ -402,78 +398,21 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     // framework objects. For consuming apps that need framework objects,
     // they should use smrtConsumer plugin instead.
 
-    // Always use dynamic scanning to respect project boundaries
+    // Always use OXC-based scanner (consolidated in Issue #951)
     try {
-      // Use OXC-based scanner when experimentalFastScanner is enabled
-      if (experimentalFastScanner) {
-        return await scanWithOxc(rootDir);
-      }
-
-      // Default: Use TypeScript Compiler API based scanner
-      // Conditionally import Node.js dependencies
-      const [{ default: fg }, { ASTScanner, ManifestGenerator }] =
-        await Promise.all([import('fast-glob'), import('../scanner/index.js')]);
-
-      // Find all TypeScript files matching patterns
-      // IMPORTANT: Set cwd to project root to avoid scanning workspace packages
-      const sourceFiles = fg.sync(include, {
-        ignore: exclude,
-        absolute: true,
-        cwd: rootDir,
-      });
-
-      if (sourceFiles.length === 0) {
-        console.warn(
-          `[smrt] No source files found matching patterns in ${rootDir}`,
-        );
-        return createEmptyManifest();
-      }
-
-      console.log(
-        `[smrt] Scanning ${sourceFiles.length} files from ${rootDir}`,
-      );
-
-      // Discover base classes from external SMRT packages
-      const { discoverBaseClassesSync } = await import(
-        '../manifest/discover-base-classes.js'
-      );
-      const discoveredBaseClasses = discoverBaseClassesSync({ cwd: rootDir });
-
-      console.log(
-        `[smrt] Discovered ${discoveredBaseClasses.length} base classes (including ${discoveredBaseClasses.length - 3} from external packages)`,
-      );
-
-      const { ManifestBuilder } = await import('../manifest/generator.js');
-      const builder = new ManifestBuilder();
-
-      // Use ManifestBuilder for unified scanning and generation
-      // This automatically writes to .smrt/manifest.json in dev mode
-      const newManifest = await builder.generate({
-        include,
-        exclude,
-        baseClasses: discoveredBaseClasses,
-        followImports,
-        injectPackageInfo: true,
-        moduleType: 'smrt',
-        loadViteConfig: false, // We are already in Vite context
-        // Enable external package discovery for cross-package STI inheritance
-        // (Issue #690: Without this, smrtDependencies is null and STI child classes
-        // from external packages get separate tables instead of merging into parent)
-        discoverExternalPackages: true,
-        includeExternalBaseClasses: true,
-      });
-
-      // Generate TypeScript declarations if enabled
-      if (generateTypes && server) {
-        await generateTypeDeclarationFile(
-          newManifest,
-          rootDir,
-          typeDeclarationsPath,
-        );
-      }
-
-      return newManifest;
+      return await scanWithOxc(rootDir);
     } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('Cannot find package')
+      ) {
+        console.error(
+          '[smrt] @happyvertical/smrt-scanner is required but not installed.',
+        );
+        console.error(
+          '[smrt] Install it: pnpm add @happyvertical/smrt-scanner',
+        );
+      }
       console.error('[smrt] Error scanning files:', error);
       // Re-throw to fail the build - don't silently continue with empty manifest
       throw error;
@@ -599,28 +538,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       return newManifest;
     } catch (error) {
-      // If OXC scanner fails to load, fall back to TS scanner
-      if (
-        error instanceof Error &&
-        error.message.includes('Cannot find package')
-      ) {
-        console.warn(
-          '[smrt] OXC scanner not available, falling back to TypeScript scanner',
-        );
-        console.warn(
-          '[smrt] Install @happyvertical/smrt-scanner for faster builds',
-        );
-
-        // Recursively call with experimentalFastScanner disabled
-        const originalValue = experimentalFastScanner;
-        (options as any).experimentalFastScanner = false;
-        try {
-          return await scanAndGenerateManifest(rootDir);
-        } finally {
-          (options as any).experimentalFastScanner = originalValue;
-        }
-      }
-
       console.error('[smrt] Error in OXC scanner:', error);
       throw error;
     }

@@ -81,7 +81,9 @@ function generateSchemas(): Record<string, any> {
   const schemas: Record<string, any> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
 
-  for (const [name] of registeredClasses) {
+  for (const [key, classInfo] of registeredClasses) {
+    // Issue #951: Use simple name for schema keys, not the qualified map key
+    const name = classInfo.name || key;
     schemas[name] = generateObjectSchema(name);
     schemas[`${name}List`] = {
       type: 'object',
@@ -188,7 +190,9 @@ function generatePaths(basePath: string): Record<string, any> {
   const paths: Record<string, any> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
 
-  for (const [name] of registeredClasses) {
+  for (const [key, classInfo] of registeredClasses) {
+    // Issue #951: Use simple name, not the qualified map key
+    const name = classInfo.name || key;
     const pluralName = pluralize(name.toLowerCase());
     const objectPath = `${basePath}/${pluralName}`;
 

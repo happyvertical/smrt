@@ -194,18 +194,21 @@ function findObjectTypeForTable(tableName: string): string | null {
   const allClasses = ObjectRegistry.getAllClasses();
 
   // First, try exact table name match
-  for (const [className] of allClasses) {
-    const registeredTableName = ObjectRegistry.getTableName(className);
+  // Issue #951: Use simple name, not qualified map key
+  for (const [_key, metadata] of allClasses) {
+    const simpleName = metadata.name || _key;
+    const registeredTableName = ObjectRegistry.getTableName(simpleName);
     if (registeredTableName === tableName) {
-      return className;
+      return simpleName;
     }
   }
 
   // Try singular form (e.g., "event" for "events" table, "person" for "people" table)
   const singular = toSingular(tableName);
-  for (const [className] of allClasses) {
-    if (className.toLowerCase() === singular) {
-      return className;
+  for (const [_key, metadata] of allClasses) {
+    const simpleName = metadata.name || _key;
+    if (simpleName.toLowerCase() === singular) {
+      return simpleName;
     }
   }
 
@@ -539,8 +542,8 @@ export class JsonDatabaseValidator {
       });
     } else {
       // Verify _meta_type is a registered class
-      const allClasses = ObjectRegistry.getAllClasses();
-      if (!allClasses.has(record._meta_type)) {
+      // Issue #951: Use getClass which handles both simple and qualified names
+      if (!ObjectRegistry.getClass(record._meta_type)) {
         issues.push({
           severity: 'warning',
           code: ValidationCodes.UNKNOWN_META_TYPE,

@@ -84,10 +84,18 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
     const hasLowercase = ObjectRegistry.classes.has('testwidget');
     expect(hasLowercase).toBe(false);
 
-    // Verify PascalCase key exists
+    // Verify the class is stored under a qualified key (Issue #951)
+    // The package name is determined by getPackageName() based on the file location,
+    // which in the test context is the core package, not the @test/package from manifest.
     // @ts-expect-error - accessing private property
-    const hasPascalCase = ObjectRegistry.classes.has('TestWidget');
-    expect(hasPascalCase).toBe(true);
+    let hasQualifiedKey = false;
+    for (const key of ObjectRegistry.classes.keys()) {
+      if (key.endsWith(':TestWidget')) {
+        hasQualifiedKey = true;
+        break;
+      }
+    }
+    expect(hasQualifiedKey).toBe(true);
   });
 
   it('should preserve manifest metadata when replacing stub', () => {
