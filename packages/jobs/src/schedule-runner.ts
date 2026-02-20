@@ -366,6 +366,11 @@ interface ScheduleRow {
 /**
  * Parse a cron expression and get the next run date.
  * Supports standard 5-field cron: minute hour day-of-month month day-of-week
+ *
+ * Limitations:
+ * - Numeric values only (no abbreviated names like JAN, MON)
+ * - No field range validation (e.g., minute=70 won't error, just won't match)
+ * - Day-of-week accepts 0-7 where both 0 and 7 represent Sunday
  */
 function getNextCronDate(cron: string): Date {
   const parts = cron.trim().split(/\s+/);
@@ -385,13 +390,36 @@ function getNextCronDate(cron: string): Date {
   // Move to next minute at minimum
   candidate.setMinutes(candidate.getMinutes() + 1);
 
+  // Standard cron DOM/DOW semantics:
+  // When both day-of-month and day-of-week are restricted (not *),
+  // a date matches if EITHER condition is met (OR logic).
+  const dayIsWildcard = dayExpr === '*';
+  const dowIsWildcard = dowExpr === '*';
+
   // Search for next matching date (limit to 1 year)
   const maxIterations = 525600;
   for (let i = 0; i < maxIterations; i++) {
+    const dayMatches = matchesCronField(candidate.getDate(), dayExpr);
+    // getDay() returns 0 for Sunday; standard cron accepts both 0 and 7
+    const dow = candidate.getDay();
+    const dowMatches =
+      matchesCronField(dow, dowExpr) ||
+      (dow === 0 && matchesCronField(7, dowExpr));
+
+    let dayOfMonthOrWeekMatches: boolean;
+    if (!dayIsWildcard && !dowIsWildcard) {
+      dayOfMonthOrWeekMatches = dayMatches || dowMatches;
+    } else if (!dayIsWildcard) {
+      dayOfMonthOrWeekMatches = dayMatches;
+    } else if (!dowIsWildcard) {
+      dayOfMonthOrWeekMatches = dowMatches;
+    } else {
+      dayOfMonthOrWeekMatches = true;
+    }
+
     if (
       matchesCronField(candidate.getMonth() + 1, monthExpr) &&
-      matchesCronField(candidate.getDate(), dayExpr) &&
-      matchesCronField(candidate.getDay(), dowExpr) &&
+      dayOfMonthOrWeekMatches &&
       matchesCronField(candidate.getHours(), hourExpr) &&
       matchesCronField(candidate.getMinutes(), minuteExpr)
     ) {
