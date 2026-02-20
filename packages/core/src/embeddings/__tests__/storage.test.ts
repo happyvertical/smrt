@@ -572,6 +572,23 @@ describe('EmbeddingStorage', () => {
       );
 
       expect(mockVector.search).toHaveBeenCalledOnce();
+      const searchArgs = (mockVector.search as ReturnType<typeof vi.fn>).mock
+        .calls[0];
+      expect(searchArgs[0]).toBe('_smrt_embeddings'); // table
+      expect(searchArgs[1]).toBe('embedding_vector'); // column
+      expect(searchArgs[2]).toEqual([1, 0, 0]); // query embedding
+      const searchOptions = searchArgs[3];
+      expect(searchOptions.where).toBe(
+        'object_class = $2 AND field_name = $3 AND model = $4',
+      );
+      expect(searchOptions.params).toEqual([
+        'Article',
+        'content',
+        'test-model',
+      ]);
+      expect(searchOptions.limit).toBe(5);
+      expect(searchOptions.metric).toBe('cosine');
+
       expect(results).toHaveLength(2);
       // Distance 0.1 → similarity 0.9
       expect(results[0].objectId).toBe('article-1');
