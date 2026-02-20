@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.22
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - review fixes, STI collision handling, PostgreSQL compat (#952) (chat,core,jobs,messages)
+  - @happyvertical/smrt-scanner@0.20.22
+  - @happyvertical/smrt-config@0.20.22
+  - @happyvertical/smrt-types@0.20.22
+
 ## 0.20.21
 
 ### Patch Changes
