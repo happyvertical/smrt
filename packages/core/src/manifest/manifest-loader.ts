@@ -219,13 +219,37 @@ function getClassNameIndex(
     index = new Map<string, SmartObjectDefinition>();
     for (const [key, entry] of Object.entries(manifest.objects)) {
       const name = (entry.className || key).toLowerCase();
-      // Only store first occurrence (prevents overwrites)
       if (!index.has(name)) {
         index.set(name, entry);
       } else {
-        debugLog(
-          `Manifest className collision for '${name}': keeping first, ignoring key '${key}'`,
-        );
+        const existing = index.get(name)!;
+        const existingName = (existing.className || '').toLowerCase();
+        const newExtends = (entry.extends || '').toLowerCase();
+        const existingExtends = (existing.extends || '').toLowerCase();
+
+        // Issue #950: STI child-wins — if new entry extends existing, replace
+        if (
+          newExtends &&
+          (newExtends === existingName || newExtends === name)
+        ) {
+          index.set(name, entry);
+          debugLog(
+            `Manifest className '${name}': child '${key}' replaces parent`,
+          );
+        } else if (
+          existingExtends &&
+          (existingExtends === (entry.className || key).toLowerCase() ||
+            existingExtends === name)
+        ) {
+          // Existing is already the child, keep it
+          debugLog(
+            `Manifest className '${name}': keeping child, ignoring parent '${key}'`,
+          );
+        } else {
+          debugLog(
+            `Manifest className collision for '${name}': keeping first, ignoring key '${key}'`,
+          );
+        }
       }
     }
     classNameIndexCache.set(manifest, index);
@@ -1250,7 +1274,16 @@ export async function discoverManifestEntry(
   if (foundEntries.length > 1) {
     const uniqueByFile = new Map<string, (typeof foundEntries)[0]>();
     for (const entry of foundEntries) {
-      const key = entry.filePath || `${entry.packageName}:${className}`;
+      // Normalize file paths so the same source file with different absolute
+      // prefixes (local dev vs CI build) is recognized as identical.
+      // Extract the relative path from the last "packages/" segment onward.
+      let key = entry.filePath || `${entry.packageName}:${className}`;
+      if (entry.filePath) {
+        const pkgIdx = entry.filePath.lastIndexOf('packages/');
+        if (pkgIdx !== -1) {
+          key = entry.filePath.slice(pkgIdx);
+        }
+      }
       if (!uniqueByFile.has(key)) {
         uniqueByFile.set(key, entry);
       }
