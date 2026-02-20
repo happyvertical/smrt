@@ -712,10 +712,10 @@ export class ManifestAdapter {
 
     switch (expectedType) {
       case 'string': {
-        // Match quoted strings
-        const stringMatch = initializer.match(/^['"`](.*)['"`]$/);
+        // Match quoted strings (backreference ensures same quote type)
+        const stringMatch = initializer.match(/^(['"`])(.*)\1$/s);
         if (stringMatch) {
-          return stringMatch[1];
+          return stringMatch[2];
         }
         break;
       }
