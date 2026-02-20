@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.23
+
+### Patch Changes
+
+- ### Features
+
+  - qualified registry keys and scanner consolidation (#953) (core,scanner,cli)
+  - @happyvertical/smrt-scanner@0.20.23
+  - @happyvertical/smrt-config@0.20.23
+  - @happyvertical/smrt-types@0.20.23
+
 ## 0.20.22
 
 ### Patch Changes
