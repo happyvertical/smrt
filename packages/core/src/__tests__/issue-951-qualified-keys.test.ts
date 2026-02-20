@@ -65,8 +65,8 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       title: string = '';
     }
 
-    // The class should be stored — verify via findClass
-    const entry = ObjectRegistry.findClass('QualifiedTestA');
+    // The class should be stored — verify via public API
+    const entry = ObjectRegistry.getClass('QualifiedTestA');
     expect(entry).toBeDefined();
     expect(entry?.name).toBe('QualifiedTestA');
 

@@ -1225,13 +1225,15 @@ export class CLIGenerator {
           // JSON output mode
           const output: Record<string, any> = {};
           for (const [key, classInfo] of registeredClasses) {
-            // Issue #951: Use simple name for display, map key for lookups
+            // Issue #951: Use qualified key to avoid collisions in JSON output,
+            // include simple name as a display field
             const displayName = classInfo.name || key;
             const config = ObjectRegistry.getConfig(key);
             const fields = ObjectRegistry.getFields(key);
             const methods = await ObjectRegistry.getAllMethods(key);
 
-            output[displayName] = {
+            output[classInfo.qualifiedName || displayName] = {
+              name: displayName,
               package: classInfo.packageName || 'project',
               hasConstructor: !!classInfo.constructor,
               hasCollection: !!classInfo.collectionConstructor,

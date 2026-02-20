@@ -2180,7 +2180,9 @@ export class ObjectRegistry {
    *
    * @param name - Name of the class to find (simple or qualified)
    * @returns Registered class information or undefined if not found
-   * @throws Error if the name is ambiguous (multiple packages define it)
+   * @remarks When a simple name is ambiguous (multiple packages define it),
+   *          logs a warning and returns the first match. Use qualified names
+   *          or resolveType() for strict disambiguation.
    * @private
    */
   private static findClass(name: string): RegisteredClass | undefined {
@@ -2499,9 +2501,11 @@ export class ObjectRegistry {
     // Issue #951: Return simple class names (not qualified keys) for backward compatibility.
     // Qualified keys are used internally for collision prevention, but the public API
     // should return simple names that can be passed to findClass(), getConfig(), etc.
-    return Array.from(ObjectRegistry.classes.values()).map(
+    // Deduplicate since multiple qualified entries can share the same simple name.
+    const names = Array.from(ObjectRegistry.classes.values()).map(
       (entry) => entry.name,
     );
+    return Array.from(new Set(names));
   }
 
   /**
