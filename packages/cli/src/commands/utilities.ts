@@ -287,8 +287,9 @@ export const utilityCommands: Record<string, CLICommand> = {
         const registeredClasses = ObjectRegistry.getAllClasses();
         if (registeredClasses.size > 0) {
           console.log('📋 Registered Objects:\n');
-          for (const [className, metadata] of registeredClasses) {
-            console.log(`  ${className}`);
+          for (const [_key, metadata] of registeredClasses) {
+            // Issue #951: Use simple name, not qualified map key
+            console.log(`  ${metadata.name || _key}`);
             if (metadata.fields) {
               const fieldNames = Object.keys(metadata.fields);
               console.log(`    Fields: ${fieldNames.join(', ')}`);

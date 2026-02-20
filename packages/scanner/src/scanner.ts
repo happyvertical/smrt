@@ -148,6 +148,47 @@ export class OxcScanner {
   }
 
   /**
+   * Scan all discovered files for @happyvertical/smrt-* imports.
+   * Returns a map of package name → Set of imported class names.
+   *
+   * Used for tree-shaking: only external objects that are actually imported
+   * in the project's source files will be included in the manifest.
+   *
+   * Must be called after scan() or as part of scanAndResolve().
+   *
+   * @example
+   * ```typescript
+   * const scanner = new OxcScanner({ cwd: process.cwd() });
+   * await scanner.scan();
+   * const imports = scanner.scanSmrtImports();
+   * // Map { '@happyvertical/smrt-profiles' => Set { 'Person', 'Organization' } }
+   * ```
+   */
+  scanSmrtImports(): Map<string, Set<string>> {
+    if (!this.scanResults) {
+      throw new Error('Must call scan() before scanSmrtImports()');
+    }
+
+    const merged = new Map<string, Set<string>>();
+
+    for (const file of this.scanResults.files) {
+      if (file.smrtImports) {
+        for (const [pkg, classes] of file.smrtImports) {
+          if (!merged.has(pkg)) {
+            merged.set(pkg, new Set());
+          }
+          const mergedSet = merged.get(pkg)!;
+          for (const cls of classes) {
+            mergedSet.add(cls);
+          }
+        }
+      }
+    }
+
+    return merged;
+  }
+
+  /**
    * Get resolver statistics
    */
   getStats(): {

@@ -21,7 +21,9 @@ export async function listRegisteredObjects(
     const registeredClasses = ObjectRegistry.getAllClasses();
     const objects: RegisteredObjectInfo[] = [];
 
-    for (const [name, classInfo] of registeredClasses) {
+    for (const [_key, classInfo] of registeredClasses) {
+      // Issue #951: Use simple name, not the qualified map key
+      const name = classInfo.name || _key;
       const config = ObjectRegistry.getConfig(name);
       const fields = ObjectRegistry.getFields(name);
 

@@ -1,13 +1,10 @@
 /**
- * Simple standalone server demonstrating AST-based auto-generation
+ * Simple standalone server demonstrating OXC-based auto-generation
  * This bypasses workspace dependency issues by importing directly
  */
 
-import { resolve } from 'node:path';
-import {
-  ASTScanner,
-  ManifestGenerator,
-} from '@happyvertical/smrt-core/scanner';
+import { ManifestGenerator } from '@happyvertical/smrt-core/scanner';
+import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 
 // Simple HTTP server using Bun
 const server = Bun.serve({
@@ -32,11 +29,14 @@ const server = Bun.serve({
 
     try {
       // Auto-scan and generate routes on each request (for demo purposes)
-      const modelsFile = resolve('./src/models.ts');
-      const scanner = new ASTScanner([modelsFile]);
-      const results = scanner.scanFiles();
+      const scanner = new OxcScanner({
+        cwd: process.cwd(),
+        include: ['src/models.ts'],
+        exclude: [],
+      });
+      const { resolved } = await scanner.scanAndResolve();
+      const manifest = ManifestAdapter.toManifest(resolved);
       const generator = new ManifestGenerator();
-      const manifest = generator.generateManifest(results);
 
       // Root - show discovered objects
       if (path === '/') {

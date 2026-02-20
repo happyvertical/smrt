@@ -7,12 +7,9 @@
  * 3. Serialization does not cause circular reference errors
  */
 
-import { writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SmrtObject } from '../object';
-import { ASTScanner } from '../scanner/ast-scanner';
 
 // Define test classes at top level so AST scanner can find them
 // Use Issue75 prefix to avoid collisions with other test files
@@ -38,27 +35,6 @@ class Issue75Book extends SmrtObject {
 }
 
 describe('Issue #75: Circular Serialization Errors', () => {
-  describe('AST Scanner excludes base class properties', () => {
-    it('should exclude system properties from SmrtClass and SmrtObject', () => {
-      // Note: This test scans actual source files including base classes
-      // The AST scanner will extract base class properties and exclude them from subclass schemas
-
-      // Scan the actual object.ts file which contains SmrtObject base class
-      const objectFilePath = join(process.cwd(), 'src', 'object.ts');
-      const scanner = new ASTScanner([objectFilePath]);
-      const results = scanner.scanFiles();
-
-      // SmrtObject itself should not be included (it's a base class)
-      const smrtObjectDef = results[0]?.objects.find(
-        (obj) => obj.className === 'SmrtObject',
-      );
-      expect(smrtObjectDef).toBeUndefined();
-
-      // When we scan actual SMRT objects in tests below,
-      // they register at runtime and we can verify system properties are excluded
-    });
-  });
-
   describe('Serialization without circular references', () => {
     it('should serialize object to JSON without circular reference errors', async () => {
       // Create instance with minimal options

@@ -170,10 +170,8 @@ class Product extends SmrtObject {
         });
 
         // Should scan for default base classes
-        // Issue #713: Keys are now qualified names
-        expect(
-          manifest.objects['@happyvertical/smrt-core:Product'],
-        ).toBeDefined();
+        // Without package.json, keys are lowercase simple names
+        expect(manifest.objects.product).toBeDefined();
       } finally {
         process.chdir(originalCwd);
       }

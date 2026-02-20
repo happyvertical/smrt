@@ -225,6 +225,9 @@ export interface FileScanResult {
 
   /** Type alias declarations found in file (name → resolved type string) */
   typeAliases: Record<string, string>;
+
+  /** SMRT package imports found in file (package name → Set of imported class names) */
+  smrtImports?: Map<string, Set<string>>;
 }
 
 /**
@@ -268,6 +271,9 @@ export interface ScanResults {
 
   /** Accumulated type aliases across all files */
   typeAliases: Record<string, string>;
+
+  /** Accumulated SMRT package imports across all files (package name → Set of imported class names) */
+  smrtImports?: Map<string, Set<string>>;
 }
 
 // ============================================================================

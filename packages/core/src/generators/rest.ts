@@ -231,8 +231,10 @@ export class APIGenerator {
     const pluralName = this.pluralize(objectType);
 
     let classInfo: any = null;
-    for (const [name, info] of registeredClasses) {
-      if (this.pluralize(name.toLowerCase()) === pluralName) {
+    for (const [_key, info] of registeredClasses) {
+      // Issue #951: Use simple name (info.name) for URL matching, not the map key
+      // which may be a qualified name like '@happyvertical/smrt-events:Event'
+      if (this.pluralize((info.name || _key).toLowerCase()) === pluralName) {
         classInfo = info;
         break;
       }

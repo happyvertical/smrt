@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('Manifest Tree Shaking', () => {
-  describe('ASTScanner.scanSmrtImports()', () => {
+  describe('OxcScanner.scanSmrtImports()', () => {
     it('should detect named imports from SMRT packages', () => {
       // Create a mock TypeScript file with SMRT imports
       const testCode = `

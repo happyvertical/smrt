@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractSmrtImports,
   extractTypeAliases,
   getLineColumn,
   parseSource,
@@ -487,6 +488,50 @@ describe('OXC Parser', () => {
       });
     });
 
+    it('should extract exported enum declarations as string union types', () => {
+      const source = `
+        export enum Status {
+          ACTIVE = 'active',
+          INACTIVE = 'inactive',
+          PENDING = 'pending',
+        }
+      `;
+
+      const result = parseSource(source);
+      expect(result.typeAliases).toEqual({
+        Status: "'active' | 'inactive' | 'pending'",
+      });
+    });
+
+    it('should extract non-exported enum declarations', () => {
+      const source = `
+        enum Priority {
+          LOW = 'low',
+          HIGH = 'high',
+        }
+      `;
+
+      const result = parseSource(source);
+      expect(result.typeAliases).toEqual({
+        Priority: "'low' | 'high'",
+      });
+    });
+
+    it('should skip numeric enums (not string unions)', () => {
+      const source = `
+        export enum Direction {
+          UP = 0,
+          DOWN = 1,
+          LEFT = 2,
+          RIGHT = 3,
+        }
+      `;
+
+      const result = parseSource(source);
+      // Numeric enums are not converted to string unions
+      expect(result.typeAliases.Direction).toBeUndefined();
+    });
+
     it('should skip complex type aliases that cannot be resolved', () => {
       const source = `
         type Config = { key: string; value: number };
@@ -551,6 +596,92 @@ describe('OXC Parser', () => {
       expect(character?.extendsClause).toBe('Character');
       expect(scene?.extendsClause).toBe('Scene');
       expect(plain?.extendsClause).toBe('SmrtObject'); // Unchanged
+    });
+  });
+
+  describe('extractSmrtImports', () => {
+    it('should extract named imports from @happyvertical/smrt-* packages', () => {
+      const source = `
+        import { Person, Organization } from '@happyvertical/smrt-profiles';
+        import { Event } from '@happyvertical/smrt-events';
+        import { something } from 'some-other-package';
+      `;
+
+      const result = parseSource(source);
+      expect(result.smrtImports).toBeDefined();
+      expect(result.smrtImports?.size).toBe(2);
+      expect(result.smrtImports?.get('@happyvertical/smrt-profiles')).toEqual(
+        new Set(['Person', 'Organization']),
+      );
+      expect(result.smrtImports?.get('@happyvertical/smrt-events')).toEqual(
+        new Set(['Event']),
+      );
+    });
+
+    it('should skip lowercase imports (utility functions)', () => {
+      const source = `
+        import { Person, config, createCollection } from '@happyvertical/smrt-profiles';
+      `;
+
+      const result = parseSource(source);
+      expect(result.smrtImports?.get('@happyvertical/smrt-profiles')).toEqual(
+        new Set(['Person']),
+      );
+    });
+
+    it('should use original name for renamed imports', () => {
+      const source = `
+        import { Person as PersonBase } from '@happyvertical/smrt-profiles';
+      `;
+
+      const result = parseSource(source);
+      expect(result.smrtImports?.get('@happyvertical/smrt-profiles')).toEqual(
+        new Set(['Person']),
+      );
+    });
+
+    it('should handle namespace imports with wildcard marker', () => {
+      const source = `
+        import * as Profiles from '@happyvertical/smrt-profiles';
+      `;
+
+      const result = parseSource(source);
+      expect(result.smrtImports?.get('@happyvertical/smrt-profiles')).toEqual(
+        new Set(['*']),
+      );
+    });
+
+    it('should handle default imports', () => {
+      const source = `
+        import SomeClass from '@happyvertical/smrt-profiles';
+      `;
+
+      const result = parseSource(source);
+      expect(result.smrtImports?.get('@happyvertical/smrt-profiles')).toEqual(
+        new Set(['SomeClass']),
+      );
+    });
+
+    it('should ignore non-SMRT packages', () => {
+      const source = `
+        import { something } from 'lodash';
+        import { Other } from '@happyvertical/ai';
+      `;
+
+      const result = parseSource(source);
+      expect(result.smrtImports).toBeUndefined();
+    });
+
+    it('should merge imports from multiple files via parseSource', () => {
+      const source = `
+        import { Person } from '@happyvertical/smrt-profiles';
+        import { Organization } from '@happyvertical/smrt-profiles';
+      `;
+
+      const result = parseSource(source);
+      expect(result.smrtImports?.get('@happyvertical/smrt-profiles')).toEqual(
+        new Set(['Person', 'Organization']),
+      );
     });
   });
 });

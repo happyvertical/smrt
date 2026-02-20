@@ -46,7 +46,8 @@ function registerTestClass(
   });
 
   // Then manually override the fields and recompile validators
-  const registered = (ObjectRegistry as any).classes.get(classConstructor.name);
+  // Issue #951: Use getClass() which resolves simple names via classNameMap
+  const registered = ObjectRegistry.getClass(classConstructor.name);
   if (registered) {
     registered.fields = fields;
 
@@ -611,9 +612,7 @@ describe('ObjectRegistry', () => {
       registerTestClass(RegistryTestProduct, fields);
 
       // Manually add method metadata (simulating what would come from manifest)
-      const registered = (ObjectRegistry as any).classes.get(
-        'RegistryTestProduct',
-      );
+      const registered = ObjectRegistry.getClass('RegistryTestProduct');
       if (registered) {
         registered.methods.set('analyze', {
           name: 'analyze',
@@ -670,9 +669,7 @@ describe('ObjectRegistry', () => {
       registerTestClass(RegistryTestProduct, fields);
 
       // Add method metadata
-      const registered = (ObjectRegistry as any).classes.get(
-        'RegistryTestProduct',
-      );
+      const registered = ObjectRegistry.getClass('RegistryTestProduct');
       if (registered) {
         registered.methods.set('research', {
           name: 'research',
@@ -837,7 +834,7 @@ describe('ObjectRegistry', () => {
       }
 
       // Manually set extends to a non-existent parent (simulating external package parent)
-      const registered = (ObjectRegistry as any).classes.get('ChildClass');
+      const registered = ObjectRegistry.getClass('ChildClass');
       expect(registered).toBeDefined();
 
       // Manually set extends to an unregistered class
@@ -1085,9 +1082,7 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.register(ValidationRulesTestProduct, {});
 
       // Manually set fields and validation rules
-      const registered = (ObjectRegistry as any).classes.get(
-        'ValidationRulesTestProduct',
-      );
+      const registered = ObjectRegistry.getClass('ValidationRulesTestProduct');
       if (registered) {
         registered.fields = fields;
         registered.validationRules = [
