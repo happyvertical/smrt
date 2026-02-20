@@ -691,6 +691,42 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
         : null;
       if (name && resolved) aliases[name] = resolved;
     }
+
+    // Extract enum declarations as string union types
+    // e.g., enum Status { PENDING = 'pending', ACTIVE = 'active' }
+    // → Status: "'pending' | 'active'"
+    const enumDecl =
+      node.type === 'TSEnumDeclaration'
+        ? node
+        : node.type === 'ExportNamedDeclaration' &&
+            node.declaration?.type === 'TSEnumDeclaration'
+          ? node.declaration
+          : null;
+    if (enumDecl) {
+      const name = enumDecl.id?.name;
+      // OXC wraps members in a TSEnumBody node: enumDecl.body.members
+      const members = enumDecl.body?.members ?? enumDecl.members;
+      if (name && members?.length > 0) {
+        const values = members
+          .map((m: any) => {
+            if (m.initializer?.type === 'Literal') {
+              const val = m.initializer.value;
+              if (typeof val === 'string') return `'${val}'`;
+              if (typeof val === 'number') return String(val);
+            }
+            return null;
+          })
+          .filter(Boolean);
+
+        if (values.length > 0) {
+          // All string values → string union, all numeric → number union
+          const allStrings = values.every((v: string) => v.startsWith("'"));
+          if (allStrings) {
+            aliases[name] = values.join(' | ');
+          }
+        }
+      }
+    }
   }
   return aliases;
 }

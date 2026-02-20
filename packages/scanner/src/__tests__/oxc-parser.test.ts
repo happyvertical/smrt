@@ -488,6 +488,50 @@ describe('OXC Parser', () => {
       });
     });
 
+    it('should extract exported enum declarations as string union types', () => {
+      const source = `
+        export enum Status {
+          ACTIVE = 'active',
+          INACTIVE = 'inactive',
+          PENDING = 'pending',
+        }
+      `;
+
+      const result = parseSource(source);
+      expect(result.typeAliases).toEqual({
+        Status: "'active' | 'inactive' | 'pending'",
+      });
+    });
+
+    it('should extract non-exported enum declarations', () => {
+      const source = `
+        enum Priority {
+          LOW = 'low',
+          HIGH = 'high',
+        }
+      `;
+
+      const result = parseSource(source);
+      expect(result.typeAliases).toEqual({
+        Priority: "'low' | 'high'",
+      });
+    });
+
+    it('should skip numeric enums (not string unions)', () => {
+      const source = `
+        export enum Direction {
+          UP = 0,
+          DOWN = 1,
+          LEFT = 2,
+          RIGHT = 3,
+        }
+      `;
+
+      const result = parseSource(source);
+      // Numeric enums are not converted to string unions
+      expect(result.typeAliases.Direction).toBeUndefined();
+    });
+
     it('should skip complex type aliases that cannot be resolved', () => {
       const source = `
         type Config = { key: string; value: number };
