@@ -143,6 +143,17 @@ function parseLiteralInitializer(
   }
 }
 
+/**
+ * Strip surrounding quotes from a raw source string.
+ * sliceSource() returns raw source text which includes quotes for string
+ * literals (e.g., "'TestProfile'" or '"TestProfile"').
+ */
+function stripQuotes(value: string | undefined): string | undefined {
+  if (!value) return value;
+  const match = value.match(/^(['"`])(.+)\1$/);
+  return match ? match[2] : value;
+}
+
 // ============================================================================
 // Manifest Adapter
 // ============================================================================
@@ -371,6 +382,17 @@ export class ManifestAdapter {
       definition.transient = true;
     }
 
+    // Check for @field({ transient: true }) decorator
+    for (const decorator of field.decorators) {
+      if (
+        decorator.name === 'field' &&
+        decorator.arguments[0]?.includes('transient: true')
+      ) {
+        definition.transient = true;
+        break;
+      }
+    }
+
     return definition;
   }
 
@@ -409,6 +431,17 @@ export class ManifestAdapter {
         type: fieldType,
         required: !field.optional,
         defaultValue: field.numericValue,
+        source: 'heuristic',
+      };
+    }
+
+    // 3.6. Infer from boolean literal without type annotation
+    // Handles cases like `isRead = false` where there's no `: boolean` annotation
+    if (field.initializer === 'true' || field.initializer === 'false') {
+      return {
+        type: 'boolean',
+        required: !field.optional,
+        defaultValue: field.initializer === 'true',
         source: 'heuristic',
       };
     }
@@ -465,7 +498,9 @@ export class ManifestAdapter {
     // @foreignKey(RelatedClass) decorator
     if (decorator.name === 'foreignKey') {
       // First argument is the related class name
-      const relatedClass = decorator.arguments[0]?.trim();
+      // Strip surrounding quotes — sliceSource() returns raw source text
+      // which includes quotes for string literals (e.g., "'TestProfile'")
+      const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
       // Respect TypeScript optional marker (?) - fixes #846
       const hasDefaultValue = field.initializer !== null;
       return {
@@ -478,7 +513,7 @@ export class ManifestAdapter {
 
     // @oneToMany(RelatedClass) decorator
     if (decorator.name === 'oneToMany') {
-      const relatedClass = decorator.arguments[0]?.trim();
+      const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
       return {
         type: 'oneToMany',
         related: relatedClass || undefined,
@@ -489,7 +524,7 @@ export class ManifestAdapter {
 
     // @manyToMany(RelatedClass) decorator
     if (decorator.name === 'manyToMany') {
-      const relatedClass = decorator.arguments[0]?.trim();
+      const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
       return {
         type: 'manyToMany',
         related: relatedClass || undefined,

@@ -1181,6 +1181,9 @@ function extractTypeName(type: TSType): string | null {
         .filter(Boolean);
       return types.join(' | ');
     }
+
+    case 'TSFunctionType':
+      return 'Function';
   }
 
   return null;
