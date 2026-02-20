@@ -9,6 +9,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import glob from 'fast-glob';
 
 export interface DiscoveredManifest {
@@ -155,11 +156,13 @@ async function findPackageManifests(
 
   try {
     // Find all package.json files that might contain SMRT packages
+    // followSymbolicLinks: true is needed so pnpm link: / workspace overrides
+    // (which create symlinks in node_modules) are discovered.
     const packageJsonFiles = await glob('**/package.json', {
       cwd: nodeModulesPath,
       ignore: ['**/node_modules/**'],
       absolute: true,
-      followSymbolicLinks: false,
+      followSymbolicLinks: true,
     });
 
     for (const pkgPath of packageJsonFiles) {
@@ -268,7 +271,10 @@ export async function loadManifestFile(manifestPath: string): Promise<any> {
 }
 
 /**
- * Load and register objects from a manifest
+ * Load and register objects from a manifest into the ObjectRegistry.
+ *
+ * This enables db:migrate (and other CLI commands) to discover schema
+ * definitions from package manifests — including locally-linked packages.
  */
 export async function loadManifest(manifestPath: string): Promise<void> {
   const manifest = await loadManifestFile(manifestPath);
@@ -277,14 +283,10 @@ export async function loadManifest(manifestPath: string): Promise<void> {
     return;
   }
 
-  // Register each object from the manifest
-  for (const [className, objectDef] of Object.entries(manifest.objects)) {
-    const def = objectDef as any;
-
-    // For now, just track that we found objects
-    // Full registration requires the actual class constructors
-    // which we don't have from manifest files alone
-    // This is enough for discovery/introspection purposes
+  // Register each object from the manifest so ObjectRegistry knows their
+  // fields, table names, and inheritance for schema generation.
+  for (const [name, objectDef] of Object.entries(manifest.objects)) {
+    ObjectRegistry.registerFromManifest(name, objectDef, manifest.packageName);
   }
 }
 

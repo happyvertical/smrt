@@ -169,12 +169,12 @@ export class ScheduleRunner extends EventEmitter {
       if (success) {
         await this.db.query(
           `UPDATE _smrt_agent_schedules
-           SET running_count = CASE WHEN running_count > 0 THEN running_count - 1 ELSE 0 END,
+           SET running_count = CASE WHEN COALESCE(running_count, 0) > 0 THEN running_count - 1 ELSE 0 END,
                last_run = ?,
                last_status = 'success',
                last_error = NULL,
-               run_count = run_count + 1,
-               success_count = success_count + 1
+               run_count = COALESCE(run_count, 0) + 1,
+               success_count = COALESCE(success_count, 0) + 1
            WHERE id = ?`,
           new Date().toISOString(),
           scheduleId,
@@ -183,12 +183,12 @@ export class ScheduleRunner extends EventEmitter {
       } else {
         await this.db.query(
           `UPDATE _smrt_agent_schedules
-           SET running_count = CASE WHEN running_count > 0 THEN running_count - 1 ELSE 0 END,
+           SET running_count = CASE WHEN COALESCE(running_count, 0) > 0 THEN running_count - 1 ELSE 0 END,
                last_run = ?,
                last_status = 'failed',
                last_error = ?,
-               run_count = run_count + 1,
-               failure_count = failure_count + 1
+               run_count = COALESCE(run_count, 0) + 1,
+               failure_count = COALESCE(failure_count, 0) + 1
            WHERE id = ?`,
           new Date().toISOString(),
           errorMessage ?? 'Unknown error',
@@ -243,10 +243,10 @@ export class ScheduleRunner extends EventEmitter {
     // Find due schedules
     const result = await this.db.query(
       `SELECT * FROM _smrt_agent_schedules
-       WHERE enabled = 1
+       WHERE enabled = true
        AND status = 'active'
        AND next_run <= ?
-       AND running_count < max_concurrent
+       AND COALESCE(running_count, 0) < COALESCE(max_concurrent, 1)
        ORDER BY next_run ASC
        LIMIT ?`,
       now,
