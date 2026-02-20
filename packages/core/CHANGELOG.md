@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.24
+
+### Patch Changes
+
+- ### Features
+
+  - add native vector storage for embeddings (#955) (core)
+  - @happyvertical/smrt-scanner@0.20.24
+  - @happyvertical/smrt-config@0.20.24
+  - @happyvertical/smrt-types@0.20.24
+
 ## 0.20.23
 
 ### Patch Changes
