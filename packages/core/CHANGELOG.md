@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.25
+
+### Patch Changes
+
+- ### Features
+
+  - scaffold @happyvertical/smrt-facts package with core models (#956) (facts)
+  - @happyvertical/smrt-scanner@0.20.25
+  - @happyvertical/smrt-config@0.20.25
+  - @happyvertical/smrt-types@0.20.25
+
 ## 0.20.24
 
 ### Patch Changes
