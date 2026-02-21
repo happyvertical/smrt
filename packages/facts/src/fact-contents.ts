@@ -42,6 +42,16 @@ export class FactContentCollection extends SmrtCollection<FactContent> {
   }
 
   /**
+   * Get content links by relationship type for a fact
+   */
+  async getByRelationship(
+    factId: string,
+    relationship: FactContentRelationship,
+  ): Promise<FactContent[]> {
+    return this.list({ where: { factId, relationship } });
+  }
+
+  /**
    * Unlink a content item from a fact (removes all relationships)
    */
   async unlink(factId: string, contentId: string): Promise<void> {

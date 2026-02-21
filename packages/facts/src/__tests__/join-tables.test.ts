@@ -176,6 +176,37 @@ describe('Join Tables', () => {
       });
     });
 
+    describe('getByRelationship', () => {
+      it('should filter content links by relationship type', async () => {
+        const fact = await facts.create({ textRefined: 'Relationship filter' });
+        const factId = fact.id as string;
+
+        await contents.link(factId, 'content-1', 'extracted_from');
+        await contents.link(factId, 'content-2', 'supports');
+        await contents.link(factId, 'content-3', 'extracted_from');
+
+        const extracted = await contents.getByRelationship(
+          factId,
+          'extracted_from',
+        );
+        expect(extracted.length).toBe(2);
+        expect(
+          extracted.every((l) => l.relationship === 'extracted_from'),
+        ).toBe(true);
+      });
+
+      it('should return empty array when no links match relationship', async () => {
+        const fact = await facts.create({ textRefined: 'No match rel' });
+        await contents.link(fact.id as string, 'content-1', 'supports');
+
+        const result = await contents.getByRelationship(
+          fact.id as string,
+          'contradicts',
+        );
+        expect(result).toEqual([]);
+      });
+    });
+
     describe('conflictColumns uniqueness', () => {
       it('should not duplicate same fact+content+relationship', async () => {
         const fact = await facts.create({ textRefined: 'Conflict test' });
