@@ -329,47 +329,42 @@ describe('Fact', () => {
     });
   });
 
-  describe('stub methods', () => {
-    it('reconcile() should throw not implemented', async () => {
-      await expect(collection.reconcile({ rawInput: 'test' })).rejects.toThrow(
-        'Not yet implemented',
-      );
-    });
-
-    it('branch() should throw not implemented', async () => {
+  describe('implemented methods', () => {
+    it('branch() should throw for nonexistent parent', async () => {
       await expect(
-        collection.branch('id', { textRefined: 'test' }),
-      ).rejects.toThrow('Not yet implemented');
+        collection.branch('nonexistent-id', { textRefined: 'test' }),
+      ).rejects.toThrow('Parent fact not found');
     });
 
-    it('getEvolutionChain() should throw not implemented', async () => {
-      await expect(collection.getEvolutionChain('id')).rejects.toThrow(
-        'Not yet implemented',
+    it('getEvolutionChain() should return empty for nonexistent id', async () => {
+      const chain = await collection.getEvolutionChain('nonexistent');
+      expect(chain).toEqual([]);
+    });
+
+    it('getLatestInChain() should throw for nonexistent id', async () => {
+      await expect(collection.getLatestInChain('nonexistent')).rejects.toThrow(
+        'Fact not found',
       );
     });
 
-    it('getLatestInChain() should throw not implemented', async () => {
-      await expect(collection.getLatestInChain('id')).rejects.toThrow(
-        'Not yet implemented',
-      );
+    it('getEvolutionTree() should return empty for nonexistent id', async () => {
+      const tree = await collection.getEvolutionTree('nonexistent');
+      expect(tree).toEqual([]);
     });
 
-    it('getEvolutionTree() should throw not implemented', async () => {
-      await expect(collection.getEvolutionTree('id')).rejects.toThrow(
-        'Not yet implemented',
-      );
-    });
-
-    it('recalculateConfidence() should throw not implemented', async () => {
-      await expect(collection.recalculateConfidence('id')).rejects.toThrow(
-        'Not yet implemented',
-      );
-    });
-
-    it('getEntityBriefing() should throw not implemented', async () => {
+    it('recalculateConfidence() should throw for nonexistent id', async () => {
       await expect(
-        collection.getEntityBriefing('Profile', 'id'),
-      ).rejects.toThrow('Not yet implemented');
+        collection.recalculateConfidence('nonexistent'),
+      ).rejects.toThrow('Fact not found');
+    });
+
+    it('getEntityBriefing() should return empty briefing for no links', async () => {
+      const briefing = await collection.getEntityBriefing(
+        'Profile',
+        'no-links',
+      );
+      expect(briefing.totalCount).toBe(0);
+      expect(briefing.facts).toEqual([]);
     });
   });
 });
