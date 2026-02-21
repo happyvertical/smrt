@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.27
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - allow pnpm duplicate copies in case-insensitive collision check (#961) (core)
+  - @happyvertical/smrt-scanner@0.20.27
+  - @happyvertical/smrt-config@0.20.27
+  - @happyvertical/smrt-types@0.20.27
+
 ## 0.20.26
 
 ### Patch Changes
