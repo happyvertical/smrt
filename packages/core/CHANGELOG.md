@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.28
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - pass agent config to constructor, separate from method args (#962) (jobs)
+  - @happyvertical/smrt-scanner@0.20.28
+  - @happyvertical/smrt-config@0.20.28
+  - @happyvertical/smrt-types@0.20.28
+
 ## 0.20.27
 
 ### Patch Changes
