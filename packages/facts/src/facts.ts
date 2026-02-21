@@ -151,7 +151,10 @@ export class FactCollection extends SmrtCollection<Fact> {
         domain,
         status: 'active',
         sourceCount: source ? 1 : 0,
-        confidence: 0.5,
+        confidence: calculateConfidence({
+          sourceCount: source ? 1 : 0,
+          avgSourceCredibility: source?.credibility ?? 0.5,
+        }),
       });
 
       // Generate embeddings for the new fact
@@ -218,6 +221,18 @@ export class FactCollection extends SmrtCollection<Fact> {
         sourceTitle: source.sourceTitle || '',
         credibility: source.credibility ?? 0.5,
       });
+    }
+
+    // Recalculate confidence after source recording
+    if (action === 'merged' && sourceRecord) {
+      try {
+        await this.recalculateConfidence(fact.id as string);
+        // Reload to get updated confidence
+        const updated = await this.get({ id: fact.id });
+        if (updated) fact = updated;
+      } catch {
+        // Non-fatal: confidence stays at previous value
+      }
     }
 
     return {
@@ -311,10 +326,13 @@ Respond with exactly one word: "merge" or "branch".`;
    */
   async getEvolutionChain(factId: string): Promise<Fact[]> {
     const chain: Fact[] = [];
+    const visited = new Set<string>();
     let currentId: string = factId;
 
     // Walk up the chain via parentId
     while (currentId) {
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
       const fact = await this.get({ id: currentId });
       if (!fact) {
         break;
@@ -336,8 +354,13 @@ Respond with exactly one word: "merge" or "branch".`;
       throw new Error(`Fact not found: ${factId}`);
     }
 
+    const visited = new Set<string>();
     while (true) {
-      const children = await this.getChildren(current.id as string);
+      const currentId = current.id as string;
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
+
+      const children = await this.getChildren(currentId);
       if (children.length === 0) {
         break;
       }
@@ -408,21 +431,15 @@ Respond with exactly one word: "merge" or "branch".`;
     let daysSinceLastSource = 0;
     if (sourceCount > 0) {
       const now = new Date();
+      const toDate = (val: unknown): Date => {
+        if (val instanceof Date) return val;
+        if (val) return new Date(val as string);
+        return new Date();
+      };
       const latestSource = sources.reduce((latest, s) => {
-        const sDate =
-          s.extractedAt instanceof Date
-            ? s.extractedAt
-            : new Date(s.extractedAt);
-        const latestDate =
-          latest.extractedAt instanceof Date
-            ? latest.extractedAt
-            : new Date(latest.extractedAt);
-        return sDate > latestDate ? s : latest;
+        return toDate(s.extractedAt) > toDate(latest.extractedAt) ? s : latest;
       }, sources[0]);
-      const latestDate =
-        latestSource.extractedAt instanceof Date
-          ? latestSource.extractedAt
-          : new Date(latestSource.extractedAt);
+      const latestDate = toDate(latestSource.extractedAt);
       daysSinceLastSource =
         (now.getTime() - latestDate.getTime()) / (1000 * 60 * 60 * 24);
     }
