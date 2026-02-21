@@ -1,5 +1,29 @@
 # @happyvertical/smrt-core
 
+## 0.20.26
+
+### Patch Changes
+
+- ### Features
+
+  - implement reconcile, evolution tree, and confidence scoring (facts)
+  - add FactContent and FactTag join tables (facts)
+  - scaffold smrt-facts package with core models and tests (facts)
+
+  ### Bug Fixes
+
+  - BFS cycle detection, prompt injection defense, parallel entity loading (facts)
+  - add cycle detection, fix confidence calculation in reconcile (facts)
+  - add getByRelationship method to FactContentCollection (facts)
+
+  ### Other Changes
+
+  - docs: add CLAUDE.md and SPEC.md for smrt-facts package (facts)
+  - refactor: use DB queries instead of in-memory filtering (facts)
+  - @happyvertical/smrt-scanner@0.20.26
+  - @happyvertical/smrt-config@0.20.26
+  - @happyvertical/smrt-types@0.20.26
+
 ## 0.20.25
 
 ### Patch Changes
