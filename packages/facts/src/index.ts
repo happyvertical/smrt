@@ -8,10 +8,14 @@
 
 // Export models
 export { Fact } from './fact';
+export { FactContent } from './fact-content';
+export { FactContentCollection } from './fact-contents';
 export { FactSource } from './fact-source';
 export { FactSourceCollection } from './fact-sources';
 export { FactSubject } from './fact-subject';
 export { FactSubjectCollection } from './fact-subjects';
+export { FactTag } from './fact-tag';
+export { FactTagCollection } from './fact-tags';
 // Export collections
 export { FactCollection } from './facts';
 
