@@ -60,7 +60,10 @@ import type {
 } from './schema/types.js';
 import { classnameToTablename, tableNameFromClass, toSnakeCase } from './utils';
 import { LRUCache } from './utils/lru-cache';
-import { createQualifiedName } from './utils/qualified-names.js';
+import {
+  createQualifiedName,
+  isQualifiedName,
+} from './utils/qualified-names.js';
 
 /**
  * Cached verbose flag evaluated once at module load time.
@@ -1223,9 +1226,47 @@ export class ObjectRegistry {
           return; // Same class, skip silently
         }
 
+        // Same package, different pnpm store copy — harmless duplicate
+        // This happens when pnpm installs multiple physical copies of the same package
+        // due to different peer dependency resolutions. Each copy has a distinct constructor
+        // but they are semantically the same class.
+        // Requirements: existing entry has a qualified key, same package, AND same class name
+        // (case-sensitive). A case-insensitive-only match with different exact names indicates
+        // genuinely different classes, not pnpm duplicates.
+        const newPackageName = getPackageName(ctor, true);
+        if (
+          isQualifiedName(existingKey) &&
+          newPackageName &&
+          existing.packageName &&
+          newPackageName === existing.packageName &&
+          name === existing.name
+        ) {
+          existing.constructor = ctor;
+          existing.config = { ...existing.config, ...config };
+          ObjectRegistry.constructorIndex.set(ctor, existingKey);
+          return;
+        }
+
         // Check if this is the same class being re-registered from module re-evaluation
         // (Issue #555: Test isolation - class name collision during vitest collection)
         const newSourceFile = getSourceFileFromStack();
+
+        // Bundled context: source file is in a build output directory
+        // Mirrors the exact-match bundled context check above
+        const isBundledContext =
+          newSourceFile &&
+          (newSourceFile.includes('.svelte-kit/output/') ||
+            newSourceFile.includes('/dist/') ||
+            newSourceFile.includes('/build/') ||
+            newSourceFile.includes('.next/') ||
+            newSourceFile.includes('.nuxt/'));
+
+        if (isBundledContext && existing.packageName?.startsWith('@')) {
+          existing.constructor = ctor;
+          existing.config = { ...existing.config, ...config };
+          ObjectRegistry.constructorIndex.set(ctor, existingKey);
+          return;
+        }
 
         // Allow re-registration if:
         // 1. Both source files are defined and match (same file being re-evaluated)
