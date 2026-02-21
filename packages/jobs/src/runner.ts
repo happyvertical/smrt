@@ -265,24 +265,28 @@ export class TaskRunner extends EventEmitter {
     }
 
     // Get the constructor from the registry entry
-    const ObjectClass =
-      registeredClass.constructor as unknown as new (options: {
-        db: DatabaseInterface | null;
-      }) => SmrtObject;
+    const ObjectClass = registeredClass.constructor as unknown as new (
+      options: Record<string, unknown>,
+    ) => SmrtObject;
+
+    // Extract internal keys from args before passing to constructor/method
+    const rawArgs = (job.args ?? {}) as Record<string, unknown>;
+    const agentConfig = (rawArgs._agentConfig ?? {}) as Record<string, unknown>;
+    const { _agentConfig: _, _scheduleId: __, ...methodArgs } = rawArgs;
 
     // Create or load the object instance
     let instance: SmrtObject;
 
     if (job.objectId) {
       // Load existing object
-      instance = new ObjectClass({ db: this.db });
+      instance = new ObjectClass({ db: this.db, ...agentConfig });
       await instance.initialize();
       await (
         instance as SmrtObject & { loadFromId(id: string): Promise<void> }
       ).loadFromId(job.objectId);
     } else {
       // Create new instance for static-like methods
-      instance = new ObjectClass({ db: this.db });
+      instance = new ObjectClass({ db: this.db, ...agentConfig });
       await instance.initialize();
     }
 
@@ -306,7 +310,7 @@ export class TaskRunner extends EventEmitter {
     // Log job start
     contextLogger.info(`Starting job: ${job.getDescription()}`);
 
-    // Invoke the method
+    // Invoke the method with cleaned args (no internal keys)
     const method = (
       instance as unknown as Record<string, (args: unknown) => Promise<unknown>>
     )[job.method];
@@ -314,7 +318,7 @@ export class TaskRunner extends EventEmitter {
       throw new Error(`Method not found: ${job.objectType}.${job.method}`);
     }
 
-    const result = await method.call(instance, job.args);
+    const result = await method.call(instance, methodArgs);
 
     return { result };
   }
