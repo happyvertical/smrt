@@ -302,16 +302,22 @@ export class ScheduleRunner extends EventEmitter {
       );
 
       // Create a job for this schedule
+      // Nest agent_config under _agentConfig so TaskRunner can pass it
+      // to the agent constructor separately from method args
+      const args: Record<string, unknown> = {
+        ...methodArgs,
+        _scheduleId: schedule.id,
+      };
+      if (Object.keys(agentConfig).length > 0) {
+        args._agentConfig = agentConfig;
+      }
+
       const job = await this.jobCollection.create({
         queue: 'agents',
         objectType: schedule.agent_type as string,
         objectId: schedule.agent_id as string | null,
         method: (schedule.method as string) || 'run',
-        args: {
-          ...methodArgs,
-          ...agentConfig,
-          _scheduleId: schedule.id,
-        },
+        args,
         priority: 75, // High priority for scheduled agents
         maxAttempts: 3,
         timeout: (schedule.timeout as number) || 3600000,
