@@ -66,8 +66,7 @@ export class FactSubjectCollection extends SmrtCollection<FactSubject> {
    * Get subjects by role for a fact
    */
   async getByRole(factId: string, role: SubjectRole): Promise<FactSubject[]> {
-    const subjects = await this.getForFact(factId);
-    return subjects.filter((s) => s.role === role);
+    return this.list({ where: { factId, role } });
   }
 
   /**

@@ -38,8 +38,7 @@ export class FactSourceCollection extends SmrtCollection<FactSource> {
   async getHighCredibility(
     minCredibility: number = 0.7,
   ): Promise<FactSource[]> {
-    const all = await this.list({});
-    return all.filter((s) => s.credibility >= minCredibility);
+    return this.list({ where: { 'credibility >=': minCredibility } });
   }
 
   /**
