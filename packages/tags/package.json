@@ -21,7 +21,7 @@
     "./manifest": "./dist/manifest.json"
   },
   "scripts": {
-    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build --mode library",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",

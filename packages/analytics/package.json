@@ -19,12 +19,11 @@
     }
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte -p && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte -p",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "generate:test": "node scripts/generate-test-manifest.js",
-    "test": "pnpm run generate:test && npx vitest run --passWithNoTests",
+    "test": "npx vitest run --passWithNoTests",
     "test:sqlite": "TEST_DB_ADAPTER=sqlite pnpm run generate:test && npx vitest run --project sqlite --passWithNoTests",
     "test:postgres": "TEST_DB_ADAPTER=postgres pnpm run generate:test && npx vitest run --project postgres --passWithNoTests",
     "test:json": "TEST_DB_ADAPTER=json pnpm run generate:test && npx vitest run --project json --passWithNoTests",

@@ -28,7 +28,7 @@
     "CLAUDE.md"
   ],
   "scripts": {
-    "build": "vite build --mode library && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build --mode library",
     "build:watch": "vite build --mode library --watch",
     "test": "npx vitest run --passWithNoTests",
     "test:watch": "vitest"

@@ -729,11 +729,12 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
   try {
     const pkgDir = dirname(pkgPath);
 
-    // Use ManifestManager for unified manifest loading
-    // This properly handles the priority order: .smrt/manifest.json -> dist/manifest.json
-    // which ensures test manifests are loaded during tests in monorepo environments
+    // Use ManifestManager for external package manifest loading
+    // Priority: dist/manifest.json -> .smrt/manifest.json
+    // External packages should prefer their production manifest to avoid
+    // pulling in test objects and transitive dependencies
     const manager = new ManifestManager(pkgDir);
-    const manifest = manager.loadLocal();
+    const manifest = manager.loadForExternalPackage();
 
     if (manifest) {
       // Validate manifest structure
