@@ -97,6 +97,34 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let projectRoot: string = process.cwd();
   let config: any = null; // Store resolved config for closeBundle hook
 
+  /**
+   * Write manifest to .smrt/manifest.json for CLI discovery.
+   * This ensures `smrt db:migrate`, `smrt db:status`, etc. can find
+   * locally-defined SMRT objects in non-library builds (Issue #963).
+   */
+  async function writeLocalManifest(
+    m: SmartObjectManifest,
+    rootDir: string,
+  ): Promise<void> {
+    try {
+      const { writeFileSync, mkdirSync } = await import('node:fs');
+      const { resolve } = await import('node:path');
+
+      const smrtDir = resolve(rootDir, '.smrt');
+      mkdirSync(smrtDir, { recursive: true });
+
+      const manifestPath = resolve(smrtDir, 'manifest.json');
+      writeFileSync(manifestPath, JSON.stringify(m, null, 2), 'utf-8');
+
+      const objectCount = Object.keys(m.objects).length;
+      console.log(
+        `[smrt] Wrote local manifest with ${objectCount} objects to .smrt/manifest.json`,
+      );
+    } catch (error) {
+      console.error('[smrt] Error writing local manifest:', error);
+    }
+  }
+
   return {
     name: 'smrt-auto-service',
 
@@ -137,6 +165,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // Scan files and generate initial manifest in all modes
       manifest = await scanAndGenerateManifest(projectRoot);
 
+      // Write local manifest for CLI discovery (Issue #963)
+      if (manifest) {
+        await writeLocalManifest(manifest, projectRoot);
+      }
+
       // Generate SvelteKit routes if enabled
       if (svelteKit.enabled && manifest) {
         await generateSvelteKitRoutes(resolvedConfig.root, manifest, {
@@ -152,6 +185,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     async buildStart() {
       // Rescan files on build start in all modes
       manifest = await scanAndGenerateManifest(projectRoot);
+
+      // Write local manifest for CLI discovery (Issue #963)
+      if (manifest) {
+        await writeLocalManifest(manifest, projectRoot);
+      }
     },
 
     configureServer(devServer) {
@@ -206,6 +244,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
             console.log(`[smrt] Rescanning due to change in ${file}`);
             manifest = await scanAndGenerateManifest(projectRoot);
 
+            // Write local manifest for CLI discovery (Issue #963)
+            if (manifest) {
+              await writeLocalManifest(manifest, projectRoot);
+            }
+
             // Generate SvelteKit routes if enabled
             if (svelteKit.enabled && manifest && server) {
               await generateSvelteKitRoutes(server.config.root, manifest, {
@@ -231,6 +274,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           if (await shouldRescan(file)) {
             console.log(`[smrt] Rescanning due to new file ${file}`);
             manifest = await scanAndGenerateManifest(projectRoot);
+
+            // Write local manifest for CLI discovery (Issue #963)
+            if (manifest) {
+              await writeLocalManifest(manifest, projectRoot);
+            }
           }
         });
       }
