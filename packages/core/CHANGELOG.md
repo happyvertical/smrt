@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.29
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - write local manifest for non-library builds (#964) (core)
+  - @happyvertical/smrt-scanner@0.20.29
+  - @happyvertical/smrt-config@0.20.29
+  - @happyvertical/smrt-types@0.20.29
+
 ## 0.20.28
 
 ### Patch Changes
