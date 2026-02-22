@@ -351,6 +351,12 @@ export const generateCommands: Record<string, CLICommand> = {
         let externalObjectCount = 0;
         const packageSummary: Record<string, number> = {};
 
+        // Track seen objects to deduplicate across packages.
+        // When packages re-export classes from dependencies, the same object
+        // appears in multiple manifests via enrichManifest() merging.
+        const seenQualifiedNames = new Set<string>();
+        const seenExportNames = new Set<string>();
+
         for (const manifestInfo of externalPackages) {
           const manifestData = await loadManifestFile(manifestInfo.path);
           if (!manifestData?.objects) continue;
@@ -363,10 +369,34 @@ export const generateCommands: Record<string, CLICommand> = {
             manifestData.objects,
           )) {
             const def = objectDef as any;
-            const importPath = def.importPath || packageName;
+
+            // Skip test-visibility objects (test fixtures, perf tests, etc.)
+            if (def.visibility === 'test') continue;
+
+            // Deduplicate by qualifiedName (e.g. @happyvertical/smrt-profiles:Profile)
+            const dedupeKey =
+              def.qualifiedName ||
+              `${packageName}:${def.className || objectName}`;
+            if (seenQualifiedNames.has(dedupeKey)) continue;
+            seenQualifiedNames.add(dedupeKey);
+
+            // Deduplicate by exportName to prevent JS identifier collisions
             const exportName = def.exportName || def.name || objectName;
+            if (seenExportNames.has(exportName)) continue;
+            seenExportNames.add(exportName);
+
+            // Check if collection export name is already taken by another object.
+            // Only skip collection registration, not the object itself.
             const collectionExportName = def.collectionExportName;
-            const hasCollection = def.hasCollection;
+            const skipCollection =
+              collectionExportName && seenExportNames.has(collectionExportName);
+            if (collectionExportName && !skipCollection) {
+              seenExportNames.add(collectionExportName);
+            }
+
+            // Import from the object's canonical package, not the current manifest package
+            const importPath = def.importPath || def.packageName || packageName;
+            const hasCollection = def.hasCollection && !skipCollection;
             const tableName = def.collection || objectName.toLowerCase();
 
             // Generate import statement
