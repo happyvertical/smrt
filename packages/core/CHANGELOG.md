@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.30
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - deduplicate imports in generate-register (#966) (cli)
+  - @happyvertical/smrt-scanner@0.20.30
+  - @happyvertical/smrt-config@0.20.30
+  - @happyvertical/smrt-types@0.20.30
+
 ## 0.20.29
 
 ### Patch Changes
