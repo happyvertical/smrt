@@ -304,4 +304,78 @@ describe('generate-register', () => {
     const widgetImports = content.match(/import \{[^}]*Widget[^}]*\}/g);
     expect(widgetImports).toHaveLength(1);
   });
+
+  it('registers both objects when they share a collectionExportName', async () => {
+    // Two different objects share the same collectionExportName.
+    // Both objects should be registered; only the first gets collection registration.
+    mockedAutoDiscover.mockResolvedValue({
+      discovered: [
+        {
+          path: '/fake/pkg-a/manifest.json',
+          source: 'package',
+          packageName: '@happyvertical/pkg-a',
+        },
+        {
+          path: '/fake/pkg-b/manifest.json',
+          source: 'package',
+          packageName: '@happyvertical/pkg-b',
+        },
+      ],
+    } as any);
+
+    mockedLoadManifest.mockImplementation(async (path: string) => {
+      if (path.includes('pkg-a')) {
+        return {
+          objects: {
+            Widget: {
+              className: 'Widget',
+              exportName: 'Widget',
+              packageName: '@happyvertical/pkg-a',
+              qualifiedName: '@happyvertical/pkg-a:Widget',
+              hasCollection: true,
+              collectionExportName: 'ItemCollection',
+              collection: 'widgets',
+              visibility: 'public',
+            },
+          },
+        };
+      }
+      if (path.includes('pkg-b')) {
+        return {
+          objects: {
+            Gadget: {
+              className: 'Gadget',
+              exportName: 'Gadget',
+              packageName: '@happyvertical/pkg-b',
+              qualifiedName: '@happyvertical/pkg-b:Gadget',
+              hasCollection: true,
+              collectionExportName: 'ItemCollection',
+              collection: 'gadgets',
+              visibility: 'public',
+            },
+          },
+        };
+      }
+      return null;
+    });
+
+    await handler([], { 'output-path': outputPath });
+
+    const content = await readFile(outputPath, 'utf-8');
+
+    // Both objects should be imported
+    expect(content).toContain(
+      "import { Widget, ItemCollection } from '@happyvertical/pkg-a'",
+    );
+    expect(content).toContain("import { Gadget } from '@happyvertical/pkg-b'");
+
+    // Both objects should be registered
+    expect(content).toContain('ObjectRegistry.register(Widget');
+    expect(content).toContain('ObjectRegistry.register(Gadget');
+
+    // ItemCollection should only appear once (from Widget's package)
+    const collectionImports = content.match(/ItemCollection/g);
+    // 1 in import, 1 in registerCollection
+    expect(collectionImports).toHaveLength(2);
+  });
 });

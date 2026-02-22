@@ -385,15 +385,18 @@ export const generateCommands: Record<string, CLICommand> = {
             if (seenExportNames.has(exportName)) continue;
             seenExportNames.add(exportName);
 
+            // Check if collection export name is already taken by another object.
+            // Only skip collection registration, not the object itself.
             const collectionExportName = def.collectionExportName;
-            if (collectionExportName) {
-              if (seenExportNames.has(collectionExportName)) continue;
+            const skipCollection =
+              collectionExportName && seenExportNames.has(collectionExportName);
+            if (collectionExportName && !skipCollection) {
               seenExportNames.add(collectionExportName);
             }
 
             // Import from the object's canonical package, not the current manifest package
             const importPath = def.importPath || def.packageName || packageName;
-            const hasCollection = def.hasCollection;
+            const hasCollection = def.hasCollection && !skipCollection;
             const tableName = def.collection || objectName.toLowerCase();
 
             // Generate import statement
