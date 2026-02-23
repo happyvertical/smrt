@@ -30,10 +30,9 @@
     }
   },
   "scripts": {
-    "build": "VITE_BUILD_PACKAGE=events vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "VITE_BUILD_PACKAGE=events vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "dev": "vite",
-    "generate:test": "node scripts/generate-test-manifest.js",
-    "test": "pnpm run generate:test && npx vitest run --passWithNoTests",
+    "test": "npx vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "echo '⏭️  Skipping events typecheck (has pre-existing TypeScript errors)'"
   },

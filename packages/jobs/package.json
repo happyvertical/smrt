@@ -44,7 +44,7 @@
     }
   },
   "scripts": {
-    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "test": "npx vitest run"
   },
   "dependencies": {

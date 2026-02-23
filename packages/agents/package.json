@@ -49,10 +49,9 @@
     "CLAUDE.md"
   ],
   "scripts": {
-    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/generate-stub-from-manifest.js",
+    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --watch",
-    "generate:test": "node scripts/generate-test-manifest.js",
-    "test": "pnpm run generate:test && npx vitest run",
+    "test": "npx vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {

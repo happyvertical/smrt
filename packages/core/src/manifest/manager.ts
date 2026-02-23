@@ -21,8 +21,28 @@ export class ManifestManager {
    * Priority: .smrt/manifest.json -> dist/manifest.json
    */
   loadLocal(): SmartObjectManifest | null {
-    const paths = [this.getOutputPath('dev'), this.getOutputPath('build')];
+    return this._loadFromPaths([
+      this.getOutputPath('dev'),
+      this.getOutputPath('build'),
+    ]);
+  }
 
+  /**
+   * Loads the manifest for an external package (dependency).
+   * Priority: dist/manifest.json -> .smrt/manifest.json
+   *
+   * External packages should prefer their production (dist) manifest
+   * over the dev/test (.smrt) manifest to avoid pulling in test objects
+   * and transitive dependencies.
+   */
+  loadForExternalPackage(): SmartObjectManifest | null {
+    return this._loadFromPaths([
+      this.getOutputPath('build'),
+      this.getOutputPath('dev'),
+    ]);
+  }
+
+  private _loadFromPaths(paths: string[]): SmartObjectManifest | null {
     for (const path of paths) {
       if (existsSync(path)) {
         try {
