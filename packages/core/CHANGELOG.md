@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.31
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - standardize manifest generation through plugins (#968) (core)
+  - @happyvertical/smrt-scanner@0.20.31
+  - @happyvertical/smrt-config@0.20.31
+  - @happyvertical/smrt-types@0.20.31
+
 ## 0.20.30
 
 ### Patch Changes
