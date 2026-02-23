@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.32
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use db.query() for system tables instead of syncSchema() (#969) (core)
+  - @happyvertical/smrt-scanner@0.20.32
+  - @happyvertical/smrt-config@0.20.32
+  - @happyvertical/smrt-types@0.20.32
+
 ## 0.20.31
 
 ### Patch Changes
