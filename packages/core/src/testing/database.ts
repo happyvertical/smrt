@@ -213,14 +213,9 @@ async function initializeSystemTables(db: DatabaseInterface): Promise<void> {
     allStatements.push(...statements);
   }
 
-  // Execute statements
-  if (db.syncSchema) {
-    for (const statement of allStatements) {
-      await db.syncSchema(statement);
-    }
-  } else {
-    for (const statement of allStatements) {
-      await db.query(statement);
-    }
+  // Use db.query() — system tables use CREATE TABLE/INDEX IF NOT EXISTS
+  // which databases handle natively without per-column existence checks.
+  for (const statement of allStatements) {
+    await db.query(statement);
   }
 }

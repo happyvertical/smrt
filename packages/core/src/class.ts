@@ -385,18 +385,13 @@ export class SmrtClass {
         allStatements.push(...statements);
       }
 
-      // Use syncSchema() if available (works with JSON adapter SDK fix)
-      // Fall back to query() for adapters without syncSchema()
-      if (this._db.syncSchema) {
-        // Execute statements one by one to ensure proper ordering
-        for (const statement of allStatements) {
-          await this._db.syncSchema(statement);
-        }
-      } else {
-        // Fallback for adapters without syncSchema()
-        for (const statement of allStatements) {
-          await this._db.query(statement);
-        }
+      // Use db.query() for system tables — they use CREATE TABLE/INDEX IF NOT EXISTS
+      // which databases handle natively in a single round-trip. The syncSchema()
+      // approach does per-column existence checks (multiple round-trips per table)
+      // which is unnecessary for framework-owned system tables and extremely slow
+      // on high-latency connections (e.g. remote postgres over Tailscale).
+      for (const statement of allStatements) {
+        await this._db.query(statement);
       }
 
       // Record current schema version
