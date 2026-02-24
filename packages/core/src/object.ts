@@ -15,6 +15,7 @@ import {
 } from './errors';
 import { createInterceptorContext, GlobalInterceptors } from './interceptors';
 import { ObjectRegistry } from './registry';
+import { isTableVerified, markTableVerified } from './table-cache';
 import {
   executeToolCall as executeToolCallInternal,
   type ToolCall,
@@ -968,16 +969,16 @@ export class SmrtObject extends SmrtClass {
 
       // Verify table exists (tables must be created via smrt db:migrate)
       // This replaces automatic schema creation which caused race conditions (issue #665)
-      // Uses SmrtCollection's cache to avoid redundant round-trips (issue #970)
+      // Cache verified tables to avoid redundant round-trips (issue #970)
       if (this.db) {
         const tableName = this.tableName;
-        const { SmrtCollection } = await import('./collection.js');
-        if (!SmrtCollection._verifiedTables.has(tableName)) {
+        const dbUrl = this.db.url || ':memory:';
+        if (!isTableVerified(dbUrl, tableName)) {
           const tableExists = await this.db.tableExists(tableName);
           if (!tableExists) {
             throw DatabaseError.schemaMissing(tableName, this.constructor.name);
           }
-          SmrtCollection._verifiedTables.add(tableName);
+          markTableVerified(dbUrl, tableName);
         }
       }
 

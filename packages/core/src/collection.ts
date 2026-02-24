@@ -11,6 +11,7 @@ import {
 import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
 import { generateSchema } from './schema/utils';
+import { isTableVerified, markTableVerified } from './table-cache';
 import {
   fieldsFromClass,
   formatDataJs,
@@ -137,14 +138,6 @@ export interface SmrtCollectionOptions extends SmrtClassOptions {}
  * generation, and provides a fluent interface for querying objects.
  */
 export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
-  /**
-   * Cache of verified table names to avoid redundant tableExists() round-trips.
-   * Keyed by table name (not class name) so STI classes sharing a table only check once.
-   * Similar pattern to SmrtClass._systemTablesInitializedByUrl.
-   * @see https://github.com/happyvertical/smrt/issues/970
-   */
-  static _verifiedTables = new Set<string>();
-
   /**
    * Cached fields for sync access during queries.
    * Populated during create() to avoid async getFields() calls on every query.
@@ -520,13 +513,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (instance.db && (this as any)._itemClass) {
       const className = (this as any)._itemClass.name;
       const tableName = ObjectRegistry.getTableName(className);
-      if (tableName && !SmrtCollection._verifiedTables.has(tableName)) {
+      const dbUrl = instance.db.url || ':memory:';
+      if (tableName && !isTableVerified(dbUrl, tableName)) {
         const tableExists = await instance.db.tableExists(tableName);
         if (!tableExists) {
           const { DatabaseError } = await import('./errors.js');
           throw DatabaseError.schemaMissing(tableName, className);
         }
-        SmrtCollection._verifiedTables.add(tableName);
+        markTableVerified(dbUrl, tableName);
       }
     }
 
