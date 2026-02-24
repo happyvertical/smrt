@@ -110,7 +110,7 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
       if (id !== RESOLVED_VIRTUAL_MODULE_ID) return;
 
       if (agentPackages.length === 0) {
-        return `// No agents configured in smrt.config.js\nexport function initializeAgentRegistrations() {}\n`;
+        return `// No agents configured in smrt.config.js\nexport const agentAdminRegistry = new Map();\nexport function initializeAgentRegistrations() {}\n`;
       }
 
       const lines: string[] = [
@@ -230,18 +230,42 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
       }
       lines.push('');
 
-      // Import admin modules (side-effect: components self-register)
+      // Import admin modules — named imports for AgentAdminExport contract,
+      // plus side-effect registration of legacy slot components
       lines.push(
-        '// Import admin modules (side-effect: self-register components)',
+        '// Import admin modules (AgentAdminExport contract + legacy slot registration)',
       );
-      for (const { packageName, hasAdmin } of registrations) {
+
+      const adminImports: Array<{ agentClass: string; adminVar: string }> = [];
+
+      for (const { packageName, agentClass, hasAdmin } of registrations) {
         if (hasAdmin) {
-          lines.push(`import '${packageName}/admin';`);
+          const safeName = packageName.replace('@', '').replace(/[/.-]/g, '_');
+          const adminVar = `admin_${safeName}`;
+          // Use namespace import so missing optional exports (navItems) resolve
+          // as undefined instead of throwing a hard ESM error.
+          lines.push(`import * as ${adminVar} from '${packageName}/admin';`);
+          adminImports.push({ agentClass: agentClass!, adminVar });
         } else {
           lines.push(
             `// ${packageName}/admin — not available (no ./admin export)`,
           );
         }
+      }
+
+      lines.push('');
+
+      // Build the agentAdminRegistry Map
+      lines.push('// Agent admin registry: agentClass -> AgentAdminExport');
+      lines.push('export const agentAdminRegistry = new Map();');
+      for (const { agentClass, adminVar } of adminImports) {
+        lines.push(
+          `agentAdminRegistry.set('${agentClass}', {`,
+          `  default: ${adminVar}.default,`,
+          `  createAPIClient: ${adminVar}.createAPIClient,`,
+          `  navItems: ${adminVar}.navItems,`,
+          `});`,
+        );
       }
 
       lines.push('');
