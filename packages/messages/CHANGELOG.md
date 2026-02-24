@@ -1,5 +1,16 @@
 # @happyvertical/smrt-messages
 
+## 0.20.33
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.20.33
+  - @happyvertical/smrt-secrets@0.20.33
+  - @happyvertical/smrt-tenancy@0.20.33
+  - @happyvertical/smrt-svelte@0.20.33
+  - @happyvertical/smrt-types@0.20.33
+
 ## 0.20.32
 
 ### Patch Changes

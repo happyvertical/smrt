@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.33
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - cache tableExists() to avoid redundant DB round-trips (#971) (core)
+  - @happyvertical/smrt-scanner@0.20.33
+  - @happyvertical/smrt-config@0.20.33
+  - @happyvertical/smrt-types@0.20.33
+
 ## 0.20.32
 
 ### Patch Changes
