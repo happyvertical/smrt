@@ -35,9 +35,18 @@ beforeAll(() => {
   originalLocalTest = g.__smrtManifestLocalTest;
 });
 
-afterAll(() => {
+afterAll(async () => {
   // Restore original state to prevent cross-file pollution
   const g = globalThis as Record<string, CacheState>;
   g.__smrtManifestCache = originalManifestCache;
   g.__smrtManifestLocalTest = originalLocalTest;
+
+  // Reset table existence cache to prevent cross-file contamination (issue #970)
+  // Dynamic import to avoid hard dependency on smrt-core from vitest package
+  try {
+    const { resetVerifiedTables } = await import('@happyvertical/smrt-core');
+    resetVerifiedTables();
+  } catch {
+    // smrt-core may not be available in all test environments
+  }
 });

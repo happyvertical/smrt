@@ -11,6 +11,7 @@ import {
 import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
 import { generateSchema } from './schema/utils';
+import { isTableVerified, markTableVerified } from './table-cache';
 import {
   fieldsFromClass,
   formatDataJs,
@@ -508,15 +509,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Verify table exists (tables must be created via smrt db:migrate)
     // This replaces automatic schema creation which caused race conditions (issue #665)
+    // Cache verified tables to avoid redundant round-trips (issue #970)
     if (instance.db && (this as any)._itemClass) {
       const className = (this as any)._itemClass.name;
       const tableName = ObjectRegistry.getTableName(className);
-      if (tableName) {
+      const dbUrl = instance.db.url || ':memory:';
+      if (tableName && !isTableVerified(dbUrl, tableName)) {
         const tableExists = await instance.db.tableExists(tableName);
         if (!tableExists) {
           const { DatabaseError } = await import('./errors.js');
           throw DatabaseError.schemaMissing(tableName, className);
         }
+        markTableVerified(dbUrl, tableName);
       }
     }
 

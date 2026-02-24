@@ -89,6 +89,8 @@ export type {
   RecallOptions,
   SystemTableConfig,
 } from './system/types';
+// Table existence verification cache (for test setup reset)
+export { resetVerifiedTables } from './table-cache';
 // Testing utilities (for test setup only)
 export {
   getTestDatabase,
