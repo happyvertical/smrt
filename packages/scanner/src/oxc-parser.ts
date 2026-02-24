@@ -1218,6 +1218,10 @@ function extractTypeName(type: TSType): string | null {
       return types.join(' | ');
     }
 
+    // Inline object type literal: { subject?: string; from?: string; body?: string }
+    // Maps to 'object' which the ManifestAdapter resolves as json
+    case 'TSTypeLiteral':
+      return 'object';
     case 'TSFunctionType':
       return 'Function';
   }
