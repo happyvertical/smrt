@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.36
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: bump SDK packages to ^0.69.7 (#975) (deps)
+  - @happyvertical/smrt-scanner@0.20.36
+  - @happyvertical/smrt-config@0.20.36
+  - @happyvertical/smrt-types@0.20.36
+
 ## 0.20.35
 
 ### Patch Changes
