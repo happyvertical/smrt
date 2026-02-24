@@ -138,6 +138,14 @@ export interface SmrtCollectionOptions extends SmrtClassOptions {}
  */
 export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
+   * Cache of verified table names to avoid redundant tableExists() round-trips.
+   * Keyed by table name (not class name) so STI classes sharing a table only check once.
+   * Similar pattern to SmrtClass._systemTablesInitializedByUrl.
+   * @see https://github.com/happyvertical/smrt/issues/970
+   */
+  static _verifiedTables = new Set<string>();
+
+  /**
    * Cached fields for sync access during queries.
    * Populated during create() to avoid async getFields() calls on every query.
    * @private
@@ -508,15 +516,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Verify table exists (tables must be created via smrt db:migrate)
     // This replaces automatic schema creation which caused race conditions (issue #665)
+    // Cache verified tables to avoid redundant round-trips (issue #970)
     if (instance.db && (this as any)._itemClass) {
       const className = (this as any)._itemClass.name;
       const tableName = ObjectRegistry.getTableName(className);
-      if (tableName) {
+      if (tableName && !SmrtCollection._verifiedTables.has(tableName)) {
         const tableExists = await instance.db.tableExists(tableName);
         if (!tableExists) {
           const { DatabaseError } = await import('./errors.js');
           throw DatabaseError.schemaMissing(tableName, className);
         }
+        SmrtCollection._verifiedTables.add(tableName);
       }
     }
 
