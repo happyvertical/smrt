@@ -119,7 +119,12 @@ describe('vitePluginAgentRoutes', () => {
       plugin.configResolved?.({ root: tmpDir });
 
       const code = plugin.load('\0virtual:smrt-agent-registrations');
-      expect(code).toContain("import '@test/with-admin/admin';");
+      // New format: namespace import + registry entry
+      expect(code).toContain(
+        "import * as admin_test_with_admin from '@test/with-admin/admin';",
+      );
+      expect(code).toContain('agentAdminRegistry');
+      expect(code).toContain('agentAdminRegistry.set("TestAgent"');
       expect(code).not.toContain('not available');
     });
 

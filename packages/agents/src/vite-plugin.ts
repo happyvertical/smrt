@@ -43,6 +43,11 @@ import {
 const VIRTUAL_MODULE_ID = 'virtual:smrt-agent-registrations';
 const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`;
 
+/** Convert a package name to a safe JS identifier (e.g., '@test/with-admin' → 'test_with_admin') */
+function toSafeIdentifier(packageName: string): string {
+  return packageName.replace('@', '').replace(/[/.-]/g, '_');
+}
+
 export interface AgentRoutesPluginOptions {
   /** Path to smrt.config.js (default: <project root>/smrt.config.js) */
   configPath?: string;
@@ -110,7 +115,7 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
       if (id !== RESOLVED_VIRTUAL_MODULE_ID) return;
 
       if (agentPackages.length === 0) {
-        return `// No agents configured in smrt.config.js\nexport function initializeAgentRegistrations() {}\n`;
+        return `// No agents configured in smrt.config.js\nexport const agentAdminRegistry = new Map();\nexport function initializeAgentRegistrations() {}\n`;
       }
 
       const lines: string[] = [
@@ -133,7 +138,7 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
 
       for (let i = 0; i < agentPackages.length; i++) {
         const pkg = agentPackages[i];
-        const safeName = pkg.replace('@', '').replace(/[/.-]/g, '_');
+        const safeName = toSafeIdentifier(pkg);
         const manifestVar = `manifest_${safeName}`;
 
         // Try to read the manifest to extract the agent class name
@@ -221,27 +226,54 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
       // Register manifests
       lines.push('// Register agent manifests');
       for (const { manifestVar, agentClass } of registrations) {
+        const key = JSON.stringify(agentClass);
         lines.push(
           `{`,
-          `  const m = extractAgentManifest(${manifestVar}, '${agentClass}');`,
-          `  if (m) AgentUIRegistry.registerManifest('${agentClass}', m);`,
+          `  const m = extractAgentManifest(${manifestVar}, ${key});`,
+          `  if (m) AgentUIRegistry.registerManifest(${key}, m);`,
           `}`,
         );
       }
       lines.push('');
 
-      // Import admin modules (side-effect: components self-register)
+      // Import admin modules — named imports for AgentAdminExport contract,
+      // plus side-effect registration of legacy slot components
       lines.push(
-        '// Import admin modules (side-effect: self-register components)',
+        '// Import admin modules (AgentAdminExport contract + legacy slot registration)',
       );
-      for (const { packageName, hasAdmin } of registrations) {
+
+      const adminImports: Array<{ agentClass: string; adminVar: string }> = [];
+
+      for (const { packageName, agentClass, hasAdmin } of registrations) {
         if (hasAdmin) {
-          lines.push(`import '${packageName}/admin';`);
+          const adminVar = `admin_${toSafeIdentifier(packageName)}`;
+          // Use namespace import so missing optional exports (navItems) resolve
+          // as undefined instead of throwing a hard ESM error.
+          lines.push(`import * as ${adminVar} from '${packageName}/admin';`);
+          adminImports.push({ agentClass: agentClass!, adminVar });
         } else {
           lines.push(
             `// ${packageName}/admin — not available (no ./admin export)`,
           );
         }
+      }
+
+      lines.push('');
+
+      // Build the agentAdminRegistry Map
+      lines.push('// Agent admin registry: agentClass -> AgentAdminExport');
+      lines.push('export const agentAdminRegistry = new Map();');
+      for (const { agentClass, adminVar } of adminImports) {
+        const key = JSON.stringify(agentClass);
+        lines.push(
+          `if (${adminVar}.default) {`,
+          `  agentAdminRegistry.set(${key}, {`,
+          `    default: ${adminVar}.default,`,
+          `    createAPIClient: ${adminVar}.createAPIClient,`,
+          `    navItems: ${adminVar}.navItems,`,
+          `  });`,
+          `}`,
+        );
       }
 
       lines.push('');

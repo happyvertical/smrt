@@ -155,7 +155,6 @@ export interface AgentManifestInfo {
     requiredPermission?: string;
   }>;
   components: Array<{ exportPath: string; type: string }>;
-  adminRoutes?: AgentAdminRoute[];
 }
 
 /**
@@ -370,6 +369,61 @@ if (!globalThis.__smrtAgentUIRegistry) {
 }
 export const AgentUIRegistry: AgentUIComponentRegistry =
   globalThis.__smrtAgentUIRegistry;
+
+/**
+ * What an agent's `./admin` entry point must export.
+ *
+ * This is the contract between agent packages and host apps.
+ * Instead of registering individual slot components, agents export
+ * a single root component that handles its own sub-navigation.
+ *
+ * @example
+ * ```typescript
+ * // In agent package: histrio/src/ui/admin/index.ts
+ * export { default } from './AdminRoot.svelte';
+ * export { createAPIClient } from '../types.js';
+ * export const navItems: AgentAdminNavItem[] = [
+ *   { id: 'characters', label: 'Characters', icon: 'users', order: 1 },
+ *   { id: 'performers', label: 'Performers', icon: 'mic', order: 2 },
+ * ];
+ * ```
+ */
+export interface AgentAdminExport {
+  /** Root admin component — renders all panels, handles its own sub-navigation */
+  default?: ComponentType;
+  /** Create a typed API client for this agent */
+  createAPIClient?: (baseUrl: string) => unknown;
+  /** Navigation items for tabs/sidebar within the agent admin */
+  navItems?: AgentAdminNavItem[];
+}
+
+/**
+ * Props passed to the root admin component
+ */
+export interface AgentAdminRootProps {
+  /** Typed API client created by the agent's own factory */
+  apiClient: unknown;
+  /** Which panel to show (from URL hash, e.g., 'sources') */
+  activePanel?: string;
+  /** Called when user navigates within the agent */
+  onNavigate?: (panelId: string) => void;
+  /** Whether admin is in read-only mode */
+  readonly?: boolean;
+}
+
+/**
+ * Navigation item within an agent's admin UI
+ */
+export interface AgentAdminNavItem {
+  /** Matches hash fragment and panel ID */
+  id: string;
+  /** Display label */
+  label: string;
+  /** Icon identifier */
+  icon?: string;
+  /** Display order (lower numbers first) */
+  order?: number;
+}
 
 /**
  * Agents module UI slots (for ModuleUIRegistry)
