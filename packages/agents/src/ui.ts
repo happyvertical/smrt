@@ -390,9 +390,9 @@ export const AgentUIRegistry: AgentUIComponentRegistry =
  */
 export interface AgentAdminExport {
   /** Root admin component — renders all panels, handles its own sub-navigation */
-  default: ComponentType;
+  default?: ComponentType;
   /** Create a typed API client for this agent */
-  createAPIClient: (baseUrl: string) => unknown;
+  createAPIClient?: (baseUrl: string) => unknown;
   /** Navigation items for tabs/sidebar within the agent admin */
   navItems?: AgentAdminNavItem[];
 }

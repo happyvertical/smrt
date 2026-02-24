@@ -43,6 +43,11 @@ import {
 const VIRTUAL_MODULE_ID = 'virtual:smrt-agent-registrations';
 const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`;
 
+/** Convert a package name to a safe JS identifier (e.g., '@test/with-admin' → 'test_with_admin') */
+function toSafeIdentifier(packageName: string): string {
+  return packageName.replace('@', '').replace(/[/.-]/g, '_');
+}
+
 export interface AgentRoutesPluginOptions {
   /** Path to smrt.config.js (default: <project root>/smrt.config.js) */
   configPath?: string;
@@ -133,7 +138,7 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
 
       for (let i = 0; i < agentPackages.length; i++) {
         const pkg = agentPackages[i];
-        const safeName = pkg.replace('@', '').replace(/[/.-]/g, '_');
+        const safeName = toSafeIdentifier(pkg);
         const manifestVar = `manifest_${safeName}`;
 
         // Try to read the manifest to extract the agent class name
@@ -221,10 +226,11 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
       // Register manifests
       lines.push('// Register agent manifests');
       for (const { manifestVar, agentClass } of registrations) {
+        const key = JSON.stringify(agentClass);
         lines.push(
           `{`,
-          `  const m = extractAgentManifest(${manifestVar}, '${agentClass}');`,
-          `  if (m) AgentUIRegistry.registerManifest('${agentClass}', m);`,
+          `  const m = extractAgentManifest(${manifestVar}, ${key});`,
+          `  if (m) AgentUIRegistry.registerManifest(${key}, m);`,
           `}`,
         );
       }
@@ -240,8 +246,7 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
 
       for (const { packageName, agentClass, hasAdmin } of registrations) {
         if (hasAdmin) {
-          const safeName = packageName.replace('@', '').replace(/[/.-]/g, '_');
-          const adminVar = `admin_${safeName}`;
+          const adminVar = `admin_${toSafeIdentifier(packageName)}`;
           // Use namespace import so missing optional exports (navItems) resolve
           // as undefined instead of throwing a hard ESM error.
           lines.push(`import * as ${adminVar} from '${packageName}/admin';`);
@@ -259,12 +264,15 @@ export function vitePluginAgentRoutes(options: AgentRoutesPluginOptions = {}): {
       lines.push('// Agent admin registry: agentClass -> AgentAdminExport');
       lines.push('export const agentAdminRegistry = new Map();');
       for (const { agentClass, adminVar } of adminImports) {
+        const key = JSON.stringify(agentClass);
         lines.push(
-          `agentAdminRegistry.set('${agentClass}', {`,
-          `  default: ${adminVar}.default,`,
-          `  createAPIClient: ${adminVar}.createAPIClient,`,
-          `  navItems: ${adminVar}.navItems,`,
-          `});`,
+          `if (${adminVar}.default) {`,
+          `  agentAdminRegistry.set(${key}, {`,
+          `    default: ${adminVar}.default,`,
+          `    createAPIClient: ${adminVar}.createAPIClient,`,
+          `    navItems: ${adminVar}.navItems,`,
+          `  });`,
+          `}`,
         );
       }
 
