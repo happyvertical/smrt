@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.38
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add smrt-affiliates and smrt-sites to changeset fixed array (#977) (release)
+  - @happyvertical/smrt-scanner@0.20.38
+  - @happyvertical/smrt-config@0.20.38
+  - @happyvertical/smrt-types@0.20.38
+
 ## 0.20.37
 
 ### Patch Changes
