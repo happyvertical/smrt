@@ -189,11 +189,13 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
-      // Get all pre-generated schemas to pass to database adapter
-      // This enables JSON adapter to create tables with correct types before loading data
-      // Dynamic import to avoid circular dependency: class → registry → collection → class
+      // Pass schemas as a lazy function so adapters that don't need them
+      // (Postgres, SQLite — they manage tables via migrations) never pay the
+      // cost of iterating 200+ classes and generating DDL.  Only JSON and
+      // DuckDB adapters call the function.  This eliminates ~2s of CPU work
+      // per Collection.create() call on large registries (issue #970).
       const { ObjectRegistry } = await import('./registry.js');
-      const schemas = ObjectRegistry.getAllSchemas();
+      const schemas = () => ObjectRegistry.getAllSchemas();
 
       // Handle four db config formats (in implementation order):
       // 1. String URL: 'products.db' (shortcut)
@@ -372,6 +374,29 @@ export class SmrtClass {
     }
 
     try {
+      // Fast path: check if system tables already exist by querying _smrt_migrations.
+      // This avoids 29 sequential DDL round-trips on high-latency connections
+      // (e.g. remote Postgres over Tailscale where each round-trip is ~650ms).
+      // If the migrations table doesn't exist, the query will throw and we fall
+      // through to the full DDL path.
+      const version = SMRT_SCHEMA_VERSION;
+      try {
+        const rows = await this._db.query(
+          `SELECT 1 FROM _smrt_migrations WHERE version = '${version}' LIMIT 1`,
+        );
+        if (rows && (Array.isArray(rows) ? rows.length > 0 : true)) {
+          // System tables already at current version — skip DDL
+          if (useInstanceTracking) {
+            SmrtClass._systemTablesInitialized.add(this._db);
+          } else {
+            SmrtClass._systemTablesInitializedByUrl.add(dbUrl);
+          }
+          return;
+        }
+      } catch {
+        // _smrt_migrations doesn't exist yet — fall through to create everything
+      }
+
       // Create all system tables
       // Split multi-statement SQL into individual statements to avoid race conditions
       // Each ALL_SYSTEM_TABLES entry contains CREATE TABLE + CREATE INDEX statements
@@ -397,7 +422,6 @@ export class SmrtClass {
       // Record current schema version
       // Use ON CONFLICT for DuckDB compatibility (not INSERT OR IGNORE)
       const id = crypto.randomUUID();
-      const version = SMRT_SCHEMA_VERSION;
       const description = 'Initial SMRT system tables';
       await this._db.execute`
         INSERT INTO _smrt_migrations (id, version, description)
