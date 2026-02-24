@@ -100,6 +100,16 @@ jobs:
           echo "  - Workflow errors checked with actionlint"
           echo "  - Shellcheck warnings validated"
 
+  check-sdk-versions:
+    name: Check SDK Version Alignment
+    runs-on: arc-happyvertical
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Verify SDK packages use same version
+        run: bash scripts/check-sdk-versions.sh
+
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

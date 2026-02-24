@@ -3,23 +3,23 @@ packages:
   - 'packages/smrt-svelte/playground'
 
 catalog:
-  '@happyvertical/ai': ^0.69.1
-  '@happyvertical/cache': ^0.69.1
-  '@happyvertical/documents': ^0.69.1
-  '@happyvertical/email': ^0.69.1
-  '@happyvertical/encryption': ^0.69.1
-  '@happyvertical/files': ^0.69.1
-  '@happyvertical/geo': ^0.69.1
-  '@happyvertical/images': ^0.69.1
-  '@happyvertical/jobs': ^0.69.1
-  '@happyvertical/json': ^0.69.1
-  '@happyvertical/logger': ^0.69.1
-  '@happyvertical/messages': ^0.69.1
+  '@happyvertical/ai': ^0.69.7
+  '@happyvertical/cache': ^0.69.7
+  '@happyvertical/documents': ^0.69.7
+  '@happyvertical/email': ^0.69.7
+  '@happyvertical/encryption': ^0.69.7
+  '@happyvertical/files': ^0.69.7
+  '@happyvertical/geo': ^0.69.7
+  '@happyvertical/images': ^0.69.7
+  '@happyvertical/jobs': ^0.69.7
+  '@happyvertical/json': ^0.69.7
+  '@happyvertical/logger': ^0.69.7
+  '@happyvertical/messages': ^0.69.7
   '@happyvertical/ocr': ^0.60.8
   '@happyvertical/pdf': ^0.62.2
-  '@happyvertical/projects': ^0.69.1
-  '@happyvertical/repos': ^0.69.1
-  '@happyvertical/secrets': ^0.69.1
+  '@happyvertical/projects': ^0.69.7
+  '@happyvertical/repos': ^0.69.7
+  '@happyvertical/secrets': ^0.69.7
   '@happyvertical/spider': ^0.60.8
   '@happyvertical/sql': ^0.69.7
-  '@happyvertical/utils': ^0.69.1
+  '@happyvertical/utils': ^0.69.7
