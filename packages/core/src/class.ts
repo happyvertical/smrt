@@ -189,11 +189,13 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
-      // Get all pre-generated schemas to pass to database adapter
-      // This enables JSON adapter to create tables with correct types before loading data
-      // Dynamic import to avoid circular dependency: class → registry → collection → class
+      // Pass schemas as a lazy function so adapters that don't need them
+      // (Postgres, SQLite — they manage tables via migrations) never pay the
+      // cost of iterating 200+ classes and generating DDL.  Only JSON and
+      // DuckDB adapters call the function.  This eliminates ~2s of CPU work
+      // per Collection.create() call on large registries (issue #970).
       const { ObjectRegistry } = await import('./registry.js');
-      const schemas = ObjectRegistry.getAllSchemas();
+      const schemas = () => ObjectRegistry.getAllSchemas();
 
       // Handle four db config formats (in implementation order):
       // 1. String URL: 'products.db' (shortcut)

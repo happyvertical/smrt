@@ -21,5 +21,5 @@ catalog:
   '@happyvertical/repos': ^0.69.1
   '@happyvertical/secrets': ^0.69.1
   '@happyvertical/spider': ^0.60.8
-  '@happyvertical/sql': ^0.69.1
+  '@happyvertical/sql': ^0.69.7
   '@happyvertical/utils': ^0.69.1
