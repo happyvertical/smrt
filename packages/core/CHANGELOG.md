@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.34
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - lazy schemas in SmrtClass.initialize() (#973) (core)
+  - @happyvertical/smrt-scanner@0.20.34
+  - @happyvertical/smrt-config@0.20.34
+  - @happyvertical/smrt-types@0.20.34
+
 ## 0.20.33
 
 ### Patch Changes

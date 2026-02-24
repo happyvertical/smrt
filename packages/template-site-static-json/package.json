@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-template-site-static-json",
-  "version": "0.20.33",
+  "version": "0.20.34",
   "description": "Static community site template with JSON data storage and SMRT framework",
   "type": "module",
   "main": "index.js",
