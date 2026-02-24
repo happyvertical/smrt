@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.37
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve TSTypeLiteral to 'object' for json field inference (#976) (scanner)
+  - @happyvertical/smrt-scanner@0.20.37
+  - @happyvertical/smrt-config@0.20.37
+  - @happyvertical/smrt-types@0.20.37
+
 ## 0.20.36
 
 ### Patch Changes
