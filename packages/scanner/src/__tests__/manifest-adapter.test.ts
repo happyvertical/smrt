@@ -223,6 +223,29 @@ describe('ManifestAdapter', () => {
         const result = adapterWithAliases.inferFieldType(field);
         expect(result.type).toBe('json');
       });
+
+      it('should infer json for inline object type literal (TSTypeLiteral)', () => {
+        const field: RawFieldDefinition = {
+          name: 'regexPatterns',
+          accessibility: 'public',
+          typeAnnotation: 'object',
+          initializer: '{}',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const adapter = new ManifestAdapter();
+        adapter.toManifest([], { typeAliases: {} });
+
+        const result = adapter.inferFieldType(field);
+        expect(result.type).toBe('json');
+        expect(result.required).toBe(false);
+      });
     });
 
     describe('@oneToMany and @manyToMany decorators', () => {

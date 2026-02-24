@@ -532,14 +532,14 @@ describe('OXC Parser', () => {
       expect(result.typeAliases.Direction).toBeUndefined();
     });
 
-    it('should skip complex type aliases that cannot be resolved', () => {
+    it('should resolve inline object type aliases to object', () => {
       const source = `
         type Config = { key: string; value: number };
       `;
 
       const result = parseSource(source);
-      // TSTypeLiteral (object shape) returns null from extractTypeName
-      expect(result.typeAliases.Config).toBeUndefined();
+      // TSTypeLiteral (object shape) resolves to 'object' for json storage
+      expect(result.typeAliases.Config).toBe('object');
     });
   });
 
