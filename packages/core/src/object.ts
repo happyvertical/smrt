@@ -970,7 +970,8 @@ export class SmrtObject extends SmrtClass {
       // Verify table exists (tables must be created via smrt db:migrate)
       // This replaces automatic schema creation which caused race conditions (issue #665)
       // Cache verified tables to avoid redundant round-trips (issue #970)
-      if (this.db) {
+      // Only check when the adapter explicitly opts in via requiresSchemaCheck: true
+      if (this.db?.requiresSchemaCheck) {
         const tableName = this.tableName;
         const dbUrl = this.db.url || ':memory:';
         if (!isTableVerified(dbUrl, tableName)) {
