@@ -510,7 +510,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Verify table exists (tables must be created via smrt db:migrate)
     // This replaces automatic schema creation which caused race conditions (issue #665)
     // Cache verified tables to avoid redundant round-trips (issue #970)
-    if (instance.db && (this as any)._itemClass) {
+    // Only check when the adapter explicitly opts in via requiresSchemaCheck: true
+    // (JSON/DuckDB auto-create tables; Postgres/SQLite are migration-managed).
+    if (
+      instance.db &&
+      (this as any)._itemClass &&
+      instance.db.requiresSchemaCheck
+    ) {
       const className = (this as any)._itemClass.name;
       const tableName = ObjectRegistry.getTableName(className);
       const dbUrl = instance.db.url || ':memory:';
