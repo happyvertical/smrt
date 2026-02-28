@@ -263,6 +263,14 @@ describe('SvelteKit Route Generator', () => {
         "import { getCollection } from '$lib/server/smrt'",
       );
 
+      // Should import model type for type-safe getCollection
+      expect(content).toContain(
+        "import type { Product } from '$lib/objects/Product'",
+      );
+
+      // Should use typed getCollection
+      expect(content).toContain("getCollection<Product>('Product')");
+
       // Should include GET handler
       expect(content).toContain('export const GET: RequestHandler');
       expect(content).toContain('await collection.get(params.id)');
@@ -325,6 +333,15 @@ describe('SvelteKit Route Generator', () => {
       expect(analyzeContent).toContain(
         "import { getCollection } from '$lib/server/smrt'",
       );
+
+      // Should import model type for type-safe getCollection
+      expect(analyzeContent).toContain(
+        "import type { Document } from '$lib/objects/Document'",
+      );
+
+      // Should use typed getCollection
+      expect(analyzeContent).toContain("getCollection<Document>('Document')");
+
       expect(analyzeContent).toContain('export const POST: RequestHandler');
       expect(analyzeContent).toContain('await item.analyze');
       expect(analyzeContent).toContain("action: 'analyze'");
@@ -391,6 +408,121 @@ describe('SvelteKit Route Generator', () => {
           call[0].toString().includes('privateAction/+server.ts'),
         );
       expect(privateRoute).toBeUndefined();
+    });
+
+    it('should import from package for external objects', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Meeting: {
+            className: 'Meeting',
+            collection: 'meetings',
+            packageName: '@happyvertical/praeco',
+            fields: {},
+            methods: {
+              summarize: {
+                name: 'summarize',
+                parameters: [],
+                returnType: 'Promise<string>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['get', 'summarize'],
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      // Item route should import from package
+      const itemRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('meetings/[id]/+server.ts'),
+        );
+
+      expect(itemRoute).toBeDefined();
+      const itemContent = itemRoute?.[1] as string;
+      expect(itemContent).toContain(
+        "import type { Meeting } from '@happyvertical/praeco'",
+      );
+      expect(itemContent).toContain("getCollection<Meeting>('Meeting')");
+
+      // Action route should also import from package
+      const actionRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('meetings/[id]/summarize/+server.ts'),
+        );
+
+      expect(actionRoute).toBeDefined();
+      const actionContent = actionRoute?.[1] as string;
+      expect(actionContent).toContain(
+        "import type { Meeting } from '@happyvertical/praeco'",
+      );
+      expect(actionContent).toContain("getCollection<Meeting>('Meeting')");
+    });
+
+    it('should extract simple class name from qualified names', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          '@blindmanpress/dashboard:Invitation': {
+            className: 'Invitation',
+            collection: 'invitations',
+            fields: {},
+            methods: {
+              canBeRedeemed: {
+                name: 'canBeRedeemed',
+                parameters: [],
+                returnType: 'boolean',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['get', 'canBeRedeemed'],
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      // Action route should use simple class name for import and generic
+      const actionRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0]
+            .toString()
+            .includes('invitations/[id]/canBeRedeemed/+server.ts'),
+        );
+
+      expect(actionRoute).toBeDefined();
+      const content = actionRoute?.[1] as string;
+
+      // Should import the simple class name, not the qualified name
+      expect(content).toContain('import type { Invitation }');
+      expect(content).not.toContain('import type { @blindmanpress');
+
+      // Should use simple name as generic parameter
+      expect(content).toContain('getCollection<Invitation>');
+
+      // Should still use the full qualified name as the registry key
+      expect(content).toContain(
+        "getCollection<Invitation>('@blindmanpress/dashboard:Invitation')",
+      );
     });
 
     it('should handle api config exclude list', async () => {
