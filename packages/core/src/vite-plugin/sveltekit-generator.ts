@@ -455,8 +455,24 @@ function getSvelteKitImportPath(
 }
 
 /**
+ * Check if an object's source file is local to the project (not in node_modules).
+ * The scanner sets packageName for all objects (including local ones from the
+ * project's own package.json), so we check the filePath to distinguish.
+ */
+function isLocalObject(
+  projectRoot: string,
+  objectDef: SmartObjectDefinition,
+): boolean {
+  if (!objectDef.filePath) return false;
+  return (
+    objectDef.filePath.startsWith(projectRoot) &&
+    !objectDef.filePath.includes('/node_modules/')
+  );
+}
+
+/**
  * Resolve the import statement for a SMRT model class.
- * External packages import from the package name, local objects use $lib paths.
+ * Local objects use $lib paths, external packages use the package/import path.
  */
 function resolveModelImport(
   projectRoot: string,
@@ -466,6 +482,21 @@ function resolveModelImport(
 ): { simpleClassName: string; importStatement: string } {
   const simpleClassName = extractSimpleClassName(className);
 
+  // Local objects (source files in the project, not node_modules) use $lib paths
+  if (isLocalObject(projectRoot, objectDef)) {
+    const importPath = getSvelteKitImportPath(
+      projectRoot,
+      objectDef.filePath,
+      options.objectsDir,
+      simpleClassName,
+    );
+    return {
+      simpleClassName,
+      importStatement: `import type { ${simpleClassName} } from '${importPath}';`,
+    };
+  }
+
+  // External packages: prefer importPath (subpath export) over packageName (root)
   const externalImportSource = objectDef.importPath ?? objectDef.packageName;
   if (externalImportSource) {
     return {
@@ -474,6 +505,7 @@ function resolveModelImport(
     };
   }
 
+  // Fallback: use $lib path from filePath
   const importPath = getSvelteKitImportPath(
     projectRoot,
     objectDef.filePath,
