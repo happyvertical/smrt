@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.41
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - skip collection classes in SvelteKit route generator (#983) (core)
+  - @happyvertical/smrt-scanner@0.20.41
+  - @happyvertical/smrt-config@0.20.41
+  - @happyvertical/smrt-types@0.20.41
+
 ## 0.20.40
 
 ### Patch Changes
