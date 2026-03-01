@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.20.39
+
+### Patch Changes
+
+- 5092f5e: Skip tableExists() check for migration-managed database adapters
+
+  `Collection.create()` now checks `db.requiresSchemaCheck` before running
+  `tableExists()`. Postgres and SQLite adapters (which manage schema via
+  migrations) no longer pay the cost of an extra round-trip per collection
+  initialization. This eliminates ~1s per collection over high-latency
+  connections (e.g. Tailscale).
+
+  - @happyvertical/smrt-scanner@0.20.39
+  - @happyvertical/smrt-config@0.20.39
+  - @happyvertical/smrt-types@0.20.39
+
 ## 0.20.38
 
 ### Patch Changes
