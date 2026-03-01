@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.40
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use $lib paths for local objects with packageName set (#981) (core)
+  - @happyvertical/smrt-scanner@0.20.40
+  - @happyvertical/smrt-config@0.20.40
+  - @happyvertical/smrt-types@0.20.40
+
 ## 0.20.39
 
 ### Patch Changes
