@@ -466,10 +466,11 @@ function resolveModelImport(
 ): { simpleClassName: string; importStatement: string } {
   const simpleClassName = extractSimpleClassName(className);
 
-  if (objectDef.packageName) {
+  const externalImportSource = objectDef.importPath ?? objectDef.packageName;
+  if (externalImportSource) {
     return {
       simpleClassName,
-      importStatement: `import type { ${simpleClassName} } from '${objectDef.packageName}';`,
+      importStatement: `import type { ${simpleClassName} } from '${externalImportSource}';`,
     };
   }
 
