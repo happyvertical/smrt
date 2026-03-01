@@ -37,6 +37,15 @@ function extractSimpleClassName(qualifiedName: string): string {
 }
 
 /**
+ * Check if an object definition represents a SmrtCollection class.
+ * Collection classes share route paths with their item class (via inherited `collection` field),
+ * so generating routes for both would cause file collisions.
+ */
+function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
+  return objectDef.extends === 'SmrtCollection';
+}
+
+/**
  * Generates SvelteKit API routes from manifest
  */
 export async function generateSvelteKitRoutes(
@@ -51,15 +60,29 @@ export async function generateSvelteKitRoutes(
   // Generate centralized configuration file first (if it doesn't exist)
   await generateSmrtConfigFile(projectRoot, manifest, options);
 
+  let generatedCount = 0;
+  let skippedCollections = 0;
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
+    if (isCollectionClass(objectDef)) {
+      console.log(
+        `[smrt] Skipping ${className} - collection class (routes handled by item class)`,
+      );
+      skippedCollections++;
+      continue;
+    }
     await generateRoutesForObject(projectRoot, className, objectDef, options);
+    generatedCount++;
   }
 
   // Update .gitignore to exclude generated routes
   updateGitignore(projectRoot, options);
 
+  const skippedMsg =
+    skippedCollections > 0
+      ? ` (skipped ${skippedCollections} collection classes)`
+      : '';
   console.log(
-    `[smrt] Generated routes for ${Object.keys(manifest.objects).length} SMRT objects`,
+    `[smrt] Generated routes for ${generatedCount} SMRT objects${skippedMsg}`,
   );
 }
 

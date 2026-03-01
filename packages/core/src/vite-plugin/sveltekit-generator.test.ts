@@ -944,4 +944,115 @@ describe('SvelteKit Route Generator', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('Collection Class Filtering', () => {
+    it('should skip collection classes and only generate routes for item classes', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Invitation: {
+            className: 'Invitation',
+            collection: 'invitations',
+            fields: {},
+            methods: {
+              canBeRedeemed: {
+                isPublic: true,
+                parameters: [],
+              },
+            },
+            decoratorConfig: { api: true },
+            filePath: '/test/project/src/lib/models/Invitation.ts',
+          },
+          InvitationCollection: {
+            className: 'InvitationCollection',
+            collection: 'invitations', // Same as Invitation (inherited by manifest-generator)
+            fields: {},
+            methods: {
+              findByToken: {
+                isPublic: true,
+                parameters: [{ name: 'token', type: 'string' }],
+              },
+            },
+            decoratorConfig: { api: true },
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Invitation',
+            filePath: '/test/project/src/lib/models/InvitationCollection.ts',
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      // Should log that collection class was skipped
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[smrt] Skipping InvitationCollection - collection class (routes handled by item class)',
+      );
+
+      // Should report 1 generated + 1 skipped
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[smrt] Generated routes for 1 SMRT objects (skipped 1 collection classes)',
+      );
+
+      // Should generate routes for Invitation (item class)
+      const writeFileCalls = vi
+        .mocked(writeFileSync)
+        .mock.calls.map(([path]) => path as string);
+      const invitationRoutes = writeFileCalls.filter((p) =>
+        p.includes('invitations'),
+      );
+
+      // Should have collection route, item route, and canBeRedeemed action route
+      expect(invitationRoutes).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('invitations/+server.ts'),
+          expect.stringContaining('invitations/[id]/+server.ts'),
+          expect.stringContaining('invitations/[id]/canBeRedeemed/+server.ts'),
+        ]),
+      );
+
+      // Should NOT have findByToken route (that's on the collection class which was skipped)
+      const findByTokenRoutes = writeFileCalls.filter((p) =>
+        p.includes('findByToken'),
+      );
+      expect(findByTokenRoutes).toHaveLength(0);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should not skip non-collection classes that happen to have extends set', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Meeting: {
+            className: 'Meeting',
+            collection: 'meetings',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true },
+            extends: 'Event', // STI: extends Event, NOT SmrtCollection
+            filePath: '/test/project/src/lib/models/Meeting.ts',
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      // Should generate routes for Meeting (it's an STI child, not a collection)
+      const writeFileCalls = vi
+        .mocked(writeFileSync)
+        .mock.calls.map(([path]) => path as string);
+      const meetingRoutes = writeFileCalls.filter((p) =>
+        p.includes('meetings'),
+      );
+      expect(meetingRoutes.length).toBeGreaterThan(0);
+    });
+  });
 });
