@@ -470,6 +470,62 @@ describe('SvelteKit Route Generator', () => {
       expect(actionContent).toContain("getCollection<Meeting>('Meeting')");
     });
 
+    it('should use $lib path for local objects even when packageName is set', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          '@myapp/dashboard:Invitation': {
+            className: 'Invitation',
+            collection: 'invitations',
+            packageName: '@myapp/dashboard',
+            filePath: '/test/project/src/lib/models/Invitation.ts',
+            fields: {},
+            methods: {
+              canBeRedeemed: {
+                name: 'canBeRedeemed',
+                parameters: [],
+                returnType: 'boolean',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['get', 'canBeRedeemed'],
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/models',
+      });
+
+      // Action route should use $lib path, NOT the packageName
+      const actionRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0]
+            .toString()
+            .includes('invitations/[id]/canBeRedeemed/+server.ts'),
+        );
+
+      expect(actionRoute).toBeDefined();
+      const content = actionRoute?.[1] as string;
+
+      // Should import via $lib, not from '@myapp/dashboard'
+      expect(content).toContain(
+        "import type { Invitation } from '$lib/models/Invitation'",
+      );
+      expect(content).not.toContain("from '@myapp/dashboard'");
+
+      // Should still use typed getCollection with qualified registry key
+      expect(content).toContain(
+        "getCollection<Invitation>('@myapp/dashboard:Invitation')",
+      );
+    });
+
     it('should extract simple class name from qualified names', async () => {
       const manifest: SmartObjectManifest = {
         objects: {
