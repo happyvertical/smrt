@@ -18,11 +18,7 @@
 ## Quick Start
 
 ```bash
-# Install
-npm install @smrt/core
-
-# Or with pnpm
-pnpm add @smrt/core
+pnpm add @happyvertical/smrt-core
 ```
 
 ## Basic Usage
@@ -32,8 +28,8 @@ pnpm add @smrt/core
 SMRT uses TypeScript types for automatic schema generation, with decorators only when needed:
 
 ```typescript
-import { SmrtObject, SmrtCollection, smrt } from '@smrt/core';
-import { foreignKey } from '@smrt/core/fields'; // Only for relationships
+import { SmrtObject, SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import { foreignKey } from '@happyvertical/smrt-core'; // Only for relationships
 
 // Define your domain object with TypeScript types
 @smrt({
@@ -125,7 +121,7 @@ class Inventory extends SmrtObject {
 Field decorators are only needed for specific cases:
 
 ```typescript
-import { text, decimal, foreignKey, oneToMany } from '@smrt/core/fields';
+import { text, decimal, foreignKey, oneToMany } from '@happyvertical/smrt-core';
 
 class Order extends SmrtObject {
   // TypeScript types for most fields
@@ -153,7 +149,7 @@ class Order extends SmrtObject {
 SMRT supports Single Table Inheritance where multiple related classes share the same database table:
 
 ```typescript
-import { SmrtObject, smrt } from '@smrt/core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 // Base class with STI strategy
 @smrt({ tableStrategy: 'sti' })
@@ -266,7 +262,7 @@ const relevance = await article.assessLocalRelevance(); // From LocalNews
 ### CLI Generation
 
 ```typescript
-import { CLIGenerator } from '@smrt/core/generators';
+import { CLIGenerator } from '@happyvertical/smrt-core/generators';
 
 const generator = new CLIGenerator({
   collections: [ProductCollection]
@@ -279,7 +275,7 @@ await generator.generate();
 ### REST API Generation
 
 ```typescript
-import { APIGenerator } from '@smrt/core/generators';
+import { APIGenerator } from '@happyvertical/smrt-core/generators';
 
 const generator = new APIGenerator({
   collections: [ProductCollection],
@@ -293,7 +289,7 @@ await generator.generate();
 ### MCP Server Generation
 
 ```typescript
-import { MCPGenerator } from '@smrt/core/generators';
+import { MCPGenerator } from '@happyvertical/smrt-core/generators';
 
 const generator = new MCPGenerator({
   collections: [ProductCollection]
@@ -307,7 +303,7 @@ await generator.generate();
 
 ```typescript
 // vite.config.js
-import { smrtPlugin } from '@smrt/core/vite-plugin';
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
 
 export default {
   plugins: [
@@ -326,34 +322,85 @@ import { tools } from '@smrt/mcp';
 
 ## Packages
 
-### Core SMRT Framework (`@smrt/*`)
+All packages are published under `@happyvertical/smrt-*`.
 
-- `@smrt/core` - Core framework with ORM, code generation, and AI integration
-- `@smrt/types` - Shared TypeScript type definitions
-- `@smrt/cli` - Developer CLI for introspection, testing, and project management
+### Foundation
 
-### Domain Modules (`@smrt/*`)
+| Package | Description |
+|---------|-------------|
+| `smrt-core` | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus |
+| `smrt-config` | cosmiconfig loader, secret sanitization, SSG export |
+| `smrt-cli` | Developer CLI: `smrt db:*`, `smrt docs:claude`, introspection, code generation |
+| `smrt-types` | Shared TypeScript types/enums (zero runtime code except enums) |
+| `smrt-vitest` | Vitest plugin: auto-manifest generation, cross-package class loading, DB isolation |
+| `smrt-scanner` | OXC-based AST scanner for class/field metadata extraction |
+| `smrt-tenancy` | Multi-tenancy: AsyncLocalStorage context, auto-filtering interceptors, adapters |
 
-- `@smrt/accounts` - Accounting ledger with multi-currency support
-- `@smrt/agents` - Agent framework for autonomous actors
-- `@smrt/assets` - Asset management with versioning and metadata
-- `@smrt/content` - Content processing (documents, PDFs, web content)
-- `@smrt/events` - Event management with participants and hierarchies
-- `@smrt/gnode` - Federation library for local knowledge bases
-- `@smrt/places` - Place management with geo integration
-- `@smrt/products` - Product catalog and microservice template
-- `@smrt/profiles` - Profile management with relationships
-- `@smrt/tags` - Hierarchical tagging system
+### Agents & Runtime
 
-### SDK Infrastructure (`@have/*`)
+| Package | Description |
+|---------|-------------|
+| `smrt-agents` | Agent lifecycle, DispatchBus inter-agent messaging, interests-based discovery |
+| `smrt-jobs` | Background execution: TaskRunner, ScheduleRunner, fluent JobBuilder |
+| `smrt-users` | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions |
+| `smrt-profiles` | Identity: multi-auth (Nostr/OIDC/API keys/magic links), relationships |
 
-External dependencies provided by the HAppyVertical SDK:
+### Content & Media
 
-- `@have/ai` - Multi-provider AI client (OpenAI, Anthropic, Google, AWS)
-- `@have/files` - File system operations and utilities
-- `@have/sql` - Database operations (SQLite, Postgres, DuckDB)
-- `@have/utils` - Shared utility functions
-- `@have/logger` - Logging infrastructure
+| Package | Description |
+|---------|-------------|
+| `smrt-content` | STI content types (Article/Document/Mirror), thumbnails, asset associations |
+| `smrt-messages` | Multi-channel messaging: Email/Slack/Twitter as STI hierarchy |
+| `smrt-chat` | Chat rooms (public/private/DM/agent), threads, agent sessions |
+| `smrt-assets` | Provider-agnostic asset management, versioning, polymorphic associations |
+| `smrt-images` | Image ops: AI categorization, editing, metadata extraction |
+| `smrt-video` | Video production: Character/Performer/Scene, ComfyUI workflows |
+| `smrt-voice` | TTS voice profiles, cloning from samples, word timings for lip-sync |
+
+### Business
+
+| Package | Description |
+|---------|-------------|
+| `smrt-commerce` | Customer/Vendor, Contract (5 STI types), Invoice, Fulfillment |
+| `smrt-products` | Product catalog — reference template for triple-consumption |
+| `smrt-ads` | Ad delivery: priority waterfall, weighted A/B variations, event tracking |
+| `smrt-affiliates` | Revenue sharing: multi-type partners, multi-tier commissions, payouts |
+| `smrt-ledgers` | Double-entry accounting, balance enforcement, journal lifecycle |
+| `smrt-analytics` | GA4/Plausible: properties, data streams, server-side events |
+
+### Domain
+
+| Package | Description |
+|---------|-------------|
+| `smrt-events` | Infinite-nesting event hierarchy, series, participant roles/placements |
+| `smrt-places` | Hierarchical places, geocoding via `lookupOrCreate()`, Haversine proximity |
+| `smrt-facts` | Knowledge base: semantic dedup, evolution chains, confidence scoring |
+| `smrt-sites` | Site lifecycle management, agent bindings with priority ordering |
+| `smrt-properties` | Digital properties with hierarchical zones for content/ad placement |
+| `smrt-tags` | Hierarchical tagging: context-scoped slugs, multi-language aliases |
+| `smrt-social` | Social media OAuth (YouTube/Threads/X/Bluesky), post scheduling |
+| `smrt-secrets` | Envelope encryption (AMK/TDEK/secret), key rotation, audit logging |
+| `smrt-projects` | Provider-agnostic project management (Issues, PRs, Repositories) |
+
+### Tooling
+
+| Package | Description |
+|---------|-------------|
+| `smrt-svelte` | Svelte 5: components, browser AI (STT/TTS/LLM), theme system |
+| `smrt-dev-mcp` | Dev MCP server: `generate-smrt-class`, `introspect-project` |
+| `smrt-gnode` | Federation library (stubs only, not implemented) |
+| `template-sveltekit` | Base SvelteKit scaffold with SMRT integration |
+| `template-site-static-json` | Community news site scaffold |
+
+### SDK Infrastructure (`@happyvertical/*`)
+
+External dependencies from the [HappyVertical SDK](https://github.com/happyvertical/sdk):
+
+- `@happyvertical/ai` — Multi-provider AI client
+- `@happyvertical/sql` — Database operations (SQLite, Postgres, DuckDB)
+- `@happyvertical/files` — File system operations
+- `@happyvertical/utils` — Shared utility functions
+- `@happyvertical/logger` — Logging infrastructure
 
 ## Documentation
 
