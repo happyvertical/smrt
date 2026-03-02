@@ -13,9 +13,10 @@ export interface SummaryArticleResult {
   title: string;
   summary: string;
   body: string;
-  dateRange: { start: string; end: string };
+  /** ISO 8601 date strings for the covered period */
+  dateRange: { start: Date | string; end: Date | string };
   images?: SummaryArticleImage[];
-  scope?: Record<string, string | number | undefined>;
+  scope?: Partial<Record<string, string | number>>;
   stats?: Record<string, number>;
 }
 

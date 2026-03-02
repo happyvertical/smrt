@@ -36,7 +36,6 @@ describe('SummaryArticleResult type', () => {
       scope: {
         councilName: 'Bentley',
         councilId: '123',
-        regionCode: undefined,
       },
       stats: { meetingsFound: 3, recapsAvailable: 2 },
     };

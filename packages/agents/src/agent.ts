@@ -546,9 +546,9 @@ export abstract class Agent extends SmrtObject {
    * Generate a summary article for the given date range.
    * Override in agent subclasses that support article generation.
    */
-  async summaryArticle?(
+  summaryArticle?: (
     options: SummaryArticleOptions,
-  ): Promise<SummaryArticleResult>;
+  ) => Promise<SummaryArticleResult>;
 
   /**
    * Cleanup and shutdown
