@@ -30,7 +30,13 @@ import {
 } from './registry.js';
 
 /**
- * Options for the @TenantScoped decorator
+ * Options accepted by the `@TenantScoped()` class decorator.
+ *
+ * All fields are optional; defaults match the most restrictive safe behaviour
+ * (required mode, auto-filter and auto-populate enabled, no super-admin bypass).
+ *
+ * @see TenantScoped
+ * @see TenantScopedConfig
  */
 export interface TenantScopedOptions {
   /**

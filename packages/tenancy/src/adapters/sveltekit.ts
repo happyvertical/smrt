@@ -46,7 +46,13 @@ interface SvelteKitEvent {
 type SvelteKitResolve = (event: SvelteKitEvent) => Promise<Response>;
 
 /**
- * Options for the SvelteKit handle
+ * Configuration options for the SvelteKit tenancy handle created by
+ * `createSvelteKitHandle()`.
+ *
+ * Only `resolveTenantId` is required; all other fields are optional callbacks
+ * used to enrich the context or customise missing-tenant behaviour.
+ *
+ * @see createSvelteKitHandle
  */
 export interface SvelteKitHandleOptions {
   /**
@@ -100,10 +106,39 @@ export interface SvelteKitHandleOptions {
 }
 
 /**
- * Create a SvelteKit Handle for tenant context
+ * Create a SvelteKit `Handle` function that establishes tenant context for
+ * every server-side request.
  *
- * @param options - Configuration options
- * @returns SvelteKit Handle function
+ * The returned handle wraps the `resolve` call in `withTenant()` so that all
+ * server-side load functions, API routes, and `+server.ts` handlers within the
+ * request share the same tenant context via `AsyncLocalStorage`.
+ *
+ * The resolved context is also stored in `event.locals` under two keys:
+ * - `event.locals.tenantContext` — full `TenantContextData`
+ * - `event.locals.tenantId`      — string tenant ID shortcut
+ *
+ * When no tenant ID can be resolved (and no custom `onNoTenant` handler
+ * returns a `Response`), the request continues without any tenant context.
+ *
+ * @param options - Configuration options including the required
+ *   `resolveTenantId` callback.
+ * @returns A SvelteKit `Handle` function suitable for use in `hooks.server.ts`.
+ *
+ * @example
+ * ```typescript
+ * // src/hooks.server.ts
+ * import { createSvelteKitHandle } from '@happyvertical/smrt-tenancy/adapters';
+ *
+ * export const handle = createSvelteKitHandle({
+ *   resolveTenantId: (event) =>
+ *     event.request.headers.get('x-tenant-id'),
+ *   onNoTenant: () =>
+ *     new Response('Tenant required', { status: 400 }),
+ * });
+ * ```
+ *
+ * @see SvelteKitHandleOptions
+ * @see createExpressMiddleware
  */
 export function createSvelteKitHandle(options: SvelteKitHandleOptions) {
   const {

@@ -74,10 +74,37 @@ function setLoadedConfig(config: SmrtConfig | null): void {
 }
 
 /**
- * Load and parse configuration from project root
+ * Load and parse configuration from the project root.
  *
- * This function caches the config in globalThis, ensuring all module instances
- * (even from different package resolution paths) share the same config.
+ * Searches for `smrt.config.{js,mjs,cjs,json}` starting from the current
+ * working directory and walking up the tree (unless `searchParents: false`).
+ * The result is stored in `globalThis.__smrtConfigCache` so every module in
+ * the process — including pnpm workspace packages loaded from different paths
+ * — sees the same instance.
+ *
+ * Must be called before {@link getConfig}, {@link getModuleConfig}, or
+ * {@link getPackageConfig} return meaningful values (they fall back to an
+ * empty config if called before loading).
+ *
+ * @param options - Optional search path, parent traversal, and cache control.
+ * @returns The parsed {@link SmrtConfig}. Returns `{}` if no file is found.
+ *
+ * @example
+ * ```ts
+ * // Typical app startup
+ * import { loadConfig } from '@happyvertical/smrt-config';
+ * await loadConfig();
+ * ```
+ *
+ * @example
+ * ```ts
+ * // Load a specific file (tests / scripts)
+ * const config = await loadConfig({ configPath: './fixtures/smrt.config.js', cache: false });
+ * ```
+ *
+ * @see {@link getConfig}
+ * @see {@link clearCache}
+ * @see {@link LoadConfigOptions}
  */
 export async function loadConfig(
   options?: LoadConfigOptions,
@@ -89,20 +116,46 @@ export async function loadConfig(
 }
 
 /**
- * Get the currently loaded configuration synchronously
- * Returns null if config hasn't been loaded yet via loadConfig()
+ * Return the full merged configuration synchronously.
  *
- * @returns The cached config or null if not loaded
+ * Reads from `globalThis.__smrtConfigCache` without triggering a file search.
+ * Returns `null` when {@link loadConfig} has not been called yet (or after
+ * {@link clearCache} resets the cache).
+ *
+ * @returns The cached {@link SmrtConfig}, or `null` if not yet loaded.
+ *
+ * @example
+ * ```ts
+ * const config = getConfig();
+ * if (config?.smrt?.logLevel === 'debug') {
+ *   console.log('Debug logging enabled');
+ * }
+ * ```
+ *
+ * @see {@link loadConfig}
+ * @see {@link getSiteConfig}
+ * @see {@link getModuleConfig}
  */
 export function getConfig(): SmrtConfig | null {
   return getLoadedConfig();
 }
 
 /**
- * Get site configuration from the loaded config
- * Returns the site identity, location, navigation, and theme settings
+ * Return the `site` section of the loaded configuration.
  *
- * @returns The site config or null if not defined
+ * Equivalent to `getConfig()?.site ?? null`. Returns `null` both when no
+ * config has been loaded and when the loaded config has no `site` key.
+ *
+ * @returns The {@link SiteConfig} object, or `null` if not defined.
+ *
+ * @example
+ * ```ts
+ * const site = getSiteConfig();
+ * const title = site?.name ?? 'Untitled Site';
+ * ```
+ *
+ * @see {@link SiteConfig}
+ * @see {@link getConfig}
  */
 export function getSiteConfig(): import('./types.js').SiteConfig | null {
   const config = getLoadedConfig() || {};
@@ -110,12 +163,34 @@ export function getSiteConfig(): import('./types.js').SiteConfig | null {
 }
 
 /**
- * Get configuration for a specific module
- * Merges global smrt config with module-specific config
+ * Return the resolved configuration for a named module.
  *
- * @param moduleName - Name of the module
- * @param defaults - Default configuration values
- * @returns Merged configuration
+ * Merges four layers in ascending priority order:
+ * 1. `defaults` (caller-supplied fallbacks)
+ * 2. Global `smrt` section of the loaded config
+ * 3. `modules[moduleName]` section of the loaded config
+ * 4. Runtime `modules[moduleName]` overrides set via {@link setConfig}
+ *
+ * Works synchronously — call {@link loadConfig} first to populate the cache.
+ * If no config has been loaded, only `defaults` are returned.
+ *
+ * @param moduleName - Key in `config.modules` (e.g., `'praeco'`).
+ * @param defaults - Optional fallback values used when a key is absent from all
+ *   higher-priority layers.
+ * @returns The fully merged module config typed as `T`.
+ *
+ * @example
+ * ```ts
+ * const config = getModuleConfig('praeco', {
+ *   rssLimit: 50,
+ *   fetchTimeout: 10_000,
+ * });
+ * // config.rssLimit may be overridden by smrt.config.js or setConfig()
+ * ```
+ *
+ * @see {@link getPackageConfig}
+ * @see {@link setConfig}
+ * @see {@link SmrtConfig.modules}
  */
 export function getModuleConfig<T extends Record<string, unknown>>(
   moduleName: string,
@@ -148,12 +223,35 @@ export function getModuleConfig<T extends Record<string, unknown>>(
 }
 
 /**
- * Get configuration for a specific package
- * Merges global smrt config with package-specific config
+ * Return the resolved configuration for a named package.
  *
- * @param packageName - Name of the package
- * @param defaults - Default configuration values
- * @returns Merged configuration
+ * Identical to {@link getModuleConfig} but reads from `config.packages` instead
+ * of `config.modules`. Use this inside `@happyvertical/smrt-*` packages that
+ * want to expose their own config section without conflicting with user-defined
+ * module names.
+ *
+ * Merges four layers in ascending priority order:
+ * 1. `defaults` (caller-supplied fallbacks)
+ * 2. Global `smrt` section of the loaded config
+ * 3. `packages[packageName]` section of the loaded config
+ * 4. Runtime `packages[packageName]` overrides set via {@link setConfig}
+ *
+ * @param packageName - Key in `config.packages` (e.g., `'ai'`, `'spider'`).
+ * @param defaults - Optional fallback values.
+ * @returns The fully merged package config typed as `T`.
+ *
+ * @example
+ * ```ts
+ * // Inside @happyvertical/smrt-ai package
+ * const config = getPackageConfig('ai', {
+ *   defaultModel: 'gpt-4o-mini',
+ *   maxTokens: 2048,
+ * });
+ * ```
+ *
+ * @see {@link getModuleConfig}
+ * @see {@link setConfig}
+ * @see {@link SmrtConfig.packages}
  */
 export function getPackageConfig<T extends Record<string, unknown>>(
   packageName: string,
@@ -187,16 +285,55 @@ export function getPackageConfig<T extends Record<string, unknown>>(
 }
 
 /**
- * Set configuration at runtime
- * Merged with file-based config, runtime config takes priority
+ * Apply runtime configuration overrides.
+ *
+ * Deep-merges `config` into an in-memory store that takes the highest priority
+ * in every subsequent {@link getModuleConfig} / {@link getPackageConfig} call.
+ * Successive calls accumulate — they do not replace earlier overrides.
+ *
+ * Common uses:
+ * - Inject test doubles or environment-specific values without a config file.
+ * - Apply feature flags from a remote source after startup.
+ *
+ * @param config - Partial {@link SmrtConfig} to merge into the runtime store.
+ *   `null` values are ignored (they do not clear existing keys).
+ *
+ * @example
+ * ```ts
+ * setConfig({ modules: { ai: { defaultModel: 'gpt-4o' } } });
+ * ```
+ *
+ * @see {@link clearCache}
+ * @see {@link getModuleConfig}
  */
 export function setConfig(config: Partial<SmrtConfig>): void {
   _setConfig(config);
 }
 
 /**
- * Clear all cached configuration
- * Useful for testing or hot-reloading
+ * Reset all cached configuration state.
+ *
+ * Clears three independent caches:
+ * 1. `globalThis.__smrtConfigCache` — the merged config loaded by {@link loadConfig}.
+ * 2. The internal loader cache (`globalThis.__smrtLoaderCachedConfig`) and the
+ *    cosmiconfig explorer instance.
+ * 3. The runtime override store populated by {@link setConfig}.
+ *
+ * After calling this, {@link getConfig} returns `null` and a fresh
+ * {@link loadConfig} call will re-read from disk.
+ *
+ * WARNING: This is a global reset — it affects every module sharing the same
+ * runtime, not just the caller. Use with care outside of test teardown.
+ *
+ * @example
+ * ```ts
+ * afterEach(() => {
+ *   clearCache(); // reset between tests
+ * });
+ * ```
+ *
+ * @see {@link loadConfig}
+ * @see {@link setConfig}
  */
 export function clearCache(): void {
   setLoadedConfig(null);
@@ -205,8 +342,28 @@ export function clearCache(): void {
 }
 
 /**
- * Helper to define config with TypeScript support
- * Provides auto-completion in config files
+ * Type-safe helper for authoring `smrt.config.js` files.
+ *
+ * This is an identity function — it returns its argument unchanged. Its sole
+ * purpose is to provide TypeScript type-checking and IDE auto-completion when
+ * writing the config object literal.
+ *
+ * @param config - The config object to validate against {@link SmrtConfig}.
+ * @returns The same object, unchanged.
+ *
+ * @example
+ * ```js
+ * // smrt.config.js
+ * import { defineConfig } from '@happyvertical/smrt-config';
+ *
+ * export default defineConfig({
+ *   smrt: { logLevel: 'info' },
+ *   site: { name: 'My Site', ... },
+ * });
+ * ```
+ *
+ * @see {@link SmrtConfig}
+ * @see {@link loadConfig}
  */
 export function defineConfig(config: SmrtConfig): SmrtConfig {
   return config;

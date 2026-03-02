@@ -170,20 +170,65 @@ function createQualifiedName(
 }
 
 /**
- * Converts OXC scanner output to smrt-core manifest format
+ * Converts OXC scanner output into the smrt-core `SmartObjectManifest` format
+ * consumed by code generators, the Vitest plugin, and the SMRT CLI.
+ *
+ * The adapter handles field type inference (applying the `0` vs `0.0` integer /
+ * decimal heuristic), decorator interpretation (`@foreignKey`, `@oneToMany`,
+ * `@manyToMany`, `@field`), type alias resolution, STI `Meta<T>` unwrapping,
+ * static property capture (`uiSlots`, `adminRoutes`), and qualified name
+ * generation for namespace isolation across packages.
+ *
+ * @example
+ * ```typescript
+ * import { OxcScanner, ManifestAdapter } from '@happyvertical/smrt-scanner';
+ *
+ * const scanner = new OxcScanner({ cwd: process.cwd() });
+ * const { results, resolved } = await scanner.scanAndResolve();
+ *
+ * const adapter = new ManifestAdapter();
+ * const manifest = adapter.toManifest(resolved, {
+ *   packageName: '@my-org/my-package',
+ *   packageVersion: '1.0.0',
+ *   typeAliases: results.typeAliases,
+ * });
+ * ```
+ *
+ * @see {@link OxcScanner} for producing the `ResolvedClassDefinition[]` input.
+ * @see {@link ResolvedClassDefinition} for the shape of each input element.
  */
 export class ManifestAdapter {
   private typeAliases: Record<string, string> = {};
   private _aliasDepth?: number;
 
   /**
-   * Convert resolved classes to manifest format
+   * Convert an array of resolved class definitions into a `SmartObjectManifest`.
    *
-   * @param resolved - Array of resolved class definitions
-   * @param options - Configuration options
-   * @param options.packageName - Package name for qualified name generation (Issue #713)
-   * @param options.packageVersion - Package version for manifest metadata
-   * @param options.typeAliases - Type alias declarations for resolving custom type names
+   * Each class is converted to a `SmartObjectDefinition` via
+   * {@link toSmartObjectDefinition} and stored under its qualified name key
+   * (e.g. `@my-org/my-package:MyClass`) when `packageName` is provided, or
+   * under its lowercased class name otherwise.
+   *
+   * @param resolved - Resolved class definitions from {@link OxcScanner.resolve}
+   *   or {@link OxcScanner.scanAndResolve}.
+   * @param options.packageName - npm package name used to generate qualified
+   *   class names for namespace isolation across multi-package projects.
+   * @param options.packageVersion - Package version recorded in the manifest
+   *   metadata.
+   * @param options.typeAliases - Map of type alias names to their resolved type
+   *   strings (from {@link ScanResults.typeAliases}).  Used to resolve custom
+   *   types like `type Status = 'active' | 'inactive'` during field inference.
+   * @returns A complete `SmartObjectManifest` ready for serialisation.
+   *
+   * @example
+   * ```typescript
+   * const manifest = adapter.toManifest(resolved, {
+   *   packageName: '@my-org/my-package',
+   *   packageVersion: '1.0.0',
+   *   typeAliases: results.typeAliases,
+   * });
+   * fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2));
+   * ```
    */
   toManifest(
     resolved: ResolvedClassDefinition[],
@@ -217,10 +262,24 @@ export class ManifestAdapter {
   }
 
   /**
-   * Convert a single resolved class to SmartObjectDefinition
+   * Convert a single resolved class definition to a `SmartObjectDefinition`.
    *
-   * @param classDef - Resolved class definition from OXC scanner
-   * @param options - Configuration options (packageName for qualified names)
+   * Handles:
+   * - Static property capture (`uiSlots`, `adminRoutes`) with child-wins
+   *   semantics for overridden statics.
+   * - Field conversion (non-static public fields only) via {@link convertField}.
+   * - Method conversion (public instance/static methods) via {@link convertMethod}.
+   * - Collection name pluralisation.
+   * - Qualified name generation when `packageName` is supplied.
+   *
+   * @param classDef - A fully-resolved class definition.
+   * @param options.packageName - Package name used to build the qualified class
+   *   name (`@pkg:ClassName`).
+   * @param options.packageVersion - Package version (informational, stored in
+   *   the definition).
+   * @returns A `SmartObjectDefinition` ready to be stored in a manifest.
+   *
+   * @see {@link toManifest} for the bulk conversion entry point.
    */
   toSmartObjectDefinition(
     classDef: ResolvedClassDefinition,
@@ -338,7 +397,23 @@ export class ManifestAdapter {
   ]);
 
   /**
-   * Convert raw field to FieldDefinition
+   * Convert a single raw field definition to a manifest `FieldDefinition`.
+   *
+   * Returns `null` for fields that should be omitted from the manifest:
+   * - `private` or `protected` fields.
+   * - Framework-internal fields (`_tableName`, `_db`, `_ai`, etc.).
+   *
+   * Delegates type inference to {@link inferFieldType} and applies additional
+   * post-processing:
+   * - Marks fields with `Function` type annotation as `transient`.
+   * - Marks fields with `@field({ transient: true })` decorator as `transient`.
+   * - Populates `_meta.underlyingType` for STI `Meta<T>` fields.
+   *
+   * @param field - Raw field definition from a scanned class.
+   * @returns A `FieldDefinition` for the manifest, or `null` if the field
+   *   should be excluded.
+   *
+   * @see {@link inferFieldType} for the type inference logic.
    */
   convertField(field: RawFieldDefinition): FieldDefinition | null {
     // Skip private/protected fields
@@ -397,7 +472,28 @@ export class ManifestAdapter {
   }
 
   /**
-   * Infer SMRT field type from raw field definition
+   * Infer the SMRT field type and required flag from a raw field definition.
+   *
+   * Inference is attempted in the following priority order:
+   * 1. **Field helper call in initializer** — currently always returns `null`
+   *    (field helpers removed); reserved for future use.
+   * 2. **Decorator** — `@foreignKey`, `@oneToMany`, `@manyToMany`, `@field({ type })`.
+   * 3. **Type annotation** — `string` → `text`, `number` with `0` vs `0.0`
+   *    heuristic → `integer` / `decimal`, `boolean`, `Date` → `datetime`,
+   *    arrays → `json`, `Record<>` / `object` → `json`, union types with
+   *    `null`, inline string/number literal unions, `Meta<T>` wrapper,
+   *    and type alias resolution (up to depth 5).
+   * 4. **Numeric literal without annotation** — `version = 1` → `integer`.
+   * 5. **Boolean literal without annotation** — `isRead = false` → `boolean`.
+   * 6. **Default** — falls back to `text`.
+   *
+   * @param field - The raw field definition to analyse.
+   * @returns A {@link FieldTypeInference} describing the inferred type,
+   *   required flag, default value, related class name (for relationships),
+   *   and the inference source for debugging.
+   *
+   * @see {@link FieldTypeInference} for the result shape.
+   * @see {@link InferredFieldType} for valid type values.
    */
   inferFieldType(field: RawFieldDefinition): FieldTypeInference {
     // 1. Check for field helper calls in initializer
@@ -736,7 +832,15 @@ export class ManifestAdapter {
   }
 
   /**
-   * Convert raw method to MethodDefinition
+   * Convert a raw method definition to a manifest `MethodDefinition`.
+   *
+   * Returns `null` for `private` or `protected` methods, which are excluded
+   * from the manifest.  Parameters are mapped to the manifest parameter shape
+   * and default values are parsed via `parseDefaultValue`.
+   *
+   * @param method - Raw method definition from a scanned class.
+   * @returns A manifest-compatible `MethodDefinition`, or `null` if the method
+   *   should be excluded.
    */
   convertMethod(method: RawMethodDefinition): MethodDefinition | null {
     // Skip private/protected methods

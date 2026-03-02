@@ -9,7 +9,14 @@
  */
 
 /**
- * Options for the tenantId field
+ * Options for the `@tenantId()` property decorator.
+ *
+ * Controls how the decorated field interacts with the tenancy interceptor.
+ * All options default to the strictest safe values: auto-filter on, required,
+ * auto-populate on, not nullable.
+ *
+ * @see tenantId
+ * @see TenantScopedOptions
  */
 export interface TenantIdFieldOptions {
   /**
@@ -41,7 +48,14 @@ export interface TenantIdFieldOptions {
 export const TENANT_ID_SYMBOL = Symbol('tenantId');
 
 /**
- * Internal tenantId field definition
+ * Internal field descriptor stored in `ObjectRegistry` when `@tenantId()` is
+ * applied to a property.
+ *
+ * Consumers should use `isTenantIdField()` and `getTenantIdFieldOptions()`
+ * to inspect these descriptors rather than reading the raw properties directly.
+ *
+ * @see isTenantIdField
+ * @see getTenantIdFieldOptions
  */
 export interface TenantIdFieldDefinition {
   /** Field type marker */
@@ -59,10 +73,23 @@ export interface TenantIdFieldDefinition {
 }
 
 /**
- * Check if a field definition is a tenantId field
+ * Return `true` if the given field definition was produced by the `@tenantId()`
+ * decorator (i.e., it has an `__tenancy.isTenantIdField` marker).
  *
- * @param field - Field definition to check
- * @returns true if the field is a tenantId field
+ * Used internally by the interceptor and code generators to locate the tenant
+ * ID field on a class without knowing its property name in advance.
+ *
+ * @param field - A raw field definition object, typically from `ObjectRegistry`.
+ * @returns `true` if `field` is a tenant ID field definition, `false` otherwise.
+ *
+ * @example
+ * ```typescript
+ * const fields = ObjectRegistry.getFields('Document');
+ * const tenantField = Object.entries(fields).find(([, def]) => isTenantIdField(def));
+ * ```
+ *
+ * @see getTenantIdFieldOptions
+ * @see TenantIdFieldDefinition
  */
 export function isTenantIdField(field: unknown): boolean {
   if (!field || typeof field !== 'object') {
@@ -74,10 +101,18 @@ export function isTenantIdField(field: unknown): boolean {
 }
 
 /**
- * Get tenancy options from a field definition
+ * Extract the `TenantIdFieldOptions` from a field definition.
  *
- * @param field - Field definition
- * @returns Tenancy options if this is a tenantId field, null otherwise
+ * Returns the tenancy-specific options (autoFilter, required, autoPopulate,
+ * nullable) stored inside the field descriptor's `__tenancy` property.
+ * Returns `null` if the field was not produced by `@tenantId()`.
+ *
+ * @param field - A raw field definition object, typically from `ObjectRegistry`.
+ * @returns The `TenantIdFieldOptions` if the field is a tenant ID field,
+ *   `null` otherwise.
+ *
+ * @see isTenantIdField
+ * @see TenantIdFieldOptions
  */
 export function getTenantIdFieldOptions(
   field: unknown,

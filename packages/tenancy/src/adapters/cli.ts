@@ -26,7 +26,13 @@ import {
 } from '../context.js';
 
 /**
- * Options for CLI context
+ * Configuration for the CLI context runner created by `createCliContext()`.
+ *
+ * `resolveTenantId` is optional — when omitted (or when it returns
+ * `null`/`undefined`) the `run()` method falls back to `withSystemContext()`.
+ *
+ * @see createCliContext
+ * @see CliContextRunner
  */
 export interface CliContextOptions {
   /**
@@ -65,26 +71,51 @@ export interface CliContextOptions {
 }
 
 /**
- * CLI context runner interface
+ * Context runner returned by `createCliContext()`.
+ *
+ * Provides four execution modes suitable for different CLI scenarios:
+ * - `run()` — resolves the tenant from the configured options and runs code in
+ *   that context; falls back to system context if no tenant is available.
+ * - `runWithTenant()` — explicitly specify a tenant ID for this invocation.
+ * - `runAsSystem()` — bypass all tenant checks (migration scripts, admin tools).
+ * - `runAsSuperAdmin()` — tenant context with bypass flag enabled.
+ *
+ * @see createCliContext
  */
 export interface CliContextRunner {
   /**
-   * Run code in tenant context resolved from options
+   * Run `fn` inside the tenant context resolved from the `CliContextOptions`.
+   *
+   * Falls back to `withSystemContext()` when no tenant ID is available.
+   *
+   * @param fn - Async function to execute.
+   * @returns Promise resolving to the return value of `fn`.
    */
   run<T>(fn: () => Promise<T>): Promise<T>;
 
   /**
-   * Run code with a specific tenant ID
+   * Run `fn` inside the context of the specified tenant.
+   *
+   * @param tenantId - Tenant ID to set as context.
+   * @param fn - Async function to execute.
+   * @returns Promise resolving to the return value of `fn`.
    */
   runWithTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T>;
 
   /**
-   * Run code in system context (no tenant restrictions)
+   * Run `fn` in system context, bypassing all tenant checks.
+   *
+   * @param fn - Async function to execute.
+   * @returns Promise resolving to the return value of `fn`.
    */
   runAsSystem<T>(fn: () => Promise<T>): Promise<T>;
 
   /**
-   * Run code as super admin (tenant context but bypass enabled)
+   * Run `fn` with a tenant context and super admin bypass enabled.
+   *
+   * @param tenantId - Tenant ID to set as context.
+   * @param fn - Async function to execute.
+   * @returns Promise resolving to the return value of `fn`.
    */
   runAsSuperAdmin<T>(tenantId: string, fn: () => Promise<T>): Promise<T>;
 }
@@ -187,12 +218,14 @@ export function createCliContext(
 }
 
 /**
- * Quick helper to run a function with a specific tenant ID
+ * Run an async function with a specific tenant ID set as context.
  *
- * Convenience for one-off operations.
+ * Convenience wrapper around `withTenant()` for one-off CLI operations where
+ * a full `CliContextRunner` is not needed.
  *
- * @param tenantId - Tenant ID
- * @param fn - Function to run
+ * @param tenantId - Tenant ID to set as the active context.
+ * @param fn - Async function to execute in the tenant context.
+ * @returns Promise resolving to the return value of `fn`.
  *
  * @example
  * ```typescript
@@ -202,6 +235,9 @@ export function createCliContext(
  *   await collection.list({});
  * });
  * ```
+ *
+ * @see createCliContext
+ * @see runAsSystem
  */
 export async function runWithTenant<T>(
   tenantId: string,
@@ -211,9 +247,26 @@ export async function runWithTenant<T>(
 }
 
 /**
- * Quick helper to run a function without tenant context
+ * Run an async function in system context, bypassing all tenant checks.
  *
- * @param fn - Function to run
+ * Convenience wrapper around `withSystemContext()` for one-off CLI operations
+ * such as migration scripts or admin tooling that needs cross-tenant access.
+ *
+ * @param fn - Async function to execute in system context.
+ * @returns Promise resolving to the return value of `fn`.
+ *
+ * @example
+ * ```typescript
+ * import { runAsSystem } from '@happyvertical/smrt-tenancy/adapters';
+ *
+ * await runAsSystem(async () => {
+ *   const all = await collection.list({});
+ *   console.log(`Total records: ${all.length}`);
+ * });
+ * ```
+ *
+ * @see runWithTenant
+ * @see createCliContext
  */
 export async function runAsSystem<T>(fn: () => Promise<T>): Promise<T> {
   return withSystemContext(fn);

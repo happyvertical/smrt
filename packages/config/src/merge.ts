@@ -4,8 +4,17 @@ import type { SmrtConfig } from './types.js';
 let runtimeConfig: Partial<SmrtConfig> = {};
 
 /**
- * Deep merge two objects
- * Later values override earlier values
+ * Deep-merge two plain objects, with `source` values taking precedence over
+ * `target` values at each key level.
+ *
+ * Rules:
+ * - Both values are non-array objects → recurse.
+ * - `source` value is `null` or `undefined` → keep the `target` value.
+ * - Otherwise → `source` value replaces `target` value (including `false`, `0`, `''`).
+ *
+ * @param target - Base object (lower priority).
+ * @param source - Override object (higher priority).
+ * @returns A new merged object.
  */
 function deepMerge<T extends Record<string, any>>(
   target: T,
@@ -38,33 +47,74 @@ function deepMerge<T extends Record<string, any>>(
 }
 
 /**
- * Set runtime configuration
- * These override file-based configs
+ * Deep-merge `config` into the in-memory runtime override store.
+ *
+ * Runtime overrides take the highest priority in the merge order:
+ * runtime > file config > defaults. Subsequent calls accumulate — they do not
+ * replace previous overrides. Call {@link clearRuntimeConfig} to reset.
+ *
+ * This is the low-level setter; consumer code should call {@link setConfig}
+ * from `index.ts` which delegates here.
+ *
+ * @param config - Partial config to merge into the runtime store.
+ *
+ * @see {@link clearRuntimeConfig}
+ * @see {@link getRuntimeConfig}
  */
 export function setConfig(config: Partial<SmrtConfig>): void {
   runtimeConfig = deepMerge(runtimeConfig, config);
 }
 
 /**
- * Get runtime configuration
+ * Return the current runtime configuration override store.
+ *
+ * Used internally by {@link getModuleConfig} and {@link getPackageConfig} to
+ * layer runtime overrides on top of file-based config. Prefer those helpers
+ * for reading config; this is a low-level accessor.
+ *
+ * @returns The accumulated runtime config partial.
  */
 export function getRuntimeConfig(): Partial<SmrtConfig> {
   return runtimeConfig;
 }
 
 /**
- * Clear runtime configuration
- * Useful for testing
+ * Reset the runtime configuration override store to an empty object.
+ *
+ * Called by {@link clearCache} in `index.ts` as part of a full cache reset.
+ * Useful in tests to ensure a clean state between cases.
+ *
+ * @see {@link setConfig}
  */
 export function clearRuntimeConfig(): void {
   runtimeConfig = {};
 }
 
 /**
- * Merge configurations with priority:
- * 1. Runtime config (highest)
- * 2. File config
- * 3. Defaults (lowest)
+ * Merge three config layers in ascending priority order.
+ *
+ * Priority (highest to lowest):
+ * 1. `runtime` — runtime overrides set via {@link setConfig}
+ * 2. `fileConfig` — values loaded from `smrt.config.js`
+ * 3. `defaults` — caller-supplied fallback values
+ *
+ * Uses {@link deepMerge} internally, so `null` / `undefined` source values
+ * never overwrite existing target values.
+ *
+ * @param defaults - Lowest-priority base values (caller defaults).
+ * @param fileConfig - Mid-priority values from the loaded config file.
+ * @param runtime - Highest-priority runtime override values.
+ * @returns A new object with all three layers merged.
+ *
+ * @example
+ * ```ts
+ * const merged = mergeConfigs(
+ *   { timeout: 5000, retries: 3 },
+ *   { retries: 5 },
+ *   { timeout: 1000 },
+ * );
+ * // => { timeout: 1000, retries: 5 }
+ * ```
  */
 export function mergeConfigs<T extends Record<string, unknown>>(
   defaults: T,

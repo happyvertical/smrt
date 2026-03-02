@@ -30,9 +30,25 @@
  */
 
 /**
- * UI slot definition for a module
+ * UI slot definition for a SMRT module.
  *
- * Modules declare slots they support; UI packages implement them.
+ * Modules declare the slots they support in their `SmrtModuleMeta`. Svelte UI
+ * packages then implement those slots by registering components against the
+ * same `id` via `ModuleUIRegistryInterface.register()`.
+ *
+ * @example
+ * ```typescript
+ * const slot: ModuleUISlot = {
+ *   id: 'invoice-card',
+ *   label: 'Invoice Card',
+ *   description: 'Compact card view for a single invoice',
+ *   category: 'display',
+ *   order: 10,
+ * };
+ * ```
+ *
+ * @see {@link SmrtModuleMeta} for how slots are declared on a module
+ * @see {@link ModuleUIRegistryInterface} for registering component implementations
  */
 export interface ModuleUISlot {
   /** Unique identifier (e.g., 'invoice-card', 'customer-form') */
@@ -52,9 +68,27 @@ export interface ModuleUISlot {
 }
 
 /**
- * Module metadata declaration
+ * Metadata declaration for a SMRT module.
  *
- * Modules export this to declare their UI extension points
+ * Each module exports a `SmrtModuleMeta` constant describing its package
+ * identity, the UI slots it declares, and the model/collection classes it
+ * provides. The UI registry uses this to resolve component lookups at runtime.
+ *
+ * @example
+ * ```typescript
+ * export const COMMERCE_MODULE_META: SmrtModuleMeta = {
+ *   name: '@happyvertical/smrt-commerce',
+ *   displayName: 'Commerce',
+ *   description: 'Invoicing, contracts, and fulfillment',
+ *   models: ['Customer', 'Invoice', 'Contract'],
+ *   uiSlots: {
+ *     'invoice-card': { id: 'invoice-card', label: 'Invoice Card', category: 'display' },
+ *   },
+ * };
+ * ```
+ *
+ * @see {@link ModuleUISlot} for the shape of each declared slot
+ * @see {@link ModuleUIRegistryInterface} for registering and retrieving module components
  */
 export interface SmrtModuleMeta {
   /** Package name (e.g., '@happyvertical/smrt-commerce') */
@@ -76,18 +110,47 @@ export interface SmrtModuleMeta {
 }
 
 /**
- * Generic component type that doesn't require Svelte dependency
+ * Generic component type for SMRT module UI slots.
  *
- * Using a generic function type to avoid requiring svelte as a dependency
- * and to avoid DOM type references that don't exist in Node.js builds.
+ * Intentionally opaque — defined as a loose function signature rather than
+ * `import('svelte').ComponentType` to avoid pulling Svelte (and its DOM types)
+ * into server-side Node.js builds. The actual Svelte component constructor
+ * is assignable to this type at runtime.
+ *
+ * @typeParam Props - The props interface the component accepts; defaults to `unknown`.
+ *
+ * @example
+ * ```typescript
+ * import InvoiceCard from './InvoiceCard.svelte';
+ * // InvoiceCard is assignable to ModuleComponentType<InvoiceCardProps>
+ * registry.register('@happyvertical/smrt-commerce', 'invoice-card', InvoiceCard);
+ * ```
+ *
+ * @see {@link ModuleUIBaseProps} for the base props all slot components receive
+ * @see {@link ModuleUIRegistryInterface} for storing and retrieving components
  */
 // biome-ignore lint/suspicious/noExplicitAny: ComponentType needs any for generic component handling
 export type ModuleComponentType<Props = unknown> = (...args: any[]) => any;
 
 /**
- * Base props all module UI components receive
+ * Base props contract for all SMRT module UI slot components.
  *
- * Extends the agent pattern but made generic for modules
+ * Every component registered against a `ModuleUISlot` should accept at least
+ * these props. Individual slot components may extend this interface with
+ * slot-specific required props.
+ *
+ * @typeParam TData   - Shape of the primary data object(s) the component renders.
+ * @typeParam TConfig - Shape of the optional configuration/settings object.
+ *
+ * @example
+ * ```typescript
+ * interface InvoiceCardProps extends ModuleUIBaseProps<Invoice> {
+ *   showLineItems?: boolean;
+ * }
+ * ```
+ *
+ * @see {@link ModuleComponentType} for the component type that accepts these props
+ * @see {@link ModuleUISlot} for the slot declaration that names the `propsInterface`
  */
 export interface ModuleUIBaseProps<TData = unknown, TConfig = unknown> {
   /** Primary data object(s) the component operates on */
@@ -107,9 +170,25 @@ export interface ModuleUIBaseProps<TData = unknown, TConfig = unknown> {
 }
 
 /**
- * Module UI component registry interface
+ * Registry interface for mapping SMRT module slots to Svelte components.
  *
- * Mirrors AgentUIComponentRegistry pattern for consistency
+ * Implemented by `ModuleUIRegistry` in `@happyvertical/smrt-svelte`. Consumers
+ * call `register()` once per slot at Svelte package initialisation time and
+ * `get()` when rendering to retrieve the correct component.
+ *
+ * @example
+ * ```typescript
+ * // Registration (in packages/commerce/src/svelte/index.ts)
+ * ModuleUIRegistry.registerModule(COMMERCE_MODULE_META);
+ * ModuleUIRegistry.register('@happyvertical/smrt-commerce', 'invoice-card', InvoiceCard);
+ *
+ * // Retrieval (in a host Svelte app)
+ * const InvoiceCard = ModuleUIRegistry.get('@happyvertical/smrt-commerce', 'invoice-card');
+ * ```
+ *
+ * @see {@link SmrtModuleMeta} for the module metadata structure passed to `registerModule()`
+ * @see {@link ModuleUISlot} for the slot identifiers used as `slotId`
+ * @see {@link ModuleComponentType} for the component type stored in the registry
  */
 export interface ModuleUIRegistryInterface {
   /** Register a component for a module's slot */
