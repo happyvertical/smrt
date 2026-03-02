@@ -17,10 +17,14 @@ export type JobStatus =
 export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
 
 /**
- * SmrtJob model for persisting background jobs
+ * Persistent job record stored in the `_smrt_jobs` system table.
  *
- * This extends SmrtObject to store job metadata in the SMRT database.
- * Jobs are executed by the TaskRunner which processes the method calls.
+ * @remarks
+ * Each SmrtJob represents a deferred method call on a SmrtObject. The TaskRunner polls for
+ * pending jobs, resolves the target class via ObjectRegistry, and invokes the method. Jobs
+ * track status (`pending -> running -> completed/failed/cancelled`), retry attempts with
+ * configurable strategies, worker heartbeats for stale-job detection, and optional result pointers.
+ * Priority ordering is `higher = sooner`; the default timeout is 5 minutes (300000ms).
  */
 @smrt({
   tableName: '_smrt_jobs',

@@ -131,11 +131,40 @@ export type SmrtWhereClause<T extends SmrtObject> = Record<string, unknown>;
 export interface SmrtCollectionOptions extends SmrtClassOptions {}
 
 /**
- * Collection interface for managing sets of SmrtObjects
+ * Typed CRUD collection for a specific `SmrtObject` subclass.
  *
- * SmrtCollection provides methods for querying, creating, and managing
- * collections of persistent objects. It handles database setup, schema
- * generation, and provides a fluent interface for querying objects.
+ * Each concrete collection pairs with exactly one model class via the required
+ * `static readonly _itemClass` property. Use the static `create()` factory —
+ * not `new` — to get a fully initialized, ready-to-query instance.
+ *
+ * Key capabilities:
+ * - **Query**: `list()`, `get()`, `count()`, `query()` (raw SQL), `listByIds()`
+ * - **Mutation**: `create()`, `getOrUpsert()`, `delete()`
+ * - **Eager loading**: pass `include: ['fieldName']` to `list()` to avoid N+1 queries
+ * - **STI support**: automatically filters by `_meta_type` for child collections;
+ *   polymorphically hydrates the correct subclass when listing/getting
+ * - **Interceptors**: all read/write paths run `GlobalInterceptors` hooks
+ *   (used by multi-tenancy, audit logging, etc.)
+ *
+ * @typeParam ModelType - The `SmrtObject` subclass managed by this collection
+ *
+ * @example
+ * ```typescript
+ * @smrt()
+ * class Product extends SmrtObject {
+ *   name: string = '';
+ *   price: number = 0.0;
+ * }
+ *
+ * @smrt()
+ * class Products extends SmrtCollection<Product> {
+ *   static readonly _itemClass = Product;
+ * }
+ *
+ * const products = await Products.create({ db: myDb });
+ * const widget = await products.create({ name: 'Widget', price: 9.99 });
+ * const all = await products.list({ where: { 'price >': 5 }, orderBy: 'price ASC' });
+ * ```
  */
 export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
@@ -442,29 +471,31 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Static factory method for creating fully initialized collection instances
+   * Factory method — the recommended way to instantiate a collection.
    *
-   * This is the recommended way to create collections. It accepts broad option types
-   * (SmrtClassOptions) and handles option extraction internally, then returns a
-   * fully initialized, ready-to-use collection instance.
+   * Creates the collection instance, calls `initialize()`, optionally checks
+   * that the backing table exists (only for adapters that opt in via
+   * `requiresSchemaCheck`), and pre-populates the field cache used by
+   * synchronous query helpers.
    *
-   * TypeScript Note: Uses instance type constraint (T extends SmrtCollection<any>)
-   * with constructor type for 'this' parameter to properly preserve subclass types
-   * through the static factory method. This ensures custom collection methods are
-   * properly typed and subclass constructors are compatible.
+   * Pass the same `options` object you received in a `SmrtObject` constructor
+   * or a `SvelteKit` load function to share the database connection.
    *
-   * @param options - Configuration options (accepts both SmrtClassOptions and SmrtCollectionOptions)
-   * @returns Promise resolving to a fully initialized collection instance
+   * @param options - Database, AI, filesystem, and other configuration options.
+   *   At minimum, provide `db` (or `persistence`) to connect to a database.
+   * @returns A fully initialized, ready-to-query collection instance
+   * @throws {DatabaseError} If `requiresSchemaCheck` is enabled and the backing
+   *   table has not been created (`DB_SCHEMA_MISSING`)
    *
    * @example
    * ```typescript
-   * // Create collection from object options
-   * const collection = await ProductCollection.create(smrtObject.options);
+   * // Share a DB connection from a SvelteKit load function
+   * const products = await Products.create(event.locals.smrtOptions);
    *
-   * // Create collection with specific config
-   * const collection = await ProductCollection.create({
-   *   persistence: { type: 'sql', url: 'products.db' },
-   *   ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
+   * // Explicit configuration
+   * const products = await Products.create({
+   *   db: myDb,
+   *   ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY },
    * });
    * ```
    */
@@ -540,9 +571,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Initializes the collection, setting up database tables
+   * Async initialization hook for the collection.
    *
-   * @returns Promise that resolves to this instance for chaining
+   * Called automatically by the static `create()` factory. In most cases you
+   * do not need to call this directly — use `create()` instead.
+   *
+   * Table creation is deferred until the first actual database operation
+   * (lazy initialization). This makes the collection safe to construct during
+   * SSR and import-time module evaluation.
+   *
+   * @returns This instance (enables chaining)
    */
   public async initialize(): Promise<this> {
     await super.initialize();
@@ -636,10 +674,35 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Retrieves a single object from the collection by ID, slug, or custom filter
+   * Retrieves a single object from the collection by ID, slug, or a custom filter.
    *
-   * @param filter - String ID/slug, Field instance, or object with filter conditions
-   * @returns Promise resolving to the object or null if not found
+   * Filter resolution:
+   * - UUID string → `WHERE id = ?`
+   * - Non-UUID string → `WHERE slug = ? AND context = ''`
+   * - Object → `WHERE <key> = <value> [AND ...]`
+   *
+   * For STI child collections, an `AND _meta_type = '<qualifiedName>'` clause is
+   * automatically appended so you only receive the correct subclass.
+   *
+   * Runs `beforeGet` / `afterGet` interceptors (used by multi-tenancy, etc.).
+   *
+   * @param filter - UUID string, slug string, or a WHERE conditions object
+   * @returns The matching object instance, or `null` if not found
+   *
+   * @example
+   * ```typescript
+   * // By UUID
+   * const product = await products.get('550e8400-e29b-41d4-a716-446655440000');
+   *
+   * // By slug
+   * const product = await products.get('my-widget');
+   *
+   * // By custom filter
+   * const product = await products.get({ sku: 'WID-001' });
+   * ```
+   *
+   * @see {@link list} for multiple results
+   * @see {@link findById} / {@link findOne} for convenience aliases
    */
   public async get(
     filter: string | Record<string, any>,
@@ -1104,10 +1167,35 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Creates a new instance of the collection's item class
+   * Creates and persists a new instance of the collection's item class.
    *
-   * @param options - Options for creating the item
-   * @returns New item instance
+   * Instantiates the model with the given field values, calls `initialize()`,
+   * assigns a UUID if none is provided, then calls `save()` to write the row
+   * to the database.
+   *
+   * For STI collections, pass `_meta_type` to create a specific subclass.
+   * The correct constructor is resolved via `ObjectRegistry` (polymorphic creation).
+   *
+   * @param options - Field values for the new object. Accepts any public field on
+   *   the model class plus the STI `_meta_type` discriminator.
+   * @returns The newly created and saved model instance
+   * @throws {ValidationError} If a `required` field is missing or a unique constraint is violated
+   * @throws {DatabaseError} If the write fails
+   *
+   * @example
+   * ```typescript
+   * // Regular creation
+   * const product = await products.create({ name: 'Widget', price: 9.99 });
+   * console.log(product.id); // UUID assigned during save
+   *
+   * // STI polymorphic creation
+   * const article = await contents.create({
+   *   _meta_type: '@happyvertical/smrt-content:Article',
+   *   title: 'Hello World',
+   * });
+   * ```
+   *
+   * @see {@link getOrUpsert} to avoid duplicates by finding-or-creating
    */
   public async create(options: SmrtCreateInput<ModelType>) {
     // Ensure manifest is loaded for external packages before creating instance
@@ -1227,11 +1315,35 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Gets an existing item or creates a new one if it doesn't exist
+   * Finds an existing record matching `data` or creates it if not found.
    *
-   * @param data - Object data to find or create
-   * @param defaults - Default values to use if creating a new object
-   * @returns Promise resolving to the existing or new object
+   * Look-up priority:
+   * 1. `data.id` — query by primary key
+   * 2. `data.slug` — query by slug + context
+   * 3. Fallback — query by the full `data` object as a WHERE clause
+   *
+   * If a matching record is found, it is updated with any changed fields from
+   * `data` (diffed against the existing record) and saved. If no match is
+   * found, `defaults` are merged with `data` and a new record is created.
+   *
+   * @param data - The field values to find or upsert
+   * @param defaults - Extra default values applied only when creating a new record
+   * @returns The existing (possibly updated) or newly created object instance
+   *
+   * @example
+   * ```typescript
+   * // Find-or-create a tag by slug
+   * const tag = await tags.getOrUpsert({ slug: 'javascript', name: 'JavaScript' });
+   *
+   * // With defaults applied only on creation
+   * const user = await users.getOrUpsert(
+   *   { email: 'alice@example.com' },
+   *   { role: 'member', active: true },
+   * );
+   * ```
+   *
+   * @see {@link create} for always-insert semantics
+   * @see {@link get} for read-only lookup
    */
   public async getOrUpsert(data: any, defaults: any = {}) {
     data = formatDataSql(data);
@@ -1424,13 +1536,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Counts records in the collection matching the given filters
+   * Returns the number of records matching the given filter conditions.
    *
-   * Accepts the same where conditions as list() but ignores limit/offset/orderBy.
+   * Executes a `SELECT COUNT(*)` query with the same WHERE conversion as
+   * `list()` (camelCase field names, operator suffixes, STI auto-filtering).
+   * `limit`, `offset`, and `orderBy` are not applicable and are ignored.
    *
-   * @param options - Query options object
-   * @param options.where - Record of conditions to filter results
-   * @returns Promise resolving to the total count of matching records
+   * @param options.where - Filter conditions (same syntax as `list()`)
+   * @returns Total count of matching records as an integer
+   *
+   * @example
+   * ```typescript
+   * const total = await products.count();
+   * const activeCount = await products.count({ where: { status: 'active' } });
+   * const expensiveCount = await products.count({ where: { 'price >': 100 } });
+   * ```
+   *
+   * @see {@link list} for retrieving the actual records
    */
   public async count(options: { where?: Record<string, any> } = {}) {
     // Schema already initialized in Collection.create() static factory

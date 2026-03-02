@@ -1,31 +1,19 @@
 # template-sveltekit
 
-Base SvelteKit project template with SMRT framework integration. Provides scaffolding for full-stack applications with REST APIs, CLI, and SQLite database support.
+Base SvelteKit project template used by `smrt init`. Scaffolds a full-stack app with SMRT integration.
 
-## Architecture
+## Exports
 
-```
-index.js                    # Template utility functions
-template/
-  src/
-    lib/
-      objects/Item.ts       # Example SMRT object definition
-      server/               # Server-side utilities
-    routes/                 # SvelteKit page routes
-```
+- `getTemplatePath()` — returns path to template directory
+- `copyTemplate(destination, options)` — copies template files with project name substitution
+- `templateInfo` — metadata (SvelteKit 2.x, Svelte 5, REST API, SMRT CLI, SQLite)
 
-## Key Exports
+## Template Contents
 
-- `getTemplatePath()` — Returns path to template directory
-- `copyTemplate(destination, options)` — Copies template files with project name substitution
-- `templateInfo` — Metadata: SvelteKit 2.x, Svelte 5, REST API, SMRT CLI, SQLite
+- `template/src/lib/objects/Item.ts` — example `@smrt()` object
+- `template/src/lib/server/` — server-side utilities
+- `template/src/routes/` — SvelteKit page routes
 
-## Key Patterns
+## Key Pattern
 
-- **File copying with substitution**: Project name replaced in template files during generation
-- **Example SMRT object**: `Item.ts` demonstrates `@smrt()` decorator usage
-- **No tests**: Straightforward file operations validated through integration
-
-## Dependencies
-
-- Template peer: `@happyvertical/smrt-core`
+File copying with placeholder substitution — project name is replaced in template files during generation.

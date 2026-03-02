@@ -29,12 +29,29 @@ import {
 import { getTenantScopedConfig, isTenantScopedClass } from './registry.js';
 
 /**
- * Configuration for raw SQL query handling on tenant-scoped classes
+ * Policy controlling what happens when raw SQL is executed against a
+ * tenant-scoped class without an explicit bypass.
+ *
+ * - `'throw'` — Raises a `TenantIsolationError` (most secure; default).
+ * - `'warn'`  — Logs a `console.warn` but allows the query to proceed (useful
+ *               during migration periods).
+ * - `'allow'` — Silently allows the query; not recommended for production.
+ *
+ * @see TenantInterceptorOptions.rawQueryPolicy
+ * @see enableTenancy
  */
 export type RawQueryPolicy = 'throw' | 'warn' | 'allow';
 
 /**
- * Options for configuring the tenant interceptor
+ * Configuration options accepted by `createTenantInterceptor()` and
+ * `enableTenancy()`.
+ *
+ * All options are optional; reasonable defaults are applied.  The callback
+ * hooks (`onRawQuery`, `onMissingContext`, `onIsolationViolation`) are useful
+ * for logging and alerting without altering the enforcement behaviour.
+ *
+ * @see createTenantInterceptor
+ * @see enableTenancy
  */
 export interface TenantInterceptorOptions {
   /**
@@ -125,7 +142,42 @@ function serializeInstance(
 }
 
 /**
- * Create a tenant interceptor instance
+ * Create a `CollectionInterceptor` that enforces tenant isolation on all
+ * `SmrtCollection` operations.
+ *
+ * The returned interceptor hooks into the smrt-core `GlobalInterceptors`
+ * pipeline at priority 100 (runs before all other interceptors) and
+ * handles the following lifecycle hooks:
+ *
+ * | Hook          | Behaviour |
+ * |---------------|-----------|
+ * | `beforeList`  | Injects tenant filter into `WHERE`; validates explicit filters. |
+ * | `beforeGet`   | Converts ID lookups to `{ id, tenantId }` filter objects. |
+ * | `beforeSave`  | Auto-populates `tenantId`; validates existing values. |
+ * | `beforeDelete`| Validates the instance's `tenantId` matches context. |
+ * | `beforeQuery` | Enforces `rawQueryPolicy` on raw SQL calls. |
+ * | `afterSave`   | Emits `directory.<class>.created/updated` via `dispatchBus`. |
+ * | `afterDelete` | Emits `directory.<class>.deleted` via `dispatchBus`. |
+ *
+ * Use `enableTenancy()` to register the interceptor globally.  Call this
+ * directly only when you need multiple interceptor instances (e.g., for
+ * isolated tests or feature flags).
+ *
+ * @param options - Configuration for the interceptor.
+ * @returns A `CollectionInterceptor` ready to be registered with
+ *   `GlobalInterceptors.register()`.
+ *
+ * @example
+ * ```typescript
+ * import { createTenantInterceptor } from '@happyvertical/smrt-tenancy';
+ * import { GlobalInterceptors } from '@happyvertical/smrt-core';
+ *
+ * const interceptor = createTenantInterceptor({ rawQueryPolicy: 'warn' });
+ * GlobalInterceptors.register(interceptor);
+ * ```
+ *
+ * @see enableTenancy
+ * @see TenantInterceptorOptions
  */
 export function createTenantInterceptor(
   options: TenantInterceptorOptions = {},
@@ -560,9 +612,26 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
 }
 
 /**
- * Disable tenant enforcement
+ * Disable global tenant enforcement.
  *
- * Use this for testing or when you need to temporarily disable tenancy.
+ * Unregisters the interceptor previously installed by `enableTenancy()` and
+ * resets the internal enabled flag so `enableTenancy()` can be called again.
+ * Idempotent — safe to call even when tenancy was never enabled.
+ *
+ * Common use-cases:
+ * - Test teardown (via `resetTenancy()`).
+ * - Temporarily disabling tenancy before reconfiguring with new options.
+ *
+ * @example
+ * ```typescript
+ * afterAll(() => {
+ *   disableTenancy();
+ * });
+ * ```
+ *
+ * @see enableTenancy
+ * @see isTenancyEnabled
+ * @see resetTenancy
  */
 export function disableTenancy(): void {
   if (!isEnabled || !registeredInterceptor) {
@@ -575,7 +644,15 @@ export function disableTenancy(): void {
 }
 
 /**
- * Check if tenant enforcement is enabled
+ * Return `true` if tenant enforcement is currently active.
+ *
+ * Reflects whether `enableTenancy()` has been called and the interceptor
+ * has not yet been removed by `disableTenancy()`.
+ *
+ * @returns `true` when the tenant interceptor is registered, `false` otherwise.
+ *
+ * @see enableTenancy
+ * @see disableTenancy
  */
 export function isTenancyEnabled(): boolean {
   return isEnabled;

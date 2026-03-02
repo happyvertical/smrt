@@ -430,7 +430,26 @@ interface TSTypeParameterInstantiation extends BaseNode {
 // ============================================================================
 
 /**
- * Parse a single TypeScript file and extract class definitions
+ * Parse a single TypeScript file and extract SMRT class definitions.
+ *
+ * Reads the file from disk, runs oxc-parser on it, and returns all class
+ * definitions found, any parse errors, accumulated type aliases, and
+ * `@happyvertical/smrt-*` import metadata.
+ *
+ * @param filePath - Absolute path to the `.ts` or `.tsx` file to parse.
+ * @returns A {@link FileScanResult} containing classes, errors, type aliases,
+ *   SMRT imports, and timing information for the file.
+ *
+ * @example
+ * ```typescript
+ * import { parseFile } from '@happyvertical/smrt-scanner';
+ *
+ * const result = parseFile('/project/src/models/Product.ts');
+ * console.log(result.classes.map((c) => c.className));
+ * // ['Product', 'ProductCollection']
+ * ```
+ *
+ * @see {@link parseSource} to parse a source string directly (e.g. in tests).
  */
 export function parseFile(filePath: string): FileScanResult {
   const startTime = performance.now();
@@ -502,7 +521,35 @@ export function parseFile(filePath: string): FileScanResult {
 }
 
 /**
- * Parse source text directly (for testing)
+ * Parse TypeScript source text directly and extract SMRT class definitions.
+ *
+ * Identical to {@link parseFile} but accepts a source string instead of a
+ * file path. Primarily used in tests and tooling that constructs source
+ * programmatically.
+ *
+ * @param sourceText - Raw TypeScript source code to parse.
+ * @param filename - Virtual filename used to determine the parser language
+ *   mode (`.ts`, `.tsx`, `.js`, `.jsx`) and to populate `filePath` fields in
+ *   the result. Defaults to `'test.ts'`.
+ * @returns A {@link FileScanResult} containing classes, errors, type aliases,
+ *   and SMRT import metadata extracted from the source text.
+ *
+ * @example
+ * ```typescript
+ * import { parseSource } from '@happyvertical/smrt-scanner';
+ *
+ * const src = `
+ *   import { smrt } from '@happyvertical/smrt-core';
+ *   @smrt()
+ *   export class Widget extends SmrtObject {
+ *     label: string = '';
+ *   }
+ * `;
+ * const result = parseSource(src, 'Widget.ts');
+ * console.log(result.classes[0].className); // 'Widget'
+ * ```
+ *
+ * @see {@link parseFile} to parse a file from disk.
  */
 export function parseSource(
   sourceText: string,
@@ -601,18 +648,41 @@ function extractImportAliases(body: Statement[]): Map<string, string> {
 }
 
 /**
- * Extract SMRT package imports from program body.
- * Returns a map of package name → Set of imported class names.
+ * Extract `@happyvertical/smrt-*` import declarations from an OXC program body.
  *
- * Handles:
- * - Named imports: `import { Person, Organization } from '@happyvertical/smrt-profiles'`
- * - Namespace imports: `import * as Profiles from '@happyvertical/smrt-profiles'` (marked as '*')
- * - Default imports: `import SomeClass from '@happyvertical/smrt-profiles'`
- * - Renamed imports: `import { Person as PersonBase } from '...'` (uses original name 'Person')
+ * Scans the top-level AST statements for `ImportDeclaration` nodes whose
+ * module specifier begins with `@happyvertical/smrt-` and collects the
+ * PascalCase identifiers being imported.  The result is used for tree-shaking:
+ * only externally imported SMRT classes that appear in project source are
+ * included in the generated manifest.
  *
- * Only PascalCase identifiers are included (likely classes, not utility functions).
+ * Handles all import forms:
+ * - Named imports — `import { Person, Organization } from '@happyvertical/smrt-profiles'`
+ * - Renamed named imports — `import { Person as PersonBase } from '...'` (records original name `Person`)
+ * - Namespace imports — `import * as Profiles from '@happyvertical/smrt-profiles'` (recorded as `'*'`)
+ * - Default imports — `import SomeClass from '@happyvertical/smrt-profiles'`
  *
- * @internal Exported for testing
+ * Only PascalCase identifiers are recorded; utility function names (lowercase)
+ * are ignored.
+ *
+ * @param body - The top-level statement array from the OXC-parsed `Program` node.
+ * @returns A `Map` keyed by package name (e.g. `'@happyvertical/smrt-profiles'`)
+ *   whose values are `Set`s of the imported PascalCase class names (or `'*'`
+ *   for namespace imports).
+ *
+ * @example
+ * ```typescript
+ * import { parseSource, extractSmrtImports } from '@happyvertical/smrt-scanner';
+ * import { parseSync } from 'oxc-parser';
+ *
+ * const src = `import { Person, Organization } from '@happyvertical/smrt-profiles';`;
+ * const { program } = parseSync('file.ts', src, { lang: 'ts' });
+ * const imports = extractSmrtImports(program.body);
+ * // Map { '@happyvertical/smrt-profiles' => Set { 'Person', 'Organization' } }
+ * ```
+ *
+ * @internal Exported for testing; use {@link OxcScanner.scanSmrtImports} for
+ *   production use cases.
  */
 export function extractSmrtImports(
   body: Statement[],

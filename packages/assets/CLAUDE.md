@@ -1,38 +1,25 @@
 # @happyvertical/smrt-assets
 
-Asset management with versioning, type classification, and metadata tracking. Supports images with dimension metadata.
+Provider-agnostic asset management with versioning, type classification, and polymorphic associations.
 
-## Architecture
+## Models
 
-```
-src/
-  index.ts          # Export barrel
-  types.ts          # AssetOptions, ImageOptions, status/type interfaces
-  models/
-    Asset.ts        # Base asset model with versioning and ownership
-    AssetType.ts    # Asset type classification
-    AssetStatus.ts  # Asset lifecycle status
-    AssetMetafield.ts # Custom metadata fields
-    Image.ts        # Image asset with width/height/alt
-  collections/      # SmrtCollection subclasses for each model
-```
-
-## Key Models
-
-- `Asset` — Base model: sourceUri, mimeType, version, primaryVersionId, typeSlug, statusSlug, ownerProfileId, parentId
-- `Image` — Extends Asset with width, height, alt text
-- `AssetType` — Classification (e.g., photo, document, video)
-- `AssetStatus` — Lifecycle status tracking
-- `AssetMetafield` — Custom metadata key-value pairs
+- **Asset** (STI base): versioning via `primaryVersionId` chain + `version` number. `ownerProfileId`, `typeSlug`, `statusSlug`, `mimeType`, `sourceUri`. Hierarchical via `parentId` (for derivatives).
+- **AssetType** / **AssetStatus**: lookup tables for classification and lifecycle.
+- **AssetMetafield**: custom metadata field definitions with JSON validation rules.
+- **Folder**: STI subclass (typeSlug='folder') for hierarchical organization.
+- **AssetAssociation**: polymorphic join — `assetId` + `metaType` + `metaId` + `role` + `sortOrder`. Links assets to any SmrtObject.
 
 ## Key Patterns
 
-- **Versioning**: Assets track version number and link to primary version via `primaryVersionId`
-- **Multi-tenancy**: Optional tenant scoping via `@TenantScoped`
-- **Ownership**: Links to profiles via `ownerProfileId`
-- **Hierarchy**: Parent-child relationships via `parentId`
+- **Versioning**: `createNewVersion()` increments version, chains via `primaryVersionId`. `findVersions()` to retrieve history.
+- **Tag integration**: `addTag()`/`removeTag()` use raw `db.upsert()` on `asset_tags` join table (not a SMRT model).
+- **AssetStore**: abstraction for provider-agnostic file I/O (S3, local, etc.).
 
-## Dependencies
+## Gotchas
 
-- `@happyvertical/smrt-core`, `@happyvertical/smrt-tenancy`
-- `@happyvertical/ai`, `@happyvertical/files`, `@happyvertical/sql`, `@happyvertical/utils`
+- **Version history manual**: `findVersions()` chaining required — no ORM shortcut
+- **Tag management uses raw SQL**: `asset_tags` is a join table, not an SMRT model
+- **Folder tree traversal manual**: via `parentId` lookups, no built-in tree methods
+- **AssetAssociation polymorphic FK**: requires manual `metaType` string matching
+- **Optional tenancy**: assets can be global (tenantId=null) or tenant-scoped

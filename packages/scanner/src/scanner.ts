@@ -32,25 +32,48 @@ const DEFAULT_EXCLUDE = [
 ];
 
 /**
- * High-performance TypeScript scanner using OXC
+ * High-performance TypeScript scanner that discovers `@smrt()`-decorated
+ * classes in a project's source files.
+ *
+ * Orchestrates the two-phase scan pipeline:
+ * 1. **Phase 1 — Parse** (`scan()`): uses OXC (Rust) to parse TypeScript files
+ *    in parallel and extract raw class, field, method, and decorator metadata.
+ * 2. **Phase 2 — Resolve** (`resolve()`): walks inheritance chains, detects STI
+ *    hierarchies, and merges fields from ancestor classes.
+ *
+ * The common path is {@link scanAndResolve} which runs both phases in sequence.
  *
  * @example
  * ```typescript
+ * import { OxcScanner } from '@happyvertical/smrt-scanner';
+ *
  * const scanner = new OxcScanner({
  *   cwd: process.cwd(),
- *   include: ['src/** /*.ts'],
- *   exclude: ['** /*.test.ts'],
+ *   include: ['src/**\/*.ts'],
+ *   exclude: ['**\/*.test.ts'],
  * });
  *
- * const results = await scanner.scan();
- * const resolved = scanner.resolve();
+ * const { results, resolved } = await scanner.scanAndResolve();
+ * console.log(`Found ${resolved.length} SMRT classes in ${results.fileCount} files`);
  * ```
+ *
+ * @see {@link OxcScannerOptions} for all available configuration options.
+ * @see {@link scanDirectory} for a one-liner convenience wrapper.
  */
 export class OxcScanner {
   private options: Required<OxcScannerOptions>;
   private resolver: InheritanceResolver;
   private scanResults: ScanResults | null = null;
 
+  /**
+   * Create a new `OxcScanner` with the given options.
+   *
+   * All options are optional. By default the scanner targets every `.ts` and
+   * `.tsx` file under `process.cwd()`, excluding `node_modules`, `dist`,
+   * `build`, declaration files, and test files.
+   *
+   * @param options - Scanner configuration. See {@link OxcScannerOptions}.
+   */
   constructor(options: OxcScannerOptions = {}) {
     this.options = {
       include: options.include || DEFAULT_INCLUDE,
@@ -71,9 +94,23 @@ export class OxcScanner {
   }
 
   /**
-   * Scan files and extract class definitions
+   * Phase 1 — Discover and parse TypeScript files using OXC.
    *
-   * Phase 1: Uses OXC for fast syntactic parsing
+   * Uses `fast-glob` to enumerate matching files and then parses them in
+   * parallel with OXC (Rust).  The raw class definitions are registered with
+   * the internal {@link InheritanceResolver} for use in the subsequent
+   * {@link resolve} call.
+   *
+   * @returns A {@link ScanResults} object containing all classes found, any
+   *   parse errors, accumulated type aliases, SMRT import metadata, and
+   *   aggregate timing information.
+   *
+   * @example
+   * ```typescript
+   * const scanner = new OxcScanner({ cwd: '/project' });
+   * const results = await scanner.scan();
+   * console.log(`Parsed ${results.fileCount} files in ${results.totalParseTimeMs.toFixed(1)}ms`);
+   * ```
    */
   async scan(): Promise<ScanResults> {
     const startTime = performance.now();
@@ -115,9 +152,19 @@ export class OxcScanner {
   }
 
   /**
-   * Resolve inheritance chains for all scanned classes
+   * Phase 2 — Resolve inheritance chains for all scanned classes.
    *
-   * Phase 2: JavaScript-based inheritance resolution
+   * Must be called after {@link scan}.  Walks each class's extends chain,
+   * detects STI hierarchies, merges ancestor fields for STI subclasses, and
+   * marks framework base classes.
+   *
+   * @returns An array of {@link ResolvedClassDefinition} objects — one for
+   *   every class that either carries `@smrt()` or extends a framework base
+   *   class (`SmrtObject`, `SmrtClass`, `SmrtCollection`).
+   *
+   * @throws {Error} If called before {@link scan}.
+   *
+   * @see {@link scanAndResolve} to run both phases in one call.
    */
   resolve(): ResolvedClassDefinition[] {
     if (!this.scanResults) {
@@ -128,7 +175,24 @@ export class OxcScanner {
   }
 
   /**
-   * Scan and resolve in one call
+   * Run both scan phases in a single call.
+   *
+   * Equivalent to calling `await scanner.scan()` followed by
+   * `scanner.resolve()`.  This is the most common entry point for callers
+   * that want the fully-resolved manifest-ready data in one step.
+   *
+   * @returns An object with:
+   *   - `results` — raw {@link ScanResults} from Phase 1.
+   *   - `resolved` — array of {@link ResolvedClassDefinition} from Phase 2.
+   *
+   * @example
+   * ```typescript
+   * const scanner = new OxcScanner({ cwd: '/project/src' });
+   * const { results, resolved } = await scanner.scanAndResolve();
+   * // resolved is ready to pass to ManifestAdapter.toManifest()
+   * ```
+   *
+   * @see {@link ManifestAdapter} to convert `resolved` into a manifest JSON.
    */
   async scanAndResolve(): Promise<{
     results: ScanResults;
@@ -141,7 +205,17 @@ export class OxcScanner {
   }
 
   /**
-   * Add external manifest for cross-package base class resolution
+   * Register an external package manifest for cross-package base class resolution.
+   *
+   * When a project class extends a class defined in an installed SMRT package,
+   * the resolver needs access to that package's class definitions to walk the
+   * full inheritance chain.  Call this method with each external package's
+   * {@link ExternalManifest} before calling {@link scan} or {@link resolve}.
+   *
+   * @param manifest - The external manifest to register, including `packageName`,
+   *   `packageVersion`, and a `classes` map keyed by class name.
+   *
+   * @see {@link ExternalManifest}
    */
   addExternalManifest(manifest: ExternalManifest): void {
     this.resolver.addExternalManifest(manifest);
@@ -189,7 +263,18 @@ export class OxcScanner {
   }
 
   /**
-   * Get resolver statistics
+   * Return aggregate statistics about the last scan.
+   *
+   * Can be called after {@link scan} has completed.  Returns counts useful for
+   * diagnostics and the `--stats` CLI flag.
+   *
+   * @returns An object with:
+   *   - `totalClasses` — total class declarations seen (including non-SMRT).
+   *   - `smrtClasses` — classes with `@smrt()` decorator.
+   *   - `stiClasses` — SMRT classes participating in an STI hierarchy.
+   *   - `maxInheritanceDepth` — length of the deepest inheritance chain.
+   *   - `fileCount` — number of files scanned.
+   *   - `parseTimeMs` — total wall-clock parse time in milliseconds.
    */
   getStats(): {
     totalClasses: number;
@@ -234,7 +319,27 @@ export class OxcScanner {
 }
 
 /**
- * Convenience function for quick scanning
+ * Convenience wrapper that creates an {@link OxcScanner} for `dir` and runs
+ * both scan phases in a single call.
+ *
+ * @param dir - Directory to scan (resolved to an absolute path automatically).
+ * @param options - Scanner options, excluding `cwd` which is set from `dir`.
+ *   See {@link OxcScannerOptions}.
+ * @returns An object with `results` ({@link ScanResults}) and `resolved`
+ *   ({@link ResolvedClassDefinition}[]).
+ *
+ * @example
+ * ```typescript
+ * import { scanDirectory } from '@happyvertical/smrt-scanner';
+ *
+ * const { resolved } = await scanDirectory('src/', {
+ *   include: ['**\/*.ts'],
+ *   exclude: ['**\/*.test.ts'],
+ * });
+ * console.log(`Found ${resolved.length} SMRT classes`);
+ * ```
+ *
+ * @see {@link OxcScanner} for the full class API with more control.
  */
 export async function scanDirectory(
   dir: string,

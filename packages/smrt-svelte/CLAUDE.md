@@ -1,416 +1,78 @@
 # @happyvertical/smrt-svelte
 
-Svelte 5 components for SMRT user management and browser AI features. Provides reactive state management, authentication, permissions, and AI capabilities (STT, TTS, LLM) with warm client caching.
+Svelte 5 components for SMRT: generic UI, forms, permissions, browser AI (STT/TTS/LLM), themes, and module UI registry.
 
-## Quick Start
+## Provider (Root Component)
+
+Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and AI capabilities.
 
 ```svelte
-<!-- +layout.svelte -->
 <script>
-  import { Provider } from '@happyvertical/smrt-svelte';
   let { data, children } = $props();
 </script>
 
-<Provider
-  user={data.user}
-  permissions={data.permissions}
-  ai={{
-    preload: 'idle',
-    stt: { type: 'whisper-cpp' }
-  }}
->
+<Provider user={data.user} permissions={data.permissions}
+  ai={{ preload: 'idle', stt: { type: 'whisper-cpp' } }}>
   {@render children()}
 </Provider>
 ```
-
-## Provider
-
-The root component that provides app-wide state for authentication, permissions, sockets, and AI.
-
-### Props
-
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `mode` | `'default' \| 'smrt'` | auto-detected | Force a specific mode |
-| `autoEnableSmrt` | `boolean` | `true` | Auto-enable smrt mode when AI is available |
-| `user` | `User \| null` | `null` | Current user from your load function |
-| `permissions` | `string[]` | `[]` | User's resolved permissions |
-| `socket` | `SocketConfig` | - | WebSocket configuration |
-| `ai` | `AIConfig` | - | AI preloading configuration |
-| `onReady` | `() => void` | - | Called when capabilities detected |
-| `onModeChange` | `(mode) => void` | - | Called when mode changes |
-| `onAILoadingChange` | `(state) => void` | - | Called when AI loading state changes |
-
-### Example with Full Configuration
-
-```svelte
-<Provider
-  user={data.user}
-  permissions={data.permissions}
-  socket={{
-    url: 'wss://api.example.com/ws',
-    reconnect: { enabled: true, maxAttempts: 5 }
-  }}
-  ai={{
-    preload: 'idle',
-    stt: { type: 'whisper-cpp', model: 'tiny.en' },
-    tts: { type: 'browser-synthesis' },
-    llm: { type: 'webllm', model: 'Llama-3.1-8B-Instruct' },
-    showLoadingOverlay: true,
-    loadingMessage: 'Preparing AI...'
-  }}
-  onReady={() => console.log('Capabilities detected')}
-  onAILoadingChange={(state) => console.log('AI:', state.phase)}
->
-  <slot />
-</Provider>
-```
-
----
-
-## AI Preloading & Warm Clients
-
-The AI system uses a warm client cache to avoid re-downloading models on every navigation. Models are downloaded once and cached in memory for the session.
-
-### AIConfig
-
-```typescript
-interface AIConfig {
-  /** When to preload models */
-  preload?: 'none' | 'eager' | 'idle' | 'on-visible';
-  /** STT configuration */
-  stt?: {
-    type: 'browser-speech' | 'whisper-cpp' | 'whisper-wasm';
-    model?: string;
-    enabled?: boolean;
-  };
-  /** TTS configuration */
-  tts?: {
-    type: 'browser-synthesis';
-    voice?: string;
-    enabled?: boolean;
-  };
-  /** LLM configuration */
-  llm?: {
-    type: 'webllm' | 'transformers-llm';
-    model?: string;
-    enabled?: boolean;
-  };
-  /** Show loading overlay during download */
-  showLoadingOverlay?: boolean;
-  /** Custom loading message */
-  loadingMessage?: string;
-}
-```
-
-### Preload Strategies
-
-| Strategy | Description |
-|----------|-------------|
-| `'none'` | Don't preload. Initialize on first use. |
-| `'eager'` | Preload immediately when Provider mounts. |
-| `'idle'` | Preload during browser idle time (`requestIdleCallback`). Recommended. |
-| `'on-visible'` | Preload when a SMRT AI component becomes visible. |
-
-### Warm Client Cache
-
-The cache persists across Svelte component lifecycles (navigation, remounts):
-
-```typescript
-import {
-  getCachedSTT,
-  getCachedLLM,
-  getCacheStats,
-  clearAllCaches
-} from '@happyvertical/smrt-svelte';
-
-// Check cache status
-const stats = getCacheStats();
-console.log(stats.stt.types);  // ['whisper-cpp']
-console.log(stats.llm.keys);   // ['webllm:Llama-3.1-8B-Instruct']
-
-// Clear all cached adapters (frees memory)
-await clearAllCaches();
-```
-
-### AILoadingOverlay
-
-Shows download progress during model initialization:
-
-```svelte
-<script>
-  import { AILoadingOverlay } from '@happyvertical/smrt-svelte';
-</script>
-
-<!-- Auto-shown by Provider when ai.showLoadingOverlay is true -->
-<!-- Or use manually: -->
-<AILoadingOverlay
-  message="Loading AI models..."
-  showDetails={true}
-  dismissible={true}
-/>
-```
-
----
 
 ## Hooks
 
-### useAuth
+| Hook | Returns |
+|------|---------|
+| `useAuth()` | `user`, `isAuthenticated`, `permissions`, `hasPermission()` |
+| `useSocket()` | `status`, `isConnected`, `send()`, `reconnect()`, `disconnect()` |
+| `useAppState()` | Full `SmrtAppStateManager` -- mode, AI adapters, capabilities |
+| `useSTT()` | `start()`, `stop()`, `isListening`, `lastResult`, `interimResult` |
+| `useTTS()` | `speak()`, `stop()`, `isSpeaking`, `getVoices()` |
+| `useLLM()` | `chat()`, `initialize()`, `unload()`, `isGenerating`, `downloadProgress` |
+| `useTheme()` | Theme context from `ThemeProvider` |
 
-Access authentication state:
+## AI System
 
-```svelte
-<script>
-  import { useAuth } from '@happyvertical/smrt-svelte';
-
-  const { user, isAuthenticated, permissions, hasPermission, hasAnyPermission } = useAuth();
-</script>
-
-{#if $isAuthenticated}
-  <p>Welcome, {$user.email}</p>
-  {#if hasPermission('articles.create')}
-    <button>Create Article</button>
-  {/if}
-{/if}
-```
-
-### useSocket
-
-Access WebSocket state:
-
-```svelte
-<script>
-  import { useSocket } from '@happyvertical/smrt-svelte';
-
-  const { status, send, reconnectAttempts } = useSocket();
-</script>
-
-<p>Socket: {$status}</p>
-<button onclick={() => send({ type: 'ping' })}>Ping</button>
-```
-
-### useAppState
-
-Access the full app state manager:
-
-```svelte
-<script>
-  import { useAppState } from '@happyvertical/smrt-svelte';
-
-  const appState = useAppState();
-
-  // Access state
-  const mode = appState.state.mode;
-  const aiLoading = appState.aiLoading;
-
-  // Methods
-  appState.toggleMode();
-  await appState.initializeSTT({ type: 'whisper-cpp' });
-  await appState.speak('Hello world');
-</script>
-```
-
----
+- **Preload strategies**: `none`, `eager`, `idle` (recommended), `on-visible`
+- **Warm client cache**: module-level Map survives navigation/remounts -- avoids re-downloading WASM/models
+- **Adapters**: STT (browser-speech, whisper-cpp, whisper-wasm), TTS (browser-synthesis), LLM (webllm, transformers-llm)
+- Cache API: `getCachedSTT()`, `getCachedTTS()`, `getCachedLLM()`, `getCacheStats()`, `clearAllCaches()`
 
 ## Components
 
-### AI Components
+| Category | Components |
+|----------|------------|
+| AI | `Provider`, `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput` |
+| Forms | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more |
+| Layout | `Container`, `Grid`, `Header`, `Footer`, `Masthead`, `PageHeader`, `EmptyState`, `SummaryCard` |
+| UI | `Button`, `Card`, `Badge`, `Pagination` |
+| Display | `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge` |
+| Feedback | `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar` |
+| Nav | `FilterChips`, `Tabs` |
+| Permission | `PermissionCheck`, `RoleBadge`, `RoleSelector` |
+| Admin | `AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell` |
+| Other | `Calendar`, `DayView`, `MembershipCard`, `MembershipList`, `ModulePanel`, `DataTable` |
 
-| Component | Description |
-|-----------|-------------|
-| `Provider` | Root provider for state and AI |
-| `AILoadingOverlay` | Full-screen loading overlay |
-| `CapabilityGate` | Conditionally render based on AI capabilities |
-| `DownloadProgress` | Progress bar for model downloads |
-| `VoiceInput` | Voice input field with STT |
-
-### User Management Components
-
-| Component | Description |
-|-----------|-------------|
-| `UserMenu` | User dropdown with logout |
-| `UserCard` | Display user info |
-| `UserAvatar` | User avatar with initials fallback |
-| `UserList` | Paginated user list |
-| `UserForm` | User create/edit form |
-| `InviteUserModal` | Modal to invite users |
-
-### Permission Components
-
-| Component | Description |
-|-----------|-------------|
-| `PermissionCheck` | Conditionally render based on permissions |
-| `RoleBadge` | Display role as badge |
-| `RoleSelector` | Role selection dropdown |
-
-### Tenant Components
-
-| Component | Description |
-|-----------|-------------|
-| `TenantSwitcher` | Switch between tenants |
-| `TenantCard` | Display tenant info |
-
-### Form Components
-
-| Component | Description |
-|-----------|-------------|
-| `SMRTForm` | Form with voice input support |
-| `SMRTTextInput` | Text input with voice |
-| `SMRTTextarea` | Textarea with voice |
-| `SMRTNumber` | Number input |
-| `SMRTPhone` | Phone number input |
-| `SMRTSelect` | Select dropdown |
-| `SMRTDateTime` | Date/time picker with natural language |
-| `SMRTCheckbox` | Checkbox input |
-
----
-
-## Permission Directive
-
-Use the `permission` action for declarative permission checks:
+## Permission Action
 
 ```svelte
-<script>
-  import { permission } from '@happyvertical/smrt-svelte';
-</script>
-
-<!-- Hide if no permission -->
-<button use:permission={'articles.delete'}>Delete</button>
-
-<!-- Disable instead of hide -->
-<button use:permission={{ permission: 'articles.delete', action: 'disable' }}>
-  Delete
-</button>
-
-<!-- Require multiple permissions -->
-<button use:permission={{ permissions: ['articles.edit', 'articles.publish'], mode: 'all' }}>
-  Publish
-</button>
+<div use:permission={{ slug: 'articles.delete', permissions: userPermissions }}>Delete</div>
+<div use:permission={{ slug: 'articles.delete', permissions: userPermissions, hideOnly: true }}>Delete</div>
 ```
 
----
+## Themes
 
-## Integration with SvelteKit
+Two theme systems: `src/theme/` (simple ThemeProvider with design tokens) and `src/themes/` (full preset system with material/glass/studio, CSS generation, runtime switching).
 
-### hooks.server.ts
+## Key Files
 
-```typescript
-import { createSessionHandler } from '@happyvertical/smrt-users/sveltekit';
-import { sequence } from '@sveltejs/kit/hooks';
-
-const sessionHandler = createSessionHandler({
-  db: { type: 'postgres', url: process.env.DATABASE_URL }
-});
-
-export const handle = sequence(sessionHandler);
-```
-
-### +layout.server.ts
-
-```typescript
-export const load = async ({ locals }) => {
-  return {
-    user: locals.user,
-    permissions: locals.permissions
-  };
-};
-```
-
-### +layout.svelte
-
-```svelte
-<script>
-  import { Provider } from '@happyvertical/smrt-svelte';
-  let { data, children } = $props();
-</script>
-
-<Provider
-  user={data.user}
-  permissions={data.permissions}
-  ai={{ preload: 'idle', stt: { type: 'whisper-cpp' } }}
->
-  {@render children()}
-</Provider>
-```
-
----
-
-## State Architecture
-
-```
-Provider
-    │
-    ├── SmrtAppStateManager ($state rune)
-    │   ├── mode: 'default' | 'smrt'
-    │   ├── session: { user, permissions, preferences }
-    │   ├── capabilities: BrowserAICapabilities
-    │   ├── ai: { stt, tts, llm } (adapter states)
-    │   ├── aiLoading: { phase, progress, loaded, failed }
-    │   └── socket: { status, reconnectAttempts }
-    │
-    └── Warm Client Cache (module-level)
-        ├── sttCache: Map<STTType, CachedAdapter>
-        ├── ttsCache: Map<TTSType, CachedAdapter>
-        └── llmCache: Map<string, CachedAdapter>
-```
-
-The warm client cache is module-level, surviving component remounts and navigation. This prevents re-downloading large WASM files and models.
-
----
-
----
-
-## Theming
-
-SMRT Svelte includes a comprehensive multi-theme system with support for Material Design, Apple Glass, and Google AI Studio aesthetics.
-
-### Quick Start with Themes
-
-```svelte
-<!-- +layout.svelte -->
-<script>
-  import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
-  import '@happyvertical/smrt-svelte/themes/styles/all.css';
-</script>
-
-<ThemeProvider preset="material" colorScheme="system">
-  {@render children()}
-</ThemeProvider>
-```
-
-### Available Themes
-
-| Theme | Description |
-|-------|-------------|
-| `material` | Modern Google Material Design 3 with refined colors |
-| `glass` | Apple-inspired glass morphism with backdrop blur |
-| `studio` | Google AI Studio flat design with minimal aesthetics |
-
-### Theme Switching
-
-```svelte
-<script>
-  import { getThemeContext, ThemeSwitcher } from '@happyvertical/smrt-svelte/themes';
-  
-  const theme = getThemeContext();
-  
-  // Programmatic switching
-  theme.setPreset('glass');
-  theme.toggleColorScheme();
-</script>
-
-<!-- UI Components -->
-<ThemeSwitcher variant="segmented" />
-<ColorSchemeToggle variant="buttons" />
-```
-
-See the [Themes README](./src/themes/README.md) for complete documentation.
-
----
+- `src/Provider.svelte` -- root component, state initialization
+- `src/state/` -- SmrtAppStateManager ($state rune), warm client cache
+- `src/hooks/` -- useAuth, useSocket, useAppState, useSTT, useTTS, useLLM, useTheme
+- `src/components/` -- UI components by category
+- `src/themes/` -- ThemeProvider, ThemeSwitcher, CSS presets
+- `src/browser-ai/` -- STT/TTS/LLM adapters, capability detection (bundled, not external)
+- `src/registry/` -- ModuleUIRegistry for cross-package component discovery
 
 ## Dependencies
 
-- `@happyvertical/browser-ai`: Browser AI adapters (STT, TTS, LLM)
-- `@happyvertical/smrt-users`: User, Tenant, Permission types
-- `@happyvertical/smrt-profiles`: Profile types
-- `svelte`: ^5.18.2 (peer dependency)
+- `@happyvertical/smrt-types` (shared types)
+- Peer: `svelte` >=5.18.2, `@happyvertical/smrt-agents`, `@happyvertical/smrt-jobs`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-users` (all optional)

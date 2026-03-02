@@ -8,6 +8,15 @@ import type {
 
 type ChatRoomMetadata = Record<string, unknown>;
 
+/**
+ * Chat room supporting public channels, private groups, DMs, and agent conversations.
+ *
+ * @remarks
+ * Room types: `public`, `private`, `dm`, `agent`. Agent rooms are auto-created by
+ * {@link ChatService.createAgentSession} with `maxParticipants: 2`. DM rooms are
+ * found-or-created via {@link ChatService.getOrCreateDM}. Threads are tracked via
+ * {@link ChatThread} linked by `roomId`. Tenant-scoped (required).
+ */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'chat_rooms',

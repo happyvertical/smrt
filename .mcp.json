@@ -6,12 +6,11 @@
       "args": [
         "exec",
         "tsx",
-        "/Users/will/Work/happyvertical/repos/smrt/packages/smrt-docs-mcp/src/index.ts"
+        "packages/smrt-docs-mcp/src/index.ts"
       ],
       "env": {
         "DEBUG": "false"
-      },
-      "cwd": "/Users/will/Work/happyvertical/repos/smrt"
+      }
     },
     "smrt-dev-mcp": {
       "type": "stdio",
@@ -19,16 +18,15 @@
       "args": [
         "exec",
         "tsx",
-        "/Users/will/Work/happyvertical/repos/smrt/packages/smrt-dev-mcp/src/index.ts"
+        "packages/smrt-dev-mcp/src/index.ts"
       ],
       "env": {
         "DEBUG": "false"
-      },
-      "cwd": "/Users/will/Work/happyvertical/repos/smrt"
+      }
     },
     "playwright": {
       "type": "stdio",
-      "command": "/Users/will/Work/happyvertical/repos/smrt/scripts/mcp-servers/playwright.sh",
+      "command": "./scripts/mcp-servers/playwright.sh",
       "args": [],
       "env": {
         "PLAYWRIGHT_MCP_ISOLATED": "true"

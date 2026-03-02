@@ -1,38 +1,18 @@
 # @happyvertical/smrt-sites
 
-Multi-tenant site management with agent bindings and infrastructure provisioning. Models sites as configurable deployable units with domain, tier, and agent configuration.
+Multi-tenant site lifecycle management with agent bindings.
 
-## Architecture
+## Models
 
-```
-src/
-  index.ts              # Export barrel
-  types.ts              # SiteStatus, SiteTier, ProvisioningStatus, SitePortalConfig
-  models/
-    Site.ts             # Site model with domain, tier, provisioning
-    SiteAgentBinding.ts # Junction linking sites to agents
-  collections/
-    SiteCollection.ts
-    SiteAgentBindingCollection.ts
-  services/
-    SiteService.ts      # Site lifecycle management
-```
+- **Site**: `domain` (unique per tenant), `tier` (free/standard/premium), `portalConfig` JSON, database connection, `provisioningStatus`/`provisioningTimestamp`. Status: draft/active/suspended/archived.
+- **SiteAgentBinding**: junction linking sites to agent classes. Per-site `config` overrides and `priority` ordering. `conflictColumns: ['site_id', 'agent_class']`.
 
-## Key Models
+## SiteService
 
-- `Site` — domain, status, tier (free/standard/premium), databaseUrl, portalConfig, templateName, provisioningStatus
-- `SiteAgentBinding` — Junction table: siteId + agentClass with per-site config overrides, priority, enabled flag
+Stateless lifecycle ops: `activate()`, `suspend()`, `archive()`. `bindAgent()` handles upsert (update config if exists, create if not).
 
-## Key Patterns
+## Gotchas
 
-- **Status lifecycle**: draft → active → suspended → archived
-- **Provisioning**: pending → provisioning → ready → failed
-- **Agent bindings**: Sites can bind multiple agents with per-site configuration overrides
-- **Portal config**: Theme, branding, navigation stored as JSON
-- **Multi-tenancy**: Required tenant scoping on SiteAgentBinding, optional on Site
-- **Custom conflict columns**: SiteAgentBinding uses `[site_id, agent_class]`
-
-## Dependencies
-
-- `@happyvertical/smrt-core`, `@happyvertical/smrt-tenancy`
-- `@happyvertical/sql`, `@happyvertical/utils`
+- **Required tenancy**: both models use `@TenantScoped({ mode: 'required' })` — must have tenant context
+- **portalConfig accepts both object and JSON string** in constructor
+- **SiteAgentBinding.config is nullable**: auto-parsed from JSON on init

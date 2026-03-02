@@ -1,37 +1,22 @@
 # @happyvertical/smrt-ledgers
 
-Double-entry accounting ledger system with chart of accounts, journal entries, and financial reporting.
+Double-entry accounting with chart of accounts, journal lifecycle, and balance enforcement.
 
-## Architecture
+## Models
 
-```
-src/
-  index.ts              # Export barrel
-  models/
-    Account.ts          # Chart of accounts entry
-    Journal.ts          # Financial event container
-    JournalEntry.ts     # Individual debit/credit line
-  collections/
-    Accounts.ts         # AccountCollection with hierarchy
-    Journals.ts         # JournalCollection with numbering
-    JournalEntries.ts   # JournalEntryCollection
-  types.ts              # AccountType, JournalStatus, TrialBalanceRow
-```
+- **Account**: 5 types (asset/liability/equity/revenue/expense). Hierarchical via `parentId`. Debit-normal (asset, expense) vs credit-normal (liability, equity, revenue). Methods: `getAncestors()`, `getFullPath()`, `toTreeNode()`, `getBalance(asOfDate?)`.
+- **Journal**: lifecycle `draft → posted → voided`. **Immutable after posting** (can only void, not edit). `sourceModule`/`sourceRef` for cross-package attribution. Auto-numbered (e.g., "JNL-0001").
+- **JournalEntry**: debit XOR credit (not both, validated on save). Multi-currency via `exchangeRate`. Non-negative amounts required.
 
-## Key Models
+## Balance Enforcement
 
-- `Account` — Chart of accounts: number, name, type (asset/liability/equity/revenue/expense), parent hierarchy
-- `Journal` — Financial event container: status lifecycle (draft → posted → voided), immutable after posting
-- `JournalEntry` — Individual debit or credit line tied to account and journal
+`journal.post()` validates `Math.abs(totalDebits - totalCredits) < BALANCE_EPSILON` where `BALANCE_EPSILON = 0.01` (float rounding tolerance). Unbalanced journals cannot be posted.
 
-## Key Patterns
+## Gotchas
 
-- **Double-entry enforcement**: Debits must equal credits within a journal
-- **Status lifecycle**: draft → posted (immutable) → voided
-- **Account hierarchy**: Parent-child relationships for account trees
-- **Trial balance**: Built-in reporting methods
-- **Multi-tenancy**: Optional tenant scoping via `@TenantScoped`
-
-## Dependencies
-
-- `@happyvertical/smrt-core`, `@happyvertical/smrt-tenancy`
+- **Float tolerance**: 0.01 epsilon for balance check — not exact equality
+- **Entry requires journalId**: save Journal first, then add entries
+- **Posted journals cannot be modified**: only voided (`voidReason`, `voidedAt`)
+- **Account types inherited by children**: child cannot differ from parent type
+- **getBalance() is async**: requires JournalEntryCollection query (not stored on Account)
+- **Optional tenancy** on all models

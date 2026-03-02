@@ -3,6 +3,15 @@ import { dirname, join } from 'node:path';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 
+/**
+ * Reads, writes, and generates SMRT manifests for a project.
+ *
+ * @remarks
+ * Manifests are JSON files containing class/field metadata produced by the AST scanner.
+ * Dev manifests live at `.smrt/manifest.json`; build manifests at `dist/manifest.json`.
+ * When loading a local project, the dev path takes priority; for external packages
+ * (dependencies), the build path takes priority to avoid pulling in test objects.
+ */
 export class ManifestManager {
   constructor(private projectRoot: string) {}
 

@@ -109,11 +109,35 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
 }
 
 /**
- * Core persistent object with unique identifiers and database storage
+ * Base class for all persistent SMRT domain objects.
  *
- * SmrtObject provides functionality for creating, loading, and saving objects
- * to a database. It supports identification via unique IDs and URL-friendly
- * slugs, with optional context scoping.
+ * Provides a full ORM lifecycle: construct with options, call `initialize()`,
+ * then use `save()` / `delete()` for persistence. Objects are identified by a
+ * UUID `id` and an optional URL-friendly `slug` (auto-generated from `name`,
+ * `title`, `label`, or `id` if not provided).
+ *
+ * Key capabilities:
+ * - **Persistence**: `save()` (upsert with retry), `delete()` (with hooks)
+ * - **Loading**: `loadFromId()`, `loadFromSlug()` (called automatically by `initialize()`)
+ * - **AI operations**: `is()` (boolean criteria check), `do()` (freeform instruction)
+ * - **Relationships**: `loadRelated()` (foreignKey), `loadRelatedMany()` (oneToMany)
+ * - **Context memory**: `remember()` / `recall()` / `recallAll()` / `forget()` / `forgetScope()`
+ * - **STI support**: `_meta_type` discriminator, `_meta_data` JSONB for child fields
+ * - **Serialization**: `toJSON()` (framework-managed, handles STI), `transformJSON()` (override hook)
+ *
+ * @example
+ * ```typescript
+ * @smrt()
+ * class Product extends SmrtObject {
+ *   name: string = '';
+ *   price: number = 0.0;
+ * }
+ *
+ * const product = new Product({ db: myDb, name: 'Widget', price: 9.99 });
+ * await product.initialize();
+ * await product.save();
+ * console.log(product.id); // auto-generated UUID
+ * ```
  */
 export class SmrtObject extends SmrtClass {
   /**
@@ -356,9 +380,28 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Initializes this object, setting up database tables and loading data if identifiers are provided
+   * Initializes this object and optionally loads its data from the database.
    *
-   * @returns Promise that resolves to this instance for chaining
+   * Initialization order:
+   * 1. Runs TypeScript field initializers (class property defaults)
+   * 2. Applies `options` values on top of defaults (options win)
+   * 3. If `options.id` is set, calls `loadFromId()` to hydrate from DB
+   * 4. If `options.slug` is set (and no id), calls `loadFromSlug()` instead
+   *
+   * Database table creation is deferred until the first actual DB operation
+   * (lazy initialization — safe for SSR and prerendering).
+   *
+   * Called automatically by collection methods. Call manually only when
+   * constructing objects outside of a collection.
+   *
+   * @returns This instance, ready to use (enables chaining)
+   *
+   * @example
+   * ```typescript
+   * const product = new Product({ db: myDb, id: 'existing-uuid' });
+   * await product.initialize(); // loads product data from DB
+   * console.log(product.name);
+   * ```
    */
   public async initialize(): Promise<this> {
     await super.initialize();
@@ -605,33 +648,38 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Hook for customizing JSON serialization
+   * Override hook for customizing JSON serialization output.
    *
-   * Override this method to add custom fields or transform serialized data.
-   * This is the **recommended way** to customize serialization.
+   * This is the **only safe way** to customize serialization. Do **not** override
+   * `toJSON()` directly — it manages STI discriminator assignment (`_meta_type`),
+   * meta-field extraction into `_meta_data`, and manifest-driven field enumeration.
+   * Overriding it will silently break STI persistence.
    *
-   * **DO NOT override toJSON() directly** as it handles critical framework infrastructure:
-   * - STI discriminator (`_meta_type`) assignment
-   * - Meta field extraction (`_meta_data`)
-   * - Field serialization from manifest
+   * The `data` argument already contains all persisted fields. Return a new object
+   * (spread `data` and add/modify/remove keys) to change what is serialized.
+   * Non-persisted computed properties added here are excluded from `save()` because
+   * the DB write path uses `toJSON()` output, not this hook's additions — unless
+   * those keys also correspond to real schema columns.
    *
-   * @param data - Serialized object data from framework
-   * @returns Transformed data (can add/modify/remove fields)
+   * @param data - Fully serialized object produced by the framework's `toJSON()` logic
+   * @returns Transformed data to use as the final serialization result
    *
    * @example
    * ```typescript
    * class Article extends SmrtObject {
+   *   body: string = '';
+   *
    *   protected transformJSON(data: any): any {
    *     return {
    *       ...data,
    *       wordCount: this.body.split(/\s+/).length,
-   *       preview: this.body.substring(0, 100)
+   *       preview: this.body.substring(0, 100),
    *     };
    *   }
    * }
    * ```
    *
-   * @see https://github.com/happyvertical/smrt/issues/377
+   * @see {@link toJSON} for the framework implementation (do not override)
    */
   protected transformJSON(data: any): any {
     return data; // Default: no transformation
@@ -869,11 +917,24 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Gets or generates a slug for this object
+   * Returns the slug for this object, generating one if not already set.
    *
-   * Fallback order: name → title → label → id
+   * Generation falls back through the following fields in order:
+   * `name` → `title` → `label` → `id`
    *
-   * @returns Promise resolving to the object's slug
+   * The generated slug is lowercased, with non-alphanumeric characters
+   * replaced by hyphens and leading/trailing hyphens stripped.
+   *
+   * Called automatically by `save()` when no slug is present.
+   *
+   * @returns The existing slug or a newly generated one (may be `null` if
+   *   none of the fallback fields and `id` are set)
+   *
+   * @example
+   * ```typescript
+   * const product = new Product({ name: 'My Widget' });
+   * console.log(await product.getSlug()); // 'my-widget'
+   * ```
    */
   async getSlug() {
     if (!this.slug) {
@@ -936,9 +997,37 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Saves this object to the database
+   * Persists this object to the database using an upsert (insert or update).
    *
-   * @returns Promise resolving to this object
+   * Steps performed on every save:
+   * 1. Runs field-level validation (`validateBeforeSave()`)
+   * 2. Executes `beforeSave` interceptors (e.g. tenant injection)
+   * 3. Assigns a UUID `id` if not already set
+   * 4. Generates a `slug` via `getSlug()` if not already set
+   * 5. Updates `updated_at` (and sets `created_at` on first save)
+   * 6. Upserts the row with automatic retry (3 attempts, 500 ms backoff)
+   * 7. Executes `afterSave` interceptors
+   * 8. Triggers embedding generation in the background if configured
+   *
+   * For STI classes, validates that `_meta_type` is present and correct
+   * before writing to the database.
+   *
+   * @returns This instance after saving (enables chaining)
+   * @throws {ValidationError} If a required field is missing or a unique constraint is violated
+   * @throws {DatabaseError} If the table does not exist (`DB_SCHEMA_MISSING`) or the query fails
+   * @throws {RuntimeError} For any other unexpected failure during save
+   *
+   * @example
+   * ```typescript
+   * const product = new Product({ db: myDb, name: 'Widget', price: 9.99 });
+   * await product.initialize();
+   * await product.save();
+   * console.log(product.id); // UUID assigned during save
+   *
+   * // Update
+   * product.price = 14.99;
+   * await product.save();
+   * ```
    */
   async save() {
     try {
@@ -1218,9 +1307,26 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Loads this object's data from the database using its ID
+   * Hydrates this object from the database using its `id` property.
    *
-   * @returns Promise that resolves when loading is complete
+   * Queries the database for a row matching `{ id: this._id }` and calls
+   * `loadDataFromDb()` if found. Uses a 3-attempt retry with 250 ms initial
+   * delay to handle transient failures.
+   *
+   * Called automatically by `initialize()` when `options.id` is provided.
+   * Typically you do not need to call this directly.
+   *
+   * @returns Promise that resolves when loading is complete (no-op if not found)
+   * @throws {ValidationError} If `this._id` is not set
+   * @throws {DatabaseError} If the query fails after all retries
+   *
+   * @example
+   * ```typescript
+   * const product = new Product({ db: myDb });
+   * await product.initialize();
+   * product._id = 'some-uuid';
+   * await product.loadFromId(); // hydrates from DB
+   * ```
    */
   public async loadFromId() {
     try {
@@ -1261,9 +1367,23 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Loads this object's data from the database using its slug and context
+   * Hydrates this object from the database using its `slug` (and `context`).
    *
-   * @returns Promise that resolves when loading is complete
+   * Queries for a row matching `{ slug, context }`. The `context` defaults to
+   * an empty string when not provided. Calls `loadDataFromDb()` if a matching
+   * row is found.
+   *
+   * Called automatically by `initialize()` when `options.slug` is provided and
+   * no `options.id` is set. Typically you do not need to call this directly.
+   *
+   * @returns Promise that resolves when loading is complete (no-op if not found)
+   *
+   * @example
+   * ```typescript
+   * const product = new Product({ db: myDb, slug: 'my-widget', context: 'shop' });
+   * await product.initialize(); // calls loadFromSlug() automatically
+   * console.log(product.name);
+   * ```
    */
   public async loadFromSlug() {
     const existing = await this.db.get(this.tableName, {
@@ -1276,12 +1396,25 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Evaluates whether this object meets given criteria using AI
+   * Evaluates whether this object satisfies the given natural-language criteria using AI.
    *
-   * @param criteria - Criteria to evaluate against
-   * @param options - AI message options
-   * @returns Promise resolving to true if criteria are met, false otherwise
-   * @throws Error if the AI response is invalid
+   * Sends the object's JSON representation to the AI with the criteria prompt and
+   * asks for a `{ result: boolean }` JSON response. Uses any AI-callable tools
+   * registered on this class (via `@smrt({ ai })`) as part of the function-calling context.
+   *
+   * @param criteria - Natural-language description of the condition to evaluate
+   * @param options - AI message options passed to `ai.message()` (e.g. model override)
+   * @returns `true` if the object meets the criteria, `false` otherwise
+   * @throws Error if the AI returns a non-boolean or malformed JSON response
+   *
+   * @example
+   * ```typescript
+   * const article = await articles.get('article-uuid');
+   * const isSuitable = await article.is('appropriate for a general audience');
+   * if (isSuitable) await article.publish();
+   * ```
+   *
+   * @see {@link do} for open-ended instructions instead of boolean checks
    */
   public async is(criteria: string, options: any = {}) {
     const prompt = `--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\nDoes the content meet all the given criteria? Reply with a json object with a single boolean 'result' property`;
@@ -1306,11 +1439,28 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Performs actions on this object based on instructions using AI
+   * Performs a freeform operation on this object using AI instructions.
    *
-   * @param instructions - Instructions for the AI to follow
-   * @param options - AI message options
-   * @returns Promise resolving to the AI response
+   * Sends the object's JSON representation to the AI together with the given
+   * instructions and returns the raw text response. Unlike `is()`, this method
+   * does not constrain the response format — use it for transformations,
+   * summaries, extractions, or any open-ended AI task.
+   *
+   * Uses any AI-callable tools registered on this class (via `@smrt({ ai })`)
+   * as part of the function-calling context.
+   *
+   * @param instructions - Natural-language instructions for the AI to follow
+   * @param options - AI message options passed to `ai.message()` (e.g. model override)
+   * @returns The raw AI response string
+   *
+   * @example
+   * ```typescript
+   * const article = await articles.get('article-uuid');
+   * const summary = await article.do('summarize this article in 3 bullet points');
+   * const translated = await article.do('translate the title and body to Spanish');
+   * ```
+   *
+   * @see {@link is} for boolean criteria checks
    */
   public async do(instructions: string, options: any = {}) {
     const prompt = `--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
@@ -1391,9 +1541,25 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Delete this object from the database
+   * Deletes this object from the database.
+   *
+   * Runs the full lifecycle in order:
+   * 1. `beforeDelete` interceptors (e.g. tenant validation)
+   * 2. `beforeDelete` lifecycle hook (defined in `@smrt({ hooks })`)
+   * 3. Database row deletion
+   * 4. `afterDelete` lifecycle hook
+   * 5. `afterDelete` interceptors
+   *
+   * Prefer `collection.delete(id)` from application code — it loads the
+   * object first (returning `false` when not found) before calling this method.
    *
    * @returns Promise that resolves when deletion is complete
+   *
+   * @example
+   * ```typescript
+   * const product = await products.get('product-uuid');
+   * if (product) await product.delete();
+   * ```
    */
   public async delete(): Promise<void> {
     // Execute beforeDelete interceptors (e.g., tenant validation)
@@ -1430,20 +1596,29 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Load a related object for a foreignKey field (lazy loading)
+   * Lazy-loads a `foreignKey` relationship and caches the result.
    *
-   * Automatically loads the related object from the database using the
-   * foreign key value. The loaded object is cached to avoid repeated queries.
+   * Looks up the relationship metadata in the ObjectRegistry, reads the
+   * foreign key value on this object, and fetches the related object from
+   * the database. Subsequent calls return the cached value without hitting
+   * the database again.
    *
-   * @param fieldName - Name of the foreignKey field
-   * @returns Promise resolving to the related object or null if not found
-   * @throws {RuntimeError} If the field is not a foreignKey or target class not found
+   * For STI relationships, the correct subclass is determined by reading
+   * `_meta_type` from the database row before instantiation.
+   *
+   * @param fieldName - Name of the `@foreignKey()` decorated property
+   * @returns The related object, or `null` if the foreign key is empty
+   * @throws {RuntimeError} If `fieldName` is not a `foreignKey` relationship,
+   *   or the target class is not found in the ObjectRegistry
+   *
    * @example
    * ```typescript
-   * // Given: class Order with customerId = foreignKey(Customer)
+   * // class Order { @foreignKey(Customer) customerId: string = ''; }
    * const customer = await order.loadRelated('customerId');
-   * console.log(customer.name); // Access customer properties
+   * console.log(customer?.name);
    * ```
+   *
+   * @see {@link getRelated} for a convenience wrapper that auto-detects relationship type
    */
   public async loadRelated(fieldName: string): Promise<any> {
     // Check if already loaded
@@ -1714,33 +1889,38 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Remember context about this object
+   * Stores a named value in the `_smrt_contexts` system table, scoped to this object.
    *
-   * Stores hierarchical context with confidence tracking for learned patterns.
-   * Context is stored in the _smrt_contexts system table.
+   * Context entries are keyed by `(owner_class, owner_id, scope, key, version)` and
+   * support an optional `confidence` score (0–1, default 1.0) for learned patterns.
+   * Calling `remember()` with the same scope+key upserts the existing entry.
    *
-   * @param options - Context options
-   * @returns Promise that resolves when context is stored
+   * Requires `initialize()` to have been called (needs `this.systemDb`).
+   *
+   * @param options.id - Optional explicit ID for the context entry (auto-generated if omitted)
+   * @param options.scope - Hierarchical path scoping the context (e.g. `'parser/example.com'`)
+   * @param options.key - Lookup key within the scope (e.g. a normalized URL)
+   * @param options.value - Any JSON-serializable value to store
+   * @param options.metadata - Optional additional JSON metadata
+   * @param options.confidence - Confidence score (0–1, default 1.0)
+   * @param options.version - Schema version for the stored value (default 1)
+   * @param options.expiresAt - Optional expiry date after which `recall()` will ignore this entry
+   * @returns Promise that resolves when the context is stored
+   * @throws Error if `initialize()` has not been called
+   *
    * @example
    * ```typescript
-   * // Remember a discovered parsing strategy
    * await agent.remember({
-   *   scope: 'discovery/parser/example.com',
+   *   scope: 'parser/example.com',
    *   key: normalizedUrl,
    *   value: { patterns: ['regex1', 'regex2'] },
-   *   metadata: { aiProvider: 'openai' },
-   *   confidence: 0.9
-   * });
-   *
-   * // Update an existing context entry by specifying id
-   * await agent.remember({
-   *   id: 'existing-context-id',
-   *   scope: 'discovery/parser/example.com',
-   *   key: normalizedUrl,
-   *   value: { patterns: ['regex1', 'regex2', 'regex3'] },
-   *   confidence: 0.95
+   *   confidence: 0.9,
    * });
    * ```
+   *
+   * @see {@link recall} to retrieve a single entry
+   * @see {@link recallAll} to retrieve all entries in a scope
+   * @see {@link forget} to delete a specific entry
    */
   public async remember(options: {
     id?: string;
@@ -1786,23 +1966,35 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Recall remembered context for this object
+   * Retrieves a single remembered context value for this object.
    *
-   * Retrieves context values with hierarchical search and confidence filtering.
-   * Returns only the value (parsed from JSON if applicable).
+   * Looks up the most recent (highest confidence, then highest version) entry
+   * matching `(owner_class, owner_id, scope, key)`. Returns the JSON-parsed value
+   * or `null` if no matching entry exists.
    *
-   * @param options - Recall options
-   * @returns Promise resolving to the context value or null if not found
+   * When `includeAncestors: true`, walks up the scope hierarchy by progressively
+   * removing the last path segment (e.g. `'a/b/c'` → `'a/b'` → `'a'` → `'global'`)
+   * until a match is found.
+   *
+   * @param options.scope - Scope path to search (e.g. `'parser/example.com/article'`)
+   * @param options.key - Lookup key within the scope
+   * @param options.includeAncestors - If `true`, fall back to parent scopes (default `false`)
+   * @param options.minConfidence - Only return entries at or above this confidence (0–1)
+   * @returns The stored value (parsed from JSON), or `null` if not found
+   * @throws Error if `initialize()` has not been called
+   *
    * @example
    * ```typescript
-   * // Recall a strategy with fallback to parent scopes
    * const strategy = await agent.recall({
-   *   scope: 'discovery/parser/example.com/article',
+   *   scope: 'parser/example.com/article',
    *   key: normalizedUrl,
    *   includeAncestors: true,
-   *   minConfidence: 0.6
+   *   minConfidence: 0.6,
    * });
    * ```
+   *
+   * @see {@link remember} to store a context entry
+   * @see {@link recallAll} to retrieve all entries in a scope
    */
   public async recall(options: {
     scope: string;
@@ -1866,25 +2058,31 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Recall all remembered context for this object in a scope
+   * Retrieves all remembered context entries for this object in a scope.
    *
-   * Returns a Map of key -> value for all context matching the criteria.
-   * Useful for bulk retrieval of strategies or cached patterns.
+   * Returns a `Map<key, value>` for every entry owned by this object that matches
+   * the scope and optional filters. When `includeDescendants: true`, a LIKE query
+   * (`scope%`) matches the scope itself and all child scopes.
    *
-   * @param options - Recall options without key (returns all keys in scope)
-   * @returns Promise resolving to Map of key -> value pairs
+   * @param options.scope - Optional scope path filter; omit to retrieve all scopes
+   * @param options.includeDescendants - If `true`, match `scope` and all child scopes (default `false`)
+   * @param options.minConfidence - Only include entries at or above this confidence (0–1)
+   * @returns `Map<string, any>` of key → JSON-parsed value pairs
+   * @throws Error if `initialize()` has not been called
+   *
    * @example
    * ```typescript
-   * // Get all strategies for a domain
    * const strategies = await agent.recallAll({
-   *   scope: 'discovery/parser/example.com',
-   *   minConfidence: 0.5
+   *   scope: 'parser/example.com',
+   *   minConfidence: 0.5,
    * });
-   *
    * for (const [url, pattern] of strategies) {
    *   console.log(`Cached pattern for ${url}:`, pattern);
    * }
    * ```
+   *
+   * @see {@link recall} to retrieve a single entry by key
+   * @see {@link forgetScope} to delete all entries in a scope
    */
   public async recallAll(
     options: {
@@ -1929,21 +2127,23 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Forget specific remembered context for this object
+   * Deletes a specific remembered context entry for this object.
    *
-   * Deletes context by scope and key. Use for invalidating cached strategies
-   * or removing outdated patterns.
+   * Removes the entry matching `(owner_class, owner_id, scope, key)`. A no-op
+   * if the entry does not exist.
    *
-   * @param options - Context identification (scope and key required)
-   * @returns Promise that resolves when context is deleted
+   * @param options.scope - Scope path of the entry to delete
+   * @param options.key - Key of the entry to delete
+   * @returns Promise that resolves when the entry is deleted
+   * @throws Error if `initialize()` has not been called
+   *
    * @example
    * ```typescript
-   * // Remove an outdated strategy
-   * await agent.forget({
-   *   scope: 'discovery/parser/example.com',
-   *   key: normalizedUrl
-   * });
+   * await agent.forget({ scope: 'parser/example.com', key: normalizedUrl });
    * ```
+   *
+   * @see {@link forgetScope} to delete all entries in a scope at once
+   * @see {@link remember} to store a context entry
    */
   public async forget(options: { scope: string; key: string }): Promise<void> {
     if (!this.systemDb) {
@@ -1959,22 +2159,28 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Forget all remembered context in a scope for this object
+   * Deletes all remembered context entries in a scope for this object.
    *
-   * Deletes all context matching the scope pattern. Useful for clearing
-   * cached strategies for an entire domain or category.
+   * When `includeDescendants: true`, uses a LIKE query (`scope%`) that matches
+   * the scope itself and all child scopes (e.g. `'parser/example.com'` also
+   * deletes `'parser/example.com/article'`).
    *
-   * @param options - Scope options (scope required, includeDescendants optional)
-   * @returns Promise resolving to number of contexts deleted
+   * @param options.scope - Scope path to clear
+   * @param options.includeDescendants - If `true`, also delete all child scopes (default `false`)
+   * @returns Number of context entries deleted
+   * @throws Error if `initialize()` has not been called
+   *
    * @example
    * ```typescript
-   * // Clear all strategies for a domain
    * const count = await agent.forgetScope({
-   *   scope: 'discovery/parser/example.com',
-   *   includeDescendants: true
+   *   scope: 'parser/example.com',
+   *   includeDescendants: true,
    * });
    * console.log(`Cleared ${count} cached strategies`);
    * ```
+   *
+   * @see {@link forget} to delete a single entry by key
+   * @see {@link recallAll} to bulk-retrieve before clearing
    */
   public async forgetScope(options: {
     scope: string;

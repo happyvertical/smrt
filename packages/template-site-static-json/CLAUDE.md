@@ -1,33 +1,23 @@
 # template-site-static-json
 
-Scaffold template for static community news sites with JSON data storage and SMRT framework integration. Used by `smrt gnode create` to generate working SvelteKit applications.
+Scaffold template for static community news sites with JSON data. Used by `smrt gnode create`.
 
-## Architecture
+## Exports
 
-```
-template.config.js          # Template config with placeholders and post-gen hooks
-index.js                    # Exports template config, path, and file utilities
-template/
-  scripts/init-data.ts      # Data initialization script
-  src/
-    site.config.ts          # Typed access to smrt.config.js site section
-    routes/                 # SvelteKit page routes
-    lib/                    # Utilities (markdown, config loading)
-```
+- Template config with placeholder mappings (site name, location, timezone, coordinates)
+- Template directory path and file path utilities
 
-## Key Exports
+## Template Contents
 
-- Template config object with placeholder mappings (site name, location, timezone, coordinates)
-- Template directory path and file path support
+- `template.config.js` — placeholder definitions and post-generation hooks
+- `template/scripts/init-data.ts` — data initialization script
+- `template/src/site.config.ts` — typed access to `smrt.config.js` site section (`initSiteConfig()`/`getSite()`)
 
 ## Key Patterns
 
-- **Placeholder system**: Variables like site name, location, timezone replaced during generation
-- **Post-generation hooks**: Run after template files are copied (e.g., `init-data.ts`)
-- **Site config**: `initSiteConfig()` / `getSite()` for typed access to `smrt.config.js` site section
-- **No tests**: Template validated through integration testing
+- **Placeholder system**: variables (site name, location, timezone) replaced during `smrt gnode create`
+- **Post-generation hooks**: run after template files are copied (e.g., init-data.ts)
 
-## Dependencies
+## Runtime Dependencies
 
-- Peer: `@happyvertical/smrt-core`, `@happyvertical/smrt-config`
-- Template runtime: `smrt-content`, `smrt-events`, `smrt-places`, `smrt-profiles`, `smrt-svelte`
+Template projects use: `smrt-content`, `smrt-events`, `smrt-places`, `smrt-profiles`, `smrt-svelte`.

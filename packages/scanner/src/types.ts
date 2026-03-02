@@ -281,7 +281,11 @@ export interface ScanResults {
 // ============================================================================
 
 /**
- * Options for OXC scanner
+ * Configuration options for {@link OxcScanner}.
+ *
+ * All fields are optional; reasonable defaults are applied when omitted.
+ *
+ * @see {@link OxcScanner}
  */
 export interface OxcScannerOptions {
   /** Glob patterns to include */
@@ -313,11 +317,23 @@ export interface OxcScannerOptions {
 }
 
 /**
- * External manifest reference for base class resolution
+ * Describes a pre-loaded manifest from an installed SMRT package, used by
+ * {@link InheritanceResolver} to resolve base classes that originate outside
+ * the local project source.
+ *
+ * Build tooling (e.g. the SMRT CLI / vitest plugin) loads each installed
+ * `@happyvertical/smrt-*` package's `manifest.json` and converts it into an
+ * `ExternalManifest` before passing it to the scanner.
+ *
+ * @see {@link OxcScannerOptions.externalManifests}
+ * @see {@link InheritanceResolver.addExternalManifest}
  */
 export interface ExternalManifest {
+  /** npm package name, e.g. `'@happyvertical/smrt-profiles'`. */
   packageName: string;
+  /** SemVer version string of the installed package. */
   packageVersion: string;
+  /** All class definitions exported by the package, keyed by class name. */
   classes: Map<string, RawClassDefinition>;
 }
 
@@ -326,7 +342,23 @@ export interface ExternalManifest {
 // ============================================================================
 
 /**
- * Inferred SMRT field type
+ * The set of SMRT column types that the scanner can infer for a field.
+ *
+ * | Value | DB column type | Notes |
+ * |---|---|---|
+ * | `text` | `TEXT` / `VARCHAR` | Default for `string` and unknown types |
+ * | `integer` | `INTEGER` | `number` with `= 0` initialiser |
+ * | `decimal` | `DECIMAL` | `number` with `= 0.0` initialiser |
+ * | `boolean` | `BOOLEAN` | `boolean` annotation or literal initialiser |
+ * | `datetime` | `DATETIME` | `Date` annotation |
+ * | `json` | `JSON` / `TEXT` | Arrays, `Record<>`, object types |
+ * | `foreignKey` | `TEXT` (FK column) | `@foreignKey(Class)` decorator |
+ * | `oneToMany` | — (virtual) | `@oneToMany(Class)` decorator |
+ * | `manyToMany` | — (virtual) | `@manyToMany(Class)` decorator |
+ * | `meta` | Stored in `_meta_data` | STI child field wrapped in `Meta<T>` |
+ * | `unknown` | — | Could not be determined |
+ *
+ * @see {@link FieldTypeInference} for the full inference result shape.
  */
 export type InferredFieldType =
   | 'text'
@@ -342,7 +374,14 @@ export type InferredFieldType =
   | 'unknown';
 
 /**
- * Result of field type inference
+ * Result produced by {@link ManifestAdapter.inferFieldType} for a single field.
+ *
+ * In addition to the inferred `type`, carries the `source` of the inference
+ * so callers can distinguish authoritative decorator-driven results from
+ * heuristic guesses and provide better diagnostics.
+ *
+ * @see {@link InferredFieldType} for valid `type` values.
+ * @see {@link ManifestAdapter.inferFieldType} for inference priority rules.
  */
 export interface FieldTypeInference {
   /** Inferred SMRT type */

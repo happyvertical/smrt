@@ -1,36 +1,35 @@
 # @happyvertical/smrt-secrets
 
-Encrypted secret storage with envelope encryption. Manages credentials, API keys, and sensitive data with per-tenant data encryption keys (TDEKs) wrapped by an Application Master Key (AMK).
+Envelope encryption for per-tenant secret storage with key rotation and audit logging.
 
-## Architecture
+## Encryption Architecture
 
 ```
-src/
-  index.ts              # Export barrel
-  models/
-    Secret.ts           # Encrypted secret record
-    TenantKey.ts        # Per-tenant data encryption key
-  collections/
-    SecretCollection.ts     # Query by category, status, expiry
-    TenantKeyCollection.ts  # Key lifecycle management
-  types/                # SecretStatus, encryption types
+Secret value → encrypted with TDEK (per-tenant Data Encryption Key)
+  TDEK → wrapped with AMK (Application Master Key, from env SMRT_SECRET_MASTER_KEY)
 ```
 
-## Key Models
+## Models
 
-- `Secret` — Encrypted secret: category, encrypted value, key version, expiry, rotation tracking
-- `TenantKey` — Per-tenant TDEK: wrappedKey, amkKeyId, status, version
+- **Secret**: `encryptedValue` (JSON envelope), `category`, `status` (active/disabled/expired), `expiresAt`, `accessCount`, `lastAccessedAt`. **No API/MCP exposure** (security). CLI: list-only.
+- **TenantKey**: per-tenant TDEK in wrapped form. Status: active/rotating/retired/compromised. **Not tenant-scoped itself** — it tracks keys FOR tenants.
+- **SecretAuditLog**: action (create/read/update/delete/rotate_key/disable/enable), result (success/failure/denied), user/IP tracking. CLI: list-only.
 
-## Key Patterns
+## SecretService
 
-- **Envelope encryption**: Secrets encrypted with TDEK, TDEK wrapped with AMK
-- **Key lifecycle**: active → rotating → retired → compromised
-- **TenantKey is NOT tenant-scoped**: It tracks keys FOR tenants, not owned BY tenants
-- **Secret categories**: Group secrets by type (api-key, credential, token, etc.)
-- **Rotation support**: Key versioning enables zero-downtime key rotation
-- **Expiry tracking**: Secrets can have expiration dates
+| Method | Behavior |
+|--------|----------|
+| `store(name, value, options)` | Encrypt + save. Upsert if exists. Uses `context=tenantId` for per-tenant uniqueness. |
+| `retrieve(name)` | Decrypt + audit + increment accessCount |
+| `rotateKey()` | Create new TDEK, mark old as retired |
+| `reencryptAll()` | Decrypt with old TDEK, re-encrypt with new — **must call separately after rotateKey()** |
+| `disable(name)` / `enable(name)` | Toggle status |
 
-## Dependencies
+## Gotchas
 
-- `@happyvertical/smrt-core`
-- `@happyvertical/encryption` (optional peer dependency)
+- **Key rotation doesn't auto-re-encrypt**: call `reencryptAll()` separately after `rotateKey()`
+- **retrieve() increments accessCount**: every read is tracked
+- **TenantKey NOT tenant-scoped**: it stores keys for tenants but isn't filtered by tenant context
+- **Expired secrets filtered by default**: pass `includeExpired: true` to list them
+- **TenantKeyCollection.cleanupRetiredKeys()**: hard-deletes after 90 days
+- **Audit logging optional but default**: failures logged to console, not thrown

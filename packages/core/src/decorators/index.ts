@@ -93,10 +93,25 @@ export interface RelationshipFieldOptions extends FieldOptions {
 }
 
 /**
- * Generic field decorator for marking properties with constraints
+ * Marks a class property with validation constraints and metadata options.
  *
- * @param options - Field options (required, default, min, max, minLength, maxLength, etc.)
- * @returns Property decorator
+ * Use `@field()` when you need options beyond what plain TypeScript initializers
+ * express — required validation, numeric ranges, string length limits, uniqueness,
+ * or transient (non-persisted) computed properties.
+ *
+ * For plain persisted fields with no constraints, no decorator is needed: just
+ * declare the property with a TypeScript initializer and the framework will infer
+ * the column type from the default value (`0` → INTEGER, `0.0` → DECIMAL, `''` → TEXT).
+ *
+ * @param options - Field configuration options
+ * @param options.required - If `true`, `save()` throws `ValidationError` when empty/null
+ * @param options.unique - Enforces a UNIQUE database constraint
+ * @param options.nullable - If `true`, the column accepts NULL (default depends on type)
+ * @param options.transient - If `true`, the property is not persisted to the database
+ * @param options.default - Default value applied at the database level
+ * @param options.description - Human-readable description used in generated API docs
+ * @param options.exported - Controls JSON export visibility (see `FieldOptions`)
+ * @returns A TypeScript property decorator
  *
  * @example
  * ```typescript
@@ -105,10 +120,16 @@ export interface RelationshipFieldOptions extends FieldOptions {
  *   @field({ required: true, maxLength: 100 })
  *   name: string = '';
  *
- *   @field({ min: 0, max: 1000, default: 0 })
+ *   @field({ min: 0 })
  *   stock: number = 0;
+ *
+ *   @field({ transient: true })
+ *   get displayPrice(): string { return `$${this.price.toFixed(2)}`; }
  * }
  * ```
+ *
+ * @see {@link meta} for STI child-specific fields stored in `_meta_data` JSON
+ * @see {@link foreignKey} for typed relationship fields
  */
 export function field(
   options: FieldOptions | NumericFieldOptions | TextFieldOptions = {},
@@ -120,20 +141,38 @@ export function field(
 }
 
 /**
- * Foreign key relationship decorator
+ * Declares a many-to-one (foreign key) relationship to another `SmrtObject` class.
  *
- * @param relatedClass - The class this field references
- * @param options - Relationship options
- * @returns Property decorator
+ * The decorated property stores the UUID of the related object. At runtime, call
+ * `instance.loadRelated('fieldName')` to lazy-load (and cache) the related object,
+ * or pass `include: ['fieldName']` to `collection.list()` for batch eager loading.
+ *
+ * Cross-package rule: Use `@foreignKey()` only for same-package references.
+ * For cross-package foreign keys, use a plain `string` property instead to avoid
+ * circular dependencies between packages.
+ *
+ * @param relatedClass - The target class constructor (or class name string)
+ * @param options - Optional field constraints (required, nullable, etc.)
+ * @returns A TypeScript property decorator
  *
  * @example
  * ```typescript
  * @smrt()
  * class Order extends SmrtObject {
+ *   // Same-package FK — enables loadRelated() and eager loading
  *   @foreignKey(Customer)
  *   customerId: string = '';
  * }
+ *
+ * // Cross-package: use a plain string instead
+ * @smrt()
+ * class Post extends SmrtObject {
+ *   authorId: string = ''; // plain string — no circular dep
+ * }
  * ```
+ *
+ * @see {@link oneToMany} for the inverse (parent) side of the relationship
+ * @see SmrtObject.loadRelated for lazy-loading the related object at runtime
  */
 export function foreignKey(
   relatedClass: string | Function | any,
@@ -153,20 +192,37 @@ export function foreignKey(
 }
 
 /**
- * One-to-many relationship decorator
+ * Declares a one-to-many relationship from this object to a collection of related objects.
  *
- * @param relatedClass - The class of the related collection
- * @param options - Relationship options (foreignKey, etc.)
- * @returns Property decorator
+ * The decorated property is `transient` — it is not persisted as a database column.
+ * At runtime, call `instance.loadRelatedMany('fieldName')` to load the related objects,
+ * or pass `include: ['fieldName']` to `collection.list()` for batch eager loading (issues
+ * a single batched query for all instances instead of N individual queries).
+ *
+ * The inverse side (`@foreignKey`) must exist on the `relatedClass` pointing back to this
+ * class. The framework discovers it automatically via `ObjectRegistry.getInverseRelationships()`.
+ *
+ * @param relatedClass - The class constructor of the child/related objects
+ * @param options - Optional relationship options (foreign key override, etc.)
+ * @returns A TypeScript property decorator (sets `transient: true` automatically)
  *
  * @example
  * ```typescript
  * @smrt()
  * class Order extends SmrtObject {
- *   @oneToMany(OrderItem, { foreignKey: 'orderId' })
+ *   @oneToMany(OrderItem)
  *   items: OrderItem[] = [];
  * }
+ *
+ * @smrt()
+ * class OrderItem extends SmrtObject {
+ *   @foreignKey(Order)
+ *   orderId: string = '';
+ * }
  * ```
+ *
+ * @see {@link foreignKey} for the many-to-one (child) side of the relationship
+ * @see SmrtObject.loadRelatedMany for lazy-loading at runtime
  */
 export function oneToMany(
   relatedClass: string | Function | any,
@@ -187,11 +243,19 @@ export function oneToMany(
 }
 
 /**
- * Many-to-many relationship decorator
+ * Declares a many-to-many relationship between two `SmrtObject` classes via a join table.
  *
- * @param relatedClass - The class of the related collection
- * @param options - Relationship options (through table, etc.)
- * @returns Property decorator
+ * The decorated property is `transient` — it is not persisted as a database column.
+ * The `through` option specifies the junction table name. The join table model must
+ * be decorated with `@smrt({ conflictColumns: ['...', '...'] })` to use the natural
+ * key columns for upsert operations.
+ *
+ * Note: Runtime eager loading for `manyToMany` relationships is not yet implemented.
+ * Use `collection.query()` with a JOIN for now.
+ *
+ * @param relatedClass - The class constructor of the related objects
+ * @param options - Relationship options; `through` specifies the junction table name
+ * @returns A TypeScript property decorator (sets `transient: true` automatically)
  *
  * @example
  * ```typescript
@@ -201,6 +265,8 @@ export function oneToMany(
  *   tags: Tag[] = [];
  * }
  * ```
+ *
+ * @see {@link oneToMany} for one-to-many relationships
  */
 export function manyToMany(
   relatedClass: string | Function | any,
@@ -221,27 +287,38 @@ export function manyToMany(
 }
 
 /**
- * Meta field decorator for STI (Single Table Inheritance) patterns
+ * Marks a field as a Single Table Inheritance (STI) meta field.
  *
- * Marks a field as a "meta field" that should be stored in the _meta_data JSONB column
- * rather than as a direct table column. Used for child-specific fields in STI hierarchies.
+ * Meta fields are stored in the `_meta_data` JSONB column on the shared STI
+ * table rather than as dedicated table columns. Use this decorator for fields
+ * that are specific to an STI child class and should not pollute the shared
+ * table schema with child-specific columns.
  *
- * @param options - Field options
- * @returns Property decorator
+ * The `@smrt({ tableStrategy: 'sti' })` decorator must be set on the base class.
+ * All child-specific fields should use `@meta()` (or the `Meta<T>` type alias).
+ *
+ * @param options - Standard field options (required, nullable, description, etc.)
+ * @returns A TypeScript property decorator (registers field with `type: 'meta'`)
  *
  * @example
  * ```typescript
  * @smrt({ tableStrategy: 'sti' })
  * class Event extends SmrtObject {
- *   title: string = '';
+ *   title: string = ''; // shared column on events table
  * }
  *
  * @smrt()
  * class Meeting extends Event {
  *   @meta()
- *   roomNumber: string = '';
+ *   roomNumber: string = ''; // stored in _meta_data JSON, not a column
+ *
+ *   @meta({ required: true })
+ *   durationMinutes: number = 60;
  * }
  * ```
+ *
+ * @see {@link Meta} for the equivalent type alias approach
+ * @see {@link field} for regular (non-STI) field declarations
  */
 export function meta(options: FieldOptions = {}) {
   return (target: any, propertyKey: string) => {

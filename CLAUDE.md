@@ -1,382 +1,107 @@
 # SMRT Framework
 
-SMRT (Smart, Multi-modal, Real-time Transformation) is a TypeScript framework for building vertical AI agents with automatic code generation and AI-powered operations.
+TypeScript framework for vertical AI agents. Define business logic as TypeScript classes with `@smrt()` — get REST APIs, CLI tools, MCP servers, and AI operations (`is()`/`do()`) automatically.
 
-**Define business logic once, get everything else automatically:**
-- REST APIs, CLI tools, and MCP servers from TypeScript classes
-- Built-in AI operations (`is()`, `do()` methods) on every object
-- Database persistence with automatic schema generation
-- Type-safe operations across all interfaces
+## Monorepo Packages
 
-## Documentation Map
+All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm workspace.
 
-This is a **navigational document**. For detailed technical reference, see package-specific CLAUDE.md files:
-
-| Topic | Location |
-|-------|----------|
-| **Core Framework** (SmrtObject, Collections, ORM, STI) | [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) |
-| **Multi-Tenancy** (auto-filtering, auto-population) | [packages/tenancy/CLAUDE.md](./packages/tenancy/CLAUDE.md) |
-| **Testing** (isolated DBs, parallel tests, manifest loading) | [packages/vitest/CLAUDE.md](./packages/vitest/CLAUDE.md) |
-| **Configuration** | [packages/config/CLAUDE.md](./packages/config/CLAUDE.md) |
-| **Content Processing** | [packages/content/CLAUDE.md](./packages/content/CLAUDE.md) |
-| **Agents** | [packages/agents/CLAUDE.md](./packages/agents/CLAUDE.md) |
-| **E-Commerce** | [packages/commerce/CLAUDE.md](./packages/commerce/CLAUDE.md) |
-| **Users & Auth** | [packages/users/CLAUDE.md](./packages/users/CLAUDE.md) |
-
-**Other important docs:**
-- [WORKFLOW.md](./WORKFLOW.md) - Development workflows and SOPs
-- [TESTING_STANDARD.md](./TESTING_STANDARD.md) - Testing requirements
-- [CHANGESETS.md](./CHANGESETS.md) - Versioning and release workflow
-
----
-
-## Quick Start
-
-```bash
-npm install @happyvertical/smrt-core
-```
-
-```typescript
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-
-@smrt({
-  api: { include: ['list', 'get', 'create'] },
-  mcp: { include: ['list', 'get'] },
-  cli: true
-})
-class Document extends SmrtObject {
-  title: string = '';
-  content: string = '';
-  wordCount: number = 0;      // INTEGER (no decimal)
-  rating: number = 0.0;       // DECIMAL (has decimal)
-  tags: string[] = [];
-
-  async isHighQuality(): Promise<boolean> {
-    return await this.is('Contains 500+ words with clear structure');
-  }
-}
-```
-
-**This generates:**
-- REST: `GET/POST /documents`
-- CLI: `smrt documents list`, `smrt documents create`
-- MCP: `document_list`, `document_get` tools
-
-For complete examples, see [packages/core/CLAUDE.md](./packages/core/CLAUDE.md).
-
----
-
-## Critical Warnings
-
-### ⚠️ Running Tests - Vitest Plugin Required
-
-**The vitest plugin is required for all SMRT projects.** It automatically generates manifests at startup.
-
-```bash
-# ✅ CORRECT - vitest plugin auto-generates manifest
-npx vitest
-npx vitest run
-npm test
-
-# ⚠️ DEPRECATED - still works but not needed
-smrt test
-```
-
-**Your vitest.config.ts MUST include the plugin:**
-
-```typescript
-import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
-
-export default defineConfig({
-  plugins: [smrtVitestPlugin()],  // Required!
-});
-```
-
-Without the plugin, you'll get errors like:
-```
-Cannot generate schema for unregistered class 'Council'.
-No field metadata found for 'Document'.
-```
-
-For test database utilities and isolation patterns, see [packages/vitest/CLAUDE.md](./packages/vitest/CLAUDE.md).
-For project setup requirements, see [docs/PROJECT_REQUIREMENTS.md](./docs/PROJECT_REQUIREMENTS.md).
-
-### ⚠️ Do Not Override toJSON()
-
-The `toJSON()` method handles critical framework infrastructure (STI, meta fields). Use `transformJSON()` instead:
-
-```typescript
-// ✅ CORRECT
-protected transformJSON(data: any): any {
-  return { ...data, wordCount: this.content.split(/\s+/).length };
-}
-
-// ❌ WRONG - breaks STI
-toJSON() {
-  return { id: this.id, title: this.title };
-}
-```
-
-See [packages/core/CLAUDE.md](./packages/core/CLAUDE.md#-warning-customizing-json-serialization) for details.
-
-### ⚠️ Vite Decorator Configuration Required
-
-Projects using `@smrt()` decorators with Vite need explicit esbuild configuration:
-
-```typescript
-// vite.config.ts
-export default defineConfig({
-  esbuild: {
-    tsconfigRaw: {
-      compilerOptions: {
-        experimentalDecorators: true,
-        emitDecoratorMetadata: true,
-      },
-    },
-  },
-});
-```
-
-Without this, you'll see `SyntaxError: Invalid or unexpected token`. For full details including SvelteKit integration, see [packages/core/CLAUDE.md](./packages/core/CLAUDE.md#vite-plugin-integration).
-
----
-
-## Monorepo Structure
-
-The SMRT framework is organized as a pnpm workspace:
-
-### Foundation Packages
+### Foundation
 | Package | Purpose |
 |---------|---------|
-| **types** | Shared TypeScript type definitions |
-| **config** | Configuration management with cosmiconfig |
-| **core** | Core framework: ORM, code generation, AI integration |
-| **tenancy** | Multi-tenancy with automatic tenant isolation |
-| **vitest** | Test utilities and cross-package manifest loading |
+| core | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus, STI |
+| config | cosmiconfig loader, secret sanitization, SSG export |
+| cli | Developer CLI: `smrt db:*`, `smrt docs:claude`, introspection, code generation |
+| types | Shared TypeScript types/enums — zero runtime code |
+| vitest | Test plugin: auto-manifest generation, cross-package class loading, DB isolation |
+| scanner | oxc-parser AST scanner for class/field metadata extraction |
+| tenancy | Multi-tenancy: AsyncLocalStorage context, auto-filtering interceptors, adapters |
 
-### Domain Packages
+### Agents & Runtime
 | Package | Purpose |
 |---------|---------|
-| **agents** | Agent framework for autonomous actors |
-| **assets** | Asset management with versioning |
-| **commerce** | E-commerce functionality |
-| **content** | Content processing (documents, PDFs, web) |
-| **events** | Event management with participants |
-| **ledgers** | Financial ledger management |
-| **places** | Place management with geo integration |
-| **products** | Product catalog |
-| **profiles** | Profile management with relationships |
-| **tags** | Hierarchical tagging system |
+| agents | Agent lifecycle, DispatchBus inter-agent messaging, interests-based discovery, scheduling |
+| jobs | Background execution: TaskRunner, ScheduleRunner, fluent JobBuilder, `withBackgroundJobs()` |
+| users | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions, SvelteKit hooks |
+| profiles | Identity: multi-auth (Nostr/OIDC/API keys/magic links), relationships, audit logging |
 
-### External SDK Dependencies
+### Content & Media
+| Package | Purpose |
+|---------|---------|
+| content | STI content types (Article/Document/Mirror), thumbnails (3 strategies), asset associations |
+| messages | Multi-channel messaging: Email/Twitter/Slack as STI hierarchy, credential encryption |
+| chat | Chat rooms (public/private/DM/agent), threads, agent sessions with tool whitelisting |
+| assets | Provider-agnostic asset management, versioning, polymorphic AssetAssociation |
+| images | Image ops: AI categorization, editing, cross-package STI extending Asset |
+| video | Video production: Character/Performer/Scene, ComfyUI workflows, frame-based durations |
+| voice | TTS voice profiles, cloning from samples, word timings for lip-sync |
 
-From [@happyvertical/sdk](https://github.com/happyvertical/sdk):
-- **@happyvertical/ai**: Multi-provider AI client
-- **@happyvertical/sql**: Database operations (SQLite, Postgres, DuckDB)
-- **@happyvertical/files**: File system operations
-- **@happyvertical/utils**: Shared utilities
+### Business
+| Package | Purpose |
+|---------|---------|
+| commerce | Customer/Vendor, Contract (5 STI types), Invoice with ledger integration, Fulfillment |
+| products | Product catalog — reference template for triple-consumption (npm/federation/standalone) |
+| ads | Ad delivery: priority waterfall, weighted A/B variations, immutable event tracking |
+| affiliates | Revenue sharing: multi-type partners, multi-tier commissions, payout processing |
+| ledgers | Double-entry accounting, balance enforcement (EPSILON=0.01), journal lifecycle |
+| analytics | GA4/Plausible: properties, data streams, server-side events, AI-powered reports |
 
----
+### Domain
+| Package | Purpose |
+|---------|---------|
+| events | Infinite-nesting event hierarchy, series, participant roles/placements |
+| places | Hierarchical places, geocoding via `lookupOrCreate()`, Haversine proximity search |
+| facts | Knowledge base: semantic dedup (3-zone reconciliation), evolution chains, confidence |
+| sites | Site lifecycle management, agent bindings with priority ordering |
+| properties | Digital properties with hierarchical zones for content/ad placement |
+| tags | Hierarchical tagging: context-scoped slugs, multi-language aliases |
+| social | Social media OAuth (YouTube/Threads/X/Bluesky), post scheduling |
+| secrets | Envelope encryption (AMK→TDEK→secret), key rotation, audit logging |
 
-## Development Setup
+### Tooling
+| Package | Purpose |
+|---------|---------|
+| smrt-svelte | Svelte 5: Provider, browser AI (STT/TTS/LLM) with warm cache, theme system |
+| smrt-dev-mcp | Tier 2 dev MCP: `generate-smrt-class`, `introspect-project` |
+| gnode | Federation library — stubs only, not implemented |
+| template-sveltekit | Base SvelteKit scaffold with SMRT integration |
+| template-site-static-json | Community news site scaffold with Praeco/Caelus |
 
-### Prerequisites
-
-- **Node.js**: 24+ required
-- **pnpm**: 9.0+ required
-
-### Installation
-
-```bash
-git clone https://github.com/happyvertical/smrt.git
-cd smrt
-pnpm install
-npm run build   # Turborepo with caching (~8s first, ~80ms cached)
-```
-
-### Common Commands
-
-```bash
-npm run dev          # Development mode with watch
-npm test             # Run tests (uses 'smrt test')
-npm run typecheck    # Type checking
-npm run lint         # Linting
-npm run format       # Format code
-npm run clean        # Clean build artifacts
-```
-
----
-
-## For Contributors
-
-### Quick Links
-
-- [WORKFLOW.md](./WORKFLOW.md) - Step-by-step development SOPs
-- [TESTING_STANDARD.md](./TESTING_STANDARD.md) - Testing requirements
-- [CONTRIBUTING.md](./CONTRIBUTING.md) - Contribution guidelines
-
-### Git Branching
-
-**Branch naming**: `{type}/issue-{number}-{short-description}`
-- `feat/issue-123-new-feature`
-- `fix/issue-45-bug-fix`
-
-**Conventional commits**: All commits follow [Conventional Commits](https://www.conventionalcommits.org/)
-
-### Changesets and Versioning
-
-⚠️ **Changesets are auto-generated on merge to main**
-
-- **No manual changesets**: Don't run `npx changeset` manually
-- **Avoid `[skip ci]`**: Breaks the publish workflow
-- All `@happyvertical/smrt-*` packages are **version-locked**
-
-See [CHANGESETS.md](./CHANGESETS.md) for complete workflow.
-
-### Adding New Packages
-
-When creating a new package:
-
-1. **Add to `.changeset/config.json`** fixed array
-2. **Match current version**: `node -p "require('./packages/core/package.json').version"`
-3. **Set required fields** in package.json:
-   ```json
-   {
-     "type": "module",
-     "publishConfig": {
-       "registry": "https://npm.pkg.github.com",
-       "access": "public"
-     }
-   }
-   ```
-
----
-
-## Key Concepts (Overview)
-
-These are summarized here; see [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) for full documentation.
-
-### TypeScript Types vs Field Helpers
-
-Use TypeScript types for most properties. The `0` vs `0.0` heuristic determines INTEGER vs DECIMAL:
-
-```typescript
-class Product extends SmrtObject {
-  name: string = '';
-  count: number = 0;      // INTEGER
-  price: number = 0.0;    // DECIMAL
-  active: boolean = true;
-  tags: string[] = [];
-}
-```
-
-**Use field helpers only for:**
-- Relationships: `categoryId = foreignKey(Category)`
-- Constraints: `name = text({ required: true, unique: true })`
-- Nullable decimals: `latitude = decimal({ nullable: true })`
-
-Full reference: [packages/core/CLAUDE.md#typescript-types-vs-field-helpers](./packages/core/CLAUDE.md#typescript-types-vs-field-helpers)
-
-### Multi-Tenancy
-
-Enable automatic tenant scoping with `@happyvertical/smrt-tenancy`:
-
-```typescript
-import { enableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
-
-enableTenancy();  // Call once at startup
-
-await withTenant({ tenantId: 'tenant-123' }, async () => {
-  const doc = await collection.create({ title: 'My Doc' });
-  // tenantId auto-populated, queries auto-filtered
-});
-```
-
-Full reference: [packages/tenancy/CLAUDE.md](./packages/tenancy/CLAUDE.md)
-
-### Single Table Inheritance (STI)
-
-Share a table across class hierarchy with polymorphic queries:
-
-```typescript
-@smrt({ tableStrategy: 'sti' })
-class Event extends SmrtObject {
-  title: string = '';
-}
-
-@smrt()  // Inherits STI
-class Meeting extends Event {
-  roomNumber: string = '';
-}
-
-// Polymorphic query returns correct subclass instances
-const events = await collection.list({});
-```
-
-Full reference: [packages/core/CLAUDE.md#single-table-inheritance-sti](./packages/core/CLAUDE.md#single-table-inheritance-sti)
-
----
-
-## Database Migrations
-
-SMRT includes a migration system with transaction wrapping and checksum-based idempotency.
+## Commands
 
 ```bash
-smrt db:status              # Check pending changes
-smrt db:migrate             # Apply migrations
-smrt db:migrate --dry-run   # Preview without applying
-smrt db:diff --generate     # Generate migration from changes
-smrt db:rollback            # Rollback migrations
+pnpm install && npm run build   # Setup (~8s first build, ~80ms cached via turborepo)
+npm run dev                     # Watch mode
+npm test                        # Vitest — smrtVitestPlugin() required in config
+npm run typecheck               # TypeScript checking
+npm run lint                    # Biome
+npm run format                  # Biome
 ```
 
-Migrations are tracked in `_smrt_schema_migrations` table. For PostgreSQL, use `--postgres-safe` for `CREATE INDEX CONCURRENTLY`.
+## Conventions
 
-Full reference: [packages/core/CLAUDE.md](./packages/core/CLAUDE.md) (see Database Migrations section when added).
+- **0 vs 0.0**: `count: number = 0` → INTEGER. `price: number = 0.0` → DECIMAL
+- **Never override toJSON()** — use `transformJSON()` (toJSON handles STI + meta fields)
+- **Cross-package FKs**: plain string IDs, not `@foreignKey()` (avoids circular deps)
+- **System tables**: prefixed `_smrt_` (jobs, dispatch, schedules, migrations)
+- **Conflict columns**: set `conflictColumns` in `@smrt()` for junction/upsert tables
+- **STI discriminator**: qualified names — `@happyvertical/smrt-content:Article`
+- **Tenant scoping**: most domain models use `@TenantScoped({ mode: 'optional' })` + nullable tenantId
+- **JSON fields**: store as string, provide `getX()`/`setX()` helpers with graceful parse error handling
+- **Changesets**: auto-generated on merge to main. Don't run `npx changeset` manually
 
----
+## SDK Dependencies
 
-## MCP Server Integration
+From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical/ai` (AI client), `@happyvertical/sql` (DB ops), `@happyvertical/files` (filesystem), `@happyvertical/utils` (utilities).
 
-SMRT provides three tiers of MCP servers:
+## Downstream Doc Generation
 
-| Tier | Package | Purpose |
-|------|---------|---------|
-| **1** | Auto-generated | Runtime servers from your SMRT objects |
-| **2** | `@happyvertical/smrt-dev-mcp` | Development code generation tools |
-| **3** | `@happyvertical/smrt-docs-mcp` | Documentation and learning tools |
+`smrt docs:claude` generates `.claude/smrt-framework.md` for consumer projects by concatenating installed package CLAUDE.md files with version tables. Code: `packages/cli/src/commands/docs-claude.ts`.
 
----
+## Gotchas
 
-## Dependency Management
-
-Uses [Renovate CE](https://github.com/renovatebot/renovate) for automated updates:
-
-```
-@happyvertical/sdk → publishes
-    ↓ Renovate creates PR
-@happyvertical/smrt-* → publishes
-    ↓ Renovate creates PR
-downstream repos (praeco, caelus, etc.)
-```
-
-- **SDK patch releases**: Auto-merged after tests pass
-- **SDK minor releases**: Require manual review
-
----
-
-## Related Projects
-
-- **[HAppyVertical SDK](https://github.com/happyvertical/sdk)**: Infrastructure packages
-- **[create-gnode](https://github.com/happyvertical/create-gnode)**: CLI for federated knowledge bases
-- **[praeco](https://github.com/happyvertical/praeco)**: Local news agent built on SMRT
-
----
-
-## License
-
-MIT License - see [LICENSE](./LICENSE) file.
-
-## Contact
-
-- **GitHub**: https://github.com/happyvertical/smrt
-- **Issues**: https://github.com/happyvertical/smrt/issues
+- **Vitest plugin required**: without `smrtVitestPlugin()` in vitest.config.ts → "No field metadata" errors
+- **Vite decorators**: needs `esbuild.tsconfigRaw` with `experimentalDecorators: true, emitDecoratorMetadata: true`
+- **Manifest is build-time**: generated once at vitest startup — restart after adding new `@smrt()` classes
+- **ObjectRegistry on globalThis**: singleton via `globalThis.__smrtRegistry*` — survives HMR
+- **Lazy table creation**: tables created on first DB op, not on `initialize()` — safe for SSR
