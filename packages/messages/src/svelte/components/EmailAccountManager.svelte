@@ -114,8 +114,10 @@ async function save() {
       smtpPort: maSmtpPort,
       smtpSecurity: maSmtpSecurity,
       username: maUsername.trim(),
-      password: maPassword,
     };
+    if (!editingId || maPassword) {
+      data.password = maPassword;
+    }
     await onsave(data, editingId ?? undefined);
     resetForm();
   } catch (e) {

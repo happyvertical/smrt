@@ -46,8 +46,16 @@ export class Whitelist extends SmrtObject {
       }
 
       case 'regex': {
-        const regex = new RegExp(this.pattern, 'i');
-        return regex.test(normalizedEmail);
+        const pattern = this.pattern.trim();
+        if (!pattern) {
+          return false;
+        }
+        try {
+          const regex = new RegExp(pattern, 'i');
+          return regex.test(normalizedEmail);
+        } catch {
+          return false;
+        }
       }
 
       default:
