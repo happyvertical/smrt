@@ -1,69 +1,41 @@
 # @happyvertical/smrt-cli
 
-Developer CLI for the SMRT framework. Provides introspection, testing, schema management, code generation, and project utilities.
+Developer CLI with lazy-loaded commands, manifest discovery, and class introspection.
+
+## Commands
+
+```
+smrt introspect              # Discover SMRT objects in project
+smrt db:status               # Pending schema changes
+smrt db:migrate              # Apply migrations
+smrt db:diff --generate      # Generate migration from changes
+smrt db:rollback             # Rollback migrations
+smrt docs:claude             # Generate .claude/smrt-framework.md
+smrt generate:mcp            # Generate MCP server
+smrt config:export           # Export agent config for SSG
+smrt init                    # Init new project
+smrt gnode                   # Scaffold gnode site
+smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
+```
+
+`smrt test` is **deprecated** — use vitest plugin directly.
 
 ## Architecture
 
-```
-src/
-  index.ts              # Entry point (shebang, main runner)
-  cli-generator.ts      # Core command dispatcher with lazy-loading
-  commands/             # 15+ command modules
-    config-export.ts    # Export configuration
-    db-*.ts             # Database commands (diff, generate, rollback, status, history)
-    dispatch.ts         # Method dispatch for custom commands
-    docs-claude.ts      # Claude documentation generation
-    export.ts           # Data export
-    generate.ts         # Code generation (MCP)
-    git.ts              # Git merge driver integration
-    gnode.ts            # Gnode scaffolding
-    init.ts             # Project initialization
-    utilities.ts        # Utility commands
-  loaders/              # Manifest discovery
-    class-loader.ts     # Load SMRT classes
-    local-loader.ts     # Load local manifests
-    npm-loader.ts       # Load npm manifests
-    git-loader.ts       # Git integration
-    template-loader.ts  # Template loading
-  discovery/            # Manifest discovery utilities
-  utils/                # Generator utilities
-```
+- **Lazy command loading**: commands loaded on-demand via dynamic import (~100ms overhead on first use)
+- **Manifest discovery**: auto-finds `.smrt/manifest.json` + scans `node_modules/@happyvertical/smrt-*`
+- **Class loading order**: config.entryPoint → package.json exports['.'] → package.json main → `./dist/index.js`
+- **Object method exposure**: custom methods on SMRT objects auto-become CLI commands
 
-## Key Commands
+## Key Files
 
-| Command | Purpose |
-|---------|---------|
-| `smrt introspect` | Discover all SMRT objects in project |
-| `smrt test` | Run tests with manifest generation (deprecated — use vitest plugin) |
-| `smrt db:status` | Check pending schema changes |
-| `smrt db:migrate` | Apply database migrations |
-| `smrt db:diff --generate` | Generate migration from changes |
-| `smrt db:rollback` | Rollback migrations |
-| `smrt docs:claude` | Generate `.claude/smrt-framework.md` from installed packages |
-| `smrt generate:mcp` | Generate MCP server from SMRT objects |
-| `smrt init` | Initialize a new SMRT project |
-| `smrt gnode` | Scaffold a new gnode |
+- `src/cli-generator.ts` — core dispatcher, lazy command loading, class loading
+- `src/commands/` — individual command implementations
+- `src/loaders/` — class-loader, local-loader, npm-loader, git-loader, template-loader
+- `src/discovery/manifest-discovery.ts` — manifest auto-discovery
+- `src/commands/docs-claude.ts` — downstream CLAUDE.md generation (~550 lines)
 
-## Key Exports
+## Gotchas
 
-- `CLIGenerator` — Core command dispatcher
-- `main` — CLI entry point function
-
-## Patterns
-
-- Commands are lazy-loaded to minimize startup time and avoid pulling in heavy dependencies (e.g., `tar`)
-- Auto-discovers SMRT manifests in both local project and `node_modules`
-- Custom methods on SMRT objects are automatically exposed as CLI commands
-- Git merge driver provides JSON-aware conflict resolution
-
-## Testing
-
-```bash
-npx vitest run --project cli
-```
-
-## Dependencies
-
-- `@happyvertical/smrt-core`, `@happyvertical/smrt-config`, `@happyvertical/smrt-types`
-- `@happyvertical/ai`, `@happyvertical/files`, `@happyvertical/sql`, `@happyvertical/utils`, `@happyvertical/logger`
-- `fast-glob`, `tar`
+- **Test mode detection**: checks `NODE_ENV=test`, `VITEST=true`, `global.it`/`describe` — could conflict with other test runners
+- **External package load failures silenced**: one package failing doesn't prevent others from loading

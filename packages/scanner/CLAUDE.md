@@ -1,34 +1,28 @@
 # @happyvertical/smrt-scanner
 
-AST-based scanner for discovering SMRT objects in TypeScript source files. Uses oxc-parser for fast, accurate parsing of decorators, class hierarchies, and field definitions.
-
-## Architecture
-
-```
-src/
-  index.ts              # Export barrel
-  scanner.ts            # Main scanner entry point
-  oxc-scanner.ts        # OXC-based AST scanner implementation
-  manifest-builder.ts   # Builds SmartObjectManifest from scan results
-  base-class-discovery.ts # Discovers base classes in node_modules
-  types.ts              # SmartObjectDefinition, FieldDefinition, etc.
-```
+AST-based scanner for discovering SMRT objects in TypeScript source. Uses oxc-parser (Rust, 2-3x faster than tsc).
 
 ## Key Exports
 
-- `ManifestBuilder` — Builds manifest from source files (`.generate()`)
-- `discoverBaseClasses()` — Finds SMRT base classes in node_modules
-- `SmartObjectDefinition` — Scanned class metadata (fields, relationships, config)
+- `ManifestBuilder` — scans source files, builds `SmartObjectManifest` (`.generate()`)
+- `discoverBaseClasses({ cwd })` — finds SMRT base classes in node_modules
+- `SmartObjectDefinition`, `FieldDefinition` — scanned class metadata types
 
-## Key Patterns
+## How It Works
 
-- **OXC parser**: Uses `oxc-parser` for fast TypeScript AST parsing (not tsc)
-- **CWD-relative**: `ManifestBuilder.generate()` resolves paths relative to `process.cwd()`
-- **Base class discovery**: `discoverBaseClasses({ cwd })` resolves node_modules relative to given directory
-- **Static property capture**: Captures `uiSlots` and `adminRoutes` for agent manifests
-- **Field heuristics**: Detects INTEGER (0) vs DECIMAL (0.0) from default values
+1. `fast-glob` finds `.ts` files matching include/exclude patterns
+2. `oxc-parser` parses each file's AST
+3. Extracts: `@smrt()` config, class hierarchy, field defaults (0 vs 0.0 heuristic), relationships, static properties (`uiSlots`, `adminRoutes`)
+4. Outputs manifest JSON consumed by code generators, vitest plugin, and CLI
 
-## Dependencies
+## Key Files
 
-- `oxc-parser`, `oxc-resolver` (AST parsing)
-- `fast-glob`, `minimatch` (file discovery)
+- `src/oxc-scanner.ts` — core AST scanning logic
+- `src/manifest-builder.ts` — orchestrates scanning → manifest
+- `src/base-class-discovery.ts` — resolves base classes from node_modules
+
+## Gotchas
+
+- **CWD-relative**: `ManifestBuilder.generate()` resolves all paths relative to `process.cwd()`
+- **Used by vitest plugin**: `smrtVitestPlugin()` calls ManifestBuilder at startup
+- **Static property capture**: captures `uiSlots` and `adminRoutes` for agent manifest generation

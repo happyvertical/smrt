@@ -1,58 +1,56 @@
 # @happyvertical/smrt-jobs
 
-Background job processing for SMRT objects with persistence and scheduling.
+Background job execution with persistent queue, scheduling, and fluent builder API.
 
-## Svelte Components
+## Architecture
 
-This package includes Svelte 5 UI components for background job management.
-
-### Installation
-
-```bash
-npm install @happyvertical/smrt-jobs
+```
+SmrtObject.bg('method') → SmrtJob (in _smrt_jobs) → TaskRunner picks up → executes via ObjectRegistry
+AgentSchedule (cron) → ScheduleRunner creates SmrtJob → TaskRunner executes → ScheduleRunner updates
 ```
 
-### Usage
+## SmrtJob
+
+Persistent in `_smrt_jobs`. Fields: `queue` (default), `objectType`, `objectId`, `method`, `args`, `runAt`, `priority` (higher=sooner), `status`, `attempts`/`maxAttempts`, `timeout` (default 5min), `retryStrategy`, `workerId`, `workerHeartbeat`.
+
+Status: `pending → running → completed/failed/cancelled`.
+
+## TaskRunner
+
+Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `heartbeatInterval` (30s), `shutdownTimeout` (30s).
+
+1. Polls `listReady()` for pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC`)
+2. Claims atomically: `status='running', workerId=this.id`
+3. Resolves class via `ObjectRegistry.getClass(objectType)`, creates instance, calls method
+4. **Internal args**: `_agentConfig` and `_scheduleId` stripped from args before calling method
+5. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure
+6. Events: `job:started`, `job:completed`, `job:failed`, `job:retrying`, `runner:started/stopped`
+
+## ScheduleRunner
+
+Polls `_smrt_agent_schedules` every 60s for due entries. Creates SmrtJob with `queue='agents'`, `priority=75`. Wires to TaskRunner events for completion/failure tracking.
+
+Custom cron parser: 5-field (minute hour dom month dow). `*`, ranges, lists, steps supported. **Not timezone-aware** (UTC).
+
+## JobBuilder — Fluent API
 
 ```typescript
-import {
-  JobDashboard,
-  JobList,
-  JobDetail,
-  JobStats,
-  JobActions,
-  JobStatusBadge,
-} from '@happyvertical/smrt-jobs/svelte';
+const handle = await doc.background('analyze', { detailed: true })
+  .delay('5m').priority('high').retries(5).queue('analysis').timeout(600000).enqueue();
+
+await handle.wait({ timeout: 60000, pollInterval: 100 }); // polling-based
 ```
 
-### Components
+`bg()` is shorthand: `await doc.bg('analyze', args)` → enqueues immediately, returns JobHandle.
 
-- **JobDashboard** - Combined overview panel for background jobs
-- **JobList** - Filterable, sortable list of jobs
-- **JobDetail** - Detailed view of a single job
-- **JobStats** - Statistics dashboard for job queues
-- **JobActions** - Action buttons for job operations
-- **JobStatusBadge** - Status indicator for jobs
+## withBackgroundJobs(Class)
 
-### Types
+Mixin that adds `bg()` and `background()` to any SmrtObject. Uses WeakMap for collection caching per DB instance.
 
-```typescript
-import type {
-  JobData,
-  JobStats,
-  QueueStats,
-  JobStatus,
-  JobPriority,
-} from '@happyvertical/smrt-jobs/svelte';
-```
+## Gotchas
 
-### Auto-registration
-
-Importing from `/svelte` auto-registers components with `ModuleUIRegistry`:
-
-```typescript
-import '@happyvertical/smrt-jobs/svelte'; // Auto-registers all components
-
-// Later, retrieve from registry
-const Component = ModuleUIRegistry.get('@happyvertical/smrt-jobs', 'job-dashboard');
-```
+- **Cron not timezone-aware**: all times treated as UTC
+- **No dead letter queue**: failed jobs stay in DB with `status='failed'` — manual intervention
+- **Result storage**: `resultPointer` is just a string — app must implement result backend
+- **Lazy builder**: `background()` returns builder — nothing happens until `enqueue()`
+- **wait() is polling**: JobHandle.wait() polls DB every 100ms (configurable)

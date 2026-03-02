@@ -1,59 +1,57 @@
 # @happyvertical/smrt-users
 
-Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups.
+Multi-tenant user management with RBAC, hierarchical tenants, session handling, and SvelteKit integration.
 
-## Svelte Components
+## Models (12)
 
-This package includes Svelte 5 UI components for user and tenant management.
+| Model | Key Pattern |
+|-------|-------------|
+| User | Auth identity. `profileId` is plain string (not FK) to smrt-profiles. Email auto-lowercased. |
+| Tenant | **STI** + hierarchical parent-child. `hierarchyPath` (materialized path), `hierarchyLevel`. Max depth 10. |
+| Session | Server-side. Secure UUID. TTL in **seconds** (not ms). Status auto-updates to EXPIRED on access. |
+| Role | `tenantId = null` → system role (available to all tenants). `isSystem: true` blocks deletion. |
+| Permission | Slug format: `resource.action`. Parsed by PermissionResolver. |
+| Membership | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
+| Group | Team within a tenant. Multiple roles via GroupRole. |
+| GroupMember, GroupRole, RolePermission | Join tables. |
+| MembershipOverride | Per-user permission grant/deny. **DENY always wins.** |
+| TenantPermissionOverride | Tenant-level cascade overrides. Effect: INHERIT/GRANT/DENY. |
 
-### Installation
+## Permission Resolution — 4-Level Cascade
 
-```bash
-npm install @happyvertical/smrt-users
-```
+PermissionResolver evaluates in order (each level can add/remove permissions):
 
-### Usage
+1. **Tenant hierarchy** — walk ancestors, apply TenantPermissionOverride at each level
+2. **Membership role** — base permissions from user's role in tenant
+3. **Group roles** — permissions from all groups user belongs to **in that tenant**
+4. **Membership overrides** — final GRANT/DENY per-user (DENY takes absolute precedence)
 
-```typescript
-import {
-  UserCard,
-  UserList,
-  UserForm,
-  UserAvatar,
-  UserMenu,
-  InviteUserModal,
-} from '@happyvertical/smrt-users/svelte';
-```
+**Critical**: `getGroupIdsForTenant(userId, tenantId)` (joins with groups table to scope by tenant). Never use `getGroupIds()` — it's cross-tenant.
 
-### Components
+## Hierarchical Tenants
 
-- **UserCard** - Compact user information display
-- **UserList** - List of users with selection support
-- **UserForm** - Form for creating or editing users
-- **UserAvatar** - User profile image or initials display
-- **UserMenu** - User profile menu dropdown
-- **InviteUserModal** - Modal for inviting new users
+- `TenantCollection.createChild()` auto-calculates hierarchy fields, enforces depth limit
+- `moveToParent()` updates tenant + ALL descendants' paths/levels
+- `cascadePermissions` (parent pushes down) + `inheritPermissions` (child accepts) — both must be true
+- `getTree(rootId?)` returns nested structure for UI
 
-### Types
-
-```typescript
-import type {
-  UserCardProps,
-  UserListProps,
-  UserFormProps,
-  UserAvatarProps,
-  UserMenuProps,
-  InviteUserModalProps,
-} from '@happyvertical/smrt-users/svelte';
-```
-
-### Auto-registration
-
-Importing from `/svelte` auto-registers components with `ModuleUIRegistry`:
+## SvelteKit Integration
 
 ```typescript
-import '@happyvertical/smrt-users/svelte'; // Auto-registers all components
+// hooks.server.ts
+export const handle = createSessionHandler({ db, ttl: 604800, skipPaths: ['/api/public'] });
+// Populates event.locals: { user, permissions: string[], tenantId, sessionId }
 
-// Later, retrieve from registry
-const Component = ModuleUIRegistry.get('@happyvertical/smrt-users', 'user-card');
+// +page.server.ts
+await createSessionCookie(event, userId, tenantId, { db });
+await destroySessionCookie(event, { db });
+await switchSessionTenant(event, tenantId, { db });
 ```
+
+## Gotchas
+
+- **seedSystemRoles() required**: call `RoleCollection.seedSystemRoles()` at app init (creates owner/admin/member/viewer)
+- **PermissionResolver casts `as any`**: collections have protected constructors — known framework limitation
+- **Session TTL in seconds**: `DEFAULT_SESSION_TTL = 7 * 24 * 60 * 60` (not milliseconds)
+- **Users are cross-tenant**: one user, many tenants via Membership. Email globally unique.
+- **Batch permission queries**: resolver fetches all permission IDs in one query, then maps to slugs (avoids N+1)
