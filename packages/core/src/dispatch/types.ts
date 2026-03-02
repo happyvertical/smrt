@@ -63,6 +63,8 @@ export interface DispatchSubscribeOptions {
   handler?: string;
   /** Whether subscription is enabled */
   enabled?: boolean;
+  /** Delivery mode: 'compete' (default, first-to-claim) or 'fanout' (each subscriber gets own copy) */
+  delivery?: 'compete' | 'fanout';
 }
 
 /**
@@ -85,6 +87,8 @@ export interface DispatchListOptions {
   source?: string;
   /** Filter by signal type */
   type?: string;
+  /** Filter by target subscriber */
+  targetSubscriber?: string;
   /** Maximum results */
   limit?: number;
   /** Offset for pagination */

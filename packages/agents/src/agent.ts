@@ -155,6 +155,24 @@ export abstract class Agent extends SmrtObject {
   static adminRoutes: AgentAdminRoute[] = [];
 
   /**
+   * Signal types this agent subscribes to by default
+   *
+   * These are seedable defaults — on `initialize()`, the agent checks the
+   * database first and only creates subscriptions that don't already exist.
+   * The database is the runtime source of truth, allowing users to customize
+   * subscriptions per-tenant via the dashboard without code changes.
+   *
+   * @example
+   * ```typescript
+   * static override signalSubscriptions: string[] = [
+   *   'email.received',
+   *   'email.bounced',
+   * ];
+   * ```
+   */
+  static signalSubscriptions: string[] = [];
+
+  /**
    * Current agent status
    */
   status: AgentStatusType = 'idle';
@@ -460,6 +478,22 @@ export abstract class Agent extends SmrtObject {
     // Setup signal handlers for graceful shutdown
     this.setupSignalHandlers();
 
+    // Seed declarative signal subscriptions (DB is source of truth)
+    const subs = (this.constructor as typeof Agent).signalSubscriptions;
+    if (subs.length > 0 && this._db) {
+      const dispatch = await this.getDispatch();
+      const existing = await dispatch.listSubscriptions(this.constructor.name);
+      const existingTypes = new Set(existing.map((s) => s.signalType));
+      for (const signalType of subs) {
+        if (!existingTypes.has(signalType)) {
+          await dispatch.subscribe({
+            signalType,
+            subscriber: this.constructor.name,
+          });
+        }
+      }
+    }
+
     return this;
   }
 
@@ -602,6 +636,19 @@ export abstract class Agent extends SmrtObject {
       await this.validate();
 
       this.status = 'running';
+
+      // Auto-process pending dispatches for agents with signal subscriptions
+      if (this._db) {
+        const dispatch = await this.getDispatch();
+        const subs = await dispatch.listSubscriptions(this.constructor.name);
+        if (subs.length > 0) {
+          const count = await this.processDispatches();
+          if (count > 0) {
+            this.logger.info(`Processed ${count} pending dispatches`);
+          }
+        }
+      }
+
       await this.run();
       this.status = 'idle';
 

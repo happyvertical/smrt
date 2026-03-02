@@ -121,7 +121,17 @@ export class DispatchBus {
   ): Promise<Dispatch> {
     await this.initialize();
 
-    // Create the dispatch record
+    // Query all enabled subscriptions matching this signal type
+    const matchingSubs = await DispatchSubscriptionCollection.findBySignalType(
+      this.db,
+      type,
+    );
+
+    // Separate into compete and fanout subscribers
+    const fanoutSubs = matchingSubs.filter((s) => s.delivery === 'fanout');
+    const competeSubs = matchingSubs.filter((s) => s.delivery !== 'fanout');
+
+    // Create the base dispatch record
     const dispatch = new Dispatch({
       type,
       source: options.source || 'unknown',
@@ -131,7 +141,25 @@ export class DispatchBus {
       status: 'pending',
     });
 
-    await DispatchCollection.insert(this.db, dispatch);
+    // For fanout subscribers: create a per-subscriber dispatch copy
+    for (const sub of fanoutSubs) {
+      const fanoutDispatch = new Dispatch({
+        type,
+        source: options.source || 'unknown',
+        source_id: options.sourceId || null,
+        payload: JSON.stringify(payload || {}),
+        metadata: JSON.stringify(options.metadata || {}),
+        status: 'pending',
+        target_subscriber: sub.subscriber,
+      });
+      await DispatchCollection.insert(this.db, fanoutDispatch);
+    }
+
+    // For compete subscribers (or if no subscriptions found): insert the original
+    // dispatch with target_subscriber = NULL so any compete subscriber can claim it
+    if (competeSubs.length > 0 || matchingSubs.length === 0) {
+      await DispatchCollection.insert(this.db, dispatch);
+    }
 
     // Notify in-memory handlers immediately (fire-and-forget)
     this.notifyHandlers(type, payload, dispatch.getMetadata());
@@ -199,6 +227,7 @@ export class DispatchBus {
       signal_type: options.signalType,
       subscriber: options.subscriber,
       handler: options.handler || 'handleDispatch',
+      delivery: options.delivery || 'compete',
       enabled: options.enabled !== false ? 1 : 0,
     });
 
@@ -255,24 +284,54 @@ export class DispatchBus {
     // For wildcards, we need to get all pending and filter
     const hasWildcards = signalTypes.some((t) => t.includes('*'));
 
+    // Build a lookup: for each signal type this subscriber subscribes to,
+    // what delivery mode? Used to filter dispatches correctly.
+    const deliveryByType = new Map<string, 'compete' | 'fanout'>();
+    for (const sub of subscriptions) {
+      deliveryByType.set(sub.signalType, sub.delivery);
+    }
+
+    // Helper: check if a dispatch should be visible to this subscriber
+    const isVisibleToSubscriber = (dispatch: Dispatch): boolean => {
+      if (dispatch.targetSubscriber === subscriber) {
+        // Targeted at this subscriber (fanout copy) — always visible
+        return true;
+      }
+      if (dispatch.targetSubscriber !== null) {
+        // Targeted at a different subscriber — not visible
+        return false;
+      }
+      // Null target (compete dispatch): only visible if this subscriber
+      // has a compete subscription matching this dispatch type
+      const matchingSub = subscriptions.find((sub) =>
+        sub.matches(dispatch.type),
+      );
+      return matchingSub?.delivery === 'compete';
+    };
+
     let pendingDispatches: Dispatch[];
     if (hasWildcards) {
-      // Get all pending dispatches and filter by subscription patterns
+      // Get all pending dispatches and filter by subscription patterns + target
       const allPending = await DispatchCollection.list(this.db, {
         status: 'pending',
         limit: options.limit || 100,
       });
 
-      pendingDispatches = allPending.filter((dispatch) =>
-        subscriptions.some((sub) => sub.matches(dispatch.type)),
+      pendingDispatches = allPending.filter(
+        (dispatch) =>
+          subscriptions.some((sub) => sub.matches(dispatch.type)) &&
+          isVisibleToSubscriber(dispatch),
       );
     } else {
-      // Direct query for exact signal types
-      pendingDispatches = await DispatchCollection.findPending(
+      // Direct query for exact signal types (with target_subscriber filter)
+      const raw = await DispatchCollection.findPending(
         this.db,
         signalTypes,
         options.limit || 100,
+        subscriber,
       );
+      // Post-filter for delivery mode correctness
+      pendingDispatches = raw.filter(isVisibleToSubscriber);
     }
 
     // Filter by specific signal types if provided

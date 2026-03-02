@@ -97,4 +97,83 @@ describe('ManifestGenerator', () => {
       expect(() => generator.generateManifest(scanResults)).not.toThrow();
     });
   });
+
+  describe('generateAgentManifests', () => {
+    it('should include signalSubscriptions in agent manifest when declared', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/my-handler.ts',
+          objects: [
+            {
+              name: 'myHandler',
+              className: 'MyHandler',
+              collection: 'agents',
+              filePath: '/path/to/my-handler.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: {
+                agent: {
+                  icon: 'mail',
+                  tier: 'standard',
+                  description: 'Handles emails',
+                },
+              },
+              staticProperties: {
+                signalSubscriptions: ['email.received', 'email.bounced'],
+              },
+              exportName: 'MyHandler',
+              collectionExportName: 'MyHandlerCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const obj = manifest.objects.myHandler;
+      expect(obj).toBeDefined();
+      expect(obj.agent).toBeDefined();
+      expect(obj.agent?.signalSubscriptions).toEqual([
+        'email.received',
+        'email.bounced',
+      ]);
+    });
+
+    it('should omit signalSubscriptions from manifest when empty', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/plain-agent.ts',
+          objects: [
+            {
+              name: 'plainAgent',
+              className: 'PlainAgent',
+              collection: 'agents',
+              filePath: '/path/to/plain-agent.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: {
+                agent: {
+                  icon: 'bot',
+                  tier: 'free',
+                },
+              },
+              exportName: 'PlainAgent',
+              collectionExportName: 'PlainAgentCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const obj = manifest.objects.plainAgent;
+      expect(obj).toBeDefined();
+      expect(obj.agent).toBeDefined();
+      expect(obj.agent?.signalSubscriptions).toBeUndefined();
+    });
+  });
 });

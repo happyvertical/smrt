@@ -29,8 +29,8 @@ export class DispatchCollection {
     await db.query(
       `INSERT INTO _smrt_dispatch
         (id, type, source, source_id, payload, status, attempts, last_error,
-         processed_at, processed_by, metadata, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+         processed_at, processed_by, target_subscriber, metadata, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       row.id,
       row.type,
       row.source,
@@ -41,6 +41,7 @@ export class DispatchCollection {
       row.last_error,
       row.processed_at,
       row.processed_by,
+      row.target_subscriber,
       row.metadata,
       row.created_at,
       row.updated_at,
@@ -59,8 +60,8 @@ export class DispatchCollection {
       `UPDATE _smrt_dispatch SET
         type = $1, source = $2, source_id = $3, payload = $4, status = $5,
         attempts = $6, last_error = $7, processed_at = $8, processed_by = $9,
-        metadata = $10, updated_at = $11
-       WHERE id = $12`,
+        target_subscriber = $10, metadata = $11, updated_at = $12
+       WHERE id = $13`,
       row.type,
       row.source,
       row.source_id,
@@ -70,6 +71,7 @@ export class DispatchCollection {
       row.last_error,
       row.processed_at,
       row.processed_by,
+      row.target_subscriber,
       row.metadata,
       row.updated_at,
       row.id,
@@ -115,6 +117,11 @@ export class DispatchCollection {
     if (options.type) {
       conditions.push(`type = $${paramIndex++}`);
       params.push(options.type);
+    }
+
+    if (options.targetSubscriber) {
+      conditions.push(`target_subscriber = $${paramIndex++}`);
+      params.push(options.targetSubscriber);
     }
 
     let sql = 'SELECT * FROM _smrt_dispatch';
@@ -163,11 +170,15 @@ export class DispatchCollection {
 
   /**
    * Find pending dispatches for a set of signal types
+   *
+   * @param subscriber - When provided, filters to dispatches with no target
+   *   or targeted specifically at this subscriber (for fan-out delivery)
    */
   static async findPending(
     db: DatabaseInterface,
     signalTypes: string[],
     limit: number = 100,
+    subscriber?: string,
   ): Promise<Dispatch[]> {
     if (signalTypes.length === 0) {
       return [];
@@ -175,15 +186,21 @@ export class DispatchCollection {
 
     let paramIndex = 1;
     const placeholders = signalTypes.map(() => `$${paramIndex++}`).join(', ');
-    const { rows } = await db.query(
-      `SELECT * FROM _smrt_dispatch
+    let sql = `SELECT * FROM _smrt_dispatch
        WHERE status = 'pending'
-       AND type IN (${placeholders})
-       ORDER BY created_at ASC
-       LIMIT $${paramIndex}`,
-      ...signalTypes,
-      limit,
-    );
+       AND type IN (${placeholders})`;
+
+    const params: unknown[] = [...signalTypes];
+
+    if (subscriber) {
+      sql += ` AND (target_subscriber IS NULL OR target_subscriber = $${paramIndex++})`;
+      params.push(subscriber);
+    }
+
+    sql += ` ORDER BY created_at ASC LIMIT $${paramIndex}`;
+    params.push(limit);
+
+    const { rows } = await db.query(sql, ...params);
 
     return rows.map((row: Record<string, unknown>) =>
       Dispatch.fromRow(row as unknown as DispatchData),

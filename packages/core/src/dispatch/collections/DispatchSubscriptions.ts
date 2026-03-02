@@ -30,6 +30,7 @@ export class DispatchSubscriptionCollection {
         signal_type: row.signal_type,
         subscriber: row.subscriber,
         handler: row.handler,
+        delivery: row.delivery,
         enabled: row.enabled,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -112,6 +113,28 @@ export class DispatchSubscriptionCollection {
     );
 
     // Filter for subscriptions that match this signal type
+    return subscriptions.filter((sub) => sub.matches(signalType));
+  }
+
+  /**
+   * Find all enabled subscriptions matching a signal type
+   *
+   * Used by emit() to determine fan-out targets. Returns subscriptions
+   * where the signal type matches exactly or via wildcard pattern.
+   */
+  static async findBySignalType(
+    db: DatabaseInterface,
+    signalType: string,
+  ): Promise<DispatchSubscription[]> {
+    // Get all enabled subscriptions and filter for pattern matches in memory
+    const { rows } = await db.query(
+      `SELECT * FROM _smrt_dispatch_subscriptions WHERE enabled = 1`,
+    );
+
+    const subscriptions = rows.map((row: Record<string, unknown>) =>
+      DispatchSubscription.fromRow(row as unknown as DispatchSubscriptionData),
+    );
+
     return subscriptions.filter((sub) => sub.matches(signalType));
   }
 
