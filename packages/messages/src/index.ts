@@ -35,6 +35,15 @@ export { EmailAttachment } from './models/EmailAttachment';
 export { EmailFolder } from './models/EmailFolder';
 
 // ─────────────────────────────────────────────────────────────────────────
+// Email filtering (whitelist/blacklist)
+// ─────────────────────────────────────────────────────────────────────────
+
+export { BlacklistCollection } from './collections/BlacklistCollection';
+export { WhitelistCollection } from './collections/WhitelistCollection';
+export { Blacklist } from './models/Blacklist';
+export { Whitelist } from './models/Whitelist';
+
+// ─────────────────────────────────────────────────────────────────────────
 // Provider stubs
 // ─────────────────────────────────────────────────────────────────────────
 
