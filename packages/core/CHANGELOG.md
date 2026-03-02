@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.44
+
+### Patch Changes
+
+- ### Features
+
+  - agent signal handler infrastructure (#990) (agents,core)
+  - @happyvertical/smrt-scanner@0.20.44
+  - @happyvertical/smrt-config@0.20.44
+  - @happyvertical/smrt-types@0.20.44
+
 ## 0.20.43
 
 ### Patch Changes

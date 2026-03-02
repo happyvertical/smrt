@@ -1,5 +1,16 @@
 # @happyvertical/smrt-affiliates
 
+## 0.20.44
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.20.44
+  - @happyvertical/smrt-ads@0.20.44
+  - @happyvertical/smrt-commerce@0.20.44
+  - @happyvertical/smrt-profiles@0.20.44
+  - @happyvertical/smrt-properties@0.20.44
+
 ## 0.20.43
 
 ### Patch Changes
