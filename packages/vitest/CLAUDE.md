@@ -6,6 +6,7 @@ Vitest plugin for manifest generation and test database utilities. **Required fo
 
 ```typescript
 // vitest.config.ts
+import { defineConfig } from 'vitest/config';
 import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
 export default defineConfig({
   plugins: [smrtVitestPlugin()],
@@ -50,7 +51,6 @@ Module-level singleton caches (common in SMRT collections) persist across tests,
 
 ## Key Files
 
-- `src/plugin.ts` — Vite plugin, manifest generation
+- `src/index.ts` — Vite plugin, manifest generation, all exports
 - `src/setup.ts` — globalThis isolation setup file
-- `src/test-db.ts` — createIsolatedTestDb, createTestDb
-- `src/test-db-manifest.ts` — createIsolatedTestDbFromManifest (FK ordering, STI dedup)
+- `src/test-db.ts` — createIsolatedTestDb, createIsolatedTestDbFromManifest, createTestDb

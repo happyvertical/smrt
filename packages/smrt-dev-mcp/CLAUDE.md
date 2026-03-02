@@ -11,7 +11,7 @@ Tier 2 MCP server for development — code generation and project introspection.
 
 ## Usage
 
-```json
+```jsonc
 // .mcp.json or Claude Desktop config
 { "mcpServers": { "smrt-dev-mcp": { "command": "npx", "args": ["-y", "@happyvertical/smrt-dev-mcp"] } } }
 ```
@@ -25,8 +25,8 @@ Tier 2 MCP server for development — code generation and project introspection.
 ## Key Files
 
 - `src/index.ts` — MCP server setup, tool registration
-- `src/tools/generate.ts` — class generation logic
-- `src/tools/introspect.ts` — project scanning (uses scanner package)
+- `src/tools/generate-smrt-class.ts` — class generation logic
+- `src/tools/introspect-project.ts` — project scanning (uses scanner package)
 
 ## Gotchas
 

@@ -7,6 +7,10 @@ Svelte 5 components for SMRT: generic UI, forms, permissions, browser AI (STT/TT
 Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and AI capabilities.
 
 ```svelte
+<script>
+  let { data, children } = $props();
+</script>
+
 <Provider user={data.user} permissions={data.permissions}
   ai={{ preload: 'idle', stt: { type: 'whisper-cpp' } }}>
   {@render children()}
