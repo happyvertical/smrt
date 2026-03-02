@@ -68,41 +68,73 @@ interface ManifestFile {
 }
 
 /**
- * Options for creating an isolated test database from a manifest
+ * Options for {@link createIsolatedTestDbFromManifest}.
  */
 export interface ManifestTestDbOptions {
   /**
-   * Path to manifest file. If not provided, auto-detects from common locations:
-   * - .smrt/manifest.json (vitest plugin output)
-   * - dist/manifest.json (production build)
-   * - src/manifest/manifest.json (legacy)
+   * Explicit path to a manifest JSON file.
+   *
+   * When omitted the function searches the following locations in order:
+   * 1. `.smrt/manifest.json` — output of `smrtVitestPlugin()` / `smrt generate:test`
+   * 2. `dist/manifest.json` — production build manifest
+   * 3. `src/manifest/manifest.json` — legacy location
    */
   manifestPath?: string;
 
   /**
-   * Filter to specific object class names (e.g., ['Product', 'Order']).
-   * If not provided, all objects with schemas are included.
+   * Restrict schema creation to a subset of class names.
+   *
+   * Accepts either simple class names (`'Product'`) or fully-qualified
+   * manifest keys (`'@my-org/smrt-models:Product'`).  When omitted, every
+   * object that has a schema in the manifest is included.
+   *
+   * @example `['Product', 'Order', 'OrderItem']`
    */
   includeObjects?: string[];
 
   /**
-   * Optional prefix for SQLite temp file name
+   * Prefix for the SQLite temp-file name.  Ignored for PostgreSQL.
    * @default 'smrt-manifest'
    */
   prefix?: string;
 }
 
+/**
+ * Supported test database adapters.
+ *
+ * - `'sqlite'` — file-based or in-memory SQLite (default for local development)
+ * - `'postgres'` — PostgreSQL, used when `DATABASE_URL` is set (CI)
+ */
 export type TestDbAdapter = 'sqlite' | 'postgres';
 
+/**
+ * Database connection configuration for a test run.
+ *
+ * Returned by {@link getTestDbConfig} and {@link getInMemoryDbConfig}.
+ * Pass to `@happyvertical/sql`'s `getDatabase()` to open a connection.
+ */
 export interface TestDbConfig {
+  /** Adapter type — determines the driver used to open the connection. */
   type: 'sqlite' | 'postgres';
+  /**
+   * Connection URL.
+   *
+   * - SQLite: absolute path to a `.db` file, or `':memory:'`
+   * - PostgreSQL: `postgresql://user:pass@host:port/dbname`
+   */
   url: string;
 }
 
 /**
- * Detect the database adapter to use based on environment
+ * Detect the database adapter to use based on the current environment.
  *
- * Uses PostgreSQL if DATABASE_URL is set, otherwise SQLite
+ * Resolution order:
+ * 1. `TEST_DB_ADAPTER` env var — explicit override (`'sqlite'` or `'postgres'`)
+ * 2. `DATABASE_URL` env var set → `'postgres'`
+ * 3. Default → `'sqlite'`
+ *
+ * @returns The adapter identifier for the current environment.
+ * @see {@link getTestDbConfig} to obtain a full {@link TestDbConfig}.
  */
 export function getTestAdapter(): TestDbAdapter {
   // Explicit adapter override
@@ -120,19 +152,30 @@ export function getTestAdapter(): TestDbAdapter {
 }
 
 /**
- * Check if PostgreSQL is available (via DATABASE_URL)
+ * Check whether PostgreSQL is available for the current test run.
+ *
+ * Returns `true` when the `DATABASE_URL` environment variable is set,
+ * which is the signal used by CI environments to opt into PostgreSQL.
+ *
+ * @returns `true` if `DATABASE_URL` is set, `false` otherwise.
+ * @see {@link getTestAdapter} for full adapter resolution logic.
  */
 export function isPostgresAvailable(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
 
 /**
- * Get database configuration for tests
+ * Get a {@link TestDbConfig} appropriate for the current environment.
  *
- * Uses PostgreSQL when DATABASE_URL is set, otherwise creates
- * a unique SQLite temp file to avoid concurrency issues.
+ * Uses PostgreSQL when `DATABASE_URL` is set (CI), otherwise generates
+ * a unique SQLite temp-file path to prevent concurrency conflicts between
+ * parallel test workers.
  *
- * @param prefix - Optional prefix for the temp file name
+ * @param prefix - Optional prefix used in the SQLite temp-file name.
+ *   Ignored when using PostgreSQL. Defaults to `'smrt-test'`.
+ * @returns A {@link TestDbConfig} ready to pass to `getDatabase()`.
+ * @see {@link getInMemoryDbConfig} for a non-persistent SQLite alternative.
+ * @see {@link createTestDb} to obtain the config alongside a cleanup function.
  */
 export function getTestDbConfig(prefix = 'smrt-test'): TestDbConfig {
   const adapter = getTestAdapter();
@@ -156,10 +199,16 @@ export function getTestDbConfig(prefix = 'smrt-test'): TestDbConfig {
 }
 
 /**
- * Get an in-memory SQLite config (for tests that don't need persistence)
+ * Get a {@link TestDbConfig} backed by an in-memory SQLite database.
  *
- * Note: :memory: databases are isolated per connection, so they're safe
- * for concurrent tests within the same process, but can't be shared.
+ * In-memory databases are isolated per connection — safe for concurrent
+ * tests within the same process, but the database cannot be shared across
+ * connections or workers.  No temp files are created or cleaned up.
+ *
+ * Prefer {@link getTestDbConfig} (file-based SQLite or PostgreSQL) when
+ * tests need to be shared or inspected after the run.
+ *
+ * @returns A `TestDbConfig` with `url: ':memory:'`.
  */
 export function getInMemoryDbConfig(): TestDbConfig {
   return {
@@ -169,9 +218,34 @@ export function getInMemoryDbConfig(): TestDbConfig {
 }
 
 /**
- * Create a test database and return cleanup function
+ * Create a test database and return a cleanup function.
  *
- * @param prefix - Optional prefix for the temp file name
+ * Determines the adapter automatically via {@link getTestDbConfig}.  For
+ * SQLite, a unique temp file is created; `cleanup()` removes it along with
+ * any WAL/SHM sidecar files.  For PostgreSQL, `cleanup()` is a no-op
+ * (table isolation must be handled by the test itself).
+ *
+ * Unlike {@link createIsolatedTestDb}, this function does **not** wrap
+ * operations in a transaction — mutations made during the test persist until
+ * the temp file is deleted.  Prefer {@link createIsolatedTestDb} for
+ * isolated, parallel-safe tests.
+ *
+ * @param prefix - Prefix for the SQLite temp-file name.  Ignored for
+ *   PostgreSQL.  Defaults to `'smrt-test'`.
+ * @returns An object containing the resolved {@link TestDbConfig} and an
+ *   async `cleanup()` function that removes the temp file on SQLite.
+ *
+ * @example
+ * ```typescript
+ * import { createTestDb } from '@happyvertical/smrt-vitest';
+ *
+ * const { config, cleanup } = await createTestDb();
+ * const db = await getDatabase(config);
+ * // ... run tests ...
+ * await cleanup();
+ * ```
+ *
+ * @see {@link createIsolatedTestDb} for transaction-isolated test databases.
  */
 export async function createTestDb(prefix = 'smrt-test'): Promise<{
   config: TestDbConfig;
@@ -206,7 +280,23 @@ export async function createTestDb(prefix = 'smrt-test'): Promise<{
 }
 
 /**
- * Get display name for the current adapter (for test descriptions)
+ * Get a human-readable display name for the current test database adapter.
+ *
+ * Useful for labelling `describe` blocks or test output so logs make clear
+ * which backend is under test.
+ *
+ * @returns `'PostgreSQL'` when the adapter is `'postgres'`, otherwise `'SQLite'`.
+ *
+ * @example
+ * ```typescript
+ * import { getAdapterDisplayName } from '@happyvertical/smrt-vitest';
+ *
+ * describe(`Product (${getAdapterDisplayName()})`, () => {
+ *   // ...
+ * });
+ * ```
+ *
+ * @see {@link getTestAdapter} to obtain the raw adapter identifier.
  */
 export function getAdapterDisplayName(): string {
   const adapter = getTestAdapter();
@@ -219,44 +309,68 @@ export function getAdapterDisplayName(): string {
 }
 
 /**
- * Options for creating an isolated test database
+ * Options for {@link createIsolatedTestDb}.
  */
 export interface IsolatedTestDbOptions {
   /**
-   * SQL schema to sync before running tests
+   * Raw SQL DDL to execute against the database before the transaction begins.
+   *
+   * The DDL is applied outside the transaction (required for DDL on SQLite and
+   * some PostgreSQL configurations), so it persists for the lifetime of the
+   * temp database.  The transaction wraps only the DML that follows.
+   *
+   * @example
+   * ```typescript
+   * schema: `
+   *   CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+   *   CREATE TABLE orders (id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id));
+   * `
+   * ```
    */
   schema?: string;
 
   /**
-   * Optional prefix for temp file name (SQLite only)
+   * Prefix for the SQLite temp-file name.  Ignored for PostgreSQL.
+   * @default 'smrt-isolated'
    */
   prefix?: string;
 }
 
 /**
- * Result from createIsolatedTestDb
+ * Result returned by {@link createIsolatedTestDb} and
+ * {@link createIsolatedTestDbFromManifest}.
  */
 export interface IsolatedTestDbResult {
   /**
-   * The transaction handle - use this for all database operations.
-   * All operations run within the transaction.
+   * Transaction-scoped database handle.
+   *
+   * Use this for all DML inside your test.  All operations run within the
+   * open transaction and are rolled back when `cleanup()` is called.
    */
   db: TransactionHandle;
 
   /**
-   * The underlying database connection (before transaction).
-   * Only use this for operations that must be outside the transaction.
+   * The underlying database connection, opened before the transaction began.
+   *
+   * Use only for operations that must run outside the transaction (e.g.,
+   * reading sequences or checking schema state).  Most tests should use
+   * `db` instead.
    */
   baseDb: DatabaseInterfaceWithTransaction;
 
   /**
-   * Database configuration used
+   * The resolved {@link TestDbConfig} used to open the connection.
+   *
+   * Useful for introspection (e.g., logging which adapter is under test).
    */
   config: TestDbConfig;
 
   /**
-   * Cleanup function - rolls back the transaction and closes connection.
-   * ALWAYS call this in afterEach() or finally block.
+   * Roll back the transaction, close the connection, and delete any SQLite
+   * temp files.
+   *
+   * **Always** call this in `afterEach()` or a `finally` block to prevent
+   * connection leaks and temp-file accumulation.
    */
   cleanup: () => Promise<void>;
 }
@@ -264,15 +378,22 @@ export interface IsolatedTestDbResult {
 /**
  * Create a test database with transaction isolation.
  *
- * Each test runs in a transaction that gets rolled back on cleanup,
+ * Each test runs in a transaction that gets rolled back on `cleanup()`,
  * ensuring complete isolation between tests without the overhead of
- * creating/dropping tables or databases.
+ * creating or dropping tables between runs.  Parallel test workers each
+ * receive their own temp database file (SQLite) or an independent
+ * transaction (PostgreSQL).
  *
- * This is the recommended approach for parallel test execution,
- * especially with PostgreSQL in CI.
+ * Requires `@happyvertical/sql` with `beginTransaction()` support
+ * (SDK PR #722).  Throws if the adapter does not implement it.
  *
- * @param options - Configuration options
- * @returns Transaction handle and cleanup function
+ * @param options - Optional schema DDL and SQLite prefix.
+ *   Pass `schema` to have the DDL applied before the transaction begins.
+ * @returns An {@link IsolatedTestDbResult} containing the transaction handle,
+ *   base connection, resolved config, and a `cleanup()` function.
+ *
+ * @see {@link createIsolatedTestDbFromManifest} to derive the schema
+ *   automatically from the generated manifest file.
  *
  * @example
  * ```typescript
@@ -743,16 +864,29 @@ function sortByDependencies(tables: TableInfo[]): string[] {
 }
 
 /**
- * Create an isolated test database with schema from a manifest file.
+ * Create an isolated test database with schema derived from a manifest file.
  *
- * This eliminates manual DDL extraction boilerplate by reading the DDL
- * directly from the generated manifest. It handles:
- * - STI deduplication (multiple classes sharing one table)
- * - Foreign key dependency ordering
- * - Auto-detection of manifest location
+ * Eliminates the need to manually write or maintain DDL in test files by
+ * reading table definitions directly from the generated manifest.  Handles:
  *
- * @param options - Configuration options
- * @returns Transaction handle and cleanup function
+ * - **STI deduplication** — multiple classes that share the same table are
+ *   merged into a single `CREATE TABLE` statement that includes all columns.
+ * - **FK dependency ordering** — tables are created in topological order so
+ *   `REFERENCES` constraints are always satisfied.
+ * - **Auto-detection** — searches `.smrt/manifest.json`, `dist/manifest.json`,
+ *   and `src/manifest/manifest.json` when no `manifestPath` is given.
+ *
+ * @param options - Optional manifest path, class filter, and SQLite prefix.
+ * @returns An {@link IsolatedTestDbResult} — same shape as
+ *   {@link createIsolatedTestDb}, with a transaction-scoped `db` handle and
+ *   a `cleanup()` that rolls back and removes temp files.
+ *
+ * @throws When no manifest is found at any of the checked locations.
+ * @throws When the manifest contains no objects with a database schema (or
+ *   none of the filtered `includeObjects` have a schema).
+ *
+ * @see {@link createIsolatedTestDb} if you prefer to supply raw DDL directly.
+ * @see {@link ManifestTestDbOptions} for all available options.
  *
  * @example Basic usage
  * ```typescript

@@ -1,57 +1,29 @@
 # @happyvertical/smrt-video
 
-AI-powered video content management with characters, performers, scenes, shot composition, and ComfyUI workflow integration.
+AI video production pipeline: characters, performers, scenes, shots, sequences, compositions, and ComfyUI workflow integration.
 
-## Architecture
+## Models
 
-```
-src/
-  index.ts                    # Export barrel
-  character.ts                # Virtual character (voice + visual identity)
-  characters.ts               # CharacterCollection
-  performer.ts                # Physical likeness for consistent generation
-  personality-profile.ts      # Deprecated alias for Character
-  scene.ts                    # 360° panorama or standard backgrounds
-  video-composition.ts        # Publishable container with render specs
-  video-compositions.ts       # VideoCompositionCollection
-  video-sequence.ts           # Thematic section with transitions
-  video-sequences.ts          # VideoSequenceCollection
-  video-shot.ts               # Atomic generation unit
-  video-shots.ts              # VideoShotCollection
-  video-shot-character.ts     # Join: shot ↔ character with role/position
-  video-shot-characters.ts    # VideoShotCharacterCollection
-  video-workflow.ts           # ComfyUI template management
-  composite-job.ts            # Batch rendering job tracker
-  *-asset.ts                  # STI asset subclasses per model
-  types/                      # Shared types
-```
+- **Character** (renamed from PersonalityProfile): visual + voice identity. `imageAssetId`, `voiceProfileId` FK, branding config (logo, colors, fonts, lower-thirds). Scene-specific position/scale configs.
+- **Performer**: physical likeness for IP-Adapter FaceID. `faceEmbedding` (512-dim), `referenceAssetIds`, `ipAdapterWeight`.
+- **Scene**: virtual background. `sourceType` (image/video/panorama_360/panorama_180), `projection`, `viewpoints` array (pan/tilt/fov), `lightingProfile`, `anchorPoints`.
+- **VideoShot** (extends Content): atomic generation unit. `durationInFrames`, `scriptText`, `scriptWordCount`. Estimated duration: `scriptWordCount / 2.7` words/sec (±15% tolerance). `videoMetadata` includes `wordTimings` for lip-sync.
+- **VideoSequence** (extends Content): thematic section with `transitionType` (none/fade/slide/wipe), position ordering.
+- **VideoComposition** (extends Content): top-level container — `fps`, `width`, `height`, `durationInFrames`, `renderStatus`/`renderProgress`.
+- **VideoShotCharacter**: junction (shot ↔ character) with role (primary/secondary/background), position, duration.
+- **VideoWorkflow**: ComfyUI template. `workflowJson`, `nodeMapping` (maps semantic names → node IDs), `workflowType` (prebake/broadcast/lipsync/postprod/custom). `injectParameters()` deep-clones workflow + overwrites `node.inputs`.
 
-## Key Models
+## Design Principles
 
-- `Character` — Virtual character with voice + visual identity (renamed from PersonalityProfile)
-- `Performer` — Physical likeness/face DNA for IP-Adapter FaceID generation
-- `Scene` — 360° panorama or standard background with anchor points, lighting profiles
-- `VideoComposition` — Publishable container: fps, width, height, render specs
-- `VideoSequence` — Thematic section with transitions (extends Content)
-- `VideoShot` — Atomic generation unit: durationInFrames, scriptText, trimming (extends Content)
-- `VideoShotCharacter` — Join table: shot + character with role (primary/secondary/background) and position
-- `VideoWorkflow` — ComfyUI workflow templates with node mappings for dynamic parameter injection
-- `CompositeJob` — Batch rendering job tracking
+- **Store frames, compute seconds**: `durationInFrames` everywhere; seconds = frames / fps
+- **Content inheritance**: VideoShot, VideoSequence, VideoComposition all extend Content from smrt-content
+- **Hierarchy**: Composition → Sequence → Shot → ShotCharacter
 
-## Key Patterns
+## Gotchas
 
-- **Video hierarchy**: Composition → Sequence → Shot → ShotCharacter
-- **Asset layer**: Each model has a corresponding STI asset subclass (CharacterAsset, SceneAsset, etc.)
-- **ComfyUI integration**: VideoWorkflow stores workflow JSON with node mappings for seed images, audio, prompts
-- **Workflow types**: prebake, broadcast, lipsync, postprod, custom
-- **Multi-tenancy**: Optional tenant scoping via `@TenantScoped`
-- **STI throughout**: Most models use `tableStrategy: 'sti'`
-
-## Dependencies
-
-- `@happyvertical/smrt-core`, `@happyvertical/smrt-tenancy`
-- `@happyvertical/smrt-content` (Content base class for shots, sequences)
-- `@happyvertical/smrt-assets` (Asset subclasses)
-- `@happyvertical/smrt-profiles`, `@happyvertical/smrt-config`
-- `@happyvertical/smrt-voice` (VoiceProfile FK)
-- `@happyvertical/utils`
+- **PersonalityProfile → Character rename**: old name still exported for backwards compatibility
+- **ComfyUI injectParameters()**: assumes `node.inputs` exists; warnings logged in dev mode
+- **Frame arithmetic**: `trimBeforeFrames`/`trimAfterFrames` require manual effective frame calculation
+- **Word timings from external TTS**: `wordTimings` array not generated by framework — requires external provider
+- **IP-Adapter weights**: `faceEmbedding` upload not handled; weight is metadata-only (0.5-1.0)
+- **Optional tenancy** on all core models

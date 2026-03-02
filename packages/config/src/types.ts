@@ -1,6 +1,25 @@
 /**
- * Global SMRT framework options
- * These apply to all modules unless overridden
+ * Global SMRT framework options that apply to all modules unless overridden.
+ *
+ * Placed under the `smrt` key in `smrt.config.js`. Values here propagate
+ * as the lowest-priority base for every `getModuleConfig()` and
+ * `getPackageConfig()` call.
+ *
+ * @example
+ * ```js
+ * // smrt.config.js
+ * export default defineConfig({
+ *   smrt: {
+ *     logLevel: 'debug',
+ *     environment: 'development',
+ *     embeddings: { provider: 'local' },
+ *   },
+ * });
+ * ```
+ *
+ * @see {@link SmrtConfig}
+ * @see {@link getModuleConfig}
+ * @see {@link getPackageConfig}
  */
 export interface SmrtGlobalConfig {
   cacheDir?: string;
@@ -123,7 +142,9 @@ export interface SmrtGlobalConfig {
 // ============================================================================
 
 /**
- * PostgreSQL-specific migration settings
+ * PostgreSQL-specific migration settings.
+ *
+ * Nested under `migrations.postgres` in {@link MigrationsConfig}.
  */
 export interface MigrationsPostgresConfig {
   /**
@@ -150,9 +171,13 @@ export interface MigrationsPostgresConfig {
 }
 
 /**
- * Database migrations configuration
+ * Database migrations configuration.
  *
- * Controls how migrations are generated, stored, and applied.
+ * Controls how migrations are generated, stored, and applied. Placed under
+ * the `cli.migrations` key in `smrt.config.js` and consumed by
+ * `@happyvertical/smrt-cli` migration commands (`smrt db:migrate`, etc.).
+ *
+ * @see {@link CliConfig}
  */
 export interface MigrationsConfig {
   /**
@@ -228,7 +253,12 @@ export interface MigrationsConfig {
 }
 
 /**
- * Database configuration for CLI commands
+ * Database connection configuration for CLI commands.
+ *
+ * Placed under `cli.database` in `smrt.config.js`. Used by
+ * `@happyvertical/smrt-cli` to connect for migration and inspection commands.
+ *
+ * @see {@link CliConfig}
  */
 export interface DatabaseConfig {
   /**
@@ -248,9 +278,23 @@ export interface DatabaseConfig {
 }
 
 /**
- * CLI package configuration
+ * CLI package configuration.
  *
- * Used by @happyvertical/smrt-cli for database and migration commands.
+ * Placed under the `cli` key in `smrt.config.js`. Consumed by
+ * `@happyvertical/smrt-cli` for `smrt db:*` and migration commands.
+ *
+ * @example
+ * ```js
+ * export default defineConfig({
+ *   cli: {
+ *     database: { type: 'sqlite', url: 'file:./local.db' },
+ *     migrations: { mode: 'file', directory: './migrations' },
+ *   },
+ * });
+ * ```
+ *
+ * @see {@link DatabaseConfig}
+ * @see {@link MigrationsConfig}
  */
 export interface CliConfig {
   /**
@@ -269,7 +313,9 @@ export interface CliConfig {
 // ============================================================================
 
 /**
- * A navigation link item
+ * A single navigation link item used in site menus.
+ *
+ * @see {@link SiteNavigation}
  */
 export interface SiteNavigationLink {
   label: string;
@@ -278,7 +324,10 @@ export interface SiteNavigationLink {
 }
 
 /**
- * Site navigation structure
+ * Site navigation structure containing primary and optional footer links.
+ *
+ * @see {@link SiteConfig}
+ * @see {@link SiteNavigationLink}
  */
 export interface SiteNavigation {
   /** Primary navigation links (header) */
@@ -288,7 +337,9 @@ export interface SiteNavigation {
 }
 
 /**
- * Geographic location for the site
+ * Geographic location for the site, used for proximity search and display.
+ *
+ * @see {@link SiteConfig}
  */
 export interface SiteLocation {
   /** Display name (e.g., "Bentley" or "Bentley, AB") */
@@ -302,7 +353,11 @@ export interface SiteLocation {
 }
 
 /**
- * Site theme/branding colors
+ * Site theme and branding color palette.
+ *
+ * Colors should be provided as CSS hex values (e.g., `'#3b82f6'`).
+ *
+ * @see {@link SiteConfig}
  */
 export interface SiteTheme {
   /** Primary brand color (hex) */
@@ -314,7 +369,9 @@ export interface SiteTheme {
 }
 
 /**
- * Publisher/organization information
+ * Publisher or organization information displayed in site footers and metadata.
+ *
+ * @see {@link SiteConfig}
  */
 export interface SitePublisher {
   /** Organization name (e.g., "Blindman Press") */
@@ -326,8 +383,30 @@ export interface SitePublisher {
 }
 
 /**
- * Site identity and configuration
- * Used by site templates to define site-specific settings
+ * Site identity and configuration for SMRT site templates.
+ *
+ * Placed under the `site` key in `smrt.config.js`. Retrieved at runtime
+ * via {@link getSiteConfig}. Used by site templates
+ * (`template-sveltekit`, `template-site-static-json`) to define name,
+ * description, navigation, location, and theme.
+ *
+ * @example
+ * ```js
+ * export default defineConfig({
+ *   site: {
+ *     name: 'Bentley Alberta',
+ *     description: 'Community news for Bentley, AB',
+ *     url: 'https://bentley.ca',
+ *     location: { name: 'Bentley', latitude: 52.4, longitude: -113.9, timezone: 'America/Edmonton' },
+ *     navigation: { primary: [{ label: 'Home', href: '/' }] },
+ *   },
+ * });
+ * ```
+ *
+ * @see {@link getSiteConfig}
+ * @see {@link SiteLocation}
+ * @see {@link SiteNavigation}
+ * @see {@link SiteTheme}
  */
 export interface SiteConfig {
   /** Full site name (e.g., "Bentley Alberta") */
@@ -364,7 +443,20 @@ export interface SiteConfig {
 // ============================================================================
 
 /**
- * Filter operators for export queries
+ * Filter operators for export queries.
+ *
+ * Used as values in {@link ExportFileConfig.filters} to build SQL `WHERE`
+ * clauses when exporting records to static files.
+ *
+ * @example
+ * ```js
+ * filters: {
+ *   publishDate: { gte: '2025-01-01', lt: '2026-01-01' },
+ *   status: { in: ['published', 'featured'] },
+ * }
+ * ```
+ *
+ * @see {@link ExportFileConfig}
  */
 export interface ExportFilterValue {
   /** Equals (shorthand: just the value) */
@@ -386,7 +478,28 @@ export interface ExportFilterValue {
 }
 
 /**
- * Configuration for a single export file
+ * Configuration for a single SSG export file.
+ *
+ * Each key in {@link ExportConfig} (besides `fieldExportDefault` and `format`)
+ * becomes the output filename. Records are queried from the database, filtered,
+ * ordered, and written to `{key}.json` (or the specified format).
+ *
+ * @example
+ * ```js
+ * export default defineConfig({
+ *   export: {
+ *     articles: {
+ *       types: ['Article'],
+ *       filters: { status: ['published'] },
+ *       orderBy: '-publishDate',
+ *       limit: 500,
+ *     },
+ *   },
+ * });
+ * ```
+ *
+ * @see {@link ExportConfig}
+ * @see {@link ExportFilterValue}
  */
 export interface ExportFileConfig {
   /**
@@ -446,9 +559,25 @@ export interface ExportFileConfig {
 }
 
 /**
- * Export configuration for static site generation
+ * Export configuration for static site generation.
  *
- * Controls how data is exported from database to JSON files for build.
+ * Placed under the `export` key in `smrt.config.js`. Controls how database
+ * records are exported to static files during SSG builds. Each additional
+ * key beyond `fieldExportDefault` and `format` defines a named export file.
+ *
+ * @example
+ * ```js
+ * export default defineConfig({
+ *   export: {
+ *     fieldExportDefault: true,
+ *     articles: { types: ['Article'], filters: { status: ['published'] } },
+ *     games: { types: ['Game'], orderBy: '-date', format: 'ndjson' },
+ *   },
+ * });
+ * ```
+ *
+ * @see {@link ExportFileConfig}
+ * @see {@link exportConfig}
  */
 export interface ExportConfig {
   /**
@@ -479,39 +608,86 @@ export interface ExportConfig {
 // ============================================================================
 
 /**
- * Main SMRT configuration structure
+ * Root SMRT configuration structure.
+ *
+ * This is the shape of the object returned by `smrt.config.{js,ts,json}` and
+ * consumed by {@link loadConfig}. Use {@link defineConfig} for type-safe
+ * authoring with IDE auto-completion.
+ *
+ * Priority order (highest to lowest):
+ * 1. Runtime overrides set via {@link setConfig}
+ * 2. File-based config loaded by {@link loadConfig}
+ * 3. Defaults passed to {@link getModuleConfig} / {@link getPackageConfig}
+ *
+ * @example
+ * ```js
+ * // smrt.config.js
+ * import { defineConfig } from '@happyvertical/smrt-config';
+ *
+ * export default defineConfig({
+ *   smrt: { logLevel: 'info', environment: 'production' },
+ *   site: { name: 'My Site', ... },
+ *   modules: { praeco: { rssLimit: 50 } },
+ *   packages: { ai: { defaultModel: 'gpt-4o' } },
+ * });
+ * ```
+ *
+ * @see {@link loadConfig}
+ * @see {@link defineConfig}
+ * @see {@link SmrtGlobalConfig}
  */
 export interface SmrtConfig {
-  // Global SMRT framework options
+  /** Global SMRT framework options — lowest-priority base for all modules. */
   smrt?: SmrtGlobalConfig;
 
-  // Site identity and configuration (for site templates)
+  /** Site identity and configuration (for site templates). */
   site?: SiteConfig;
 
-  // Export configuration for static site generation
+  /** Export configuration for static site generation. */
   export?: ExportConfig;
 
-  // Module-scoped configurations
+  /**
+   * Module-scoped configurations keyed by module name.
+   * Retrieved via {@link getModuleConfig}.
+   */
   modules?: {
     [moduleName: string]: Record<string, unknown>;
   };
 
-  // Package-scoped configurations
+  /**
+   * Package-scoped configurations keyed by package name.
+   * Retrieved via {@link getPackageConfig}.
+   */
   packages?: {
     [packageName: string]: Record<string, unknown>;
   };
 }
 
 /**
- * Options for loading configuration
+ * Options accepted by {@link loadConfig}.
+ *
+ * All fields are optional; omitting them triggers cosmiconfig's default
+ * search behaviour (scan `cwd` upward for `smrt.config.{js,mjs,cjs,json}`).
  */
 export interface LoadConfigOptions {
-  // Custom config file path (default: auto-detect in cwd)
+  /**
+   * Absolute or relative path to a specific config file.
+   * When provided, cosmiconfig loads this file directly instead of searching.
+   */
   configPath?: string;
 
-  // Search parent directories (default: true)
+  /**
+   * Whether to search parent directories when no config is found in `cwd`.
+   *
+   * @default true
+   */
   searchParents?: boolean;
 
-  // Cache loaded config (default: true)
+  /**
+   * Whether to cache the loaded config in `globalThis.__smrtLoaderCachedConfig`.
+   * Disable for test isolation or hot-reload scenarios.
+   *
+   * @default true
+   */
   cache?: boolean;
 }

@@ -57,7 +57,45 @@ interface RegisteredHandler {
 }
 
 /**
- * DispatchBus for inter-agent communication
+ * Central hub for inter-agent messaging with both in-memory and persistent delivery.
+ *
+ * The `DispatchBus` combines two complementary delivery models:
+ *
+ * - **In-memory handlers** (`on(pattern, handler)`) — called synchronously (fire-and-forget)
+ *   when a dispatch is emitted. Fast, but lost on process restart.
+ * - **Persistent subscriptions** (`subscribe({ signalType, subscriber })`) — stored in
+ *   `_smrt_dispatch_subscriptions` and processed later by calling `process(subscriber, handler)`.
+ *   Survive restarts; suitable for background workers and scheduled agents.
+ *
+ * Signal types support single-segment wildcards: `'campaign.*'` matches `'campaign.completed'`
+ * and `'campaign.failed'`, but not `'campaign.phase.two'`.
+ *
+ * Dispatch lifecycle: `pending → processing → completed` (or `failed` on handler error).
+ * Use `retry()` to reset failed dispatches back to `pending`.
+ *
+ * Create instances via `createDispatchBus()` — do not use `new DispatchBus()` directly
+ * in application code.
+ *
+ * @example
+ * ```typescript
+ * const bus = await createDispatchBus({ db: myDb });
+ *
+ * // In-memory: immediate, fire-and-forget
+ * bus.on('invoice.paid', async (payload) => {
+ *   console.log('Invoice paid:', payload.invoiceId);
+ * });
+ *
+ * // Persistent: processed by 'notifications' agent on next run
+ * await bus.subscribe({ signalType: 'invoice.*', subscriber: 'notifications' });
+ *
+ * // Emit (notifies in-memory handlers immediately, stores persistent dispatch)
+ * await bus.emit('invoice.paid', { invoiceId: 'inv-001' }, { source: 'billing' });
+ *
+ * // Later, in the notifications agent:
+ * await bus.process('notifications', async (payload) => {
+ *   await sendEmail(payload.invoiceId);
+ * });
+ * ```
  */
 export class DispatchBus {
   private db: DatabaseInterface;
@@ -137,18 +175,44 @@ export class DispatchBus {
   }
 
   /**
-   * Emit a dispatch message
+   * Emits a dispatch message.
    *
-   * Creates pending dispatch(es) and immediately notifies any in-memory handlers.
+   * Two things happen atomically (from the caller's perspective):
+   * 1. One or more `Dispatch` rows are inserted with `status: 'pending'` into `_smrt_dispatch`.
+   * 2. All matching in-memory handlers (registered via `on()`) are invoked
+   *    fire-and-forget (errors are caught and logged, not thrown back to the caller).
    *
-   * For fan-out subscribers, a separate dispatch copy is created per subscriber.
-   * For compete subscribers, a single shared dispatch is created.
+   * Persistent subscriptions registered via `subscribe()` will see this dispatch
+   * the next time `process(subscriber, handler)` is called for their subscriber name.
+   *
+   * **Delivery modes** affect how dispatches are created:
+   * - `compete` subscribers share a single dispatch (`target_subscriber = NULL`).
+   *   First subscriber to `process()` claims it (at-most-once delivery).
+   * - `fanout` subscribers each get their own dispatch copy (`target_subscriber` set
+   *   to the subscriber name), so each processes independently.
+   *
    * If no subscriptions exist, one dispatch is created for future processing.
    *
-   * @param type - Signal type (e.g., 'campaign.completed')
-   * @param payload - Data to send
-   * @param options - Emission options (source, sourceId, metadata)
-   * @returns A persisted dispatch (the compete dispatch, or the first fanout copy if fanout-only)
+   * @param type - Signal type string, e.g. `'campaign.completed'` or `'invoice.paid'`
+   * @param payload - Any JSON-serializable data to attach to the dispatch
+   * @param options.source - Name of the emitting agent/component (default `'unknown'`)
+   * @param options.sourceId - Optional ID of the specific emitting entity
+   * @param options.metadata - Optional additional JSON metadata for the dispatch record
+   * @returns A persisted `Dispatch` instance (the compete dispatch, or the first fanout copy if fanout-only)
+   *
+   * @example
+   * ```typescript
+   * const dispatch = await bus.emit(
+   *   'campaign.completed',
+   *   { campaignId: 'cmp-001', impressions: 10_000 },
+   *   { source: 'suasor', sourceId: agentId },
+   * );
+   * console.log(dispatch.id); // UUID of the created dispatch record
+   * ```
+   *
+   * @see {@link on} for in-memory handlers
+   * @see {@link subscribe} for persistent subscriptions
+   * @see {@link process} to consume pending dispatches
    */
   async emit(
     type: string,
@@ -213,13 +277,30 @@ export class DispatchBus {
   }
 
   /**
-   * Register an in-memory handler for a signal type
+   * Registers an in-memory handler for a signal type pattern.
    *
-   * In-memory handlers are called immediately when a dispatch is emitted.
-   * They don't require processing and are useful for real-time reactions.
+   * In-memory handlers are called immediately (fire-and-forget) during `emit()`.
+   * They are stored only in memory and lost on process restart — use `subscribe()`
+   * for durable, restart-safe subscriptions.
    *
-   * @param pattern - Signal type pattern (supports wildcards)
-   * @param handler - Handler function
+   * Pattern matching supports a single-segment wildcard `*`:
+   * - `'campaign.*'` matches `'campaign.completed'` and `'campaign.failed'`
+   * - `'campaign.*'` does **not** match `'campaign.phase.two'`
+   *
+   * Multiple handlers may be registered for the same pattern — all will be called.
+   *
+   * @param pattern - Signal type pattern, optionally with a trailing `.*` wildcard
+   * @param handler - Async or sync function to call with `(payload, metadata)`
+   *
+   * @example
+   * ```typescript
+   * bus.on('invoice.*', async (payload, metadata) => {
+   *   console.log(`Invoice event from ${metadata.source}:`, payload);
+   * });
+   * ```
+   *
+   * @see {@link off} to remove a handler
+   * @see {@link subscribe} for persistent (restart-safe) subscriptions
    */
   on(pattern: string, handler: DispatchHandler): void {
     const subscription = new DispatchSubscription({
@@ -258,15 +339,43 @@ export class DispatchBus {
   }
 
   /**
-   * Create a persistent subscription
+   * Creates or updates a persistent subscription in the database.
    *
-   * Persistent subscriptions are stored in the database and processed
-   * when process() is called for the subscriber.
+   * Persistent subscriptions survive process restarts. When `process(subscriber, handler)`
+   * is called later, all pending dispatches matching this subscriber's signal patterns
+   * will be delivered.
+   *
+   * Calling `subscribe()` with the same `signalType`/`subscriber` pair is idempotent
+   * (upsert) — it is safe to call on every agent startup.
    *
    * Set `delivery: 'fanout'` to give each subscriber their own dispatch copy.
    * Default is `'compete'` (at-most-once, first subscriber to process claims it).
    *
-   * @param options - Subscription options
+   * @param options.signalType - Signal type pattern to subscribe to (wildcards supported)
+   * @param options.subscriber - Name that identifies this subscriber (e.g. agent class name)
+   * @param options.handler - Optional method name on the subscriber to call (default `'handleDispatch'`)
+   * @param options.delivery - `'compete'` (default) for at-most-once, `'fanout'` for per-subscriber copies
+   * @param options.enabled - If `false`, subscription is created but disabled (default `true`)
+   *
+   * @example
+   * ```typescript
+   * // Subscribe on agent startup (idempotent)
+   * await bus.subscribe({ signalType: 'campaign.*', subscriber: 'FiscusAgent' });
+   *
+   * // Fan-out: each subscriber gets their own dispatch copy
+   * await bus.subscribe({
+   *   signalType: 'campaign.*',
+   *   subscriber: 'AuditorAgent',
+   *   delivery: 'fanout',
+   * });
+   *
+   * // Later, process matching pending dispatches
+   * await bus.process('FiscusAgent', async (payload, metadata) => { ... });
+   * ```
+   *
+   * @see {@link process} to consume pending dispatches for this subscriber
+   * @see {@link unsubscribe} to remove the subscription
+   * @see {@link on} for non-persistent in-memory handling
    */
   async subscribe(options: DispatchSubscribeOptions): Promise<void> {
     await this.initialize();
@@ -298,15 +407,36 @@ export class DispatchBus {
   }
 
   /**
-   * Process pending dispatches for a subscriber
+   * Processes pending dispatches for a named subscriber.
    *
-   * Finds all pending dispatches that match the subscriber's subscriptions
-   * and invokes the provided handler for each.
+   * For each matching `pending` dispatch:
+   * 1. Sets status to `processing`
+   * 2. Calls `handler(payload, metadata)`
+   * 3. On success: sets status to `completed`
+   * 4. On error: sets status to `failed` (stores the error message)
    *
-   * @param subscriber - Subscriber name
-   * @param handler - Handler function to call for each dispatch
-   * @param options - Processing options
-   * @returns Number of dispatches processed
+   * Uses a wildcard-aware query strategy: subscriptions with `*` patterns fetch
+   * all pending dispatches and filter in memory; exact-match subscriptions use
+   * a direct SQL `IN` query for efficiency.
+   *
+   * @param subscriber - The subscriber name (must match a `subscribe()` call)
+   * @param handler - Function to call for each pending dispatch
+   * @param options.limit - Maximum dispatches to process in one call (default 100)
+   * @param options.signalTypes - Optional filter to process only specific signal types
+   * @returns Number of dispatches successfully processed (excludes failed)
+   *
+   * @example
+   * ```typescript
+   * const count = await bus.process('FiscusAgent', async (payload, metadata) => {
+   *   if (metadata.signalType === 'campaign.completed') {
+   *     await generateInvoice(payload.campaignId);
+   *   }
+   * });
+   * console.log(`Processed ${count} dispatches`);
+   * ```
+   *
+   * @see {@link subscribe} to register the persistent subscription first
+   * @see {@link retry} to reset failed dispatches back to pending
    */
   async process(
     subscriber: string,

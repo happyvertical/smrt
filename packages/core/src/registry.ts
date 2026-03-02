@@ -5305,35 +5305,72 @@ export class ObjectRegistry {
 }
 
 /**
- * @smrt decorator for registering classes with the global registry
+ * Registers a `SmrtObject` or `SmrtCollection` subclass with the global `ObjectRegistry`.
  *
- * Captures the original class name before minification and stores it as
- * a static property, ensuring table names remain consistent in production builds.
+ * This decorator is the primary entry point for the SMRT framework. Applying it to a class:
  *
- * Supports both SmrtObject and SmrtCollection subclasses.
+ * 1. Captures the original class name before minification and stores it as the
+ *    `SMRT_TABLE_NAME` static property — ensuring table names are stable in production builds.
+ * 2. Registers class metadata (fields, schema, config) in the singleton `ObjectRegistry`.
+ * 3. Enables automatic code generation: REST API endpoints (`api`), CLI commands (`cli`),
+ *    and MCP server tools (`mcp`) are generated at build time from the registered config.
+ * 4. Activates lifecycle hooks (`hooks.beforeSave`, `hooks.afterDelete`, etc.).
+ * 5. Configures AI-callable methods exposed to `is()` / `do()` via function calling (`ai`).
+ * 6. Enables automatic vector embedding generation (`embeddings`).
+ *
+ * Apply to `SmrtCollection` subclasses as well — the decorator uses `_itemClass` to
+ * register the collection under the correct table name and creates a collection-to-table
+ * lookup used by the CLI and introspection tools.
+ *
+ * For Single Table Inheritance (STI), set `tableStrategy: 'sti'` on the base class only.
+ * Child classes inherit the strategy automatically.
+ *
+ * @param config - Optional configuration for the class. All fields are optional; defaults
+ *   are derived from the class name and framework conventions.
+ * @returns A class decorator that registers the class and returns the original constructor
  *
  * @example
  * ```typescript
+ * // Basic usage — convention-based defaults
  * @smrt()
  * class Product extends SmrtObject {
  *   @field({ required: true })
  *   name: string = '';
- *
- *   @field({ min: 0 })
- *   price: number = 0.0;
+ *   price: number = 0.0; // 0.0 → DECIMAL column
  * }
  *
- * @smrt({ tableName: 'custom_products' })
- * class ProductCollection extends SmrtCollection<Product> {
+ * // Paired collection (required for collection.create())
+ * @smrt()
+ * class Products extends SmrtCollection<Product> {
  *   static readonly _itemClass = Product;
  * }
  *
- * @smrt({ api: { exclude: ['delete'] } })
- * class SensitiveData extends SmrtObject {
- *   @field({ encrypted: true })
- *   secret: string = '';
+ * // STI base class
+ * @smrt({ tableStrategy: 'sti' })
+ * class Content extends SmrtObject {
+ *   title: string = '';
+ * }
+ *
+ * // STI child — inherits strategy, adds @meta() fields stored in _meta_data JSON
+ * @smrt()
+ * class Article extends Content {
+ *   @meta() wordCount: number = 0;
+ * }
+ *
+ * // Restrict generated API surface
+ * @smrt({ api: { exclude: ['delete'] }, mcp: true, cli: false })
+ * class Invoice extends SmrtObject {}
+ *
+ * // Junction/upsert table with natural key
+ * @smrt({ conflictColumns: ['event_id', 'profile_id'] })
+ * class EventParticipant extends SmrtObject {
+ *   eventId: string = '';
+ *   profileId: string = '';
  * }
  * ```
+ *
+ * @see {@link SmartObjectConfig} for all available configuration options
+ * @see {@link field} / {@link meta} / {@link foreignKey} for field decorators
  */
 export function smrt(config: SmartObjectConfig = {}) {
   return <T extends abstract new (...args: any[]) => any>(ctor: T): T => {

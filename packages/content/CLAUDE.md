@@ -1,51 +1,47 @@
 # @happyvertical/smrt-content
 
-Content processing module for SMRT framework - handles documents, web content, and media.
+STI content management with Article/Document/Mirror types, thumbnail generation, and asset associations.
 
-## Svelte Components
+## Models
 
-This package includes Svelte 5 UI components for content display.
+- **Content** (STI base): `type`, `variant` (generator:domain:specific format), `status` (published/draft/review/archived/deleted), `state`, `category` (hierarchical path with `/` separator), `metadata` JSON, `tags` array, `thumbnailAssetId`
+- **Article**, **ContentDocument**, **Mirror**: STI subclasses — all share `contents` table via `_meta_type`
 
-### Installation
+## Contents Collection
 
-```bash
-npm install @happyvertical/smrt-content
-```
+| Method | Purpose |
+|--------|---------|
+| `mirror({ url })` | Downloads URL content, extracts text, creates `type: 'mirror'`. Idempotent (returns existing if URL already mirrored). |
+| `syncContentDir({ contentDir })` | Batch exports articles as markdown with YAML frontmatter |
+| `generateMissingThumbnails(options)` | Bulk thumbnail generation for content missing `thumbnailAssetId` |
+| `findWithGlobals(tenantId)` | Returns tenant-specific + global (tenantId=null) content |
+| `getOrUpsert({ slug, context })` | Upsert by slug+context combination |
 
-### Usage
+## Thumbnail Generation
 
-```typescript
-import {
-  ArticleCard,
-  ArticleList,
-  Markdown,
-} from '@happyvertical/smrt-content/svelte';
-```
+Three strategies via ThumbnailGenerator:
+- **headline-card**: title on branded background (via `@happyvertical/images`)
+- **static-map**: requires `metadata.latitude`/`longitude` (via `@happyvertical/geo`)
+- **ai-generate**: AI image generation (dynamic import of `@happyvertical/ai`)
 
-### Components
+## Asset Associations
 
-- **ArticleCard** - Article preview card with title, excerpt, and metadata
-- **ArticleList** - Grid or list of article cards
-- **Markdown** - Markdown content renderer
-
-### Types
+`content_assets` junction table (lazy-created on first `addAsset()` call):
 
 ```typescript
-import type {
-  Article,
-  ArticleCardProps,
-  ArticleListProps,
-  MarkdownProps,
-} from '@happyvertical/smrt-content/svelte';
+await content.addAsset(image, 'thumbnail', 0);  // relationship, sortOrder
+await content.getAssets('attachment');
+await content.setThumbnail(image);  // convenience: adds asset + updates thumbnailAssetId
 ```
 
-### Auto-registration
+## Category Navigation
 
-Importing from `/svelte` auto-registers components with `ModuleUIRegistry`:
+`getCategorySegments()`, `getParentCategory()`, `getRootCategory()`, `getAncestorPaths()`, `isInCategory(path, includeChildren?)`
 
-```typescript
-import '@happyvertical/smrt-content/svelte'; // Auto-registers all components
+## Gotchas
 
-// Later, retrieve from registry
-const Component = ModuleUIRegistry.get('@happyvertical/smrt-content', 'article-card');
-```
+- **content_assets table created on-demand**: doesn't exist until first `addAsset()` call
+- **STI discriminator**: qualified names like `@happyvertical/smrt-content:Article`
+- **Optional tenancy**: `@TenantScoped({ mode: 'optional' })` — null tenantId = global content
+- **Metadata is primary extension pattern**: use JSON `metadata` field, not additional class fields
+- **Static map coordinates**: uses unary `+` for strict parsing (rejects "45invalid" unlike parseFloat)

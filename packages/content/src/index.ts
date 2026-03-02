@@ -1,4 +1,8 @@
-// Content processing module for SMRT framework
+/**
+ * @packageDocumentation
+ * STI content types (Article, ContentDocument, Mirror) with thumbnail generation
+ * strategies, asset associations, and markdown serialization utilities.
+ */
 
 export type { ContentOptions } from './content';
 export { Content } from './content';

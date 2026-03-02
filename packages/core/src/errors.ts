@@ -6,7 +6,29 @@
  */
 
 /**
- * Base error class for all SMRT framework errors
+ * Abstract base class for all SMRT framework errors.
+ *
+ * Adds a structured `code` (machine-readable string constant), a `category`
+ * (coarse error domain), optional structured `details`, and an optional
+ * causal `Error` chain on top of the standard `Error` class.
+ *
+ * Never throw `SmrtError` directly — use one of the concrete subclasses
+ * (`DatabaseError`, `AIError`, `ValidationError`, etc.) or their static
+ * factory methods for consistent error codes and messages.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await product.save();
+ * } catch (err) {
+ *   if (err instanceof ValidationError) {
+ *     console.error(err.code, err.details); // 'VALIDATION_REQUIRED_FIELD', { fieldName, objectType }
+ *   }
+ *   if (err instanceof SmrtError) {
+ *     logger.error(ErrorUtils.sanitizeError(err));
+ *   }
+ * }
+ * ```
  */
 export abstract class SmrtError extends Error {
   public readonly code: string;
@@ -64,7 +86,18 @@ export abstract class SmrtError extends Error {
 }
 
 /**
- * Database-related errors
+ * Errors originating from database operations.
+ *
+ * Use the static factory methods rather than the constructor directly:
+ * - `DatabaseError.connectionFailed(url, cause)` — DB connection failure
+ * - `DatabaseError.queryFailed(query, cause)` — SQL execution error
+ * - `DatabaseError.schemaError(table, op, cause)` — DDL/migration error
+ * - `DatabaseError.constraintViolation(constraint, value, cause)` — FK/CHECK/UNIQUE
+ * - `DatabaseError.corruptedData(field, class, cause)` — unparse-able column data
+ * - `DatabaseError.missingDiscriminator(class, rowId)` — STI row missing `_meta_type`
+ * - `DatabaseError.schemaMissing(table, class)` — table not yet migrated
+ *
+ * All errors have `category: 'database'` and codes prefixed with `DB_`.
  */
 export class DatabaseError extends SmrtError {
   constructor(
@@ -161,7 +194,16 @@ export class DatabaseError extends SmrtError {
 }
 
 /**
- * AI integration errors
+ * Errors from AI provider integrations.
+ *
+ * Use the static factory methods:
+ * - `AIError.providerError(provider, operation, cause)` — generic provider failure
+ * - `AIError.rateLimitExceeded(provider, retryAfter)` — rate limit hit
+ * - `AIError.invalidResponse(provider, response)` — unexpected response shape
+ * - `AIError.authenticationFailed(provider)` — bad API key / credentials
+ *
+ * All errors have `category: 'ai'` and codes prefixed with `AI_`.
+ * AI errors are considered retryable by `ErrorUtils.isRetryable()`.
  */
 export class AIError extends SmrtError {
   constructor(
@@ -212,7 +254,14 @@ export class AIError extends SmrtError {
 }
 
 /**
- * Filesystem operation errors
+ * Errors from filesystem operations.
+ *
+ * Use the static factory methods:
+ * - `FilesystemError.fileNotFound(path)` — file does not exist
+ * - `FilesystemError.permissionDenied(path, operation)` — access denied
+ * - `FilesystemError.diskSpaceExceeded(path, requiredBytes)` — insufficient space
+ *
+ * All errors have `category: 'filesystem'` and codes prefixed with `FS_`.
  */
 export class FilesystemError extends SmrtError {
   constructor(
@@ -251,7 +300,19 @@ export class FilesystemError extends SmrtError {
 }
 
 /**
- * Data validation errors
+ * Input/data validation errors thrown before or during a database operation.
+ *
+ * `save()` throws `ValidationError` when field validation fails. The collection's
+ * `convertWhereKeys()` throws it for invalid WHERE clause operators or field names.
+ * `ValidationError` is **not** retried by `ErrorUtils.withRetry()`.
+ *
+ * Use the static factory methods:
+ * - `ValidationError.requiredField(field, objectType)` — missing required field
+ * - `ValidationError.invalidValue(field, value, expected)` — wrong type/format
+ * - `ValidationError.uniqueConstraint(field, value)` — duplicate unique value
+ * - `ValidationError.rangeError(field, value, min?, max?)` — out of allowed range
+ *
+ * All errors have `category: 'validation'` and codes prefixed with `VALIDATION_`.
  */
 export class ValidationError extends SmrtError {
   constructor(
@@ -313,7 +374,15 @@ export class ValidationError extends SmrtError {
 }
 
 /**
- * Network and external service errors
+ * Errors from HTTP and external network operations.
+ *
+ * Use the static factory methods:
+ * - `NetworkError.requestFailed(url, status?, body?)` — non-2xx response or connection failure
+ * - `NetworkError.timeout(url, timeoutMs)` — request exceeded timeout
+ * - `NetworkError.serviceUnavailable(service, reason?)` — external service down
+ *
+ * All errors have `category: 'network'` and codes prefixed with `NETWORK_`.
+ * Network errors are considered retryable by `ErrorUtils.isRetryable()`.
  */
 export class NetworkError extends SmrtError {
   constructor(
@@ -360,7 +429,21 @@ export class NetworkError extends SmrtError {
 }
 
 /**
- * Configuration and setup errors
+ * Errors from misconfigured or incompatible class/framework setup.
+ *
+ * These are typically thrown during class registration (i.e. at module load time),
+ * not during normal request handling.
+ *
+ * Use the static factory methods:
+ * - `ConfigurationError.missingConfiguration(key, context?)` — missing required config
+ * - `ConfigurationError.invalidConfiguration(key, value, expected)` — wrong config type/value
+ * - `ConfigurationError.initializationFailed(component, cause?)` — component failed to start
+ * - `ConfigurationError.circularInheritance(class, chain)` — circular class inheritance
+ * - `ConfigurationError.incompatibleStrategy(class, strategy, parent, parentStrategy)` — STI mismatch
+ * - `ConfigurationError.unregisteredBaseClass(child, base)` — STI base not yet registered
+ *
+ * All errors have `category: 'configuration'` and codes prefixed with `CONFIG_`.
+ * Configuration errors are **not** retried by `ErrorUtils.withRetry()`.
  */
 export class ConfigurationError extends SmrtError {
   constructor(
@@ -451,7 +534,18 @@ export class ConfigurationError extends SmrtError {
 }
 
 /**
- * Runtime execution errors
+ * Errors representing unexpected runtime failures not covered by other categories.
+ *
+ * `RuntimeError` is the catch-all for internal framework errors — invalid object
+ * state, exhausted resources, or failures in operations like `save()` and `loadFromId()`
+ * that propagate from an unknown cause.
+ *
+ * Use the static factory methods:
+ * - `RuntimeError.operationFailed(operation, context?, cause?)` — generic operation failure
+ * - `RuntimeError.invalidState(message, context?)` — unexpected object/system state
+ * - `RuntimeError.resourceExhausted(resource, limit)` — limit exceeded (e.g. connections)
+ *
+ * All errors have `category: 'runtime'` and codes prefixed with `RUNTIME_`.
  */
 export class RuntimeError extends SmrtError {
   constructor(

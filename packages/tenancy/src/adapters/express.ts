@@ -44,7 +44,14 @@ interface ExpressResponse {
 type ExpressNext = (error?: unknown) => void;
 
 /**
- * Options for Express middleware
+ * Configuration options for the Express tenancy middleware created by
+ * `createExpressMiddleware()`.
+ *
+ * Only `resolveTenantId` is required.  All callback options receive the raw
+ * Express `Request` object so you can extract tenant information from headers,
+ * subdomains, cookies, or any other request property.
+ *
+ * @see createExpressMiddleware
  */
 export interface ExpressMiddlewareOptions {
   /**
@@ -95,10 +102,40 @@ export interface ExpressMiddlewareOptions {
 }
 
 /**
- * Create Express middleware for tenant context
+ * Create an Express middleware function that establishes tenant context for
+ * every incoming request.
  *
- * @param options - Configuration options
- * @returns Express middleware function
+ * Uses `enterTenantContext()` (rather than `withTenant()`) because Express
+ * middleware returns before route handlers execute.  `enterWith()` sets the
+ * context on the current async resource so it propagates to handlers that run
+ * after `next()` is called.
+ *
+ * The resolved context is also attached directly to the request object for
+ * convenience:
+ * - `req.tenantContext` — full `TenantContextData`
+ * - `req.tenantId`      — string tenant ID shortcut
+ *
+ * When no tenant ID can be resolved, the default behaviour returns a `400`
+ * JSON response.  Customise this with the `onNoTenant` option.
+ *
+ * @param options - Middleware configuration including the required
+ *   `resolveTenantId` callback.
+ * @returns An Express-compatible middleware function `(req, res, next) => void`.
+ *
+ * @example
+ * ```typescript
+ * import express from 'express';
+ * import { createExpressMiddleware } from '@happyvertical/smrt-tenancy/adapters';
+ *
+ * const app = express();
+ * app.use(createExpressMiddleware({
+ *   resolveTenantId: (req) => req.headers['x-tenant-id'] as string,
+ *   excludePaths: ['/health', '/public/*'],
+ * }));
+ * ```
+ *
+ * @see ExpressMiddlewareOptions
+ * @see createSvelteKitHandle
  */
 export function createExpressMiddleware(options: ExpressMiddlewareOptions) {
   const {

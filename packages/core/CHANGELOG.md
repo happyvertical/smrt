@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.20.43
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use isLocalObject() in registration file generator (#988) (core)
+
+  ### Other Changes
+
+  - docs: complete CLAUDE.md audit, README cleanup, and JSDoc for all 38 packages (#989)
+  - @happyvertical/smrt-scanner@0.20.43
+  - @happyvertical/smrt-config@0.20.43
+  - @happyvertical/smrt-types@0.20.43
+
 ## 0.20.42
 
 ### Patch Changes

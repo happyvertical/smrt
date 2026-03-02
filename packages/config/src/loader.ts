@@ -18,31 +18,55 @@ declare global {
   var __smrtLoaderExplorer: ReturnType<typeof cosmiconfig> | null | undefined;
 }
 
-/**
- * Get/set cached config from globalThis
- */
+/** Retrieve the cached config from the globalThis singleton store. */
 function getCachedConfig(): SmrtConfig | null {
   return globalThis.__smrtLoaderCachedConfig ?? null;
 }
 
+/** Write the config (or null to invalidate) into the globalThis singleton store. */
 function setCachedConfig(config: SmrtConfig | null): void {
   globalThis.__smrtLoaderCachedConfig = config;
 }
 
-/**
- * Get/set cosmiconfig explorer from globalThis
- */
+/** Retrieve the cosmiconfig explorer instance from the globalThis singleton store. */
 function getExplorer(): ReturnType<typeof cosmiconfig> | null {
   return globalThis.__smrtLoaderExplorer ?? null;
 }
 
+/** Write the cosmiconfig explorer instance into the globalThis singleton store. */
 function setExplorer(exp: ReturnType<typeof cosmiconfig> | null): void {
   globalThis.__smrtLoaderExplorer = exp;
 }
 
 /**
- * Load and parse configuration from project root
- * Searches for smrt.config.{js,ts,json} files
+ * Load and parse configuration from the project root using cosmiconfig.
+ *
+ * Searches for `smrt.config.{js,mjs,cjs,json}` starting from `cwd`, walking
+ * up the directory tree unless `searchParents` is `false`. The result is
+ * cached in `globalThis.__smrtLoaderCachedConfig` so that all modules sharing
+ * the same runtime (including pnpm workspace symlinks) see the same config.
+ *
+ * Returns an empty object (`{}`) when no config file is found or when the
+ * file fails to parse — callers should always treat every field as optional.
+ *
+ * @param options - Search and caching options.
+ * @returns The parsed {@link SmrtConfig}, or `{}` if no file is found.
+ *
+ * @example
+ * ```ts
+ * import { loadConfig } from '@happyvertical/smrt-config';
+ *
+ * const config = await loadConfig();
+ * console.log(config.smrt?.logLevel); // 'debug'
+ * ```
+ *
+ * @example Load a specific file (useful in tests):
+ * ```ts
+ * const config = await loadConfig({ configPath: './fixtures/smrt.config.js', cache: false });
+ * ```
+ *
+ * @see {@link LoadConfigOptions}
+ * @see {@link clearConfigCache}
  */
 export async function loadConfig(
   options: LoadConfigOptions = {},
@@ -96,8 +120,15 @@ export async function loadConfig(
 }
 
 /**
- * Clear the config cache
- * Useful for testing or hot-reloading
+ * Clear the internal loader cache.
+ *
+ * Resets `globalThis.__smrtLoaderCachedConfig` and invalidates the cosmiconfig
+ * explorer so that the next `loadConfig()` call performs a fresh file search.
+ *
+ * This is a low-level helper. Consumer code should call {@link clearCache}
+ * from `index.ts` instead, which also clears the runtime-override store.
+ *
+ * @see {@link clearCache}
  */
 export function clearConfigCache(): void {
   setCachedConfig(null);
@@ -111,7 +142,13 @@ export function clearConfigCache(): void {
 }
 
 /**
- * Check if config is loaded and cached
+ * Return whether the config has been loaded and cached.
+ *
+ * Checks `globalThis.__smrtLoaderCachedConfig` without triggering a load.
+ * Primarily used internally; consumers can call {@link getConfig} which
+ * returns `null` when the config has not yet been loaded.
+ *
+ * @returns `true` if a cached config object exists.
  */
 export function isConfigLoaded(): boolean {
   return getCachedConfig() !== null;

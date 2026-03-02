@@ -1,33 +1,18 @@
 # @happyvertical/smrt-social
 
-Social media account management with OAuth integration and post scheduling. Supports YouTube, Instagram, TikTok, Facebook, Twitter/X, LinkedIn, and Bluesky.
+Social media account management with OAuth and post scheduling. Supports YouTube, Threads, X (Twitter), Bluesky.
 
-## Architecture
+## Models
 
-```
-src/
-  index.ts              # Export barrel
-  social-account.ts     # Social account model with OAuth tokens
-  social-post.ts        # Social post model with scheduling
-  oauth-state.ts        # OAuth state for CSRF protection and PKCE
-  types/                # Platform types, post status
-```
+- **SocialAccount** (STI): `platform`, `accessToken`/`refreshToken`, `tokenExpiresAt`, `status` (connected/expired/error), `linkBehavior` (description/reply/none). `isTokenExpired` checks with 5-min buffer. `isReady` gate checks active + connected + token present + not expired.
+- **SocialPost**: `scheduledAt`, `publishedAt`, `status` (draft/scheduled/publishing/published/failed), `analytics` JSON (views/likes/comments/shares/clicks).
+- **OAuthState** (STI): CSRF token + PKCE `codeVerifier` with 10-min TTL.
 
-## Key Models
+## Gotchas
 
-- `SocialAccount` — Platform account: accessToken, refreshToken, tokenExpiry, platformUserId, platformUsername
-- `SocialPost` — Post record: content, mediaUrls, scheduledAt, publishedAt, platformPostId
-- `OAuthState` — Temporary OAuth flow state with CSRF token and PKCE code verifier
-
-## Key Patterns
-
-- **Platform support**: youtube, instagram, tiktok, facebook, twitter, linkedin, bluesky
-- **OAuth security**: OAuthState stores CSRF tokens and PKCE code verifiers with expiry (10 min default)
-- **Token management**: Access/refresh token storage with expiry tracking
-- **Post scheduling**: Posts can be scheduled for future publishing
-- **STI**: OAuthState uses `tableStrategy: 'sti'`
-- **Multi-tenancy**: Optional tenant scoping via `@TenantScoped`
-
-## Dependencies
-
-- `@happyvertical/smrt-core`, `@happyvertical/smrt-tenancy`
+- **Tokens not encrypted**: OAuth tokens stored as plaintext — TODO for smrt-secrets integration
+- **No auto-publishing**: `scheduledAt` is metadata only — app must implement job runner to trigger publishing
+- **Analytics manual**: `analytics` field must be updated by platform sync, not auto-populated
+- **Platform enum hardcoded**: youtube/threads/x/bluesky — extending requires code changes
+- **OAuthState TTL**: 10 minutes, app must clean up expired states
+- **Optional tenancy** on all models

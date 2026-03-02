@@ -32,48 +32,66 @@ import { dirname, join } from 'node:path';
 import type { Plugin } from 'vitest/config';
 
 /**
- * Options for the SMRT Vitest plugin
+ * Configuration options for {@link smrtVitestPlugin} and
+ * {@link setupSmrtManifests}.
+ *
+ * All fields are optional — the defaults work for the typical single-package
+ * SMRT project.  Override them when you need to tune manifest generation,
+ * add extra packages, or adjust the scan scope.
  */
 export interface SmrtVitestPluginOptions {
   /**
-   * Additional SMRT packages to load manifests from.
-   * By default, discovers packages from peerDependencies and devDependencies.
+   * Extra `@happyvertical/smrt-*` package names whose manifests should be
+   * loaded in addition to those discovered automatically from `package.json`.
+   *
+   * Useful when a dependency is not listed in `dependencies`,
+   * `peerDependencies`, or `devDependencies` but still needs its classes
+   * registered (e.g., a dynamically loaded plugin).
+   *
+   * @default [] — only auto-discovered packages are loaded
    */
   packages?: string[];
 
   /**
-   * Enable verbose logging
+   * Emit diagnostic log lines for each manifest discovered, loaded, or
+   * skipped.  Helpful when debugging "No field metadata found" errors.
+   *
    * @default false
    */
   verbose?: boolean;
 
   /**
-   * Root directory to search for package.json
+   * Project root used to locate `package.json` and to resolve relative
+   * manifest paths.
+   *
    * @default process.cwd()
    */
   root?: string;
 
   /**
-   * Automatically generate manifest if missing or stale.
-   * When enabled, the plugin generates a manifest at vitest startup,
-   * eliminating the need to run `smrt test` or `smrt generate:test` first.
+   * Automatically generate the local manifest at vitest startup using
+   * `ManifestBuilder`.  When `true`, there is no need to run
+   * `smrt generate:test` or `smrt test` before running vitest.
    *
-   * Note: The manifest is generated once at startup. If you add new classes
-   * or fields while vitest is running in watch mode, restart vitest to
-   * pick up the changes.
+   * The manifest is generated **once** at startup and cached for the session.
+   * In watch mode, restart vitest after adding new `@smrt()` classes or
+   * fields to pick up the changes.
    *
    * @default true
    */
   generateManifest?: boolean;
 
   /**
-   * Source directories to scan for SMRT classes when generating manifest.
+   * Glob patterns that determine which source files are scanned for SMRT
+   * classes when `generateManifest` is `true`.
+   *
    * @default ['src/**\/*.ts']
    */
   include?: string[];
 
   /**
-   * Patterns to exclude from scanning when generating manifest.
+   * Glob patterns excluded from the manifest scan.
+   *
    * @default ['**\/*.d.ts', '**\/node_modules/**', '**\/dist/**']
    */
   exclude?: string[];
@@ -482,9 +500,21 @@ export function smrtVitestPlugin(
 }
 
 /**
- * Setup function for use with vitest globalSetup
+ * Discover and register SMRT manifests from peer dependencies.
  *
- * Alternative to using the plugin, can be used as a globalSetup file.
+ * An imperative alternative to {@link smrtVitestPlugin} for environments
+ * where a Vite plugin is not available (e.g., a plain `globalSetup` file or
+ * a custom test runner bootstrap).
+ *
+ * The function reads `package.json` in the working directory, finds all
+ * `@happyvertical/smrt-*` dependencies, locates their manifest files, and
+ * registers every class in the global `ObjectRegistry`.  It does **not**
+ * generate a new manifest — use `smrtVitestPlugin()` with
+ * `generateManifest: true` (the default) if auto-generation is needed.
+ *
+ * @param options - Same options accepted by {@link smrtVitestPlugin}.
+ *   Relevant fields: `packages`, `verbose`, `root`.
+ * @returns A promise that resolves once all manifests have been loaded.
  *
  * @example
  * ```typescript
@@ -497,6 +527,16 @@ export function smrtVitestPlugin(
  *   },
  * });
  * ```
+ *
+ * @example Calling directly in a custom bootstrap
+ * ```typescript
+ * import { setupSmrtManifests } from '@happyvertical/smrt-vitest';
+ *
+ * await setupSmrtManifests({ verbose: true });
+ * ```
+ *
+ * @see {@link smrtVitestPlugin} for the recommended Vite-plugin approach that
+ *   also handles manifest generation.
  */
 export async function setupSmrtManifests(
   options: SmrtVitestPluginOptions = {},

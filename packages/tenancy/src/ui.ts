@@ -8,7 +8,13 @@
 import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
 
 /**
- * Tenancy module UI slots
+ * UI slot definitions for the tenancy module.
+ *
+ * Keyed by slot ID.  Each entry describes a named extension point where a
+ * host application can render a tenancy UI component (e.g., tenant card,
+ * tenant switcher).  Components are implemented in the `./svelte` subpath.
+ *
+ * @see TENANCY_MODULE_META
  */
 export const TENANCY_UI_SLOTS: Record<string, ModuleUISlot> = {
   'tenant-card': {
@@ -32,7 +38,12 @@ export const TENANCY_UI_SLOTS: Record<string, ModuleUISlot> = {
 };
 
 /**
- * Tenancy module metadata
+ * Module metadata for `@happyvertical/smrt-tenancy`.
+ *
+ * Consumed by the SMRT module system to register this package's display name,
+ * description, data models, collections, and UI slots with the host application.
+ *
+ * @see TENANCY_UI_SLOTS
  */
 export const TENANCY_MODULE_META: SmrtModuleMeta = {
   name: '@happyvertical/smrt-tenancy',

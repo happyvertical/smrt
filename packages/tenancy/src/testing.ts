@@ -111,7 +111,9 @@ export async function testTenantIsolation<T>(
 }
 
 /**
- * Options for setupTestTenancy
+ * Options for `setupTestTenancy()`.
+ *
+ * @see setupTestTenancy
  */
 export interface SetupTestTenancyOptions {
   /**
@@ -158,18 +160,28 @@ export function setupTestTenancy(options: SetupTestTenancyOptions = {}): void {
 }
 
 /**
- * Assert that code throws a TenantContextError
+ * Assert that executing `fn` throws a `TenantContextError`.
  *
- * @param fn - Async function that should throw
- * @param messageContains - Optional substring that error message should contain
+ * Fails with a descriptive message if `fn` completes without throwing, or if
+ * it throws a different error type.  Optionally verifies that the error message
+ * contains a specific substring.
+ *
+ * Useful for testing that business-logic code correctly rejects calls that are
+ * made outside a tenant context.
+ *
+ * @param fn - Async function that should throw `TenantContextError`.
+ * @param messageContains - Optional substring the error message must include.
  *
  * @example
  * ```typescript
  * await assertTenantContextRequired(async () => {
- *   // No tenant context set
- *   await collection.list({});
- * }, 'context required');
+ *   // No withTenant() in scope
+ *   await documentCollection.list({});
+ * });
  * ```
+ *
+ * @see assertTenantIsolationViolation
+ * @see TenantContextError
  */
 export async function assertTenantContextRequired(
   fn: () => Promise<unknown>,
@@ -194,10 +206,30 @@ export async function assertTenantContextRequired(
 }
 
 /**
- * Assert that code throws a TenantIsolationError
+ * Assert that executing `fn` throws a `TenantIsolationError`.
  *
- * @param fn - Async function that should throw
- * @param messageContains - Optional substring that error message should contain
+ * Fails with a descriptive message if `fn` completes without throwing, or if
+ * it throws a different error type.  Optionally verifies that the error message
+ * contains a specific substring.
+ *
+ * Use this to verify that cross-tenant data access attempts are correctly
+ * blocked by the interceptor.
+ *
+ * @param fn - Async function that should throw `TenantIsolationError`.
+ * @param messageContains - Optional substring the error message must include.
+ *
+ * @example
+ * ```typescript
+ * await withTenant({ tenantId: 'tenant-a' }, async () => {
+ *   await assertTenantIsolationViolation(async () => {
+ *     // Attempt to filter by a different tenant
+ *     await collection.list({ where: { tenantId: 'tenant-b' } });
+ *   });
+ * });
+ * ```
+ *
+ * @see assertTenantContextRequired
+ * @see TenantIsolationError
  */
 export async function assertTenantIsolationViolation(
   fn: () => Promise<unknown>,

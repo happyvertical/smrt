@@ -7,16 +7,49 @@
  */
 
 /**
- * Signal event type indicating the lifecycle stage
+ * Lifecycle stage of a signal emitted during SMRT method execution.
+ *
+ * - `'start'` — emitted when a tracked method begins executing
+ * - `'step'`  — emitted manually within a method for progress tracking
+ * - `'end'`   — emitted when a method completes successfully
+ * - `'error'` — emitted when a method throws an unhandled exception
+ *
+ * @example
+ * ```typescript
+ * adapter.handle = async (signal: Signal) => {
+ *   if (signal.type === 'error') {
+ *     logger.error(`${signal.className}.${signal.method} failed`, signal.error);
+ *   }
+ * };
+ * ```
+ *
+ * @see {@link Signal} for the full signal payload shape
+ * @see {@link SignalAdapter} for consuming signals
  */
 export type SignalType = 'start' | 'step' | 'end' | 'error';
 
 /**
- * Signal emitted during SMRT method execution
+ * Signal emitted during SMRT method execution.
  *
  * Signals provide automatic observability into method execution,
  * enabling logging, metrics, pub/sub updates, and other integrations
  * without requiring manual instrumentation.
+ *
+ * @example
+ * ```typescript
+ * // Logging adapter
+ * const loggingAdapter: SignalAdapter = {
+ *   async handle(signal: Signal) {
+ *     const label = `${signal.className}.${signal.method} [${signal.id}]`;
+ *     if (signal.type === 'start')  console.log(`→ ${label}`);
+ *     if (signal.type === 'end')    console.log(`✓ ${label} (${signal.duration}ms)`);
+ *     if (signal.type === 'error')  console.error(`✗ ${label}`, signal.error);
+ *   },
+ * };
+ * ```
+ *
+ * @see {@link SignalType} for the lifecycle stage values
+ * @see {@link SignalAdapter} for implementing a consumer
  */
 export interface Signal {
   /**
@@ -90,16 +123,33 @@ export interface Signal {
 }
 
 /**
- * Adapter interface for consuming signals
+ * Adapter interface for consuming signals from the SMRT signaling system.
  *
- * Adapters process signals for specific purposes like:
- * - Logging: Write to console, file, or logging service
- * - Metrics: Track execution counts, durations, errors
- * - Pub/Sub: Broadcast real-time updates to clients
- * - Tracing: Send spans to distributed tracing systems
+ * Adapters process signals for specific purposes:
+ * - **Logging**: write to console, file, or a logging service
+ * - **Metrics**: track execution counts, durations, and error rates
+ * - **Pub/Sub**: broadcast real-time updates to connected clients
+ * - **Tracing**: forward spans to a distributed tracing system (e.g., OpenTelemetry)
  *
- * Adapters are fire-and-forget - errors are caught and logged
- * but don't interrupt the main execution flow.
+ * Adapters are fire-and-forget — errors thrown inside `handle()` are caught
+ * by the SignalBus and do not interrupt the main execution flow.
+ *
+ * @example
+ * ```typescript
+ * class MetricsAdapter implements SignalAdapter {
+ *   async handle(signal: Signal): Promise<void> {
+ *     if (signal.type === 'end') {
+ *       metrics.histogram('smrt.method.duration', signal.duration ?? 0, {
+ *         class: signal.className,
+ *         method: signal.method,
+ *       });
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * @see {@link Signal} for the payload each adapter receives
+ * @see {@link SignalType} for the lifecycle stages
  */
 export interface SignalAdapter {
   /**
