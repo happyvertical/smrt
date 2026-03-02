@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.42
+
+### Patch Changes
+
+- ### Features
+
+  - add whitelist/blacklist models and email management UI (#987) (messages)
+  - @happyvertical/smrt-scanner@0.20.42
+  - @happyvertical/smrt-config@0.20.42
+  - @happyvertical/smrt-types@0.20.42
+
 ## 0.20.41
 
 ### Patch Changes
