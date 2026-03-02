@@ -17,6 +17,8 @@ import AccountList from './components/AccountList.svelte';
 import AttachmentChip from './components/AttachmentChip.svelte';
 import AttachmentUpload from './components/AttachmentUpload.svelte';
 import ComposeForm from './components/ComposeForm.svelte';
+import EmailAccountManager from './components/EmailAccountManager.svelte';
+import EmailFilterManager from './components/EmailFilterManager.svelte';
 import FolderNav from './components/FolderNav.svelte';
 import ForwardForm from './components/ForwardForm.svelte';
 import MessageCard from './components/MessageCard.svelte';
@@ -39,6 +41,8 @@ export {
   AttachmentChip,
   AttachmentUpload,
   ComposeForm,
+  EmailAccountManager,
+  EmailFilterManager,
   FolderNav,
   ForwardForm,
   MessageCard,
@@ -61,6 +65,15 @@ export type { Props as AccountListProps } from './components/AccountList.svelte'
 export type { Props as AttachmentChipProps } from './components/AttachmentChip.svelte';
 export type { Props as AttachmentUploadProps } from './components/AttachmentUpload.svelte';
 export type { Props as ComposeFormProps } from './components/ComposeForm.svelte';
+export type {
+  EmailAccountData,
+  Props as EmailAccountManagerProps,
+} from './components/EmailAccountManager.svelte';
+export type {
+  BlacklistEntry,
+  Props as EmailFilterManagerProps,
+  WhitelistEntry,
+} from './components/EmailFilterManager.svelte';
 export type { Props as FolderNavProps } from './components/FolderNav.svelte';
 export type { Props as ForwardFormProps } from './components/ForwardForm.svelte';
 export type { Props as MessageCardProps } from './components/MessageCard.svelte';
