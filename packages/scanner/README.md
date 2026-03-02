@@ -17,7 +17,7 @@ import { parseFile, parseSource, extractSmrtImports } from '@happyvertical/smrt-
 // Scan a single file
 const result = parseFile('/path/to/Product.ts');
 // result.classes → RawClassDefinition[]
-// result.imports → import declarations
+// result.smrtImports → Map of SMRT package imports
 
 // Scan from source string
 const source = `
@@ -30,16 +30,17 @@ const source = `
 const parsed = parseSource(source, 'Product.ts');
 
 // Full scanner with glob support
-const scanner = new OxcScanner();
-const classes = await scanner.scan(['src/**/*.ts']);
+const scanner = new OxcScanner({ include: ['src/**/*.ts'] });
+const results = await scanner.scan();
 
 // Resolve inheritance across files
-const resolver = new InheritanceResolver(classes);
-const resolved = resolver.resolve();
+const resolver = new InheritanceResolver();
+resolver.addClasses(results.classes);
+const resolved = resolver.resolveAll();
 
 // Convert to SMRT manifest format
-const adapter = new ManifestAdapter(resolved);
-const manifest = adapter.toManifest();
+const adapter = new ManifestAdapter();
+const manifest = adapter.toManifest(resolved);
 ```
 
 ### CLI
@@ -69,7 +70,7 @@ smrt-scan src/**/*.ts
 
 ### Key Types
 
-`RawClassDefinition`, `RawFieldDefinition`, `RawMethodDefinition`, `RawDecoratorConfig`
+`RawClassDefinition`, `RawFieldDefinition`, `RawMethodDefinition`, `RawDecoratorConfig`, `ResolvedClassDefinition`, `ScanResults`, `FileScanResult`, `OxcScannerOptions`, `InferredFieldType`, `FieldTypeInference`
 
 ## Dependencies
 

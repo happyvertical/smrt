@@ -1,6 +1,6 @@
 # @happyvertical/smrt-jobs
 
-Background job processing for the SMRT framework. Provides a fluent `JobBuilder` API, persistent job storage, scheduled execution, and a `withBackgroundJobs()` mixin for adding background capabilities to any SmrtCollection.
+Background job execution for SMRT objects. Provides persistent queue storage, retry strategies, cron-based scheduling, and a fluent `JobBuilder` API via the `withBackgroundJobs()` mixin.
 
 ## Installation
 
@@ -10,47 +10,82 @@ pnpm add @happyvertical/smrt-jobs
 
 ## Usage
 
+### Add background capabilities to a SmrtObject
+
 ```typescript
-import {
-  JobBuilder, TaskRunner, ScheduleRunner,
-  createTaskRunner, createScheduleRunner,
-  withBackgroundJobs, parseDelay
-} from '@happyvertical/smrt-jobs';
+import { withBackgroundJobs, TaskRunner } from '@happyvertical/smrt-jobs';
+import { Document } from './document.js';
 
-// Fluent job building
-const job = new JobBuilder()
-  .task('process-invoice')
-  .payload({ invoiceId: 'inv-123' })
-  .priority('high')
+// Mixin adds .bg() and .background() to any SmrtObject class
+const BackgroundDocument = withBackgroundJobs(Document);
+const doc = new BackgroundDocument({ db });
+await doc.initialize();
+
+// Quick enqueue — runs immediately when a TaskRunner picks it up
+const handle = await doc.bg('generateSummary', { format: 'md' });
+
+// Fluent builder for advanced options
+const handle2 = await doc.background('generateSummary', { format: 'md' })
   .delay('5m')
-  .maxRetries(3)
-  .build();
+  .priority('high')
+  .retries(5)
+  .queue('analysis')
+  .timeout(600000)
+  .enqueue();
 
-// Task runner for processing jobs
-const runner = createTaskRunner({
-  db,
+// Wait for result (polling-based)
+const result = await handle2.wait({ timeout: 60000, pollInterval: 100 });
+```
+
+### Run a TaskRunner to process jobs
+
+```typescript
+import { TaskRunner } from '@happyvertical/smrt-jobs';
+
+const runner = new TaskRunner({
   concurrency: 5,
   pollInterval: 1000,
+  queues: ['default', 'analysis'],
 });
-
-runner.register('process-invoice', async (ctx) => {
-  const { invoiceId } = ctx.payload;
-  // Process the invoice...
-  return { success: true };
-});
-
+await runner.initialize(db);
 await runner.start();
 
-// Schedule runner for cron-like jobs
-const scheduler = createScheduleRunner({
-  db,
-  timezone: 'America/New_York',
-});
-await scheduler.start();
+// Listen for events
+runner.on('job:completed', (job, result) => { /* ... */ });
+runner.on('job:failed', (job, error) => { /* ... */ });
 
-// Add background jobs to any collection via mixin
-const BgProducts = withBackgroundJobs(ProductCollection);
+// Graceful shutdown
+process.on('SIGTERM', () => runner.stop());
 ```
+
+### Schedule recurring jobs with ScheduleRunner
+
+The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Wire them together via events:
+
+```typescript
+import { ScheduleRunner } from '@happyvertical/smrt-jobs';
+
+const scheduleRunner = new ScheduleRunner({ pollInterval: 30000 });
+await scheduleRunner.initialize(db);
+await scheduleRunner.start();
+
+// Connect TaskRunner events to update schedule state
+taskRunner.on('job:completed', (job) => {
+  const scheduleId = job.args?._scheduleId;
+  if (scheduleId) scheduleRunner.handleJobCompletion(scheduleId, true);
+});
+taskRunner.on('job:failed', (job, error) => {
+  const scheduleId = job.args?._scheduleId;
+  if (scheduleId) scheduleRunner.handleJobCompletion(scheduleId, false, error.message);
+});
+```
+
+### System Tables
+
+| Table | Purpose |
+|-------|---------|
+| `_smrt_jobs` | Persistent job queue (SmrtJob records) |
+| `_smrt_agent_schedules` | Cron schedule entries polled by ScheduleRunner |
 
 ## API
 
@@ -58,31 +93,35 @@ const BgProducts = withBackgroundJobs(ProductCollection);
 
 | Export | Description |
 |--------|------------|
-| `JobBuilder` | Fluent API for constructing job definitions |
-| `JobHandle` | Handle returned when a job is enqueued |
-| `JobContextLogger` | Scoped logger for job execution context |
-| `TaskRunner` | Processes queued jobs with concurrency control |
-| `ScheduleRunner` | Executes jobs on cron-like schedules |
-| `SmrtJob` | Persistent job record model |
-| `SmrtJobCollection` | Collection for querying/managing jobs |
+| `SmrtJob` | Persistent job record stored in `_smrt_jobs` |
+| `SmrtJobCollection` | Collection with `listReady()`, `listByStatus()`, `stats()`, `cleanup()` |
+| `JobBuilder` | Fluent API: `.delay()`, `.priority()`, `.retries()`, `.queue()`, `.timeout()`, `.enqueue()` |
+| `JobHandle` | Track, wait, cancel, or retry an enqueued job |
+| `JobContextLogger` | Logger that auto-injects job context (jobId, attempt, queue) |
+| `TaskRunner` | Polling-based execution engine with concurrency control and heartbeats |
+| `ScheduleRunner` | Polls for due cron schedules and creates SmrtJob entries |
 
 ### Functions
 
 | Export | Description |
 |--------|------------|
-| `createTaskRunner` | Factory for creating a configured TaskRunner |
-| `createScheduleRunner` | Factory for creating a configured ScheduleRunner |
-| `withBackgroundJobs` | Mixin that adds background job capabilities to a collection |
-| `parseDelay` | Parse human-readable delay strings (e.g., `'5m'`, `'1h'`) |
-| `priorityToNumber` | Convert priority label to numeric value |
+| `createTaskRunner(config?)` | Factory for creating a configured TaskRunner |
+| `createScheduleRunner(config?)` | Factory for creating a configured ScheduleRunner |
+| `withBackgroundJobs(Class)` | Mixin that adds `.bg()` and `.background()` to any SmrtObject class |
+| `parseDelay(delay)` | Parse human-readable delay strings (`'5m'`, `'1h'`, `'30s'`) to milliseconds |
+| `priorityToNumber(priority)` | Convert priority label (`'critical'`/`'high'`/`'normal'`/`'low'`) to number |
 
 ### Key Types
 
-`Priority`, `JobResult`, `JobStatus`, `JobContext`, `TaskRunnerConfig`, `ScheduleRunnerConfig`, `ScheduleInfo`, `BackgroundCapable`, `TimeoutBehavior`
+`Priority`, `JobStatus`, `JobResult`, `WaitOptions`, `BgOptions`, `BackgroundCapable`, `TaskRunnerConfig`, `TaskRunnerEvents`, `ScheduleRunnerConfig`, `ScheduleRunnerEvents`, `ScheduleInfo`, `JobContext`, `TimeoutBehavior`, `SmrtJobData`, `ListReadyOptions`
 
 ## Dependencies
 
-- `@happyvertical/smrt-core` — ORM and code generation
-- `@happyvertical/smrt-config` — configuration loading
-- `@happyvertical/smrt-types` — shared type definitions
-- Peer: `@happyvertical/smrt-svelte`
+- `@happyvertical/smrt-core` -- ORM and code generation
+- `@happyvertical/smrt-config` -- configuration loading
+- `@happyvertical/smrt-types` -- shared type definitions
+- `@happyvertical/jobs` -- retry strategies
+- `@happyvertical/sql` -- database interface
+- `@happyvertical/logger` -- structured logging
+- `@happyvertical/utils` -- ID generation utilities
+- Peer (optional): `@happyvertical/smrt-svelte`, `svelte`

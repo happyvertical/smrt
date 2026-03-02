@@ -10,40 +10,85 @@ pnpm add @happyvertical/smrt-chat
 
 ## Usage
 
+### Rooms and messages
+
 ```typescript
-import {
-  ChatRoom, ChatRoomCollection,
-  ChatMessage, ChatMessageCollection,
-  ChatParticipant, ChatParticipantCollection,
-  ChatService
-} from '@happyvertical/smrt-chat';
+import { ChatService } from '@happyvertical/smrt-chat';
 
-// Create a chat room
-const rooms = new ChatRoomCollection(db);
-const room = await rooms.create({
-  name: 'General',
-  type: 'public',
-  status: 'active',
+const chat = await ChatService.create({
+  persistence: { type: 'sql', url: 'chat.db' },
 });
-await room.save();
 
-// Add a participant
-const participants = new ChatParticipantCollection(db);
-await participants.create({
-  chatRoomId: room.id,
-  profileId: 'user-123',
-  role: 'member',
-  status: 'active',
+// Create a public room (creator is added as owner)
+const room = await chat.createRoom({
+  tenantId: 'tenant-1',
+  name: 'General',
+  roomType: 'public',
+  createdByProfileId: 'profile-1',
 });
 
 // Send a message
-const messages = new ChatMessageCollection(db);
-await messages.create({
-  chatRoomId: room.id,
-  profileId: 'user-123',
-  content: 'Hello everyone!',
+await chat.sendMessage({
+  tenantId: 'tenant-1',
+  roomId: room.id,
+  senderProfileId: 'profile-1',
+  content: 'Hello, world!',
+});
+
+// Start a threaded conversation from a message
+const thread = await chat.startThread({
+  tenantId: 'tenant-1',
+  roomId: room.id,
+  rootMessageId: message.id,
+  title: 'Follow-up discussion',
+});
+
+// Reply within the thread
+await chat.sendMessage({
+  tenantId: 'tenant-1',
+  roomId: room.id,
+  senderProfileId: 'profile-2',
+  content: 'Great point!',
+  threadId: thread.id,
+});
+```
+
+### Agent sessions with tool whitelisting
+
+```typescript
+// Create an agent session (auto-creates an agent-type room)
+const { session, room } = await chat.createAgentSession({
+  tenantId: 'tenant-1',
+  agentId: 'agent-summarizer',
+  participantProfileId: 'profile-1',
+  allowedTools: ['web-search', 'summarize'],
+  systemPrompt: 'You are a research assistant.',
+  maxMessages: 100,
+});
+
+// Send a message within the agent session
+await chat.sendAgentMessage({
+  tenantId: 'tenant-1',
+  agentSessionId: session.id,
+  senderProfileId: 'profile-1',
+  content: 'Summarize the latest news',
   role: 'user',
-  type: 'text',
+});
+
+// Check session limits before allowing more messages
+if (session.isActive()) {
+  // Session has not expired or hit token/message limits
+}
+```
+
+### Direct messages
+
+```typescript
+// Get or create a DM room between two profiles
+const dmRoom = await chat.getOrCreateDM({
+  tenantId: 'tenant-1',
+  profileId1: 'profile-1',
+  profileId2: 'profile-2',
 });
 ```
 
@@ -53,22 +98,33 @@ await messages.create({
 
 | Export | Description |
 |--------|------------|
-| `ChatRoom` | Room with type (public/private/dm/agent) and status |
-| `ChatMessage` | Message with role, type, and optional thread reference |
-| `ChatParticipant` | Room member with role and online status |
-| `ChatThread` | Threaded conversation within a room |
+| `ChatRoom` | Room with type (`public`/`private`/`dm`/`agent`), status, topic, and metadata |
+| `ChatMessage` | Message with `role` (user/assistant/system/tool), `messageType` (text/system/action/file/tool_call/tool_result), optional thread and reply references |
+| `ChatParticipant` | Room member with `role` (owner/admin/member/viewer), online status, read tracking |
+| `ChatThread` | Threaded conversation linked to a root message, with resolve/reopen lifecycle |
 | `ChatReaction` | Emoji reaction on a message |
-| `AgentSession` | AI agent session within a room with tool whitelisting |
+| `AgentSession` | AI agent session with `allowedTools` (JSON string array), `sessionContext` for multi-turn memory, `systemPrompt`, and usage limits (`maxTokens`/`maxMessages`/`expiresAt`) |
 
 ### Collections
 
-`ChatRoomCollection`, `ChatMessageCollection`, `ChatParticipantCollection`, `ChatThreadCollection`, `ChatReactionCollection`, `AgentSessionCollection`
+| Export | Description |
+|--------|------------|
+| `ChatRoomCollection` | Room queries, `findOrCreateDM()` |
+| `ChatMessageCollection` | Message queries and search filters |
+| `ChatParticipantCollection` | Participant queries, `findMembership()` |
+| `ChatThreadCollection` | Thread queries |
+| `ChatReactionCollection` | Reaction queries |
+| `AgentSessionCollection` | Session queries, `findActiveSession()`, `findOrCreate()` |
 
 ### Services
 
 | Export | Description |
 |--------|------------|
-| `ChatService` | High-level chat operations service |
+| `ChatService` | Facade: `createRoom()`, `sendMessage()`, `startThread()`, `addParticipant()`, `getOrCreateDM()`, `createAgentSession()`, `sendAgentMessage()` |
+
+### Types
+
+`ChatRoomType`, `ChatRoomStatus`, `ChatRoomOptions`, `ChatMessageType`, `ChatMessageRole`, `ChatMessageOptions`, `ChatMessageSearchFilters`, `ChatParticipantRole`, `ChatParticipantStatus`, `ChatParticipantOptions`, `OnlineStatus`, `ChatThreadOptions`, `ChatReactionOptions`, `AgentSessionStatus`, `AgentSessionOptions`
 
 ### Constants
 
@@ -76,7 +132,7 @@ await messages.create({
 
 ## Dependencies
 
-- `@happyvertical/smrt-core` — ORM and code generation
-- `@happyvertical/smrt-tenancy` — multi-tenant scoping
-- `@happyvertical/smrt-types` — shared type definitions
-- Peer: `@happyvertical/smrt-agents`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-svelte`
+- `@happyvertical/smrt-core` -- ORM and code generation
+- `@happyvertical/smrt-tenancy` -- multi-tenant scoping
+- `@happyvertical/smrt-types` -- shared type definitions
+- Peer (optional): `@happyvertical/smrt-agents`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-svelte`

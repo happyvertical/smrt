@@ -1,64 +1,49 @@
-# @have/gnode
+# @happyvertical/smrt-gnode
 
-SMRT federation library for building federated local knowledge bases (gnodes).
+Federation library for inter-gnode peer-to-peer discovery and communication.
 
-## Overview
-
-Gnodes are **federated local knowledge bases** that transform government documents into accessible, multi-modal knowledge. This package provides the federation utilities and protocols needed to enable P2P discovery and cross-gnode communication.
+**Status: stubs only -- not implemented. All methods return empty arrays or null.**
 
 ## Installation
 
 ```bash
-pnpm add @have/gnode
+pnpm add @happyvertical/smrt-gnode
 ```
 
-## Usage
+## Intent
 
-```typescript
-import { Federation, WebFingerProtocol } from '@have/gnode';
+Gnodes are federated local knowledge bases. This package will provide the federation protocols needed for P2P discovery and cross-gnode communication. No SMRT models are present -- this is a library-stage package.
 
-// Configure federation
-const federation = new Federation({
-  enabled: true,
-  discoverability: 'public',
-  peers: ['https://example.gnode'],
-  autodiscovery: true,
-  peerExchange: true
-});
+## Exports
 
-// Discover peers
-const peers = await federation.discoverPeers();
+### Classes
 
-// Use WebFinger for discovery
-const gnodeInfo = await WebFingerProtocol.discover('example.com');
-```
+| Export | Status | Description |
+|--------|--------|------------|
+| `Federation` | Stub | Peer discovery and exchange. `discoverPeers()` and `exchangePeers()` return `[]` |
+| `WebFingerProtocol` | Stub | `.well-known/gnode` discovery. `discover()` returns `null` |
+| `PeerExchangeProtocol` | Stub | `/api/federation/peers` peer list exchange. `exchange()` returns `[]` |
 
-## Features
+### Types
 
-- **P2P Discovery**: Automatic peer discovery via WebFinger and DNS
-- **Peer Exchange**: Share peer lists between gnodes
-- **Federation Protocols**: ActivityPub-inspired protocols for cross-gnode queries
-- **SMRT Integration**: Built on @have/smrt for seamless object federation
+| Export | Description |
+|--------|------------|
+| `GnodePeer` | Peer descriptor: `url`, `name`, `discoveredAt`, `lastSeen?` |
+| `FederationConfig` | Config: `enabled`, `discoverability`, `peers`, `autodiscovery`, `peerExchange` |
+| `WebFingerResponse` | WebFinger response: `subject`, `links[]` |
 
-## Documentation
+### Constants
 
-### High-Level Concepts
-- [Vision](./docs/vision.md) - Long-term roadmap for federated local knowledge
-- [Principles](./docs/principles.md) - Core principles (Open, Federated, Transparent, etc.)
+| Export | Description |
+|--------|------------|
+| `version` | Package version string (`'0.1.0'`) |
 
-### Implementation Guides
-See the [town template](../create-gnode/templates/town/) for complete implementation documentation:
-- Architecture - Technical stack and system design
-- Deployment - Infrastructure tiers and scaling
-- Roadmap - 12-week implementation plan
-- Standards - News standards, RSS, SEO
+## Planned Architecture
 
-## Related Packages
+- WebFinger-based peer discovery via `GET /.well-known/gnode`
+- Peer exchange protocol via `GET /api/federation/peers`
+- ActivityPub-inspired cross-gnode queries
 
-- [@have/smrt](../smrt) - Core SMRT framework
-- [@have/sql](../sql) - Database abstraction layer
-- [@have/create-gnode](../create-gnode) - CLI generator for creating gnodes
+## Dependencies
 
-## License
-
-TBD (likely MIT)
+None. Standalone stub package.

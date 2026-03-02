@@ -14,11 +14,13 @@ pnpm add @happyvertical/smrt-svelte
 
 ```svelte
 <script>
-  import Provider from '@happyvertical/smrt-svelte';
+  import { Provider } from '@happyvertical/smrt-svelte';
+  let { children } = $props();
 </script>
 
-<Provider>
-  <slot />
+<Provider user={data.user} permissions={data.permissions}
+  ai={{ preload: 'idle', stt: { type: 'whisper-cpp' } }}>
+  {@render children()}
 </Provider>
 ```
 
@@ -53,8 +55,7 @@ pnpm add @happyvertical/smrt-svelte
 
 ```svelte
 <script>
-  import { PermissionCheck } from '@happyvertical/smrt-svelte';
-  import { permission } from '@happyvertical/smrt-svelte';
+  import { PermissionCheck, permission } from '@happyvertical/smrt-svelte';
 </script>
 
 <PermissionCheck requires="admin:write">
@@ -62,7 +63,9 @@ pnpm add @happyvertical/smrt-svelte
 </PermissionCheck>
 
 <!-- Or as a Svelte action -->
-<div use:permission={'admin:read'}>Protected content</div>
+<div use:permission={{ slug: 'admin:read', permissions: userPermissions }}>
+  Protected content
+</div>
 ```
 
 ### Theme System
@@ -72,17 +75,9 @@ pnpm add @happyvertical/smrt-svelte
   import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
 </script>
 
-<ThemeProvider config={{ mode: 'dark' }}>
-  <slot />
+<ThemeProvider preset="glass" colorScheme="system">
+  {@render children()}
 </ThemeProvider>
-```
-
-### Browser AI
-
-```svelte
-<script>
-  import { useSTT, useTTS, useLLM } from '@happyvertical/smrt-svelte/browser-ai/svelte';
-</script>
 ```
 
 ## Exports
@@ -91,17 +86,16 @@ pnpm add @happyvertical/smrt-svelte
 
 | Import Path | Contents |
 |-------------|----------|
-| `@happyvertical/smrt-svelte` | Provider, DataTable, permission utilities, hooks, state |
+| `@happyvertical/smrt-svelte` | Provider, DataTable, permission utilities, hooks, state, components |
 | `@happyvertical/smrt-svelte/admin` | Agent admin panel components |
 | `@happyvertical/smrt-svelte/calendar` | Calendar and DayView |
-| `@happyvertical/smrt-svelte/content` | Content display components |
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, etc.) |
 | `@happyvertical/smrt-svelte/layout` | Layout (Container, Grid, Header, Footer, Masthead, etc.) |
 | `@happyvertical/smrt-svelte/ui` | UI primitives (Button, Card, Badge, Pagination) |
-| `@happyvertical/smrt-svelte/themes` | ThemeProvider and theme utilities |
+| `@happyvertical/smrt-svelte/themes` | ThemeProvider, presets (material/glass/studio), CSS generation |
 | `@happyvertical/smrt-svelte/registry` | ModuleUIRegistry for agent admin panels |
-| `@happyvertical/smrt-svelte/browser-ai` | Browser AI client (STT/TTS/LLM) |
-| `@happyvertical/smrt-svelte/browser-ai/svelte` | Svelte hooks for browser AI |
+| `@happyvertical/smrt-svelte/browser-ai` | Browser AI client (STT/TTS/LLM adapters, capability detection) |
+| `@happyvertical/smrt-svelte/browser-ai/svelte` | Svelte AI components (VoiceInput, CapabilityGate, etc.) |
 | `@happyvertical/smrt-svelte/styles/tokens.css` | Design tokens CSS |
 
 ### Components by Category
@@ -126,11 +120,21 @@ pnpm add @happyvertical/smrt-svelte
 
 **Other**: `Calendar`, `DayView`, `MembershipCard`, `MembershipList`, `ModulePanel`
 
+**Browser AI**: `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput`
+
+### Hooks
+
+`useAuth`, `useSocket`, `useAppState`, `useSTT`, `useTTS`, `useLLM`, `useTheme`
+
 ### Functions & Actions
 
 `hasPermission`, `hasAnyPermission`, `hasAllPermissions`, `permission` (action), `ripple` (action)
 
+### Cache API
+
+`getCachedSTT`, `getCachedTTS`, `getCachedLLM`, `getCacheStats`, `clearAllCaches`
+
 ## Dependencies
 
-- `@happyvertical/smrt-types` — shared type definitions
-- Peer: `@happyvertical/smrt-agents`, `@happyvertical/smrt-jobs`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-users`
+- `@happyvertical/smrt-types` -- shared type definitions
+- Peer: `svelte` >=5.18.2, `@happyvertical/smrt-agents`, `@happyvertical/smrt-jobs`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-users` (all optional)

@@ -12,51 +12,61 @@ pnpm add @happyvertical/smrt-messages
 
 ```typescript
 import {
-  Message, MessageCollection,
   Email, EmailCollection,
-  EmailSender, SlackSender, TweetSender,
-  EmailAccount, EmailAccountCollection
+  EmailAccount, EmailAccountCollection,
+  EmailSender,
+  MessageCollection,
 } from '@happyvertical/smrt-messages';
 
-// Create an email account
+// Create an email account with encrypted credentials
 const accounts = new EmailAccountCollection(db);
 const account = await accounts.create({
   name: 'Support',
-  address: 'support@example.com',
-  provider: 'smtp',
+  providerType: 'smtp',
 });
-await account.save();
+await account.setCredentials({
+  host: 'smtp.example.com',
+  user: 'support@example.com',
+  pass: process.env.SMTP_PASSWORD,
+});
 
-// Send an email
-const sender = new EmailSender(account);
-await sender.send({
-  to: 'user@example.com',
+// Send an email through the send lifecycle
+const emails = new EmailCollection(db);
+const email = await emails.create({
+  accountId: account.id,
   subject: 'Welcome',
-  body: 'Thanks for signing up!',
+  toAddresses: JSON.stringify([{ address: 'user@example.com' }]),
+  textBody: 'Thanks for signing up!',
 });
+const result = await email.send();
+// sendStatus transitions: draft -> sending -> sent (or failed)
 
-// Query messages across channels
+// Retry a failed message (respects maxRetries budget)
+if (!result.success) {
+  await email.retrySend();
+}
+
+// Query messages across all channels via base collection
 const messages = new MessageCollection(db);
-const recent = await messages.list({
-  orderBy: 'createdAt DESC',
-  limit: 20,
-});
+const recent = await messages.list({ orderBy: 'createdAt DESC', limit: 20 });
 ```
 
 ## API
 
 ### Models (STI Hierarchy)
 
+Messages and accounts each use single-table inheritance. STI discriminators use qualified names (e.g., `@happyvertical/smrt-messages:Email`).
+
 | Export | Description |
 |--------|------------|
-| `Message` | Base message (STI base) |
-| `Email` | Email message (STI subclass) |
-| `SlackMessage` | Slack message (STI subclass) |
-| `Tweet` | Twitter message (STI subclass) |
-| `Account` | Base messaging account (STI base) |
-| `EmailAccount` | Email account (STI subclass) |
-| `SlackAccount` | Slack account (STI subclass) |
-| `TwitterAccount` | Twitter account (STI subclass) |
+| `Message` | Base message with send lifecycle (draft/sending/sent/failed) |
+| `Email` | Email with RFC 822 threading, cc/bcc, htmlBody/textBody, folders |
+| `SlackMessage` | Slack message with channelId, slackTs, reactions, blocks |
+| `Tweet` | Twitter message with tweetId, retweetCount, likeCount, hashtags |
+| `Account` | Base account with `setCredentials()`/`getCredentials()` via smrt-secrets |
+| `EmailAccount` | Email account (SMTP/IMAP provider) |
+| `SlackAccount` | Slack workspace account |
+| `TwitterAccount` | Twitter API account |
 | `Attachment` | Message attachment |
 | `EmailAttachment` | Email-specific attachment |
 | `EmailFolder` | Email folder/label |
@@ -67,20 +77,27 @@ const recent = await messages.list({
 
 ### Senders
 
+Each channel has a dedicated sender implementing `MessageSenderInterface`.
+
 | Export | Description |
 |--------|------------|
-| `EmailSender` | Send emails via SMTP/API |
+| `EmailSender` | Send emails via `@happyvertical/email` client |
 | `SlackSender` | Send Slack messages via API |
 | `TweetSender` | Post tweets via Twitter API |
 
+### Credential Security
+
+Account credentials are stored via `credentialSecretId` pointing to smrt-secrets envelope encryption. Use `account.setCredentials()` and `account.getCredentials()` -- never store passwords as plain fields.
+
 ### Key Types
 
-`MessageType`, `ProviderType`, `SendStatus`, `SendMessageOptions`, `SendEmailOptions`, `SendSlackOptions`, `SendTweetOptions`, `SyncOptions`, `SyncResult`
+`MessageType`, `ProviderType`, `SendStatus`, `SendMessageOptions`, `SendEmailOptions`, `SendSlackOptions`, `SendTweetOptions`, `MessageSendResult`, `MessageSenderInterface`, `SyncOptions`, `SyncResult`, `SyncProgress`
 
 ## Dependencies
 
-- `@happyvertical/smrt-core` — ORM and code generation
-- `@happyvertical/smrt-secrets` — credential encryption
-- `@happyvertical/smrt-tenancy` — multi-tenant scoping
-- `@happyvertical/smrt-types` — shared type definitions
-- Peer: `@happyvertical/smrt-svelte`
+- `@happyvertical/smrt-core` -- ORM and code generation
+- `@happyvertical/smrt-secrets` -- credential encryption (envelope encryption)
+- `@happyvertical/smrt-tenancy` -- optional multi-tenant scoping
+- `@happyvertical/smrt-types` -- shared type definitions
+- `@happyvertical/email` -- SMTP/IMAP email client
+- Peer: `@happyvertical/smrt-svelte` (optional)
