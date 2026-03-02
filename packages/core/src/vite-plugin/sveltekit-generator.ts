@@ -104,13 +104,16 @@ async function generateRegistrationFile(
   const packageObjects = new Map<string, string[]>(); // packageName -> classNames
 
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
-    if (objectDef.packageName) {
+    if (isLocalObject(projectRoot, objectDef)) {
+      // Local object (source in project, not node_modules) - use $lib path
+      localObjects.push([className, objectDef]);
+    } else if (objectDef.packageName) {
       // External package - group by package name
       const classes = packageObjects.get(objectDef.packageName) || [];
       classes.push(className);
       packageObjects.set(objectDef.packageName, classes);
     } else {
-      // Local object - use file path
+      // No package name and not local - treat as local fallback
       localObjects.push([className, objectDef]);
     }
   }
