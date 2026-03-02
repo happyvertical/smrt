@@ -84,6 +84,11 @@ export {
   AgentScheduleCollection,
   type ScheduleStatus,
 } from './schedule.js';
+export type {
+  SummaryArticleImage,
+  SummaryArticleOptions,
+  SummaryArticleResult,
+} from './summary-article.js';
 export {
   type ResolvedAgentAvailability,
   TenantAgent,

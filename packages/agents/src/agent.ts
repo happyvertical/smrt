@@ -20,6 +20,10 @@ import type {
   ObjectInterestConfig,
 } from './interests.js';
 import { mergeFilters, normalizeSort } from './interests.js';
+import type {
+  SummaryArticleOptions,
+  SummaryArticleResult,
+} from './summary-article.js';
 import type { AgentStatusType } from './types.js';
 import type { AgentAdminRoute, AgentUISlots } from './ui.js';
 
@@ -537,6 +541,14 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   abstract run(): Promise<void>;
+
+  /**
+   * Generate a summary article for the given date range.
+   * Override in agent subclasses that support article generation.
+   */
+  summaryArticle?: (
+    options: SummaryArticleOptions,
+  ) => Promise<SummaryArticleResult>;
 
   /**
    * Cleanup and shutdown
