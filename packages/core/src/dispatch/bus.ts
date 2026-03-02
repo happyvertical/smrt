@@ -87,6 +87,13 @@ export class DispatchBus {
       for (const stmt of statements) {
         await this.db.query(stmt);
       }
+    } else {
+      // Migrate existing tables: add target_subscriber column (v1.2.0)
+      await this.addColumnIfMissing(
+        '_smrt_dispatch',
+        'target_subscriber',
+        'TEXT',
+      );
     }
 
     const subsExists = await DispatchSubscriptionCollection.tableExists(
@@ -99,20 +106,49 @@ export class DispatchBus {
       for (const stmt of statements) {
         await this.db.query(stmt);
       }
+    } else {
+      // Migrate existing tables: add delivery column (v1.2.0)
+      await this.addColumnIfMissing(
+        '_smrt_dispatch_subscriptions',
+        'delivery',
+        "TEXT NOT NULL DEFAULT 'compete'",
+      );
     }
 
     this.initialized = true;
   }
 
   /**
+   * Add a column to an existing table if it doesn't already exist.
+   * Uses a safe try/catch approach since SQLite doesn't support IF NOT EXISTS for ALTER.
+   */
+  private async addColumnIfMissing(
+    table: string,
+    column: string,
+    definition: string,
+  ): Promise<void> {
+    try {
+      await this.db.query(
+        `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`,
+      );
+    } catch {
+      // Column already exists — safe to ignore
+    }
+  }
+
+  /**
    * Emit a dispatch message
    *
-   * Creates a pending dispatch and immediately notifies any in-memory handlers.
+   * Creates pending dispatch(es) and immediately notifies any in-memory handlers.
+   *
+   * For fan-out subscribers, a separate dispatch copy is created per subscriber.
+   * For compete subscribers, a single shared dispatch is created.
+   * If no subscriptions exist, one dispatch is created for future processing.
    *
    * @param type - Signal type (e.g., 'campaign.completed')
    * @param payload - Data to send
    * @param options - Emission options (source, sourceId, metadata)
-   * @returns The created dispatch
+   * @returns A persisted dispatch (the compete dispatch, or the first fanout copy if fanout-only)
    */
   async emit(
     type: string,
@@ -121,7 +157,9 @@ export class DispatchBus {
   ): Promise<Dispatch> {
     await this.initialize();
 
-    // Query all enabled subscriptions matching this signal type
+    // Query subscriptions to determine if fan-out copies are needed.
+    // This runs on every emit() — uses SQL-level exact matching with
+    // in-memory fallback only for wildcard subscriptions to minimize I/O.
     const matchingSubs = await DispatchSubscriptionCollection.findBySignalType(
       this.db,
       type,
@@ -141,6 +179,9 @@ export class DispatchBus {
       status: 'pending',
     });
 
+    // Track first persisted dispatch to return to caller
+    let returnDispatch = dispatch;
+
     // For fanout subscribers: create a per-subscriber dispatch copy
     for (const sub of fanoutSubs) {
       const fanoutDispatch = new Dispatch({
@@ -153,6 +194,10 @@ export class DispatchBus {
         target_subscriber: sub.subscriber,
       });
       await DispatchCollection.insert(this.db, fanoutDispatch);
+      // If no compete dispatch will be persisted, return the first fanout copy
+      if (competeSubs.length === 0 && matchingSubs.length > 0) {
+        returnDispatch = fanoutDispatch;
+      }
     }
 
     // For compete subscribers (or if no subscriptions found): insert the original
@@ -164,7 +209,7 @@ export class DispatchBus {
     // Notify in-memory handlers immediately (fire-and-forget)
     this.notifyHandlers(type, payload, dispatch.getMetadata());
 
-    return dispatch;
+    return returnDispatch;
   }
 
   /**
@@ -217,6 +262,9 @@ export class DispatchBus {
    *
    * Persistent subscriptions are stored in the database and processed
    * when process() is called for the subscriber.
+   *
+   * Set `delivery: 'fanout'` to give each subscriber their own dispatch copy.
+   * Default is `'compete'` (at-most-once, first subscriber to process claims it).
    *
    * @param options - Subscription options
    */
@@ -283,13 +331,6 @@ export class DispatchBus {
     // For non-wildcard subscriptions, we can query directly
     // For wildcards, we need to get all pending and filter
     const hasWildcards = signalTypes.some((t) => t.includes('*'));
-
-    // Build a lookup: for each signal type this subscriber subscribes to,
-    // what delivery mode? Used to filter dispatches correctly.
-    const deliveryByType = new Map<string, 'compete' | 'fanout'>();
-    for (const sub of subscriptions) {
-      deliveryByType.set(sub.signalType, sub.delivery);
-    }
 
     // Helper: check if a dispatch should be visible to this subscriber
     const isVisibleToSubscriber = (dispatch: Dispatch): boolean => {

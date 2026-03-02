@@ -96,46 +96,54 @@ export class DispatchSubscriptionCollection {
   /**
    * Get all subscriptions that match a signal type
    *
-   * This performs server-side filtering for exact matches,
-   * but wildcard matching must be done client-side.
+   * Uses SQL-level filtering for exact matches. Wildcard subscriptions
+   * (containing '*') are fetched separately and filtered in memory since
+   * pattern matching requires application-side regex evaluation.
    */
   static async findMatchingSubscribers(
     db: DatabaseInterface,
     signalType: string,
   ): Promise<DispatchSubscription[]> {
-    // Get all enabled subscriptions - we'll filter for wildcards in memory
-    const { rows } = await db.query(
-      `SELECT * FROM _smrt_dispatch_subscriptions WHERE enabled = 1`,
+    // SQL-level: exact match subscriptions
+    const { rows: exactRows } = await db.query(
+      `SELECT * FROM _smrt_dispatch_subscriptions
+       WHERE enabled = 1 AND signal_type = $1`,
+      signalType,
     );
 
-    const subscriptions = rows.map((row: Record<string, unknown>) =>
+    const exactSubs = exactRows.map((row: Record<string, unknown>) =>
       DispatchSubscription.fromRow(row as unknown as DispatchSubscriptionData),
     );
 
-    // Filter for subscriptions that match this signal type
-    return subscriptions.filter((sub) => sub.matches(signalType));
+    // SQL-level: wildcard subscriptions (contain '%' or '*')
+    // Must be filtered in memory for pattern matching
+    const { rows: wildcardRows } = await db.query(
+      `SELECT * FROM _smrt_dispatch_subscriptions
+       WHERE enabled = 1 AND signal_type LIKE '%*%'`,
+    );
+
+    const wildcardSubs = wildcardRows
+      .map((row: Record<string, unknown>) =>
+        DispatchSubscription.fromRow(
+          row as unknown as DispatchSubscriptionData,
+        ),
+      )
+      .filter((sub) => sub.matches(signalType));
+
+    return [...exactSubs, ...wildcardSubs];
   }
 
   /**
    * Find all enabled subscriptions matching a signal type
    *
-   * Used by emit() to determine fan-out targets. Returns subscriptions
-   * where the signal type matches exactly or via wildcard pattern.
+   * Alias for findMatchingSubscribers — used by emit() to determine
+   * fan-out targets.
    */
   static async findBySignalType(
     db: DatabaseInterface,
     signalType: string,
   ): Promise<DispatchSubscription[]> {
-    // Get all enabled subscriptions and filter for pattern matches in memory
-    const { rows } = await db.query(
-      `SELECT * FROM _smrt_dispatch_subscriptions WHERE enabled = 1`,
-    );
-
-    const subscriptions = rows.map((row: Record<string, unknown>) =>
-      DispatchSubscription.fromRow(row as unknown as DispatchSubscriptionData),
-    );
-
-    return subscriptions.filter((sub) => sub.matches(signalType));
+    return this.findMatchingSubscribers(db, signalType);
   }
 
   /**

@@ -3,6 +3,13 @@
  *
  * Provides the DispatchBus for asynchronous agent-to-agent messaging.
  *
+ * ## Delivery modes
+ *
+ * - **compete** (default): At-most-once delivery. First subscriber to process
+ *   claims the dispatch. Other subscribers won't see it.
+ * - **fanout**: Each subscriber gets their own copy of the dispatch and
+ *   processes independently.
+ *
  * @example
  * ```typescript
  * import { createDispatchBus } from '@happyvertical/smrt-core';
@@ -12,8 +19,15 @@
  * // Emit a dispatch
  * await bus.emit('campaign.completed', { campaignId: '123' }, { source: 'suasor' });
  *
- * // Subscribe to dispatches
+ * // Subscribe with compete delivery (default — first-to-claim)
  * await bus.subscribe({ signalType: 'campaign.*', subscriber: 'fiscus' });
+ *
+ * // Subscribe with fan-out delivery (each subscriber gets own copy)
+ * await bus.subscribe({
+ *   signalType: 'campaign.*',
+ *   subscriber: 'auditor',
+ *   delivery: 'fanout',
+ * });
  *
  * // Process pending dispatches
  * await bus.process('fiscus', async (payload, metadata) => {

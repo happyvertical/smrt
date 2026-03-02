@@ -2,10 +2,9 @@
  * Tests for declarative signal subscriptions and auto-processing in Agent lifecycle
  */
 
-import { createDispatchBus, smrt } from '@happyvertical/smrt-core';
+import { smrt } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
-import type { AgentOptions } from './agent.js';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { Agent } from './agent.js';
 
 // Agent with declarative signal subscriptions
