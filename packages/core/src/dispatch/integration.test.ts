@@ -194,6 +194,47 @@ describe('Agent-to-Agent Communication', () => {
     expect(completed[0].processedBy).toBe('Inventory');
   });
 
+  it('should support fan-out delivery where all subscribers process independently', async () => {
+    // Multiple agents subscribe with fanout delivery
+    await bus.subscribe({
+      signalType: 'order.placed',
+      subscriber: 'Inventory',
+      delivery: 'fanout',
+    });
+    await bus.subscribe({
+      signalType: 'order.placed',
+      subscriber: 'Billing',
+      delivery: 'fanout',
+    });
+    await bus.subscribe({
+      signalType: 'order.placed',
+      subscriber: 'Notification',
+      delivery: 'fanout',
+    });
+
+    await bus.emit(
+      'order.placed',
+      { orderId: 'ord-123', total: 99.99 },
+      { source: 'Checkout' },
+    );
+
+    // All 3 subscribers process the dispatch independently
+    const inventoryProcessed = await bus.process('Inventory', async () => {});
+    const billingProcessed = await bus.process('Billing', async () => {});
+    const notificationProcessed = await bus.process(
+      'Notification',
+      async () => {},
+    );
+
+    expect(inventoryProcessed).toBe(1);
+    expect(billingProcessed).toBe(1);
+    expect(notificationProcessed).toBe(1);
+
+    // All 3 dispatches were processed (one per subscriber)
+    const completed = await bus.list({ status: 'completed' });
+    expect(completed).toHaveLength(3);
+  });
+
   it('should support event metadata for tracing', async () => {
     await bus.subscribe({ signalType: 'trace.test', subscriber: 'Logger' });
 

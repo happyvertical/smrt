@@ -1717,6 +1717,10 @@ ${fields}
       const adminRoutes: AgentAdminRouteManifest[] =
         obj.staticProperties?.adminRoutes ?? [];
 
+      // Capture signalSubscriptions from static property
+      const signalSubscriptions: string[] =
+        obj.staticProperties?.signalSubscriptions ?? [];
+
       const agentManifest: AgentManifest = {
         name: obj.className,
         slug,
@@ -1725,6 +1729,7 @@ ${fields}
         description: agentConfig.description,
         uiSlots,
         ...(adminRoutes.length > 0 ? { adminRoutes } : {}),
+        ...(signalSubscriptions.length > 0 ? { signalSubscriptions } : {}),
         permissions,
         features,
         menuItems,

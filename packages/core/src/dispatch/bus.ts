@@ -125,6 +125,13 @@ export class DispatchBus {
       for (const stmt of statements) {
         await this.db.query(stmt);
       }
+    } else {
+      // Migrate existing tables: add target_subscriber column (v1.2.0)
+      await this.addColumnIfMissing(
+        '_smrt_dispatch',
+        'target_subscriber',
+        'TEXT',
+      );
     }
 
     const subsExists = await DispatchSubscriptionCollection.tableExists(
@@ -137,28 +144,61 @@ export class DispatchBus {
       for (const stmt of statements) {
         await this.db.query(stmt);
       }
+    } else {
+      // Migrate existing tables: add delivery column (v1.2.0)
+      await this.addColumnIfMissing(
+        '_smrt_dispatch_subscriptions',
+        'delivery',
+        "TEXT NOT NULL DEFAULT 'compete'",
+      );
     }
 
     this.initialized = true;
   }
 
   /**
+   * Add a column to an existing table if it doesn't already exist.
+   * Uses a safe try/catch approach since SQLite doesn't support IF NOT EXISTS for ALTER.
+   */
+  private async addColumnIfMissing(
+    table: string,
+    column: string,
+    definition: string,
+  ): Promise<void> {
+    try {
+      await this.db.query(
+        `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`,
+      );
+    } catch {
+      // Column already exists — safe to ignore
+    }
+  }
+
+  /**
    * Emits a dispatch message.
    *
    * Two things happen atomically (from the caller's perspective):
-   * 1. A `Dispatch` row is inserted with `status: 'pending'` into `_smrt_dispatch`.
+   * 1. One or more `Dispatch` rows are inserted with `status: 'pending'` into `_smrt_dispatch`.
    * 2. All matching in-memory handlers (registered via `on()`) are invoked
    *    fire-and-forget (errors are caught and logged, not thrown back to the caller).
    *
    * Persistent subscriptions registered via `subscribe()` will see this dispatch
    * the next time `process(subscriber, handler)` is called for their subscriber name.
    *
+   * **Delivery modes** affect how dispatches are created:
+   * - `compete` subscribers share a single dispatch (`target_subscriber = NULL`).
+   *   First subscriber to `process()` claims it (at-most-once delivery).
+   * - `fanout` subscribers each get their own dispatch copy (`target_subscriber` set
+   *   to the subscriber name), so each processes independently.
+   *
+   * If no subscriptions exist, one dispatch is created for future processing.
+   *
    * @param type - Signal type string, e.g. `'campaign.completed'` or `'invoice.paid'`
    * @param payload - Any JSON-serializable data to attach to the dispatch
    * @param options.source - Name of the emitting agent/component (default `'unknown'`)
    * @param options.sourceId - Optional ID of the specific emitting entity
    * @param options.metadata - Optional additional JSON metadata for the dispatch record
-   * @returns The created `Dispatch` instance (status `'pending'`)
+   * @returns A persisted `Dispatch` instance (the compete dispatch, or the first fanout copy if fanout-only)
    *
    * @example
    * ```typescript
@@ -181,7 +221,19 @@ export class DispatchBus {
   ): Promise<Dispatch> {
     await this.initialize();
 
-    // Create the dispatch record
+    // Query subscriptions to determine if fan-out copies are needed.
+    // This runs on every emit() — uses SQL-level exact matching with
+    // in-memory fallback only for wildcard subscriptions to minimize I/O.
+    const matchingSubs = await DispatchSubscriptionCollection.findBySignalType(
+      this.db,
+      type,
+    );
+
+    // Separate into compete and fanout subscribers
+    const fanoutSubs = matchingSubs.filter((s) => s.delivery === 'fanout');
+    const competeSubs = matchingSubs.filter((s) => s.delivery !== 'fanout');
+
+    // Create the base dispatch record
     const dispatch = new Dispatch({
       type,
       source: options.source || 'unknown',
@@ -191,12 +243,37 @@ export class DispatchBus {
       status: 'pending',
     });
 
-    await DispatchCollection.insert(this.db, dispatch);
+    // Track first persisted dispatch to return to caller
+    let returnDispatch = dispatch;
+
+    // For fanout subscribers: create a per-subscriber dispatch copy
+    for (const sub of fanoutSubs) {
+      const fanoutDispatch = new Dispatch({
+        type,
+        source: options.source || 'unknown',
+        source_id: options.sourceId || null,
+        payload: JSON.stringify(payload || {}),
+        metadata: JSON.stringify(options.metadata || {}),
+        status: 'pending',
+        target_subscriber: sub.subscriber,
+      });
+      await DispatchCollection.insert(this.db, fanoutDispatch);
+      // If no compete dispatch will be persisted, return the first fanout copy
+      if (competeSubs.length === 0 && matchingSubs.length > 0) {
+        returnDispatch = fanoutDispatch;
+      }
+    }
+
+    // For compete subscribers (or if no subscriptions found): insert the original
+    // dispatch with target_subscriber = NULL so any compete subscriber can claim it
+    if (competeSubs.length > 0 || matchingSubs.length === 0) {
+      await DispatchCollection.insert(this.db, dispatch);
+    }
 
     // Notify in-memory handlers immediately (fire-and-forget)
     this.notifyHandlers(type, payload, dispatch.getMetadata());
 
-    return dispatch;
+    return returnDispatch;
   }
 
   /**
@@ -271,15 +348,26 @@ export class DispatchBus {
    * Calling `subscribe()` with the same `signalType`/`subscriber` pair is idempotent
    * (upsert) — it is safe to call on every agent startup.
    *
+   * Set `delivery: 'fanout'` to give each subscriber their own dispatch copy.
+   * Default is `'compete'` (at-most-once, first subscriber to process claims it).
+   *
    * @param options.signalType - Signal type pattern to subscribe to (wildcards supported)
    * @param options.subscriber - Name that identifies this subscriber (e.g. agent class name)
    * @param options.handler - Optional method name on the subscriber to call (default `'handleDispatch'`)
+   * @param options.delivery - `'compete'` (default) for at-most-once, `'fanout'` for per-subscriber copies
    * @param options.enabled - If `false`, subscription is created but disabled (default `true`)
    *
    * @example
    * ```typescript
    * // Subscribe on agent startup (idempotent)
    * await bus.subscribe({ signalType: 'campaign.*', subscriber: 'FiscusAgent' });
+   *
+   * // Fan-out: each subscriber gets their own dispatch copy
+   * await bus.subscribe({
+   *   signalType: 'campaign.*',
+   *   subscriber: 'AuditorAgent',
+   *   delivery: 'fanout',
+   * });
    *
    * // Later, process matching pending dispatches
    * await bus.process('FiscusAgent', async (payload, metadata) => { ... });
@@ -296,6 +384,7 @@ export class DispatchBus {
       signal_type: options.signalType,
       subscriber: options.subscriber,
       handler: options.handler || 'handleDispatch',
+      delivery: options.delivery || 'compete',
       enabled: options.enabled !== false ? 1 : 0,
     });
 
@@ -373,24 +462,47 @@ export class DispatchBus {
     // For wildcards, we need to get all pending and filter
     const hasWildcards = signalTypes.some((t) => t.includes('*'));
 
+    // Helper: check if a dispatch should be visible to this subscriber
+    const isVisibleToSubscriber = (dispatch: Dispatch): boolean => {
+      if (dispatch.targetSubscriber === subscriber) {
+        // Targeted at this subscriber (fanout copy) — always visible
+        return true;
+      }
+      if (dispatch.targetSubscriber !== null) {
+        // Targeted at a different subscriber — not visible
+        return false;
+      }
+      // Null target (compete dispatch): only visible if this subscriber
+      // has a compete subscription matching this dispatch type
+      const matchingSub = subscriptions.find((sub) =>
+        sub.matches(dispatch.type),
+      );
+      return matchingSub?.delivery === 'compete';
+    };
+
     let pendingDispatches: Dispatch[];
     if (hasWildcards) {
-      // Get all pending dispatches and filter by subscription patterns
+      // Get all pending dispatches and filter by subscription patterns + target
       const allPending = await DispatchCollection.list(this.db, {
         status: 'pending',
         limit: options.limit || 100,
       });
 
-      pendingDispatches = allPending.filter((dispatch) =>
-        subscriptions.some((sub) => sub.matches(dispatch.type)),
+      pendingDispatches = allPending.filter(
+        (dispatch) =>
+          subscriptions.some((sub) => sub.matches(dispatch.type)) &&
+          isVisibleToSubscriber(dispatch),
       );
     } else {
-      // Direct query for exact signal types
-      pendingDispatches = await DispatchCollection.findPending(
+      // Direct query for exact signal types (with target_subscriber filter)
+      const raw = await DispatchCollection.findPending(
         this.db,
         signalTypes,
         options.limit || 100,
+        subscriber,
       );
+      // Post-filter for delivery mode correctness
+      pendingDispatches = raw.filter(isVisibleToSubscriber);
     }
 
     // Filter by specific signal types if provided

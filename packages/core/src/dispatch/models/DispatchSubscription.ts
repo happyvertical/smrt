@@ -15,6 +15,7 @@ export interface DispatchSubscriptionData {
   signal_type: string;
   subscriber: string;
   handler: string;
+  delivery: string;
   enabled: number;
   created_at: string;
   updated_at: string;
@@ -39,6 +40,9 @@ export class DispatchSubscription {
   /** Handler method name */
   handler: string;
 
+  /** Delivery mode: 'compete' (first-to-claim) or 'fanout' (per-subscriber copy) */
+  delivery: 'compete' | 'fanout';
+
   /** Whether subscription is active */
   enabled: boolean;
 
@@ -53,6 +57,7 @@ export class DispatchSubscription {
     this.signalType = data.signal_type || '';
     this.subscriber = data.subscriber || '';
     this.handler = data.handler || 'handleDispatch';
+    this.delivery = (data.delivery as 'compete' | 'fanout') || 'compete';
     this.enabled = data.enabled !== undefined ? Boolean(data.enabled) : true;
     this.createdAt = data.created_at ? new Date(data.created_at) : new Date();
     this.updatedAt = data.updated_at ? new Date(data.updated_at) : new Date();
@@ -74,6 +79,7 @@ export class DispatchSubscription {
       signal_type: this.signalType,
       subscriber: this.subscriber,
       handler: this.handler,
+      delivery: this.delivery,
       enabled: this.enabled ? 1 : 0,
       created_at: this.createdAt.toISOString(),
       updated_at: new Date().toISOString(),

@@ -155,6 +155,34 @@ export abstract class Agent extends SmrtObject {
   static adminRoutes: AgentAdminRoute[] = [];
 
   /**
+   * Signal types this agent subscribes to by default
+   *
+   * These are seedable defaults — on `initialize()`, the agent checks the
+   * database first and only creates subscriptions that don't already exist.
+   * The database is the runtime source of truth, allowing users to customize
+   * subscriptions per-tenant via the dashboard without code changes.
+   *
+   * When declared, `execute()` will automatically call `processDispatches()`
+   * before `run()`, so handler agents don't need to manually poll.
+   * Override `handleDispatch()` to process incoming dispatches.
+   *
+   * @example
+   * ```typescript
+   * @smrt({ agent: { icon: 'mail', tier: 'standard' } })
+   * class EmailHandler extends Agent {
+   *   static override signalSubscriptions = ['email.received', 'email.bounced'];
+   *
+   *   async handleDispatch(payload: unknown, metadata: DispatchMetadata) {
+   *     // Called automatically during execute() for each pending dispatch
+   *   }
+   *
+   *   async run() { ... }
+   * }
+   * ```
+   */
+  static signalSubscriptions: string[] = [];
+
+  /**
    * Current agent status
    */
   status: AgentStatusType = 'idle';
@@ -460,6 +488,22 @@ export abstract class Agent extends SmrtObject {
     // Setup signal handlers for graceful shutdown
     this.setupSignalHandlers();
 
+    // Seed declarative signal subscriptions (DB is source of truth)
+    const subs = (this.constructor as typeof Agent).signalSubscriptions;
+    if (subs.length > 0 && this._db) {
+      const dispatch = await this.getDispatch();
+      const existing = await dispatch.listSubscriptions(this.constructor.name);
+      const existingTypes = new Set(existing.map((s) => s.signalType));
+      for (const signalType of subs) {
+        if (!existingTypes.has(signalType)) {
+          await dispatch.subscribe({
+            signalType,
+            subscriber: this.constructor.name,
+          });
+        }
+      }
+    }
+
     return this;
   }
 
@@ -575,9 +619,12 @@ export abstract class Agent extends SmrtObject {
    * Execute agent with lifecycle management
    *
    * Runs the full lifecycle:
-   * 1. initialize()
+   * 1. initialize() — seeds signal subscriptions if declared
    * 2. validate()
-   * 3. run()
+   * 3. processDispatches() — auto-processes pending dispatches if subscriptions exist
+   * 4. run()
+   *
+   * Note: handleDispatch() callbacks may fire before run() is entered.
    *
    * On error:
    * 1. Sets status to 'error'
@@ -602,6 +649,19 @@ export abstract class Agent extends SmrtObject {
       await this.validate();
 
       this.status = 'running';
+
+      // Auto-process pending dispatches for agents with signal subscriptions
+      if (this._db) {
+        const dispatch = await this.getDispatch();
+        const subs = await dispatch.listSubscriptions(this.constructor.name);
+        if (subs.length > 0) {
+          const count = await this.processDispatches();
+          if (count > 0) {
+            this.logger.info(`Processed ${count} pending dispatches`);
+          }
+        }
+      }
+
       await this.run();
       this.status = 'idle';
 

@@ -206,6 +206,8 @@ export interface AgentManifest {
   description?: string;
   uiSlots: Record<string, AgentUISlotManifest>;
   adminRoutes?: AgentAdminRouteManifest[];
+  /** Default signal subscriptions declared by this agent */
+  signalSubscriptions?: string[];
   permissions: AgentPermission[];
   features: AgentFeature[];
   menuItems: AgentMenuItem[];

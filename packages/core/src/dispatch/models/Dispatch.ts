@@ -22,6 +22,7 @@ export interface DispatchData {
   last_error: string | null;
   processed_at: string | null;
   processed_by: string | null;
+  target_subscriber: string | null;
   metadata: string | null;
   created_at: string;
   updated_at: string;
@@ -64,6 +65,9 @@ export class Dispatch {
   /** Which subscriber processed it */
   processedBy: string;
 
+  /** Target subscriber for fan-out delivery (null for compete mode) */
+  targetSubscriber: string | null;
+
   /** Additional metadata */
   metadata: Record<string, unknown>;
 
@@ -82,6 +86,7 @@ export class Dispatch {
     this.attempts = data.attempts || 0;
     this.lastError = data.last_error || '';
     this.processedBy = data.processed_by || '';
+    this.targetSubscriber = data.target_subscriber || null;
     this.createdAt = data.created_at ? new Date(data.created_at) : new Date();
     this.updatedAt = data.updated_at ? new Date(data.updated_at) : new Date();
     this.processedAt = data.processed_at ? new Date(data.processed_at) : null;
@@ -113,6 +118,7 @@ export class Dispatch {
       last_error: this.lastError || null,
       processed_at: this.processedAt?.toISOString() || null,
       processed_by: this.processedBy || null,
+      target_subscriber: this.targetSubscriber || null,
       metadata: JSON.stringify(this.metadata),
       created_at: this.createdAt.toISOString(),
       updated_at: new Date().toISOString(),

@@ -134,6 +134,8 @@ export interface AgentManifestInfo {
   description?: string;
   uiSlots: Record<string, AgentUISlot>;
   adminRoutes?: AgentAdminRoute[];
+  /** Default signal subscriptions declared by this agent */
+  signalSubscriptions?: string[];
   permissions: Array<{
     id: string;
     label: string;
