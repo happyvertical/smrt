@@ -28,6 +28,7 @@ export enum CommissionType {
   REFERRAL = 'referral',
   SALES = 'sales',
   PARENT = 'parent',
+  OVERHEAD = 'overhead',
 }
 
 /**

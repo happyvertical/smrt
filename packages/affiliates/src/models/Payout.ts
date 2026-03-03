@@ -76,8 +76,13 @@ export class Payout extends SmrtObject {
   parentEarnings: number = 0;
 
   /**
+   * Total overhead earnings in cents (network overhead commissions)
+   */
+  overheadEarnings: number = 0;
+
+  /**
    * Total payout amount in cents
-   * = displayEarnings + referralEarnings + salesEarnings + parentEarnings
+   * = displayEarnings + referralEarnings + salesEarnings + parentEarnings + overheadEarnings
    */
   totalAmount: number = 0;
 
@@ -132,6 +137,8 @@ export class Payout extends SmrtObject {
       this.salesEarnings = options.salesEarnings;
     if (options.parentEarnings !== undefined)
       this.parentEarnings = options.parentEarnings;
+    if (options.overheadEarnings !== undefined)
+      this.overheadEarnings = options.overheadEarnings;
     if (options.totalAmount !== undefined)
       this.totalAmount = options.totalAmount;
     if (options.currency !== undefined) this.currency = options.currency;
@@ -215,6 +222,13 @@ export class Payout extends SmrtObject {
   }
 
   /**
+   * Get overhead earnings in dollars
+   */
+  getOverheadEarningsInDollars(): number {
+    return this.overheadEarnings / 100;
+  }
+
+  /**
    * Calculate total from component earnings
    */
   calculateTotal(): number {
@@ -222,7 +236,8 @@ export class Payout extends SmrtObject {
       this.displayEarnings +
       this.referralEarnings +
       this.salesEarnings +
-      this.parentEarnings
+      this.parentEarnings +
+      this.overheadEarnings
     );
   }
 
