@@ -135,6 +135,181 @@ export class CommissionCollection extends SmrtCollection<Commission> {
     });
   }
 
+  // --- Network-scoped queries ---
+
+  /**
+   * Find all commissions for a network
+   *
+   * @param networkId - Network ID
+   * @returns Array of commissions
+   */
+  async findByNetwork(networkId: string): Promise<Commission[]> {
+    return await this.list({
+      where: { networkId },
+      orderBy: 'event_timestamp DESC',
+    });
+  }
+
+  /**
+   * Find commissions for a network filtered by type
+   *
+   * @param networkId - Network ID
+   * @param commissionType - Commission type
+   * @returns Array of commissions
+   */
+  async findByNetworkAndType(
+    networkId: string,
+    commissionType: CommissionType,
+  ): Promise<Commission[]> {
+    return await this.list({
+      where: { networkId, commissionType },
+      orderBy: 'event_timestamp DESC',
+    });
+  }
+
+  /**
+   * Find pending commissions for a network
+   *
+   * @param networkId - Network ID
+   * @returns Array of pending commissions
+   */
+  async findPendingByNetwork(networkId: string): Promise<Commission[]> {
+    return await this.list({
+      where: { networkId, status: CommissionStatus.PENDING },
+      orderBy: 'event_timestamp DESC',
+    });
+  }
+
+  /**
+   * Get aggregate summary of commissions by type and site for a network.
+   *
+   * @param networkId - Network ID
+   * @param options - Optional filters (siteId, from, to, commissionType)
+   * @returns Summary with byType, bySite, total, and count
+   */
+  async getSummaryByNetwork(
+    networkId: string,
+    options: {
+      siteId?: string;
+      from?: Date;
+      to?: Date;
+      commissionType?: CommissionType;
+    } = {},
+  ): Promise<{
+    byType: Record<string, number>;
+    bySite: Record<string, number>;
+    total: number;
+    count: number;
+  }> {
+    const where: Record<string, unknown> = { networkId };
+    if (options.siteId) where.siteId = options.siteId;
+    if (options.commissionType) where.commissionType = options.commissionType;
+    if (options.from) where['event_timestamp >='] = options.from.toISOString();
+    if (options.to) where['event_timestamp <='] = options.to.toISOString();
+
+    const filtered = await this.list({ where });
+
+    const byType: Record<string, number> = {
+      overhead: 0,
+      display: 0,
+      referral: 0,
+      sales: 0,
+      parent: 0,
+    };
+    const bySite: Record<string, number> = {};
+    let total = 0;
+
+    for (const c of filtered) {
+      byType[c.commissionType] =
+        (byType[c.commissionType] ?? 0) + c.commissionAmount;
+      if (c.siteId) {
+        bySite[c.siteId] = (bySite[c.siteId] ?? 0) + c.commissionAmount;
+      }
+      total += c.commissionAmount;
+    }
+
+    return { byType, bySite, total, count: filtered.length };
+  }
+
+  /**
+   * Get pending commissions grouped by partnerId for a network.
+   *
+   * @param networkId - Network ID
+   * @returns Array of payout groups (partnerId, totalPending, currency, entries)
+   */
+  async getPendingPayoutsByNetwork(networkId: string): Promise<
+    Array<{
+      partnerId: string;
+      totalPending: number;
+      currency: string;
+      entryCount: number;
+      entries: Array<{
+        id: string;
+        commissionType: string;
+        commissionAmount: number;
+        campaignId: string;
+        siteId: string;
+      }>;
+    }>
+  > {
+    const pending = await this.findPendingByNetwork(networkId);
+
+    // Filter to entries with a partnerId
+    const withPartner = pending.filter(
+      (c) => c.partnerId && c.partnerId !== '',
+    );
+
+    // Group by partnerId
+    const grouped = new Map<string, Commission[]>();
+    for (const c of withPartner) {
+      const existing = grouped.get(c.partnerId) ?? [];
+      existing.push(c);
+      grouped.set(c.partnerId, existing);
+    }
+
+    const payouts: Array<{
+      partnerId: string;
+      totalPending: number;
+      currency: string;
+      entryCount: number;
+      entries: Array<{
+        id: string;
+        commissionType: string;
+        commissionAmount: number;
+        campaignId: string;
+        siteId: string;
+      }>;
+    }> = [];
+    for (const [partnerId, group] of grouped) {
+      const totalPending = group.reduce(
+        (sum, c) => sum + c.commissionAmount,
+        0,
+      );
+      const currency = group[0]?.currency ?? 'CAD';
+
+      payouts.push({
+        partnerId,
+        totalPending,
+        currency,
+        entryCount: group.length,
+        entries: group.map((c) => ({
+          id: c.id ?? '',
+          commissionType: c.commissionType,
+          commissionAmount: c.commissionAmount,
+          campaignId: c.campaignId,
+          siteId: c.siteId,
+        })),
+      });
+    }
+
+    // Sort by total pending descending
+    payouts.sort((a, b) => b.totalPending - a.totalPending);
+
+    return payouts;
+  }
+
+  // --- Aggregation queries ---
+
   /**
    * Sum pending commissions for a partner
    *
@@ -174,6 +349,7 @@ export class CommissionCollection extends SmrtCollection<Commission> {
     referral: number;
     sales: number;
     parent: number;
+    overhead: number;
     total: number;
   }> {
     const commissions = await this.findByPartner(partnerId);
@@ -182,6 +358,7 @@ export class CommissionCollection extends SmrtCollection<Commission> {
       referral: 0,
       sales: 0,
       parent: 0,
+      overhead: 0,
       total: 0,
     };
 
@@ -200,6 +377,9 @@ export class CommissionCollection extends SmrtCollection<Commission> {
           case CommissionType.PARENT:
             breakdown.parent += c.commissionAmount;
             break;
+          case CommissionType.OVERHEAD:
+            breakdown.overhead += c.commissionAmount;
+            break;
         }
       }
     }
@@ -208,7 +388,8 @@ export class CommissionCollection extends SmrtCollection<Commission> {
       breakdown.display +
       breakdown.referral +
       breakdown.sales +
-      breakdown.parent;
+      breakdown.parent +
+      breakdown.overhead;
     return breakdown;
   }
 
@@ -223,6 +404,7 @@ export class CommissionCollection extends SmrtCollection<Commission> {
     referral: number;
     sales: number;
     parent: number;
+    overhead: number;
     total: number;
   }> {
     const pending = await this.findPendingByPartner(partnerId);
@@ -231,6 +413,7 @@ export class CommissionCollection extends SmrtCollection<Commission> {
       referral: 0,
       sales: 0,
       parent: 0,
+      overhead: 0,
       total: 0,
     };
 
@@ -248,6 +431,9 @@ export class CommissionCollection extends SmrtCollection<Commission> {
         case CommissionType.PARENT:
           breakdown.parent += c.commissionAmount;
           break;
+        case CommissionType.OVERHEAD:
+          breakdown.overhead += c.commissionAmount;
+          break;
       }
     }
 
@@ -255,7 +441,8 @@ export class CommissionCollection extends SmrtCollection<Commission> {
       breakdown.display +
       breakdown.referral +
       breakdown.sales +
-      breakdown.parent;
+      breakdown.parent +
+      breakdown.overhead;
     return breakdown;
   }
 }

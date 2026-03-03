@@ -113,6 +113,21 @@ export class Commission extends SmrtObject {
   eventTimestamp: Date = new Date();
 
   /**
+   * Network ID for aggregate queries (optional context)
+   */
+  networkId: string = '';
+
+  /**
+   * Site/Property ID for aggregate queries (optional context)
+   */
+  siteId: string = '';
+
+  /**
+   * Campaign ID for aggregate queries (optional context)
+   */
+  campaignId: string = '';
+
+  /**
    * Additional metadata as JSON string
    */
   metadata: string = '';
@@ -134,6 +149,9 @@ export class Commission extends SmrtObject {
     if (options.status !== undefined) this.status = options.status;
     if (options.eventTimestamp !== undefined)
       this.eventTimestamp = options.eventTimestamp;
+    if (options.networkId !== undefined) this.networkId = options.networkId;
+    if (options.siteId !== undefined) this.siteId = options.siteId;
+    if (options.campaignId !== undefined) this.campaignId = options.campaignId;
     if (options.metadata !== undefined) this.metadata = options.metadata;
   }
 
@@ -184,6 +202,13 @@ export class Commission extends SmrtObject {
    */
   isParent(): boolean {
     return this.commissionType === CommissionType.PARENT;
+  }
+
+  /**
+   * Check if this is an overhead commission
+   */
+  isOverhead(): boolean {
+    return this.commissionType === CommissionType.OVERHEAD;
   }
 
   /**
