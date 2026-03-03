@@ -204,17 +204,10 @@ export class CommissionCollection extends SmrtCollection<Commission> {
     const where: Record<string, unknown> = { networkId };
     if (options.siteId) where.siteId = options.siteId;
     if (options.commissionType) where.commissionType = options.commissionType;
+    if (options.from) where['event_timestamp >='] = options.from.toISOString();
+    if (options.to) where['event_timestamp <='] = options.to.toISOString();
 
-    const allCommissions = await this.list({ where });
-
-    // Filter by date range if provided
-    const filtered = allCommissions.filter((c) => {
-      if (options.from && c.eventTimestamp && c.eventTimestamp < options.from)
-        return false;
-      if (options.to && c.eventTimestamp && c.eventTimestamp > options.to)
-        return false;
-      return true;
-    });
+    const filtered = await this.list({ where });
 
     const byType: Record<string, number> = {
       overhead: 0,
@@ -274,7 +267,19 @@ export class CommissionCollection extends SmrtCollection<Commission> {
       grouped.set(c.partnerId, existing);
     }
 
-    const payouts = [];
+    const payouts: Array<{
+      partnerId: string;
+      totalPending: number;
+      currency: string;
+      entryCount: number;
+      entries: Array<{
+        id: string;
+        commissionType: string;
+        commissionAmount: number;
+        campaignId: string;
+        siteId: string;
+      }>;
+    }> = [];
     for (const [partnerId, group] of grouped) {
       const totalPending = group.reduce(
         (sum, c) => sum + c.commissionAmount,
