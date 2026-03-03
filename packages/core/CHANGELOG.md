@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.45
+
+### Patch Changes
+
+- ### Features
+
+  - add OVERHEAD type and network context fields (#991) (affiliates)
+  - @happyvertical/smrt-scanner@0.20.45
+  - @happyvertical/smrt-config@0.20.45
+  - @happyvertical/smrt-types@0.20.45
+
 ## 0.20.44
 
 ### Patch Changes
