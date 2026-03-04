@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.46
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: Add SMRT onboarding agents and rules (#992)
+  - @happyvertical/smrt-scanner@0.20.46
+  - @happyvertical/smrt-config@0.20.46
+  - @happyvertical/smrt-types@0.20.46
+
 ## 0.20.45
 
 ### Patch Changes
