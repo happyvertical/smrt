@@ -100,7 +100,7 @@ export class GroupMemberCollection extends SmrtCollection<GroupMember> {
       INNER JOIN groups g ON g.id = gm.group_id
       WHERE gm.user_id = ? AND g.tenant_id = ?
     `;
-    const result = await this.db.query(sql, [userId, tenantId]);
+    const result = await this.db.query(sql, userId, tenantId);
     return result.rows.map((r: any) => r.group_id as string);
   }
 
