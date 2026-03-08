@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.47
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - update group member query to use Postgres parameter bindings instead of SQLite bindings (#998) (users)
+  - @happyvertical/smrt-scanner@0.20.47
+  - @happyvertical/smrt-config@0.20.47
+  - @happyvertical/smrt-types@0.20.47
+
 ## 0.20.46
 
 ### Patch Changes
