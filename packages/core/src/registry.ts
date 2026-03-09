@@ -1988,13 +1988,22 @@ export class ObjectRegistry {
             // (ambiguity will be detected at findClass time)
             //
             // Issue #1000: Merge plain-property fields from the manifest into the
-            // existing decorator-registered entry. When the @smrt() decorator runs
-            // first, it only registers fields that have decorators (@foreignKey,
-            // @tenantId, etc.). Plain TypeScript properties like `contractId: string = ''`
-            // are absent. The manifest scan captures ALL fields. By merging here,
-            // getClass('AdGroup') returns a complete field set so toJSON() serializes
-            // all columns, not just decorator-annotated ones.
-            if (objectDef.fields) {
+            // existing decorator-registered entry — but ONLY when both entries come
+            // from the same package. This is the scenario where the @smrt() decorator
+            // ran first (registering only decorator-annotated fields like @foreignKey
+            // and @tenantId) and the manifest entry from the same package now provides
+            // the full field list including plain TypeScript properties like
+            // `contractId: string = ''`. Without this merge, toJSON() only serializes
+            // decorator-annotated columns, silently dropping plain-property fields.
+            //
+            // Restricting to same-package prevents corrupting unrelated classes that
+            // happen to share a name across different packages (genuine collisions).
+            if (
+              packageName &&
+              existing.packageName &&
+              packageName === existing.packageName &&
+              objectDef.fields
+            ) {
               for (const [fieldName, fieldDef] of Object.entries(
                 objectDef.fields as Record<string, any>,
               )) {
@@ -2011,10 +2020,10 @@ export class ObjectRegistry {
                   });
                 }
               }
-            }
-            // Also update extends/schema/tableName on the existing entry when absent
-            if (!existing.extends && objectDef.extends) {
-              existing.extends = objectDef.extends;
+              // Backfill extends when absent (needed for STI chain resolution)
+              if (!existing.extends && objectDef.extends) {
+                existing.extends = objectDef.extends;
+              }
             }
           } else {
             return;
