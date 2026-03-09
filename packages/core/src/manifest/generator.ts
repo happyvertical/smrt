@@ -242,7 +242,11 @@ export class ManifestBuilder {
   }
 
   /**
-   * Enrich manifest with external packages, metadata, and tree shaking
+   * Enrich manifest with metadata (moduleType, smrtDependencies, packageInfo).
+   *
+   * Note: As of Issue #1013, this method no longer merges external package
+   * objects into the manifest. Dependencies are referenced via
+   * `smrtDependencies` and resolved at runtime by manifest-loader.ts.
    */
   private enrichManifest(
     manifest: SmartObjectManifest,
@@ -252,18 +256,13 @@ export class ManifestBuilder {
     // Add module type
     manifest.moduleType = options.moduleType || 'smrt';
 
-    // Add SMRT dependencies and aggregate their manifests (Issue #782)
-    // This pre-aggregates all external package objects into a single manifest,
-    // eliminating the need to scan node_modules at runtime
+    // Record dependency references (not their objects) so runtime
+    // manifest-loader.ts can discover and load them on demand.
     if (
       scannerConfig.smrtDependencies &&
       scannerConfig.smrtDependencies.length > 0
     ) {
       manifest.smrtDependencies = scannerConfig.smrtDependencies;
-      // Removed:
-      // We no longer aggregate external package objects into the local manifest.
-      // Doing so causes massive duplication (Issue 1013) and makes registration order dependent.
-      // External manifests are discovered and auto-loaded natively by manifest-loader.ts at runtime.
     }
 
     // Inject package info

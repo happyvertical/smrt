@@ -1,5 +1,5 @@
 /**
- * Integration test for high object counts (400+ registered objects)
+ * Integration test for high object counts (200+ registered objects)
  *
  * Issue #1008: The existing test suite tests packages in isolation and never
  * reaches the scale where name collisions and registration order effects

@@ -11,7 +11,7 @@
  * ```typescript
  * import { SchemaAggregator } from '@happyvertical/smrt-core/schema';
  *
- * // Auto-discover from package.json dependencies
+ * // Auto-discover from installed @happyvertical packages in node_modules
  * const aggregator = new SchemaAggregator();
  * const result = aggregator.aggregate();
  *
@@ -78,7 +78,8 @@ export interface AggregationResult {
 export interface AggregateOptions {
   /**
    * Explicit list of packages to scan. If omitted, auto-discovers
-   * from package.json dependencies using `discoverSmrtPackages()`.
+   * installed `@happyvertical/smrt-*` packages from `node_modules`
+   * via `discoverSmrtPackages()`.
    */
   packages?: string[];
 
@@ -88,11 +89,6 @@ export interface AggregateOptions {
    * packages have newer schemas than node_modules.
    */
   localPaths?: Record<string, string>;
-
-  /**
-   * Root directory for resolving node_modules. Defaults to `process.cwd()`.
-   */
-  cwd?: string;
 
   /**
    * Skip collection tables and infrastructure tables.
@@ -154,7 +150,6 @@ export class SchemaAggregator {
    * @returns Aggregated schemas with combined SQL
    */
   aggregate(options: AggregateOptions = {}): AggregationResult {
-    const cwd = options.cwd || process.cwd();
     const verbose = options.verbose ?? false;
 
     // 1. Discover packages
@@ -169,7 +164,7 @@ export class SchemaAggregator {
     let packagesSkipped = 0;
 
     for (const pkg of packages) {
-      const manifest = this.loadManifest(pkg, cwd, options.localPaths);
+      const manifest = this.loadManifest(pkg, options.localPaths);
       if (manifest) {
         manifests.set(pkg, manifest);
         if (verbose) {
@@ -224,7 +219,6 @@ export class SchemaAggregator {
    */
   private loadManifest(
     packageName: string,
-    cwd: string,
     localPaths?: Record<string, string>,
   ): SmartObjectManifest | null {
     // Try local development path first (may have newer schemas)
@@ -248,10 +242,11 @@ export class SchemaAggregator {
     const manifest = loadExternalManifestSync(packageName);
     if (manifest) return manifest;
 
-    // Fallback: try common node_modules paths
+    // Fallback: try common node_modules paths relative to cwd
+    const root = process.cwd();
     const paths = [
-      join(cwd, 'node_modules', packageName, 'dist', 'manifest.json'),
-      join(cwd, 'node_modules', packageName, 'manifest.json'),
+      join(root, 'node_modules', packageName, 'dist', 'manifest.json'),
+      join(root, 'node_modules', packageName, 'manifest.json'),
     ];
 
     for (const manifestPath of paths) {
@@ -277,10 +272,11 @@ export class SchemaAggregator {
     const tables = new Map<string, AggregatedTable>();
 
     for (const manifest of manifests) {
-      for (const [objectName, object] of Object.entries(manifest.objects)) {
+      for (const [_key, object] of Object.entries(manifest.objects)) {
         const schema = (object as any).schema;
         if (!schema?.ddl) continue;
 
+        const className: string = (object as any).className || _key;
         const tableName: string = schema.tableName;
         const existing = tables.get(tableName);
 
@@ -289,7 +285,7 @@ export class SchemaAggregator {
           if (schema.ddl.length > existing.ddl.length) {
             existing.ddl = schema.ddl;
           }
-          existing.sources.push(`${manifest.packageName || '?'}:${objectName}`);
+          existing.sources.push(`${manifest.packageName || '?'}:${className}`);
 
           // Merge indexes (deduplicate by SQL text)
           for (const idx of schema.indexes || []) {
@@ -309,7 +305,7 @@ export class SchemaAggregator {
             tableName,
             ddl: schema.ddl,
             indexes,
-            sources: [`${manifest.packageName || '?'}:${objectName}`],
+            sources: [`${manifest.packageName || '?'}:${className}`],
             columns: schema.columns,
           });
         }

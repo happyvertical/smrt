@@ -6,9 +6,8 @@
  * No dependency objects should leak into package manifests.
  */
 
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -20,28 +19,31 @@ function findMonorepoRoot(): string {
     if (existsSync(join(dir, 'turbo.json'))) {
       return dir;
     }
-    dir = join(dir, '..');
+    dir = resolve(dir, '..');
   }
   throw new Error('Could not find monorepo root (turbo.json)');
 }
 
 /**
- * Discover all dist/manifest.json files in the monorepo
+ * Discover all dist/manifest.json files using Node APIs (no shell commands).
  */
 function discoverManifestPaths(root: string): string[] {
-  try {
-    const output = execSync(
-      'find packages -name "manifest.json" -path "*/dist/*" -not -path "*/node_modules/*"',
-      { cwd: root, encoding: 'utf-8' },
-    );
-    return output
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((p) => join(root, p));
-  } catch {
-    return [];
+  const packagesDir = join(root, 'packages');
+  if (!existsSync(packagesDir)) return [];
+
+  const packageDirs = readdirSync(packagesDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
+
+  const paths: string[] = [];
+  for (const dir of packageDirs) {
+    const manifestPath = join(packagesDir, dir, 'dist', 'manifest.json');
+    if (existsSync(manifestPath)) {
+      paths.push(manifestPath);
+    }
   }
+
+  return paths;
 }
 
 describe('Manifest Leak Detection (Issue #1013)', () => {
@@ -61,20 +63,34 @@ describe('Manifest Leak Detection (Issue #1013)', () => {
       const manifest = JSON.parse(content);
       const packageName = manifest.packageName;
 
-      // Skip manifests without packageName (shouldn't happen but be safe)
-      if (!packageName) {
-        console.warn(`  [warn] ${relativePath} has no packageName, skipping`);
-        return;
-      }
+      // Every manifest must have a packageName
+      expect(packageName).toBeTruthy();
 
       const objects = manifest.objects || {};
       const leaked: string[] = [];
+      const missingPackageName: string[] = [];
 
       for (const [key, obj] of Object.entries(objects)) {
         const objPackage = (obj as any).packageName;
-        if (objPackage && objPackage !== packageName) {
+        if (!objPackage) {
+          // Flag objects without packageName — potential false negative
+          missingPackageName.push(key);
+        } else if (objPackage !== packageName) {
           leaked.push(`${key} (from ${objPackage})`);
         }
+      }
+
+      if (missingPackageName.length > 0) {
+        expect.fail(
+          `${packageName}: ${missingPackageName.length} objects are missing packageName metadata:\n` +
+            missingPackageName
+              .slice(0, 10)
+              .map((n) => `  - ${n}`)
+              .join('\n') +
+            (missingPackageName.length > 10
+              ? `\n  ... and ${missingPackageName.length - 10} more`
+              : ''),
+        );
       }
 
       if (leaked.length > 0) {
