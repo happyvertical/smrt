@@ -150,6 +150,7 @@ describe('@have/agents', () => {
       });
 
       const agent = new CallableArticleAgent({ name: 'callable-agent' });
+      expect(typeof agent.summaryArticle).toBe('function');
       const result = await agent.summaryArticle?.({
         startDate: '2025-01-01',
         endDate: '2025-01-07',
