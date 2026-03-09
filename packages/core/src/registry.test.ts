@@ -6,6 +6,7 @@ import {
   TestCustomer,
   TestOrder,
 } from './__tests__/fixtures/registry-test-classes.js';
+import { ConfigurationError } from './errors';
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
 import type { FieldDefinition } from './scanner/types.js';
@@ -1267,6 +1268,195 @@ describe('ObjectRegistry', () => {
       );
 
       expect(errors.length).toBe(0);
+    });
+  });
+
+  describe('Qualified Extends and findClassStrict (Issues #1004, #1005)', () => {
+    // Save registered classes so we can clean up after tests
+    let savedClassKeys: string[];
+
+    beforeEach(() => {
+      savedClassKeys = Array.from(
+        (ObjectRegistry as any).classes?.keys?.() || [],
+      );
+    });
+
+    afterEach(() => {
+      // Remove only the classes we added during the test
+      const currentKeys = Array.from(
+        (ObjectRegistry as any).classes?.keys?.() || [],
+      ) as string[];
+      for (const key of currentKeys) {
+        if (!savedClassKeys.includes(key)) {
+          (ObjectRegistry as any).classes.delete(key);
+          // Also clean up classNameMap
+          for (const [mapKey, mapValue] of (
+            ObjectRegistry as any
+          ).classNameMap.entries()) {
+            const filtered = (mapValue as string[]).filter((v) => v !== key);
+            if (filtered.length === 0) {
+              (ObjectRegistry as any).classNameMap.delete(mapKey);
+            } else {
+              (ObjectRegistry as any).classNameMap.set(mapKey, filtered);
+            }
+          }
+        }
+      }
+      // Clear inheritance cache so recomputation happens
+      (ObjectRegistry as any).getInheritanceCache().clear();
+    });
+
+    it('should resolve cross-package same-named class via qualified extends (#1004)', () => {
+      // Simulate two packages defining a class named "Content"
+      ObjectRegistry.registerFromManifest(
+        'Content',
+        {
+          className: 'Content',
+          fields: { title: { type: 'text' } },
+          extends: undefined,
+        },
+        '@happyvertical/smrt-content',
+      );
+
+      ObjectRegistry.registerFromManifest(
+        'Content',
+        {
+          className: 'Content',
+          fields: { duration: { type: 'integer' } },
+          extends: undefined,
+        },
+        '@happyvertical/smrt-video',
+      );
+
+      // Register VideoShot that extends Content from the video package
+      // Since @happyvertical/smrt-video:Content is already registered,
+      // qualifyExtendsName will find it in the same package
+      ObjectRegistry.registerFromManifest(
+        'VideoShot',
+        {
+          className: 'VideoShot',
+          fields: { shotType: { type: 'text' } },
+          extends: 'Content',
+        },
+        '@happyvertical/smrt-video',
+      );
+
+      // Verify the extends was qualified to the correct package
+      const videoShot = ObjectRegistry.getClass(
+        '@happyvertical/smrt-video:VideoShot',
+      );
+      expect(videoShot).toBeDefined();
+      expect(videoShot?.extends).toBe('@happyvertical/smrt-video:Content');
+
+      // Verify getInheritanceChain resolves correctly
+      const chain = ObjectRegistry.getInheritanceChain(
+        '@happyvertical/smrt-video:VideoShot',
+      );
+      expect(chain).toEqual(['Content', 'VideoShot']);
+    });
+
+    it('should pass through already-qualified extends names', () => {
+      ObjectRegistry.registerFromManifest(
+        'Event',
+        {
+          className: 'Event',
+          fields: { date: { type: 'datetime' } },
+          extends: undefined,
+        },
+        '@happyvertical/smrt-events',
+      );
+
+      ObjectRegistry.registerFromManifest(
+        'Meeting',
+        {
+          className: 'Meeting',
+          fields: { agenda: { type: 'text' } },
+          extends: '@happyvertical/smrt-events:Event',
+        },
+        '@happyvertical/praeco',
+      );
+
+      const meeting = ObjectRegistry.getClass('@happyvertical/praeco:Meeting');
+      expect(meeting).toBeDefined();
+      // Already-qualified extends should pass through unchanged
+      expect(meeting?.extends).toBe('@happyvertical/smrt-events:Event');
+
+      // Chain should resolve correctly
+      const chain = ObjectRegistry.getInheritanceChain(
+        '@happyvertical/praeco:Meeting',
+      );
+      expect(chain).toEqual(['Event', 'Meeting']);
+    });
+
+    it('should resolve single-package simple extends without issue', () => {
+      ObjectRegistry.registerFromManifest(
+        'Animal',
+        {
+          className: 'Animal',
+          fields: { species: { type: 'text' } },
+          extends: undefined,
+        },
+        '@happyvertical/smrt-zoo',
+      );
+
+      ObjectRegistry.registerFromManifest(
+        'Dog',
+        {
+          className: 'Dog',
+          fields: { breed: { type: 'text' } },
+          extends: 'Animal',
+        },
+        '@happyvertical/smrt-zoo',
+      );
+
+      const dog = ObjectRegistry.getClass('@happyvertical/smrt-zoo:Dog');
+      expect(dog).toBeDefined();
+      // Same-package parent should be qualified
+      expect(dog?.extends).toBe('@happyvertical/smrt-zoo:Animal');
+
+      const chain = ObjectRegistry.getInheritanceChain(
+        '@happyvertical/smrt-zoo:Dog',
+      );
+      expect(chain).toEqual(['Animal', 'Dog']);
+    });
+
+    it('should not qualify framework base classes (SmrtObject, etc.)', () => {
+      ObjectRegistry.registerFromManifest(
+        'Widget',
+        {
+          className: 'Widget',
+          fields: { label: { type: 'text' } },
+          extends: 'SmrtObject',
+        },
+        '@happyvertical/smrt-ui',
+      );
+
+      const widget = ObjectRegistry.getClass('@happyvertical/smrt-ui:Widget');
+      expect(widget).toBeDefined();
+      // Framework base classes should NOT be qualified
+      expect(widget?.extends).toBe('SmrtObject');
+    });
+
+    it('should handle classes without extends field', () => {
+      ObjectRegistry.registerFromManifest(
+        'Standalone',
+        {
+          className: 'Standalone',
+          fields: { data: { type: 'text' } },
+        },
+        '@happyvertical/smrt-misc',
+      );
+
+      const standalone = ObjectRegistry.getClass(
+        '@happyvertical/smrt-misc:Standalone',
+      );
+      expect(standalone).toBeDefined();
+      expect(standalone?.extends).toBeUndefined();
+
+      const chain = ObjectRegistry.getInheritanceChain(
+        '@happyvertical/smrt-misc:Standalone',
+      );
+      expect(chain).toEqual(['Standalone']);
     });
   });
 });
