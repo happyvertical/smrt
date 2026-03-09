@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.48
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - fix cross-package STI field registration and db:migrate error reporting (#1002) (core)
+  - @happyvertical/smrt-scanner@0.20.48
+  - @happyvertical/smrt-config@0.20.48
+  - @happyvertical/smrt-types@0.20.48
+
 ## 0.20.47
 
 ### Patch Changes
