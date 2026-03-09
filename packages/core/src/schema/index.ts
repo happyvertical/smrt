@@ -7,6 +7,12 @@ export { SchemaCodeGenerator } from './code-generator';
 export * from './ddl';
 export { SchemaGenerator } from './generator';
 export { SchemaOverrideSystem } from './override-system';
+export type {
+  AggregatedTable,
+  AggregateOptions,
+  AggregationResult,
+} from './schema-aggregator';
+export { SchemaAggregator } from './schema-aggregator';
 export { createSchemaManager, SchemaManager } from './schema-manager';
 
 // Re-export for easy access
