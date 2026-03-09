@@ -21,6 +21,10 @@ export default defineConfig({
       '**/docs/**',
       '**/*.d.ts',
       '**/coverage/**',
+      // Cross-package integration tests that traverse the entire monorepo.
+      // These are run locally or in a dedicated CI step, not in sharded runs.
+      'src/__tests__/full-registry-integration.test.ts',
+      'src/__tests__/manifest-no-leak.test.ts',
     ],
 
     // Environment configuration
