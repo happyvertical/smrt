@@ -68,6 +68,10 @@ import {
   removeFromClassNameMap as _removeFromClassNameMap,
   resolveType as _resolveType,
 } from './registry/name-resolver';
+import {
+  getDependencyGraph as _getDependencyGraph,
+  getRelationshipMap as _getRelationshipMap,
+} from './registry/relationship-graph';
 // ── Extracted modules (Issue #1006) ──────────────────────────────────────
 import {
   getClasses,
@@ -94,6 +98,7 @@ import type {
   SmrtObjectConstructor,
   ValidatorFunction,
 } from './registry/types';
+import { compileValidators as _compileValidators } from './registry/validator';
 import type {
   FieldDefinition,
   QualifiedClassName,
@@ -2399,168 +2404,7 @@ export class ObjectRegistry {
     className: string,
     fields: Map<string, any>,
   ): ValidatorFunction[] {
-    const validators: ValidatorFunction[] = [];
-
-    for (const [fieldName, field] of fields) {
-      const options = field._meta || {};
-
-      // Skip transient fields (they're not persisted, so no validation needed)
-      if (options.transient || field.transient) {
-        continue;
-      }
-
-      // Required field validator
-      if (options.required) {
-        validators.push(async (instance: any) => {
-          const value = instance[fieldName];
-          if (value === null || value === undefined || value === '') {
-            const ValidationError = await import('./errors').then(
-              (m) => m.ValidationError,
-            );
-            return ValidationError.requiredField(fieldName, className);
-          }
-          return null;
-        });
-      }
-
-      // Numeric range validators
-      if (
-        field.type === 'integer' ||
-        field.type === 'decimal' ||
-        field.type === 'number'
-      ) {
-        if (options.min !== undefined) {
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (value !== null && value !== undefined && value < options.min) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.rangeError(
-                fieldName,
-                value,
-                options.min,
-                options.max,
-              );
-            }
-            return null;
-          });
-        }
-
-        if (options.max !== undefined) {
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (value !== null && value !== undefined && value > options.max) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.rangeError(
-                fieldName,
-                value,
-                options.min,
-                options.max,
-              );
-            }
-            return null;
-          });
-        }
-      }
-
-      // String length validators
-      if (field.type === 'text') {
-        if (options.minLength !== undefined) {
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (
-              value &&
-              typeof value === 'string' &&
-              value.length < options.minLength
-            ) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.invalidValue(
-                fieldName,
-                value,
-                `string with minimum length ${options.minLength}`,
-              );
-            }
-            return null;
-          });
-        }
-
-        if (options.maxLength !== undefined) {
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (
-              value &&
-              typeof value === 'string' &&
-              value.length > options.maxLength
-            ) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.invalidValue(
-                fieldName,
-                value,
-                `string with maximum length ${options.maxLength}`,
-              );
-            }
-            return null;
-          });
-        }
-
-        // Pattern validator (regex)
-        if (options.pattern) {
-          const regex = new RegExp(options.pattern);
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (value && typeof value === 'string' && !regex.test(value)) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.invalidValue(
-                fieldName,
-                value,
-                `string matching pattern ${options.pattern}`,
-              );
-            }
-            return null;
-          });
-        }
-      }
-
-      // Custom validator function
-      if (options.validate && typeof options.validate === 'function') {
-        validators.push(async (instance: any) => {
-          const value = instance[fieldName];
-          try {
-            const isValid = await options.validate(value);
-            if (!isValid) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              const message =
-                options.customMessage ||
-                `Field ${fieldName} failed custom validation`;
-              return ValidationError.invalidValue(fieldName, value, message);
-            }
-          } catch (error) {
-            const ValidationError = await import('./errors').then(
-              (m) => m.ValidationError,
-            );
-            return ValidationError.invalidValue(
-              fieldName,
-              value,
-              `custom validation error: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-          return null;
-        });
-      }
-    }
-
-    return validators;
+    return _compileValidators(className, fields);
   }
 
   /**
@@ -3542,37 +3386,7 @@ export class ObjectRegistry {
    * ```
    */
   static getDependencyGraph(): Map<string, string[]> {
-    const graph = new Map<string, string[]>();
-
-    // Initialize graph with all registered classes
-    // Issue #951: Use simple names for graph keys (map keys may be qualified)
-    for (const [_key, entry] of ObjectRegistry.classes) {
-      graph.set(entry.name || _key, []);
-    }
-
-    // Scan all fields for foreignKey relationships
-    for (const [_key, registered] of ObjectRegistry.classes) {
-      const simpleName = registered.name || _key;
-      const dependencies: string[] = [];
-
-      for (const [_fieldName, field] of registered.fields) {
-        if (field.type === 'foreignKey' && field.related) {
-          const relatedClass = field.related;
-          // Skip self-references (table can reference itself after creation)
-          // Only add if the related class is registered and not self
-          if (
-            relatedClass !== simpleName &&
-            ObjectRegistry.findClass(relatedClass) !== undefined
-          ) {
-            dependencies.push(relatedClass);
-          }
-        }
-      }
-
-      graph.set(simpleName, dependencies);
-    }
-
-    return graph;
+    return _getDependencyGraph();
   }
 
   /**
@@ -3656,58 +3470,7 @@ export class ObjectRegistry {
    * ```
    */
   static getRelationshipMap(): Map<string, RelationshipMetadata[]> {
-    const relationshipMap = new Map<string, RelationshipMetadata[]>();
-
-    // Initialize map with all registered classes
-    // Issue #951: Use simple names for map keys (map keys may be qualified)
-    for (const [_key, entry] of ObjectRegistry.classes) {
-      relationshipMap.set(entry.name || _key, []);
-    }
-
-    // Scan all fields for relationship types
-    for (const [_key, registered] of ObjectRegistry.classes) {
-      const simpleName = registered.name || _key;
-      const relationships: RelationshipMetadata[] = [];
-
-      for (const [fieldName, field] of registered.fields) {
-        // Check for foreignKey relationships
-        if (field.type === 'foreignKey' && field.related) {
-          relationships.push({
-            sourceClass: simpleName,
-            fieldName,
-            targetClass: field.related,
-            type: 'foreignKey',
-            options: field._meta,
-          });
-        }
-
-        // Check for oneToMany relationships
-        if (field.type === 'oneToMany' && field.related) {
-          relationships.push({
-            sourceClass: simpleName,
-            fieldName,
-            targetClass: field.related,
-            type: 'oneToMany',
-            options: field._meta,
-          });
-        }
-
-        // Check for manyToMany relationships
-        if (field.type === 'manyToMany' && field.related) {
-          relationships.push({
-            sourceClass: simpleName,
-            fieldName,
-            targetClass: field.related,
-            type: 'manyToMany',
-            options: field._meta,
-          });
-        }
-      }
-
-      relationshipMap.set(simpleName, relationships);
-    }
-
-    return relationshipMap;
+    return _getRelationshipMap();
   }
 
   /**
