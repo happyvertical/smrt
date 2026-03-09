@@ -47,6 +47,27 @@ import {
   lookupInManifest,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
+import {
+  addToClassNameMap as _addToClassNameMap,
+  findClass as _findClass,
+  findClassesByName as _findClassesByName,
+  findClassStrict as _findClassStrict,
+  getAllClasses as _getAllClasses,
+  getCanonicalClassName as _getCanonicalClassName,
+  getClass as _getClass,
+  getClassByConstructor as _getClassByConstructor,
+  getClassByQualifiedName as _getClassByQualifiedName,
+  getClassesByPackage as _getClassesByPackage,
+  getClassesByVisibility as _getClassesByVisibility,
+  getClassInPackage as _getClassInPackage,
+  getClassNames as _getClassNames,
+  getPublicClasses as _getPublicClasses,
+  hasClass as _hasClass,
+  hasClassCaseInsensitive as _hasClassCaseInsensitive,
+  qualifyExtendsName as _qualifyExtendsName,
+  removeFromClassNameMap as _removeFromClassNameMap,
+  resolveType as _resolveType,
+} from './registry/name-resolver';
 // ── Extracted modules (Issue #1006) ──────────────────────────────────────
 import {
   getClasses,
@@ -228,11 +249,7 @@ export class ObjectRegistry {
     simpleNameLower: string,
     qualifiedKey: string,
   ): void {
-    const existing = ObjectRegistry.classNameMap.get(simpleNameLower) || [];
-    if (!existing.includes(qualifiedKey)) {
-      existing.push(qualifiedKey);
-      ObjectRegistry.classNameMap.set(simpleNameLower, existing);
-    }
+    _addToClassNameMap(simpleNameLower, qualifiedKey);
   }
 
   /**
@@ -243,13 +260,7 @@ export class ObjectRegistry {
     simpleNameLower: string,
     qualifiedKey: string,
   ): void {
-    const existing = ObjectRegistry.classNameMap.get(simpleNameLower);
-    if (existing) {
-      const idx = existing.indexOf(qualifiedKey);
-      if (idx !== -1) existing.splice(idx, 1);
-      if (existing.length === 0)
-        ObjectRegistry.classNameMap.delete(simpleNameLower);
-    }
+    _removeFromClassNameMap(simpleNameLower, qualifiedKey);
   }
 
   /**
@@ -257,19 +268,14 @@ export class ObjectRegistry {
    * Returns the canonical name if found, undefined otherwise
    */
   static getCanonicalClassName(name: string): string | undefined {
-    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    if (!entries || entries.length === 0) return undefined;
-    if (entries.length === 1) return entries[0];
-    // Ambiguous — multiple entries, return undefined
-    return undefined;
+    return _getCanonicalClassName(name);
   }
 
   /**
    * Check if a class exists by name (case-insensitive)
    */
   static hasClassCaseInsensitive(name: string): boolean {
-    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    return !!entries && entries.length > 0;
+    return _hasClassCaseInsensitive(name);
   }
 
   /**
@@ -1665,43 +1671,7 @@ export class ObjectRegistry {
    * @private
    */
   private static findClass(name: string): RegisteredClass | undefined {
-    // 1. Direct hit on classes map (fast path, works for qualified keys)
-    const registered = ObjectRegistry.classes.get(name);
-    if (registered) {
-      return registered;
-    }
-
-    // 2. If input looks like a qualified name, no fallback — it's not found
-    if (name.includes(':') && name.startsWith('@')) {
-      return undefined;
-    }
-
-    // 3. classNameMap lookup by simple name
-    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    if (entries && entries.length > 0) {
-      if (entries.length === 1) {
-        // Unambiguous — return the single match
-        return ObjectRegistry.classes.get(entries[0]);
-      }
-      // Ambiguous — multiple packages define this class name
-      // Return first match but log a warning (use resolveType() for strict behavior)
-      verboseLog(
-        `[registry] findClass("${name}") is ambiguous — ${entries.length} matches. ` +
-          `Use qualified name (e.g., ${entries[0]}) for precision.`,
-      );
-      return ObjectRegistry.classes.get(entries[0]);
-    }
-
-    // 4. Case-insensitive iteration fallback (backward compat for simple names)
-    const lowerName = name.toLowerCase();
-    for (const [key, value] of ObjectRegistry.classes.entries()) {
-      // Only match by the registered simple name, not by the full key
-      if (value.name?.toLowerCase() === lowerName) {
-        return value;
-      }
-    }
-
-    return undefined;
+    return _findClass(name);
   }
 
   /**
@@ -1732,54 +1702,7 @@ export class ObjectRegistry {
     name: string,
     fromPackage?: string,
   ): RegisteredClass | undefined {
-    // 1. Direct hit on classes map (fast path, works for qualified keys)
-    const registered = ObjectRegistry.classes.get(name);
-    if (registered) {
-      return registered;
-    }
-
-    // 2. If input is a qualified name, no fallback — it's not found
-    if (isQualifiedName(name)) {
-      return undefined;
-    }
-
-    // 3. If fromPackage provided, try constructing qualified name for direct lookup
-    if (fromPackage) {
-      const qualifiedAttempt = createQualifiedName(fromPackage, name);
-      const byQualified = ObjectRegistry.classes.get(qualifiedAttempt);
-      if (byQualified) {
-        return byQualified;
-      }
-    }
-
-    // 4. classNameMap lookup by simple name
-    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    if (entries && entries.length > 0) {
-      if (entries.length === 1) {
-        // Unambiguous — return the single match
-        return ObjectRegistry.classes.get(entries[0]);
-      }
-      // Ambiguous — multiple packages define this class name
-      // In strict mode, throw instead of silently returning first match
-      throw new ConfigurationError(
-        `Ambiguous class name "${name}" — found in ${entries.length} packages: ` +
-          `${entries.join(', ')}. ` +
-          `Use a qualified name (e.g., ${entries[0]}) to disambiguate.`,
-        'CONFIG_AMBIGUOUS_CLASS',
-        { className: name, candidates: entries },
-      );
-    }
-
-    // 5. Case-insensitive iteration fallback (backward compat for simple names)
-    const lowerName = name.toLowerCase();
-    for (const [key, value] of ObjectRegistry.classes.entries()) {
-      // Only match by the registered simple name, not by the full key
-      if (value.name?.toLowerCase() === lowerName) {
-        return value;
-      }
-    }
-
-    return undefined;
+    return _findClassStrict(name, fromPackage);
   }
 
   /**
@@ -1801,41 +1724,7 @@ export class ObjectRegistry {
     extendsValue: string,
     currentPackage: string,
   ): string {
-    // Already qualified → pass through
-    if (isQualifiedName(extendsValue)) {
-      return extendsValue;
-    }
-
-    // Skip framework base classes (never registered with qualified names)
-    if (
-      extendsValue === 'SmrtObject' ||
-      extendsValue === 'SmrtClass' ||
-      extendsValue === 'SmrtCollection'
-    ) {
-      return extendsValue;
-    }
-
-    // Try same-package first (common case: child and parent in same package)
-    const samePackageQualified = createQualifiedName(
-      currentPackage,
-      extendsValue,
-    );
-    if (ObjectRegistry.classes.has(samePackageQualified)) {
-      return samePackageQualified;
-    }
-
-    // Try to find the parent in any registered package
-    const entries = ObjectRegistry.classNameMap.get(extendsValue.toLowerCase());
-    if (entries && entries.length === 1) {
-      // Unambiguous — use the single match's qualified key
-      return entries[0];
-    }
-
-    // Fallback: return unmodified (backward compat)
-    // Note: We deliberately avoid calling discoverManifestSync() here to
-    // prevent heavy I/O during registration. Unresolved parents will be
-    // discovered lazily by getInheritanceChain() at lookup time.
-    return extendsValue;
+    return _qualifyExtendsName(extendsValue, currentPackage);
   }
 
   /**
@@ -1853,7 +1742,7 @@ export class ObjectRegistry {
    * ```
    */
   static getClass(name: string): RegisteredClass | undefined {
-    return ObjectRegistry.findClass(name);
+    return _getClass(name);
   }
 
   /**
@@ -1878,12 +1767,7 @@ export class ObjectRegistry {
   static getClassByConstructor(
     ctor: SmrtObjectConstructor,
   ): RegisteredClass | undefined {
-    // Use WeakMap index for O(1) lookup
-    const registeredName = ObjectRegistry.constructorIndex.get(ctor);
-    if (registeredName) {
-      return ObjectRegistry.classes.get(registeredName);
-    }
-    return undefined;
+    return _getClassByConstructor(ctor);
   }
 
   /**
@@ -1903,8 +1787,7 @@ export class ObjectRegistry {
   static getClassByQualifiedName(
     qualifiedName: string,
   ): RegisteredClass | undefined {
-    // Issue #951: O(1) lookup — qualified names are now used as primary keys
-    return ObjectRegistry.classes.get(qualifiedName);
+    return _getClassByQualifiedName(qualifiedName);
   }
 
   /**
@@ -1923,9 +1806,7 @@ export class ObjectRegistry {
     packageName: string,
     className: string,
   ): RegisteredClass | undefined {
-    // Issue #951: O(1) — both getClassByQualifiedName and classes.get are direct lookups
-    const qualifiedName = createQualifiedName(packageName, className);
-    return ObjectRegistry.classes.get(qualifiedName);
+    return _getClassInPackage(packageName, className);
   }
 
   /**
@@ -1946,16 +1827,7 @@ export class ObjectRegistry {
    * ```
    */
   static findClassesByName(className: string): RegisteredClass[] {
-    const matches: RegisteredClass[] = [];
-    const lowerName = className.toLowerCase();
-
-    for (const registered of ObjectRegistry.classes.values()) {
-      if (registered.name.toLowerCase() === lowerName) {
-        matches.push(registered);
-      }
-    }
-
-    return matches;
+    return _findClassesByName(className);
   }
 
   /**
@@ -1986,41 +1858,7 @@ export class ObjectRegistry {
    * ```
    */
   static resolveType(shortName: string): QualifiedClassName {
-    // If already qualified, validate and return
-    if (shortName.includes(':') && shortName.startsWith('@')) {
-      const registered = ObjectRegistry.getClassByQualifiedName(
-        shortName as QualifiedClassName,
-      );
-      if (!registered) {
-        throw new Error(
-          `Class "${shortName}" is not registered. ` +
-            `Make sure the package is installed and the class is decorated with @smrt().`,
-        );
-      }
-      return shortName as QualifiedClassName;
-    }
-
-    // Find all classes with this short name
-    const matches = ObjectRegistry.findClassesByName(shortName);
-
-    if (matches.length === 0) {
-      throw new Error(
-        `Class "${shortName}" is not registered. ` +
-          `Make sure the package is installed and the class is decorated with @smrt().`,
-      );
-    }
-
-    if (matches.length > 1) {
-      const packageList = matches
-        .map((m) => `  - ${m.qualifiedName}`)
-        .join('\n');
-      throw new Error(
-        `"${shortName}" is ambiguous. Found in multiple packages:\n${packageList}\n` +
-          `Use the fully qualified name instead.`,
-      );
-    }
-
-    return matches[0].qualifiedName as QualifiedClassName;
+    return _resolveType(shortName);
   }
 
   /**
@@ -2039,15 +1877,7 @@ export class ObjectRegistry {
   static getClassesByPackage(
     packageName: string,
   ): Map<string, RegisteredClass> {
-    const result = new Map<string, RegisteredClass>();
-
-    for (const [name, registered] of ObjectRegistry.classes.entries()) {
-      if (registered.packageName === packageName) {
-        result.set(name, registered);
-      }
-    }
-
-    return result;
+    return _getClassesByPackage(packageName);
   }
 
   /**
@@ -2064,16 +1894,7 @@ export class ObjectRegistry {
   static getClassesByVisibility(
     visibility: SmrtVisibility,
   ): Map<string, RegisteredClass> {
-    const result = new Map<string, RegisteredClass>();
-
-    for (const [name, registered] of ObjectRegistry.classes.entries()) {
-      const classVisibility = registered.visibility || 'public';
-      if (classVisibility === visibility) {
-        result.set(name, registered);
-      }
-    }
-
-    return result;
+    return _getClassesByVisibility(visibility);
   }
 
   /**
@@ -2088,7 +1909,7 @@ export class ObjectRegistry {
    * ```
    */
   static getPublicClasses(): Map<string, RegisteredClass> {
-    return ObjectRegistry.getClassesByVisibility('public');
+    return _getPublicClasses();
   }
 
   /**
@@ -2104,21 +1925,14 @@ export class ObjectRegistry {
    * ```
    */
   static getAllClasses(): Map<string, RegisteredClass> {
-    return new Map(ObjectRegistry.classes);
+    return _getAllClasses();
   }
 
   /**
    * Get class names
    */
   static getClassNames(): string[] {
-    // Issue #951: Return simple class names (not qualified keys) for backward compatibility.
-    // Qualified keys are used internally for collision prevention, but the public API
-    // should return simple names that can be passed to findClass(), getConfig(), etc.
-    // Deduplicate since multiple qualified entries can share the same simple name.
-    const names = Array.from(ObjectRegistry.classes.values()).map(
-      (entry) => entry.name,
-    );
-    return Array.from(new Set(names));
+    return _getClassNames();
   }
 
   /**
@@ -2349,7 +2163,7 @@ export class ObjectRegistry {
    * Check if a class is registered (case-insensitive)
    */
   static hasClass(name: string): boolean {
-    return ObjectRegistry.findClass(name) !== undefined;
+    return _hasClass(name);
   }
 
   /**
