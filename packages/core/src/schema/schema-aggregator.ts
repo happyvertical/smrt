@@ -2,7 +2,7 @@
  * Schema Aggregator
  *
  * Aggregates database schemas across multiple SMRT package manifests.
- * Handles STI table deduplication, index merging, and dependency ordering.
+ * Handles STI table deduplication, index merging, and sorting for deterministic output.
  *
  * This replaces the manual generate-schema.ts pattern used by downstream
  * projects like blindmanpress.com (Issue #1013).

@@ -267,7 +267,7 @@ export function getAllSchemas(): Record<
       indexSQL = tableSchema.indexes.map((idx) => {
         const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
         const columnList = idx.columns.map((col) => `"${col}"`).join(', ');
-        return `CREATE ${indexType} IF NOT EXISTS ${idx.name} ON "${tableName}" (${columnList});`;
+        return `CREATE ${indexType} IF NOT EXISTS "${idx.name}" ON "${tableName}" (${columnList});`;
       });
     }
 
@@ -520,6 +520,11 @@ export function generateDDLFromColumns(
  * @returns Formatted SQL default value
  */
 export function formatDefaultValue(value: any, type: string): string {
+  // Handle NULL
+  if (value === null || value === undefined) {
+    return 'NULL';
+  }
+
   // Handle SQL functions and keywords
   if (typeof value === 'string') {
     if (value.includes('(')) {
@@ -531,6 +536,7 @@ export function formatDefaultValue(value: any, type: string): string {
       'current_time',
       'now()',
       'uuid_generate_v4()',
+      'null',
     ];
     if (sqlKeywords.some((kw) => value.toLowerCase() === kw)) {
       return value;
@@ -545,10 +551,22 @@ export function formatDefaultValue(value: any, type: string): string {
     return String(value);
   }
   if (type === 'BOOLEAN') {
-    return value ? '1' : '0';
+    return value ? 'TRUE' : 'FALSE';
   }
   if (type === 'JSON') {
-    return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+    if (typeof value === 'string') {
+      if (value === '') return "'null'";
+      if (value === '[object Object]') return "'{}'";
+      try {
+        JSON.parse(value);
+        return `'${value.replace(/'/g, "''")}'`;
+      } catch {
+        const json = JSON.stringify(value);
+        return `'${json.replace(/'/g, "''")}'`;
+      }
+    }
+    const json = JSON.stringify(value);
+    return `'${json.replace(/'/g, "''")}'`;
   }
 
   // Fallback: quote as string
