@@ -2189,7 +2189,10 @@ export class ObjectRegistry {
       validationRules, // Pre-computed rules from manifest (Issue #782)
       packageName,
       sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
-      extends: objectDef.extends, // Parent class name for inheritance chain
+      extends:
+        objectDef.extends && packageName
+          ? ObjectRegistry.qualifyExtendsName(objectDef.extends, packageName)
+          : objectDef.extends, // Issue #1004: Qualified parent for unambiguous resolution
       visibility, // New: Visibility control for manifest filtering
     });
 
@@ -2303,6 +2306,143 @@ export class ObjectRegistry {
     }
 
     return undefined;
+  }
+
+  /**
+   * Strict class lookup with package-aware disambiguation.
+   *
+   * Unlike `findClass()` which silently returns the first match when a simple
+   * name is ambiguous, this method throws a `ConfigurationError` — making it
+   * safe for inheritance-critical paths where wrong resolution creates phantom
+   * circular chains.
+   *
+   * Lookup priority:
+   * 1. Direct hit on classes map (works for qualified names as keys)
+   * 2. If input contains ':', treat as qualified name — direct only, no fallback
+   * 3. If `fromPackage` provided, try qualified name `fromPackage:name` first
+   * 4. classNameMap lookup by simple name (lowercase)
+   *    - Unambiguous (1 entry) → return it
+   *    - Ambiguous (>1 entry) → throw ConfigurationError
+   * 5. Case-insensitive iteration fallback (backward compat)
+   *
+   * @param name - Name of the class to find (simple or qualified)
+   * @param fromPackage - Optional package context for disambiguation
+   * @returns Registered class information or undefined if not found
+   * @throws {ConfigurationError} When simple name is ambiguous and no package context resolves it
+   * @see https://github.com/happyvertical/smrt/issues/1005
+   * @private
+   */
+  private static findClassStrict(
+    name: string,
+    fromPackage?: string,
+  ): RegisteredClass | undefined {
+    // 1. Direct hit on classes map (fast path, works for qualified keys)
+    const registered = ObjectRegistry.classes.get(name);
+    if (registered) {
+      return registered;
+    }
+
+    // 2. If input looks like a qualified name, no fallback — it's not found
+    if (name.includes(':') && name.startsWith('@')) {
+      return undefined;
+    }
+
+    // 3. If fromPackage provided, try constructing qualified name for direct lookup
+    if (fromPackage) {
+      const qualifiedAttempt = createQualifiedName(fromPackage, name);
+      const byQualified = ObjectRegistry.classes.get(qualifiedAttempt);
+      if (byQualified) {
+        return byQualified;
+      }
+    }
+
+    // 4. classNameMap lookup by simple name
+    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
+    if (entries && entries.length > 0) {
+      if (entries.length === 1) {
+        // Unambiguous — return the single match
+        return ObjectRegistry.classes.get(entries[0]);
+      }
+      // Ambiguous — multiple packages define this class name
+      // In strict mode, throw instead of silently returning first match
+      throw new ConfigurationError(
+        `Ambiguous class name "${name}" — found in ${entries.length} packages: ` +
+          `${entries.join(', ')}. ` +
+          `Use a qualified name (e.g., ${entries[0]}) to disambiguate.`,
+        'CONFIG_AMBIGUOUS_CLASS',
+        { className: name, candidates: entries },
+      );
+    }
+
+    // 5. Case-insensitive iteration fallback (backward compat for simple names)
+    const lowerName = name.toLowerCase();
+    for (const [key, value] of ObjectRegistry.classes.entries()) {
+      // Only match by the registered simple name, not by the full key
+      if (value.name?.toLowerCase() === lowerName) {
+        return value;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Qualify an `extends` value with the parent class's package name.
+   *
+   * When registering from a manifest, the `extends` field is often a bare class
+   * name (e.g., `Content`). If we know the package context, we can resolve it
+   * to a qualified name (e.g., `@happyvertical/smrt-content:Content`) so that
+   * `getInheritanceChain()` can do an O(1) direct lookup instead of relying on
+   * ambiguous simple-name matching.
+   *
+   * @param extendsValue - The raw extends value from the manifest
+   * @param currentPackage - The package that defines the *child* class
+   * @returns Qualified extends name, or original value as fallback
+   * @see https://github.com/happyvertical/smrt/issues/1004
+   * @private
+   */
+  private static qualifyExtendsName(
+    extendsValue: string,
+    currentPackage: string,
+  ): string {
+    // Already qualified → pass through
+    if (isQualifiedName(extendsValue)) {
+      return extendsValue;
+    }
+
+    // Skip framework base classes (never registered with qualified names)
+    if (
+      extendsValue === 'SmrtObject' ||
+      extendsValue === 'SmrtClass' ||
+      extendsValue === 'SmrtCollection'
+    ) {
+      return extendsValue;
+    }
+
+    // Try same-package first (common case: child and parent in same package)
+    const samePackageQualified = createQualifiedName(
+      currentPackage,
+      extendsValue,
+    );
+    if (ObjectRegistry.classes.has(samePackageQualified)) {
+      return samePackageQualified;
+    }
+
+    // Try to find the parent in any registered package
+    const entries = ObjectRegistry.classNameMap.get(extendsValue.toLowerCase());
+    if (entries && entries.length === 1) {
+      // Unambiguous — use the single match's qualified key
+      return entries[0];
+    }
+
+    // Try manifest discovery for unregistered parents
+    const manifestEntry = discoverManifestSync(extendsValue);
+    if (manifestEntry?.packageName) {
+      return createQualifiedName(manifestEntry.packageName, extendsValue);
+    }
+
+    // Fallback: return unmodified (backward compat)
+    return extendsValue;
   }
 
   /**
@@ -4398,7 +4538,22 @@ export class ObjectRegistry {
       }
 
       // Try to find the parent class
-      let parent = ObjectRegistry.findClass(current.extends);
+      // Issue #1004/#1005: Use findClassStrict with package context for
+      // unambiguous resolution. If extends is already qualified (from
+      // qualifyExtendsName), this is an O(1) direct lookup.
+      let parent: RegisteredClass | undefined;
+      try {
+        parent = ObjectRegistry.findClassStrict(
+          current.extends,
+          current.packageName,
+        );
+      } catch (e) {
+        // If findClassStrict throws due to ambiguity, log warning and
+        // fall through to manifest discovery below (which may resolve it)
+        verboseLog(
+          `[registry] getInheritanceChain: strict lookup failed for "${current.extends}": ${e instanceof Error ? e.message : e}`,
+        );
+      }
 
       // FIX #735: If parent not found, try loading from external manifests
       // This handles STI hierarchies where parent class is from an external package
