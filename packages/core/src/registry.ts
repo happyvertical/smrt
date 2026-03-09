@@ -41,7 +41,6 @@ import {
   loadExternalManifestSync,
 } from './manifest/manifest-loader.js';
 import type { SmrtObject } from './object';
-// ── Extracted modules (Issue #1006) ──────────────────────────────────────
 import {
   register as _register,
   registerCollection as _registerCollection,
@@ -76,6 +75,14 @@ import {
   getDependencyGraph as _getDependencyGraph,
   getRelationshipMap as _getRelationshipMap,
 } from './registry/relationship-graph';
+// ── Extracted modules (Issue #1006) ──────────────────────────────────────
+import {
+  getAllSchemas as _getAllSchemas,
+  getAllSchemasAsDefinitions as _getAllSchemasAsDefinitions,
+  getSchema as _getSchema,
+  getSchemaDDL as _getSchemaDDL,
+  getTableName as _getTableName,
+} from './registry/schema-builder';
 import {
   getClasses,
   getClassNameMap,
@@ -101,18 +108,12 @@ import type {
 } from './registry/types';
 import { compileValidators as _compileValidators } from './registry/validator';
 import type {
-  FieldDefinition,
   QualifiedClassName,
   SmrtVisibility,
   ValidationRule,
 } from './scanner/types.js';
-import type {
-  ColumnDefinition,
-  IndexDefinition,
-  SchemaDefinition,
-  SQLDataType,
-} from './schema/types.js';
-import { classnameToTablename, toSnakeCase } from './utils';
+import type { SchemaDefinition } from './schema/types.js';
+import { classnameToTablename } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
 // Re-export types for backward compatibility
@@ -1302,645 +1303,41 @@ export class ObjectRegistry {
 
   /**
    * Get cached schema definition for a registered class
-   *
-   * @param name - Name of the registered class
-   * @returns Schema definition or undefined if not found
-   * @example
-   * ```typescript
-   * const schema = ObjectRegistry.getSchema('Product');
-   * console.log(schema.tableName); // 'products'
-   * console.log(schema.ddl);       // 'CREATE TABLE...'
-   * ```
    */
   static getSchema(name: string): SchemaDefinition | undefined {
-    // Issue #951: Use findClass for multi-strategy lookup
-    const registered = ObjectRegistry.findClass(name);
-    return registered?.schema;
+    return _getSchema(name);
   }
 
   /**
    * Get SQL DDL statement for a registered class
-   *
-   * @param name - Name of the registered class
-   * @returns SQL DDL statement or undefined if not found
-   * @example
-   * ```typescript
-   * const ddl = ObjectRegistry.getSchemaDDL('Product');
-   * await db.query(ddl);
-   * ```
    */
   static getSchemaDDL(name: string): string | undefined {
-    return ObjectRegistry.getSchema(name)?.ddl;
+    return _getSchemaDDL(name);
   }
 
   /**
    * Get table name for a registered class
-   *
-   * @param name - Name of the registered class
-   * @returns Table name or undefined if not found
-   * @example
-   * ```typescript
-   * const tableName = ObjectRegistry.getTableName('Product');
-   * console.log(tableName); // 'products'
-   * ```
    */
   static getTableName(name: string): string | undefined {
-    // Check if this is a collection class - collections have their own tableName mapping
-    const collectionTableName = ObjectRegistry.collectionTableNames.get(name);
-    if (collectionTableName) {
-      return collectionTableName;
-    }
-
-    // For STI classes, return the STI base class's table name
-    const stiBase = ObjectRegistry.getSTIBase(name);
-    if (stiBase && stiBase !== name) {
-      return ObjectRegistry.getSchema(stiBase)?.tableName;
-    }
-    return ObjectRegistry.getSchema(name)?.tableName;
+    return _getTableName(name);
   }
 
   /**
    * Get all pre-generated schemas for passing to database adapters
-   *
-   * Returns schemas in SDK SchemaProvider format for all registered classes.
-   * This allows passing all known schemas upfront to getDatabase(), enabling
-   * adapters like JSON to create tables with correct types before loading data.
-   *
-   * @returns Record of table names to schema definitions
-   * @example
-   * ```typescript
-   * const schemas = ObjectRegistry.getAllSchemas();
-   * const db = await getDatabase({ type: 'json', url: './data', schemas });
-   * ```
    */
   static getAllSchemas(): Record<
     string,
     { tableName: string; ddl: string; indexes?: string[] }
   > {
-    // Step 1: Collect all schemas grouped by tableName
-    // For STI, multiple classes may share the same table
-    const tableSchemas: Record<
-      string,
-      {
-        tableName: string;
-        columns: Record<string, ColumnDefinition>;
-        indexes: Array<{ name: string; columns: string[]; unique?: boolean }>;
-        ddl: string;
-        isSTI: boolean;
-      }
-    > = {};
-
-    for (const [_className, registered] of ObjectRegistry.classes) {
-      // Skip collection classes - they don't have their own tables
-      // Their schemas incorrectly contain collection properties (loaded, options, etc.)
-      if (registered.extends === 'SmrtCollection') {
-        continue;
-      }
-
-      // Issue #951: Use simple name for STI comparisons (map key may be qualified)
-      const simpleName = registered.name || _className;
-
-      // Issue #703: Handle STI subclasses with null tableName from external manifests
-      // When loaded from external manifests, tableName may be null, causing
-      // registerFromManifest() to derive a tableName from class name.
-      // For STI subclasses, we need to use the STI base's tableName instead.
-      if (!registered.schema?.tableName && registered.extends) {
-        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
-        if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-          if (stiBaseName && stiBaseName !== simpleName) {
-            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
-            if (stiBaseClass?.schema?.tableName) {
-              // Ensure we have a schema object to modify
-              if (!registered.schema) {
-                registered.schema = {
-                  tableName: '',
-                  ddl: '',
-                  columns: {},
-                  indexes: [],
-                  triggers: [],
-                  foreignKeys: [],
-                  dependencies: [],
-                  version: '',
-                };
-              }
-              // Set tableName from STI base so the following block processes this class
-              registered.schema.tableName = stiBaseClass.schema.tableName;
-            }
-          }
-        }
-      }
-
-      if (registered.schema?.tableName) {
-        // For STI subclasses, use the STI base class's tableName
-        // This ensures all STI subclass columns are merged into the parent table
-        // (Issue #693: STI subclasses with separate tableName still serialize to parent table)
-        let tableName = registered.schema.tableName;
-        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
-        if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-          if (stiBaseName && stiBaseName !== simpleName) {
-            // This is an STI subclass - use the base class's tableName
-            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
-            if (stiBaseClass?.schema?.tableName) {
-              tableName = stiBaseClass.schema.tableName;
-            }
-          }
-        }
-
-        // Get columns from schema, or generate from fields if schema.columns is empty
-        // This handles STI subclasses that have fields but no pre-generated schema
-        // (Issue #690: db:migrate doesn't detect STI subclass columns)
-        let columnsToUse = registered.schema.columns || {};
-        if (
-          Object.keys(columnsToUse).length === 0 &&
-          registered.fields.size > 0
-        ) {
-          columnsToUse = ObjectRegistry.fieldsToColumns(registered.fields);
-        }
-
-        if (!tableSchemas[tableName]) {
-          // First class for this table - initialize with base columns
-          // These are required for all tables but are skipped by fieldsToColumns()
-          const baseColumns: Record<string, ColumnDefinition> = {
-            id: { type: 'TEXT', primaryKey: true },
-            slug: { type: 'TEXT', notNull: true },
-            context: { type: 'TEXT' },
-            created_at: { type: 'TIMESTAMP' },
-            updated_at: { type: 'TIMESTAMP' },
-          };
-
-          // For STI tables, add discriminator and data columns
-          // (Issue #690: db:diff needs these columns to detect schema changes)
-          const isSTI = tableStrategy === 'sti';
-          if (isSTI) {
-            baseColumns._meta_type = {
-              type: 'TEXT',
-              notNull: true,
-              defaultValue: '',
-            };
-            baseColumns._meta_data = { type: 'JSON' };
-          }
-
-          tableSchemas[tableName] = {
-            tableName,
-            columns: { ...baseColumns, ...columnsToUse },
-            indexes: [],
-            ddl: registered.schema.ddl || '',
-            isSTI,
-          };
-        } else {
-          // Additional class sharing this table (STI scenario)
-          // Merge columns from this class into the existing schema
-          for (const [colName, colDef] of Object.entries(columnsToUse)) {
-            if (!tableSchemas[tableName].columns[colName]) {
-              // New column from this subtype - add it
-              tableSchemas[tableName].columns[colName] = colDef;
-            }
-          }
-        }
-
-        // Merge indexes (avoid duplicates by name)
-        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
-          const existingNames = new Set(
-            tableSchemas[tableName].indexes.map((idx) =>
-              typeof idx === 'string' ? idx : idx.name,
-            ),
-          );
-          for (const idx of registered.schema.indexes) {
-            const indexName = typeof idx === 'string' ? idx : idx.name;
-            if (!existingNames.has(indexName)) {
-              if (typeof idx === 'string') {
-                // Legacy string format - skip, can't merge properly
-              } else {
-                tableSchemas[tableName].indexes.push(idx);
-                existingNames.add(idx.name);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Step 2: Convert to output format, regenerating DDL for merged schemas
-    const schemas: Record<
-      string,
-      { tableName: string; ddl: string; indexes?: string[] }
-    > = {};
-
-    for (const [tableName, tableSchema] of Object.entries(tableSchemas)) {
-      // Generate DDL from merged columns (or use original DDL if columns are empty)
-      let ddl: string;
-      if (Object.keys(tableSchema.columns).length === 0 && tableSchema.ddl) {
-        // No columns merged - use original DDL to avoid generating invalid SQL
-        ddl = tableSchema.ddl;
-      } else if (Object.keys(tableSchema.columns).length === 0) {
-        // Skip schemas with no columns and no original DDL
-        continue;
-      } else {
-        ddl = ObjectRegistry.generateDDLFromColumns(
-          tableName,
-          tableSchema.columns,
-          tableSchema.isSTI,
-        );
-      }
-
-      // Convert index definitions to SQL strings for SDK compatibility
-      let indexSQL: string[] | undefined;
-      if (tableSchema.indexes.length > 0) {
-        indexSQL = tableSchema.indexes.map((idx) => {
-          const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
-          const columnList = idx.columns.map((col) => `"${col}"`).join(', ');
-          return `CREATE ${indexType} IF NOT EXISTS ${idx.name} ON "${tableName}" (${columnList});`;
-        });
-      }
-
-      schemas[tableName] = {
-        tableName,
-        ddl,
-        indexes: indexSQL,
-      };
-    }
-
-    return schemas;
+    return _getAllSchemas();
   }
 
   /**
    * Get all registered schemas as SchemaDefinition objects
-   *
-   * Similar to getAllSchemas(), but returns SchemaDefinition format suitable
-   * for use with SchemaComparer (migrations/differ.ts).
-   *
-   * Key difference: Indexes are kept as IndexDefinition objects instead of
-   * being converted to SQL strings.
-   *
-   * @returns Map of tableName to SchemaDefinition
    */
   static getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
-    // Step 1: Collect all schemas grouped by tableName
-    // For STI, multiple classes may share the same table
-    const tableSchemas: Record<
-      string,
-      {
-        tableName: string;
-        columns: Record<string, ColumnDefinition>;
-        indexes: IndexDefinition[];
-        isSTI: boolean;
-      }
-    > = {};
-
-    for (const [_className, registered] of ObjectRegistry.classes) {
-      // Skip collection classes - they don't have their own tables
-      if (registered.extends === 'SmrtCollection') {
-        continue;
-      }
-
-      // Issue #951: Use simple name for STI comparisons (map key may be qualified)
-      const simpleName = registered.name || _className;
-
-      // Handle STI subclasses with null tableName from external manifests
-      if (!registered.schema?.tableName && registered.extends) {
-        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
-        if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-          if (stiBaseName && stiBaseName !== simpleName) {
-            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
-            if (stiBaseClass?.schema?.tableName) {
-              if (!registered.schema) {
-                registered.schema = {
-                  tableName: '',
-                  ddl: '',
-                  columns: {},
-                  indexes: [],
-                  triggers: [],
-                  foreignKeys: [],
-                  dependencies: [],
-                  version: '',
-                };
-              }
-              registered.schema.tableName = stiBaseClass.schema.tableName;
-            }
-          }
-        }
-      }
-
-      if (registered.schema?.tableName) {
-        // For STI subclasses, use the STI base class's tableName
-        let tableName = registered.schema.tableName;
-        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
-        if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-          if (stiBaseName && stiBaseName !== simpleName) {
-            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
-            if (stiBaseClass?.schema?.tableName) {
-              tableName = stiBaseClass.schema.tableName;
-            }
-          }
-        }
-
-        // Get columns from schema, or generate from fields if empty
-        let columnsToUse = registered.schema.columns || {};
-        if (
-          Object.keys(columnsToUse).length === 0 &&
-          registered.fields.size > 0
-        ) {
-          columnsToUse = ObjectRegistry.fieldsToColumns(registered.fields);
-        }
-
-        if (!tableSchemas[tableName]) {
-          // First class for this table - initialize with base columns
-          const baseColumns: Record<string, ColumnDefinition> = {
-            id: { type: 'TEXT', primaryKey: true },
-            slug: { type: 'TEXT', notNull: true },
-            context: { type: 'TEXT' },
-            created_at: { type: 'TIMESTAMP' },
-            updated_at: { type: 'TIMESTAMP' },
-          };
-
-          const isSTI = tableStrategy === 'sti';
-          if (isSTI) {
-            baseColumns._meta_type = {
-              type: 'TEXT',
-              notNull: true,
-              defaultValue: '',
-            };
-            baseColumns._meta_data = { type: 'JSON' };
-          }
-
-          tableSchemas[tableName] = {
-            tableName,
-            columns: { ...baseColumns, ...columnsToUse },
-            indexes: [],
-            isSTI,
-          };
-        } else {
-          // Additional class sharing this table (STI scenario) - merge columns
-          for (const [colName, colDef] of Object.entries(columnsToUse)) {
-            if (!tableSchemas[tableName].columns[colName]) {
-              tableSchemas[tableName].columns[colName] = colDef;
-            }
-          }
-        }
-
-        // Merge indexes (avoid duplicates by name)
-        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
-          const existingNames = new Set(
-            tableSchemas[tableName].indexes.map((idx) => idx.name),
-          );
-          for (const idx of registered.schema.indexes) {
-            if (!existingNames.has(idx.name)) {
-              tableSchemas[tableName].indexes.push(idx);
-              existingNames.add(idx.name);
-            }
-          }
-        }
-      }
-    }
-
-    // Step 2: Convert to SchemaDefinition format
-    const schemas: Record<string, SchemaDefinition> = {};
-
-    for (const [tableName, tableSchema] of Object.entries(tableSchemas)) {
-      if (Object.keys(tableSchema.columns).length === 0) {
-        continue;
-      }
-
-      // Generate DDL from columns
-      const ddl = ObjectRegistry.generateDDLFromColumns(
-        tableName,
-        tableSchema.columns,
-        tableSchema.isSTI,
-      );
-
-      schemas[tableName] = {
-        tableName,
-        ddl,
-        columns: tableSchema.columns,
-        indexes: tableSchema.indexes, // Keep as IndexDefinition[]
-        triggers: [],
-        foreignKeys: [],
-        version: '',
-        dependencies: [],
-      };
-    }
-
-    return schemas;
+    return _getAllSchemasAsDefinitions();
   }
-
-  /**
-   * Generate DDL CREATE TABLE statement from columns
-   *
-   * Used internally by getAllSchemas() to regenerate DDL after merging
-   * columns from multiple STI subtypes that share the same table.
-   *
-   * @param tableName - Name of the table
-   * @param columns - Column definitions
-   * @returns DDL CREATE TABLE statement
-   */
-  private static generateDDLFromColumns(
-    tableName: string,
-    columns: Record<string, ColumnDefinition>,
-    isSTI = false,
-  ): string {
-    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
-
-    const columnLines: string[] = [];
-    for (const [columnName, columnDef] of Object.entries(columns)) {
-      const parts: string[] = [];
-
-      // Column name and type
-      parts.push(`  "${columnName}" ${columnDef.type}`);
-
-      // Primary key
-      if (columnDef.primaryKey) {
-        parts.push('PRIMARY KEY');
-      }
-
-      // Not null constraint
-      if (columnDef.notNull) {
-        parts.push('NOT NULL');
-      }
-
-      // Unique constraint (skip if primary key already implies uniqueness)
-      if (columnDef.unique && !columnDef.primaryKey) {
-        parts.push('UNIQUE');
-      }
-
-      // Default value
-      if (columnDef.defaultValue !== undefined) {
-        const defaultSQL = ObjectRegistry.formatDefaultValue(
-          columnDef.defaultValue,
-          columnDef.type,
-        );
-        parts.push(`DEFAULT ${defaultSQL}`);
-      }
-
-      columnLines.push(parts.join(' '));
-    }
-
-    sql += columnLines.join(',\n');
-
-    // Add UNIQUE constraint for UPSERT operations
-    // For STI tables: UNIQUE(slug, context, _meta_type) - different types can have same slug+context
-    // For non-STI tables: UNIQUE(slug, context)
-    if (columns.slug && columns.context) {
-      if (isSTI && columns._meta_type) {
-        sql += ',\n  UNIQUE(slug, context, _meta_type)';
-      } else {
-        sql += ',\n  UNIQUE(slug, context)';
-      }
-    }
-
-    sql += '\n);';
-
-    return sql;
-  }
-
-  /**
-   * Format default value for SQL DDL
-   *
-   * @param value - Default value
-   * @param type - Column SQL type
-   * @returns Formatted SQL default value
-   */
-  private static formatDefaultValue(value: any, type: string): string {
-    // Handle SQL functions and keywords
-    if (typeof value === 'string') {
-      if (value.includes('(')) {
-        return value;
-      }
-      const sqlKeywords = [
-        'current_timestamp',
-        'current_date',
-        'current_time',
-        'now()',
-        'uuid_generate_v4()',
-      ];
-      if (sqlKeywords.some((kw) => value.toLowerCase() === kw)) {
-        return value;
-      }
-    }
-
-    // Handle by type
-    if (type === 'TEXT' || type === 'VARCHAR') {
-      return `'${String(value).replace(/'/g, "''")}'`;
-    }
-    if (type === 'INTEGER' || type === 'REAL') {
-      return String(value);
-    }
-    if (type === 'BOOLEAN') {
-      return value ? '1' : '0';
-    }
-    if (type === 'JSON') {
-      return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
-    }
-
-    // Fallback: quote as string
-    return `'${String(value).replace(/'/g, "''")}'`;
-  }
-
-  /**
-   * Convert a Map of field definitions to column definitions
-   *
-   * Used by getAllSchemas() to generate columns from fields when a class
-   * has no pre-generated schema (e.g., STI subclasses registered from manifest).
-   *
-   * @param fields - Map of field name to field definition
-   * @returns Record of column name to column definition
-   * @private
-   */
-  private static fieldsToColumns(
-    fields: Map<string, FieldDefinition>,
-  ): Record<string, ColumnDefinition> {
-    const columns: Record<string, ColumnDefinition> = {};
-
-    for (const [fieldName, fieldDef] of fields) {
-      // Skip id, timestamps - they're on the base table
-      if (
-        fieldName === 'id' ||
-        fieldName === 'created_at' ||
-        fieldName === 'updated_at' ||
-        fieldName === 'slug' ||
-        fieldName === 'context'
-      ) {
-        continue;
-      }
-
-      // Skip transient fields (non-persisted)
-      if (fieldDef.transient || fieldDef._meta?.transient) {
-        continue;
-      }
-
-      // Skip relationship fields that don't create columns
-      // oneToMany and manyToMany are relationship metadata, not actual database columns
-      if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany') {
-        continue;
-      }
-
-      // Skip meta fields - they're stored in _meta_data JSONB column
-      if (fieldDef.type === 'meta') {
-        continue;
-      }
-
-      // Map field type to SQL type
-      const sqlType = ObjectRegistry.mapFieldTypeToSQL(fieldDef.type);
-
-      const column: ColumnDefinition = {
-        type: sqlType,
-        notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
-        description: fieldDef.description,
-      };
-
-      // Handle default values
-      if (fieldDef.default !== undefined) {
-        column.defaultValue = fieldDef.default;
-      }
-
-      // Handle foreign keys
-      if (fieldDef.type === 'foreignKey' && fieldDef.related) {
-        const [table, columnName = 'id'] = fieldDef.related.split('.');
-        column.foreignKey = {
-          table: classnameToTablename(table),
-          column: columnName,
-          onDelete: 'CASCADE',
-          onUpdate: 'CASCADE',
-        };
-      }
-
-      // Use snake_case for column names
-      columns[toSnakeCase(fieldName)] = column;
-    }
-
-    return columns;
-  }
-
-  /**
-   * Map field type to SQL data type
-   * @private
-   */
-  private static mapFieldTypeToSQL(
-    fieldType: FieldDefinition['type'],
-  ): SQLDataType {
-    switch (fieldType) {
-      case 'text':
-        return 'TEXT';
-      case 'integer':
-        return 'INTEGER';
-      case 'decimal':
-        return 'REAL';
-      case 'boolean':
-        return 'BOOLEAN';
-      case 'datetime':
-        return 'TIMESTAMP';
-      case 'json':
-        return 'JSON';
-      case 'foreignKey':
-        return 'TEXT';
-      default:
-        return 'TEXT';
-    }
-  }
-
   /**
    * Get compiled validation functions for a registered class
    *
