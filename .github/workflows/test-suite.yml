@@ -165,6 +165,36 @@ jobs:
             packages/core/test-results/
           retention-days: 7
 
+  test-integration:
+    name: Test Integration
+    needs: build
+    runs-on: arc-happyvertical
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore build from cache
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run cross-package integration tests
+        working-directory: packages/core
+        run: pnpm run test:integration
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+
   test-packages:
     name: Test Packages
     needs: build

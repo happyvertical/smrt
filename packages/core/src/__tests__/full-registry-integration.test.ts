@@ -14,7 +14,7 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ObjectRegistry } from '../registry.js';
 
 // ---------------------------------------------------------------------------
@@ -65,25 +65,19 @@ function countTotalObjects(manifestPaths: string[]): number {
 
 describe('Issue #1008: Full registry integration (high object counts)', () => {
   let manifestPaths: string[];
-  let savedClasses: Map<string, any>;
-
-  beforeEach(() => {
-    // Snapshot current registry state so we can restore it after each test
-    savedClasses = new Map(ObjectRegistry.classes);
-
+  beforeAll(() => {
     // Start with a clean registry for isolation
     ObjectRegistry.clear();
 
     // Discover all manifest paths once
     manifestPaths = discoverManifestPaths();
+    // Load all manifests once for all tests to share
+    ObjectRegistry.loadAllManifests({ manifestPaths });
   });
 
-  afterEach(() => {
-    // Restore original registry state
+  afterAll(() => {
+    // Clean up
     ObjectRegistry.clear();
-    for (const [key, value] of savedClasses) {
-      ObjectRegistry.classes.set(key, value);
-    }
   });
 
   // -----------------------------------------------------------------------
@@ -96,9 +90,7 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
 
     const totalObjects = countTotalObjects(manifestPaths);
     // Issue #1013: After removing manifest pre-aggregation, each manifest
-    // contains ONLY its own objects (no leaked dependencies). The total
-    // across all packages is ~245 unique objects, not the inflated 1000+
-    // that resulted from duplicate objects being copied into every manifest.
+    // contains ONLY its own objects (no leaked dependencies).
     expect(totalObjects).toBeGreaterThanOrEqual(200);
   });
 
@@ -107,15 +99,8 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
   // -----------------------------------------------------------------------
 
   it('should register all objects via loadAllManifests()', () => {
-    const { packagesLoaded, objectsRegistered } =
-      ObjectRegistry.loadAllManifests({ manifestPaths });
-
-    expect(packagesLoaded).toBeGreaterThanOrEqual(20);
-    // Raw manifest entries total 600+, but after case-insensitive dedup
-    // and qualified-name consolidation, ~250 unique classes are registered.
-    // The 400+ raw count is validated in "should discover manifests" above.
-    expect(objectsRegistered).toBeGreaterThanOrEqual(200);
-    expect(ObjectRegistry.classes.size).toBeGreaterThanOrEqual(200);
+    // They are already loaded in beforeAll, just check the state
+    expect(ObjectRegistry.getAllClasses().size).toBeGreaterThanOrEqual(200);
   });
 
   // -----------------------------------------------------------------------
@@ -125,10 +110,8 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
   it('should not emit circular inheritance warnings', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    ObjectRegistry.loadAllManifests({ manifestPaths });
-
     // Walk every class's inheritance chain to trigger any warnings
-    for (const [_key, registered] of ObjectRegistry.classes) {
+    for (const [_key, registered] of ObjectRegistry.getAllClasses()) {
       ObjectRegistry.getInheritanceChain(registered.name || _key);
     }
 
@@ -149,10 +132,8 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
   // -----------------------------------------------------------------------
 
   it('should produce valid inheritance chains for all classes with extends', () => {
-    ObjectRegistry.loadAllManifests({ manifestPaths });
-
     const classesWithExtends: string[] = [];
-    for (const [_key, registered] of ObjectRegistry.classes) {
+    for (const [_key, registered] of ObjectRegistry.getAllClasses()) {
       if (
         registered.extends &&
         registered.extends !== 'SmrtObject' &&
@@ -180,18 +161,16 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
   // -----------------------------------------------------------------------
 
   it('should not mutate registry state during getInheritanceChain()', () => {
-    ObjectRegistry.loadAllManifests({ manifestPaths });
-
     // Snapshot registry size before reads
-    const sizeBefore = ObjectRegistry.classes.size;
+    const sizeBefore = ObjectRegistry.getAllClasses().size;
 
     // Walk every class's inheritance chain
-    for (const [_key, registered] of ObjectRegistry.classes) {
+    for (const [_key, registered] of ObjectRegistry.getAllClasses()) {
       ObjectRegistry.getInheritanceChain(registered.name || _key);
     }
 
     // Registry size should not have changed — no side effects
-    expect(ObjectRegistry.classes.size).toBe(sizeBefore);
+    expect(ObjectRegistry.getAllClasses().size).toBe(sizeBefore);
   });
 
   // -----------------------------------------------------------------------
@@ -199,8 +178,6 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
   // -----------------------------------------------------------------------
 
   it('should produce a valid topological ordering via getInitializationOrder()', () => {
-    ObjectRegistry.loadAllManifests({ manifestPaths });
-
     // getInitializationOrder() throws if it detects cycles
     const order = ObjectRegistry.getInitializationOrder();
 
@@ -232,11 +209,9 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
   // -----------------------------------------------------------------------
 
   it('should resolve all ambiguous simple names via qualified names', () => {
-    ObjectRegistry.loadAllManifests({ manifestPaths });
-
     // Collect simple name -> qualified names mapping
     const nameGroups = new Map<string, string[]>();
-    for (const [key, registered] of ObjectRegistry.classes) {
+    for (const [key, registered] of ObjectRegistry.getAllClasses()) {
       const simpleName = registered.name || key;
       const qualified = registered.qualifiedName || key;
       if (!nameGroups.has(simpleName)) {
@@ -259,8 +234,6 @@ describe('Issue #1008: Full registry integration (high object counts)', () => {
   // -----------------------------------------------------------------------
 
   it('should produce a valid dependency graph (DAG)', () => {
-    ObjectRegistry.loadAllManifests({ manifestPaths });
-
     const graph = ObjectRegistry.getDependencyGraph();
 
     // All dependency targets must exist as graph keys

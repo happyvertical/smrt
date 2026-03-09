@@ -62,6 +62,7 @@
     "generate": "node scripts/generate-manifest.js",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "(command -v smrt >/dev/null 2>&1 && smrt test) || (node scripts/generate-test-manifest.js && npx vitest run)",
+    "test:integration": "TEST_INTEGRATION=1 npx vitest run src/__tests__/full-registry-integration.test.ts src/__tests__/manifest-no-leak.test.ts",
     "test:watch": "smrt test && npx vitest",
     "build": "vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/ && cp src/manifest/static-manifest.json dist/manifest.json",
     "build:watch": "vite build --watch",

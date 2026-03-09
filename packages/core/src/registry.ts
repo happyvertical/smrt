@@ -28,642 +28,105 @@
  * ```
  */
 
-import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
-import { getModuleConfig } from '@happyvertical/smrt-config';
+import { readFileSync } from 'node:fs';
 import { SmrtCollection } from './collection';
 import type {
   ClassEmbeddingConfig,
   ProjectEmbeddingConfig,
   ResolvedEmbeddingConfig,
 } from './embeddings/types';
-import { ConfigurationError } from './errors';
 import {
   discoverManifestEntry,
   discoverManifestSync,
-  discoverSTISiblingsSync,
-  getPackageName,
-  lookupInManifest,
+  loadExternalManifestSync,
 } from './manifest/manifest-loader.js';
-import { SmrtObject } from './object';
+import type { SmrtObject } from './object';
+import {
+  register as _register,
+  registerCollection as _registerCollection,
+  registerFromManifest as _registerFromManifest,
+} from './registry/class-registration';
+import {
+  getEmbeddingClasses as _getEmbeddingClasses,
+  getEmbeddingConfig as _getEmbeddingConfig,
+  getProjectEmbeddingConfig as _getProjectEmbeddingConfig,
+  hasEmbeddings as _hasEmbeddings,
+  resolveEmbeddingConfig as _resolveEmbeddingConfig,
+} from './registry/embedding-manager';
+import {
+  findClass as _findClass,
+  findClassesByName as _findClassesByName,
+  findClassStrict as _findClassStrict,
+  getAllClasses as _getAllClasses,
+  getCanonicalClassName as _getCanonicalClassName,
+  getClass as _getClass,
+  getClassByConstructor as _getClassByConstructor,
+  getClassByQualifiedName as _getClassByQualifiedName,
+  getClassesByPackage as _getClassesByPackage,
+  getClassesByVisibility as _getClassesByVisibility,
+  getClassInPackage as _getClassInPackage,
+  getClassNames as _getClassNames,
+  getPublicClasses as _getPublicClasses,
+  hasClass as _hasClass,
+  hasClassCaseInsensitive as _hasClassCaseInsensitive,
+  resolveType as _resolveType,
+} from './registry/name-resolver';
+import {
+  getDependencyGraph as _getDependencyGraph,
+  getRelationshipMap as _getRelationshipMap,
+} from './registry/relationship-graph';
+// ── Extracted modules (Issue #1006) ──────────────────────────────────────
+import {
+  getAllSchemas as _getAllSchemas,
+  getAllSchemasAsDefinitions as _getAllSchemasAsDefinitions,
+  getSchema as _getSchema,
+  getSchemaDDL as _getSchemaDDL,
+  getTableName as _getTableName,
+} from './registry/schema-builder';
+import {
+  getClasses,
+  getClassNameMap,
+  getCollectionCache,
+  getCollections,
+  getCollectionTableNames,
+  getDbInstanceIds,
+  getDiscoveryAttemptCache,
+  getFieldDecorators,
+  getInheritanceCache,
+  getInheritanceConfig,
+  getNextDbId,
+  getStiSiblingsLoaded,
+  setNextDbId,
+  verboseLog,
+} from './registry/shared-state';
 import type {
-  FieldDefinition,
+  RegisteredClass,
+  RelationshipMetadata,
+  SmartObjectConfig,
+  SmrtObjectConstructor,
+  ValidatorFunction,
+} from './registry/types';
+import { compileValidators as _compileValidators } from './registry/validator';
+import type {
   QualifiedClassName,
-  SmartObjectManifest,
   SmrtVisibility,
   ValidationRule,
 } from './scanner/types.js';
-import type {
-  ColumnDefinition,
-  IndexDefinition,
-  SchemaDefinition,
-  SQLDataType,
-} from './schema/types.js';
-import { classnameToTablename, tableNameFromClass, toSnakeCase } from './utils';
+import type { SchemaDefinition } from './schema/types.js';
+import { classnameToTablename } from './utils';
 import { LRUCache } from './utils/lru-cache';
-import {
-  createQualifiedName,
-  isQualifiedName,
-} from './utils/qualified-names.js';
 
-/**
- * Cached verbose flag evaluated once at module load time.
- * Checks SMRT_VERBOSE=true or DEBUG containing 'smrt'.
- * Avoids repeated env var parsing on every log statement.
- * @see https://github.com/happyvertical/smrt/issues/782
- */
-const VERBOSE_ENABLED =
-  process.env.SMRT_VERBOSE === 'true' ||
-  (process.env.DEBUG?.includes('smrt') ?? false);
+// Re-export types for backward compatibility
+export type {
+  RelationshipMetadata,
+  RelationshipType,
+  SmartObjectConfig,
+} from './registry/types';
 
-/**
- * Log a message only when verbose mode is enabled.
- * Used throughout registry.ts to reduce noise during normal operation.
- * @param args - Arguments to pass to console.log
- */
-function verboseLog(...args: unknown[]): void {
-  if (VERBOSE_ENABLED) {
-    console.log(...args);
-  }
-}
-
-/**
- * Extend globalThis to include ObjectRegistry state.
- * Using globalThis ensures all module instances share the same registry,
- * which is critical in monorepos where the same package can be loaded
- * from different paths (e.g., pnpm store vs workspace symlink).
- *
- * This fixes cross-module state sharing issues where different module
- * instances would have different class registrations, causing STI failures,
- * missing schemas, etc.
- *
- * @see https://github.com/happyvertical/smrt/issues/543
- */
-/**
- * Type for any constructor function that extends SmrtObject.
- * Used for WeakMap keys where we need to accept any subclass constructor.
- */
-type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __smrtRegistryClasses: Map<string, any> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryCollections: Map<string, typeof SmrtCollection> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryCollectionCache:
-    | LRUCache<string, SmrtCollection<any>>
-    | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryDbInstanceIds: WeakMap<object, number> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryNextDbId: number | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryInheritanceChainCache:
-    | LRUCache<string, string[]>
-    | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryFieldDecorators: Map<string, Map<string, any>> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryClassNameMap: Map<string, string[]> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistrySchemasInitialized: WeakSet<object> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryConstructorIndex:
-    | WeakMap<SmrtObjectConstructor, string>
-    | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryDiscoveryAttemptCache: Map<string, boolean> | undefined;
-}
-
-/**
- * Get inheritance config synchronously
- * Uses the config package's sync accessor which returns already-loaded config
- */
-function getInheritanceConfig() {
-  const config = getModuleConfig<SmrtGlobalConfig>('smrt', {});
-  return {
-    cacheSize: config.inheritance?.cacheSize ?? 200,
-    onMissingAncestor:
-      config.inheritance?.onMissingAncestor ?? ('warn' as 'warn' | 'error'),
-  };
-}
-
-/**
- * Extract the source file path from the call stack
- *
- * Used to identify where a class was defined for collision detection.
- * This allows the same class to be re-registered when modules are re-evaluated
- * (e.g., during vitest test file collection with isolation enabled).
- *
- * @returns The file path where the @smrt() decorator was called, or undefined
- */
-function getSourceFileFromStack(): string | undefined {
-  const error = new Error();
-  const stack = error.stack || '';
-  const stackLines = stack.split('\n');
-
-  // Look for the first file path that's NOT from smrt-core internal files
-  // Stack trace format: "    at FunctionName (file:///path/to/file.ts:line:col)"
-  // or "    at file:///path/to/file.ts:line:col"
-  for (const line of stackLines) {
-    // Match file paths in stack trace (include all JS/TS file extensions)
-    const fileMatch = line.match(
-      /(?:file:\/\/)?([^)\s]+\.(?:js|ts|mjs|mts|jsx|tsx|cjs|cts))(?::\d+:\d+)?/,
-    );
-    if (fileMatch) {
-      const rawPath = fileMatch[1];
-      // Normalize the path:
-      // - remove any leading file:// or file:/// prefix
-      // - convert Windows backslashes to POSIX-style forward slashes
-      const normalizedPath = rawPath
-        .replace(/^file:\/+/, '')
-        .replace(/\\/g, '/');
-      const lowerPath = normalizedPath.toLowerCase();
-
-      // Skip smrt-core internal files using specific path patterns
-      // to avoid false positives with user files containing "registry" in name
-      if (
-        // Installed package form: node_modules/@happyvertical/smrt-core/...
-        lowerPath.includes('/node_modules/@happyvertical/smrt-core/') ||
-        // Monorepo/workspace form: packages/core/src/...
-        (lowerPath.includes('/packages/core/src/') &&
-          !lowerPath.includes('__tests__')) ||
-        // Specific manifest loader internals
-        lowerPath.includes('/manifest/manifest-loader')
-      ) {
-        continue;
-      }
-      return normalizedPath;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Configuration options for SMRT objects registered in the system
- *
- * Controls how objects are exposed through generated APIs, CLIs, and MCP servers.
- * Each section configures a different aspect of code generation and runtime behavior.
- *
- * @interface SmartObjectConfig
- */
-export interface SmartObjectConfig {
-  /**
-   * Custom name for the object (defaults to class name)
-   */
-  name?: string;
-
-  /**
-   * Custom table name for database storage (defaults to pluralized snake_case class name)
-   * Explicitly setting this ensures the table name survives code minification
-   */
-  tableName?: string;
-
-  /**
-   * Table inheritance strategy (defaults to 'cti')
-   * - 'cti': Class Table Inheritance - one table per class (current default)
-   * - 'sti': Single Table Inheritance - shared table with discriminator column
-   *
-   * Set once on base class, children inherit automatically.
-   *
-   * @example
-   * ```typescript
-   * @smrt({ tableStrategy: 'sti' })
-   * class Event extends SmrtObject {
-   *   title: string = '';
-   * }
-   *
-   * // Meeting inherits 'sti' strategy
-   * @smrt()
-   * class Meeting extends Event {
-   *   roomId = foreignKey(Room);
-   * }
-   * ```
-   */
-  tableStrategy?: 'cti' | 'sti';
-
-  /**
-   * Custom conflict columns for UPSERT operations
-   *
-   * By default, SMRT uses ['slug', 'context'] for CTI tables and
-   * ['slug', 'context', '_meta_type'] for STI tables. Override this
-   * for junction tables or models with different natural keys.
-   *
-   * @example
-   * ```typescript
-   * // Junction table using foreign keys as natural key
-   * @smrt({ conflictColumns: ['event_id', 'profile_id'] })
-   * class EventParticipant extends SmrtObject {
-   *   eventId = '';
-   *   profileId = '';
-   * }
-   * ```
-   */
-  conflictColumns?: string[];
-
-  /**
-   * Visibility control for manifest inclusion and cross-package access
-   * - 'public': Included in published manifest, available to all consumers (default)
-   * - 'internal': Package-only, excluded from published manifest
-   * - 'test': Test-only, never in any published manifest
-   *
-   * @example
-   * ```typescript
-   * // Public class (default) - exported to consumers
-   * @smrt({ visibility: 'public' })
-   * class Product extends SmrtObject {}
-   *
-   * // Internal helper class - not exported
-   * @smrt({ visibility: 'internal' })
-   * class InternalHelper extends SmrtObject {}
-   *
-   * // Test fixture - never exported
-   * @smrt({ visibility: 'test' })
-   * class TestProduct extends SmrtObject {}
-   * ```
-   */
-  visibility?: SmrtVisibility;
-
-  /**
-   * API configuration
-   */
-  api?:
-    | boolean
-    | {
-        /**
-         * Exclude specific endpoints (supports both standard CRUD actions and custom methods)
-         */
-        exclude?: string[];
-
-        /**
-         * Include only specific endpoints (supports both standard CRUD actions and custom methods)
-         */
-        include?: string[];
-
-        /**
-         * Custom middleware for this object's endpoints
-         */
-        middleware?: any[];
-
-        /**
-         * Custom endpoint handlers (supports both standard CRUD actions and custom methods)
-         */
-        customize?: Record<string, (req: any, collection: any) => Promise<any>>;
-      };
-
-  /**
-   * MCP server configuration
-   */
-  mcp?:
-    | boolean
-    | {
-        /**
-         * Include specific tools (supports both standard CRUD actions and custom methods)
-         */
-        include?: string[];
-
-        /**
-         * Exclude specific tools (supports both standard CRUD actions and custom methods)
-         */
-        exclude?: string[];
-      };
-
-  /**
-   * CLI configuration
-   */
-  cli?:
-    | boolean
-    | {
-        /**
-         * Include specific commands (supports both standard CRUD actions and custom methods)
-         */
-        include?: string[];
-
-        /**
-         * Exclude specific commands (supports both standard CRUD actions and custom methods)
-         */
-        exclude?: string[];
-      };
-
-  /**
-   * AI callable configuration
-   */
-  ai?: {
-    /**
-     * Methods that AI can call
-     * - Array of method names, e.g., ['analyze', 'validate']
-     * - 'public-async' to auto-include all public async methods
-     * - 'all' to include all methods (not recommended)
-     */
-    callable?: string[] | 'public-async' | 'all';
-
-    /**
-     * Methods to exclude from AI calling (higher priority than callable)
-     */
-    exclude?: string[];
-
-    /**
-     * Additional tool descriptions to override method JSDoc
-     */
-    descriptions?: Record<string, string>;
-  };
-
-  /**
-   * Lifecycle hooks
-   */
-  hooks?: {
-    beforeSave?: string | ((instance: any) => Promise<void>);
-    afterSave?: string | ((instance: any) => Promise<void>);
-    beforeCreate?: string | ((instance: any) => Promise<void>);
-    afterCreate?: string | ((instance: any) => Promise<void>);
-    beforeUpdate?: string | ((instance: any) => Promise<void>);
-    afterUpdate?: string | ((instance: any) => Promise<void>);
-    beforeDelete?: string | ((instance: any) => Promise<void>);
-    afterDelete?: string | ((instance: any) => Promise<void>);
-  };
-
-  /**
-   * Embedding configuration for semantic search
-   *
-   * Enable vector embeddings on this class for similarity search.
-   * Project-level defaults come from smrt.config embeddings section.
-   *
-   * @example
-   * ```typescript
-   * @smrt({
-   *   embeddings: {
-   *     fields: ['title', 'body'],
-   *     autoGenerate: true
-   *   }
-   * })
-   * class Article extends SmrtObject {
-   *   title: string = '';
-   *   body: string = '';
-   * }
-   * ```
-   */
-  embeddings?: {
-    /**
-     * Fields to generate embeddings for
-     * Each field gets its own embedding vector stored in _smrt_embeddings
-     */
-    fields: string[];
-
-    /**
-     * Override project-level embedding provider
-     * - 'local': Use local Node.js model (@xenova/transformers)
-     * - 'ai': Use AI library (OpenAI, etc.)
-     * - 'auto': Try local first, fallback to AI
-     */
-    provider?: 'local' | 'ai' | 'auto';
-
-    /**
-     * Automatically generate embeddings on save
-     * Only regenerates when content changes (via content hash)
-     * @default true
-     */
-    autoGenerate?: boolean;
-
-    /**
-     * Regenerate embeddings when field content changes
-     * Uses content hash comparison to detect changes
-     * @default true
-     */
-    regenerateOnChange?: boolean;
-
-    /**
-     * Create a combined embedding from multiple fields
-     * Useful for holistic similarity search across an object
-     *
-     * @example
-     * ```typescript
-     * combinedField: {
-     *   name: 'content',
-     *   template: '{title}\n\n{body}'
-     * }
-     * ```
-     */
-    combinedField?: {
-      /** Field name for the combined embedding */
-      name: string;
-      /** Template with {fieldName} placeholders */
-      template: string;
-    };
-  };
-
-  /**
-   * Multi-tenancy configuration
-   *
-   * Enable automatic tenant isolation for this class.
-   * When enabled, a `tenantId` field is auto-injected and queries are
-   * automatically filtered by tenant context.
-   *
-   * Requires `@happyvertical/smrt-tenancy` package to be installed
-   * and `enableTenancy()` to be called at app startup.
-   *
-   * @example Simple boolean flag (uses defaults)
-   * ```typescript
-   * @smrt({ tenantScoped: true })
-   * class Account extends SmrtObject {
-   *   // tenantId field auto-injected
-   *   name: string = '';
-   * }
-   * ```
-   *
-   * @example With custom options
-   * ```typescript
-   * @smrt({
-   *   tenantScoped: {
-   *     mode: 'optional',  // Works with or without tenant context
-   *     allowSuperAdminBypass: true
-   *   }
-   * })
-   * class AuditLog extends SmrtObject { }
-   * ```
-   *
-   * @see https://github.com/happyvertical/smrt/issues/688
-   */
-  tenantScoped?:
-    | boolean
-    | {
-        /**
-         * Tenancy mode for this class
-         * - 'required': Must have tenant context for all operations (default)
-         * - 'optional': Works with or without tenant context
-         * @default 'required'
-         */
-        mode?: 'required' | 'optional';
-
-        /**
-         * Field name for the tenant ID
-         * @default 'tenantId'
-         */
-        field?: string;
-
-        /**
-         * Auto-filter all queries by tenant
-         * @default true
-         */
-        autoFilter?: boolean;
-
-        /**
-         * Auto-populate tenant ID from context on create
-         * @default true
-         */
-        autoPopulate?: boolean;
-
-        /**
-         * Allow super admin bypass for this class
-         * @default false
-         */
-        allowSuperAdminBypass?: boolean;
-      };
-
-  /**
-   * Agent metadata configuration
-   *
-   * Only relevant for classes extending Agent. Provides metadata
-   * that the manifest build uses to auto-generate permissions, features,
-   * menu items, and component declarations.
-   *
-   * @example
-   * ```typescript
-   * @smrt({
-   *   tableName: 'praecos',
-   *   agent: {
-   *     icon: 'newspaper',
-   *     tier: 'standard',
-   *     description: 'Council meeting coverage and article generation',
-   *   },
-   *   cli: { include: ['discover', 'fetch', 'analyze'] },
-   * })
-   * export class Praeco extends Agent { }
-   * ```
-   */
-  agent?: {
-    /** Icon identifier (e.g., 'newspaper', 'cloud', 'git-branch') */
-    icon?: string;
-    /** Billing tier: 'free' | 'standard' | 'premium' */
-    tier?: 'free' | 'standard' | 'premium';
-    /** Human-readable description of the agent */
-    description?: string;
-  };
-
-  /**
-   * Synchronous manifest for build-time imports (Issue #270 Phase 1)
-   * Allows passing manifest directly instead of async loading
-   * @internal Advanced usage - typically set by build tools
-   */
-  _manifest?: SmartObjectManifest;
-}
-
-// SchemaDefinition is imported from ./schema/types.js
-
-/**
- * Validation function that takes an object instance and returns
- * a ValidationError if validation fails, or null if validation passes
- */
-type ValidatorFunction = (
-  instance: any,
-) => Promise<import('./errors').ValidationError | null>;
-
-/**
- * Relationship type for the relationship map
- */
-export type RelationshipType = 'foreignKey' | 'oneToMany' | 'manyToMany';
-
-/**
- * Metadata about a relationship between classes
- */
-export interface RelationshipMetadata {
-  /** Source class name */
-  sourceClass: string;
-  /** Field name on the source class */
-  fieldName: string;
-  /** Target/related class name */
-  targetClass: string;
-  /** Type of relationship */
-  type: RelationshipType;
-  /** Options for the relationship (onDelete, etc.) */
-  options: any;
-}
-
-/**
- * Internal representation of a registered SMRT class
- *
- * @interface RegisteredClass
- * @private
- */
-interface RegisteredClass {
-  /**
-   * Simple class name (e.g., "Product")
-   */
-  name: string;
-
-  /**
-   * Qualified class name in format "@package/name:ClassName"
-   * This is the PRIMARY KEY for registry lookups.
-   * Example: "@happyvertical/smrt-core:Product"
-   */
-  qualifiedName?: QualifiedClassName;
-
-  constructor: typeof SmrtObject;
-  collectionConstructor?: new (options: any) => SmrtCollection<any>;
-  config: SmartObjectConfig;
-  fields: Map<string, any>;
-  /** Method definitions from manifest (for custom CLI/API/MCP generation) */
-  methods: Map<string, any>;
-  /** Cached schema definition generated during registration */
-  schema?: SchemaDefinition;
-  /** Compiled validation functions for efficient runtime validation */
-  validators?: ValidatorFunction[];
-  /**
-   * Pre-computed validation rules from manifest (Issue #782)
-   * When available, these are used instead of compiling validator closures,
-   * significantly reducing CLI startup time.
-   */
-  validationRules?: ValidationRule[];
-  /** AI-callable tools generated from methods at build time */
-  tools?: Array<{
-    type: 'function';
-    function: {
-      name: string;
-      description?: string;
-      parameters?: Record<string, any>;
-    };
-  }>;
-  /** Package name from manifest (for external package classes) */
-  packageName?: string;
-  /** Source file path where the class was defined (for collision detection) */
-  sourceFilePath?: string;
-  /** Parent class name (for inheritance chain tracking) */
-  extends?: string;
-  /** Full inheritance chain from base to this class (cached for performance) */
-  inheritanceChain?: string[];
-  /** Merged fields from entire inheritance chain (cached, includes parent fields) */
-  inheritedFields?: Map<string, any>;
-  /** Merged methods from entire inheritance chain (cached, includes parent methods) */
-  inheritedMethods?: Map<string, any>;
-  /** Normalized tenant scoping configuration (Issue #688) */
-  tenantScopedConfig?: {
-    mode: 'required' | 'optional';
-    field: string;
-    autoFilter: boolean;
-    autoPopulate: boolean;
-    allowSuperAdminBypass: boolean;
-  };
-  /**
-   * Visibility control for manifest inclusion
-   * - 'public': Included in published manifest (default)
-   * - 'internal': Package-only, excluded from published manifest
-   * - 'test': Test-only, never in any published manifest
-   */
-  visibility?: SmrtVisibility;
-}
+// Types, utility functions, and globalThis declarations have been extracted
+// to registry/types.ts and registry/shared-state.ts (Issue #1006).
+// The SmartObjectConfig, RelationshipType, and RelationshipMetadata types
+// are re-exported above for backward compatibility.
 
 /**
  * Central registry for all SMRT objects
@@ -676,23 +139,14 @@ export class ObjectRegistry {
    * Get the classes map from globalThis, initializing if needed
    */
   private static get classes(): Map<string, RegisteredClass> {
-    if (!globalThis.__smrtRegistryClasses) {
-      globalThis.__smrtRegistryClasses = new Map<string, RegisteredClass>();
-    }
-    return globalThis.__smrtRegistryClasses;
+    return getClasses();
   }
 
   /**
    * Get the collections map from globalThis, initializing if needed
    */
   private static get collections(): Map<string, typeof SmrtCollection> {
-    if (!globalThis.__smrtRegistryCollections) {
-      globalThis.__smrtRegistryCollections = new Map<
-        string,
-        typeof SmrtCollection
-      >();
-    }
-    return globalThis.__smrtRegistryCollections;
+    return getCollections();
   }
 
   /**
@@ -700,10 +154,7 @@ export class ObjectRegistry {
    * Maps collection class name -> tableName for getTableName lookups
    */
   private static get collectionTableNames(): Map<string, string> {
-    if (!globalThis.__smrtRegistryCollectionTableNames) {
-      globalThis.__smrtRegistryCollectionTableNames = new Map<string, string>();
-    }
-    return globalThis.__smrtRegistryCollectionTableNames;
+    return getCollectionTableNames();
   }
 
   /**
@@ -721,13 +172,7 @@ export class ObjectRegistry {
    * Get the collection cache from globalThis, initializing if needed
    */
   private static get collectionCache(): LRUCache<string, SmrtCollection<any>> {
-    if (!globalThis.__smrtRegistryCollectionCache) {
-      globalThis.__smrtRegistryCollectionCache = new LRUCache<
-        string,
-        SmrtCollection<any>
-      >(100);
-    }
-    return globalThis.__smrtRegistryCollectionCache;
+    return getCollectionCache();
   }
 
   /**
@@ -759,24 +204,18 @@ export class ObjectRegistry {
    * Prevents cache key collisions when different db instances are used
    */
   private static get dbInstanceIds(): WeakMap<object, number> {
-    if (!globalThis.__smrtRegistryDbInstanceIds) {
-      globalThis.__smrtRegistryDbInstanceIds = new WeakMap<object, number>();
-    }
-    return globalThis.__smrtRegistryDbInstanceIds;
+    return getDbInstanceIds();
   }
 
   /**
    * Get/set the next database ID counter
    */
   private static get nextDbId(): number {
-    if (globalThis.__smrtRegistryNextDbId === undefined) {
-      globalThis.__smrtRegistryNextDbId = 1;
-    }
-    return globalThis.__smrtRegistryNextDbId;
+    return getNextDbId();
   }
 
   private static set nextDbId(value: number) {
-    globalThis.__smrtRegistryNextDbId = value;
+    setNextDbId(value);
   }
 
   /**
@@ -785,13 +224,7 @@ export class ObjectRegistry {
    * Used by @field(), @foreignKey(), @oneToMany(), @manyToMany() decorators
    */
   private static get fieldDecorators(): Map<string, Map<string, any>> {
-    if (!globalThis.__smrtRegistryFieldDecorators) {
-      globalThis.__smrtRegistryFieldDecorators = new Map<
-        string,
-        Map<string, any>
-      >();
-    }
-    return globalThis.__smrtRegistryFieldDecorators;
+    return getFieldDecorators();
   }
 
   /**
@@ -799,10 +232,7 @@ export class ObjectRegistry {
    * Prevents infinite recursion when loading siblings
    */
   private static get stiSiblingsLoaded(): Set<string> {
-    if (!globalThis.__smrtRegistryStiSiblingsLoaded) {
-      globalThis.__smrtRegistryStiSiblingsLoaded = new Set<string>();
-    }
-    return globalThis.__smrtRegistryStiSiblingsLoaded;
+    return getStiSiblingsLoaded();
   }
 
   /**
@@ -811,42 +241,7 @@ export class ObjectRegistry {
    * both 'praeco' and 'Praeco' from being registered separately
    */
   private static get classNameMap(): Map<string, string[]> {
-    if (!globalThis.__smrtRegistryClassNameMap) {
-      globalThis.__smrtRegistryClassNameMap = new Map<string, string[]>();
-    }
-    return globalThis.__smrtRegistryClassNameMap;
-  }
-
-  /**
-   * Add a mapping from a lowercase simple name to a qualified key in classNameMap.
-   * Supports multiple qualified keys per simple name (for ambiguity detection).
-   */
-  private static addToClassNameMap(
-    simpleNameLower: string,
-    qualifiedKey: string,
-  ): void {
-    const existing = ObjectRegistry.classNameMap.get(simpleNameLower) || [];
-    if (!existing.includes(qualifiedKey)) {
-      existing.push(qualifiedKey);
-      ObjectRegistry.classNameMap.set(simpleNameLower, existing);
-    }
-  }
-
-  /**
-   * Remove a qualified key from a classNameMap entry.
-   * Cleans up empty arrays.
-   */
-  private static removeFromClassNameMap(
-    simpleNameLower: string,
-    qualifiedKey: string,
-  ): void {
-    const existing = ObjectRegistry.classNameMap.get(simpleNameLower);
-    if (existing) {
-      const idx = existing.indexOf(qualifiedKey);
-      if (idx !== -1) existing.splice(idx, 1);
-      if (existing.length === 0)
-        ObjectRegistry.classNameMap.delete(simpleNameLower);
-    }
+    return getClassNameMap();
   }
 
   /**
@@ -854,37 +249,14 @@ export class ObjectRegistry {
    * Returns the canonical name if found, undefined otherwise
    */
   static getCanonicalClassName(name: string): string | undefined {
-    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    if (!entries || entries.length === 0) return undefined;
-    if (entries.length === 1) return entries[0];
-    // Ambiguous — multiple entries, return undefined
-    return undefined;
+    return _getCanonicalClassName(name);
   }
 
   /**
    * Check if a class exists by name (case-insensitive)
    */
   static hasClassCaseInsensitive(name: string): boolean {
-    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    return !!entries && entries.length > 0;
-  }
-
-  /**
-   * WeakMap index for O(1) constructor-based lookups
-   * Maps constructor → registered class name for fast reverse lookups
-   * Uses WeakMap so classes can be garbage collected if unregistered
-   */
-  private static get constructorIndex(): WeakMap<
-    SmrtObjectConstructor,
-    string
-  > {
-    if (!globalThis.__smrtRegistryConstructorIndex) {
-      globalThis.__smrtRegistryConstructorIndex = new WeakMap<
-        SmrtObjectConstructor,
-        string
-      >();
-    }
-    return globalThis.__smrtRegistryConstructorIndex;
+    return _hasClassCaseInsensitive(name);
   }
 
   /**
@@ -894,14 +266,7 @@ export class ObjectRegistry {
    * Cache size is configurable via smrt.inheritance.cacheSize (default: 200)
    */
   private static getInheritanceCache(): LRUCache<string, string[]> {
-    if (!globalThis.__smrtRegistryInheritanceChainCache) {
-      const { cacheSize } = getInheritanceConfig();
-      globalThis.__smrtRegistryInheritanceChainCache = new LRUCache<
-        string,
-        string[]
-      >(cacheSize);
-    }
-    return globalThis.__smrtRegistryInheritanceChainCache;
+    return getInheritanceCache();
   }
 
   /**
@@ -910,13 +275,7 @@ export class ObjectRegistry {
    * Prevents repeated discoverManifestSync calls for the same class name
    */
   private static getDiscoveryAttemptCache(): Map<string, boolean> {
-    if (!globalThis.__smrtRegistryDiscoveryAttemptCache) {
-      globalThis.__smrtRegistryDiscoveryAttemptCache = new Map<
-        string,
-        boolean
-      >();
-    }
-    return globalThis.__smrtRegistryDiscoveryAttemptCache;
+    return getDiscoveryAttemptCache();
   }
 
   /**
@@ -1033,801 +392,7 @@ export class ObjectRegistry {
     ctor: typeof SmrtObject,
     config: SmartObjectConfig = {},
   ): void {
-    const name = config.name || ctor.name;
-
-    // Prevent duplicate registrations - check exact match first
-    if (ObjectRegistry.classes.has(name)) {
-      const existing = ObjectRegistry.classes.get(name);
-      if (!existing) {
-        throw new Error(
-          `Registry inconsistency: ${name} exists in classes Map but get() returned undefined`,
-        );
-      }
-
-      // Check if this is the exact same constructor (re-registration is OK)
-      if (existing.constructor === ctor) {
-        return; // Same class, skip silently
-      }
-
-      // Check if existing is a manifest stub that should be replaced by the real class
-      // This happens when:
-      // 1. `smrt test` generates a manifest which registers classes via registerFromManifest()
-      // 2. Test file imports the real class, triggering the @smrt() decorator
-      // 3. The real class should replace the stub (same name, different constructor)
-      if ((existing.constructor as any)._isManifestStub === true) {
-        // Replace stub with real class - update constructor and merge any decorator config
-        existing.constructor = ctor;
-        // Merge config from decorator (new) with manifest config (existing)
-        // Priority: decorator config wins over manifest config for explicit settings
-        existing.config = { ...existing.config, ...config };
-        // Index constructor for O(1) reverse lookups (Issue #713)
-        ObjectRegistry.constructorIndex.set(ctor, name);
-        verboseLog(
-          `[registry] Replaced manifest stub with real class: ${name}`,
-        );
-        return;
-      }
-
-      // Check if existing entry was registered from external package manifest data
-      // (Issue #584: Registry collision when real class tries to replace manifest-loaded entry)
-      // This happens when:
-      // 1. CLI loads manifest and registers classes using manifest data via ObjectRegistry.register()
-      // 2. Later, register.js imports the real class, triggering the @smrt() decorator
-      // 3. The real class should replace the manifest-loaded entry
-      // We detect this by checking if existing has packageName from an external package
-      const newPackageName = getPackageName(ctor, true);
-      if (existing.packageName?.startsWith('@')) {
-        // If the new class is from the same package, allow replacement
-        if (newPackageName === existing.packageName) {
-          existing.constructor = ctor;
-          existing.config = { ...existing.config, ...config };
-          // Index constructor for O(1) reverse lookups (Issue #713)
-          ObjectRegistry.constructorIndex.set(ctor, name);
-          return;
-        }
-      }
-
-      // Check if this is the same class being re-registered from module re-evaluation
-      // This happens during vitest test collection when modules are re-evaluated for isolation
-      // (Issue #555: Test isolation - class name collision during vitest collection)
-      const newSourceFile = getSourceFileFromStack();
-
-      // Detect bundled context: source file is in a build output directory
-      // Bundlers (Vite, webpack, etc.) can duplicate module code into multiple chunks,
-      // causing the same class to be registered multiple times with different source paths
-      const isBundledContext =
-        newSourceFile &&
-        (newSourceFile.includes('.svelte-kit/output/') ||
-          newSourceFile.includes('/dist/') ||
-          newSourceFile.includes('/build/') ||
-          newSourceFile.includes('.next/') ||
-          newSourceFile.includes('.nuxt/'));
-
-      // In bundled contexts, allow re-registration if the existing entry came from a manifest
-      // (which means it's a known package class that the bundler duplicated)
-      if (isBundledContext && existing.packageName?.startsWith('@')) {
-        existing.constructor = ctor;
-        existing.config = { ...existing.config, ...config };
-        // Index constructor for O(1) reverse lookups (Issue #713)
-        ObjectRegistry.constructorIndex.set(ctor, name);
-        return;
-      }
-
-      // Allow re-registration if:
-      // 1. Both source files are defined and match (same file being re-evaluated)
-      // 2. Either source file is unavailable (can't do proper comparison, allow as fallback)
-      const sourceFilesMatch =
-        newSourceFile &&
-        existing.sourceFilePath &&
-        newSourceFile === existing.sourceFilePath;
-      const cannotCompareSourceFiles =
-        !newSourceFile || !existing.sourceFilePath;
-
-      if (sourceFilesMatch || cannotCompareSourceFiles) {
-        // Same source file or can't compare = allow constructor update
-        existing.constructor = ctor;
-        existing.config = { ...existing.config, ...config };
-        // Index constructor for O(1) reverse lookups (Issue #713)
-        ObjectRegistry.constructorIndex.set(ctor, name);
-        return;
-      }
-
-      // Allow subclass to replace parent class with the same name (STI child-wins).
-      // This happens when a downstream package extends a base class with the same
-      // name to customize behavior (e.g., histrio's Character extends smrt-video's Character).
-      try {
-        if (ctor.prototype instanceof existing.constructor) {
-          // New class extends existing — child wins
-          existing.constructor = ctor;
-          existing.config = { ...existing.config, ...config };
-          ObjectRegistry.constructorIndex.set(ctor, name);
-          verboseLog(
-            `[registry] Subclass '${name}' from ${newPackageName || 'unknown'} replaced parent from ${existing.packageName || 'unknown'}`,
-          );
-          return;
-        }
-        if (existing.constructor.prototype instanceof ctor) {
-          // Existing class extends new — existing (child) already wins, skip
-          verboseLog(
-            `[registry] Skipping parent '${name}' — subclass already registered`,
-          );
-          return;
-        }
-      } catch {
-        // instanceof can throw if constructors are not proper functions — fall through to collision error
-      }
-
-      // Different constructors with same name from different source files - this is a collision!
-      // This will cause silent bugs where the wrong fields are used
-      throw new Error(
-        `SMRT Class Name Collision: "${name}"\n\n` +
-          `A class with this name is already registered, but with a different constructor.\n` +
-          `This usually happens when:\n` +
-          `  1. Multiple test files define classes with the same name\n` +
-          `  2. Different packages export classes with the same name\n\n` +
-          `The collision will cause the wrong field definitions to be used,\n` +
-          `leading to properties not being initialized correctly.\n\n` +
-          `To fix:\n` +
-          `  - Use unique class names (e.g., ${name}_UniqueId)\n` +
-          `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
-      );
-    }
-
-    // Case-insensitive check for manifest stubs (Issue #531, #847)
-    // Manifest keys can be:
-    // - lowercase simple names (e.g., 'praeco')
-    // - qualified names (e.g., '@happyvertical/praeco:Council')
-    // When the real class is loaded via @smrt() decorator, we need to find and replace the stub.
-    // Issue #847: Also check the entry's `name` property which contains the simple class name.
-    const lowerName = name.toLowerCase();
-    for (const [existingKey, existing] of ObjectRegistry.classes.entries()) {
-      // Match by key (original behavior) OR by the entry's simple name property (Issue #847)
-      const keyMatches = existingKey.toLowerCase() === lowerName;
-      const nameMatches = existing.name?.toLowerCase() === lowerName;
-      if ((keyMatches || nameMatches) && existingKey !== name) {
-        // Found case-insensitive match with different casing
-        if ((existing.constructor as any)._isManifestStub === true) {
-          // Replace stub with real class
-          // Use the new PascalCase name as the canonical key
-          ObjectRegistry.classes.delete(existingKey);
-          existing.constructor = ctor;
-          existing.name = name; // Update to PascalCase
-          // Merge config from decorator (new) with manifest config (existing)
-          existing.config = { ...existing.config, ...config };
-          // Issue #951: Compute qualified name for the new key
-          const newPkg = getPackageName(ctor, true) || existing.packageName;
-          const newKey = newPkg ? createQualifiedName(newPkg, name) : name;
-          existing.qualifiedName = newPkg
-            ? (createQualifiedName(newPkg, name) as any)
-            : undefined;
-          ObjectRegistry.classes.set(newKey, existing);
-          // Update classNameMap: remove old, add new
-          ObjectRegistry.removeFromClassNameMap(
-            existingKey.toLowerCase(),
-            existingKey,
-          );
-          if (existing.name.toLowerCase() !== existingKey.toLowerCase()) {
-            ObjectRegistry.removeFromClassNameMap(
-              existing.name.toLowerCase(),
-              existingKey,
-            );
-          }
-          ObjectRegistry.addToClassNameMap(name.toLowerCase(), newKey);
-          // Index constructor for O(1) reverse lookups (Issue #713)
-          ObjectRegistry.constructorIndex.set(ctor, newKey);
-          verboseLog(
-            `[registry] Replaced manifest stub '${existingKey}' with real class '${name}' (key: ${newKey})`,
-          );
-          return;
-        }
-
-        // Non-stub case-insensitive collision - same constructor is OK
-        if (existing.constructor === ctor) {
-          return; // Same class, skip silently
-        }
-
-        // Same package, different pnpm store copy — harmless duplicate
-        // This happens when pnpm installs multiple physical copies of the same package
-        // due to different peer dependency resolutions. Each copy has a distinct constructor
-        // but they are semantically the same class.
-        // Requirements: existing entry has a qualified key, same package, AND same class name
-        // (case-sensitive). A case-insensitive-only match with different exact names indicates
-        // genuinely different classes, not pnpm duplicates.
-        const newPackageName = getPackageName(ctor, true);
-        if (
-          isQualifiedName(existingKey) &&
-          newPackageName &&
-          existing.packageName &&
-          newPackageName === existing.packageName &&
-          name === existing.name
-        ) {
-          existing.constructor = ctor;
-          existing.config = { ...existing.config, ...config };
-          ObjectRegistry.constructorIndex.set(ctor, existingKey);
-          return;
-        }
-
-        // Check if this is the same class being re-registered from module re-evaluation
-        // (Issue #555: Test isolation - class name collision during vitest collection)
-        const newSourceFile = getSourceFileFromStack();
-
-        // Bundled context: source file is in a build output directory
-        // Mirrors the exact-match bundled context check above
-        const isBundledContext =
-          newSourceFile &&
-          (newSourceFile.includes('.svelte-kit/output/') ||
-            newSourceFile.includes('/dist/') ||
-            newSourceFile.includes('/build/') ||
-            newSourceFile.includes('.next/') ||
-            newSourceFile.includes('.nuxt/'));
-
-        if (isBundledContext && existing.packageName?.startsWith('@')) {
-          existing.constructor = ctor;
-          existing.config = { ...existing.config, ...config };
-          ObjectRegistry.constructorIndex.set(ctor, existingKey);
-          return;
-        }
-
-        // Allow re-registration if:
-        // 1. Both source files are defined and match (same file being re-evaluated)
-        // 2. Either source file is unavailable (can't do proper comparison, allow as fallback)
-        const sourceFilesMatch =
-          newSourceFile &&
-          existing.sourceFilePath &&
-          newSourceFile === existing.sourceFilePath;
-        const cannotCompareSourceFiles =
-          !newSourceFile || !existing.sourceFilePath;
-
-        if (sourceFilesMatch || cannotCompareSourceFiles) {
-          // Same source file or can't compare = allow constructor update
-          const oldName = existing.name;
-          ObjectRegistry.classes.delete(existingKey);
-          existing.constructor = ctor;
-          existing.name = name;
-          existing.config = { ...existing.config, ...config };
-          // Issue #951: Compute qualified key for re-registration
-          const reregPkg = getPackageName(ctor, true) || existing.packageName;
-          const reregKey = reregPkg
-            ? createQualifiedName(reregPkg, name)
-            : name;
-          existing.qualifiedName = reregPkg
-            ? (createQualifiedName(reregPkg, name) as any)
-            : undefined;
-          ObjectRegistry.classes.set(reregKey, existing);
-          // Update classNameMap: remove old key reference, add new
-          ObjectRegistry.removeFromClassNameMap(
-            oldName.toLowerCase(),
-            existingKey,
-          );
-          ObjectRegistry.addToClassNameMap(name.toLowerCase(), reregKey);
-          // Index constructor for O(1) reverse lookups (Issue #713)
-          ObjectRegistry.constructorIndex.set(ctor, reregKey);
-          return;
-        }
-
-        // Allow subclass to replace parent class (STI child-wins, case-insensitive)
-        try {
-          if (ctor.prototype instanceof existing.constructor) {
-            const oldName = existing.name;
-            ObjectRegistry.classes.delete(existingKey);
-            existing.constructor = ctor;
-            existing.name = name;
-            existing.config = { ...existing.config, ...config };
-            // Issue #951: Compute qualified key for STI child-wins
-            const stiPkg = getPackageName(ctor, true) || existing.packageName;
-            const stiKey = stiPkg ? createQualifiedName(stiPkg, name) : name;
-            existing.qualifiedName = stiPkg
-              ? (createQualifiedName(stiPkg, name) as any)
-              : undefined;
-            ObjectRegistry.classes.set(stiKey, existing);
-            ObjectRegistry.removeFromClassNameMap(
-              oldName.toLowerCase(),
-              existingKey,
-            );
-            ObjectRegistry.addToClassNameMap(name.toLowerCase(), stiKey);
-            ObjectRegistry.constructorIndex.set(ctor, stiKey);
-            verboseLog(
-              `[registry] Subclass '${name}' replaced parent '${existingKey}' (key: ${stiKey})`,
-            );
-            return;
-          }
-          if (existing.constructor.prototype instanceof ctor) {
-            verboseLog(
-              `[registry] Skipping parent '${name}' — subclass '${existingKey}' already registered`,
-            );
-            return;
-          }
-        } catch {
-          // instanceof can throw if constructors are not proper functions — fall through
-        }
-
-        // Different constructors with case-insensitive name match from different source files
-        throw new Error(
-          `SMRT Class Name Collision: "${name}" (case-insensitive match with "${existingKey}")\n\n` +
-            `A class with this name is already registered, but with a different constructor.\n` +
-            `This usually happens when:\n` +
-            `  1. Multiple test files define classes with the same name\n` +
-            `  2. Different packages export classes with the same name\n\n` +
-            `The collision will cause the wrong field definitions to be used,\n` +
-            `leading to properties not being initialized correctly.\n\n` +
-            `To fix:\n` +
-            `  - Use unique class names (e.g., ${name}_UniqueId)\n` +
-            `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
-        );
-      }
-    }
-
-    // CRITICAL: Capture package name NOW, while stack trace still shows external package
-    // This is called from the @smrt() decorator during import, so the stack trace
-    // includes the external package file path. Later calls won't have this context.
-    // Skip registry check to avoid circular dependency - class isn't registered yet!
-    // This solves issue #159 where external package manifests couldn't be loaded.
-    const packageNameFromStack = getPackageName(ctor, true) || undefined;
-
-    // Capture source file path for collision detection during module re-evaluation
-    // (Issue #555: Test isolation - class name collision during vitest collection)
-    const sourceFilePath = getSourceFileFromStack();
-
-    // Get field definitions from manifest
-    // Priority order (Issue #270 Phase 1 - synchronous manifest loading):
-    // 1. Explicitly provided manifest (_manifest parameter)
-    // 2. Test manifests (for test classes)
-    // 3. Static manifests (for core framework classes)
-    // 4. Cached external manifests (if already loaded)
-    // For external packages not yet loaded, manifest discovery happens lazily during schema generation
-    // Issue #713: Use lookupInManifest for qualified name support
-    let manifestEntry: ReturnType<typeof lookupInManifest> | undefined;
-    if (config._manifest) {
-      manifestEntry = lookupInManifest(config._manifest, name);
-    }
-    if (!manifestEntry) {
-      manifestEntry = discoverManifestSync(name);
-    }
-    const fields = new Map<string, any>();
-    const methods = new Map<string, any>();
-    let packageName: string | undefined;
-
-    verboseLog(
-      `[registry] Registering ${name}: manifestEntry =`,
-      manifestEntry ? 'found' : 'not found',
-    );
-    if (manifestEntry?.fields) {
-      verboseLog(
-        `[registry] Manifest has ${Object.keys(manifestEntry.fields).length} fields:`,
-        Object.keys(manifestEntry.fields),
-      );
-    }
-
-    if (manifestEntry?.fields) {
-      // Use manifest fields (from build-time AST scanning)
-      // Store field definitions as plain objects with nested options
-      for (const [fieldName, fieldDef] of Object.entries(
-        manifestEntry.fields,
-      ) as [string, import('./scanner/types.js').FieldDefinition][]) {
-        // Build options object, only including defined values
-        const options: any = { ...fieldDef._meta };
-        if (fieldDef.required !== undefined)
-          options.required = fieldDef.required;
-        if (fieldDef.default !== undefined) options.default = fieldDef.default;
-        if (fieldDef.description !== undefined)
-          options.description = fieldDef.description;
-        if (fieldDef.transient !== undefined)
-          options.transient = fieldDef.transient;
-
-        // Store field definition as plain object maintaining Field-like structure
-        const field: any = {
-          type: fieldDef.type,
-        };
-
-        // Only include options if not empty
-        if (Object.keys(options).length > 0) {
-          field._meta = options;
-        }
-
-        // Preserve top-level flags from manifest
-        if (fieldDef.transient !== undefined) {
-          field.transient = fieldDef.transient;
-        }
-        if (fieldDef.required !== undefined) {
-          field.required = fieldDef.required;
-        }
-
-        // Hoist related to top level for relationship fields
-        // Check both fieldDef.related (new manifests) and _meta.related (old manifests)
-        if (fieldDef.related !== undefined) {
-          field.related = fieldDef.related;
-        } else if (options.related !== undefined) {
-          field.related = options.related;
-          delete field._meta?.related;
-        }
-
-        fields.set(fieldName, field);
-      }
-
-      verboseLog(
-        `[registry] ✅ Loaded ${fields.size} fields for ${name} from manifest`,
-      );
-
-      // Use packageName from manifest if available, otherwise from stack trace
-      // Priority: explicit manifest > manifestEntry > stack trace
-      packageName =
-        config._manifest?.packageName ||
-        manifestEntry.packageName ||
-        packageNameFromStack;
-    } else {
-      // No manifest found yet - use package name from stack trace
-      // This will be used later by ensureManifestLoaded() to load the external manifest
-      verboseLog(
-        `[registry] ⚠️  No manifest entry for ${name} - fields will be loaded later`,
-      );
-      packageName = packageNameFromStack;
-    }
-
-    // Apply decorator metadata to override/extend manifest fields
-    // Decorators take priority over AST-scanned types (Issue #316)
-    const decorators = ObjectRegistry.fieldDecorators.get(name);
-    if (decorators && decorators.size > 0) {
-      verboseLog(
-        `[registry] Applying ${decorators.size} field decorators for ${name}`,
-      );
-
-      for (const [fieldName, decoratorOptions] of decorators) {
-        const existingField = fields.get(fieldName);
-
-        if (existingField) {
-          // Merge decorator options with manifest field
-          // Decorator type takes priority over AST-scanned type
-          const mergedField: any = {
-            type: decoratorOptions.type || existingField.type,
-            _meta: {
-              ...existingField._meta,
-              ...decoratorOptions,
-            },
-          };
-
-          // Remove 'type' from _meta if it was moved to top level
-          if (mergedField._meta.type) {
-            delete mergedField._meta.type;
-          }
-
-          // Preserve top-level flags (transient, required, etc.)
-          if (decoratorOptions.transient !== undefined) {
-            mergedField.transient = decoratorOptions.transient;
-          } else if (existingField.transient !== undefined) {
-            mergedField.transient = existingField.transient;
-          }
-
-          // Handle required flag: nullable fields should not be required
-          if (decoratorOptions.nullable === true) {
-            // Nullable explicitly set to true means field is NOT required
-            mergedField.required = false;
-            mergedField._meta.required = false;
-          } else if (decoratorOptions.required !== undefined) {
-            mergedField.required = decoratorOptions.required;
-          } else if (existingField.required !== undefined) {
-            mergedField.required = existingField.required;
-          }
-
-          // Hoist related to top level for relationship fields
-          if (decoratorOptions.related !== undefined) {
-            mergedField.related = decoratorOptions.related;
-            delete mergedField._meta?.related;
-          } else if (existingField.related !== undefined) {
-            mergedField.related = existingField.related;
-          }
-
-          fields.set(fieldName, mergedField);
-          verboseLog(
-            `[registry]   ✅ Merged decorator for ${fieldName}: type=${mergedField.type}`,
-          );
-        } else {
-          // Decorator for field not in manifest - add it
-          const newField: any = {
-            type: decoratorOptions.type || 'text',
-            _meta: decoratorOptions,
-          };
-
-          // Set top-level flags from decorator options
-          if (decoratorOptions.transient !== undefined) {
-            newField.transient = decoratorOptions.transient;
-          }
-          // Handle required flag: nullable fields should not be required
-          if (decoratorOptions.nullable === true) {
-            newField.required = false;
-            newField._meta.required = false;
-          } else if (decoratorOptions.required !== undefined) {
-            newField.required = decoratorOptions.required;
-          }
-
-          // Hoist related to top level for relationship fields (Issue #746)
-          // This is critical for getRelationshipMap() to detect relationships
-          if (decoratorOptions.related !== undefined) {
-            newField.related = decoratorOptions.related;
-            delete newField._meta?.related;
-          }
-
-          fields.set(fieldName, newField);
-          verboseLog(
-            `[registry]   ✅ Added field ${fieldName} from decorator: type=${decoratorOptions.type || 'text'}`,
-          );
-        }
-      }
-    }
-
-    // Handle tenantScoped configuration (Issue #688)
-    // Normalize config and inject tenantId field if enabled
-    let tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined;
-    if (config.tenantScoped) {
-      // Normalize boolean or object config into full options
-      const tenantOpts =
-        typeof config.tenantScoped === 'boolean' ? {} : config.tenantScoped;
-      tenantScopedConfig = {
-        mode: tenantOpts.mode ?? 'required',
-        field: tenantOpts.field ?? 'tenantId',
-        autoFilter: tenantOpts.autoFilter ?? true,
-        autoPopulate: tenantOpts.autoPopulate ?? true,
-        allowSuperAdminBypass: tenantOpts.allowSuperAdminBypass ?? false,
-      };
-
-      // Inject tenantId field if not already defined
-      const fieldName = tenantScopedConfig.field;
-      if (!fields.has(fieldName)) {
-        fields.set(fieldName, {
-          type: 'foreignKey',
-          related: 'Tenant',
-          required: tenantScopedConfig.mode === 'required',
-          _meta: {
-            reference: 'Tenant',
-            sqlType: 'TEXT',
-            __tenancy: {
-              isTenantIdField: true,
-              ...tenantScopedConfig,
-            },
-          },
-        });
-        verboseLog(
-          `[registry] ✅ Injected ${fieldName} field for tenant-scoped class ${name}`,
-        );
-      }
-    }
-
-    if (manifestEntry?.methods) {
-      // Load method definitions from manifest (for custom CLI/API/MCP generation)
-      for (const [methodName, methodDef] of Object.entries(
-        manifestEntry.methods,
-      )) {
-        methods.set(methodName, methodDef);
-      }
-    }
-
-    // Also load methods from _manifestMethods in config (from consumer plugin register.js)
-    // This is how external package methods are passed to the registry
-    if ((config as any)._manifestMethods) {
-      for (const [methodName, methodDef] of Object.entries(
-        (config as any)._manifestMethods,
-      )) {
-        methods.set(methodName, methodDef);
-      }
-      verboseLog(
-        `[registry] Loaded ${methods.size} methods for ${name} from _manifestMethods`,
-      );
-    }
-
-    // Note: If manifest not found here, it will be loaded asynchronously when needed
-    // via ensureManifestLoaded(). This allows decorators to remain synchronous while
-    // supporting dynamic external package manifest loading.
-
-    // Build inheritance chain from constructor (needed for STI table name resolution)
-    const inheritanceChain = ObjectRegistry.buildInheritanceChain(ctor);
-
-    // Validate table strategy compatibility with parent (STI requirement)
-    if (inheritanceChain.length > 1) {
-      // This class has a parent - validate strategy compatibility
-      const parentName = inheritanceChain[inheritanceChain.length - 2]; // Second-to-last is parent
-      const parentEntry = ObjectRegistry.findClass(parentName);
-
-      if (parentEntry) {
-        const parentStrategy = parentEntry.config?.tableStrategy || 'default';
-        const childStrategy = config.tableStrategy; // Don't default - undefined means inherit
-
-        // Only validate if child has an EXPLICIT strategy that differs from parent
-        // undefined childStrategy means it will inherit from parent
-        if (childStrategy !== undefined && parentStrategy !== childStrategy) {
-          throw ConfigurationError.incompatibleStrategy(
-            name,
-            childStrategy,
-            parentName,
-            parentStrategy,
-          );
-        }
-      }
-    }
-
-    // Defer schema generation until needed (generateSchema now uses dynamic import)
-    // Store table name for lazy schema generation
-    // Priority for STI: manifest's tableName > decorator config > derived from class name
-    // The manifest's tableName is computed at build-time when full class hierarchy is known,
-    // which correctly handles STI inheritance. The decorator may derive wrong tableName
-    // if parent class isn't registered yet at decorator execution time.
-    const tableName =
-      manifestEntry?.decoratorConfig?.tableName ||
-      config.tableName ||
-      tableNameFromClass(ctor);
-
-    // Load pre-generated schema from manifest if available, otherwise placeholder
-    let schema: SchemaDefinition;
-    if (manifestEntry?.schema) {
-      // Pre-generated schema from manifest (build-time)
-      // Keep indexes as IndexDefinition objects for DDL strategies
-      schema = {
-        ddl: manifestEntry.schema.ddl,
-        indexes:
-          manifestEntry.schema.indexes?.map((idx: any) => ({
-            name: idx.name,
-            columns: idx.columns || [],
-            unique: idx.unique || false,
-            where: idx.where,
-            description: idx.description,
-          })) || [],
-        triggers: [],
-        tableName: manifestEntry.schema.tableName || tableName,
-        // Cast manifest columns to ColumnDefinition (same shape, TypeScript just needs help)
-        columns: manifestEntry.schema.columns as Record<
-          string,
-          ColumnDefinition
-        >,
-        foreignKeys: [],
-        dependencies: [],
-        version: manifestEntry.schema.version || '',
-        packageName: manifestEntry.packageName,
-      };
-      verboseLog(
-        `[registry] Loaded pre-generated schema for ${name} (${Object.keys(manifestEntry.schema.columns || {}).length} columns)`,
-      );
-    } else {
-      // Placeholder schema - will be generated lazily when first needed
-      schema = {
-        ddl: '', // Generated lazily
-        indexes: [], // Parsed from DDL lazily
-        triggers: [], // No longer using database triggers - timestamps managed by application
-        tableName,
-        columns: {},
-        foreignKeys: [],
-        dependencies: [],
-        version: '',
-        packageName: undefined,
-      };
-    }
-
-    // Use pre-computed validation rules from manifest if available (Issue #782)
-    // For decorator-based registration, manifest may have pre-computed rules
-    const validationRules = manifestEntry?.validationRules;
-    let validators: ValidatorFunction[] | undefined;
-
-    // Only compile validators if no pre-computed rules exist
-    if (!validationRules || validationRules.length === 0) {
-      validators = ObjectRegistry.compileValidators(name, fields);
-    } else {
-      verboseLog(
-        `[registry] Using ${validationRules.length} pre-computed validation rules for ${name}`,
-      );
-    }
-
-    // Derive extends from prototype chain if not available from manifest
-    // This is critical for inline test classes that use decorators
-    let extendsClass: string | undefined = manifestEntry?.extends;
-    if (!extendsClass) {
-      const proto = Object.getPrototypeOf(ctor);
-      if (
-        proto?.name &&
-        proto.name !== 'SmrtObject' &&
-        proto.name !== 'Object'
-      ) {
-        extendsClass = proto.name;
-      }
-    }
-
-    // Merge manifest's decoratorConfig into config
-    // Use the computed tableName which prioritizes manifest's value for STI correctness
-    const mergedConfig = {
-      ...manifestEntry?.decoratorConfig,
-      ...config,
-      tableName, // Override with correctly computed tableName
-    };
-
-    // Generate qualified name if we have a package name
-    // Format: "@package/name:ClassName"
-    const qualifiedName = packageName
-      ? createQualifiedName(packageName, name)
-      : undefined;
-
-    // Determine visibility from config, manifest, or default to 'public'
-    // Priority: explicit config > manifest > default
-    const visibility: SmrtVisibility =
-      config.visibility || manifestEntry?.visibility || 'public';
-
-    // Issue #951: Use qualified name as primary key when available
-    const registrationKey = qualifiedName || name;
-
-    ObjectRegistry.classes.set(registrationKey, {
-      name,
-      qualifiedName, // Qualified name for cross-package identification
-      constructor: ctor,
-      config: mergedConfig,
-      fields,
-      methods,
-      schema,
-      validators,
-      validationRules, // Pre-computed rules from manifest (Issue #782)
-      packageName, // Store package name from manifest for getPackageName() lookup
-      sourceFilePath, // Store source file for collision detection (Issue #555)
-      extends: extendsClass, // Capture parent class name from manifest OR prototype chain
-      tenantScopedConfig, // Multi-tenancy config (Issue #688)
-      visibility, // Visibility control for manifest filtering
-      // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
-      // it lazily using the `extends` field. This ensures correct chain for both
-      // decorator-registered and manifest-loaded classes.
-    });
-
-    // Track this class name for case-insensitive lookups
-    // Maps lowercase simple name → array of qualified keys
-    ObjectRegistry.addToClassNameMap(name.toLowerCase(), registrationKey);
-
-    // Index constructor for O(1) reverse lookups (Issue #713: constructor-based lookup)
-    ObjectRegistry.constructorIndex.set(ctor, registrationKey);
-
-    verboseLog(
-      `🎯 Registered smrt object: ${name} (key: ${registrationKey}) with schema for ${schema.tableName} and ${(validators?.length || 0) + (validationRules?.length || 0)} validators/rules`,
-    );
-
-    // STI sibling auto-loading (Issue #430)
-    // When a class is registered that shares a table with other classes (STI),
-    // we need to discover and register ALL siblings so that getAllSchemas()
-    // can merge columns from all subtypes for the database adapter.
-    //
-    // IMPORTANT: Only auto-load siblings from EXTERNAL packages.
-    // For test classes or classes in the same package, they will be registered
-    // by their own @smrt() decorators. Auto-loading them as stubs would cause collisions.
-    const collection = manifestEntry?.collection;
-    if (collection && !ObjectRegistry.stiSiblingsLoaded.has(collection)) {
-      // Mark this collection as processed to prevent infinite recursion
-      ObjectRegistry.stiSiblingsLoaded.add(collection);
-
-      verboseLog(
-        `[registry] Checking for STI siblings for collection: ${collection}`,
-      );
-
-      // Discover all classes that share this collection (table)
-      const siblings = discoverSTISiblingsSync(collection);
-
-      // Register any siblings that aren't already registered
-      // Only load siblings from DIFFERENT packages to avoid collisions with local classes
-      for (const sibling of siblings) {
-        // Use case-insensitive check to prevent registering 'Praeco' when 'praeco' exists
-        if (!ObjectRegistry.hasClassCaseInsensitive(sibling.className)) {
-          // Skip siblings from the same package - they will be registered by their own decorators
-          if (
-            sibling.packageName &&
-            packageName &&
-            sibling.packageName === packageName
-          ) {
-            verboseLog(
-              `[registry] Skipping STI sibling ${sibling.className} from same package: ${packageName}`,
-            );
-            continue;
-          }
-
-          verboseLog(
-            `[registry] Auto-loading STI sibling: ${sibling.className} for collection: ${collection}`,
-          );
-          ObjectRegistry.registerFromManifest(
-            sibling.className,
-            sibling.entry,
-            sibling.packageName,
-          );
-        }
-      }
-    }
+    _register(ctor, config);
   }
 
   /**
@@ -1844,422 +409,14 @@ export class ObjectRegistry {
     objectName: string,
     collectionConstructor: new (options: any) => SmrtCollection<any>,
   ): void {
-    const registered = ObjectRegistry.findClass(objectName);
-    if (registered) {
-      registered.collectionConstructor = collectionConstructor;
-    }
-
-    ObjectRegistry.collections.set(objectName, collectionConstructor as any);
-  }
-
-  /**
-   * Register an object from manifest metadata (for CLI/tools without importing actual classes)
-   *
-   * This method allows tools like the CLI to register objects from build-time manifest data
-   * without needing to import the actual class. This solves the bootstrap problem where
-   * `npx smrt` can't access user project classes but needs to generate commands for them.
-   *
-   * @param name - Name of the object class
-   * @param objectDef - Object definition from manifest
-   * @param packageName - Package name from manifest
-   * @example
-   * ```typescript
-   * const manifest = loadLocalTestManifestSync();
-   * for (const [name, objectDef] of Object.entries(manifest.objects)) {
-   *   ObjectRegistry.registerFromManifest(name, objectDef, manifest.packageName);
-   * }
-   * ```
-   */
-
-  /**
-   * Resolve a manifest-path name collision using string-based inheritance checks.
-   *
-   * Unlike the decorator-based `register()` path which uses `instanceof` on real
-   * constructors, manifest stubs don't have real prototype chains. Instead, we
-   * compare the `extends` field from the manifest's SmartObjectDefinition.
-   *
-   * @returns 'child-wins' if the new entry should replace the existing one,
-   *          'skip' if the existing entry should be kept
-   * @see https://github.com/happyvertical/smrt/issues/950
-   */
-  private static resolveManifestCollision(
-    name: string,
-    objectDef: any,
-    packageName: string | undefined,
-    existing: RegisteredClass,
-    existingKey: string,
-  ): 'child-wins' | 'skip' {
-    const newClassName = objectDef.className || name;
-    const newExtends = objectDef.extends;
-
-    // Same source file → re-export from a consumer manifest, not a real collision
-    if (
-      existing.sourceFilePath &&
-      objectDef.filePath &&
-      existing.sourceFilePath === objectDef.filePath
-    ) {
-      return 'skip';
-    }
-
-    // STI child-wins: new class extends the existing one
-    if (
-      newExtends &&
-      (newExtends === existing.name ||
-        newExtends === existingKey ||
-        newExtends.toLowerCase() === existing.name.toLowerCase())
-    ) {
-      verboseLog(
-        `[registry] Manifest child-wins: "${newClassName}" from ${packageName || 'unknown'} ` +
-          `replaces parent "${existingKey}" from ${existing.packageName || 'unknown'}`,
-      );
-      return 'child-wins';
-    }
-
-    // Existing is already the child of the new class → keep existing
-    if (
-      existing.extends &&
-      (existing.extends === newClassName ||
-        existing.extends === name ||
-        existing.extends.toLowerCase() === newClassName.toLowerCase())
-    ) {
-      verboseLog(
-        `[registry] Skipping manifest parent "${name}" — child "${existingKey}" already registered`,
-      );
-      return 'skip';
-    }
-
-    // True collision — different classes, no inheritance relationship
-    verboseLog(
-      `[registry] Manifest collision: "${name}" from ${packageName || 'unknown'} ` +
-        `conflicts with "${existingKey}" from ${existing.packageName || 'unknown'} ` +
-        `(no inheritance relationship)`,
-    );
-    return 'skip';
+    _registerCollection(objectName, collectionConstructor);
   }
   static registerFromManifest(
     name: string,
     objectDef: any,
     packageName?: string,
   ): void {
-    // Issue #951: Compute simple class name and registration key early
-    // `name` may be a qualified key from manifest (e.g., '@happyvertical/smrt-events:Event')
-    // `simpleClassName` is always the plain class name (e.g., 'Event')
-    const simpleClassName = objectDef.className || name;
-    const qualifiedNameEarly = packageName
-      ? createQualifiedName(packageName, simpleClassName)
-      : (objectDef.qualifiedName as QualifiedClassName | undefined);
-    const registrationKey = (qualifiedNameEarly || name) as string;
-
-    // Prevent duplicate registrations (case-insensitive)
-    // This prevents both 'praeco' and 'Praeco' from being registered separately
-    // which caused race conditions in PostgreSQL due to duplicate command execution
-    //
-    // Issue #950: Before silently returning, check if the collision is an STI
-    // child-wins scenario. The decorator-based register() path uses instanceof
-    // checks, but manifest stubs don't have real prototype chains — so we use
-    // the objectDef.extends field for string-based inheritance comparison.
-    //
-    // Issue #951: Look up by simple class name (not the qualified key) so
-    // cross-package STI child-wins is detected.
-    const existingCanonical =
-      ObjectRegistry.getCanonicalClassName(simpleClassName);
-    if (existingCanonical) {
-      const existing = ObjectRegistry.classes.get(existingCanonical);
-      if (existing) {
-        const resolution = ObjectRegistry.resolveManifestCollision(
-          name,
-          objectDef,
-          packageName,
-          existing,
-          existingCanonical,
-        );
-        if (resolution === 'child-wins') {
-          // Remove old entry so the child can be registered below
-          ObjectRegistry.classes.delete(existingCanonical);
-          ObjectRegistry.removeFromClassNameMap(
-            existing.name.toLowerCase(),
-            existingCanonical,
-          );
-        } else {
-          // 'skip' — existing wins (parent after child, same file, or true collision)
-          // Issue #951: With qualified keys, allow coexistence of different packages
-          if (registrationKey !== existingCanonical) {
-            // Different qualified keys → allow both to be registered
-            // (ambiguity will be detected at findClass time)
-            //
-            // Issue #1000: Merge plain-property fields from the manifest into the
-            // existing decorator-registered entry — but ONLY when both entries come
-            // from the same package. This is the scenario where the @smrt() decorator
-            // ran first (registering only decorator-annotated fields like @foreignKey
-            // and @tenantId) and the manifest entry from the same package now provides
-            // the full field list including plain TypeScript properties like
-            // `contractId: string = ''`. Without this merge, toJSON() only serializes
-            // decorator-annotated columns, silently dropping plain-property fields.
-            //
-            // Restricting to same-package prevents corrupting unrelated classes that
-            // happen to share a name across different packages (genuine collisions).
-            if (
-              packageName &&
-              existing.packageName &&
-              packageName === existing.packageName &&
-              objectDef.fields
-            ) {
-              for (const [fieldName, fieldDef] of Object.entries(
-                objectDef.fields as Record<string, any>,
-              )) {
-                if (!existing.fields.has(fieldName)) {
-                  const fd = fieldDef as any;
-                  existing.fields.set(fieldName, {
-                    type: fd.type,
-                    _meta: {
-                      required: fd.required,
-                      default: fd.default,
-                      description: fd.description,
-                      ...fd._meta,
-                    },
-                  });
-                }
-              }
-              // Backfill extends when absent (needed for STI chain resolution)
-              // Issue #1004: Qualify the backfilled extends too
-              if (!existing.extends && objectDef.extends) {
-                existing.extends = packageName
-                  ? ObjectRegistry.qualifyExtendsName(
-                      objectDef.extends,
-                      packageName,
-                    )
-                  : objectDef.extends;
-              }
-            }
-          } else {
-            return;
-          }
-        }
-      } else {
-        // Stale classNameMap entry (key exists but class was removed) — allow registration
-      }
-    }
-    // Check exact key match (handles re-registration with same qualified key)
-    if (ObjectRegistry.classes.has(registrationKey)) {
-      const existing = ObjectRegistry.classes.get(registrationKey)!;
-      const resolution = ObjectRegistry.resolveManifestCollision(
-        name,
-        objectDef,
-        packageName,
-        existing,
-        registrationKey,
-      );
-      if (resolution === 'child-wins') {
-        ObjectRegistry.classes.delete(registrationKey);
-        ObjectRegistry.removeFromClassNameMap(
-          existing.name.toLowerCase(),
-          registrationKey,
-        );
-      } else {
-        return;
-      }
-    }
-
-    // Issue #1004: Qualify the extends value BEFORE adding to classNameMap.
-    // This must happen first to avoid self-reference: if we add the child to
-    // classNameMap first, qualifyExtendsName would find the child's own entry
-    // and create a circular extends (e.g., @test/sports:TestEvent extends itself).
-    const qualifiedExtends =
-      objectDef.extends && packageName
-        ? ObjectRegistry.qualifyExtendsName(objectDef.extends, packageName)
-        : objectDef.extends;
-
-    // Track this class name for case-insensitive lookups
-    // Maps lowercase simple name → array of registration keys
-    ObjectRegistry.addToClassNameMap(
-      simpleClassName.toLowerCase(),
-      registrationKey,
-    );
-
-    // Create stub constructor - not needed for CLI command generation
-    // The CLI only needs metadata (fields, methods, config)
-    // Mark as manifest stub so real class can replace it during decorator registration
-    const stubConstructor = class extends SmrtObject {
-      static readonly _isManifestStub = true;
-    } as typeof SmrtObject;
-    Object.defineProperty(stubConstructor, 'name', { value: simpleClassName });
-
-    // Convert manifest field definitions to Field objects
-    const fields = new Map<string, any>();
-    if (objectDef.fields) {
-      for (const [fieldName, fieldDef] of Object.entries(
-        objectDef.fields as any,
-      )) {
-        const fd = fieldDef as any;
-        fields.set(fieldName, {
-          type: fd.type,
-          _meta: {
-            required: fd.required,
-            default: fd.default,
-            description: fd.description,
-            ...fd._meta,
-          },
-        });
-      }
-    }
-
-    // Load method definitions
-    const methods = new Map<string, any>();
-    if (objectDef.methods) {
-      for (const [methodName, methodDef] of Object.entries(objectDef.methods)) {
-        methods.set(methodName, methodDef);
-      }
-    }
-
-    // Get config from manifest
-    const config = objectDef.decoratorConfig || {};
-    const tableName = config.tableName || tableNameFromClass(stubConstructor);
-
-    // Load pre-generated schema from manifest if available
-    // This enables efficient external package consumption without runtime schema generation
-    let schema: SchemaDefinition;
-    if (objectDef.schema) {
-      // Pre-generated schema from manifest (build-time)
-      // Keep indexes as IndexDefinition objects for DDL strategies
-      schema = {
-        ddl: objectDef.schema.ddl,
-        indexes:
-          objectDef.schema.indexes?.map((idx: any) => ({
-            name: idx.name,
-            columns: idx.columns || [],
-            unique: idx.unique || false,
-            where: idx.where,
-            description: idx.description,
-          })) || [],
-        triggers: [],
-        tableName: objectDef.schema.tableName,
-        columns: objectDef.schema.columns,
-        foreignKeys: [],
-        dependencies: [],
-        version: objectDef.schema.version || '',
-        packageName: packageName,
-      };
-      verboseLog(
-        `[registry] Loaded pre-generated schema for ${name} (${Object.keys(objectDef.schema.columns || {}).length} columns)`,
-      );
-    } else {
-      // Placeholder schema - will be generated at runtime if needed
-      schema = {
-        ddl: '',
-        indexes: [],
-        triggers: [],
-        tableName,
-        columns: {},
-        foreignKeys: [],
-        dependencies: [],
-        version: '',
-        packageName: packageName,
-      };
-    }
-
-    // Use pre-computed validation rules from manifest if available (Issue #782)
-    // This avoids compiling validator closures at runtime, reducing startup time
-    const validationRules = objectDef.validationRules;
-    let validators: ValidatorFunction[] | undefined;
-
-    // Only compile validators if no pre-computed rules exist
-    // (backward compatibility for older manifests)
-    if (!validationRules || validationRules.length === 0) {
-      validators = ObjectRegistry.compileValidators(name, fields);
-      verboseLog(
-        `[registry] No pre-computed rules for ${name}, compiled ${validators.length} validators`,
-      );
-    } else {
-      verboseLog(
-        `[registry] Using ${validationRules.length} pre-computed validation rules for ${name}`,
-      );
-    }
-
-    // Issue #951: Use qualifiedNameEarly computed at the top of this function
-    // (uses simpleClassName, not the manifest key which may already be qualified)
-    const qualifiedName = qualifiedNameEarly;
-
-    // Get visibility from manifest (defaults to 'public')
-    const visibility: SmrtVisibility =
-      objectDef.visibility || config.visibility || 'public';
-
-    // Register in ObjectRegistry (metadata only, no collection constructor)
-    // Manifest registration is for command discovery and help text.
-    // Runtime execution requires real classes loaded from entry point.
-    //
-    // Issue #847: Use className from objectDef (simple name like 'Council') for the name
-    // property, not the qualified name key. This enables getFields() lookups by simple
-    // class name to work correctly. simpleClassName is defined earlier in this function.
-    //
-    // Issue #951: Use registrationKey (qualified when available) as the primary key
-    ObjectRegistry.classes.set(registrationKey, {
-      name: simpleClassName,
-      qualifiedName, // Qualified name for cross-package identification
-      constructor: stubConstructor,
-      config,
-      fields,
-      methods,
-      schema,
-      validators,
-      validationRules, // Pre-computed rules from manifest (Issue #782)
-      packageName,
-      sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
-      extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
-      visibility, // New: Visibility control for manifest filtering
-    });
-
-    verboseLog(
-      `📦 Registered ${simpleClassName} from manifest (key: ${registrationKey}, ${fields.size} fields, ${methods.size} methods)`,
-    );
-
-    // STI sibling auto-loading (Issue #430)
-    // When a class is registered that shares a table with other classes (STI),
-    // we need to discover and register ALL siblings so that getAllSchemas()
-    // can merge columns from all subtypes for the database adapter.
-    //
-    // IMPORTANT: Only auto-load siblings from EXTERNAL packages.
-    // For test classes or classes in the same package, they will be registered
-    // by their own @smrt() decorators. Auto-loading them as stubs would cause collisions.
-    const collection = objectDef.collection;
-    if (collection && !ObjectRegistry.stiSiblingsLoaded.has(collection)) {
-      // Mark this collection as processed to prevent infinite recursion
-      ObjectRegistry.stiSiblingsLoaded.add(collection);
-
-      verboseLog(
-        `[registry] Checking for STI siblings for collection: ${collection}`,
-      );
-
-      // Discover all classes that share this collection (table)
-      const siblings = discoverSTISiblingsSync(collection);
-
-      // Register any siblings that aren't already registered
-      // Only load siblings from DIFFERENT packages to avoid collisions with local classes
-      for (const sibling of siblings) {
-        // Use case-insensitive check to prevent registering 'Praeco' when 'praeco' exists
-        if (!ObjectRegistry.hasClassCaseInsensitive(sibling.className)) {
-          // Skip siblings from the same package - they will be registered by their own decorators
-          if (
-            sibling.packageName &&
-            packageName &&
-            sibling.packageName === packageName
-          ) {
-            verboseLog(
-              `[registry] Skipping STI sibling ${sibling.className} from same package: ${packageName}`,
-            );
-            continue;
-          }
-
-          verboseLog(
-            `[registry] Auto-loading STI sibling: ${sibling.className} for collection: ${collection}`,
-          );
-          ObjectRegistry.registerFromManifest(
-            sibling.className,
-            sibling.entry,
-            sibling.packageName,
-          );
-        }
-      }
-    }
+    _registerFromManifest(name, objectDef, packageName);
   }
 
   /**
@@ -2281,43 +438,7 @@ export class ObjectRegistry {
    * @private
    */
   private static findClass(name: string): RegisteredClass | undefined {
-    // 1. Direct hit on classes map (fast path, works for qualified keys)
-    const registered = ObjectRegistry.classes.get(name);
-    if (registered) {
-      return registered;
-    }
-
-    // 2. If input looks like a qualified name, no fallback — it's not found
-    if (name.includes(':') && name.startsWith('@')) {
-      return undefined;
-    }
-
-    // 3. classNameMap lookup by simple name
-    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    if (entries && entries.length > 0) {
-      if (entries.length === 1) {
-        // Unambiguous — return the single match
-        return ObjectRegistry.classes.get(entries[0]);
-      }
-      // Ambiguous — multiple packages define this class name
-      // Return first match but log a warning (use resolveType() for strict behavior)
-      verboseLog(
-        `[registry] findClass("${name}") is ambiguous — ${entries.length} matches. ` +
-          `Use qualified name (e.g., ${entries[0]}) for precision.`,
-      );
-      return ObjectRegistry.classes.get(entries[0]);
-    }
-
-    // 4. Case-insensitive iteration fallback (backward compat for simple names)
-    const lowerName = name.toLowerCase();
-    for (const [key, value] of ObjectRegistry.classes.entries()) {
-      // Only match by the registered simple name, not by the full key
-      if (value.name?.toLowerCase() === lowerName) {
-        return value;
-      }
-    }
-
-    return undefined;
+    return _findClass(name);
   }
 
   /**
@@ -2348,110 +469,7 @@ export class ObjectRegistry {
     name: string,
     fromPackage?: string,
   ): RegisteredClass | undefined {
-    // 1. Direct hit on classes map (fast path, works for qualified keys)
-    const registered = ObjectRegistry.classes.get(name);
-    if (registered) {
-      return registered;
-    }
-
-    // 2. If input is a qualified name, no fallback — it's not found
-    if (isQualifiedName(name)) {
-      return undefined;
-    }
-
-    // 3. If fromPackage provided, try constructing qualified name for direct lookup
-    if (fromPackage) {
-      const qualifiedAttempt = createQualifiedName(fromPackage, name);
-      const byQualified = ObjectRegistry.classes.get(qualifiedAttempt);
-      if (byQualified) {
-        return byQualified;
-      }
-    }
-
-    // 4. classNameMap lookup by simple name
-    const entries = ObjectRegistry.classNameMap.get(name.toLowerCase());
-    if (entries && entries.length > 0) {
-      if (entries.length === 1) {
-        // Unambiguous — return the single match
-        return ObjectRegistry.classes.get(entries[0]);
-      }
-      // Ambiguous — multiple packages define this class name
-      // In strict mode, throw instead of silently returning first match
-      throw new ConfigurationError(
-        `Ambiguous class name "${name}" — found in ${entries.length} packages: ` +
-          `${entries.join(', ')}. ` +
-          `Use a qualified name (e.g., ${entries[0]}) to disambiguate.`,
-        'CONFIG_AMBIGUOUS_CLASS',
-        { className: name, candidates: entries },
-      );
-    }
-
-    // 5. Case-insensitive iteration fallback (backward compat for simple names)
-    const lowerName = name.toLowerCase();
-    for (const [key, value] of ObjectRegistry.classes.entries()) {
-      // Only match by the registered simple name, not by the full key
-      if (value.name?.toLowerCase() === lowerName) {
-        return value;
-      }
-    }
-
-    return undefined;
-  }
-
-  /**
-   * Qualify an `extends` value with the parent class's package name.
-   *
-   * When registering from a manifest, the `extends` field is often a bare class
-   * name (e.g., `Content`). If we know the package context, we can resolve it
-   * to a qualified name (e.g., `@happyvertical/smrt-content:Content`) so that
-   * `getInheritanceChain()` can do an O(1) direct lookup instead of relying on
-   * ambiguous simple-name matching.
-   *
-   * @param extendsValue - The raw extends value from the manifest
-   * @param currentPackage - The package that defines the *child* class
-   * @returns Qualified extends name, or original value as fallback
-   * @see https://github.com/happyvertical/smrt/issues/1004
-   * @private
-   */
-  private static qualifyExtendsName(
-    extendsValue: string,
-    currentPackage: string,
-  ): string {
-    // Already qualified → pass through
-    if (isQualifiedName(extendsValue)) {
-      return extendsValue;
-    }
-
-    // Skip framework base classes (never registered with qualified names)
-    if (
-      extendsValue === 'SmrtObject' ||
-      extendsValue === 'SmrtClass' ||
-      extendsValue === 'SmrtCollection'
-    ) {
-      return extendsValue;
-    }
-
-    // Try same-package first (common case: child and parent in same package)
-    const samePackageQualified = createQualifiedName(
-      currentPackage,
-      extendsValue,
-    );
-    if (ObjectRegistry.classes.has(samePackageQualified)) {
-      return samePackageQualified;
-    }
-
-    // Try to find the parent in any registered package
-    const entries = ObjectRegistry.classNameMap.get(extendsValue.toLowerCase());
-    if (entries && entries.length === 1) {
-      // Unambiguous — use the single match's qualified key
-      return entries[0];
-    }
-
-    // Fallback: return unmodified (backward compat)
-    // Note: We deliberately avoid calling discoverManifestSync() here to
-    // prevent heavy I/O during registration. Unresolved parents will be
-    // discovered lazily by getInheritanceChain() at lookup time.
-    return extendsValue;
+    return _findClassStrict(name, fromPackage);
   }
 
   /**
@@ -2469,7 +487,7 @@ export class ObjectRegistry {
    * ```
    */
   static getClass(name: string): RegisteredClass | undefined {
-    return ObjectRegistry.findClass(name);
+    return _getClass(name);
   }
 
   /**
@@ -2494,12 +512,7 @@ export class ObjectRegistry {
   static getClassByConstructor(
     ctor: SmrtObjectConstructor,
   ): RegisteredClass | undefined {
-    // Use WeakMap index for O(1) lookup
-    const registeredName = ObjectRegistry.constructorIndex.get(ctor);
-    if (registeredName) {
-      return ObjectRegistry.classes.get(registeredName);
-    }
-    return undefined;
+    return _getClassByConstructor(ctor);
   }
 
   /**
@@ -2519,8 +532,7 @@ export class ObjectRegistry {
   static getClassByQualifiedName(
     qualifiedName: string,
   ): RegisteredClass | undefined {
-    // Issue #951: O(1) lookup — qualified names are now used as primary keys
-    return ObjectRegistry.classes.get(qualifiedName);
+    return _getClassByQualifiedName(qualifiedName);
   }
 
   /**
@@ -2539,9 +551,7 @@ export class ObjectRegistry {
     packageName: string,
     className: string,
   ): RegisteredClass | undefined {
-    // Issue #951: O(1) — both getClassByQualifiedName and classes.get are direct lookups
-    const qualifiedName = createQualifiedName(packageName, className);
-    return ObjectRegistry.classes.get(qualifiedName);
+    return _getClassInPackage(packageName, className);
   }
 
   /**
@@ -2562,16 +572,7 @@ export class ObjectRegistry {
    * ```
    */
   static findClassesByName(className: string): RegisteredClass[] {
-    const matches: RegisteredClass[] = [];
-    const lowerName = className.toLowerCase();
-
-    for (const registered of ObjectRegistry.classes.values()) {
-      if (registered.name.toLowerCase() === lowerName) {
-        matches.push(registered);
-      }
-    }
-
-    return matches;
+    return _findClassesByName(className);
   }
 
   /**
@@ -2602,41 +603,7 @@ export class ObjectRegistry {
    * ```
    */
   static resolveType(shortName: string): QualifiedClassName {
-    // If already qualified, validate and return
-    if (shortName.includes(':') && shortName.startsWith('@')) {
-      const registered = ObjectRegistry.getClassByQualifiedName(
-        shortName as QualifiedClassName,
-      );
-      if (!registered) {
-        throw new Error(
-          `Class "${shortName}" is not registered. ` +
-            `Make sure the package is installed and the class is decorated with @smrt().`,
-        );
-      }
-      return shortName as QualifiedClassName;
-    }
-
-    // Find all classes with this short name
-    const matches = ObjectRegistry.findClassesByName(shortName);
-
-    if (matches.length === 0) {
-      throw new Error(
-        `Class "${shortName}" is not registered. ` +
-          `Make sure the package is installed and the class is decorated with @smrt().`,
-      );
-    }
-
-    if (matches.length > 1) {
-      const packageList = matches
-        .map((m) => `  - ${m.qualifiedName}`)
-        .join('\n');
-      throw new Error(
-        `"${shortName}" is ambiguous. Found in multiple packages:\n${packageList}\n` +
-          `Use the fully qualified name instead.`,
-      );
-    }
-
-    return matches[0].qualifiedName as QualifiedClassName;
+    return _resolveType(shortName);
   }
 
   /**
@@ -2655,15 +622,7 @@ export class ObjectRegistry {
   static getClassesByPackage(
     packageName: string,
   ): Map<string, RegisteredClass> {
-    const result = new Map<string, RegisteredClass>();
-
-    for (const [name, registered] of ObjectRegistry.classes.entries()) {
-      if (registered.packageName === packageName) {
-        result.set(name, registered);
-      }
-    }
-
-    return result;
+    return _getClassesByPackage(packageName);
   }
 
   /**
@@ -2680,16 +639,7 @@ export class ObjectRegistry {
   static getClassesByVisibility(
     visibility: SmrtVisibility,
   ): Map<string, RegisteredClass> {
-    const result = new Map<string, RegisteredClass>();
-
-    for (const [name, registered] of ObjectRegistry.classes.entries()) {
-      const classVisibility = registered.visibility || 'public';
-      if (classVisibility === visibility) {
-        result.set(name, registered);
-      }
-    }
-
-    return result;
+    return _getClassesByVisibility(visibility);
   }
 
   /**
@@ -2704,7 +654,7 @@ export class ObjectRegistry {
    * ```
    */
   static getPublicClasses(): Map<string, RegisteredClass> {
-    return ObjectRegistry.getClassesByVisibility('public');
+    return _getPublicClasses();
   }
 
   /**
@@ -2720,21 +670,14 @@ export class ObjectRegistry {
    * ```
    */
   static getAllClasses(): Map<string, RegisteredClass> {
-    return new Map(ObjectRegistry.classes);
+    return _getAllClasses();
   }
 
   /**
    * Get class names
    */
   static getClassNames(): string[] {
-    // Issue #951: Return simple class names (not qualified keys) for backward compatibility.
-    // Qualified keys are used internally for collision prevention, but the public API
-    // should return simple names that can be passed to findClass(), getConfig(), etc.
-    // Deduplicate since multiple qualified entries can share the same simple name.
-    const names = Array.from(ObjectRegistry.classes.values()).map(
-      (entry) => entry.name,
-    );
-    return Array.from(new Set(names));
+    return _getClassNames();
   }
 
   /**
@@ -2866,10 +809,106 @@ export class ObjectRegistry {
   }
 
   /**
+   * Load all manifests upfront so inheritance queries are pure lookups.
+   *
+   * After this method completes, every class across all packages is
+   * registered and `getInheritanceChain()` will never need to mutate
+   * registry state.
+   *
+   * @param options - Optional configuration
+   * @param options.manifestPaths - Explicit list of manifest.json file paths to load.
+   *   When omitted the method discovers packages via `loadExternalManifestSync()`
+   *   for every `@happyvertical` package found in `node_modules`.
+   * @returns Summary statistics about the load operation
+   *
+   * @example
+   * ```typescript
+   * // At CLI / server startup
+   * ObjectRegistry.loadAllManifests();
+   * // All classes are now registered — inheritance lookups are side-effect free
+   * ```
+   *
+   * @see https://github.com/happyvertical/smrt/issues/1007
+   */
+  static loadAllManifests(options?: { manifestPaths?: string[] }): {
+    packagesLoaded: number;
+    objectsRegistered: number;
+  } {
+    let packagesLoaded = 0;
+    let objectsRegistered = 0;
+
+    if (options?.manifestPaths) {
+      // Explicit paths — used by integration tests
+      for (const manifestPath of options.manifestPaths) {
+        try {
+          const raw = readFileSync(manifestPath, 'utf-8');
+          const manifest = JSON.parse(raw);
+          const packageName = manifest.packageName as string | undefined;
+
+          if (!manifest.objects) continue;
+
+          for (const [_key, objectDef] of Object.entries(manifest.objects)) {
+            const def = objectDef as any;
+            const className = def.className || _key;
+            if (!ObjectRegistry.hasClassCaseInsensitive(className)) {
+              ObjectRegistry.registerFromManifest(className, def, packageName);
+              objectsRegistered++;
+            }
+          }
+          packagesLoaded++;
+        } catch (err) {
+          verboseLog(
+            `[ObjectRegistry] Failed to load manifest from ${manifestPath}: ${err}`,
+          );
+        }
+      }
+    } else {
+      // Auto-discover via loadExternalManifestSync for each @happyvertical package
+      const packagePrefixes = ['@happyvertical/smrt-'];
+      try {
+        const { readdirSync } = require('node:fs') as typeof import('node:fs');
+        const { join } = require('node:path') as typeof import('node:path');
+        const scopeDir = join(process.cwd(), 'node_modules', '@happyvertical');
+        const packages = readdirSync(scopeDir).filter((name: string) =>
+          packagePrefixes.some((prefix) =>
+            `@happyvertical/${name}`.startsWith(prefix),
+          ),
+        );
+
+        for (const pkgDir of packages) {
+          const packageName = `@happyvertical/${pkgDir}`;
+          const manifest = loadExternalManifestSync(packageName);
+          if (!manifest?.objects) continue;
+
+          for (const [_key, objectDef] of Object.entries(manifest.objects)) {
+            const def = objectDef as any;
+            const className = def.className || _key;
+            if (!ObjectRegistry.hasClassCaseInsensitive(className)) {
+              ObjectRegistry.registerFromManifest(className, def, packageName);
+              objectsRegistered++;
+            }
+          }
+          packagesLoaded++;
+        }
+      } catch (err) {
+        verboseLog(
+          `[ObjectRegistry] Auto-discovery of manifests failed: ${err}`,
+        );
+      }
+    }
+
+    verboseLog(
+      `[ObjectRegistry] loadAllManifests complete: ${packagesLoaded} packages, ${objectsRegistered} objects registered`,
+    );
+
+    return { packagesLoaded, objectsRegistered };
+  }
+
+  /**
    * Check if a class is registered (case-insensitive)
    */
   static hasClass(name: string): boolean {
-    return ObjectRegistry.findClass(name) !== undefined;
+    return _hasClass(name);
   }
 
   /**
@@ -3091,185 +1130,6 @@ export class ObjectRegistry {
   }
 
   /**
-   * Compile validation functions from field definitions
-   *
-   * Extracts validation rules from field options and compiles them into
-   * efficient validation functions that can be executed at runtime.
-   *
-   * @param className - Name of the class being validated
-   * @param fields - Map of field definitions
-   * @returns Array of compiled validation functions
-   * @private
-   */
-  private static compileValidators(
-    className: string,
-    fields: Map<string, any>,
-  ): ValidatorFunction[] {
-    const validators: ValidatorFunction[] = [];
-
-    for (const [fieldName, field] of fields) {
-      const options = field._meta || {};
-
-      // Skip transient fields (they're not persisted, so no validation needed)
-      if (options.transient || field.transient) {
-        continue;
-      }
-
-      // Required field validator
-      if (options.required) {
-        validators.push(async (instance: any) => {
-          const value = instance[fieldName];
-          if (value === null || value === undefined || value === '') {
-            const ValidationError = await import('./errors').then(
-              (m) => m.ValidationError,
-            );
-            return ValidationError.requiredField(fieldName, className);
-          }
-          return null;
-        });
-      }
-
-      // Numeric range validators
-      if (
-        field.type === 'integer' ||
-        field.type === 'decimal' ||
-        field.type === 'number'
-      ) {
-        if (options.min !== undefined) {
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (value !== null && value !== undefined && value < options.min) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.rangeError(
-                fieldName,
-                value,
-                options.min,
-                options.max,
-              );
-            }
-            return null;
-          });
-        }
-
-        if (options.max !== undefined) {
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (value !== null && value !== undefined && value > options.max) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.rangeError(
-                fieldName,
-                value,
-                options.min,
-                options.max,
-              );
-            }
-            return null;
-          });
-        }
-      }
-
-      // String length validators
-      if (field.type === 'text') {
-        if (options.minLength !== undefined) {
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (
-              value &&
-              typeof value === 'string' &&
-              value.length < options.minLength
-            ) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.invalidValue(
-                fieldName,
-                value,
-                `string with minimum length ${options.minLength}`,
-              );
-            }
-            return null;
-          });
-        }
-
-        if (options.maxLength !== undefined) {
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (
-              value &&
-              typeof value === 'string' &&
-              value.length > options.maxLength
-            ) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.invalidValue(
-                fieldName,
-                value,
-                `string with maximum length ${options.maxLength}`,
-              );
-            }
-            return null;
-          });
-        }
-
-        // Pattern validator (regex)
-        if (options.pattern) {
-          const regex = new RegExp(options.pattern);
-          validators.push(async (instance: any) => {
-            const value = instance[fieldName];
-            if (value && typeof value === 'string' && !regex.test(value)) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              return ValidationError.invalidValue(
-                fieldName,
-                value,
-                `string matching pattern ${options.pattern}`,
-              );
-            }
-            return null;
-          });
-        }
-      }
-
-      // Custom validator function
-      if (options.validate && typeof options.validate === 'function') {
-        validators.push(async (instance: any) => {
-          const value = instance[fieldName];
-          try {
-            const isValid = await options.validate(value);
-            if (!isValid) {
-              const ValidationError = await import('./errors').then(
-                (m) => m.ValidationError,
-              );
-              const message =
-                options.customMessage ||
-                `Field ${fieldName} failed custom validation`;
-              return ValidationError.invalidValue(fieldName, value, message);
-            }
-          } catch (error) {
-            const ValidationError = await import('./errors').then(
-              (m) => m.ValidationError,
-            );
-            return ValidationError.invalidValue(
-              fieldName,
-              value,
-              `custom validation error: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-          return null;
-        });
-      }
-    }
-
-    return validators;
-  }
-
-  /**
    * Get field definitions for a registered class.
    * Supports both qualified names and simple class names.
    */
@@ -3307,6 +1167,13 @@ export class ObjectRegistry {
     }
 
     return new Map();
+  }
+
+  static compileValidators(
+    className: string,
+    fields: Map<string, any>,
+  ): ValidatorFunction[] {
+    return _compileValidators(className, fields);
   }
 
   /**
@@ -3436,645 +1303,41 @@ export class ObjectRegistry {
 
   /**
    * Get cached schema definition for a registered class
-   *
-   * @param name - Name of the registered class
-   * @returns Schema definition or undefined if not found
-   * @example
-   * ```typescript
-   * const schema = ObjectRegistry.getSchema('Product');
-   * console.log(schema.tableName); // 'products'
-   * console.log(schema.ddl);       // 'CREATE TABLE...'
-   * ```
    */
   static getSchema(name: string): SchemaDefinition | undefined {
-    // Issue #951: Use findClass for multi-strategy lookup
-    const registered = ObjectRegistry.findClass(name);
-    return registered?.schema;
+    return _getSchema(name);
   }
 
   /**
    * Get SQL DDL statement for a registered class
-   *
-   * @param name - Name of the registered class
-   * @returns SQL DDL statement or undefined if not found
-   * @example
-   * ```typescript
-   * const ddl = ObjectRegistry.getSchemaDDL('Product');
-   * await db.query(ddl);
-   * ```
    */
   static getSchemaDDL(name: string): string | undefined {
-    return ObjectRegistry.getSchema(name)?.ddl;
+    return _getSchemaDDL(name);
   }
 
   /**
    * Get table name for a registered class
-   *
-   * @param name - Name of the registered class
-   * @returns Table name or undefined if not found
-   * @example
-   * ```typescript
-   * const tableName = ObjectRegistry.getTableName('Product');
-   * console.log(tableName); // 'products'
-   * ```
    */
   static getTableName(name: string): string | undefined {
-    // Check if this is a collection class - collections have their own tableName mapping
-    const collectionTableName = ObjectRegistry.collectionTableNames.get(name);
-    if (collectionTableName) {
-      return collectionTableName;
-    }
-
-    // For STI classes, return the STI base class's table name
-    const stiBase = ObjectRegistry.getSTIBase(name);
-    if (stiBase && stiBase !== name) {
-      return ObjectRegistry.getSchema(stiBase)?.tableName;
-    }
-    return ObjectRegistry.getSchema(name)?.tableName;
+    return _getTableName(name);
   }
 
   /**
    * Get all pre-generated schemas for passing to database adapters
-   *
-   * Returns schemas in SDK SchemaProvider format for all registered classes.
-   * This allows passing all known schemas upfront to getDatabase(), enabling
-   * adapters like JSON to create tables with correct types before loading data.
-   *
-   * @returns Record of table names to schema definitions
-   * @example
-   * ```typescript
-   * const schemas = ObjectRegistry.getAllSchemas();
-   * const db = await getDatabase({ type: 'json', url: './data', schemas });
-   * ```
    */
   static getAllSchemas(): Record<
     string,
     { tableName: string; ddl: string; indexes?: string[] }
   > {
-    // Step 1: Collect all schemas grouped by tableName
-    // For STI, multiple classes may share the same table
-    const tableSchemas: Record<
-      string,
-      {
-        tableName: string;
-        columns: Record<string, ColumnDefinition>;
-        indexes: Array<{ name: string; columns: string[]; unique?: boolean }>;
-        ddl: string;
-        isSTI: boolean;
-      }
-    > = {};
-
-    for (const [_className, registered] of ObjectRegistry.classes) {
-      // Skip collection classes - they don't have their own tables
-      // Their schemas incorrectly contain collection properties (loaded, options, etc.)
-      if (registered.extends === 'SmrtCollection') {
-        continue;
-      }
-
-      // Issue #951: Use simple name for STI comparisons (map key may be qualified)
-      const simpleName = registered.name || _className;
-
-      // Issue #703: Handle STI subclasses with null tableName from external manifests
-      // When loaded from external manifests, tableName may be null, causing
-      // registerFromManifest() to derive a tableName from class name.
-      // For STI subclasses, we need to use the STI base's tableName instead.
-      if (!registered.schema?.tableName && registered.extends) {
-        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
-        if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-          if (stiBaseName && stiBaseName !== simpleName) {
-            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
-            if (stiBaseClass?.schema?.tableName) {
-              // Ensure we have a schema object to modify
-              if (!registered.schema) {
-                registered.schema = {
-                  tableName: '',
-                  ddl: '',
-                  columns: {},
-                  indexes: [],
-                  triggers: [],
-                  foreignKeys: [],
-                  dependencies: [],
-                  version: '',
-                };
-              }
-              // Set tableName from STI base so the following block processes this class
-              registered.schema.tableName = stiBaseClass.schema.tableName;
-            }
-          }
-        }
-      }
-
-      if (registered.schema?.tableName) {
-        // For STI subclasses, use the STI base class's tableName
-        // This ensures all STI subclass columns are merged into the parent table
-        // (Issue #693: STI subclasses with separate tableName still serialize to parent table)
-        let tableName = registered.schema.tableName;
-        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
-        if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-          if (stiBaseName && stiBaseName !== simpleName) {
-            // This is an STI subclass - use the base class's tableName
-            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
-            if (stiBaseClass?.schema?.tableName) {
-              tableName = stiBaseClass.schema.tableName;
-            }
-          }
-        }
-
-        // Get columns from schema, or generate from fields if schema.columns is empty
-        // This handles STI subclasses that have fields but no pre-generated schema
-        // (Issue #690: db:migrate doesn't detect STI subclass columns)
-        let columnsToUse = registered.schema.columns || {};
-        if (
-          Object.keys(columnsToUse).length === 0 &&
-          registered.fields.size > 0
-        ) {
-          columnsToUse = ObjectRegistry.fieldsToColumns(registered.fields);
-        }
-
-        if (!tableSchemas[tableName]) {
-          // First class for this table - initialize with base columns
-          // These are required for all tables but are skipped by fieldsToColumns()
-          const baseColumns: Record<string, ColumnDefinition> = {
-            id: { type: 'TEXT', primaryKey: true },
-            slug: { type: 'TEXT', notNull: true },
-            context: { type: 'TEXT' },
-            created_at: { type: 'TIMESTAMP' },
-            updated_at: { type: 'TIMESTAMP' },
-          };
-
-          // For STI tables, add discriminator and data columns
-          // (Issue #690: db:diff needs these columns to detect schema changes)
-          const isSTI = tableStrategy === 'sti';
-          if (isSTI) {
-            baseColumns._meta_type = {
-              type: 'TEXT',
-              notNull: true,
-              defaultValue: '',
-            };
-            baseColumns._meta_data = { type: 'JSON' };
-          }
-
-          tableSchemas[tableName] = {
-            tableName,
-            columns: { ...baseColumns, ...columnsToUse },
-            indexes: [],
-            ddl: registered.schema.ddl || '',
-            isSTI,
-          };
-        } else {
-          // Additional class sharing this table (STI scenario)
-          // Merge columns from this class into the existing schema
-          for (const [colName, colDef] of Object.entries(columnsToUse)) {
-            if (!tableSchemas[tableName].columns[colName]) {
-              // New column from this subtype - add it
-              tableSchemas[tableName].columns[colName] = colDef;
-            }
-          }
-        }
-
-        // Merge indexes (avoid duplicates by name)
-        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
-          const existingNames = new Set(
-            tableSchemas[tableName].indexes.map((idx) =>
-              typeof idx === 'string' ? idx : idx.name,
-            ),
-          );
-          for (const idx of registered.schema.indexes) {
-            const indexName = typeof idx === 'string' ? idx : idx.name;
-            if (!existingNames.has(indexName)) {
-              if (typeof idx === 'string') {
-                // Legacy string format - skip, can't merge properly
-              } else {
-                tableSchemas[tableName].indexes.push(idx);
-                existingNames.add(idx.name);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Step 2: Convert to output format, regenerating DDL for merged schemas
-    const schemas: Record<
-      string,
-      { tableName: string; ddl: string; indexes?: string[] }
-    > = {};
-
-    for (const [tableName, tableSchema] of Object.entries(tableSchemas)) {
-      // Generate DDL from merged columns (or use original DDL if columns are empty)
-      let ddl: string;
-      if (Object.keys(tableSchema.columns).length === 0 && tableSchema.ddl) {
-        // No columns merged - use original DDL to avoid generating invalid SQL
-        ddl = tableSchema.ddl;
-      } else if (Object.keys(tableSchema.columns).length === 0) {
-        // Skip schemas with no columns and no original DDL
-        continue;
-      } else {
-        ddl = ObjectRegistry.generateDDLFromColumns(
-          tableName,
-          tableSchema.columns,
-          tableSchema.isSTI,
-        );
-      }
-
-      // Convert index definitions to SQL strings for SDK compatibility
-      let indexSQL: string[] | undefined;
-      if (tableSchema.indexes.length > 0) {
-        indexSQL = tableSchema.indexes.map((idx) => {
-          const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
-          const columnList = idx.columns.map((col) => `"${col}"`).join(', ');
-          return `CREATE ${indexType} IF NOT EXISTS ${idx.name} ON "${tableName}" (${columnList});`;
-        });
-      }
-
-      schemas[tableName] = {
-        tableName,
-        ddl,
-        indexes: indexSQL,
-      };
-    }
-
-    return schemas;
+    return _getAllSchemas();
   }
 
   /**
    * Get all registered schemas as SchemaDefinition objects
-   *
-   * Similar to getAllSchemas(), but returns SchemaDefinition format suitable
-   * for use with SchemaComparer (migrations/differ.ts).
-   *
-   * Key difference: Indexes are kept as IndexDefinition objects instead of
-   * being converted to SQL strings.
-   *
-   * @returns Map of tableName to SchemaDefinition
    */
   static getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
-    // Step 1: Collect all schemas grouped by tableName
-    // For STI, multiple classes may share the same table
-    const tableSchemas: Record<
-      string,
-      {
-        tableName: string;
-        columns: Record<string, ColumnDefinition>;
-        indexes: IndexDefinition[];
-        isSTI: boolean;
-      }
-    > = {};
-
-    for (const [_className, registered] of ObjectRegistry.classes) {
-      // Skip collection classes - they don't have their own tables
-      if (registered.extends === 'SmrtCollection') {
-        continue;
-      }
-
-      // Issue #951: Use simple name for STI comparisons (map key may be qualified)
-      const simpleName = registered.name || _className;
-
-      // Handle STI subclasses with null tableName from external manifests
-      if (!registered.schema?.tableName && registered.extends) {
-        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
-        if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-          if (stiBaseName && stiBaseName !== simpleName) {
-            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
-            if (stiBaseClass?.schema?.tableName) {
-              if (!registered.schema) {
-                registered.schema = {
-                  tableName: '',
-                  ddl: '',
-                  columns: {},
-                  indexes: [],
-                  triggers: [],
-                  foreignKeys: [],
-                  dependencies: [],
-                  version: '',
-                };
-              }
-              registered.schema.tableName = stiBaseClass.schema.tableName;
-            }
-          }
-        }
-      }
-
-      if (registered.schema?.tableName) {
-        // For STI subclasses, use the STI base class's tableName
-        let tableName = registered.schema.tableName;
-        const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
-        if (tableStrategy === 'sti') {
-          const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-          if (stiBaseName && stiBaseName !== simpleName) {
-            const stiBaseClass = ObjectRegistry.findClass(stiBaseName);
-            if (stiBaseClass?.schema?.tableName) {
-              tableName = stiBaseClass.schema.tableName;
-            }
-          }
-        }
-
-        // Get columns from schema, or generate from fields if empty
-        let columnsToUse = registered.schema.columns || {};
-        if (
-          Object.keys(columnsToUse).length === 0 &&
-          registered.fields.size > 0
-        ) {
-          columnsToUse = ObjectRegistry.fieldsToColumns(registered.fields);
-        }
-
-        if (!tableSchemas[tableName]) {
-          // First class for this table - initialize with base columns
-          const baseColumns: Record<string, ColumnDefinition> = {
-            id: { type: 'TEXT', primaryKey: true },
-            slug: { type: 'TEXT', notNull: true },
-            context: { type: 'TEXT' },
-            created_at: { type: 'TIMESTAMP' },
-            updated_at: { type: 'TIMESTAMP' },
-          };
-
-          const isSTI = tableStrategy === 'sti';
-          if (isSTI) {
-            baseColumns._meta_type = {
-              type: 'TEXT',
-              notNull: true,
-              defaultValue: '',
-            };
-            baseColumns._meta_data = { type: 'JSON' };
-          }
-
-          tableSchemas[tableName] = {
-            tableName,
-            columns: { ...baseColumns, ...columnsToUse },
-            indexes: [],
-            isSTI,
-          };
-        } else {
-          // Additional class sharing this table (STI scenario) - merge columns
-          for (const [colName, colDef] of Object.entries(columnsToUse)) {
-            if (!tableSchemas[tableName].columns[colName]) {
-              tableSchemas[tableName].columns[colName] = colDef;
-            }
-          }
-        }
-
-        // Merge indexes (avoid duplicates by name)
-        if (registered.schema.indexes && registered.schema.indexes.length > 0) {
-          const existingNames = new Set(
-            tableSchemas[tableName].indexes.map((idx) => idx.name),
-          );
-          for (const idx of registered.schema.indexes) {
-            if (!existingNames.has(idx.name)) {
-              tableSchemas[tableName].indexes.push(idx);
-              existingNames.add(idx.name);
-            }
-          }
-        }
-      }
-    }
-
-    // Step 2: Convert to SchemaDefinition format
-    const schemas: Record<string, SchemaDefinition> = {};
-
-    for (const [tableName, tableSchema] of Object.entries(tableSchemas)) {
-      if (Object.keys(tableSchema.columns).length === 0) {
-        continue;
-      }
-
-      // Generate DDL from columns
-      const ddl = ObjectRegistry.generateDDLFromColumns(
-        tableName,
-        tableSchema.columns,
-        tableSchema.isSTI,
-      );
-
-      schemas[tableName] = {
-        tableName,
-        ddl,
-        columns: tableSchema.columns,
-        indexes: tableSchema.indexes, // Keep as IndexDefinition[]
-        triggers: [],
-        foreignKeys: [],
-        version: '',
-        dependencies: [],
-      };
-    }
-
-    return schemas;
+    return _getAllSchemasAsDefinitions();
   }
-
-  /**
-   * Generate DDL CREATE TABLE statement from columns
-   *
-   * Used internally by getAllSchemas() to regenerate DDL after merging
-   * columns from multiple STI subtypes that share the same table.
-   *
-   * @param tableName - Name of the table
-   * @param columns - Column definitions
-   * @returns DDL CREATE TABLE statement
-   */
-  private static generateDDLFromColumns(
-    tableName: string,
-    columns: Record<string, ColumnDefinition>,
-    isSTI = false,
-  ): string {
-    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
-
-    const columnLines: string[] = [];
-    for (const [columnName, columnDef] of Object.entries(columns)) {
-      const parts: string[] = [];
-
-      // Column name and type
-      parts.push(`  "${columnName}" ${columnDef.type}`);
-
-      // Primary key
-      if (columnDef.primaryKey) {
-        parts.push('PRIMARY KEY');
-      }
-
-      // Not null constraint
-      if (columnDef.notNull) {
-        parts.push('NOT NULL');
-      }
-
-      // Unique constraint (skip if primary key already implies uniqueness)
-      if (columnDef.unique && !columnDef.primaryKey) {
-        parts.push('UNIQUE');
-      }
-
-      // Default value
-      if (columnDef.defaultValue !== undefined) {
-        const defaultSQL = ObjectRegistry.formatDefaultValue(
-          columnDef.defaultValue,
-          columnDef.type,
-        );
-        parts.push(`DEFAULT ${defaultSQL}`);
-      }
-
-      columnLines.push(parts.join(' '));
-    }
-
-    sql += columnLines.join(',\n');
-
-    // Add UNIQUE constraint for UPSERT operations
-    // For STI tables: UNIQUE(slug, context, _meta_type) - different types can have same slug+context
-    // For non-STI tables: UNIQUE(slug, context)
-    if (columns.slug && columns.context) {
-      if (isSTI && columns._meta_type) {
-        sql += ',\n  UNIQUE(slug, context, _meta_type)';
-      } else {
-        sql += ',\n  UNIQUE(slug, context)';
-      }
-    }
-
-    sql += '\n);';
-
-    return sql;
-  }
-
-  /**
-   * Format default value for SQL DDL
-   *
-   * @param value - Default value
-   * @param type - Column SQL type
-   * @returns Formatted SQL default value
-   */
-  private static formatDefaultValue(value: any, type: string): string {
-    // Handle SQL functions and keywords
-    if (typeof value === 'string') {
-      if (value.includes('(')) {
-        return value;
-      }
-      const sqlKeywords = [
-        'current_timestamp',
-        'current_date',
-        'current_time',
-        'now()',
-        'uuid_generate_v4()',
-      ];
-      if (sqlKeywords.some((kw) => value.toLowerCase() === kw)) {
-        return value;
-      }
-    }
-
-    // Handle by type
-    if (type === 'TEXT' || type === 'VARCHAR') {
-      return `'${String(value).replace(/'/g, "''")}'`;
-    }
-    if (type === 'INTEGER' || type === 'REAL') {
-      return String(value);
-    }
-    if (type === 'BOOLEAN') {
-      return value ? '1' : '0';
-    }
-    if (type === 'JSON') {
-      return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
-    }
-
-    // Fallback: quote as string
-    return `'${String(value).replace(/'/g, "''")}'`;
-  }
-
-  /**
-   * Convert a Map of field definitions to column definitions
-   *
-   * Used by getAllSchemas() to generate columns from fields when a class
-   * has no pre-generated schema (e.g., STI subclasses registered from manifest).
-   *
-   * @param fields - Map of field name to field definition
-   * @returns Record of column name to column definition
-   * @private
-   */
-  private static fieldsToColumns(
-    fields: Map<string, FieldDefinition>,
-  ): Record<string, ColumnDefinition> {
-    const columns: Record<string, ColumnDefinition> = {};
-
-    for (const [fieldName, fieldDef] of fields) {
-      // Skip id, timestamps - they're on the base table
-      if (
-        fieldName === 'id' ||
-        fieldName === 'created_at' ||
-        fieldName === 'updated_at' ||
-        fieldName === 'slug' ||
-        fieldName === 'context'
-      ) {
-        continue;
-      }
-
-      // Skip transient fields (non-persisted)
-      if (fieldDef.transient || fieldDef._meta?.transient) {
-        continue;
-      }
-
-      // Skip relationship fields that don't create columns
-      // oneToMany and manyToMany are relationship metadata, not actual database columns
-      if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany') {
-        continue;
-      }
-
-      // Skip meta fields - they're stored in _meta_data JSONB column
-      if (fieldDef.type === 'meta') {
-        continue;
-      }
-
-      // Map field type to SQL type
-      const sqlType = ObjectRegistry.mapFieldTypeToSQL(fieldDef.type);
-
-      const column: ColumnDefinition = {
-        type: sqlType,
-        notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
-        description: fieldDef.description,
-      };
-
-      // Handle default values
-      if (fieldDef.default !== undefined) {
-        column.defaultValue = fieldDef.default;
-      }
-
-      // Handle foreign keys
-      if (fieldDef.type === 'foreignKey' && fieldDef.related) {
-        const [table, columnName = 'id'] = fieldDef.related.split('.');
-        column.foreignKey = {
-          table: classnameToTablename(table),
-          column: columnName,
-          onDelete: 'CASCADE',
-          onUpdate: 'CASCADE',
-        };
-      }
-
-      // Use snake_case for column names
-      columns[toSnakeCase(fieldName)] = column;
-    }
-
-    return columns;
-  }
-
-  /**
-   * Map field type to SQL data type
-   * @private
-   */
-  private static mapFieldTypeToSQL(
-    fieldType: FieldDefinition['type'],
-  ): SQLDataType {
-    switch (fieldType) {
-      case 'text':
-        return 'TEXT';
-      case 'integer':
-        return 'INTEGER';
-      case 'decimal':
-        return 'REAL';
-      case 'boolean':
-        return 'BOOLEAN';
-      case 'datetime':
-        return 'TIMESTAMP';
-      case 'json':
-        return 'JSON';
-      case 'foreignKey':
-        return 'TEXT';
-      default:
-        return 'TEXT';
-    }
-  }
-
   /**
    * Get compiled validation functions for a registered class
    *
@@ -4248,37 +1511,7 @@ export class ObjectRegistry {
    * ```
    */
   static getDependencyGraph(): Map<string, string[]> {
-    const graph = new Map<string, string[]>();
-
-    // Initialize graph with all registered classes
-    // Issue #951: Use simple names for graph keys (map keys may be qualified)
-    for (const [_key, entry] of ObjectRegistry.classes) {
-      graph.set(entry.name || _key, []);
-    }
-
-    // Scan all fields for foreignKey relationships
-    for (const [_key, registered] of ObjectRegistry.classes) {
-      const simpleName = registered.name || _key;
-      const dependencies: string[] = [];
-
-      for (const [_fieldName, field] of registered.fields) {
-        if (field.type === 'foreignKey' && field.related) {
-          const relatedClass = field.related;
-          // Skip self-references (table can reference itself after creation)
-          // Only add if the related class is registered and not self
-          if (
-            relatedClass !== simpleName &&
-            ObjectRegistry.findClass(relatedClass) !== undefined
-          ) {
-            dependencies.push(relatedClass);
-          }
-        }
-      }
-
-      graph.set(simpleName, dependencies);
-    }
-
-    return graph;
+    return _getDependencyGraph();
   }
 
   /**
@@ -4362,58 +1595,7 @@ export class ObjectRegistry {
    * ```
    */
   static getRelationshipMap(): Map<string, RelationshipMetadata[]> {
-    const relationshipMap = new Map<string, RelationshipMetadata[]>();
-
-    // Initialize map with all registered classes
-    // Issue #951: Use simple names for map keys (map keys may be qualified)
-    for (const [_key, entry] of ObjectRegistry.classes) {
-      relationshipMap.set(entry.name || _key, []);
-    }
-
-    // Scan all fields for relationship types
-    for (const [_key, registered] of ObjectRegistry.classes) {
-      const simpleName = registered.name || _key;
-      const relationships: RelationshipMetadata[] = [];
-
-      for (const [fieldName, field] of registered.fields) {
-        // Check for foreignKey relationships
-        if (field.type === 'foreignKey' && field.related) {
-          relationships.push({
-            sourceClass: simpleName,
-            fieldName,
-            targetClass: field.related,
-            type: 'foreignKey',
-            options: field._meta,
-          });
-        }
-
-        // Check for oneToMany relationships
-        if (field.type === 'oneToMany' && field.related) {
-          relationships.push({
-            sourceClass: simpleName,
-            fieldName,
-            targetClass: field.related,
-            type: 'oneToMany',
-            options: field._meta,
-          });
-        }
-
-        // Check for manyToMany relationships
-        if (field.type === 'manyToMany' && field.related) {
-          relationships.push({
-            sourceClass: simpleName,
-            fieldName,
-            targetClass: field.related,
-            type: 'manyToMany',
-            options: field._meta,
-          });
-        }
-      }
-
-      relationshipMap.set(simpleName, relationships);
-    }
-
-    return relationshipMap;
+    return _getRelationshipMap();
   }
 
   /**
@@ -4429,48 +1611,6 @@ export class ObjectRegistry {
    */
   static getRelationships(className: string): RelationshipMetadata[] {
     return ObjectRegistry.getRelationshipMap().get(className) || [];
-  }
-
-  /**
-   * Build inheritance chain by walking prototype chain
-   *
-   * Walks from child → parent → ... → SmrtObject, building array from base to child.
-   * Stops at SmrtObject (the framework base class).
-   *
-   * @param ctor - Class constructor to build chain for
-   * @returns Array of class names from base to child (e.g., ['SmrtObject', 'Content', 'PraecoContent'])
-   * @private
-   */
-  private static buildInheritanceChain(ctor: typeof SmrtObject): string[] {
-    const chain: string[] = [];
-    // Issue #871: Use constructor references for circular detection, not names.
-    // Two different classes can have the same JS name (e.g., local "Account"
-    // extending upstream "Account"), but they are different constructors.
-    const visited = new Set<Function>();
-    let current: any = ctor;
-
-    // Walk up the prototype chain
-    while (current?.name) {
-      // Stop at SmrtObject (don't include it in chain unless it's the class itself)
-      if (current.name === 'SmrtObject') {
-        break;
-      }
-
-      // Circular inheritance detection using constructor identity
-      if (visited.has(current)) {
-        throw ConfigurationError.circularInheritance(
-          current.name,
-          Array.from(chain),
-        );
-      }
-
-      visited.add(current);
-      chain.unshift(current.name); // Add to front (we're walking child → base)
-
-      current = Object.getPrototypeOf(current);
-    }
-
-    return chain;
   }
 
   /**
@@ -4552,46 +1692,22 @@ export class ObjectRegistry {
       // qualifyExtendsName), this is an O(1) direct lookup.
       // If ambiguous, let the ConfigurationError propagate — callers
       // should fix their manifests rather than silently get wrong results.
-      let parent = ObjectRegistry.findClassStrict(
+      const parent = ObjectRegistry.findClassStrict(
         current.extends,
         current.packageName,
       );
 
-      // FIX #735: If parent not found, try loading from external manifests
-      // This handles STI hierarchies where parent class is from an external package
-      // (e.g., Meeting extends Event from @happyvertical/smrt-events)
+      // Issue #1007: Parent not found — the class is not registered.
+      // After loadAllManifests() completes at startup, all classes are
+      // pre-registered so this path is only hit when a package is not
+      // installed or the manifest is stale. We gracefully end the chain
+      // here instead of mutating registry state during a read operation.
       if (!parent) {
-        const discoveryCache = ObjectRegistry.getDiscoveryAttemptCache();
-        const parentName = current.extends;
-
-        // Check if we've already attempted to discover this class
-        if (!discoveryCache.has(parentName)) {
-          const manifestEntry = discoverManifestSync(parentName);
-          if (manifestEntry) {
-            const packageName = manifestEntry.packageName;
-            ObjectRegistry.registerFromManifest(
-              parentName,
-              manifestEntry,
-              packageName,
-            );
-            discoveryCache.set(parentName, true);
-            parent = ObjectRegistry.findClassStrict(
-              parentName,
-              current.packageName,
-            );
-          } else {
-            // Mark as not found to avoid repeated lookups
-            discoveryCache.set(parentName, false);
-          }
-        }
-        // If already attempted and found, try findClass again (it should work now)
-        else if (discoveryCache.get(parentName) === true) {
-          parent = ObjectRegistry.findClassStrict(
-            parentName,
-            current.packageName,
-          );
-        }
-        // If already attempted and not found, parent stays undefined
+        verboseLog(
+          `[ObjectRegistry] Parent class '${current.extends}' not found ` +
+            `while building inheritance chain. Ensure the parent package ` +
+            `is installed and loadAllManifests() was called at startup.`,
+        );
       }
 
       current = parent;
@@ -5382,11 +2498,7 @@ export class ObjectRegistry {
   static getEmbeddingConfig(
     className: string,
   ): ClassEmbeddingConfig | undefined {
-    const registered = ObjectRegistry.findClass(className);
-    if (!registered?.config?.embeddings) {
-      return undefined;
-    }
-    return registered.config.embeddings as ClassEmbeddingConfig;
+    return _getEmbeddingConfig(className);
   }
 
   /**
@@ -5402,8 +2514,7 @@ export class ObjectRegistry {
    * ```
    */
   static hasEmbeddings(className: string): boolean {
-    const config = ObjectRegistry.getEmbeddingConfig(className);
-    return config !== undefined && config.fields.length > 0;
+    return _hasEmbeddings(className);
   }
 
   /**
@@ -5417,15 +2528,7 @@ export class ObjectRegistry {
    * ```
    */
   static getEmbeddingClasses(): string[] {
-    const embeddingClasses: string[] = [];
-    // Issue #951: Use simple names (map keys may be qualified)
-    for (const [_key, entry] of ObjectRegistry.classes) {
-      const simpleName = entry.name || _key;
-      if (ObjectRegistry.hasEmbeddings(simpleName)) {
-        embeddingClasses.push(simpleName);
-      }
-    }
-    return embeddingClasses;
+    return _getEmbeddingClasses();
   }
 
   /**
@@ -5448,18 +2551,7 @@ export class ObjectRegistry {
    * ```
    */
   static getProjectEmbeddingConfig(): ProjectEmbeddingConfig {
-    const globalConfig = getModuleConfig<SmrtGlobalConfig>('smrt', {});
-    const embeddingConfig = globalConfig?.embeddings;
-
-    // Return defaults merged with any project config
-    return {
-      dimensions: embeddingConfig?.dimensions ?? 768,
-      provider: embeddingConfig?.provider ?? 'local',
-      localModel: embeddingConfig?.localModel ?? 'Xenova/bge-base-en-v1.5',
-      aiModel: embeddingConfig?.aiModel ?? 'text-embedding-3-small',
-      fallbackToAI: embeddingConfig?.fallbackToAI ?? true,
-      storage: embeddingConfig?.storage ?? 'json',
-    };
+    return _getProjectEmbeddingConfig();
   }
 
   /**
@@ -5488,29 +2580,7 @@ export class ObjectRegistry {
   static resolveEmbeddingConfig(
     className: string,
   ): ResolvedEmbeddingConfig | undefined {
-    const classConfig = ObjectRegistry.getEmbeddingConfig(className);
-    if (!classConfig) {
-      return undefined;
-    }
-
-    const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
-
-    return {
-      // Class-specific fields (required)
-      fields: classConfig.fields,
-      combinedField: classConfig.combinedField,
-
-      // Merge provider settings (class overrides project)
-      dimensions: projectConfig.dimensions,
-      provider: classConfig.provider ?? projectConfig.provider,
-      localModel: projectConfig.localModel ?? 'Xenova/bge-base-en-v1.5',
-      aiModel: projectConfig.aiModel ?? 'text-embedding-3-small',
-      fallbackToAI: projectConfig.fallbackToAI ?? true,
-
-      // Generation behavior (defaults to true)
-      autoGenerate: classConfig.autoGenerate ?? true,
-      regenerateOnChange: classConfig.regenerateOnChange ?? true,
-    };
+    return _resolveEmbeddingConfig(className);
   }
 }
 
