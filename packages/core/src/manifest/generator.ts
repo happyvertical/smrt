@@ -10,7 +10,6 @@ import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { discoverSmrtPackages } from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
-import { loadExternalManifestSync } from './manifest-loader.js';
 
 /**
  * Options for ManifestBuilder.generate()
@@ -43,23 +42,12 @@ export interface ManifestBuilderOptions {
 
   // Tree Shaking (External Object Filtering)
   /**
-   * Enable import-based tree shaking for external SMRT objects.
-   * When enabled, only external objects that are actually imported
-   * in the project's source files will be included in the manifest.
-   *
-   * Default: false (include all external objects)
+   * @deprecated Tree shaking is no longer needed. The AST scanner no longer includes external objects in the manifest by default.
    */
   treeShake?: boolean;
 
   /**
-   * Explicit whitelist of external class names to include in the manifest.
-   * Use this in conjunction with or instead of import-based tree shaking.
-   *
-   * Accepts simple class names (e.g., "Person") or qualified names
-   * (e.g., "@happyvertical/smrt-profiles:Person").
-   *
-   * When combined with treeShake, both imported classes AND whitelisted
-   * classes will be included.
+   * @deprecated Whitelists are no longer needed. The AST scanner no longer includes external objects in the manifest by default.
    */
   externalObjectsWhitelist?: string[];
 }
@@ -70,8 +58,6 @@ interface ScannerConfig {
   includeStaticMethods: boolean;
   followImports: boolean;
   smrtDependencies?: string[];
-  /** Imports discovered from source files (package → Set<className>) */
-  smrtImports?: Map<string, Set<string>>;
 }
 
 interface PackageInfo {
@@ -105,16 +91,13 @@ export class ManifestBuilder {
     // 2. Configure scanner (baseClasses, external packages, vite config)
     const scannerConfig = await this.configureScanner(options);
 
-    // 3. Scan files with OXC scanner (includes import scanning if tree shaking enabled)
-    const { manifest: scannedManifest, smrtImports } =
-      await this.scanAndBuildManifest(scannerConfig, options);
+    // 3. Scan files with OXC scanner
+    const scannedManifest = await this.scanAndBuildManifest(
+      scannerConfig,
+      options,
+    );
 
-    // Store imports in scanner config for use in enrichManifest
-    if (smrtImports) {
-      scannerConfig.smrtImports = smrtImports;
-    }
-
-    // 4. Enrich manifest with external packages, metadata, etc.
+    // 4. Enrich manifest with metadata (smrtDependencies, packageInfo)
     const manifest = this.enrichManifest(
       scannedManifest,
       options,
@@ -204,10 +187,7 @@ export class ManifestBuilder {
   private async scanAndBuildManifest(
     config: ScannerConfig,
     options: ManifestBuilderOptions,
-  ): Promise<{
-    manifest: SmartObjectManifest;
-    smrtImports?: Map<string, Set<string>>;
-  }> {
+  ): Promise<SmartObjectManifest> {
     const { OxcScanner, ManifestAdapter } = await import(
       '@happyvertical/smrt-scanner'
     );
@@ -258,18 +238,7 @@ export class ManifestBuilder {
     manifestGen.generateSchemas(manifest);
     manifestGen.generateAgentManifests(manifest, packageName, packageJson);
 
-    // Scan for SMRT imports if tree shaking is enabled
-    let smrtImports: Map<string, Set<string>> | undefined;
-    if (options.treeShake) {
-      if (process.env.DEBUG_MANIFEST) {
-        console.log(
-          '[smrt] Tree shaking enabled, scanning for SMRT imports...',
-        );
-      }
-      smrtImports = scanner.scanSmrtImports();
-    }
-
-    return { manifest, smrtImports };
+    return manifest;
   }
 
   /**
@@ -291,62 +260,10 @@ export class ManifestBuilder {
       scannerConfig.smrtDependencies.length > 0
     ) {
       manifest.smrtDependencies = scannerConfig.smrtDependencies;
-
-      // Determine if we should filter external objects
-      const shouldFilter =
-        options.treeShake ||
-        (options.externalObjectsWhitelist &&
-          options.externalObjectsWhitelist.length > 0);
-
-      // Build the allowed set of external classes
-      let allowedClasses: Set<string> | null = null;
-      if (shouldFilter) {
-        allowedClasses = this.buildAllowedClassSet(
-          options,
-          scannerConfig,
-          scannerConfig.smrtDependencies,
-        );
-      }
-
-      // Merge objects from external packages into this manifest
-      let includedCount = 0;
-      let excludedCount = 0;
-
-      for (const pkgName of scannerConfig.smrtDependencies) {
-        const extManifest = loadExternalManifestSync(pkgName);
-        if (extManifest?.objects) {
-          for (const [key, obj] of Object.entries(extManifest.objects)) {
-            // Don't overwrite local objects with external ones
-            if (manifest.objects[key]) {
-              continue;
-            }
-
-            // Apply tree shaking filter if enabled
-            if (allowedClasses) {
-              if (
-                !this.isClassAllowed(
-                  obj.className,
-                  obj.qualifiedName ?? obj.className,
-                  allowedClasses,
-                )
-              ) {
-                excludedCount++;
-                continue;
-              }
-            }
-
-            manifest.objects[key] = obj;
-            includedCount++;
-          }
-        }
-      }
-
-      // Log filtering results
-      if (shouldFilter && process.env.DEBUG_MANIFEST) {
-        console.log(
-          `[smrt] Tree shaking: included ${includedCount} external object(s), excluded ${excludedCount}`,
-        );
-      }
+      // Removed:
+      // We no longer aggregate external package objects into the local manifest.
+      // Doing so causes massive duplication (Issue 1013) and makes registration order dependent.
+      // External manifests are discovered and auto-loaded natively by manifest-loader.ts at runtime.
     }
 
     // Inject package info
@@ -363,214 +280,6 @@ export class ManifestBuilder {
     }
 
     return manifest;
-  }
-
-  /**
-   * Build the set of allowed external classes from imports and whitelist
-   *
-   * Combines:
-   * 1. Whitelist (explicit class names)
-   * 2. Import analysis (classes imported in source files)
-   * 3. Transitive dependencies (inheritance, foreignKey relationships)
-   */
-  private buildAllowedClassSet(
-    options: ManifestBuilderOptions,
-    scannerConfig: ScannerConfig,
-    packages: string[],
-  ): Set<string> {
-    const allowed = new Set<string>();
-
-    // 1. Add whitelisted classes
-    if (options.externalObjectsWhitelist) {
-      for (const className of options.externalObjectsWhitelist) {
-        // Handle both simple names and qualified names
-        if (className.includes(':')) {
-          // Qualified name like "@happyvertical/smrt-profiles:Person"
-          allowed.add(className);
-          // Also add simple name for matching (use last segment for multi-colon names)
-          const parts = className.split(':');
-          const simpleName = parts[parts.length - 1];
-          if (simpleName) {
-            allowed.add(simpleName);
-          }
-        } else {
-          allowed.add(className);
-        }
-      }
-      if (process.env.DEBUG_MANIFEST) {
-        console.log(
-          `[smrt] Whitelist: ${options.externalObjectsWhitelist.length} class(es)`,
-        );
-      }
-    }
-
-    // 2. Add imported classes
-    if (scannerConfig.smrtImports) {
-      for (const [pkgName, classNames] of scannerConfig.smrtImports) {
-        // Check for wildcard import (import * as ...)
-        if (classNames.has('*')) {
-          // Include all classes from this package
-          const extManifest = loadExternalManifestSync(pkgName);
-          if (extManifest?.objects) {
-            for (const obj of Object.values(extManifest.objects)) {
-              allowed.add(obj.className);
-              if (obj.qualifiedName) {
-                allowed.add(obj.qualifiedName);
-              }
-            }
-          }
-          if (process.env.DEBUG_MANIFEST) {
-            console.log(`[smrt] Import wildcard: all classes from ${pkgName}`);
-          }
-        } else {
-          for (const className of classNames) {
-            allowed.add(className);
-          }
-        }
-      }
-    }
-
-    // 3. Resolve transitive dependencies
-    const resolved = this.resolveTransitiveDependencies(allowed, packages);
-
-    if (process.env.DEBUG_MANIFEST) {
-      console.log(
-        `[smrt] Allowed classes after dependency resolution: ${resolved.size}`,
-      );
-    }
-
-    return resolved;
-  }
-
-  /**
-   * Resolve transitive dependencies for allowed classes
-   *
-   * Includes:
-   * - Base classes (extends)
-   * - Foreign key targets (foreignKey relationships)
-   * - STI siblings (classes sharing the same STI base table)
-   */
-  private resolveTransitiveDependencies(
-    initial: Set<string>,
-    packages: string[],
-  ): Set<string> {
-    const resolved = new Set(initial);
-    const queue = [...initial];
-    const visited = new Set<string>();
-
-    // Build a map of all external objects for lookup
-    const externalObjects = new Map<
-      string,
-      { obj: any; pkgName: string; key: string }
-    >();
-    for (const pkgName of packages) {
-      const extManifest = loadExternalManifestSync(pkgName);
-      if (extManifest?.objects) {
-        for (const [key, obj] of Object.entries(extManifest.objects)) {
-          externalObjects.set(obj.className, { obj, pkgName, key });
-          if (obj.qualifiedName) {
-            externalObjects.set(obj.qualifiedName, { obj, pkgName, key });
-          }
-        }
-      }
-    }
-
-    // Process queue to find transitive dependencies
-    while (queue.length > 0) {
-      const className = queue.shift()!;
-      if (visited.has(className)) continue;
-      visited.add(className);
-
-      const entry = externalObjects.get(className);
-      if (!entry) continue;
-
-      const { obj } = entry;
-
-      // Include base class (extends)
-      if (obj.extends && !resolved.has(obj.extends)) {
-        resolved.add(obj.extends);
-        queue.push(obj.extends);
-      }
-
-      // Include foreign key targets
-      if (obj.fields) {
-        for (const field of Object.values(obj.fields) as any[]) {
-          if (
-            field.type === 'foreignKey' &&
-            field.related &&
-            !resolved.has(field.related)
-          ) {
-            resolved.add(field.related);
-            queue.push(field.related);
-          }
-        }
-      }
-
-      // Include STI siblings (classes sharing the same base table)
-      // If this class uses STI, include all classes in the same hierarchy
-      if (obj.decoratorConfig?.tableStrategy === 'sti') {
-        // Find all classes that share the same STI base
-        const stiBase = this.findSTIBase(obj, externalObjects);
-        if (stiBase) {
-          for (const [, otherEntry] of externalObjects) {
-            const other = otherEntry.obj;
-            if (this.findSTIBase(other, externalObjects) === stiBase) {
-              if (!resolved.has(other.className)) {
-                resolved.add(other.className);
-                queue.push(other.className);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    return resolved;
-  }
-
-  /**
-   * Find the STI base class for an object
-   */
-  private findSTIBase(
-    obj: any,
-    externalObjects: Map<string, { obj: any; pkgName: string; key: string }>,
-  ): string | null {
-    // If no tableStrategy, not STI
-    if (!obj.decoratorConfig?.tableStrategy) return null;
-    if (obj.decoratorConfig.tableStrategy !== 'sti') return null;
-
-    // Walk up inheritance chain to find the root STI class
-    // Track visited classes to prevent infinite loops
-    const visited = new Set<string>();
-    let current = obj;
-    while (current.extends) {
-      if (visited.has(current.className)) {
-        // Circular inheritance detected, return current as base
-        break;
-      }
-      visited.add(current.className);
-      const parentEntry = externalObjects.get(current.extends);
-      if (!parentEntry) break;
-      if (parentEntry.obj.decoratorConfig?.tableStrategy !== 'sti') {
-        // Parent is not STI, so current is the STI base
-        return current.className;
-      }
-      current = parentEntry.obj;
-    }
-
-    // Reached the top, return current
-    return current.className;
-  }
-
-  /**
-   * Check if a class is in the allowed set
-   */
-  private isClassAllowed(
-    className: string,
-    qualifiedName: string,
-    allowed: Set<string>,
-  ): boolean {
-    return allowed.has(className) || allowed.has(qualifiedName);
   }
 
   /**
