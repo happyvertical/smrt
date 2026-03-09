@@ -2021,8 +2021,14 @@ export class ObjectRegistry {
                 }
               }
               // Backfill extends when absent (needed for STI chain resolution)
+              // Issue #1004: Qualify the backfilled extends too
               if (!existing.extends && objectDef.extends) {
-                existing.extends = objectDef.extends;
+                existing.extends = packageName
+                  ? ObjectRegistry.qualifyExtendsName(
+                      objectDef.extends,
+                      packageName,
+                    )
+                  : objectDef.extends;
               }
             }
           } else {
@@ -2053,6 +2059,15 @@ export class ObjectRegistry {
         return;
       }
     }
+
+    // Issue #1004: Qualify the extends value BEFORE adding to classNameMap.
+    // This must happen first to avoid self-reference: if we add the child to
+    // classNameMap first, qualifyExtendsName would find the child's own entry
+    // and create a circular extends (e.g., @test/sports:TestEvent extends itself).
+    const qualifiedExtends =
+      objectDef.extends && packageName
+        ? ObjectRegistry.qualifyExtendsName(objectDef.extends, packageName)
+        : objectDef.extends;
 
     // Track this class name for case-insensitive lookups
     // Maps lowercase simple name → array of registration keys
@@ -2189,10 +2204,7 @@ export class ObjectRegistry {
       validationRules, // Pre-computed rules from manifest (Issue #782)
       packageName,
       sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
-      extends:
-        objectDef.extends && packageName
-          ? ObjectRegistry.qualifyExtendsName(objectDef.extends, packageName)
-          : objectDef.extends, // Issue #1004: Qualified parent for unambiguous resolution
+      extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
       visibility, // New: Visibility control for manifest filtering
     });
 
@@ -2342,8 +2354,8 @@ export class ObjectRegistry {
       return registered;
     }
 
-    // 2. If input looks like a qualified name, no fallback — it's not found
-    if (name.includes(':') && name.startsWith('@')) {
+    // 2. If input is a qualified name, no fallback — it's not found
+    if (isQualifiedName(name)) {
       return undefined;
     }
 
@@ -2435,13 +2447,10 @@ export class ObjectRegistry {
       return entries[0];
     }
 
-    // Try manifest discovery for unregistered parents
-    const manifestEntry = discoverManifestSync(extendsValue);
-    if (manifestEntry?.packageName) {
-      return createQualifiedName(manifestEntry.packageName, extendsValue);
-    }
-
     // Fallback: return unmodified (backward compat)
+    // Note: We deliberately avoid calling discoverManifestSync() here to
+    // prevent heavy I/O during registration. Unresolved parents will be
+    // discovered lazily by getInheritanceChain() at lookup time.
     return extendsValue;
   }
 
@@ -4541,19 +4550,12 @@ export class ObjectRegistry {
       // Issue #1004/#1005: Use findClassStrict with package context for
       // unambiguous resolution. If extends is already qualified (from
       // qualifyExtendsName), this is an O(1) direct lookup.
-      let parent: RegisteredClass | undefined;
-      try {
-        parent = ObjectRegistry.findClassStrict(
-          current.extends,
-          current.packageName,
-        );
-      } catch (e) {
-        // If findClassStrict throws due to ambiguity, log warning and
-        // fall through to manifest discovery below (which may resolve it)
-        verboseLog(
-          `[registry] getInheritanceChain: strict lookup failed for "${current.extends}": ${e instanceof Error ? e.message : e}`,
-        );
-      }
+      // If ambiguous, let the ConfigurationError propagate — callers
+      // should fix their manifests rather than silently get wrong results.
+      let parent = ObjectRegistry.findClassStrict(
+        current.extends,
+        current.packageName,
+      );
 
       // FIX #735: If parent not found, try loading from external manifests
       // This handles STI hierarchies where parent class is from an external package
@@ -4573,7 +4575,10 @@ export class ObjectRegistry {
               packageName,
             );
             discoveryCache.set(parentName, true);
-            parent = ObjectRegistry.findClass(parentName);
+            parent = ObjectRegistry.findClassStrict(
+              parentName,
+              current.packageName,
+            );
           } else {
             // Mark as not found to avoid repeated lookups
             discoveryCache.set(parentName, false);
@@ -4581,7 +4586,10 @@ export class ObjectRegistry {
         }
         // If already attempted and found, try findClass again (it should work now)
         else if (discoveryCache.get(parentName) === true) {
-          parent = ObjectRegistry.findClass(parentName);
+          parent = ObjectRegistry.findClassStrict(
+            parentName,
+            current.packageName,
+          );
         }
         // If already attempted and not found, parent stays undefined
       }
