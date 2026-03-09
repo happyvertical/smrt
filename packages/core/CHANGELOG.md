@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.52
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - use declare for summaryArticle to prevent subclass shadowing (#1017) (agents)
+  - @happyvertical/smrt-scanner@0.20.52
+  - @happyvertical/smrt-config@0.20.52
+  - @happyvertical/smrt-types@0.20.52
+
 ## 0.20.51
 
 ### Patch Changes
