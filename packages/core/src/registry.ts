@@ -28,6 +28,7 @@
  * ```
  */
 
+import { readFileSync } from 'node:fs';
 import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
@@ -42,13 +43,39 @@ import {
   discoverManifestSync,
   discoverSTISiblingsSync,
   getPackageName,
+  loadExternalManifestSync,
   lookupInManifest,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
+// ── Extracted modules (Issue #1006) ──────────────────────────────────────
+import {
+  getClasses,
+  getClassNameMap,
+  getCollectionCache,
+  getCollections,
+  getCollectionTableNames,
+  getConstructorIndex,
+  getDbInstanceIds,
+  getDiscoveryAttemptCache,
+  getFieldDecorators,
+  getInheritanceCache,
+  getInheritanceConfig,
+  getNextDbId,
+  getSourceFileFromStack,
+  getStiSiblingsLoaded,
+  setNextDbId,
+  verboseLog,
+} from './registry/shared-state';
+import type {
+  RegisteredClass,
+  RelationshipMetadata,
+  SmartObjectConfig,
+  SmrtObjectConstructor,
+  ValidatorFunction,
+} from './registry/types';
 import type {
   FieldDefinition,
   QualifiedClassName,
-  SmartObjectManifest,
   SmrtVisibility,
   ValidationRule,
 } from './scanner/types.js';
@@ -65,605 +92,17 @@ import {
   isQualifiedName,
 } from './utils/qualified-names.js';
 
-/**
- * Cached verbose flag evaluated once at module load time.
- * Checks SMRT_VERBOSE=true or DEBUG containing 'smrt'.
- * Avoids repeated env var parsing on every log statement.
- * @see https://github.com/happyvertical/smrt/issues/782
- */
-const VERBOSE_ENABLED =
-  process.env.SMRT_VERBOSE === 'true' ||
-  (process.env.DEBUG?.includes('smrt') ?? false);
+// Re-export types for backward compatibility
+export type {
+  RelationshipMetadata,
+  RelationshipType,
+  SmartObjectConfig,
+} from './registry/types';
 
-/**
- * Log a message only when verbose mode is enabled.
- * Used throughout registry.ts to reduce noise during normal operation.
- * @param args - Arguments to pass to console.log
- */
-function verboseLog(...args: unknown[]): void {
-  if (VERBOSE_ENABLED) {
-    console.log(...args);
-  }
-}
-
-/**
- * Extend globalThis to include ObjectRegistry state.
- * Using globalThis ensures all module instances share the same registry,
- * which is critical in monorepos where the same package can be loaded
- * from different paths (e.g., pnpm store vs workspace symlink).
- *
- * This fixes cross-module state sharing issues where different module
- * instances would have different class registrations, causing STI failures,
- * missing schemas, etc.
- *
- * @see https://github.com/happyvertical/smrt/issues/543
- */
-/**
- * Type for any constructor function that extends SmrtObject.
- * Used for WeakMap keys where we need to accept any subclass constructor.
- */
-type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __smrtRegistryClasses: Map<string, any> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryCollections: Map<string, typeof SmrtCollection> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryCollectionCache:
-    | LRUCache<string, SmrtCollection<any>>
-    | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryDbInstanceIds: WeakMap<object, number> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryNextDbId: number | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryInheritanceChainCache:
-    | LRUCache<string, string[]>
-    | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryFieldDecorators: Map<string, Map<string, any>> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryClassNameMap: Map<string, string[]> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistrySchemasInitialized: WeakSet<object> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryConstructorIndex:
-    | WeakMap<SmrtObjectConstructor, string>
-    | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryDiscoveryAttemptCache: Map<string, boolean> | undefined;
-}
-
-/**
- * Get inheritance config synchronously
- * Uses the config package's sync accessor which returns already-loaded config
- */
-function getInheritanceConfig() {
-  const config = getModuleConfig<SmrtGlobalConfig>('smrt', {});
-  return {
-    cacheSize: config.inheritance?.cacheSize ?? 200,
-    onMissingAncestor:
-      config.inheritance?.onMissingAncestor ?? ('warn' as 'warn' | 'error'),
-  };
-}
-
-/**
- * Extract the source file path from the call stack
- *
- * Used to identify where a class was defined for collision detection.
- * This allows the same class to be re-registered when modules are re-evaluated
- * (e.g., during vitest test file collection with isolation enabled).
- *
- * @returns The file path where the @smrt() decorator was called, or undefined
- */
-function getSourceFileFromStack(): string | undefined {
-  const error = new Error();
-  const stack = error.stack || '';
-  const stackLines = stack.split('\n');
-
-  // Look for the first file path that's NOT from smrt-core internal files
-  // Stack trace format: "    at FunctionName (file:///path/to/file.ts:line:col)"
-  // or "    at file:///path/to/file.ts:line:col"
-  for (const line of stackLines) {
-    // Match file paths in stack trace (include all JS/TS file extensions)
-    const fileMatch = line.match(
-      /(?:file:\/\/)?([^)\s]+\.(?:js|ts|mjs|mts|jsx|tsx|cjs|cts))(?::\d+:\d+)?/,
-    );
-    if (fileMatch) {
-      const rawPath = fileMatch[1];
-      // Normalize the path:
-      // - remove any leading file:// or file:/// prefix
-      // - convert Windows backslashes to POSIX-style forward slashes
-      const normalizedPath = rawPath
-        .replace(/^file:\/+/, '')
-        .replace(/\\/g, '/');
-      const lowerPath = normalizedPath.toLowerCase();
-
-      // Skip smrt-core internal files using specific path patterns
-      // to avoid false positives with user files containing "registry" in name
-      if (
-        // Installed package form: node_modules/@happyvertical/smrt-core/...
-        lowerPath.includes('/node_modules/@happyvertical/smrt-core/') ||
-        // Monorepo/workspace form: packages/core/src/...
-        (lowerPath.includes('/packages/core/src/') &&
-          !lowerPath.includes('__tests__')) ||
-        // Specific manifest loader internals
-        lowerPath.includes('/manifest/manifest-loader')
-      ) {
-        continue;
-      }
-      return normalizedPath;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Configuration options for SMRT objects registered in the system
- *
- * Controls how objects are exposed through generated APIs, CLIs, and MCP servers.
- * Each section configures a different aspect of code generation and runtime behavior.
- *
- * @interface SmartObjectConfig
- */
-export interface SmartObjectConfig {
-  /**
-   * Custom name for the object (defaults to class name)
-   */
-  name?: string;
-
-  /**
-   * Custom table name for database storage (defaults to pluralized snake_case class name)
-   * Explicitly setting this ensures the table name survives code minification
-   */
-  tableName?: string;
-
-  /**
-   * Table inheritance strategy (defaults to 'cti')
-   * - 'cti': Class Table Inheritance - one table per class (current default)
-   * - 'sti': Single Table Inheritance - shared table with discriminator column
-   *
-   * Set once on base class, children inherit automatically.
-   *
-   * @example
-   * ```typescript
-   * @smrt({ tableStrategy: 'sti' })
-   * class Event extends SmrtObject {
-   *   title: string = '';
-   * }
-   *
-   * // Meeting inherits 'sti' strategy
-   * @smrt()
-   * class Meeting extends Event {
-   *   roomId = foreignKey(Room);
-   * }
-   * ```
-   */
-  tableStrategy?: 'cti' | 'sti';
-
-  /**
-   * Custom conflict columns for UPSERT operations
-   *
-   * By default, SMRT uses ['slug', 'context'] for CTI tables and
-   * ['slug', 'context', '_meta_type'] for STI tables. Override this
-   * for junction tables or models with different natural keys.
-   *
-   * @example
-   * ```typescript
-   * // Junction table using foreign keys as natural key
-   * @smrt({ conflictColumns: ['event_id', 'profile_id'] })
-   * class EventParticipant extends SmrtObject {
-   *   eventId = '';
-   *   profileId = '';
-   * }
-   * ```
-   */
-  conflictColumns?: string[];
-
-  /**
-   * Visibility control for manifest inclusion and cross-package access
-   * - 'public': Included in published manifest, available to all consumers (default)
-   * - 'internal': Package-only, excluded from published manifest
-   * - 'test': Test-only, never in any published manifest
-   *
-   * @example
-   * ```typescript
-   * // Public class (default) - exported to consumers
-   * @smrt({ visibility: 'public' })
-   * class Product extends SmrtObject {}
-   *
-   * // Internal helper class - not exported
-   * @smrt({ visibility: 'internal' })
-   * class InternalHelper extends SmrtObject {}
-   *
-   * // Test fixture - never exported
-   * @smrt({ visibility: 'test' })
-   * class TestProduct extends SmrtObject {}
-   * ```
-   */
-  visibility?: SmrtVisibility;
-
-  /**
-   * API configuration
-   */
-  api?:
-    | boolean
-    | {
-        /**
-         * Exclude specific endpoints (supports both standard CRUD actions and custom methods)
-         */
-        exclude?: string[];
-
-        /**
-         * Include only specific endpoints (supports both standard CRUD actions and custom methods)
-         */
-        include?: string[];
-
-        /**
-         * Custom middleware for this object's endpoints
-         */
-        middleware?: any[];
-
-        /**
-         * Custom endpoint handlers (supports both standard CRUD actions and custom methods)
-         */
-        customize?: Record<string, (req: any, collection: any) => Promise<any>>;
-      };
-
-  /**
-   * MCP server configuration
-   */
-  mcp?:
-    | boolean
-    | {
-        /**
-         * Include specific tools (supports both standard CRUD actions and custom methods)
-         */
-        include?: string[];
-
-        /**
-         * Exclude specific tools (supports both standard CRUD actions and custom methods)
-         */
-        exclude?: string[];
-      };
-
-  /**
-   * CLI configuration
-   */
-  cli?:
-    | boolean
-    | {
-        /**
-         * Include specific commands (supports both standard CRUD actions and custom methods)
-         */
-        include?: string[];
-
-        /**
-         * Exclude specific commands (supports both standard CRUD actions and custom methods)
-         */
-        exclude?: string[];
-      };
-
-  /**
-   * AI callable configuration
-   */
-  ai?: {
-    /**
-     * Methods that AI can call
-     * - Array of method names, e.g., ['analyze', 'validate']
-     * - 'public-async' to auto-include all public async methods
-     * - 'all' to include all methods (not recommended)
-     */
-    callable?: string[] | 'public-async' | 'all';
-
-    /**
-     * Methods to exclude from AI calling (higher priority than callable)
-     */
-    exclude?: string[];
-
-    /**
-     * Additional tool descriptions to override method JSDoc
-     */
-    descriptions?: Record<string, string>;
-  };
-
-  /**
-   * Lifecycle hooks
-   */
-  hooks?: {
-    beforeSave?: string | ((instance: any) => Promise<void>);
-    afterSave?: string | ((instance: any) => Promise<void>);
-    beforeCreate?: string | ((instance: any) => Promise<void>);
-    afterCreate?: string | ((instance: any) => Promise<void>);
-    beforeUpdate?: string | ((instance: any) => Promise<void>);
-    afterUpdate?: string | ((instance: any) => Promise<void>);
-    beforeDelete?: string | ((instance: any) => Promise<void>);
-    afterDelete?: string | ((instance: any) => Promise<void>);
-  };
-
-  /**
-   * Embedding configuration for semantic search
-   *
-   * Enable vector embeddings on this class for similarity search.
-   * Project-level defaults come from smrt.config embeddings section.
-   *
-   * @example
-   * ```typescript
-   * @smrt({
-   *   embeddings: {
-   *     fields: ['title', 'body'],
-   *     autoGenerate: true
-   *   }
-   * })
-   * class Article extends SmrtObject {
-   *   title: string = '';
-   *   body: string = '';
-   * }
-   * ```
-   */
-  embeddings?: {
-    /**
-     * Fields to generate embeddings for
-     * Each field gets its own embedding vector stored in _smrt_embeddings
-     */
-    fields: string[];
-
-    /**
-     * Override project-level embedding provider
-     * - 'local': Use local Node.js model (@xenova/transformers)
-     * - 'ai': Use AI library (OpenAI, etc.)
-     * - 'auto': Try local first, fallback to AI
-     */
-    provider?: 'local' | 'ai' | 'auto';
-
-    /**
-     * Automatically generate embeddings on save
-     * Only regenerates when content changes (via content hash)
-     * @default true
-     */
-    autoGenerate?: boolean;
-
-    /**
-     * Regenerate embeddings when field content changes
-     * Uses content hash comparison to detect changes
-     * @default true
-     */
-    regenerateOnChange?: boolean;
-
-    /**
-     * Create a combined embedding from multiple fields
-     * Useful for holistic similarity search across an object
-     *
-     * @example
-     * ```typescript
-     * combinedField: {
-     *   name: 'content',
-     *   template: '{title}\n\n{body}'
-     * }
-     * ```
-     */
-    combinedField?: {
-      /** Field name for the combined embedding */
-      name: string;
-      /** Template with {fieldName} placeholders */
-      template: string;
-    };
-  };
-
-  /**
-   * Multi-tenancy configuration
-   *
-   * Enable automatic tenant isolation for this class.
-   * When enabled, a `tenantId` field is auto-injected and queries are
-   * automatically filtered by tenant context.
-   *
-   * Requires `@happyvertical/smrt-tenancy` package to be installed
-   * and `enableTenancy()` to be called at app startup.
-   *
-   * @example Simple boolean flag (uses defaults)
-   * ```typescript
-   * @smrt({ tenantScoped: true })
-   * class Account extends SmrtObject {
-   *   // tenantId field auto-injected
-   *   name: string = '';
-   * }
-   * ```
-   *
-   * @example With custom options
-   * ```typescript
-   * @smrt({
-   *   tenantScoped: {
-   *     mode: 'optional',  // Works with or without tenant context
-   *     allowSuperAdminBypass: true
-   *   }
-   * })
-   * class AuditLog extends SmrtObject { }
-   * ```
-   *
-   * @see https://github.com/happyvertical/smrt/issues/688
-   */
-  tenantScoped?:
-    | boolean
-    | {
-        /**
-         * Tenancy mode for this class
-         * - 'required': Must have tenant context for all operations (default)
-         * - 'optional': Works with or without tenant context
-         * @default 'required'
-         */
-        mode?: 'required' | 'optional';
-
-        /**
-         * Field name for the tenant ID
-         * @default 'tenantId'
-         */
-        field?: string;
-
-        /**
-         * Auto-filter all queries by tenant
-         * @default true
-         */
-        autoFilter?: boolean;
-
-        /**
-         * Auto-populate tenant ID from context on create
-         * @default true
-         */
-        autoPopulate?: boolean;
-
-        /**
-         * Allow super admin bypass for this class
-         * @default false
-         */
-        allowSuperAdminBypass?: boolean;
-      };
-
-  /**
-   * Agent metadata configuration
-   *
-   * Only relevant for classes extending Agent. Provides metadata
-   * that the manifest build uses to auto-generate permissions, features,
-   * menu items, and component declarations.
-   *
-   * @example
-   * ```typescript
-   * @smrt({
-   *   tableName: 'praecos',
-   *   agent: {
-   *     icon: 'newspaper',
-   *     tier: 'standard',
-   *     description: 'Council meeting coverage and article generation',
-   *   },
-   *   cli: { include: ['discover', 'fetch', 'analyze'] },
-   * })
-   * export class Praeco extends Agent { }
-   * ```
-   */
-  agent?: {
-    /** Icon identifier (e.g., 'newspaper', 'cloud', 'git-branch') */
-    icon?: string;
-    /** Billing tier: 'free' | 'standard' | 'premium' */
-    tier?: 'free' | 'standard' | 'premium';
-    /** Human-readable description of the agent */
-    description?: string;
-  };
-
-  /**
-   * Synchronous manifest for build-time imports (Issue #270 Phase 1)
-   * Allows passing manifest directly instead of async loading
-   * @internal Advanced usage - typically set by build tools
-   */
-  _manifest?: SmartObjectManifest;
-}
-
-// SchemaDefinition is imported from ./schema/types.js
-
-/**
- * Validation function that takes an object instance and returns
- * a ValidationError if validation fails, or null if validation passes
- */
-type ValidatorFunction = (
-  instance: any,
-) => Promise<import('./errors').ValidationError | null>;
-
-/**
- * Relationship type for the relationship map
- */
-export type RelationshipType = 'foreignKey' | 'oneToMany' | 'manyToMany';
-
-/**
- * Metadata about a relationship between classes
- */
-export interface RelationshipMetadata {
-  /** Source class name */
-  sourceClass: string;
-  /** Field name on the source class */
-  fieldName: string;
-  /** Target/related class name */
-  targetClass: string;
-  /** Type of relationship */
-  type: RelationshipType;
-  /** Options for the relationship (onDelete, etc.) */
-  options: any;
-}
-
-/**
- * Internal representation of a registered SMRT class
- *
- * @interface RegisteredClass
- * @private
- */
-interface RegisteredClass {
-  /**
-   * Simple class name (e.g., "Product")
-   */
-  name: string;
-
-  /**
-   * Qualified class name in format "@package/name:ClassName"
-   * This is the PRIMARY KEY for registry lookups.
-   * Example: "@happyvertical/smrt-core:Product"
-   */
-  qualifiedName?: QualifiedClassName;
-
-  constructor: typeof SmrtObject;
-  collectionConstructor?: new (options: any) => SmrtCollection<any>;
-  config: SmartObjectConfig;
-  fields: Map<string, any>;
-  /** Method definitions from manifest (for custom CLI/API/MCP generation) */
-  methods: Map<string, any>;
-  /** Cached schema definition generated during registration */
-  schema?: SchemaDefinition;
-  /** Compiled validation functions for efficient runtime validation */
-  validators?: ValidatorFunction[];
-  /**
-   * Pre-computed validation rules from manifest (Issue #782)
-   * When available, these are used instead of compiling validator closures,
-   * significantly reducing CLI startup time.
-   */
-  validationRules?: ValidationRule[];
-  /** AI-callable tools generated from methods at build time */
-  tools?: Array<{
-    type: 'function';
-    function: {
-      name: string;
-      description?: string;
-      parameters?: Record<string, any>;
-    };
-  }>;
-  /** Package name from manifest (for external package classes) */
-  packageName?: string;
-  /** Source file path where the class was defined (for collision detection) */
-  sourceFilePath?: string;
-  /** Parent class name (for inheritance chain tracking) */
-  extends?: string;
-  /** Full inheritance chain from base to this class (cached for performance) */
-  inheritanceChain?: string[];
-  /** Merged fields from entire inheritance chain (cached, includes parent fields) */
-  inheritedFields?: Map<string, any>;
-  /** Merged methods from entire inheritance chain (cached, includes parent methods) */
-  inheritedMethods?: Map<string, any>;
-  /** Normalized tenant scoping configuration (Issue #688) */
-  tenantScopedConfig?: {
-    mode: 'required' | 'optional';
-    field: string;
-    autoFilter: boolean;
-    autoPopulate: boolean;
-    allowSuperAdminBypass: boolean;
-  };
-  /**
-   * Visibility control for manifest inclusion
-   * - 'public': Included in published manifest (default)
-   * - 'internal': Package-only, excluded from published manifest
-   * - 'test': Test-only, never in any published manifest
-   */
-  visibility?: SmrtVisibility;
-}
+// Types, utility functions, and globalThis declarations have been extracted
+// to registry/types.ts and registry/shared-state.ts (Issue #1006).
+// The SmartObjectConfig, RelationshipType, and RelationshipMetadata types
+// are re-exported above for backward compatibility.
 
 /**
  * Central registry for all SMRT objects
@@ -676,23 +115,14 @@ export class ObjectRegistry {
    * Get the classes map from globalThis, initializing if needed
    */
   private static get classes(): Map<string, RegisteredClass> {
-    if (!globalThis.__smrtRegistryClasses) {
-      globalThis.__smrtRegistryClasses = new Map<string, RegisteredClass>();
-    }
-    return globalThis.__smrtRegistryClasses;
+    return getClasses();
   }
 
   /**
    * Get the collections map from globalThis, initializing if needed
    */
   private static get collections(): Map<string, typeof SmrtCollection> {
-    if (!globalThis.__smrtRegistryCollections) {
-      globalThis.__smrtRegistryCollections = new Map<
-        string,
-        typeof SmrtCollection
-      >();
-    }
-    return globalThis.__smrtRegistryCollections;
+    return getCollections();
   }
 
   /**
@@ -700,10 +130,7 @@ export class ObjectRegistry {
    * Maps collection class name -> tableName for getTableName lookups
    */
   private static get collectionTableNames(): Map<string, string> {
-    if (!globalThis.__smrtRegistryCollectionTableNames) {
-      globalThis.__smrtRegistryCollectionTableNames = new Map<string, string>();
-    }
-    return globalThis.__smrtRegistryCollectionTableNames;
+    return getCollectionTableNames();
   }
 
   /**
@@ -721,13 +148,7 @@ export class ObjectRegistry {
    * Get the collection cache from globalThis, initializing if needed
    */
   private static get collectionCache(): LRUCache<string, SmrtCollection<any>> {
-    if (!globalThis.__smrtRegistryCollectionCache) {
-      globalThis.__smrtRegistryCollectionCache = new LRUCache<
-        string,
-        SmrtCollection<any>
-      >(100);
-    }
-    return globalThis.__smrtRegistryCollectionCache;
+    return getCollectionCache();
   }
 
   /**
@@ -759,24 +180,18 @@ export class ObjectRegistry {
    * Prevents cache key collisions when different db instances are used
    */
   private static get dbInstanceIds(): WeakMap<object, number> {
-    if (!globalThis.__smrtRegistryDbInstanceIds) {
-      globalThis.__smrtRegistryDbInstanceIds = new WeakMap<object, number>();
-    }
-    return globalThis.__smrtRegistryDbInstanceIds;
+    return getDbInstanceIds();
   }
 
   /**
    * Get/set the next database ID counter
    */
   private static get nextDbId(): number {
-    if (globalThis.__smrtRegistryNextDbId === undefined) {
-      globalThis.__smrtRegistryNextDbId = 1;
-    }
-    return globalThis.__smrtRegistryNextDbId;
+    return getNextDbId();
   }
 
   private static set nextDbId(value: number) {
-    globalThis.__smrtRegistryNextDbId = value;
+    setNextDbId(value);
   }
 
   /**
@@ -785,13 +200,7 @@ export class ObjectRegistry {
    * Used by @field(), @foreignKey(), @oneToMany(), @manyToMany() decorators
    */
   private static get fieldDecorators(): Map<string, Map<string, any>> {
-    if (!globalThis.__smrtRegistryFieldDecorators) {
-      globalThis.__smrtRegistryFieldDecorators = new Map<
-        string,
-        Map<string, any>
-      >();
-    }
-    return globalThis.__smrtRegistryFieldDecorators;
+    return getFieldDecorators();
   }
 
   /**
@@ -799,10 +208,7 @@ export class ObjectRegistry {
    * Prevents infinite recursion when loading siblings
    */
   private static get stiSiblingsLoaded(): Set<string> {
-    if (!globalThis.__smrtRegistryStiSiblingsLoaded) {
-      globalThis.__smrtRegistryStiSiblingsLoaded = new Set<string>();
-    }
-    return globalThis.__smrtRegistryStiSiblingsLoaded;
+    return getStiSiblingsLoaded();
   }
 
   /**
@@ -811,10 +217,7 @@ export class ObjectRegistry {
    * both 'praeco' and 'Praeco' from being registered separately
    */
   private static get classNameMap(): Map<string, string[]> {
-    if (!globalThis.__smrtRegistryClassNameMap) {
-      globalThis.__smrtRegistryClassNameMap = new Map<string, string[]>();
-    }
-    return globalThis.__smrtRegistryClassNameMap;
+    return getClassNameMap();
   }
 
   /**
@@ -878,13 +281,7 @@ export class ObjectRegistry {
     SmrtObjectConstructor,
     string
   > {
-    if (!globalThis.__smrtRegistryConstructorIndex) {
-      globalThis.__smrtRegistryConstructorIndex = new WeakMap<
-        SmrtObjectConstructor,
-        string
-      >();
-    }
-    return globalThis.__smrtRegistryConstructorIndex;
+    return getConstructorIndex();
   }
 
   /**
@@ -894,14 +291,7 @@ export class ObjectRegistry {
    * Cache size is configurable via smrt.inheritance.cacheSize (default: 200)
    */
   private static getInheritanceCache(): LRUCache<string, string[]> {
-    if (!globalThis.__smrtRegistryInheritanceChainCache) {
-      const { cacheSize } = getInheritanceConfig();
-      globalThis.__smrtRegistryInheritanceChainCache = new LRUCache<
-        string,
-        string[]
-      >(cacheSize);
-    }
-    return globalThis.__smrtRegistryInheritanceChainCache;
+    return getInheritanceCache();
   }
 
   /**
@@ -910,13 +300,7 @@ export class ObjectRegistry {
    * Prevents repeated discoverManifestSync calls for the same class name
    */
   private static getDiscoveryAttemptCache(): Map<string, boolean> {
-    if (!globalThis.__smrtRegistryDiscoveryAttemptCache) {
-      globalThis.__smrtRegistryDiscoveryAttemptCache = new Map<
-        string,
-        boolean
-      >();
-    }
-    return globalThis.__smrtRegistryDiscoveryAttemptCache;
+    return getDiscoveryAttemptCache();
   }
 
   /**
@@ -2866,6 +2250,102 @@ export class ObjectRegistry {
   }
 
   /**
+   * Load all manifests upfront so inheritance queries are pure lookups.
+   *
+   * After this method completes, every class across all packages is
+   * registered and `getInheritanceChain()` will never need to mutate
+   * registry state.
+   *
+   * @param options - Optional configuration
+   * @param options.manifestPaths - Explicit list of manifest.json file paths to load.
+   *   When omitted the method discovers packages via `loadExternalManifestSync()`
+   *   for every `@happyvertical` package found in `node_modules`.
+   * @returns Summary statistics about the load operation
+   *
+   * @example
+   * ```typescript
+   * // At CLI / server startup
+   * ObjectRegistry.loadAllManifests();
+   * // All classes are now registered — inheritance lookups are side-effect free
+   * ```
+   *
+   * @see https://github.com/happyvertical/smrt/issues/1007
+   */
+  static loadAllManifests(options?: { manifestPaths?: string[] }): {
+    packagesLoaded: number;
+    objectsRegistered: number;
+  } {
+    let packagesLoaded = 0;
+    let objectsRegistered = 0;
+
+    if (options?.manifestPaths) {
+      // Explicit paths — used by integration tests
+      for (const manifestPath of options.manifestPaths) {
+        try {
+          const raw = readFileSync(manifestPath, 'utf-8');
+          const manifest = JSON.parse(raw);
+          const packageName = manifest.packageName as string | undefined;
+
+          if (!manifest.objects) continue;
+
+          for (const [_key, objectDef] of Object.entries(manifest.objects)) {
+            const def = objectDef as any;
+            const className = def.className || _key;
+            if (!ObjectRegistry.hasClassCaseInsensitive(className)) {
+              ObjectRegistry.registerFromManifest(className, def, packageName);
+              objectsRegistered++;
+            }
+          }
+          packagesLoaded++;
+        } catch (err) {
+          verboseLog(
+            `[ObjectRegistry] Failed to load manifest from ${manifestPath}: ${err}`,
+          );
+        }
+      }
+    } else {
+      // Auto-discover via loadExternalManifestSync for each @happyvertical package
+      const packagePrefixes = ['@happyvertical/smrt-'];
+      try {
+        const { readdirSync } = require('node:fs') as typeof import('node:fs');
+        const { join } = require('node:path') as typeof import('node:path');
+        const scopeDir = join(process.cwd(), 'node_modules', '@happyvertical');
+        const packages = readdirSync(scopeDir).filter((name: string) =>
+          packagePrefixes.some((prefix) =>
+            `@happyvertical/${name}`.startsWith(prefix),
+          ),
+        );
+
+        for (const pkgDir of packages) {
+          const packageName = `@happyvertical/${pkgDir}`;
+          const manifest = loadExternalManifestSync(packageName);
+          if (!manifest?.objects) continue;
+
+          for (const [_key, objectDef] of Object.entries(manifest.objects)) {
+            const def = objectDef as any;
+            const className = def.className || _key;
+            if (!ObjectRegistry.hasClassCaseInsensitive(className)) {
+              ObjectRegistry.registerFromManifest(className, def, packageName);
+              objectsRegistered++;
+            }
+          }
+          packagesLoaded++;
+        }
+      } catch (err) {
+        verboseLog(
+          `[ObjectRegistry] Auto-discovery of manifests failed: ${err}`,
+        );
+      }
+    }
+
+    verboseLog(
+      `[ObjectRegistry] loadAllManifests complete: ${packagesLoaded} packages, ${objectsRegistered} objects registered`,
+    );
+
+    return { packagesLoaded, objectsRegistered };
+  }
+
+  /**
    * Check if a class is registered (case-insensitive)
    */
   static hasClass(name: string): boolean {
@@ -4552,46 +4032,22 @@ export class ObjectRegistry {
       // qualifyExtendsName), this is an O(1) direct lookup.
       // If ambiguous, let the ConfigurationError propagate — callers
       // should fix their manifests rather than silently get wrong results.
-      let parent = ObjectRegistry.findClassStrict(
+      const parent = ObjectRegistry.findClassStrict(
         current.extends,
         current.packageName,
       );
 
-      // FIX #735: If parent not found, try loading from external manifests
-      // This handles STI hierarchies where parent class is from an external package
-      // (e.g., Meeting extends Event from @happyvertical/smrt-events)
+      // Issue #1007: Parent not found — the class is not registered.
+      // After loadAllManifests() completes at startup, all classes are
+      // pre-registered so this path is only hit when a package is not
+      // installed or the manifest is stale. We gracefully end the chain
+      // here instead of mutating registry state during a read operation.
       if (!parent) {
-        const discoveryCache = ObjectRegistry.getDiscoveryAttemptCache();
-        const parentName = current.extends;
-
-        // Check if we've already attempted to discover this class
-        if (!discoveryCache.has(parentName)) {
-          const manifestEntry = discoverManifestSync(parentName);
-          if (manifestEntry) {
-            const packageName = manifestEntry.packageName;
-            ObjectRegistry.registerFromManifest(
-              parentName,
-              manifestEntry,
-              packageName,
-            );
-            discoveryCache.set(parentName, true);
-            parent = ObjectRegistry.findClassStrict(
-              parentName,
-              current.packageName,
-            );
-          } else {
-            // Mark as not found to avoid repeated lookups
-            discoveryCache.set(parentName, false);
-          }
-        }
-        // If already attempted and found, try findClass again (it should work now)
-        else if (discoveryCache.get(parentName) === true) {
-          parent = ObjectRegistry.findClassStrict(
-            parentName,
-            current.packageName,
-          );
-        }
-        // If already attempted and not found, parent stays undefined
+        verboseLog(
+          `[ObjectRegistry] Parent class '${current.extends}' not found ` +
+            `while building inheritance chain. Ensure the parent package ` +
+            `is installed and loadAllManifests() was called at startup.`,
+        );
       }
 
       current = parent;
