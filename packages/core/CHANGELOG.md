@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.50
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - remove dependency pre-aggregation from enrichManifest (#1013) (#1014) (manifest)
+  - @happyvertical/smrt-scanner@0.20.50
+  - @happyvertical/smrt-config@0.20.50
+  - @happyvertical/smrt-types@0.20.50
+
 ## 0.20.49
 
 ### Patch Changes
