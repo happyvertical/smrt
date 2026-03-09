@@ -65,14 +65,12 @@ function countTotalObjects(manifestPaths: string[]): number {
 
 describe('Issue #1008: Full registry integration (high object counts)', () => {
   let manifestPaths: string[];
-
   beforeAll(() => {
     // Start with a clean registry for isolation
     ObjectRegistry.clear();
 
     // Discover all manifest paths once
     manifestPaths = discoverManifestPaths();
-
     // Load all manifests once for all tests to share
     ObjectRegistry.loadAllManifests({ manifestPaths });
   });

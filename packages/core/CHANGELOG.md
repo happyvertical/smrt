@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.20.50
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - remove dependency pre-aggregation from enrichManifest (#1013) (#1014) (manifest)
+  - @happyvertical/smrt-scanner@0.20.50
+  - @happyvertical/smrt-config@0.20.50
+  - @happyvertical/smrt-types@0.20.50
+
+## 0.20.49
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - qualified extends + findClassStrict for cross-package inheritance (#1004, #1005) (#1012) (core)
+  - @happyvertical/smrt-scanner@0.20.49
+  - @happyvertical/smrt-config@0.20.49
+  - @happyvertical/smrt-types@0.20.49
+
 ## 0.20.48
 
 ### Patch Changes
