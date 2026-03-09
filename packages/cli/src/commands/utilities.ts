@@ -1703,6 +1703,15 @@ export default testManifest;
         console.error('\n❌ Migration failed:');
         if (error instanceof Error) {
           console.error(`   ${error.message}`);
+          const ctx = (error as any).context;
+          if (ctx) {
+            if (ctx.originalError) {
+              console.error(`   Database error: ${ctx.originalError}`);
+            }
+            if (ctx.sql) {
+              console.error(`   Failed SQL: ${ctx.sql}`);
+            }
+          }
           if (options.verbose && error.stack) {
             console.error('\nStack trace:');
             console.error(error.stack);
