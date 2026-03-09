@@ -107,4 +107,54 @@ describe('@have/agents', () => {
       expect(agent.itemsProcessed).toBe(5);
     });
   });
+
+  describe('summaryArticle subclass override (#1016)', () => {
+    it('should not shadow a subclass summaryArticle prototype method', () => {
+      @smrt()
+      class ArticleAgent extends Agent {
+        protected config = {};
+
+        async run(): Promise<void> {}
+      }
+
+      // Attach summaryArticle on the prototype (simulates what downstream
+      // packages do when they define the method on the class body).
+      ArticleAgent.prototype.summaryArticle = async () => ({
+        title: 'Test',
+        summary: 'Summary',
+        body: 'Body',
+        dateRange: { start: '2025-01-01', end: '2025-01-07' },
+      });
+
+      const agent = new ArticleAgent({ name: 'article-agent' });
+
+      // The bug: bare field declaration compiled to this.summaryArticle = undefined
+      // which overwrote the prototype method
+      expect(typeof agent.summaryArticle).toBe('function');
+      expect(agent.summaryArticle).toBeDefined();
+    });
+
+    it('should allow calling the subclass summaryArticle method', async () => {
+      @smrt()
+      class CallableArticleAgent extends Agent {
+        protected config = {};
+
+        async run(): Promise<void> {}
+      }
+
+      CallableArticleAgent.prototype.summaryArticle = async () => ({
+        title: 'Weekly Recap',
+        summary: 'A weekly recap.',
+        body: 'Full body content.',
+        dateRange: { start: '2025-01-01', end: '2025-01-07' },
+      });
+
+      const agent = new CallableArticleAgent({ name: 'callable-agent' });
+      const result = await agent.summaryArticle?.({
+        startDate: '2025-01-01',
+        endDate: '2025-01-07',
+      });
+      expect(result.title).toBe('Weekly Recap');
+    });
+  });
 });
