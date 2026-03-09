@@ -29,8 +29,6 @@
  */
 
 import { readFileSync } from 'node:fs';
-import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
-import { getModuleConfig } from '@happyvertical/smrt-config';
 import { SmrtCollection } from './collection';
 import type {
   ClassEmbeddingConfig,
@@ -47,6 +45,13 @@ import {
   lookupInManifest,
 } from './manifest/manifest-loader.js';
 import { SmrtObject } from './object';
+import {
+  getEmbeddingClasses as _getEmbeddingClasses,
+  getEmbeddingConfig as _getEmbeddingConfig,
+  getProjectEmbeddingConfig as _getProjectEmbeddingConfig,
+  hasEmbeddings as _hasEmbeddings,
+  resolveEmbeddingConfig as _resolveEmbeddingConfig,
+} from './registry/embedding-manager';
 import {
   addToClassNameMap as _addToClassNameMap,
   findClass as _findClass,
@@ -4415,11 +4420,7 @@ export class ObjectRegistry {
   static getEmbeddingConfig(
     className: string,
   ): ClassEmbeddingConfig | undefined {
-    const registered = ObjectRegistry.findClass(className);
-    if (!registered?.config?.embeddings) {
-      return undefined;
-    }
-    return registered.config.embeddings as ClassEmbeddingConfig;
+    return _getEmbeddingConfig(className);
   }
 
   /**
@@ -4435,8 +4436,7 @@ export class ObjectRegistry {
    * ```
    */
   static hasEmbeddings(className: string): boolean {
-    const config = ObjectRegistry.getEmbeddingConfig(className);
-    return config !== undefined && config.fields.length > 0;
+    return _hasEmbeddings(className);
   }
 
   /**
@@ -4450,15 +4450,7 @@ export class ObjectRegistry {
    * ```
    */
   static getEmbeddingClasses(): string[] {
-    const embeddingClasses: string[] = [];
-    // Issue #951: Use simple names (map keys may be qualified)
-    for (const [_key, entry] of ObjectRegistry.classes) {
-      const simpleName = entry.name || _key;
-      if (ObjectRegistry.hasEmbeddings(simpleName)) {
-        embeddingClasses.push(simpleName);
-      }
-    }
-    return embeddingClasses;
+    return _getEmbeddingClasses();
   }
 
   /**
@@ -4481,18 +4473,7 @@ export class ObjectRegistry {
    * ```
    */
   static getProjectEmbeddingConfig(): ProjectEmbeddingConfig {
-    const globalConfig = getModuleConfig<SmrtGlobalConfig>('smrt', {});
-    const embeddingConfig = globalConfig?.embeddings;
-
-    // Return defaults merged with any project config
-    return {
-      dimensions: embeddingConfig?.dimensions ?? 768,
-      provider: embeddingConfig?.provider ?? 'local',
-      localModel: embeddingConfig?.localModel ?? 'Xenova/bge-base-en-v1.5',
-      aiModel: embeddingConfig?.aiModel ?? 'text-embedding-3-small',
-      fallbackToAI: embeddingConfig?.fallbackToAI ?? true,
-      storage: embeddingConfig?.storage ?? 'json',
-    };
+    return _getProjectEmbeddingConfig();
   }
 
   /**
@@ -4521,29 +4502,7 @@ export class ObjectRegistry {
   static resolveEmbeddingConfig(
     className: string,
   ): ResolvedEmbeddingConfig | undefined {
-    const classConfig = ObjectRegistry.getEmbeddingConfig(className);
-    if (!classConfig) {
-      return undefined;
-    }
-
-    const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
-
-    return {
-      // Class-specific fields (required)
-      fields: classConfig.fields,
-      combinedField: classConfig.combinedField,
-
-      // Merge provider settings (class overrides project)
-      dimensions: projectConfig.dimensions,
-      provider: classConfig.provider ?? projectConfig.provider,
-      localModel: projectConfig.localModel ?? 'Xenova/bge-base-en-v1.5',
-      aiModel: projectConfig.aiModel ?? 'text-embedding-3-small',
-      fallbackToAI: projectConfig.fallbackToAI ?? true,
-
-      // Generation behavior (defaults to true)
-      autoGenerate: classConfig.autoGenerate ?? true,
-      regenerateOnChange: classConfig.regenerateOnChange ?? true,
-    };
+    return _resolveEmbeddingConfig(className);
   }
 }
 
