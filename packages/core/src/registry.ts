@@ -1986,6 +1986,45 @@ export class ObjectRegistry {
           if (registrationKey !== existingCanonical) {
             // Different qualified keys → allow both to be registered
             // (ambiguity will be detected at findClass time)
+            //
+            // Issue #1000: Merge plain-property fields from the manifest into the
+            // existing decorator-registered entry — but ONLY when both entries come
+            // from the same package. This is the scenario where the @smrt() decorator
+            // ran first (registering only decorator-annotated fields like @foreignKey
+            // and @tenantId) and the manifest entry from the same package now provides
+            // the full field list including plain TypeScript properties like
+            // `contractId: string = ''`. Without this merge, toJSON() only serializes
+            // decorator-annotated columns, silently dropping plain-property fields.
+            //
+            // Restricting to same-package prevents corrupting unrelated classes that
+            // happen to share a name across different packages (genuine collisions).
+            if (
+              packageName &&
+              existing.packageName &&
+              packageName === existing.packageName &&
+              objectDef.fields
+            ) {
+              for (const [fieldName, fieldDef] of Object.entries(
+                objectDef.fields as Record<string, any>,
+              )) {
+                if (!existing.fields.has(fieldName)) {
+                  const fd = fieldDef as any;
+                  existing.fields.set(fieldName, {
+                    type: fd.type,
+                    _meta: {
+                      required: fd.required,
+                      default: fd.default,
+                      description: fd.description,
+                      ...fd._meta,
+                    },
+                  });
+                }
+              }
+              // Backfill extends when absent (needed for STI chain resolution)
+              if (!existing.extends && objectDef.extends) {
+                existing.extends = objectDef.extends;
+              }
+            }
           } else {
             return;
           }
@@ -4327,6 +4366,7 @@ export class ObjectRegistry {
     const chain: string[] = [];
     const visited = new Set<any>(); // Cycle detection using object identity
     let current: any = registered;
+    let circularDetected = false;
     while (current) {
       // Cycle detection: use object identity to handle cases where distinct
       // classes share the same name (e.g., histrio:Performer vs smrt-video:Performer)
@@ -4336,8 +4376,10 @@ export class ObjectRegistry {
         // Longer cycles indicate misconfigured manifests.
         if (chain.length > 1) {
           console.warn(
-            `[ObjectRegistry] Circular inheritance detected in chain: ${chain.join(' -> ')} -> ${current.name}`,
+            `[ObjectRegistry] Circular inheritance detected in chain: ${chain.join(' -> ')} -> ${current.name}. ` +
+              `Check that '${current.extends ?? current.name}' resolves to the correct package class.`,
           );
+          circularDetected = true;
         }
         break;
       }
@@ -4392,9 +4434,14 @@ export class ObjectRegistry {
       current = parent;
     }
 
-    // Cache in both places
-    registered.inheritanceChain = chain;
-    cache.set(className, chain);
+    // Only cache complete, non-circular chains.
+    // Caching a broken chain from a circular detection would cause all future
+    // lookups to return incorrect inheritance data (e.g., ["VideoShot","VideoShot"]
+    // instead of ["Content","VideoShot"]), breaking STI table resolution.
+    if (!circularDetected) {
+      registered.inheritanceChain = chain;
+      cache.set(className, chain);
+    }
 
     return chain;
   }
