@@ -60,22 +60,6 @@
     "vite": "^7.3.1",
     "vitest": "^4.0.17"
   },
-  "peerDependencies": {
-    "@happyvertical/smrt-users": "workspace:*",
-    "@happyvertical/smrt-svelte": "workspace:*",
-    "svelte": "^5.18.0"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-users": {
-      "optional": true
-    },
-    "@happyvertical/smrt-svelte": {
-      "optional": true
-    },
-    "svelte": {
-      "optional": true
-    }
-  },
   "keywords": [
     "ai",
     "agents",
