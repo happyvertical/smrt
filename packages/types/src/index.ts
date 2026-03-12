@@ -7,6 +7,17 @@
 
 // Module standardization types
 export type {
+  AiTokenUsage,
+  AiUsageGroupBy,
+  AiUsageHandler,
+  AiUsageListOptions,
+  AiUsageSnapshot,
+  AiUsageStats,
+  AiUsageSummaryOptions,
+  SmrtAiUsageEvent,
+  SmrtAiUsageRecord,
+} from './ai-usage.js';
+export type {
   ModuleComponentType,
   ModuleUIBaseProps,
   ModuleUIRegistryInterface,

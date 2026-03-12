@@ -9,7 +9,7 @@
  */
 
 import type { LoggerConfig } from '@happyvertical/logger';
-import type { SignalAdapter } from '@happyvertical/smrt-types';
+import type { AiUsageHandler, SignalAdapter } from '@happyvertical/smrt-types';
 import type { SignalBus } from './signals/bus.js';
 import type { SanitizationConfig } from './signals/sanitizer.js';
 
@@ -61,6 +61,26 @@ export interface AIConfig {
 }
 
 /**
+ * AI usage tracking configuration
+ */
+export interface AiUsageConfig {
+  /** Enable normalized AI usage tracking (default: true) */
+  enabled?: boolean;
+
+  /** Enable persistence to _smrt_ai_usage when a DB exists (default: true) */
+  persist?: boolean;
+
+  /** Enable best-effort cost estimation (default: true) */
+  estimateCosts?: boolean;
+
+  /** Override USD-per-1K-token cost rates */
+  costRates?: Record<string, { input: number; output: number }>;
+
+  /** Additional usage handlers */
+  handlers?: AiUsageHandler[];
+}
+
+/**
  * Global signal configuration
  *
  * Application-level defaults for signal adapters.
@@ -81,6 +101,11 @@ export interface GlobalSignalConfig {
    * Provides global defaults for AI client initialization
    */
   ai?: AIConfig;
+
+  /**
+   * AI usage tracking configuration (default: enabled)
+   */
+  usage?: AiUsageConfig;
 
   /**
    * Signal sanitization configuration (default: enabled with standard redactions)

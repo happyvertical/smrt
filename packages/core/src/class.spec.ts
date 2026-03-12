@@ -158,6 +158,7 @@ describe('SmrtClass', () => {
       `;
 
       const tableNames = tables.map((row: any) => row.name);
+      expect(tableNames).toContain('_smrt_ai_usage');
       expect(tableNames).toContain('_smrt_contexts');
       expect(tableNames).toContain('_smrt_migrations');
       expect(tableNames).toContain('_smrt_registry');
@@ -188,6 +189,7 @@ describe('SmrtClass', () => {
       `;
 
       const tableNames = tables.map((row: any) => row.table_name);
+      expect(tableNames).toContain('_smrt_ai_usage');
       expect(tableNames).toContain('_smrt_contexts');
       expect(tableNames).toContain('_smrt_migrations');
       expect(tableNames).toContain('_smrt_registry');
@@ -262,6 +264,29 @@ describe('SmrtClass', () => {
       // If we got here, system tables were created successfully
       // This is expected - DuckDB CAN create system tables
       expect((instance as any)._db).toBeDefined();
+    });
+
+    it('should not skip DDL when migration query returns an empty rows object', async () => {
+      const query = async (sql: string) => {
+        if (sql.includes('SELECT 1 FROM _smrt_migrations')) {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      };
+      const execute = async () => ({ rows: [] });
+      const fakeDb = {
+        url: 'sqlite://system-table-fast-path-test.db',
+        query,
+        execute,
+        constructor: { name: 'FakeDatabase' },
+      };
+
+      const instance = new SmrtClass({});
+      (instance as any)._db = fakeDb;
+
+      await expect(
+        (instance as any).ensureSystemTables(),
+      ).resolves.toBeUndefined();
     });
   });
 });
