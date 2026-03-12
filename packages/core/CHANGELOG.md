@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.20.54
+
+### Patch Changes
+
+- ### Features
+
+  - add AI usage tracking (#1020) (core)
+  - @happyvertical/smrt-scanner@0.20.54
+  - @happyvertical/smrt-config@0.20.54
+  - @happyvertical/smrt-types@0.20.54
+
 ## 0.20.53
 
 ### Patch Changes
