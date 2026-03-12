@@ -51,7 +51,7 @@ function getRegistrationPackageName(
   isLocal: boolean,
 ): string | undefined {
   if (isLocal) {
-    return manifest.packageName;
+    return manifest.packageName ?? objectDef.packageName;
   }
 
   return objectDef.packageName;
@@ -168,19 +168,21 @@ async function generateRegistrationFile(
       );
 
       if (!packageName) {
-        return `ObjectRegistry.register(${simpleClassName}, {});`;
+        return null;
       }
 
       return `ObjectRegistry.register(${simpleClassName}, { packageName: ${JSON.stringify(packageName)} });`;
     })
+    .filter((registration): registration is string => registration !== null)
     .join('\n');
 
   const registrationContent = `/**
  * Auto-generated SMRT object registration
  * DO NOT EDIT - changes will be overwritten
  *
- * This file imports all SMRT objects to trigger their @smrt() decorators
- * and then upgrades them to deterministic qualified registrations.
+ * Importing these modules triggers their @smrt() decorators, which performs
+ * the initial registration. The explicit re-registration below is intentional:
+ * it upgrades bundled runtimes to deterministic qualified registrations.
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';

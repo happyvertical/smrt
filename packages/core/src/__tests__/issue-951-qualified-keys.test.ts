@@ -25,6 +25,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ConfigurationError } from '../errors.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 
@@ -268,9 +269,60 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     );
     expect(promoted).toBeDefined();
     expect(promoted?.constructor).toBe(QualifiedTestH);
+    expect(ObjectRegistry.getClass('QualifiedTestH')?.constructor).toBe(
+      QualifiedTestH,
+    );
 
     // @ts-expect-error - accessing private property for verification
     expect(ObjectRegistry.classes.has('QualifiedTestH')).toBe(false);
+  });
+
+  it('should reject promotion when the target qualified key already belongs to another class', () => {
+    class QualifiedTestI extends SmrtObject {}
+
+    ObjectRegistry.register(QualifiedTestI, { name: 'QualifiedTestI' });
+
+    let initialKey: string | undefined;
+    let entry: any;
+    // @ts-expect-error - accessing private property for verification
+    for (const [key, val] of ObjectRegistry.classes) {
+      if (val.name === 'QualifiedTestI') {
+        initialKey = key;
+        entry = val;
+        break;
+      }
+    }
+
+    expect(initialKey).toBeDefined();
+
+    // Force a simple-key starting point, then occupy the target qualified key
+    // with a different class to verify promotion collisions fail loudly.
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.delete(initialKey!);
+    entry.packageName = undefined;
+    entry.qualifiedName = undefined;
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.set('QualifiedTestI', entry);
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classNameMap.set('qualifiedtesti', ['QualifiedTestI']);
+
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:QualifiedTestI',
+      {
+        className: 'QualifiedTestI',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+      },
+      '@test/pkg',
+    );
+
+    expect(() =>
+      ObjectRegistry.register(QualifiedTestI, {
+        name: 'QualifiedTestI',
+        packageName: '@test/pkg',
+      }),
+    ).toThrow(ConfigurationError);
   });
 
   it('should return correct simple names from getDescendants()', () => {

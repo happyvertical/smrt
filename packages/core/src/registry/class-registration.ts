@@ -74,9 +74,25 @@ export function register(
     existing.constructor = ctor;
 
     if (existingKey !== nextKey) {
-      getClasses().delete(existingKey);
+      const classes = getClasses();
+      const existingAtNextKey = classes.get(nextKey);
+
+      if (existingAtNextKey && existingAtNextKey !== existing) {
+        throw new ConfigurationError(
+          `Class registry collision while promoting "${existingKey}" to "${nextKey}". ` +
+            'A different class is already registered under the target key.',
+          'CONFIG_REGISTRY_PROMOTION_COLLISION',
+          {
+            existingKey,
+            nextKey,
+            className: name,
+          },
+        );
+      }
+
+      classes.delete(existingKey);
       removeFromClassNameMap(oldName.toLowerCase(), existingKey);
-      getClasses().set(nextKey, existing);
+      classes.set(nextKey, existing);
       addToClassNameMap(name.toLowerCase(), nextKey);
     }
 
