@@ -53,6 +53,52 @@ export function register(
   config: SmartObjectConfig = {},
 ): void {
   const name = config.name || ctor.name;
+  const explicitPackageName = config.packageName;
+
+  function upsertExistingEntry(
+    existingKey: string,
+    existing: RegisteredClass,
+  ): string {
+    const nextPackageName = explicitPackageName || existing.packageName;
+    const nextKey = nextPackageName
+      ? createQualifiedName(nextPackageName, name)
+      : name;
+    const oldName = existing.name;
+
+    existing.name = name;
+    existing.packageName = nextPackageName;
+    existing.qualifiedName = nextPackageName
+      ? (createQualifiedName(nextPackageName, name) as QualifiedClassName)
+      : undefined;
+    existing.config = { ...existing.config, ...config };
+    existing.constructor = ctor;
+
+    if (existingKey !== nextKey) {
+      const classes = getClasses();
+      const existingAtNextKey = classes.get(nextKey);
+
+      if (existingAtNextKey && existingAtNextKey !== existing) {
+        throw new ConfigurationError(
+          `Class registry collision while promoting "${existingKey}" to "${nextKey}". ` +
+            'A different class is already registered under the target key.',
+          'CONFIG_REGISTRY_PROMOTION_COLLISION',
+          {
+            existingKey,
+            nextKey,
+            className: name,
+          },
+        );
+      }
+
+      classes.delete(existingKey);
+      removeFromClassNameMap(oldName.toLowerCase(), existingKey);
+      classes.set(nextKey, existing);
+      addToClassNameMap(name.toLowerCase(), nextKey);
+    }
+
+    getConstructorIndex().set(ctor, nextKey);
+    return nextKey;
+  }
 
   // Prevent duplicate registrations - check exact match first
   if (getClasses().has(name)) {
@@ -65,7 +111,8 @@ export function register(
 
     // Check if this is the exact same constructor (re-registration is OK)
     if (existing.constructor === ctor) {
-      return; // Same class, skip silently
+      upsertExistingEntry(name, existing);
+      return;
     }
 
     // Check if existing is a manifest stub that should be replaced by the real class
@@ -74,13 +121,7 @@ export function register(
     // 2. Test file imports the real class, triggering the @smrt() decorator
     // 3. The real class should replace the stub (same name, different constructor)
     if ((existing.constructor as any)._isManifestStub === true) {
-      // Replace stub with real class - update constructor and merge any decorator config
-      existing.constructor = ctor;
-      // Merge config from decorator (new) with manifest config (existing)
-      // Priority: decorator config wins over manifest config for explicit settings
-      existing.config = { ...existing.config, ...config };
-      // Index constructor for O(1) reverse lookups (Issue #713)
-      getConstructorIndex().set(ctor, name);
+      upsertExistingEntry(name, existing);
       verboseLog(`[registry] Replaced manifest stub with real class: ${name}`);
       return;
     }
@@ -92,14 +133,11 @@ export function register(
     // 2. Later, register.js imports the real class, triggering the @smrt() decorator
     // 3. The real class should replace the manifest-loaded entry
     // We detect this by checking if existing has packageName from an external package
-    const newPackageName = getPackageName(ctor, true);
+    const newPackageName = explicitPackageName || getPackageName(ctor, true);
     if (existing.packageName?.startsWith('@')) {
       // If the new class is from the same package, allow replacement
       if (newPackageName === existing.packageName) {
-        existing.constructor = ctor;
-        existing.config = { ...existing.config, ...config };
-        // Index constructor for O(1) reverse lookups (Issue #713)
-        getConstructorIndex().set(ctor, name);
+        upsertExistingEntry(name, existing);
         return;
       }
     }
@@ -123,10 +161,7 @@ export function register(
     // In bundled contexts, allow re-registration if the existing entry came from a manifest
     // (which means it's a known package class that the bundler duplicated)
     if (isBundledContext && existing.packageName?.startsWith('@')) {
-      existing.constructor = ctor;
-      existing.config = { ...existing.config, ...config };
-      // Index constructor for O(1) reverse lookups (Issue #713)
-      getConstructorIndex().set(ctor, name);
+      upsertExistingEntry(name, existing);
       return;
     }
 
@@ -141,10 +176,7 @@ export function register(
 
     if (sourceFilesMatch || cannotCompareSourceFiles) {
       // Same source file or can't compare = allow constructor update
-      existing.constructor = ctor;
-      existing.config = { ...existing.config, ...config };
-      // Index constructor for O(1) reverse lookups (Issue #713)
-      getConstructorIndex().set(ctor, name);
+      upsertExistingEntry(name, existing);
       return;
     }
 
@@ -154,9 +186,7 @@ export function register(
     try {
       if (ctor.prototype instanceof existing.constructor) {
         // New class extends existing — child wins
-        existing.constructor = ctor;
-        existing.config = { ...existing.config, ...config };
-        getConstructorIndex().set(ctor, name);
+        upsertExistingEntry(name, existing);
         verboseLog(
           `[registry] Subclass '${name}' from ${newPackageName || 'unknown'} replaced parent from ${existing.packageName || 'unknown'}`,
         );
@@ -203,28 +233,7 @@ export function register(
     if ((keyMatches || nameMatches) && existingKey !== name) {
       // Found case-insensitive match with different casing
       if ((existing.constructor as any)._isManifestStub === true) {
-        // Replace stub with real class
-        // Use the new PascalCase name as the canonical key
-        getClasses().delete(existingKey);
-        existing.constructor = ctor;
-        existing.name = name; // Update to PascalCase
-        // Merge config from decorator (new) with manifest config (existing)
-        existing.config = { ...existing.config, ...config };
-        // Issue #951: Compute qualified name for the new key
-        const newPkg = getPackageName(ctor, true) || existing.packageName;
-        const newKey = newPkg ? createQualifiedName(newPkg, name) : name;
-        existing.qualifiedName = newPkg
-          ? (createQualifiedName(newPkg, name) as any)
-          : undefined;
-        getClasses().set(newKey, existing);
-        // Update classNameMap: remove old, add new
-        removeFromClassNameMap(existingKey.toLowerCase(), existingKey);
-        if (existing.name.toLowerCase() !== existingKey.toLowerCase()) {
-          removeFromClassNameMap(existing.name.toLowerCase(), existingKey);
-        }
-        addToClassNameMap(name.toLowerCase(), newKey);
-        // Index constructor for O(1) reverse lookups (Issue #713)
-        getConstructorIndex().set(ctor, newKey);
+        const newKey = upsertExistingEntry(existingKey, existing);
         verboseLog(
           `[registry] Replaced manifest stub '${existingKey}' with real class '${name}' (key: ${newKey})`,
         );
@@ -233,7 +242,8 @@ export function register(
 
       // Non-stub case-insensitive collision - same constructor is OK
       if (existing.constructor === ctor) {
-        return; // Same class, skip silently
+        upsertExistingEntry(existingKey, existing);
+        return;
       }
 
       // Same package, different pnpm store copy — harmless duplicate
@@ -243,7 +253,7 @@ export function register(
       // Requirements: existing entry has a qualified key, same package, AND same class name
       // (case-sensitive). A case-insensitive-only match with different exact names indicates
       // genuinely different classes, not pnpm duplicates.
-      const newPackageName = getPackageName(ctor, true);
+      const newPackageName = explicitPackageName || getPackageName(ctor, true);
       if (
         isQualifiedName(existingKey) &&
         newPackageName &&
@@ -251,9 +261,7 @@ export function register(
         newPackageName === existing.packageName &&
         name === existing.name
       ) {
-        existing.constructor = ctor;
-        existing.config = { ...existing.config, ...config };
-        getConstructorIndex().set(ctor, existingKey);
+        upsertExistingEntry(existingKey, existing);
         return;
       }
 
@@ -272,9 +280,7 @@ export function register(
           newSourceFile.includes('.nuxt/'));
 
       if (isBundledContext && existing.packageName?.startsWith('@')) {
-        existing.constructor = ctor;
-        existing.config = { ...existing.config, ...config };
-        getConstructorIndex().set(ctor, existingKey);
+        upsertExistingEntry(existingKey, existing);
         return;
       }
 
@@ -290,44 +296,14 @@ export function register(
 
       if (sourceFilesMatch || cannotCompareSourceFiles) {
         // Same source file or can't compare = allow constructor update
-        const oldName = existing.name;
-        getClasses().delete(existingKey);
-        existing.constructor = ctor;
-        existing.name = name;
-        existing.config = { ...existing.config, ...config };
-        // Issue #951: Compute qualified key for re-registration
-        const reregPkg = getPackageName(ctor, true) || existing.packageName;
-        const reregKey = reregPkg ? createQualifiedName(reregPkg, name) : name;
-        existing.qualifiedName = reregPkg
-          ? (createQualifiedName(reregPkg, name) as any)
-          : undefined;
-        getClasses().set(reregKey, existing);
-        // Update classNameMap: remove old key reference, add new
-        removeFromClassNameMap(oldName.toLowerCase(), existingKey);
-        addToClassNameMap(name.toLowerCase(), reregKey);
-        // Index constructor for O(1) reverse lookups (Issue #713)
-        getConstructorIndex().set(ctor, reregKey);
+        upsertExistingEntry(existingKey, existing);
         return;
       }
 
       // Allow subclass to replace parent class (STI child-wins, case-insensitive)
       try {
         if (ctor.prototype instanceof existing.constructor) {
-          const oldName = existing.name;
-          getClasses().delete(existingKey);
-          existing.constructor = ctor;
-          existing.name = name;
-          existing.config = { ...existing.config, ...config };
-          // Issue #951: Compute qualified key for STI child-wins
-          const stiPkg = getPackageName(ctor, true) || existing.packageName;
-          const stiKey = stiPkg ? createQualifiedName(stiPkg, name) : name;
-          existing.qualifiedName = stiPkg
-            ? (createQualifiedName(stiPkg, name) as any)
-            : undefined;
-          getClasses().set(stiKey, existing);
-          removeFromClassNameMap(oldName.toLowerCase(), existingKey);
-          addToClassNameMap(name.toLowerCase(), stiKey);
-          getConstructorIndex().set(ctor, stiKey);
+          const stiKey = upsertExistingEntry(existingKey, existing);
           verboseLog(
             `[registry] Subclass '${name}' replaced parent '${existingKey}' (key: ${stiKey})`,
           );
@@ -364,7 +340,8 @@ export function register(
   // includes the external package file path. Later calls won't have this context.
   // Skip registry check to avoid circular dependency - class isn't registered yet!
   // This solves issue #159 where external package manifests couldn't be loaded.
-  const packageNameFromStack = getPackageName(ctor, true) || undefined;
+  const packageNameFromStack =
+    explicitPackageName || getPackageName(ctor, true) || undefined;
 
   // Capture source file path for collision detection during module re-evaluation
   // (Issue #555: Test isolation - class name collision during vitest collection)
@@ -452,6 +429,7 @@ export function register(
     // Use packageName from manifest if available, otherwise from stack trace
     // Priority: explicit manifest > manifestEntry > stack trace
     packageName =
+      explicitPackageName ||
       config._manifest?.packageName ||
       manifestEntry.packageName ||
       packageNameFromStack;

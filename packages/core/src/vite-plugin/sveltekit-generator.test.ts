@@ -163,6 +163,108 @@ describe('SvelteKit Route Generator', () => {
         'utf-8',
       );
     });
+
+    it('should generate smrt-register with explicit package registrations', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const manifest: SmartObjectManifest = {
+        packageName: '@test/app',
+        objects: {
+          LocalThing: {
+            className: 'LocalThing',
+            collection: 'localthings',
+            fields: {},
+            methods: {},
+            filePath: join(projectRoot, 'src/lib/objects/LocalThing.ts'),
+            decoratorConfig: { api: true },
+          },
+          '@test/pkg:ExternalThing': {
+            className: 'ExternalThing',
+            collection: 'externalthings',
+            fields: {},
+            methods: {},
+            packageName: '@test/pkg',
+            filePath: '/virtual/node_modules/@test/pkg/dist/ExternalThing.js',
+            decoratorConfig: { api: true },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const registrationCall = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().endsWith('src/lib/server/smrt-register.ts'),
+        );
+
+      expect(registrationCall).toBeDefined();
+      const registrationContent = registrationCall?.[1] as string;
+
+      expect(registrationContent).toContain(
+        "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+      );
+      expect(registrationContent).toContain(
+        'ObjectRegistry.register(LocalThing, { packageName: "@test/app" });',
+      );
+      expect(registrationContent).toContain(
+        'ObjectRegistry.register(ExternalThing, { packageName: "@test/pkg" });',
+      );
+    });
+
+    it('should fall back to object package metadata and skip empty re-registrations', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          LocalThing: {
+            className: 'LocalThing',
+            collection: 'localthings',
+            fields: {},
+            methods: {},
+            packageName: '@test/app',
+            filePath: join(projectRoot, 'src/lib/objects/LocalThing.ts'),
+            decoratorConfig: { api: true },
+          },
+          UnqualifiedThing: {
+            className: 'UnqualifiedThing',
+            collection: 'unqualifiedthings',
+            fields: {},
+            methods: {},
+            filePath: join(projectRoot, 'src/lib/objects/UnqualifiedThing.ts'),
+            decoratorConfig: { api: true },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const registrationCall = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().endsWith('src/lib/server/smrt-register.ts'),
+        );
+
+      expect(registrationCall).toBeDefined();
+      const registrationContent = registrationCall?.[1] as string;
+
+      expect(registrationContent).toContain(
+        'ObjectRegistry.register(LocalThing, { packageName: "@test/app" });',
+      );
+      expect(registrationContent).not.toContain(
+        'ObjectRegistry.register(UnqualifiedThing, {});',
+      );
+    });
   });
 
   describe('Route Template Generation', () => {

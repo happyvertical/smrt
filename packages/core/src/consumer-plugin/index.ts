@@ -402,7 +402,9 @@ async function generateRegistrationFile(
     // properly with its simple name and qualified name. We call register() again with
     // an empty config just to ensure the class is registered (in case it lacks a decorator).
     // Do NOT pass { name: qualifiedName } as that creates a separate registry entry.
-    registrations.push(`ObjectRegistry.register(${exportName}, {});`);
+    registrations.push(
+      `ObjectRegistry.register(${exportName}, { packageName: ${JSON.stringify(def.packageName)} });`,
+    );
 
     // Only register collection if it exists
     if (hasCollection && collectionExportName) {

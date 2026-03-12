@@ -38,6 +38,14 @@ export interface SmartObjectConfig {
   name?: string;
 
   /**
+   * Explicit package name for deterministic qualified registration.
+   *
+   * Build tools should prefer setting this instead of relying on runtime
+   * stack/package.json discovery, which can fail in bundled deployments.
+   */
+  packageName?: string;
+
+  /**
    * Custom table name for database storage (defaults to pluralized snake_case class name)
    * Explicitly setting this ensures the table name survives code minification
    */
