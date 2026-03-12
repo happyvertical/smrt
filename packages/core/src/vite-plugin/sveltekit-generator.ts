@@ -45,6 +45,18 @@ function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
   return objectDef.extends === 'SmrtCollection';
 }
 
+function getRegistrationPackageName(
+  manifest: SmartObjectManifest,
+  objectDef: SmartObjectDefinition,
+  isLocal: boolean,
+): string | undefined {
+  if (isLocal) {
+    return manifest.packageName;
+  }
+
+  return objectDef.packageName;
+}
+
 /**
  * Generates SvelteKit API routes from manifest
  */
@@ -145,18 +157,38 @@ async function generateRegistrationFile(
     .join('\n');
 
   const imports = [packageImports, localImports].filter(Boolean).join('\n');
+  const registrations = Object.entries(manifest.objects)
+    .map(([className, objectDef]) => {
+      const simpleClassName = extractSimpleClassName(className);
+      const localObject = isLocalObject(projectRoot, objectDef);
+      const packageName = getRegistrationPackageName(
+        manifest,
+        objectDef,
+        localObject,
+      );
+
+      if (!packageName) {
+        return `ObjectRegistry.register(${simpleClassName}, {});`;
+      }
+
+      return `ObjectRegistry.register(${simpleClassName}, { packageName: ${JSON.stringify(packageName)} });`;
+    })
+    .join('\n');
 
   const registrationContent = `/**
  * Auto-generated SMRT object registration
  * DO NOT EDIT - changes will be overwritten
  *
  * This file imports all SMRT objects to trigger their @smrt() decorators
- * and register them in the ObjectRegistry.
+ * and then upgrades them to deterministic qualified registrations.
  */
+
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 ${imports}
 
-// Objects are registered automatically when imported via @smrt() decorator
+// Re-register imported objects with explicit package names for bundled runtimes
+${registrations}
 `;
 
   // Create directory if it doesn't exist

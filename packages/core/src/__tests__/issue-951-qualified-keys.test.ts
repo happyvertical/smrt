@@ -229,6 +229,50 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     expect(entry?.name).toBe('QualifiedTestG');
   });
 
+  it('should promote a simple-key registration when packageName is provided later', () => {
+    class QualifiedTestH extends SmrtObject {}
+
+    ObjectRegistry.register(QualifiedTestH, { name: 'QualifiedTestH' });
+
+    let initialKey: string | undefined;
+    let entry: any;
+    // @ts-expect-error - accessing private property for verification
+    for (const [key, val] of ObjectRegistry.classes) {
+      if (val.name === 'QualifiedTestH') {
+        initialKey = key;
+        entry = val;
+        break;
+      }
+    }
+
+    expect(initialKey).toBeDefined();
+
+    // Force a simple-key starting point to simulate bundled runtimes that
+    // registered the class before an explicit package name was available.
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.delete(initialKey!);
+    entry.packageName = undefined;
+    entry.qualifiedName = undefined;
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.set('QualifiedTestH', entry);
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classNameMap.set('qualifiedtesth', ['QualifiedTestH']);
+
+    ObjectRegistry.register(QualifiedTestH, {
+      name: 'QualifiedTestH',
+      packageName: '@test/pkg',
+    });
+
+    const promoted = ObjectRegistry.getClassByQualifiedName(
+      '@test/pkg:QualifiedTestH' as any,
+    );
+    expect(promoted).toBeDefined();
+    expect(promoted?.constructor).toBe(QualifiedTestH);
+
+    // @ts-expect-error - accessing private property for verification
+    expect(ObjectRegistry.classes.has('QualifiedTestH')).toBe(false);
+  });
+
   it('should return correct simple names from getDescendants()', () => {
     @smrt({ tableStrategy: 'sti' })
     class QualifiedBase extends SmrtObject {
