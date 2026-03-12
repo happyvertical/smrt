@@ -33,22 +33,6 @@
     "typecheck": "tsc --noEmit",
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
-  "peerDependencies": {
-    "@happyvertical/smrt-profiles": "workspace:*",
-    "@happyvertical/smrt-svelte": "workspace:*",
-    "svelte": "^5.18.0"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-profiles": {
-      "optional": true
-    },
-    "@happyvertical/smrt-svelte": {
-      "optional": true
-    },
-    "svelte": {
-      "optional": true
-    }
-  },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*"

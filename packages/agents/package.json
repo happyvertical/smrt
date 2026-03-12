@@ -32,18 +32,6 @@
       "import": "./dist/svelte/index.js"
     }
   },
-  "peerDependencies": {
-    "@happyvertical/smrt-svelte": "workspace:*",
-    "svelte": "^5.18.0"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-svelte": {
-      "optional": true
-    },
-    "svelte": {
-      "optional": true
-    }
-  },
   "files": [
     "dist",
     "CLAUDE.md"

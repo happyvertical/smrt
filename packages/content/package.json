@@ -26,18 +26,6 @@
       "import": "./dist/svelte/index.js"
     }
   },
-  "peerDependencies": {
-    "@happyvertical/smrt-svelte": "workspace:*",
-    "svelte": "^5.18.0"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-svelte": {
-      "optional": true
-    },
-    "svelte": {
-      "optional": true
-    }
-  },
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
