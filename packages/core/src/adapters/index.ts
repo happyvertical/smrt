@@ -1,10 +1,13 @@
 /**
- * Built-in Signal Adapters
+ * Built-in Adapters & Usage Handlers
  *
- * Pre-built adapters for common observability and communication patterns:
- * - AiUsageCollector: Track normalized AI usage telemetry in memory
- * - MetricsAdapter: Track execution metrics (Prometheus-compatible)
- * - PubSubAdapter: Broadcast signals to subscribers (WebSocket/SSE)
+ * Pre-built components for common observability and communication patterns:
+ * - AiUsageCollector / AiUsagePersistenceHandler: AI usage handlers for
+ *   normalized telemetry collection and persistence
+ * - MetricsAdapter: Signal adapter for execution metrics
+ *   (Prometheus-compatible)
+ * - PubSubAdapter: Signal adapter to broadcast signals to subscribers
+ *   (WebSocket/SSE)
  */
 
 export type { AiUsageSnapshot, AiUsageStats } from '@happyvertical/smrt-types';

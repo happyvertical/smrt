@@ -2,10 +2,14 @@
  * Tests for AI usage cost estimation
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { estimateAiUsageCost } from './cost-rates.js';
 
 describe('estimateAiUsageCost', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('should estimate cost from default rates', () => {
     const cost = estimateAiUsageCost('openai', 'gpt-4o-mini', {
       promptTokens: 1000,
@@ -37,6 +41,8 @@ describe('estimateAiUsageCost', () => {
   });
 
   it('should return undefined for unknown models', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
     const cost = estimateAiUsageCost('openai', 'unknown-model', {
       promptTokens: 100,
       completionTokens: 100,
@@ -44,5 +50,26 @@ describe('estimateAiUsageCost', () => {
     });
 
     expect(cost).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[smrt] No AI usage cost rate configured for openai:unknown-model. ' +
+        'Cost estimation will be skipped for this model.',
+    );
+  });
+
+  it('should warn only once per unknown model', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    estimateAiUsageCost('openai', 'warn-once-model', {
+      promptTokens: 100,
+      completionTokens: 100,
+      totalTokens: 200,
+    });
+    estimateAiUsageCost('openai', 'warn-once-model', {
+      promptTokens: 150,
+      completionTokens: 50,
+      totalTokens: 200,
+    });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 });

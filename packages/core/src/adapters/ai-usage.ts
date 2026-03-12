@@ -99,24 +99,33 @@ export class AiUsagePersistenceHandler implements AiUsageHandler {
   constructor(private readonly db: DatabaseInterface) {}
 
   async handle(event: SmrtAiUsageEvent): Promise<void> {
-    await this.db.query(
-      `INSERT INTO _smrt_ai_usage
-        (id, provider, model, operation, prompt_tokens, completion_tokens,
-         total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      crypto.randomUUID(),
-      event.provider,
-      event.model,
-      event.operation,
-      event.usage?.promptTokens ?? null,
-      event.usage?.completionTokens ?? null,
-      event.usage?.totalTokens ?? null,
-      event.estimatedCost ?? null,
-      event.duration,
-      event.className ?? null,
-      event.tenantId ?? null,
-      event.tags ? JSON.stringify(event.tags) : null,
-      event.timestamp.toISOString(),
-    );
+    try {
+      await this.db.query(
+        `INSERT INTO _smrt_ai_usage
+          (id, provider, model, operation, prompt_tokens, completion_tokens,
+           total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        crypto.randomUUID(),
+        event.provider,
+        event.model,
+        event.operation,
+        event.usage?.promptTokens ?? null,
+        event.usage?.completionTokens ?? null,
+        event.usage?.totalTokens ?? null,
+        event.estimatedCost ?? null,
+        event.duration,
+        event.className ?? null,
+        event.tenantId ?? null,
+        event.tags ? JSON.stringify(event.tags) : null,
+        event.timestamp.toISOString(),
+      );
+    } catch (error) {
+      throw new Error(
+        `Failed to persist AI usage event for ${event.provider}:${event.model}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      );
+    }
   }
 }

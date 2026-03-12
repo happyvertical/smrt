@@ -39,7 +39,38 @@ interface ResolvedAiUsageConfig {
   handlers: AiUsageHandler[];
 }
 
-function normalizeAiUsageTokens(value: unknown): AiTokenUsage | undefined {
+type AiUsageFilterOptions = Pick<
+  AiUsageListOptions,
+  | 'since'
+  | 'until'
+  | 'provider'
+  | 'model'
+  | 'operation'
+  | 'className'
+  | 'tenantId'
+>;
+
+interface AiUsageWhereClause {
+  conditions: string[];
+  params: unknown[];
+  nextParamIndex: number;
+}
+
+function firstString(...candidates: unknown[]): string | undefined {
+  return candidates.find((candidate): candidate is string => {
+    return typeof candidate === 'string';
+  });
+}
+
+function firstNumber(...candidates: unknown[]): number | undefined {
+  return candidates.find((candidate): candidate is number => {
+    return typeof candidate === 'number';
+  });
+}
+
+function normalizeIncomingAiUsageTokens(
+  value: unknown,
+): AiTokenUsage | undefined {
   if (!value || typeof value !== 'object') {
     return undefined;
   }
@@ -63,6 +94,45 @@ function normalizeAiUsageTokens(value: unknown): AiTokenUsage | undefined {
       : promptTokens !== undefined || completionTokens !== undefined
         ? (promptTokens ?? 0) + (completionTokens ?? 0)
         : undefined;
+
+  if (
+    promptTokens === undefined &&
+    completionTokens === undefined &&
+    totalTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+  };
+}
+
+function hydratePersistedAiUsageTokens(row: {
+  prompt_tokens?: unknown;
+  completion_tokens?: unknown;
+  total_tokens?: unknown;
+}): AiTokenUsage | undefined {
+  const promptTokens =
+    typeof row.prompt_tokens === 'number'
+      ? row.prompt_tokens
+      : row.prompt_tokens === null || row.prompt_tokens === undefined
+        ? undefined
+        : Number(row.prompt_tokens);
+  const completionTokens =
+    typeof row.completion_tokens === 'number'
+      ? row.completion_tokens
+      : row.completion_tokens === null || row.completion_tokens === undefined
+        ? undefined
+        : Number(row.completion_tokens);
+  const totalTokens =
+    typeof row.total_tokens === 'number'
+      ? row.total_tokens
+      : row.total_tokens === null || row.total_tokens === undefined
+        ? undefined
+        : Number(row.total_tokens);
 
   if (
     promptTokens === undefined &&
@@ -128,6 +198,57 @@ function getQueryRows(
   return Array.isArray(result)
     ? (result as Record<string, unknown>[])
     : ((result as { rows?: Record<string, unknown>[] }).rows ?? []);
+}
+
+function buildAiUsageWhereClause(
+  options: AiUsageFilterOptions,
+): AiUsageWhereClause {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let nextParamIndex = 1;
+
+  if (options.since) {
+    conditions.push(`created_at >= $${nextParamIndex++}`);
+    params.push(options.since.toISOString());
+  }
+
+  if (options.until) {
+    conditions.push(`created_at <= $${nextParamIndex++}`);
+    params.push(options.until.toISOString());
+  }
+
+  if (options.provider) {
+    conditions.push(`provider = $${nextParamIndex++}`);
+    params.push(options.provider);
+  }
+
+  if (options.model) {
+    conditions.push(`model = $${nextParamIndex++}`);
+    params.push(options.model);
+  }
+
+  if (options.operation) {
+    conditions.push(`operation = $${nextParamIndex++}`);
+    params.push(options.operation);
+  }
+
+  if (options.className) {
+    conditions.push(`class_name = $${nextParamIndex++}`);
+    params.push(options.className);
+  }
+
+  if (options.tenantId === null) {
+    conditions.push(`tenant_id IS NULL`);
+  } else if (options.tenantId) {
+    conditions.push(`tenant_id = $${nextParamIndex++}`);
+    params.push(options.tenantId);
+  }
+
+  return {
+    conditions,
+    params,
+    nextParamIndex,
+  };
 }
 
 /**
@@ -457,13 +578,11 @@ export class SmrtClass {
           aiConfig.onUsage ??
           (userConfig as Record<string, unknown>).onUsage ??
           undefined;
-        aiConfig.onUsage = async (...args: unknown[]) => {
+        aiConfig.onUsage = async (event: unknown) => {
           if (typeof existingOnUsage === 'function') {
-            await (existingOnUsage as (...callbackArgs: unknown[]) => unknown)(
-              ...args,
-            );
+            await (existingOnUsage as (usageEvent: unknown) => unknown)(event);
           }
-          await this.handleAiUsageCallback(args[0], aiConfig, usageConfig);
+          await this.handleAiUsageCallback(event, aiConfig, usageConfig);
         };
 
         // Only initialize if we have a provider configured
@@ -530,7 +649,7 @@ export class SmrtClass {
         const rows = await this._db.query(
           `SELECT 1 FROM _smrt_migrations WHERE version = '${version}' LIMIT 1`,
         );
-        if (rows && (Array.isArray(rows) ? rows.length > 0 : true)) {
+        if (getQueryRows(rows).length > 0) {
           // System tables already at current version — skip DDL
           if (useInstanceTracking) {
             SmrtClass._systemTablesInitialized.add(this._db);
@@ -796,46 +915,8 @@ export class SmrtClass {
       );
     }
 
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    let paramIndex = 1;
-
-    if (options.since) {
-      conditions.push(`created_at >= $${paramIndex++}`);
-      params.push(options.since.toISOString());
-    }
-
-    if (options.until) {
-      conditions.push(`created_at <= $${paramIndex++}`);
-      params.push(options.until.toISOString());
-    }
-
-    if (options.provider) {
-      conditions.push(`provider = $${paramIndex++}`);
-      params.push(options.provider);
-    }
-
-    if (options.model) {
-      conditions.push(`model = $${paramIndex++}`);
-      params.push(options.model);
-    }
-
-    if (options.operation) {
-      conditions.push(`operation = $${paramIndex++}`);
-      params.push(options.operation);
-    }
-
-    if (options.className) {
-      conditions.push(`class_name = $${paramIndex++}`);
-      params.push(options.className);
-    }
-
-    if (options.tenantId === null) {
-      conditions.push(`tenant_id IS NULL`);
-    } else if (options.tenantId) {
-      conditions.push(`tenant_id = $${paramIndex++}`);
-      params.push(options.tenantId);
-    }
+    const { conditions, params } = buildAiUsageWhereClause(options);
+    let paramIndex = params.length + 1;
 
     let sql = 'SELECT * FROM _smrt_ai_usage';
     if (conditions.length > 0) {
@@ -863,11 +944,7 @@ export class SmrtClass {
       provider: String(row.provider),
       model: String(row.model),
       operation: String(row.operation),
-      usage: normalizeAiUsageTokens({
-        promptTokens: row.prompt_tokens,
-        completionTokens: row.completion_tokens,
-        totalTokens: row.total_tokens,
-      }),
+      usage: hydratePersistedAiUsageTokens(row),
       estimatedCost:
         row.estimated_cost === null || row.estimated_cost === undefined
           ? undefined
@@ -913,46 +990,7 @@ export class SmrtClass {
                 ? `operation`
                 : `substr(CAST(created_at AS TEXT), 1, 10)`;
 
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    let paramIndex = 1;
-
-    if (options.since) {
-      conditions.push(`created_at >= $${paramIndex++}`);
-      params.push(options.since.toISOString());
-    }
-
-    if (options.until) {
-      conditions.push(`created_at <= $${paramIndex++}`);
-      params.push(options.until.toISOString());
-    }
-
-    if (options.provider) {
-      conditions.push(`provider = $${paramIndex++}`);
-      params.push(options.provider);
-    }
-
-    if (options.model) {
-      conditions.push(`model = $${paramIndex++}`);
-      params.push(options.model);
-    }
-
-    if (options.operation) {
-      conditions.push(`operation = $${paramIndex++}`);
-      params.push(options.operation);
-    }
-
-    if (options.className) {
-      conditions.push(`class_name = $${paramIndex++}`);
-      params.push(options.className);
-    }
-
-    if (options.tenantId === null) {
-      conditions.push(`tenant_id IS NULL`);
-    } else if (options.tenantId) {
-      conditions.push(`tenant_id = $${paramIndex++}`);
-      params.push(options.tenantId);
-    }
+    const { conditions, params } = buildAiUsageWhereClause(options);
 
     let sql = `
       SELECT ${bucketExpression} AS bucket,
@@ -1023,6 +1061,11 @@ export class SmrtClass {
       }
       this._registeredAdapters = [];
     }
+
+    // TODO: If SmrtClass grows a broader async teardown lifecycle, move
+    // AI usage handler cleanup there alongside other connection-bound state.
+    this._aiUsageCollector = undefined;
+    this._aiUsageHandlers = [];
   }
 
   private mergeAiUsageConfig(
@@ -1088,9 +1131,21 @@ export class SmrtClass {
       );
     }
 
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       this._aiUsageHandlers.map((handler) => handler.handle(normalizedEvent)),
     );
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.warn(
+          `[smrt] AI usage handler failed for ${normalizedEvent.provider}:${normalizedEvent.model}: ${
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason)
+          }`,
+        );
+      }
+    }
   }
 
   private normalizeAiUsageEvent(
@@ -1098,38 +1153,24 @@ export class SmrtClass {
     aiConfig: Record<string, unknown>,
   ): SmrtAiUsageEvent | undefined {
     const raw = (event ?? {}) as Record<string, unknown>;
-    const provider =
-      typeof raw.provider === 'string'
-        ? raw.provider
-        : typeof raw.type === 'string'
-          ? raw.type
-          : typeof aiConfig.provider === 'string'
-            ? aiConfig.provider
-            : typeof aiConfig.type === 'string'
-              ? aiConfig.type
-              : undefined;
-    const model =
-      typeof raw.model === 'string'
-        ? raw.model
-        : typeof raw.defaultModel === 'string'
-          ? raw.defaultModel
-          : typeof aiConfig.model === 'string'
-            ? aiConfig.model
-            : typeof aiConfig.defaultModel === 'string'
-              ? aiConfig.defaultModel
-              : undefined;
+    const provider = firstString(
+      raw.provider,
+      raw.type,
+      aiConfig.provider,
+      aiConfig.type,
+    );
+    const model = firstString(
+      raw.model,
+      raw.defaultModel,
+      aiConfig.model,
+      aiConfig.defaultModel,
+    );
     const operation =
-      typeof raw.operation === 'string'
-        ? raw.operation
-        : typeof raw.kind === 'string'
-          ? raw.kind
-          : typeof raw.method === 'string'
-            ? raw.method
-            : 'unknown';
+      firstString(raw.operation, raw.kind, raw.method) ?? 'unknown';
     const usage =
-      normalizeAiUsageTokens(raw.usage) ??
-      normalizeAiUsageTokens(raw.tokenUsage) ??
-      normalizeAiUsageTokens({
+      normalizeIncomingAiUsageTokens(raw.usage) ??
+      normalizeIncomingAiUsageTokens(raw.tokenUsage) ??
+      normalizeIncomingAiUsageTokens({
         promptTokens: raw.promptTokens,
         completionTokens: raw.completionTokens,
         totalTokens: raw.totalTokens,
@@ -1140,13 +1181,7 @@ export class SmrtClass {
     }
 
     const duration =
-      typeof raw.duration === 'number'
-        ? raw.duration
-        : typeof raw.durationMs === 'number'
-          ? raw.durationMs
-          : typeof raw.latency === 'number'
-            ? raw.latency
-            : 0;
+      firstNumber(raw.duration, raw.durationMs, raw.latency) ?? 0;
     const tenantId =
       'tenantId' in this &&
       (this as { tenantId?: string | null }).tenantId !== undefined

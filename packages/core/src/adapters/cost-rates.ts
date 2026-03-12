@@ -1,10 +1,13 @@
 import type { AiTokenUsage } from '@happyvertical/smrt-types';
 
+const missingRateWarnings = new Set<string>();
+
 /**
  * Cost rates are expressed in USD per 1K tokens.
  *
  * These defaults are intentionally small and best-effort. Applications can
  * override them via configuration when they need stricter billing accuracy.
+ * Snapshot captured on 2026-03-12 from provider pricing pages.
  */
 export const DEFAULT_AI_COST_RATES: Record<
   string,
@@ -40,6 +43,14 @@ export function estimateAiUsageCost(
   const rate = rates[exactKey] ?? rates[fallbackKey];
 
   if (!rate) {
+    const warningKey = exactKey;
+    if (!missingRateWarnings.has(warningKey)) {
+      missingRateWarnings.add(warningKey);
+      console.warn(
+        `[smrt] No AI usage cost rate configured for ${warningKey}. ` +
+          `Cost estimation will be skipped for this model.`,
+      );
+    }
     return undefined;
   }
 

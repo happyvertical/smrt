@@ -42,6 +42,7 @@ describe('SmrtClass AI usage tracking', () => {
 
   afterEach(() => {
     config.reset();
+    vi.restoreAllMocks();
   });
 
   it('should wire onUsage into getAI and collect normalized usage', async () => {
@@ -162,5 +163,41 @@ describe('SmrtClass AI usage tracking', () => {
 
     expect(instance.getAiUsageSnapshot()).toBeUndefined();
     expect(handler.handle).not.toHaveBeenCalled();
+  });
+
+  it('should warn when an AI usage handler fails', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const handler = {
+      handle: vi.fn().mockRejectedValue(new Error('handler exploded')),
+    };
+    const instance = new TestSmrtClass({
+      ai: {
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+      } as any,
+      usage: {
+        handlers: [handler],
+      },
+    });
+
+    await instance.init();
+
+    const aiConfig = getAIMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    await (aiConfig.onUsage as (event: unknown) => Promise<void>)({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      operation: 'chat',
+      usage: {
+        promptTokens: 10,
+        completionTokens: 10,
+        totalTokens: 20,
+      },
+      duration: 50,
+      timestamp: new Date('2026-03-12T02:30:00.000Z'),
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[smrt] AI usage handler failed for openai:gpt-4o-mini: handler exploded',
+    );
   });
 });
