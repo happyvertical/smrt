@@ -158,6 +158,7 @@ describe('SmrtClass', () => {
       `;
 
       const tableNames = tables.map((row: any) => row.name);
+      expect(tableNames).toContain('_smrt_ai_usage');
       expect(tableNames).toContain('_smrt_contexts');
       expect(tableNames).toContain('_smrt_migrations');
       expect(tableNames).toContain('_smrt_registry');
@@ -188,6 +189,7 @@ describe('SmrtClass', () => {
       `;
 
       const tableNames = tables.map((row: any) => row.table_name);
+      expect(tableNames).toContain('_smrt_ai_usage');
       expect(tableNames).toContain('_smrt_contexts');
       expect(tableNames).toContain('_smrt_migrations');
       expect(tableNames).toContain('_smrt_registry');

@@ -20,6 +20,7 @@ export * from './adapters/index';
 export * from './class';
 export * from './collection';
 export type {
+  AiUsageConfig,
   GlobalSignalConfig,
   MetricsConfig,
   PubSubConfig,

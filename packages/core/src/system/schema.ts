@@ -231,6 +231,40 @@ CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_enabled
 `;
 
 /**
+ * AI usage telemetry storage
+ * Stores normalized AI usage records for reporting and billing hooks
+ */
+export const CREATE_SMRT_AI_USAGE_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  prompt_tokens INTEGER,
+  completion_tokens INTEGER,
+  total_tokens INTEGER,
+  estimated_cost REAL,
+  duration INTEGER NOT NULL,
+  class_name TEXT,
+  tenant_id TEXT,
+  tags TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_created
+  ON _smrt_ai_usage(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_class
+  ON _smrt_ai_usage(class_name);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_tenant
+  ON _smrt_ai_usage(tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_provider_model
+  ON _smrt_ai_usage(provider, model);
+`;
+
+/**
  * All system table creation statements
  */
 export const ALL_SYSTEM_TABLES = [
@@ -242,9 +276,10 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_EMBEDDINGS_TABLE,
   CREATE_SMRT_DISPATCH_TABLE,
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
+  CREATE_SMRT_AI_USAGE_TABLE,
 ];
 
 /**
  * Current SMRT system schema version
  */
-export const SMRT_SCHEMA_VERSION = '1.2.0';
+export const SMRT_SCHEMA_VERSION = '1.3.0';
