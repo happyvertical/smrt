@@ -516,11 +516,12 @@ export default testManifest;
 
       console.log(`[smrt] Using experimental OXC scanner for faster builds`);
 
-      // Create scanner with options
+      // Create scanner with options. Always exclude .svelte files as OXC barfs on <style> tags
+      const safeExclude = [...(exclude || []), '**/*.svelte'];
       const scanner = new OxcScanner({
         cwd: rootDir,
         include,
-        exclude,
+        exclude: safeExclude,
       });
 
       // Scan and resolve inheritance

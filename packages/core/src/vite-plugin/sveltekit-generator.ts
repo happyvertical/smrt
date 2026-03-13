@@ -135,14 +135,29 @@ async function generateRegistrationFile(
   const localImports = localObjects
     .map(([className, objectDef]) => {
       const simpleClassName = extractSimpleClassName(className);
-      const importPath = getSvelteKitImportPath(
-        projectRoot,
-        objectDef.filePath,
-        options.objectsDir,
-        simpleClassName,
-      );
-      const actualClassName = importPath.split('/').pop() || simpleClassName;
-      return `import { ${actualClassName} } from '${importPath}';`;
+
+      // Calculate direct relative path from the configDir where smrt-register.ts lives
+      // to the actual source file of the object.
+      let importPath = '';
+      if (objectDef.filePath) {
+        const relativeToConfig = relative(configDir, objectDef.filePath);
+        const normalized = relativeToConfig
+          .replace(/\\/g, '/')
+          .replace(/\.(ts|js|tsx|jsx)$/, '');
+        importPath = normalized.startsWith('.')
+          ? normalized
+          : `./${normalized}`;
+      } else {
+        // Fallback for missing file paths
+        importPath = getSvelteKitImportPath(
+          projectRoot,
+          undefined,
+          options.objectsDir,
+          simpleClassName,
+        );
+      }
+
+      return `import { ${simpleClassName} } from '${importPath}';`;
     })
     .join('\n');
 
@@ -668,7 +683,7 @@ ${importStatement}
     ? `
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<${simpleClassName}>('${className}');
+  const collection = await getCollection<any>('${className}');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '${className} not found');
 
@@ -681,7 +696,7 @@ export const GET: RequestHandler = async ({ params }) => {
     ? `
 // Update ${simpleClassName.toLowerCase()}
 export const PUT: RequestHandler = async ({ params, request }) => {
-  const collection = await getCollection<${simpleClassName}>('${className}');
+  const collection = await getCollection<any>('${className}');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '${className} not found');
 
@@ -698,7 +713,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
     ? `
 // Delete ${simpleClassName.toLowerCase()}
 export const DELETE: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<${simpleClassName}>('${className}');
+  const collection = await getCollection<any>('${className}');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '${className} not found');
 
@@ -741,7 +756,7 @@ ${importStatement}
 
 // Custom action: ${actionName}
 export const POST: RequestHandler = async ({ params, request }) => {
-  const collection = await getCollection<${simpleClassName}>('${className}');
+  const collection = await getCollection<any>('${className}');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '${className} not found');
 

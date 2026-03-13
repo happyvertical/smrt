@@ -90,8 +90,9 @@ export class ImageCollection extends SmrtCollection<Image> {
    * @returns Array of landscape-oriented images
    */
   async getLandscape(): Promise<Image[]> {
-    const images = (await this.list({})) as Image[];
-    return images.filter((img) => img.isLandscape);
+    return (await this.query(
+      `SELECT * FROM ${this.tableName} WHERE width > height`,
+    )) as Image[];
   }
 
   /**
@@ -100,8 +101,9 @@ export class ImageCollection extends SmrtCollection<Image> {
    * @returns Array of portrait-oriented images
    */
   async getPortrait(): Promise<Image[]> {
-    const images = (await this.list({})) as Image[];
-    return images.filter((img) => img.isPortrait);
+    return (await this.query(
+      `SELECT * FROM ${this.tableName} WHERE height > width`,
+    )) as Image[];
   }
 
   /**
@@ -110,8 +112,9 @@ export class ImageCollection extends SmrtCollection<Image> {
    * @returns Array of square images
    */
   async getSquare(): Promise<Image[]> {
-    const images = (await this.list({})) as Image[];
-    return images.filter((img) => img.isSquare);
+    return (await this.query(
+      `SELECT * FROM ${this.tableName} WHERE width = height AND width > 0`,
+    )) as Image[];
   }
 
   /**
@@ -131,8 +134,9 @@ export class ImageCollection extends SmrtCollection<Image> {
    * @returns Array of high resolution images
    */
   async getHighResolution(): Promise<Image[]> {
-    const images = (await this.list({})) as Image[];
-    return images.filter((img) => img.isHighResolution());
+    return (await this.query(
+      `SELECT * FROM ${this.tableName} WHERE width >= 3840 OR height >= 2160`,
+    )) as Image[];
   }
 
   /**
@@ -143,10 +147,13 @@ export class ImageCollection extends SmrtCollection<Image> {
    * @returns Array of images within the aspect ratio range
    */
   async getByAspectRatio(minRatio: number, maxRatio: number): Promise<Image[]> {
-    const images = (await this.list({})) as Image[];
-    return images.filter((img) => {
-      const ratio = img.aspectRatio;
-      return ratio >= minRatio && ratio <= maxRatio;
-    });
+    // Use computed ratio in SQL: (CAST(width AS REAL) / NULLIF(height, 0))
+    return (await this.query(
+      `SELECT * FROM ${this.tableName}
+       WHERE height > 0
+         AND (CAST(width AS REAL) / height) >= ?
+         AND (CAST(width AS REAL) / height) <= ?`,
+      [minRatio, maxRatio],
+    )) as Image[];
   }
 }

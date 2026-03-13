@@ -52,6 +52,7 @@ export default defineConfig({
       '@happyvertical/smrt-svelte',
       '@happyvertical/smrt-users',
       '@happyvertical/smrt-commerce',
+      '@happyvertical/smrt-images',
     ],
   },
   build: {
