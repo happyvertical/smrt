@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-cli",
-  "version": "0.20.53",
+  "version": "0.20.54",
   "description": "Developer CLI for SMRT framework - introspection, testing, and project management",
   "type": "module",
   "main": "./dist/index.js",
