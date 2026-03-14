@@ -166,119 +166,246 @@ function handleExternalSubmit() {
   onSelect(externalUrl);
 }
 
+// --- Gallery Confirmation + Variation ---
+
+let selectedImage: Image | null = $state(null);
+let showVariation = $state(false);
+let variationPrompt = $state('');
+let isGenerating = $state(false);
+let variationError: string | null = $state(null);
+
+function handleGalleryPick(image: Image) {
+  selectedImage = image;
+  showVariation = false;
+  variationPrompt = '';
+  variationError = null;
+}
+
+function handleConfirmOriginal() {
+  if (!selectedImage) return;
+  onSelect(selectedImage);
+  selectedImage = null;
+}
+
+function handleBackToChooser() {
+  selectedImage = null;
+  showVariation = false;
+  variationPrompt = '';
+  variationError = null;
+}
+
+async function handleGenerateVariation() {
+  if (!selectedImage || !variationPrompt.trim()) return;
+  isGenerating = true;
+  variationError = null;
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/images/${selectedImage.id}/edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: variationPrompt }),
+    });
+
+    if (!res.ok) {
+      let errText = await res.text();
+      if (errText.trim().startsWith('<'))
+        errText = `Server returned ${res.status} ${res.statusText}`;
+      throw new Error(errText);
+    }
+
+    const data = await res.json();
+    onSelect(data.image);
+    selectedImage = null;
+  } catch (e: any) {
+    variationError = e.message || 'Failed to generate variation';
+  } finally {
+    isGenerating = false;
+  }
+}
+
 onDestroy(() => {
   stopCamera();
 });
 </script>
 
 <div class="smrt-image-uploader">
-  <div class="header">
-    <h3>Choose Image</h3>
-    {#if onCancel}
-      <button class="close-btn" onclick={onCancel}>×</button>
-    {/if}
-  </div>
-  
-  <div class="tabs">
-    {#if allowedTabs.includes('gallery')}
-      <button class:active={activeTab === 'gallery'} onclick={() => activeTab = 'gallery'}>Gallery</button>
-    {/if}
-    {#if allowedTabs.includes('upload')}
-      <button class:active={activeTab === 'upload'} onclick={() => activeTab = 'upload'}>Upload</button>
-    {/if}
-    {#if allowedTabs.includes('camera')}
-      <button class:active={activeTab === 'camera'} onclick={() => activeTab = 'camera'}>Camera</button>
-    {/if}
-    {#if allowedTabs.includes('external')}
-      <button class:active={activeTab === 'external'} onclick={() => activeTab = 'external'}>External URL</button>
-    {/if}
-  </div>
-  
-  <div class="tab-content">
-    
-    {#if activeTab === 'gallery'}
-      <div class="gallery-wrapper">
-        <AssetsGallery {apiBaseUrl} {onSelect} />
-      </div>
+  {#if selectedImage}
+    <!-- Gallery Confirmation Step -->
+    <div class="header">
+      <button class="back-btn" onclick={handleBackToChooser}>
+        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        Back
+      </button>
+      {#if onCancel}
+        <button class="close-btn" onclick={onCancel}>×</button>
+      {/if}
+    </div>
+
+    <div class="confirm-panel">
+      <div class="confirm-preview" style="background-image: url({selectedImage.url})"></div>
       
-    {:else if activeTab === 'upload'}
-      <div 
-        class="upload-area" 
-        class:dragging={isDragging}
-        ondragover={handleDragOver}
-        ondragleave={handleDragLeave}
-        ondrop={handleDrop}
-        onclick={() => uploadInput?.click()}
-        onkeydown={(e) => e.key === 'Enter' && uploadInput?.click()}
-        tabindex="0"
-        role="button"
-      >
-        <div class="upload-icon">
-          <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
+      <div class="confirm-info">
+        <span class="confirm-name">{selectedImage.name}</span>
+        <span class="confirm-meta">{selectedImage.width}×{selectedImage.height} · {selectedImage.mimeType}</span>
+      </div>
+
+      <div class="confirm-actions">
+        <button class="primary-btn" onclick={handleConfirmOriginal}>
+          Use Original
+        </button>
+        <button 
+          class="variation-toggle" 
+          class:active={showVariation}
+          onclick={() => showVariation = !showVariation}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
           </svg>
-        </div>
-        <p>Drag and drop an image here</p>
-        <span class="divider">or</span>
-        <button class="browse-btn">Browse Files</button>
-        <input 
-          type="file" 
-          accept="image/*" 
-          bind:this={uploadInput} 
-          onchange={handleFileSelect} 
-          style="display: none;" 
-        />
-        {#if uploadError}
-          <p class="error">{uploadError}</p>
-        {/if}
+          Create Variation
+        </button>
       </div>
-      
-    {:else if activeTab === 'camera'}
-      <div class="camera-area">
-        {#if cameraError}
-          <div class="error-panel">
-            <p>{cameraError}</p>
-            <button onclick={startCamera}>Try Again</button>
-          </div>
-        {:else}
-          <div class="video-container">
-            <!-- svelte-ignore a11y_media_has_caption -->
-            <video bind:this={videoElement} autoplay playsinline></video>
-            {#if !isCameraActive}
-              <div class="loading-overlay">Starting camera...</div>
-            {/if}
-          </div>
-          <button class="capture-btn" disabled={!isCameraActive} onclick={takePicture}>
-            Take Picture
-          </button>
-          <canvas bind:this={canvasElement} style="display: none;"></canvas>
-        {/if}
-      </div>
-      
-    {:else if activeTab === 'external'}
-      <div class="external-area">
-        <p class="hint">Enter a direct URL to an image or a supported provider link.</p>
-        <div class="input-group">
-          <input 
-            type="url" 
-            bind:value={externalUrl} 
-            placeholder="https://example.com/image.jpg"
-            onkeydown={(e) => e.key === 'Enter' && handleExternalSubmit()}
-          />
+
+      {#if showVariation}
+        <div class="variation-form">
+          <p class="variation-hint">Describe how this image should be changed. A new derivative will be created from the original.</p>
+          <textarea 
+            bind:value={variationPrompt} 
+            placeholder="e.g. Change the sky to show heavy rain and overcast clouds..."
+            rows="3"
+            disabled={isGenerating}
+          ></textarea>
+          {#if variationError}
+            <div class="variation-error">{variationError}</div>
+          {/if}
           <button 
-            class="submit-btn" 
-            disabled={!externalUrl.trim()} 
-            onclick={handleExternalSubmit}
+            class="generate-btn"
+            disabled={isGenerating || !variationPrompt.trim()} 
+            onclick={handleGenerateVariation}
           >
-            Add
+            {#if isGenerating}
+              <span class="spinner"></span>
+              Generating…
+            {:else}
+              Generate Variation
+            {/if}
           </button>
         </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
+
+  {:else}
+    <!-- Normal Chooser -->
+    <div class="header">
+      <h3>Choose Image</h3>
+      {#if onCancel}
+        <button class="close-btn" onclick={onCancel}>×</button>
+      {/if}
+    </div>
     
-  </div>
+    <div class="tabs">
+      {#if allowedTabs.includes('gallery')}
+        <button class:active={activeTab === 'gallery'} onclick={() => activeTab = 'gallery'}>Gallery</button>
+      {/if}
+      {#if allowedTabs.includes('upload')}
+        <button class:active={activeTab === 'upload'} onclick={() => activeTab = 'upload'}>Upload</button>
+      {/if}
+      {#if allowedTabs.includes('camera')}
+        <button class:active={activeTab === 'camera'} onclick={() => activeTab = 'camera'}>Camera</button>
+      {/if}
+      {#if allowedTabs.includes('external')}
+        <button class:active={activeTab === 'external'} onclick={() => activeTab = 'external'}>External URL</button>
+      {/if}
+    </div>
+    
+    <div class="tab-content">
+      
+      {#if activeTab === 'gallery'}
+        <div class="gallery-wrapper">
+          <AssetsGallery {apiBaseUrl} onSelect={handleGalleryPick} />
+        </div>
+        
+      {:else if activeTab === 'upload'}
+        <div 
+          class="upload-area" 
+          class:dragging={isDragging}
+          ondragover={handleDragOver}
+          ondragleave={handleDragLeave}
+          ondrop={handleDrop}
+          onclick={() => uploadInput?.click()}
+          onkeydown={(e) => e.key === 'Enter' && uploadInput?.click()}
+          tabindex="0"
+          role="button"
+        >
+          <div class="upload-icon">
+            <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </div>
+          <p>Drag and drop an image here</p>
+          <span class="divider">or</span>
+          <button class="browse-btn">Browse Files</button>
+          <input 
+            type="file" 
+            accept="image/*" 
+            bind:this={uploadInput} 
+            onchange={handleFileSelect} 
+            style="display: none;" 
+          />
+          {#if uploadError}
+            <p class="error">{uploadError}</p>
+          {/if}
+        </div>
+        
+      {:else if activeTab === 'camera'}
+        <div class="camera-area">
+          {#if cameraError}
+            <div class="error-panel">
+              <p>{cameraError}</p>
+              <button onclick={startCamera}>Try Again</button>
+            </div>
+          {:else}
+            <div class="video-container">
+              <!-- svelte-ignore a11y_media_has_caption -->
+              <video bind:this={videoElement} autoplay playsinline></video>
+              {#if !isCameraActive}
+                <div class="loading-overlay">Starting camera...</div>
+              {/if}
+            </div>
+            <button class="capture-btn" disabled={!isCameraActive} onclick={takePicture}>
+              Take Picture
+            </button>
+            <canvas bind:this={canvasElement} style="display: none;"></canvas>
+          {/if}
+        </div>
+        
+      {:else if activeTab === 'external'}
+        <div class="external-area">
+          <p class="hint">Enter a direct URL to an image or a supported provider link.</p>
+          <div class="input-group">
+            <input 
+              type="url" 
+              bind:value={externalUrl} 
+              placeholder="https://example.com/image.jpg"
+              onkeydown={(e) => e.key === 'Enter' && handleExternalSubmit()}
+            />
+            <button 
+              class="submit-btn" 
+              disabled={!externalUrl.trim()} 
+              onclick={handleExternalSubmit}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      {/if}
+      
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -558,5 +685,193 @@ onDestroy(() => {
     background: var(--smrt-color-surface-container-highest, #333);
     color: var(--smrt-color-outline, #666);
     cursor: not-allowed;
+  }
+
+  /* --- Back Button --- */
+  .back-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: transparent;
+    border: none;
+    color: var(--smrt-color-primary, #3b82f6);
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--smrt-radius-sm, 4px);
+    transition: background 0.15s;
+  }
+
+  .back-btn:hover {
+    background: rgba(59, 130, 246, 0.08);
+  }
+
+  /* --- Confirmation Panel --- */
+  .confirm-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.5rem;
+    overflow-y: auto;
+  }
+
+  .confirm-preview {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: var(--smrt-color-surface-container-high, #242424);
+    border-radius: var(--smrt-radius-md, 6px);
+    border: 1px solid var(--smrt-color-outline-variant, #333);
+  }
+
+  .confirm-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .confirm-name {
+    font-weight: 500;
+    font-size: 1.05rem;
+  }
+
+  .confirm-meta {
+    font-size: 0.85rem;
+    color: var(--smrt-color-outline, #888);
+  }
+
+  .confirm-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .primary-btn {
+    background: var(--smrt-color-primary, #3b82f6);
+    color: white;
+    border: none;
+    padding: 0.65rem 1.5rem;
+    border-radius: 999px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: filter 0.15s;
+  }
+
+  .primary-btn:hover {
+    filter: brightness(1.1);
+  }
+
+  .variation-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--smrt-color-surface-container-highest, #333);
+    color: var(--smrt-color-on-surface-variant, #ccc);
+    border: 1px solid var(--smrt-color-outline-variant, #444);
+    padding: 0.65rem 1.25rem;
+    border-radius: 999px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .variation-toggle:hover {
+    background: var(--smrt-color-surface-container-high, #3f3f3f);
+  }
+
+  .variation-toggle.active {
+    color: var(--smrt-color-primary, #3b82f6);
+    border-color: var(--smrt-color-primary, #3b82f6);
+    background: rgba(59, 130, 246, 0.08);
+  }
+
+  /* --- Variation Form --- */
+  .variation-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1.25rem;
+    background: var(--smrt-color-surface-container-high, #242424);
+    border-radius: var(--smrt-radius-md, 6px);
+    border: 1px solid var(--smrt-color-outline-variant, #333);
+  }
+
+  .variation-hint {
+    font-size: 0.85rem;
+    color: var(--smrt-color-outline, #888);
+    margin: 0;
+  }
+
+  .variation-form textarea {
+    width: 100%;
+    padding: 0.75rem;
+    background: var(--smrt-color-surface-container, #1a1a1a);
+    border: 1px solid var(--smrt-color-outline-variant, #444);
+    border-radius: var(--smrt-radius-sm, 4px);
+    color: inherit;
+    font-family: inherit;
+    font-size: 0.95rem;
+    resize: vertical;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .variation-form textarea:focus {
+    outline: none;
+    border-color: var(--smrt-color-primary, #3b82f6);
+    box-shadow: inset 0 0 0 1px var(--smrt-color-primary, #3b82f6);
+  }
+
+  .variation-form textarea:disabled {
+    opacity: 0.6;
+  }
+
+  .variation-error {
+    color: var(--smrt-color-error, #ef4444);
+    background: rgba(239, 68, 68, 0.1);
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--smrt-radius-sm, 4px);
+    font-size: 0.85rem;
+  }
+
+  .generate-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    align-self: flex-start;
+    background: var(--smrt-color-primary, #3b82f6);
+    color: white;
+    border: none;
+    padding: 0.65rem 1.5rem;
+    border-radius: 999px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: filter 0.15s, opacity 0.15s;
+  }
+
+  .generate-btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .generate-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255 ,255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
   }
 </style>

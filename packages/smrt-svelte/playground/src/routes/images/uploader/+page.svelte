@@ -28,7 +28,7 @@ function handleSelect(result: any) {
 <div class="page-container">
   <div class="content-header">
     <h1>Image Uploader Component</h1>
-    <p>A versatile component for choosing images via gallery, file upload, camera, or external URL.</p>
+    <p>Choose images via gallery, upload, camera, or external URL. Gallery selections include a confirmation step with an optional AI variation prompt.</p>
   </div>
 
   <div class="demo-section">
