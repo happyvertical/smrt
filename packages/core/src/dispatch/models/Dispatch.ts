@@ -23,6 +23,7 @@ export interface DispatchData {
   processed_at: string | null;
   processed_by: string | null;
   target_subscriber: string | null;
+  correlation_id: string | null;
   metadata: string | null;
   created_at: string;
   updated_at: string;
@@ -68,6 +69,9 @@ export class Dispatch {
   /** Target subscriber for fan-out delivery (null for compete mode) */
   targetSubscriber: string | null;
 
+  /** Correlation ID for linking request/response dispatch pairs */
+  correlationId: string;
+
   /** Additional metadata */
   metadata: Record<string, unknown>;
 
@@ -87,6 +91,7 @@ export class Dispatch {
     this.lastError = data.last_error || '';
     this.processedBy = data.processed_by || '';
     this.targetSubscriber = data.target_subscriber || null;
+    this.correlationId = data.correlation_id || '';
     this.createdAt = data.created_at ? new Date(data.created_at) : new Date();
     this.updatedAt = data.updated_at ? new Date(data.updated_at) : new Date();
     this.processedAt = data.processed_at ? new Date(data.processed_at) : null;
@@ -119,6 +124,7 @@ export class Dispatch {
       processed_at: this.processedAt?.toISOString() || null,
       processed_by: this.processedBy || null,
       target_subscriber: this.targetSubscriber || null,
+      correlation_id: this.correlationId || null,
       metadata: JSON.stringify(this.metadata),
       created_at: this.createdAt.toISOString(),
       updated_at: new Date().toISOString(),
@@ -134,6 +140,7 @@ export class Dispatch {
       type: this.type,
       source: this.source,
       sourceId: this.sourceId,
+      correlationId: this.correlationId,
       createdAt: this.createdAt,
       attempts: this.attempts,
       metadata: this.metadata,

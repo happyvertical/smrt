@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS _smrt_dispatch (
   processed_at TIMESTAMP,
   processed_by TEXT,
   target_subscriber TEXT,
+  correlation_id TEXT,
   metadata TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -201,6 +202,9 @@ CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_created
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_target
   ON _smrt_dispatch(target_subscriber);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_correlation
+  ON _smrt_dispatch(correlation_id);
 `;
 
 /**

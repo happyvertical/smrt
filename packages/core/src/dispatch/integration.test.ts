@@ -266,4 +266,57 @@ describe('Agent-to-Agent Communication', () => {
       environment: 'test',
     });
   });
+
+  it('should support correlationId for request/response linking', async () => {
+    const correlationId = 'corr-req-001';
+
+    // Histrio subscribes to video requests
+    await bus.subscribe({
+      signalType: 'histrio.request',
+      subscriber: 'Histrio',
+    });
+
+    // Praeco subscribes to video completions (fanout so multiple agents can react)
+    await bus.subscribe({
+      signalType: 'histrio.completed',
+      subscriber: 'Praeco',
+      delivery: 'fanout',
+    });
+
+    // 1. Praeco emits a video request with a correlationId
+    const request = await bus.emit(
+      'histrio.request',
+      { contentId: 'article-42', script: 'Today the council approved...' },
+      { source: 'Praeco', correlationId },
+    );
+
+    expect(request.correlationId).toBe(correlationId);
+
+    // 2. Histrio processes the request and sees the correlationId in metadata
+    let receivedCorrelationId = '';
+    await bus.process('Histrio', async (_payload, metadata) => {
+      receivedCorrelationId = metadata.correlationId;
+    });
+
+    expect(receivedCorrelationId).toBe(correlationId);
+
+    // 3. Histrio emits a completion with the same correlationId
+    await bus.emit(
+      'histrio.completed',
+      { contentId: 'article-42', videoAssetId: 'video-99' },
+      { source: 'Histrio', correlationId },
+    );
+
+    // 4. Query by correlationId to find both request and response
+    const correlated = await bus.list({ correlationId });
+    expect(correlated).toHaveLength(2);
+
+    const types = correlated.map((d) => d.type).sort();
+    expect(types).toEqual(['histrio.completed', 'histrio.request']);
+
+    // All dispatches share the same correlationId
+    for (const d of correlated) {
+      expect(d.correlationId).toBe(correlationId);
+    }
+  });
 });

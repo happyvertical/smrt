@@ -132,6 +132,8 @@ export class DispatchBus {
         'target_subscriber',
         'TEXT',
       );
+      // Migrate existing tables: add correlation_id column (v1.3.1)
+      await this.addColumnIfMissing('_smrt_dispatch', 'correlation_id', 'TEXT');
     }
 
     const subsExists = await DispatchSubscriptionCollection.tableExists(
@@ -241,6 +243,7 @@ export class DispatchBus {
       payload: JSON.stringify(payload || {}),
       metadata: JSON.stringify(options.metadata || {}),
       status: 'pending',
+      correlation_id: options.correlationId || null,
     });
 
     // Track first persisted dispatch to return to caller
@@ -256,6 +259,7 @@ export class DispatchBus {
         metadata: JSON.stringify(options.metadata || {}),
         status: 'pending',
         target_subscriber: sub.subscriber,
+        correlation_id: options.correlationId || null,
       });
       await DispatchCollection.insert(this.db, fanoutDispatch);
       // If no compete dispatch will be persisted, return the first fanout copy
