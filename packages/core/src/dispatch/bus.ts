@@ -134,6 +134,12 @@ export class DispatchBus {
       );
       // Migrate existing tables: add correlation_id column (v1.3.1)
       await this.addColumnIfMissing('_smrt_dispatch', 'correlation_id', 'TEXT');
+      // Ensure index exists for correlation_id lookups
+      await this.addIndexIfMissing(
+        'idx_smrt_dispatch_correlation',
+        '_smrt_dispatch',
+        'correlation_id',
+      );
     }
 
     const subsExists = await DispatchSubscriptionCollection.tableExists(
@@ -174,6 +180,20 @@ export class DispatchBus {
     } catch {
       // Column already exists — safe to ignore
     }
+  }
+
+  /**
+   * Create an index if it doesn't already exist.
+   * Uses CREATE INDEX IF NOT EXISTS which is safe for both SQLite and Postgres.
+   */
+  private async addIndexIfMissing(
+    indexName: string,
+    table: string,
+    column: string,
+  ): Promise<void> {
+    await this.db.query(
+      `CREATE INDEX IF NOT EXISTS ${indexName} ON ${table}(${column})`,
+    );
   }
 
   /**

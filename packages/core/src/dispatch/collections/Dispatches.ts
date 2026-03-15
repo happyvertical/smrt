@@ -126,7 +126,7 @@ export class DispatchCollection {
       params.push(options.targetSubscriber);
     }
 
-    if (options.correlationId) {
+    if (options.correlationId !== undefined) {
       conditions.push(`correlation_id = $${paramIndex++}`);
       params.push(options.correlationId);
     }
