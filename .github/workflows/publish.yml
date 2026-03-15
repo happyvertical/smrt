@@ -147,11 +147,24 @@ jobs:
             rm -rf .turbo
             TURBO_FORCE=true pnpm run build
 
+            echo "🧹 Running release safety checks..."
+            pnpm run format-check
+
+            echo "🔍 Validating workflow files before push..."
+            for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+              [ -f "$file" ] || continue
+              yamllint "$file"
+              if command -v actionlint >/dev/null 2>&1; then
+                actionlint "$file"
+              fi
+            done
+
             pnpm run changeset:publish
 
             git tag -f "v$AFTER_VERSION"
             # Skip developer hooks in CI. Release builds can generate source
-            # artifacts, and those hooks should not block the automation push.
+            # artifacts, and those hooks should not block the automation push
+            # after the equivalent safety checks have already run above.
             git push --no-verify -f origin "v$AFTER_VERSION"
             git push --no-verify origin main
 

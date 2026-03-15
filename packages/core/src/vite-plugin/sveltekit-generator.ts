@@ -18,6 +18,9 @@ export interface SvelteKitOptions {
   configFileName?: string; // default: 'smrt.ts'
 }
 
+// Keep this aligned with biome.json formatter.lineWidth.
+const BIOME_LINE_WIDTH = 80;
+
 /**
  * Extract simple class name from potentially qualified name.
  * Qualified names follow the pattern: @scope/package:ClassName
@@ -55,6 +58,12 @@ function getRegistrationPackageName(
   }
 
   return objectDef.packageName;
+}
+
+function toSingleQuotedStringLiteral(value: string): string {
+  const jsonLiteral = JSON.stringify(value);
+  const jsonContent = jsonLiteral.slice(1, -1).replaceAll("'", "\\'");
+  return `'${jsonContent}'`;
 }
 
 /**
@@ -186,18 +195,16 @@ async function generateRegistrationFile(
         return null;
       }
 
-      const escapedPackageName = packageName
-        .replaceAll('\\', '\\\\')
-        .replaceAll("'", "\\'");
-      const singleLineRegistration = `ObjectRegistry.register(${simpleClassName}, { packageName: '${escapedPackageName}' });`;
+      const packageNameLiteral = toSingleQuotedStringLiteral(packageName);
+      const singleLineRegistration = `ObjectRegistry.register(${simpleClassName}, { packageName: ${packageNameLiteral} });`;
 
-      if (singleLineRegistration.length <= 80) {
+      if (singleLineRegistration.length <= BIOME_LINE_WIDTH) {
         return singleLineRegistration;
       }
 
       return [
         `ObjectRegistry.register(${simpleClassName}, {`,
-        `  packageName: '${escapedPackageName}',`,
+        `  packageName: ${packageNameLiteral},`,
         `});`,
       ].join('\n');
     })
