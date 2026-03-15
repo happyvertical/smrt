@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.20.56
+
+### Patch Changes
+
+- ### Features
+
+  - Add UI components and Material Design updates (#1023) (images)
+
+  ### Bug Fixes
+
+  - use in-memory filter for json override effects to fix postgres 500s (#1025) (users)
+  - @happyvertical/smrt-scanner@0.20.56
+  - @happyvertical/smrt-config@0.20.56
+  - @happyvertical/smrt-types@0.20.56
+
 ## 0.20.54
 
 ### Patch Changes
