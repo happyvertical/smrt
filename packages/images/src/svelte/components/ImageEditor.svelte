@@ -1,0 +1,470 @@
+<script lang="ts">
+import type { Image } from '../../image';
+
+let {
+  image = null,
+  apiBaseUrl = '/api/v1',
+  onSave = undefined,
+  onCancel = undefined,
+}: {
+  image?: Image | null;
+  apiBaseUrl?: string;
+  onSave?: (image: Image) => void;
+  onCancel?: () => void;
+} = $props();
+
+let mode: 'standard' | 'ai' = $state('standard');
+
+let isEditingDimensions = $state(false);
+let isCropping = $state(false);
+
+// Set default state empty and populate through effect
+let width = $state(800);
+let height = $state(600);
+let cropX = $state(0);
+let cropY = $state(0);
+let cropW = $state(800);
+let cropH = $state(600);
+let format = $state('webp');
+
+// Track if we've initialized dimensions for the *current* image
+let lastImageId = $state<string | undefined>(undefined);
+
+// AI Mode options
+let prompt = $state('');
+
+let isProcessing = $state(false);
+let error: string | null = $state(null);
+let successMessage: string | null = $state(null);
+
+$effect(() => {
+  // Only reset dimensions if the actual image selection changes
+  if (image?.id && image.id !== lastImageId) {
+    lastImageId = image.id;
+    resetDimensions();
+  }
+});
+
+function resetDimensions() {
+  if (!image) return;
+  width = image.width;
+  height = image.height;
+  cropW = image.width;
+  cropH = image.height;
+  isEditingDimensions = false;
+  isCropping = false;
+}
+
+async function handleResize() {
+  if (!image) return;
+  isProcessing = true;
+  error = null;
+  successMessage = null;
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/images/${image.id}/resize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ width, height }),
+    });
+
+    if (!res.ok) {
+      let errText = await res.text();
+      if (errText.trim().startsWith('<'))
+        errText = `Server returned ${res.status} ${res.statusText}`;
+      throw new Error(errText);
+    }
+    const data = await res.json();
+
+    successMessage = 'Image resized successfully (new derivative created).';
+    if (onSave) onSave(data.image);
+  } catch (e: any) {
+    error = e.message || 'Failed to resize image';
+  } finally {
+    isProcessing = false;
+  }
+}
+
+async function handleCrop() {
+  if (!image) return;
+  isProcessing = true;
+  error = null;
+  successMessage = null;
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/images/${image.id}/crop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ x: cropX, y: cropY, w: cropW, h: cropH }),
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    successMessage = 'Image cropped successfully (new derivative created).';
+    if (onSave) onSave(data.image);
+  } catch (e: any) {
+    error = e.message || 'Failed to crop image';
+  } finally {
+    isProcessing = false;
+  }
+}
+
+async function handleConvert() {
+  if (!image) return;
+  isProcessing = true;
+  error = null;
+  successMessage = null;
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/images/${image.id}/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format }),
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    successMessage = `Image converted to ${format} successfully (new derivative created).`;
+    if (onSave) onSave(data.image);
+  } catch (e: any) {
+    error = e.message || 'Failed to convert image';
+  } finally {
+    isProcessing = false;
+  }
+}
+
+async function handleAIEdit() {
+  if (!image || !prompt) return;
+  isProcessing = true;
+  error = null;
+  successMessage = null;
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/images/${image.id}/edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    successMessage = 'AI edit complete (new derivative created).';
+    if (onSave) onSave(data.image);
+  } catch (e: any) {
+    error = e.message || 'Failed to apply AI edit';
+  } finally {
+    isProcessing = false;
+  }
+}
+</script>
+
+<div class="smrt-image-editor">
+  <div class="header">
+    <h3>Image Editor</h3>
+    {#if onCancel}
+      <button class="close-btn" onclick={onCancel}>×</button>
+    {/if}
+  </div>
+
+  {#if !image}
+    <div class="empty-state">No image selected for editing.</div>
+  {:else}
+    <div class="editor-content">
+      <div class="image-preview" style="background-image: url({image.url})">
+        <!-- Optional: Interactive crop overlay could go here -->
+      </div>
+      
+      <div class="editor-controls">
+        <div class="mode-selector">
+          <button class:active={mode === 'standard'} onclick={() => mode = 'standard'}>Standard Tools</button>
+          <button class:active={mode === 'ai'} onclick={() => mode = 'ai'}>AI Edit</button>
+        </div>
+
+        {#if error}
+          <div class="error-msg">{error}</div>
+        {/if}
+        {#if successMessage}
+          <div class="success-msg">{successMessage}</div>
+        {/if}
+
+        {#if mode === 'standard'}
+          <!-- Standard Operations -->
+          <div class="tool-section">
+            <h4>Resize</h4>
+            <div class="row">
+              <label>Width <input type="number" bind:value={width} onfocus={() => isEditingDimensions = true} /></label>
+              <label>Height <input type="number" bind:value={height} onfocus={() => isEditingDimensions = true} /></label>
+              <button disabled={isProcessing} onclick={handleResize} class="tonal-btn">Apply Resize</button>
+            </div>
+            {#if isEditingDimensions}
+               <div class="row"><button class="text-btn hint" onclick={resetDimensions}>Reset Dimensions</button></div>
+            {/if}
+          </div>
+
+          <div class="tool-section">
+            <h4>Crop</h4>
+            <div class="row">
+              <label>X <input type="number" bind:value={cropX} onfocus={() => isCropping = true} /></label>
+              <label>Y <input type="number" bind:value={cropY} onfocus={() => isCropping = true} /></label>
+            </div>
+            <div class="row">
+              <label>W <input type="number" bind:value={cropW} onfocus={() => isCropping = true} /></label>
+              <label>H <input type="number" bind:value={cropH} onfocus={() => isCropping = true} /></label>
+              <button disabled={isProcessing} onclick={handleCrop} class="tonal-btn">Apply Crop</button>
+            </div>
+            {#if isCropping}
+               <div class="row"><button class="text-btn hint" onclick={resetDimensions}>Reset Dimensions</button></div>
+            {/if}
+          </div>
+
+          <div class="tool-section">
+            <h4>Convert Format</h4>
+            <div class="row">
+              <select bind:value={format}>
+                <option value="webp">WebP</option>
+                <option value="jpeg">JPEG</option>
+                <option value="png">PNG</option>
+              </select>
+              <button disabled={isProcessing} onclick={handleConvert} class="tonal-btn">Convert</button>
+            </div>
+          </div>
+        {:else}
+          <!-- AI Operations -->
+          <div class="tool-section">
+            <h4>AI Powered Edit</h4>
+            <p class="hint">Describe how you want to change this image. A new derivative asset will be created.</p>
+            <textarea 
+              bind:value={prompt} 
+              placeholder="e.g. Change the background to a sunset..."
+              rows="4"
+            ></textarea>
+            <button 
+              disabled={isProcessing || !prompt.trim()} 
+              onclick={handleAIEdit}
+              class="primary-btn"
+            >
+              {isProcessing ? 'Generating...' : 'Apply AI Edit'}
+            </button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .smrt-image-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: var(--smrt-color-surface-container, #1a1a1a);
+    color: var(--smrt-color-on-surface, #fff);
+    border-radius: var(--smrt-radius-lg, 8px);
+    border: 1px solid var(--smrt-color-outline-variant, #333);
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #333);
+    padding-bottom: 1rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 500;
+  }
+
+  .close-btn {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 1.5rem;
+    cursor: pointer;
+  }
+
+  .empty-state {
+    padding: 2rem;
+    text-align: center;
+    color: var(--smrt-color-outline, #666);
+  }
+
+  .editor-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+  }
+
+  .image-preview {
+    flex: 1;
+    min-width: 300px;
+    min-height: 300px;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: var(--smrt-color-surface-container-high, #242424);
+    border-radius: var(--smrt-radius-md, 6px);
+    border: 1px dashed var(--smrt-color-outline-variant, #444);
+  }
+
+  .editor-controls {
+    flex: 1;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* Segmented button style for tabs */
+  .mode-selector {
+    display: flex;
+    background: var(--smrt-color-surface-container-high, #242424);
+    border-radius: 999px;
+    padding: 0.25rem;
+    gap: 0.25rem;
+  }
+
+  .mode-selector button {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 0.6rem 1rem;
+    color: var(--smrt-color-outline, #666);
+    cursor: pointer;
+    font-weight: 500;
+    border-radius: 999px;
+    transition: all 0.2s;
+  }
+
+  .mode-selector button.active {
+    background: var(--smrt-color-surface-container, #1a1a1a);
+    color: var(--smrt-color-on-surface, #fff);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+
+  .tool-section h4 {
+    margin: 0 0 1rem 0;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--smrt-color-on-surface-variant, #ccc);
+  }
+
+  .row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .row label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--smrt-color-outline, #888);
+    gap: 0.25rem;
+  }
+
+  input, select, textarea {
+    background: var(--smrt-color-surface-container-high, #242424);
+    border: 1px solid var(--smrt-color-outline-variant, #444);
+    color: inherit;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--smrt-radius-sm, 4px);
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--smrt-color-primary, #3b82f6);
+    box-shadow: inset 0 0 0 1px var(--smrt-color-primary, #3b82f6);
+  }
+
+  input[type="number"] {
+    width: 90px;
+  }
+
+  textarea {
+    width: 100%;
+    resize: vertical;
+    margin-bottom: 1rem;
+    font-family: inherit;
+  }
+
+  .tonal-btn {
+    background: var(--smrt-color-surface-container-highest, #333);
+    color: var(--smrt-color-primary, #3b82f6);
+    border: 1px solid var(--smrt-color-outline-variant, #444);
+    padding: 0.6rem 1.2rem;
+    border-radius: 999px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 1.25rem;
+  }
+
+  .tonal-btn:hover:not(:disabled) {
+    background: var(--smrt-color-surface-container-high, #3f3f3f);
+  }
+
+  .text-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+  .text-btn:hover {
+    color: var(--smrt-color-on-surface, #fff);
+  }
+
+  .primary-btn {
+    background: var(--smrt-color-primary, #3b82f6);
+    color: white;
+    border: none;
+    padding: 0.6rem 1.5rem;
+    border-radius: 999px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, opacity 0.2s;
+  }
+
+  .primary-btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .hint {
+    font-size: 0.8rem;
+    color: var(--smrt-color-outline, #888);
+    margin: 0 0 0.5rem 0;
+  }
+
+  .error-msg {
+    color: var(--smrt-color-error, #ef4444);
+    background: rgba(239, 68, 68, 0.1);
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  .success-msg {
+    color: var(--smrt-color-success, #22c55e);
+    background: rgba(34, 197, 94, 0.1);
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+</style>

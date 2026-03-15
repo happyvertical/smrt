@@ -370,8 +370,8 @@ describe('SvelteKit Route Generator', () => {
         "import type { Product } from '$lib/objects/Product'",
       );
 
-      // Should use typed getCollection
-      expect(content).toContain("getCollection<Product>('Product')");
+      // Should use getCollection<any> to avoid SSR type-stripping issues
+      expect(content).toContain("getCollection<any>('Product')");
 
       // Should include GET handler
       expect(content).toContain('export const GET: RequestHandler');
@@ -441,8 +441,8 @@ describe('SvelteKit Route Generator', () => {
         "import type { Document } from '$lib/objects/Document'",
       );
 
-      // Should use typed getCollection
-      expect(analyzeContent).toContain("getCollection<Document>('Document')");
+      // Should use getCollection<any> to avoid SSR type-stripping issues
+      expect(analyzeContent).toContain("getCollection<any>('Document')");
 
       expect(analyzeContent).toContain('export const POST: RequestHandler');
       expect(analyzeContent).toContain('await item.analyze');
@@ -555,7 +555,7 @@ describe('SvelteKit Route Generator', () => {
       expect(itemContent).toContain(
         "import type { Meeting } from '@happyvertical/praeco'",
       );
-      expect(itemContent).toContain("getCollection<Meeting>('Meeting')");
+      expect(itemContent).toContain("getCollection<any>('Meeting')");
 
       // Action route should also import from package
       const actionRoute = vi
@@ -569,7 +569,7 @@ describe('SvelteKit Route Generator', () => {
       expect(actionContent).toContain(
         "import type { Meeting } from '@happyvertical/praeco'",
       );
-      expect(actionContent).toContain("getCollection<Meeting>('Meeting')");
+      expect(actionContent).toContain("getCollection<any>('Meeting')");
     });
 
     it('should use $lib path for local objects even when packageName is set', async () => {
@@ -622,9 +622,9 @@ describe('SvelteKit Route Generator', () => {
       );
       expect(content).not.toContain("from '@myapp/dashboard'");
 
-      // Should still use typed getCollection with qualified registry key
+      // Should still use getCollection<any> with qualified registry key
       expect(content).toContain(
-        "getCollection<Invitation>('@myapp/dashboard:Invitation')",
+        "getCollection<any>('@myapp/dashboard:Invitation')",
       );
     });
 
@@ -674,12 +674,12 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('import type { Invitation }');
       expect(content).not.toContain('import type { @blindmanpress');
 
-      // Should use simple name as generic parameter
-      expect(content).toContain('getCollection<Invitation>');
+      // Should use <any> as generic parameter to avoid SSR type issues
+      expect(content).toContain('getCollection<any>');
 
       // Should still use the full qualified name as the registry key
       expect(content).toContain(
-        "getCollection<Invitation>('@blindmanpress/dashboard:Invitation')",
+        "getCollection<any>('@blindmanpress/dashboard:Invitation')",
       );
     });
 

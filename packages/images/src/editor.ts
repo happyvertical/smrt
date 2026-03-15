@@ -82,7 +82,10 @@ export class ImageEditor {
 
     try {
       await writeFile(inputPath, sourceData);
-      // Use the processor adapter for crop via resize with cover fit
+      // TODO: @happyvertical/images does not yet expose a direct x,y extract API.
+      // The x/y offset params are accepted but unused — this is a resize-with-cover-fit,
+      // not a true x,y crop. When the `extract(x, y, w, h)` API is available, replace this.
+      // Tracked in: https://github.com/happyvertical/smrt/issues/TODO
       await processor.resize(inputPath, outputPath, {
         width: w,
         height: h,

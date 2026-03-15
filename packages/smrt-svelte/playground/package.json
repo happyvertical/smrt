@@ -10,6 +10,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-commerce": "workspace:*",
+    "@happyvertical/smrt-images": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@mlc-ai/web-llm": "^0.2.80",

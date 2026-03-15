@@ -132,6 +132,9 @@ function toggleLogin() {
         <li><a href="/feedback">Feedback Components</a></li>
         <li class="section">Commerce</li>
         <li><a href="/commerce">Invoice Components</a></li>
+        <li class="section">Images</li>
+        <li><a href="/images/uploader">Image Uploader</a></li>
+        <li><a href="/images/editor">Image Editor</a></li>
       </ul>
     </nav>
     <main class="content">

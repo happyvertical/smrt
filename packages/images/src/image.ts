@@ -41,6 +41,13 @@ export class Image extends Asset {
   }
 
   /**
+   * Helper to get URL from sourceUri for frontend components
+   */
+  get url(): string {
+    return this.sourceUri;
+  }
+
+  /**
    * Check if dimensions indicate landscape orientation
    */
   get isLandscape(): boolean {
