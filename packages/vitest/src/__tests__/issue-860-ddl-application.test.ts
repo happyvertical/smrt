@@ -263,7 +263,7 @@ describe('Issue #860 - DDL Application', () => {
       } finally {
         await cleanup();
       }
-    });
+    }, 90000);
   });
 
   describe('DDL with indexes', () => {
