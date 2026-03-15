@@ -10,6 +10,11 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./svelte": {
+      "svelte": "./src/svelte/index.ts",
+      "import": "./dist/svelte/index.js",
+      "types": "./dist/svelte/index.d.ts"
+    },
     "./manifest": "./dist/manifest.json"
   },
   "scripts": {
