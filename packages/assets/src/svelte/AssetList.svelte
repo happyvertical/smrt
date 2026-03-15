@@ -94,44 +94,63 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 </script>
 
 <div class="asset-list" class:asset-list--loading={loading}>
-  {#if loading}
-    <div class="asset-list__loading">
-      <span class="spinner"></span>
-      <span>Loading assets...</span>
-    </div>
-  {:else if assets.length === 0}
-    <div class="asset-list__empty">
-      <p>No assets found. Upload your first asset or adjust your filters.</p>
-    </div>
-  {:else}
-    <table class="list-table">
-      <thead class="list-table__head">
+  <table class="list-table">
+    <thead class="list-table__head">
+      <tr>
+        <th class="col-checkbox">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            use:setIndeterminate={someSelected}
+            onchange={toggleSelectAll}
+            aria-label="Select all"
+          />
+        </th>
+        <th class="col-thumb">Preview</th>
+        <th class="col-name">
+          <button type="button" class="sort-btn" onclick={() => handleSort('name')}>
+            Name <span class="sort-indicator">{getSortIndicator('name')}</span>
+          </button>
+        </th>
+        <th class="col-type">Type</th>
+        <th class="col-date">
+          <button type="button" class="sort-btn" onclick={() => handleSort('createdAt')}>
+            Created <span class="sort-indicator">{getSortIndicator('createdAt')}</span>
+          </button>
+        </th>
+        <th class="col-status">Status</th>
+      </tr>
+    </thead>
+    <tbody class="list-table__body">
+      {#if loading}
         <tr>
-          <th class="col-checkbox">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              use:setIndeterminate={someSelected}
-              onchange={toggleSelectAll}
-              aria-label="Select all"
-            />
-          </th>
-          <th class="col-thumb">Preview</th>
-          <th class="col-name">
-            <button type="button" class="sort-btn" onclick={() => handleSort('name')}>
-              Name <span class="sort-indicator">{getSortIndicator('name')}</span>
-            </button>
-          </th>
-          <th class="col-type">Type</th>
-          <th class="col-date">
-            <button type="button" class="sort-btn" onclick={() => handleSort('createdAt')}>
-              Created <span class="sort-indicator">{getSortIndicator('createdAt')}</span>
-            </button>
-          </th>
-          <th class="col-status">Status</th>
+          <td colspan="6" class="cell-empty">
+            <div class="asset-list__loading">
+              <span class="spinner"></span>
+              <span>Loading assets...</span>
+            </div>
+          </td>
         </tr>
-      </thead>
-      <tbody class="list-table__body">
+      {:else if assets.length === 0}
+        <tr>
+          <td colspan="6" class="cell-empty">
+            <div class="empty-state">
+              <div class="empty-state__icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="8" y1="6" x2="21" y2="6"></line>
+                  <line x1="8" y1="12" x2="21" y2="12"></line>
+                  <line x1="8" y1="18" x2="21" y2="18"></line>
+                  <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                  <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                  <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+              </div>
+              <p class="empty-state__title">No assets found</p>
+              <p class="empty-state__desc">Upload an asset or change your search filters to see results.</p>
+            </div>
+          </td>
+        </tr>
+      {:else}
         {#each assets as asset (asset.id)}
           {@const selected = selectedIds.has(asset.id!)}
           <tr
@@ -181,9 +200,9 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             </td>
           </tr>
         {/each}
-      </tbody>
-    </table>
-  {/if}
+      {/if}
+    </tbody>
+  </table>
 </div>
 
 <style>

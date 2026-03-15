@@ -84,15 +84,16 @@ function formatFileSize(bytes: number | undefined): string {
       <span>Loading assets...</span>
     </div>
   {:else if assets.length === 0}
-    <div class="asset-grid__empty">
-      <div class="empty-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M22 12h-6l-2 3h-4l-2-3H2"></path>
-          <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"></path>
+    <div class="empty-state">
+      <div class="empty-state__icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <polyline points="21 15 16 10 5 21"></polyline>
         </svg>
       </div>
-      <p class="empty-title">No assets found</p>
-      <p class="empty-description">Upload your first asset or adjust your filters.</p>
+      <p class="empty-state__title">No assets found</p>
+      <p class="empty-state__desc">Upload an asset or change your search filters to see results.</p>
     </div>
   {:else}
     <div class="grid">

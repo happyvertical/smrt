@@ -1,0 +1,2 @@
+# SMRT auto-generated routes (from Vite plugin)
+src/routes/api/**/+server.ts

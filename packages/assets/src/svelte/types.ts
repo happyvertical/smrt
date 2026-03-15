@@ -63,6 +63,17 @@ export interface AssetAction {
  */
 export type AssetDbFilters = Record<string, unknown>;
 
+export interface AssetManagerUploaderProps {
+  /** Whether the uploader modal should be open */
+  open: boolean;
+  /** Pre-loaded file from a drag-and-drop or paste event on the manager */
+  initialFile: File | null;
+  /** Callback to close the uploader */
+  onclose: () => void;
+  /** Callback when asset creation/selection is complete */
+  oncreate: (data: any) => void;
+}
+
 /** Props for the main AssetManager component */
 export interface AssetManagerProps {
   /** Tenant ID to scope assets to */
@@ -75,6 +86,8 @@ export interface AssetManagerProps {
   accept?: string;
   /** Custom actions added to the action bar */
   customActions?: AssetAction[];
+  /** Optional custom uploader snippet (e.g., to inject ImageUploader from smrt-images) */
+  uploader?: Snippet<[AssetManagerUploaderProps]>;
   /** Callback when assets are selected (useful in pick mode) */
   onselect?: (assets: Asset[]) => void;
   /** Callback when an asset is double-clicked or "confirmed" in pick mode */

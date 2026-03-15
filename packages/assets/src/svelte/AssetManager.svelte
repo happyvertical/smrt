@@ -41,6 +41,7 @@ let {
   mode = 'manage',
   accept,
   customActions = [],
+  uploader,
   onselect,
   onconfirm,
   initialView = 'grid',
@@ -284,13 +285,22 @@ function handleManagerDrop(e: DragEvent) {
     </div>
   {/if}
 
-  <!-- Create modal -->
-  <CreateAssetModal
-    open={showCreateModal}
-    initialFile={pastedFile}
-    oncreate={handleCreate}
-    onclose={() => { showCreateModal = false; }}
-  />
+  <!-- Create modal or custom uploader -->
+  {#if uploader}
+    {@render uploader({
+      open: showCreateModal,
+      initialFile: pastedFile,
+      onclose: () => { showCreateModal = false; pastedFile = null; },
+      oncreate: handleCreate
+    })}
+  {:else}
+    <CreateAssetModal
+      open={showCreateModal}
+      initialFile={pastedFile}
+      oncreate={handleCreate}
+      onclose={() => { showCreateModal = false; pastedFile = null; }}
+    />
+  {/if}
 </div>
 
 <style>
