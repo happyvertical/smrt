@@ -29,8 +29,8 @@ export class DispatchCollection {
     await db.query(
       `INSERT INTO _smrt_dispatch
         (id, type, source, source_id, payload, status, attempts, last_error,
-         processed_at, processed_by, target_subscriber, metadata, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         processed_at, processed_by, target_subscriber, correlation_id, metadata, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       row.id,
       row.type,
       row.source,
@@ -42,6 +42,7 @@ export class DispatchCollection {
       row.processed_at,
       row.processed_by,
       row.target_subscriber,
+      row.correlation_id,
       row.metadata,
       row.created_at,
       row.updated_at,
@@ -60,8 +61,8 @@ export class DispatchCollection {
       `UPDATE _smrt_dispatch SET
         type = $1, source = $2, source_id = $3, payload = $4, status = $5,
         attempts = $6, last_error = $7, processed_at = $8, processed_by = $9,
-        target_subscriber = $10, metadata = $11, updated_at = $12
-       WHERE id = $13`,
+        target_subscriber = $10, correlation_id = $11, metadata = $12, updated_at = $13
+       WHERE id = $14`,
       row.type,
       row.source,
       row.source_id,
@@ -72,6 +73,7 @@ export class DispatchCollection {
       row.processed_at,
       row.processed_by,
       row.target_subscriber,
+      row.correlation_id,
       row.metadata,
       row.updated_at,
       row.id,
@@ -122,6 +124,11 @@ export class DispatchCollection {
     if (options.targetSubscriber) {
       conditions.push(`target_subscriber = $${paramIndex++}`);
       params.push(options.targetSubscriber);
+    }
+
+    if (options.correlationId !== undefined) {
+      conditions.push(`correlation_id = $${paramIndex++}`);
+      params.push(options.correlationId);
     }
 
     let sql = 'SELECT * FROM _smrt_dispatch';

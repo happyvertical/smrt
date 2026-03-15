@@ -19,6 +19,8 @@ export interface DispatchEmitOptions {
   source?: string;
   /** Source agent instance ID */
   sourceId?: string;
+  /** Correlation ID for linking request/response dispatch pairs */
+  correlationId?: string;
   /** Additional metadata */
   metadata?: Record<string, unknown>;
 }
@@ -35,6 +37,8 @@ export interface DispatchMetadata {
   source: string;
   /** Source agent instance ID */
   sourceId: string;
+  /** Correlation ID for linking request/response dispatch pairs */
+  correlationId?: string;
   /** Dispatch creation timestamp */
   createdAt: Date;
   /** Number of processing attempts */
@@ -89,6 +93,8 @@ export interface DispatchListOptions {
   type?: string;
   /** Filter by target subscriber */
   targetSubscriber?: string;
+  /** Filter by correlation ID */
+  correlationId?: string;
   /** Maximum results */
   limit?: number;
   /** Offset for pagination */
