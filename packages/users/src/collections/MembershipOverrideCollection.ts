@@ -23,21 +23,26 @@ export class MembershipOverrideCollection extends SmrtCollection<MembershipOverr
   }
 
   /**
-   * Find grant overrides for a membership
+   * Find grant overrides for a membership.
+   *
+   * Filters in memory because the `effect` column is JSON-typed and
+   * Postgres rejects bare `json = text` comparisons.  A single
+   * `findByMembership` call is reused for both grant and deny lookups
+   * within the same request (see `_overridesByMembership` cache).
    */
   async findGrants(membershipId: string): Promise<MembershipOverride[]> {
-    return await this.list({
-      where: { membershipId, effect: OverrideEffect.GRANT },
-    });
+    const all = await this.findByMembership(membershipId);
+    return all.filter((o) => o.effect === OverrideEffect.GRANT);
   }
 
   /**
-   * Find deny overrides for a membership
+   * Find deny overrides for a membership.
+   *
+   * See `findGrants` for rationale on in-memory filtering.
    */
   async findDenies(membershipId: string): Promise<MembershipOverride[]> {
-    return await this.list({
-      where: { membershipId, effect: OverrideEffect.DENY },
-    });
+    const all = await this.findByMembership(membershipId);
+    return all.filter((o) => o.effect === OverrideEffect.DENY);
   }
 
   /**

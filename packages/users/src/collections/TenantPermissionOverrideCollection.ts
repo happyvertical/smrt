@@ -38,30 +38,35 @@ export class TenantPermissionOverrideCollection extends SmrtCollection<TenantPer
   }
 
   /**
-   * Find grant overrides for a tenant
+   * Find grant overrides for a tenant.
+   *
+   * Filters in memory because the `effect` column is JSON-typed and
+   * Postgres rejects bare `json = text` comparisons.  A single
+   * `findByTenant` call is reused for grant, deny, and inherit lookups.
    */
   async findGrants(tenantId: string): Promise<TenantPermissionOverride[]> {
-    return await this.list({
-      where: { tenantId, effect: TenantPermissionEffect.GRANT },
-    });
+    const all = await this.findByTenant(tenantId);
+    return all.filter((o) => o.effect === TenantPermissionEffect.GRANT);
   }
 
   /**
-   * Find deny overrides for a tenant
+   * Find deny overrides for a tenant.
+   *
+   * See `findGrants` for rationale on in-memory filtering.
    */
   async findDenies(tenantId: string): Promise<TenantPermissionOverride[]> {
-    return await this.list({
-      where: { tenantId, effect: TenantPermissionEffect.DENY },
-    });
+    const all = await this.findByTenant(tenantId);
+    return all.filter((o) => o.effect === TenantPermissionEffect.DENY);
   }
 
   /**
-   * Find inherit overrides for a tenant
+   * Find inherit overrides for a tenant.
+   *
+   * See `findGrants` for rationale on in-memory filtering.
    */
   async findInherits(tenantId: string): Promise<TenantPermissionOverride[]> {
-    return await this.list({
-      where: { tenantId, effect: TenantPermissionEffect.INHERIT },
-    });
+    const all = await this.findByTenant(tenantId);
+    return all.filter((o) => o.effect === TenantPermissionEffect.INHERIT);
   }
 
   /**
