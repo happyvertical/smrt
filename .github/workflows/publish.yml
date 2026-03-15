@@ -150,8 +150,10 @@ jobs:
             pnpm run changeset:publish
 
             git tag -f "v$AFTER_VERSION"
-            git push -f origin "v$AFTER_VERSION"
-            git push origin main
+            # Skip developer hooks in CI. Release builds can generate source
+            # artifacts, and those hooks should not block the automation push.
+            git push --no-verify -f origin "v$AFTER_VERSION"
+            git push --no-verify origin main
 
             RELEASE_NOTES="## Published Packages"$'\n\n'
             RELEASE_NOTES="${RELEASE_NOTES}All packages published to"

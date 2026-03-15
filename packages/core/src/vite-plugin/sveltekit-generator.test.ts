@@ -210,10 +210,10 @@ describe('SvelteKit Route Generator', () => {
         "import { ObjectRegistry } from '@happyvertical/smrt-core';",
       );
       expect(registrationContent).toContain(
-        'ObjectRegistry.register(LocalThing, { packageName: "@test/app" });',
+        "ObjectRegistry.register(LocalThing, { packageName: '@test/app' });",
       );
       expect(registrationContent).toContain(
-        'ObjectRegistry.register(ExternalThing, { packageName: "@test/pkg" });',
+        "ObjectRegistry.register(ExternalThing, { packageName: '@test/pkg' });",
       );
     });
 
@@ -259,11 +259,49 @@ describe('SvelteKit Route Generator', () => {
       const registrationContent = registrationCall?.[1] as string;
 
       expect(registrationContent).toContain(
-        'ObjectRegistry.register(LocalThing, { packageName: "@test/app" });',
+        "ObjectRegistry.register(LocalThing, { packageName: '@test/app' });",
       );
       expect(registrationContent).not.toContain(
         'ObjectRegistry.register(UnqualifiedThing, {});',
       );
+    });
+
+    it('should wrap long package registrations to match repository formatting', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          ImageCollection: {
+            className: 'ImageCollection',
+            collection: 'imagecollections',
+            fields: {},
+            methods: {},
+            packageName: '@happyvertical/smrt-images',
+            filePath: join(projectRoot, 'src/lib/objects/ImageCollection.ts'),
+            decoratorConfig: { api: true },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const registrationCall = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().endsWith('src/lib/server/smrt-register.ts'),
+        );
+
+      expect(registrationCall).toBeDefined();
+      const registrationContent = registrationCall?.[1] as string;
+
+      expect(registrationContent).toContain(`ObjectRegistry.register(ImageCollection, {
+  packageName: '@happyvertical/smrt-images',
+});`);
     });
   });
 

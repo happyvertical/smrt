@@ -186,7 +186,20 @@ async function generateRegistrationFile(
         return null;
       }
 
-      return `ObjectRegistry.register(${simpleClassName}, { packageName: ${JSON.stringify(packageName)} });`;
+      const escapedPackageName = packageName
+        .replaceAll('\\', '\\\\')
+        .replaceAll("'", "\\'");
+      const singleLineRegistration = `ObjectRegistry.register(${simpleClassName}, { packageName: '${escapedPackageName}' });`;
+
+      if (singleLineRegistration.length <= 80) {
+        return singleLineRegistration;
+      }
+
+      return [
+        `ObjectRegistry.register(${simpleClassName}, {`,
+        `  packageName: '${escapedPackageName}',`,
+        `});`,
+      ].join('\n');
     })
     .filter((registration): registration is string => registration !== null)
     .join('\n');
