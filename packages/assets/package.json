@@ -10,6 +10,11 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./svelte": {
+      "svelte": "./src/svelte/index.ts",
+      "import": "./dist/svelte/index.js",
+      "types": "./dist/svelte/index.d.ts"
+    },
     "./manifest": "./dist/manifest.json"
   },
   "scripts": {
@@ -32,7 +37,13 @@
     "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
+    "@sveltejs/adapter-auto": "^7.0.1",
+    "@sveltejs/kit": "^2.55.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/node": "25.0.9",
+    "svelte": "^5.53.12",
+    "svelte-check": "^4.3.5",
+    "tslib": "^2.8.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"

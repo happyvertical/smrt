@@ -1,0 +1,291 @@
+{
+  "changesets": [
+    {
+      "releases": [
+        {
+          "name": "@happyvertical/smrt-core",
+          "type": "patch"
+        }
+      ],
+      "summary": "### Features\n\n- add image variation toggle workflow to uploader component (images)\n- Add UI components and Material Design updates (images)\n- add AI usage tracking (core)\n\n### Bug Fixes\n\n- use createPackageConfig for library build mode (images)\n- update sveltekit-generator tests for getCollection<any> (core)\n- address AI usage review feedback (core)",
+      "id": "auto-341dde1ab2055352"
+    }
+  ],
+  "releases": [
+    {
+      "name": "@happyvertical/smrt-core",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [
+        "auto-341dde1ab2055352"
+      ],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-ads",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-affiliates",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-agents",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-analytics",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-assets",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-chat",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-cli",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-commerce",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-content",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-events",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-facts",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-gnode",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-images",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-jobs",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-ledgers",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-messages",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-places",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-products",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-profiles",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-projects",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-properties",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-scanner",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-secrets",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-sites",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-dev-mcp",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-social",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-tags",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-tenancy",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-users",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-video",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-vitest",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-voice",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-svelte",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "smrt-svelte-playground",
+      "type": "none",
+      "oldVersion": "0.0.0",
+      "changesets": [],
+      "newVersion": "0.0.0"
+    },
+    {
+      "name": "@happyvertical/smrt-config",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-template-site-static-json",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-template-sveltekit",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    },
+    {
+      "name": "@happyvertical/smrt-types",
+      "type": "patch",
+      "oldVersion": "0.20.54",
+      "changesets": [],
+      "newVersion": "0.20.55"
+    }
+  ]
+}
