@@ -7,9 +7,7 @@
  */
 
 import type { Asset } from '../asset';
-import type { AssetGridProps } from './types';
-
-type GridAsset = Asset & { id: string };
+import type { AssetGridProps, PersistedAsset } from './types';
 
 let {
   assets,
@@ -20,7 +18,7 @@ let {
   loading = false,
 }: AssetGridProps = $props();
 
-function toggleSelection(asset: GridAsset, event: Event) {
+function toggleSelection(asset: PersistedAsset, event: Event) {
   event.stopPropagation();
   const next = new Set(selectedIds);
   if (next.has(asset.id)) {
@@ -31,39 +29,39 @@ function toggleSelection(asset: GridAsset, event: Event) {
   onSelectionChange(next);
 }
 
-function handleClick(asset: GridAsset) {
+function handleClick(asset: PersistedAsset) {
   onAssetClick(asset);
 }
 
-function handleDblClick(asset: GridAsset) {
+function handleDblClick(asset: PersistedAsset) {
   onAssetDblClick?.(asset);
 }
 
-function handleKeydown(asset: GridAsset, event: KeyboardEvent) {
+function handleKeydown(asset: PersistedAsset, event: KeyboardEvent) {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
     onAssetClick(asset);
   }
 }
 
-function isImage(asset: GridAsset): boolean {
+function isImage(asset: PersistedAsset): boolean {
   return asset.mimeType?.startsWith('image/') ?? false;
 }
 
-function isVideo(asset: GridAsset): boolean {
+function isVideo(asset: PersistedAsset): boolean {
   return asset.mimeType?.startsWith('video/') ?? false;
 }
 
-function isAudio(asset: GridAsset): boolean {
+function isAudio(asset: PersistedAsset): boolean {
   return asset.mimeType?.startsWith('audio/') ?? false;
 }
 
 /** True if it's an image-like asset missing alt text */
-function isMissingAlt(asset: GridAsset): boolean {
+function isMissingAlt(asset: PersistedAsset): boolean {
   return isImage(asset) && !asset.alt;
 }
 
-function getTypeIcon(asset: GridAsset): string {
+function getTypeIcon(asset: PersistedAsset): string {
   if (isVideo(asset)) return '🎬';
   if (isAudio(asset)) return '🎵';
   if (asset.mimeType?.includes('pdf')) return '📄';

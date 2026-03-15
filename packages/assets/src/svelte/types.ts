@@ -10,6 +10,11 @@ import type { Asset } from '../asset';
 /** View modes for the asset manager */
 export type AssetViewMode = 'grid' | 'list';
 
+/** Asset with a guaranteed ID (persisted in DB) */
+export interface PersistedAsset extends Asset {
+  id: string;
+}
+
 /** Operating mode — manage (full CRUD) or pick (select and return) */
 export type AssetManagerMode = 'manage' | 'pick';
 
@@ -45,7 +50,7 @@ export interface AssetAction {
   /** Whether this action supports multiple selected assets */
   multi?: boolean;
   /** Callback when the action is triggered */
-  action: (selected: Array<Asset & { id: string }>) => void | Promise<void>;
+  action: (selected: PersistedAsset[]) => void | Promise<void>;
 }
 
 /**
@@ -89,9 +94,9 @@ export interface AssetManagerProps {
   /** Optional custom uploader snippet (e.g., to inject ImageUploader from smrt-images) */
   uploader?: Snippet<[AssetManagerUploaderProps]>;
   /** Callback when assets are selected (useful in pick mode) */
-  onSelect?: (assets: Array<Asset & { id: string }>) => void;
+  onSelect?: (assets: PersistedAsset[]) => void;
   /** Callback when an asset is double-clicked or "confirmed" in pick mode */
-  onConfirm?: (assets: Array<Asset & { id: string }>) => void;
+  onConfirm?: (assets: PersistedAsset[]) => void;
   /** Initial view mode */
   initialView?: AssetViewMode;
   /** Whether to show folder navigation */
@@ -119,15 +124,15 @@ export interface AssetToolbarProps {
 /** Props for AssetGrid */
 export interface AssetGridProps {
   /** Assets to display */
-  assets: Array<Asset & { id: string }>;
+  assets: PersistedAsset[];
   /** Currently selected asset IDs */
   selectedIds: Set<string>;
   /** Callback when selection changes */
   onSelectionChange: (ids: Set<string>) => void;
   /** Callback when an asset is clicked for detail view */
-  onAssetClick: (asset: Asset & { id: string }) => void;
+  onAssetClick: (asset: PersistedAsset) => void;
   /** Callback when an asset is double-clicked */
-  onAssetDblClick?: (asset: Asset & { id: string }) => void;
+  onAssetDblClick?: (asset: PersistedAsset) => void;
   /** Whether the grid is loading */
   loading?: boolean;
 }
@@ -135,7 +140,7 @@ export interface AssetGridProps {
 /** Props for AssetList */
 export interface AssetListProps {
   /** Assets to display */
-  assets: Array<Asset & { id: string }>;
+  assets: PersistedAsset[];
   /** Currently selected asset IDs */
   selectedIds: Set<string>;
   /** Current sort state */
@@ -143,7 +148,7 @@ export interface AssetListProps {
   /** Callback when selection changes */
   onSelectionChange: (ids: Set<string>) => void;
   /** Callback when an asset is clicked for detail view */
-  onAssetClick: (asset: Asset & { id: string }) => void;
+  onAssetClick: (asset: PersistedAsset) => void;
   /** Callback when sort changes */
   onSortChange: (sort: AssetSort) => void;
   /** Whether the list is loading */
@@ -153,11 +158,11 @@ export interface AssetListProps {
 /** Props for ActionBar */
 export interface ActionBarProps {
   /** Currently selected assets */
-  selectedAssets: Array<Asset & { id: string }>;
+  selectedAssets: PersistedAsset[];
   /** Custom actions from the consumer */
   customActions?: AssetAction[];
   /** Callback to clear selection */
   onClearSelection: () => void;
   /** Callback for delete action */
-  onDelete: (assets: Array<Asset & { id: string }>) => void | Promise<void>;
+  onDelete: (assets: PersistedAsset[]) => void | Promise<void>;
 }

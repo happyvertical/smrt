@@ -7,9 +7,16 @@
  */
 
 import type { Asset } from '../asset';
-import type { AssetListProps, AssetSort, AssetSortField } from './types';
+import type {
+  AssetListProps,
+  AssetSort,
+  AssetSortField,
+  PersistedAsset,
+} from './types';
 
-type ListAsset = Asset & { id: string; alt?: string };
+interface ListAsset extends PersistedAsset {
+  alt?: string;
+}
 
 let {
   assets,
