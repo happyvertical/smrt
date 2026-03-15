@@ -286,4 +286,4 @@ export const ALL_SYSTEM_TABLES = [
 /**
  * Current SMRT system schema version
  */
-export const SMRT_SCHEMA_VERSION = '1.3.0';
+export const SMRT_SCHEMA_VERSION = '1.4.0';

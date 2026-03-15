@@ -132,7 +132,7 @@ export class DispatchBus {
         'target_subscriber',
         'TEXT',
       );
-      // Migrate existing tables: add correlation_id column (v1.3.1)
+      // Migrate existing tables: add correlation_id column (v1.4.0)
       await this.addColumnIfMissing('_smrt_dispatch', 'correlation_id', 'TEXT');
       // Ensure index exists for correlation_id lookups
       await this.addIndexIfMissing(

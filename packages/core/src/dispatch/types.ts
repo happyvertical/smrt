@@ -38,7 +38,7 @@ export interface DispatchMetadata {
   /** Source agent instance ID */
   sourceId: string;
   /** Correlation ID for linking request/response dispatch pairs */
-  correlationId: string;
+  correlationId?: string;
   /** Dispatch creation timestamp */
   createdAt: Date;
   /** Number of processing attempts */
