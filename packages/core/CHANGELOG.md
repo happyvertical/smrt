@@ -1,5 +1,35 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- e4a2fa7: feat(dispatch): add `correlationId` for request/response linking
+
+  Adds a first-class `correlation_id` column to the dispatch system, enabling agents to link related dispatches (e.g. a video generation request and its completion response).
+
+  - New `correlationId` field on `DispatchEmitOptions`, `DispatchMetadata`, `DispatchListOptions`, `Dispatch`, and `DispatchData`
+  - Schema DDL includes `correlation_id` column and index
+  - Auto-migration for existing databases (adds column if missing)
+  - Query dispatches by `correlationId` via `bus.list({ correlationId })`
+
+### Patch Changes
+
+- 9f01b9a: ### Features
+
+  - add image variation toggle workflow to uploader component (images)
+  - Add UI components and Material Design updates (images)
+  - add AI usage tracking (core)
+
+  ### Bug Fixes
+
+  - use createPackageConfig for library build mode (images)
+  - update sveltekit-generator tests for getCollection<any> (core)
+  - address AI usage review feedback (core)
+  - @happyvertical/smrt-scanner@1.0.0
+  - @happyvertical/smrt-config@1.0.0
+  - @happyvertical/smrt-types@1.0.0
+
 ## 0.20.56
 
 ### Patch Changes
