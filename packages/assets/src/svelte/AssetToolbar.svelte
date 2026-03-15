@@ -1,4 +1,5 @@
 <script lang="ts">
+import { onDestroy } from 'svelte';
 /**
  * AssetToolbar - Filter bar and view controls for the Asset Manager
  *
@@ -18,14 +19,22 @@ let {
   view,
   filters,
   sort,
-  onviewchange,
-  onfilterchange,
-  onsortchange,
-  onupload,
+  onViewChange,
+  onFilterChange,
+  onSortChange,
+  onUpload,
 }: AssetToolbarProps = $props();
 
 let searchValue = $state(filters.search);
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+$effect(() => {
+  searchValue = filters.search;
+});
+
+onDestroy(() => {
+  if (debounceTimer) clearTimeout(debounceTimer);
+});
 
 function handleSearch(e: Event) {
   const target = e.target as HTMLInputElement;
@@ -33,13 +42,13 @@ function handleSearch(e: Event) {
 
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    onfilterchange({ ...filters, search: searchValue });
+    onFilterChange({ ...filters, search: searchValue });
   }, 300);
 }
 
 function handleClearSearch() {
   searchValue = '';
-  onfilterchange({ ...filters, search: '' });
+  onFilterChange({ ...filters, search: '' });
 }
 
 function handleSortChange(e: Event) {
@@ -48,13 +57,13 @@ function handleSortChange(e: Event) {
     AssetSortField,
     'asc' | 'desc',
   ];
-  onsortchange({ field, direction });
+  onSortChange({ field, direction });
 }
 
 function handleTypeFilter(e: Event) {
   const target = e.target as HTMLSelectElement;
   const types = target.value ? [target.value] : [];
-  onfilterchange({ ...filters, types });
+  onFilterChange({ ...filters, types });
 }
 
 const sortValue = $derived(`${sort.field}:${sort.direction}`);
@@ -121,7 +130,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
           type="button"
           class="view-toggle__btn"
           class:view-toggle__btn--active={view === v.key}
-          onclick={() => onviewchange(v.key)}
+          onclick={() => onViewChange(v.key)}
           aria-label="{v.label} view"
           aria-pressed={view === v.key}
         >
@@ -147,7 +156,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     </div>
 
     <!-- Upload Button -->
-    <button type="button" class="upload-btn" onclick={onupload}>
+    <button type="button" class="upload-btn" onclick={onUpload}>
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
         <polyline points="17 8 12 3 7 8"></polyline>

@@ -9,43 +9,45 @@
 import type { Asset } from '../asset';
 import type { AssetListProps, AssetSort, AssetSortField } from './types';
 
+type ListAsset = Asset & { id: string; alt?: string };
+
 let {
   assets,
   selectedIds,
   sort,
-  onselectionchange,
-  onassetclick,
-  onsortchange,
+  onSelectionChange,
+  onAssetClick,
+  onSortChange,
   loading = false,
 }: AssetListProps = $props();
 
-function toggleSelection(asset: Asset, event: Event) {
+function toggleSelection(asset: ListAsset, event: Event) {
   event.stopPropagation();
   const next = new Set(selectedIds);
-  if (next.has(asset.id!)) {
-    next.delete(asset.id!);
+  if (next.has(asset.id)) {
+    next.delete(asset.id);
   } else {
-    next.add(asset.id!);
+    next.add(asset.id);
   }
-  onselectionchange(next);
+  onSelectionChange(next);
 }
 
 function toggleSelectAll() {
   if (allSelected) {
-    onselectionchange(new Set());
+    onSelectionChange(new Set());
   } else {
-    onselectionchange(new Set(assets.map((a) => a.id!)));
+    onSelectionChange(new Set(assets.map((a) => a.id)));
   }
 }
 
 function handleSort(field: AssetSortField) {
   if (sort.field === field) {
-    onsortchange({
+    onSortChange({
       field,
       direction: sort.direction === 'asc' ? 'desc' : 'asc',
     });
   } else {
-    onsortchange({ field, direction: 'asc' });
+    onSortChange({ field, direction: 'asc' });
   }
 }
 
@@ -54,7 +56,7 @@ function getSortIndicator(field: AssetSortField): string {
   return sort.direction === 'asc' ? '↑' : '↓';
 }
 
-function isImage(asset: Asset): boolean {
+function isImage(asset: ListAsset): boolean {
   return asset.mimeType?.startsWith('image/') ?? false;
 }
 
@@ -67,7 +69,7 @@ function formatDate(date: Date | string): string {
   });
 }
 
-function getTypeBadge(asset: Asset): string {
+function getTypeBadge(asset: ListAsset): string {
   if (isImage(asset)) return 'IMG';
   if (asset.mimeType?.startsWith('video/')) return 'VID';
   if (asset.mimeType?.startsWith('audio/')) return 'AUD';
@@ -76,10 +78,10 @@ function getTypeBadge(asset: Asset): string {
 }
 
 const allSelected = $derived(
-  assets.length > 0 && assets.every((a) => selectedIds.has(a.id!)),
+  assets.length > 0 && assets.every((a) => selectedIds.has(a.id)),
 );
 const someSelected = $derived(
-  assets.some((a) => selectedIds.has(a.id!)) && !allSelected,
+  assets.some((a) => selectedIds.has(a.id)) && !allSelected,
 );
 
 // Svelte action to set indeterminate
@@ -152,17 +154,17 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
         </tr>
       {:else}
         {#each assets as asset (asset.id)}
-          {@const selected = selectedIds.has(asset.id!)}
+          {@const selected = selectedIds.has(asset.id)}
           <tr
             class="list-table__row"
             class:list-table__row--selected={selected}
-            onclick={() => onassetclick(asset)}
+            onclick={() => onAssetClick(asset)}
             role="button"
             tabindex="0"
             onkeydown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                onassetclick(asset);
+                onAssetClick(asset);
               }
             }}
           >
@@ -177,7 +179,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             </td>
             <td class="col-thumb">
               {#if isImage(asset) && asset.sourceUri}
-                <img src={asset.sourceUri} alt={asset.name} class="row-thumb" loading="lazy" />
+                <img src={asset.sourceUri} alt={(asset as any).alt || asset.name} class="row-thumb" loading="lazy" />
               {:else}
                 <span class="row-thumb-placeholder">{getTypeBadge(asset)}</span>
               {/if}

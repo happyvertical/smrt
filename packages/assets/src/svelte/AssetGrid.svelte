@@ -9,71 +9,66 @@
 import type { Asset } from '../asset';
 import type { AssetGridProps } from './types';
 
+type GridAsset = Asset & { id: string };
+
 let {
   assets,
   selectedIds,
-  onselectionchange,
-  onassetclick,
-  onassetdblclick,
+  onSelectionChange,
+  onAssetClick,
+  onAssetDblClick,
   loading = false,
 }: AssetGridProps = $props();
 
-function toggleSelection(asset: Asset, event: Event) {
+function toggleSelection(asset: GridAsset, event: Event) {
   event.stopPropagation();
   const next = new Set(selectedIds);
-  if (next.has(asset.id!)) {
-    next.delete(asset.id!);
+  if (next.has(asset.id)) {
+    next.delete(asset.id);
   } else {
-    next.add(asset.id!);
+    next.add(asset.id);
   }
-  onselectionchange(next);
+  onSelectionChange(next);
 }
 
-function handleClick(asset: Asset) {
-  onassetclick(asset);
+function handleClick(asset: GridAsset) {
+  onAssetClick(asset);
 }
 
-function handleDblClick(asset: Asset) {
-  onassetdblclick?.(asset);
+function handleDblClick(asset: GridAsset) {
+  onAssetDblClick?.(asset);
 }
 
-function handleKeydown(asset: Asset, event: KeyboardEvent) {
+function handleKeydown(asset: GridAsset, event: KeyboardEvent) {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    onassetclick(asset);
+    onAssetClick(asset);
   }
 }
 
-function isImage(asset: Asset): boolean {
+function isImage(asset: GridAsset): boolean {
   return asset.mimeType?.startsWith('image/') ?? false;
 }
 
-function isVideo(asset: Asset): boolean {
+function isVideo(asset: GridAsset): boolean {
   return asset.mimeType?.startsWith('video/') ?? false;
 }
 
-function isAudio(asset: Asset): boolean {
+function isAudio(asset: GridAsset): boolean {
   return asset.mimeType?.startsWith('audio/') ?? false;
 }
 
 /** True if it's an image-like asset missing alt text */
-function isMissingAlt(asset: Asset): boolean {
-  return isImage(asset) && !(asset as any).alt;
+function isMissingAlt(asset: GridAsset): boolean {
+  return isImage(asset) && !asset.alt;
 }
 
-function getTypeIcon(asset: Asset): string {
+function getTypeIcon(asset: GridAsset): string {
   if (isVideo(asset)) return '🎬';
   if (isAudio(asset)) return '🎵';
   if (asset.mimeType?.includes('pdf')) return '📄';
   if (asset.mimeType?.startsWith('text/')) return '📝';
   return '📎';
-}
-
-function formatFileSize(bytes: number | undefined): string {
-  if (!bytes) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 </script>
 
@@ -98,7 +93,7 @@ function formatFileSize(bytes: number | undefined): string {
   {:else}
     <div class="grid">
       {#each assets as asset (asset.id)}
-        {@const selected = selectedIds.has(asset.id!)}
+        {@const selected = selectedIds.has(asset.id)}
         <div
           class="asset-card"
           class:asset-card--selected={selected}
@@ -124,7 +119,7 @@ function formatFileSize(bytes: number | undefined): string {
             {#if isImage(asset) && asset.sourceUri}
               <img
                 src={asset.sourceUri}
-                alt={(asset as any).alt || asset.name}
+                alt={asset.alt || asset.name}
                 class="asset-card__image"
                 loading="lazy"
               />

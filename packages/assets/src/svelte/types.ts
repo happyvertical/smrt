@@ -8,7 +8,7 @@ import type { Snippet } from 'svelte';
 import type { Asset } from '../asset';
 
 /** View modes for the asset manager */
-export type AssetViewMode = 'grid' | 'list' | 'detail';
+export type AssetViewMode = 'grid' | 'list';
 
 /** Operating mode — manage (full CRUD) or pick (select and return) */
 export type AssetManagerMode = 'manage' | 'pick';
@@ -45,7 +45,7 @@ export interface AssetAction {
   /** Whether this action supports multiple selected assets */
   multi?: boolean;
   /** Callback when the action is triggered */
-  action: (selected: Asset[]) => void | Promise<void>;
+  action: (selected: Array<Asset & { id: string }>) => void | Promise<void>;
 }
 
 /**
@@ -69,9 +69,9 @@ export interface AssetManagerUploaderProps {
   /** Pre-loaded file from a drag-and-drop or paste event on the manager */
   initialFile: File | null;
   /** Callback to close the uploader */
-  onclose: () => void;
+  onClose: () => void;
   /** Callback when asset creation/selection is complete */
-  oncreate: (data: any) => void;
+  onCreate: (data: any) => void;
 }
 
 /** Props for the main AssetManager component */
@@ -89,9 +89,9 @@ export interface AssetManagerProps {
   /** Optional custom uploader snippet (e.g., to inject ImageUploader from smrt-images) */
   uploader?: Snippet<[AssetManagerUploaderProps]>;
   /** Callback when assets are selected (useful in pick mode) */
-  onselect?: (assets: Asset[]) => void;
+  onSelect?: (assets: Array<Asset & { id: string }>) => void;
   /** Callback when an asset is double-clicked or "confirmed" in pick mode */
-  onconfirm?: (assets: Asset[]) => void;
+  onConfirm?: (assets: Array<Asset & { id: string }>) => void;
   /** Initial view mode */
   initialView?: AssetViewMode;
   /** Whether to show folder navigation */
@@ -107,27 +107,27 @@ export interface AssetToolbarProps {
   /** Current sort */
   sort: AssetSort;
   /** Callback when view changes */
-  onviewchange: (view: AssetViewMode) => void;
+  onViewChange: (view: AssetViewMode) => void;
   /** Callback when filters change */
-  onfilterchange: (filters: AssetFilters) => void;
+  onFilterChange: (filters: AssetFilters) => void;
   /** Callback when sort changes */
-  onsortchange: (sort: AssetSort) => void;
+  onSortChange: (sort: AssetSort) => void;
   /** Callback when upload is requested */
-  onupload: () => void;
+  onUpload: () => void;
 }
 
 /** Props for AssetGrid */
 export interface AssetGridProps {
   /** Assets to display */
-  assets: Asset[];
+  assets: Array<Asset & { id: string }>;
   /** Currently selected asset IDs */
   selectedIds: Set<string>;
   /** Callback when selection changes */
-  onselectionchange: (ids: Set<string>) => void;
+  onSelectionChange: (ids: Set<string>) => void;
   /** Callback when an asset is clicked for detail view */
-  onassetclick: (asset: Asset) => void;
+  onAssetClick: (asset: Asset & { id: string }) => void;
   /** Callback when an asset is double-clicked */
-  onassetdblclick?: (asset: Asset) => void;
+  onAssetDblClick?: (asset: Asset & { id: string }) => void;
   /** Whether the grid is loading */
   loading?: boolean;
 }
@@ -135,17 +135,17 @@ export interface AssetGridProps {
 /** Props for AssetList */
 export interface AssetListProps {
   /** Assets to display */
-  assets: Asset[];
+  assets: Array<Asset & { id: string }>;
   /** Currently selected asset IDs */
   selectedIds: Set<string>;
   /** Current sort state */
   sort: AssetSort;
   /** Callback when selection changes */
-  onselectionchange: (ids: Set<string>) => void;
+  onSelectionChange: (ids: Set<string>) => void;
   /** Callback when an asset is clicked for detail view */
-  onassetclick: (asset: Asset) => void;
+  onAssetClick: (asset: Asset & { id: string }) => void;
   /** Callback when sort changes */
-  onsortchange: (sort: AssetSort) => void;
+  onSortChange: (sort: AssetSort) => void;
   /** Whether the list is loading */
   loading?: boolean;
 }
@@ -153,11 +153,11 @@ export interface AssetListProps {
 /** Props for ActionBar */
 export interface ActionBarProps {
   /** Currently selected assets */
-  selectedAssets: Asset[];
+  selectedAssets: Array<Asset & { id: string }>;
   /** Custom actions from the consumer */
   customActions?: AssetAction[];
   /** Callback to clear selection */
-  onclearselection: () => void;
+  onClearSelection: () => void;
   /** Callback for delete action */
-  ondelete: (assets: Asset[]) => void;
+  onDelete: (assets: Array<Asset & { id: string }>) => void | Promise<void>;
 }
