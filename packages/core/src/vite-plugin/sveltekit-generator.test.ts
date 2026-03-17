@@ -299,7 +299,9 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationCall).toBeDefined();
       const registrationContent = registrationCall?.[1] as string;
 
-      expect(registrationContent).toContain(`ObjectRegistry.register(ImageCollection, {
+      expect(
+        registrationContent,
+      ).toContain(`ObjectRegistry.register(ImageCollection, {
   packageName: '@happyvertical/smrt-images',
 });`);
     });

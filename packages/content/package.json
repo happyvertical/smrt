@@ -48,10 +48,19 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-images": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/spider": "catalog:",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
     "yaml": "^2.8.2"
+  },
+  "peerDependencies": {
+    "svelte": "^5.18.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@faker-js/faker": "^10.2.0",
