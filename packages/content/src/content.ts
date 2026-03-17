@@ -305,6 +305,18 @@ export class Content extends SmrtObject {
     return contents;
   }
 
+  private async getImageCollection() {
+    const images = new ImageCollection({ db: this.db } as any);
+    await images.initialize();
+    const ensureStorageReady = (images as any).ensureStorageReady;
+    if (typeof ensureStorageReady === 'function') {
+      await ensureStorageReady.call(images);
+    } else {
+      await images.count();
+    }
+    return images;
+  }
+
   private async resolveReferenceTarget(content: Content | string) {
     if (typeof content !== 'string') {
       return content;
@@ -313,11 +325,15 @@ export class Content extends SmrtObject {
     const contents = await this.getContentsCollection();
 
     return (await contents.getOrUpsert(
-      { url: content },
+      {
+        url: content,
+        tenantId: this.tenantId,
+      },
       {
         name: content,
         title: content,
         type: 'reference',
+        tenantId: this.tenantId,
       },
     )) as Content;
   }
@@ -385,20 +401,24 @@ export class Content extends SmrtObject {
 
     const references = await this.getReferenceCollection();
     const linkedReferences = await references.getForSource(this.id);
+    const targetIds = linkedReferences.map((reference) => reference.targetId);
 
-    if (linkedReferences.length === 0) {
+    if (targetIds.length === 0) {
       this.references = [];
       return this.references;
     }
 
     const contents = await this.getContentsCollection();
-    const resolved = await Promise.all(
-      linkedReferences.map((reference) =>
-        contents.get({ id: reference.targetId }),
-      ),
+    const resolved = await contents.listByIds(targetIds);
+    const referencesById = new Map(
+      resolved
+        .filter((content) => content.id)
+        .map((content) => [content.id as string, content]),
     );
 
-    this.references = resolved.filter(Boolean) as Content[];
+    this.references = targetIds
+      .map((targetId) => referencesById.get(targetId))
+      .filter(Boolean) as Content[];
     return this.references;
   }
 
@@ -484,11 +504,7 @@ export class Content extends SmrtObject {
   async getAssets(relationship?: string): Promise<Asset[]> {
     const db = this.db;
     await ensureContentAssetsTable(db);
-
-    const images = await (ImageCollection as any).create({
-      db: (this as any).options?.db,
-    });
-    await images.count();
+    const images = await this.getImageCollection();
 
     let sql = `
       SELECT a.* FROM assets a

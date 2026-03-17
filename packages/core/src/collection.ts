@@ -54,6 +54,12 @@ function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
   return where;
 }
 
+function shouldAutoEnsureCollectionSchema(
+  db: { requiresSchemaCheck?: boolean } | undefined,
+): boolean {
+  return !!db && !db.requiresSchemaCheck && !!process.versions?.node;
+}
+
 /**
  * Keys from SmrtObject and SmrtClass that should not appear as user-facing
  * create/update input fields. These are framework-internal properties.
@@ -598,7 +604,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * This is especially important when a collection is attached to an existing
    * database connection, because no upfront `schemas` bootstrap runs in that path.
    */
-  protected async ensureStorageReady(): Promise<void> {
+  public async ensureStorageReady(): Promise<void> {
+    if (!shouldAutoEnsureCollectionSchema(this.db)) {
+      return;
+    }
+
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
     const { ensureSchema } = await import('./schema/utils.js');
     await ensureSchema(this.db, this._itemClass.name);

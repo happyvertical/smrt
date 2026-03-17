@@ -357,3 +357,29 @@ it('should persist content references via the ContentReference model', async () 
   expect(references).toHaveLength(1);
   expect(references[0]?.id).toBe(target.id);
 });
+
+it('should create URL reference targets with the source tenantId', async () => {
+  const contents = await Contents.create({
+    db: {
+      url: getTestDbUrl('tenant-reference-target'),
+    },
+  });
+
+  const source = await contents.create({
+    name: 'tenant-reference-source',
+    title: 'Tenant reference source',
+    body: 'Tenant scoped source',
+    status: 'draft',
+    tenantId: 'tenant-1',
+  });
+
+  await source.addReference('https://example.com/reference');
+
+  const referenced = await contents.get({
+    url: 'https://example.com/reference',
+    tenantId: 'tenant-1',
+  });
+
+  expect(referenced).toBeTruthy();
+  expect(referenced?.tenantId).toBe('tenant-1');
+});
