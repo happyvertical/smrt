@@ -848,25 +848,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @returns Promise resolving to an array of model instances
    */
-  public async list(options: {
-    where?: SmrtWhereClause<ModelType>;
-    offset?: number;
-    limit?: number;
-    orderBy?: string | string[];
-    /**
-     * Relationships to eagerly load (avoids N+1 query problem)
-     * @example
-     * ```typescript
-     * // Load orders with their customers pre-loaded
-     * const orders = await orderCollection.list({
-     *   include: ['customerId']
-     * });
-     * // Access customer without additional query
-     * orders[0].getRelated('customerId');
-     * ```
-     */
-    include?: string[];
-  }): Promise<ModelType[]> {
+  public async list(
+    options: {
+      where?: SmrtWhereClause<ModelType>;
+      offset?: number;
+      limit?: number;
+      orderBy?: string | string[];
+      /**
+       * Relationships to eagerly load (avoids N+1 query problem)
+       * @example
+       * ```typescript
+       * // Load orders with their customers pre-loaded
+       * const orders = await orderCollection.list({
+       *   include: ['customerId']
+       * });
+       * // Access customer without additional query
+       * orders[0].getRelated('customerId');
+       * ```
+       */
+      include?: string[];
+    } = {},
+  ): Promise<ModelType[]> {
     await this.ensureStorageReady();
 
     // Execute beforeList interceptors (e.g., tenancy filtering)
@@ -875,11 +877,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       'list',
       this.constructor.name,
     );
-    const interceptedOptions = await GlobalInterceptors.executeBeforeList(
-      this._itemClass.name,
-      options as InterceptorListOptions,
-      interceptorContext,
-    );
+    const interceptedOptions =
+      (await GlobalInterceptors.executeBeforeList(
+        this._itemClass.name,
+        options as InterceptorListOptions,
+        interceptorContext,
+      )) ??
+      (options as InterceptorListOptions | undefined) ??
+      {};
 
     let { where, offset, limit, orderBy } = interceptedOptions;
 

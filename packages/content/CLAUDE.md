@@ -24,14 +24,17 @@ Three strategies via ThumbnailGenerator:
 - **static-map**: requires `metadata.latitude`/`longitude` (via `@happyvertical/geo`)
 - **ai-generate**: AI image generation (dynamic import of `@happyvertical/ai`)
 
-## Asset Associations
+## Relationship Models
 
-`content_assets` junction table (lazy-created on first `addAsset()` call):
+- **ContentReference**: SMRT junction model backing `content_references` for content-to-content links
+- **AssetAssociation**: shared polymorphic SMRT junction model used by content for asset links
 
 ```typescript
 await content.addAsset(image, 'thumbnail', 0);  // relationship, sortOrder
 await content.getAssets('attachment');
 await content.setThumbnail(image);  // convenience: adds asset + updates thumbnailAssetId
+await content.addReference(otherContent);
+await content.getReferences();
 ```
 
 ## Category Navigation
@@ -40,7 +43,6 @@ await content.setThumbnail(image);  // convenience: adds asset + updates thumbna
 
 ## Gotchas
 
-- **content_assets table created on-demand**: doesn't exist until first `addAsset()` call
 - **STI discriminator**: qualified names like `@happyvertical/smrt-content:Article`
 - **Optional tenancy**: `@TenantScoped({ mode: 'optional' })` — null tenantId = global content
 - **Metadata is primary extension pattern**: use JSON `metadata` field, not additional class fields

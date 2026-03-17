@@ -1,6 +1,5 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { AIClientOptions } from '@happyvertical/ai';
 import { fetchDocument } from '@happyvertical/documents';
 import { ensureDirectoryExists } from '@happyvertical/files';
 import { createLogger } from '@happyvertical/logger';
@@ -11,6 +10,7 @@ import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { Content } from './content';
 import type {
+  AIGenerateThumbnailOptions,
   ThumbnailOptions,
   ThumbnailStrategy,
 } from './thumbnail-generator';
@@ -21,11 +21,6 @@ const logger = createLogger({ level: 'info' });
  * Configuration options for Contents collection
  */
 export interface ContentsOptions extends SmrtCollectionOptions {
-  /**
-   * AI client configuration options
-   */
-  ai?: AIClientOptions;
-
   /**
    * Directory to store content files
    */
@@ -381,7 +376,7 @@ export class Contents extends SmrtCollection<Content> {
               style: mergedOptions.style,
               width: mergedOptions.width,
               height: mergedOptions.height,
-              ai: this.options.ai,
+              ai: this.options.ai as AIGenerateThumbnailOptions['ai'],
             };
             break;
 

@@ -289,33 +289,15 @@ export class Content extends SmrtObject {
 
   private async getContentsCollection() {
     const { Contents } = await import('./contents');
-    const contents = new Contents({ db: this.db });
-    await contents.initialize();
-    return contents;
+    return Contents.create({ db: this.db });
   }
 
   private async getAssetCollection() {
-    const assets = new AssetCollection({ db: this.db } as any);
-    await assets.initialize();
-    const ensureStorageReady = (assets as any).ensureStorageReady;
-    if (typeof ensureStorageReady === 'function') {
-      await ensureStorageReady.call(assets);
-    } else {
-      await assets.count();
-    }
-    return assets;
+    return AssetCollection.create({ db: this.db } as any);
   }
 
   private async getAssetAssociationCollection() {
-    const associations = new AssetAssociationCollection({ db: this.db } as any);
-    await associations.initialize();
-    const ensureStorageReady = (associations as any).ensureStorageReady;
-    if (typeof ensureStorageReady === 'function') {
-      await ensureStorageReady.call(associations);
-    } else {
-      await associations.count();
-    }
-    return associations;
+    return AssetAssociationCollection.create({ db: this.db } as any);
   }
 
   private getAssetAssociationMetaType(): string {
