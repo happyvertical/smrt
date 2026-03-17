@@ -1,4 +1,8 @@
-import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  type Asset,
+  AssetAssociationCollection,
+  AssetCollection,
+} from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
@@ -278,12 +282,57 @@ export class Content extends SmrtObject {
     return this;
   }
 
+  private async getReferenceCollection() {
+    const { ContentReferences } = await import('./content-references');
+    return ContentReferences.create({ db: this.db });
+  }
+
+  private async getContentsCollection() {
+    const { Contents } = await import('./contents');
+    return Contents.create({ db: this.db });
+  }
+
+  private async getAssetCollection() {
+    return AssetCollection.create({ db: this.db });
+  }
+
+  private async getAssetAssociationCollection() {
+    return AssetAssociationCollection.create({ db: this.db });
+  }
+
+  private getAssetAssociationMetaType(): string {
+    return (this as any)._meta_type || this.constructor.name;
+  }
+
+  private async resolveReferenceTarget(content: Content | string) {
+    if (typeof content !== 'string') {
+      return content;
+    }
+
+    const contents = await this.getContentsCollection();
+
+    return (await contents.getOrUpsert(
+      {
+        url: content,
+        tenantId: this.tenantId,
+      },
+      {
+        name: content,
+        title: content,
+        type: 'reference',
+        tenantId: this.tenantId,
+      },
+    )) as Content;
+  }
+
   /**
    * Loads referenced content objects
    *
    * @returns Promise that resolves when references are loaded
    */
-  public async loadReferences() {}
+  public async loadReferences() {
+    this.references = await this.getReferences();
+  }
 
   /**
    * Adds a reference to another content object
@@ -292,13 +341,39 @@ export class Content extends SmrtObject {
    * @returns Promise that resolves when the reference is added
    */
   public async addReference(content: Content | string) {
-    if (typeof content === 'string') {
-      content = new Content({
-        url: content,
-      } as any);
-      await content.initialize();
+    if (!this.id) {
+      throw new Error('Cannot add reference to unsaved content');
     }
-    this.references.push(content);
+
+    const target = await this.resolveReferenceTarget(content);
+
+    if (!target.id) {
+      throw new Error('Cannot add reference to unsaved content');
+    }
+    if (this.id === target.id) {
+      return;
+    }
+
+    const references = await this.getReferenceCollection();
+    await references.link(this.id, target.id, this.tenantId);
+    this.references = await this.getReferences();
+  }
+
+  /**
+   * Removes a reference to another content object
+   *
+   * @param targetId - ID of the referenced content to remove
+   */
+  public async removeReference(targetId: string) {
+    if (!this.id) {
+      return;
+    }
+
+    const references = await this.getReferenceCollection();
+    await references.unlink(this.id, targetId);
+    this.references = this.references.filter(
+      (reference) => reference.id !== targetId,
+    );
   }
 
   /**
@@ -307,6 +382,30 @@ export class Content extends SmrtObject {
    * @returns Promise resolving to an array of referenced Content objects
    */
   public async getReferences() {
+    if (!this.id) {
+      return [];
+    }
+
+    const references = await this.getReferenceCollection();
+    const linkedReferences = await references.getForSource(this.id);
+    const targetIds = linkedReferences.map((reference) => reference.targetId);
+
+    if (targetIds.length === 0) {
+      this.references = [];
+      return this.references;
+    }
+
+    const contents = await this.getContentsCollection();
+    const resolved = await contents.listByIds(targetIds);
+    const referencesById = new Map(
+      resolved
+        .filter((content) => content.id)
+        .map((content) => [content.id as string, content]),
+    );
+
+    this.references = targetIds
+      .map((targetId) => referencesById.get(targetId))
+      .filter(Boolean) as Content[];
     return this.references;
   }
 
@@ -390,39 +489,38 @@ export class Content extends SmrtObject {
    * @returns Promise resolving to array of assets
    */
   async getAssets(relationship?: string): Promise<Asset[]> {
-    const db = this.db;
-
-    let sql = `
-      SELECT a.* FROM assets a
-      INNER JOIN content_assets ca ON ca.asset_id = a.id
-      WHERE ca.content_id = ?
-    `;
-    const params: any[] = [this.id];
-
-    if (relationship) {
-      sql += ' AND ca.relationship = ?';
-      params.push(relationship);
+    if (!this.id) {
+      return [];
     }
 
-    sql += ' ORDER BY ca.sort_order ASC, ca.created_at ASC';
+    const associations = await this.getAssetAssociationCollection();
+    const linkedAssets = relationship
+      ? await associations.getForObjectByRole(
+          this.getAssetAssociationMetaType(),
+          this.id,
+          relationship,
+        )
+      : await associations.getForObject(
+          this.getAssetAssociationMetaType(),
+          this.id,
+        );
+    const assetIds = linkedAssets.map((association) => association.assetId);
 
-    const { rows } = await db.query(sql, ...params);
-
-    // Use ImageCollection to properly instantiate assets with STI
-    // Cast to any: ImageCollection.create is a protected factory method inherited from Collection
-    // that TypeScript doesn't expose on the static type. This is intentional SMRT ORM design.
-    const images = await (ImageCollection as any).create({
-      db: (this as any).options?.db,
-    });
-
-    const assets: Asset[] = [];
-    for (const row of rows) {
-      // Get the proper instance through the collection to handle STI
-      const asset = await images.get({ id: row.id });
-      if (asset) assets.push(asset);
+    if (assetIds.length === 0) {
+      return [];
     }
 
-    return assets;
+    const assets = await this.getAssetCollection();
+    const resolved = await assets.listByIds(assetIds);
+    const assetsById = new Map(
+      resolved
+        .filter((asset) => asset.id)
+        .map((asset) => [asset.id as string, asset]),
+    );
+
+    return assetIds
+      .map((assetId) => assetsById.get(assetId))
+      .filter(Boolean) as Asset[];
   }
 
   /**
@@ -436,6 +534,10 @@ export class Content extends SmrtObject {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
+    if (!this.id || !asset.id) {
+      throw new Error('Cannot associate unsaved content or asset');
+    }
+
     // Validate relationship - must start with letter/underscore, contain only alphanumeric and underscores
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(relationship)) {
       throw new Error(
@@ -454,26 +556,11 @@ export class Content extends SmrtObject {
       );
     }
 
-    const db = this.db;
-
-    // Ensure content_assets table exists
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS content_assets (
-        content_id TEXT NOT NULL,
-        asset_id TEXT NOT NULL,
-        relationship TEXT NOT NULL DEFAULT 'attachment',
-        sort_order INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (content_id, asset_id, relationship)
-      )
-    `);
-
-    await db.query(
-      `INSERT INTO content_assets (content_id, asset_id, relationship, sort_order)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT (content_id, asset_id, relationship) DO UPDATE SET sort_order = excluded.sort_order`,
-      this.id,
+    const associations = await this.getAssetAssociationCollection();
+    await associations.associate(
       asset.id,
+      this.getAssetAssociationMetaType(),
+      this.id,
       relationship,
       sortOrder,
     );
@@ -485,22 +572,17 @@ export class Content extends SmrtObject {
    * @param relationship - Optional specific relationship to remove (removes all if not specified)
    */
   async removeAsset(assetId: string, relationship?: string): Promise<void> {
-    const db = this.db;
-
-    if (relationship) {
-      await db.query(
-        'DELETE FROM content_assets WHERE content_id = ? AND asset_id = ? AND relationship = ?',
-        this.id,
-        assetId,
-        relationship,
-      );
-    } else {
-      await db.query(
-        'DELETE FROM content_assets WHERE content_id = ? AND asset_id = ?',
-        this.id,
-        assetId,
-      );
+    if (!this.id) {
+      return;
     }
+
+    const associations = await this.getAssetAssociationCollection();
+    await associations.dissociate(
+      assetId,
+      this.getAssetAssociationMetaType(),
+      this.id,
+      relationship,
+    );
   }
 
   // ============================================

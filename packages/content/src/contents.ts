@@ -22,14 +22,20 @@ const logger = createLogger({ level: 'info' });
  */
 export interface ContentsOptions extends SmrtCollectionOptions {
   /**
-   * AI client configuration options
-   */
-  ai?: AIClientOptions;
-
-  /**
    * Directory to store content files
    */
   contentDir?: string;
+}
+
+function isAIClientOptions(
+  ai: SmrtCollectionOptions['ai'],
+): ai is AIClientOptions {
+  return (
+    !!ai &&
+    typeof ai === 'object' &&
+    !('embed' in ai) &&
+    !('generateImage' in ai)
+  );
 }
 
 /**
@@ -67,9 +73,9 @@ export class Contents extends SmrtCollection<Content> {
    *
    * @param options - Configuration options
    */
-  constructor(options: ContentsOptions) {
+  constructor(options: ContentsOptions = {}) {
     super(options);
-    this.options = options; //needed cause redeclare above i think ?
+    this.options = options;
     this.loaded = new Map();
   }
 
@@ -381,7 +387,9 @@ export class Contents extends SmrtCollection<Content> {
               style: mergedOptions.style,
               width: mergedOptions.width,
               height: mergedOptions.height,
-              ai: this.options.ai,
+              ai: isAIClientOptions(this.options.ai)
+                ? this.options.ai
+                : undefined,
             };
             break;
 

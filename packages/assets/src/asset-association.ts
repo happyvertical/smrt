@@ -9,6 +9,7 @@ import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AssetAssociationOptions } from './types';
 
 @smrt({
+  conflictColumns: ['asset_id', 'meta_type', 'meta_id', 'role'],
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,

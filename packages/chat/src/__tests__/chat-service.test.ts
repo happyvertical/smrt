@@ -5,6 +5,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ChatService } from '../services/ChatService.js';
 
@@ -30,6 +31,31 @@ describe('ChatService', () => {
   });
 
   describe('Room Management', () => {
+    it('should lazily create tables when attached to an existing fresh database', async () => {
+      const sharedDb = await getTestDatabase({ classes: [] });
+
+      try {
+        const sharedChat = await ChatService.create({ db: sharedDb });
+        const room = await sharedChat.createRoom({
+          tenantId: 'tenant-1',
+          name: 'Bootstrap',
+          roomType: 'public',
+          createdByProfileId: 'profile-1',
+        });
+
+        expect(room.id).toBeDefined();
+
+        const rooms = await sharedChat.rooms.list({
+          where: { tenantId: 'tenant-1' },
+        });
+        expect(rooms).toHaveLength(1);
+      } finally {
+        if (typeof sharedDb.close === 'function') {
+          await sharedDb.close();
+        }
+      }
+    });
+
     it('should create a room and add creator as owner', async () => {
       const room = await chat.createRoom({
         tenantId: 'tenant-1',
