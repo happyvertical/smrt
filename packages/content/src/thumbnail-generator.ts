@@ -7,7 +7,7 @@
  * - ai-generate: Uses AI image generation for creative thumbnails
  */
 
-import type { AIClientOptions } from '@happyvertical/ai';
+import type { AIClient, AIClientOptions } from '@happyvertical/ai';
 import { fetchStaticMap, type StaticMapProvider } from '@happyvertical/geo';
 import {
   generateHeadlineCard,
@@ -128,7 +128,7 @@ export interface AIGenerateThumbnailOptions extends BaseThumbnailOptions {
   /**
    * AI provider configuration
    */
-  ai?: AIClientOptions;
+  ai?: AIClientOptions | AIClient;
 
   /**
    * Custom prompt for image generation
@@ -167,7 +167,34 @@ export interface ThumbnailGeneratorOptions {
   /**
    * AI client configuration for AI-generated thumbnails
    */
-  ai?: AIClientOptions;
+  ai?: AIClientOptions | AIClient;
+}
+
+interface ImageGenerationClient {
+  generateImage(
+    prompt: string,
+    options?: Record<string, unknown>,
+  ): Promise<{
+    images?: Array<{ data?: Buffer | string }>;
+  }>;
+}
+
+function isImageGenerationClient(
+  value: AIClientOptions | AIClient,
+): value is AIClient & ImageGenerationClient {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>).generateImage === 'function'
+  );
+}
+
+function isAIClientOptions(
+  value: AIClientOptions | AIClient,
+): value is AIClientOptions {
+  return (
+    !!value && typeof value === 'object' && !isImageGenerationClient(value)
+  );
 }
 
 /**
@@ -295,14 +322,22 @@ export class ThumbnailGenerator {
     // Dynamic import to avoid requiring AI package when not using this strategy
     const { getAI } = await import('@happyvertical/ai');
 
-    const aiConfig = options.ai ?? this.options.ai;
-    if (!aiConfig) {
+    const aiInput = options.ai ?? this.options.ai;
+    if (!aiInput) {
       throw new Error(
         'AI configuration required for ai-generate strategy. Provide via options.ai or constructor options.',
       );
     }
 
-    const ai = await getAI(aiConfig);
+    const ai = isImageGenerationClient(aiInput)
+      ? aiInput
+      : isAIClientOptions(aiInput)
+        ? await getAI(aiInput)
+        : (() => {
+            throw new Error(
+              'AI client does not support image generation for ai-generate thumbnails.',
+            );
+          })();
 
     // Generate prompt if not provided
     const prompt =

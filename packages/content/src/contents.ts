@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { AIClientOptions } from '@happyvertical/ai';
 import { fetchDocument } from '@happyvertical/documents';
 import { ensureDirectoryExists } from '@happyvertical/files';
 import { createLogger } from '@happyvertical/logger';
@@ -10,7 +11,6 @@ import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { Content } from './content';
 import type {
-  AIGenerateThumbnailOptions,
   ThumbnailOptions,
   ThumbnailStrategy,
 } from './thumbnail-generator';
@@ -25,6 +25,17 @@ export interface ContentsOptions extends SmrtCollectionOptions {
    * Directory to store content files
    */
   contentDir?: string;
+}
+
+function isAIClientOptions(
+  ai: SmrtCollectionOptions['ai'],
+): ai is AIClientOptions {
+  return (
+    !!ai &&
+    typeof ai === 'object' &&
+    !('embed' in ai) &&
+    !('generateImage' in ai)
+  );
 }
 
 /**
@@ -64,7 +75,7 @@ export class Contents extends SmrtCollection<Content> {
    */
   constructor(options: ContentsOptions = {}) {
     super(options);
-    this.options = options; //needed cause redeclare above i think ?
+    this.options = options;
     this.loaded = new Map();
   }
 
@@ -376,7 +387,9 @@ export class Contents extends SmrtCollection<Content> {
               style: mergedOptions.style,
               width: mergedOptions.width,
               height: mergedOptions.height,
-              ai: this.options.ai as AIGenerateThumbnailOptions['ai'],
+              ai: isAIClientOptions(this.options.ai)
+                ? this.options.ai
+                : undefined,
             };
             break;
 

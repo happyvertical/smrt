@@ -293,11 +293,11 @@ export class Content extends SmrtObject {
   }
 
   private async getAssetCollection() {
-    return AssetCollection.create({ db: this.db } as any);
+    return AssetCollection.create({ db: this.db });
   }
 
   private async getAssetAssociationCollection() {
-    return AssetAssociationCollection.create({ db: this.db } as any);
+    return AssetAssociationCollection.create({ db: this.db });
   }
 
   private getAssetAssociationMetaType(): string {

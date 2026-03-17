@@ -57,7 +57,12 @@ function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
 function shouldAutoEnsureCollectionSchema(
   db: { requiresSchemaCheck?: boolean } | undefined,
 ): boolean {
-  return !!db && !db.requiresSchemaCheck && !!process.versions?.node;
+  return (
+    !!db &&
+    !db.requiresSchemaCheck &&
+    typeof process !== 'undefined' &&
+    !!process.versions?.node
+  );
 }
 
 /**
