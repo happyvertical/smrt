@@ -1031,6 +1031,10 @@ export class SmrtObject extends SmrtClass {
    */
   async save() {
     try {
+      await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
+      const { ensureSchema } = await import('./schema/utils.js');
+      await ensureSchema(this.db, this.constructor.name);
+
       // Validate object state before saving
       await this.validateBeforeSave();
 
@@ -1562,6 +1566,10 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public async delete(): Promise<void> {
+    await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
+    const { ensureSchema } = await import('./schema/utils.js');
+    await ensureSchema(this.db, this.constructor.name);
+
     // Execute beforeDelete interceptors (e.g., tenant validation)
     const interceptorContext = createInterceptorContext(
       this.constructor.name,

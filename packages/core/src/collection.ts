@@ -593,6 +593,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Ensure the collection's backing table exists before the first real query.
+   *
+   * This is especially important when a collection is attached to an existing
+   * database connection, because no upfront `schemas` bootstrap runs in that path.
+   */
+  protected async ensureStorageReady(): Promise<void> {
+    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+    const { ensureSchema } = await import('./schema/utils.js');
+    await ensureSchema(this.db, this._itemClass.name);
+  }
+
+  /**
    * Find a single record by criteria (convenience method - delegates to get())
    *
    * @param options - Query options with where clause
@@ -707,10 +719,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   public async get(
     filter: string | Record<string, any>,
   ): Promise<ModelType | null> {
-    // Schema already initialized in Collection.create() static factory
-
-    // Ensure manifest is loaded for external packages before validating WHERE clause
-    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+    await this.ensureStorageReady();
 
     // Execute beforeGet interceptors (e.g., tenancy validation)
     const interceptorContext = createInterceptorContext(
@@ -848,10 +857,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
      */
     include?: string[];
   }): Promise<ModelType[]> {
-    // Schema already initialized in Collection.create() static factory
-
-    // Ensure manifest is loaded for external packages before validating WHERE clause
-    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+    await this.ensureStorageReady();
 
     // Execute beforeList interceptors (e.g., tenancy filtering)
     const interceptorContext = createInterceptorContext(
@@ -1198,8 +1204,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @see {@link getOrUpsert} to avoid duplicates by finding-or-creating
    */
   public async create(options: SmrtCreateInput<ModelType>) {
-    // Ensure manifest is loaded for external packages before creating instance
-    // This is critical for STI children to have inherited fields available during toJSON()
+    // Ensure manifest is loaded before creating instance metadata; save() will
+    // ensure the actual table exists right before persistence.
     await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
 
     // STI: Check for polymorphic instantiation
@@ -1555,7 +1561,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @see {@link list} for retrieving the actual records
    */
   public async count(options: { where?: Record<string, any> } = {}) {
-    // Schema already initialized in Collection.create() static factory
+    await this.ensureStorageReady();
 
     let { where } = options;
 
@@ -1632,10 +1638,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     params: any[] = [],
     options: { allowRawOnTenantScoped?: boolean } = {},
   ): Promise<ModelType[]> {
-    // Schema already initialized in Collection.create() static factory
-
-    // Ensure manifest is loaded for external packages
-    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+    await this.ensureStorageReady();
 
     // Execute beforeQuery interceptors (e.g., tenant raw SQL policy)
     const interceptorContext = createInterceptorContext(

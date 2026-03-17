@@ -67,7 +67,7 @@ export class Contents extends SmrtCollection<Content> {
    *
    * @param options - Configuration options
    */
-  constructor(options: ContentsOptions) {
+  constructor(options: ContentsOptions = {}) {
     super(options);
     this.options = options; //needed cause redeclare above i think ?
     this.loaded = new Map();

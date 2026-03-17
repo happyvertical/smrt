@@ -284,3 +284,76 @@ it.skipIf(!process.env.OPENAI_API_KEY)(
     expect(json.variant).toBe('praeco:meeting:upcoming');
   },
 );
+
+it('should return an empty asset list on a fresh database before any asset writes', async () => {
+  const contents = await Contents.create({
+    db: {
+      url: getTestDbUrl('fresh-assets'),
+    },
+  });
+
+  const content = await contents.create({
+    name: 'Fresh asset lookup',
+    title: 'Fresh asset lookup',
+    body: 'No assets yet',
+    status: 'draft',
+  });
+
+  const assets = await content.getAssets();
+  expect(assets).toEqual([]);
+});
+
+it('should return an empty reference list before any reference writes', async () => {
+  const contents = await Contents.create({
+    db: {
+      url: getTestDbUrl('fresh-reference-read'),
+    },
+  });
+
+  const content = await contents.create({
+    name: 'fresh-reference-read',
+    title: 'Fresh reference read',
+    body: 'No references yet',
+    status: 'draft',
+  });
+
+  await expect(content.getReferences()).resolves.toEqual([]);
+});
+
+it('should persist content references via the ContentReference model', async () => {
+  const dbUrl = getTestDbUrl('persisted-references');
+  const contents = await Contents.create({
+    db: {
+      url: dbUrl,
+    },
+  });
+
+  const source = await contents.create({
+    name: 'source-content',
+    title: 'Source content',
+    body: 'Source body',
+    status: 'draft',
+  });
+
+  const target = await contents.create({
+    name: 'target-content',
+    title: 'Target content',
+    body: 'Target body',
+    status: 'draft',
+  });
+
+  await source.addReference(target);
+
+  const reloadedContents = await Contents.create({
+    db: {
+      url: dbUrl,
+    },
+  });
+  const reloadedSource = await reloadedContents.get({ id: source.id });
+
+  expect(reloadedSource).toBeTruthy();
+
+  const references = await reloadedSource?.getReferences();
+  expect(references).toHaveLength(1);
+  expect(references[0]?.id).toBe(target.id);
+});

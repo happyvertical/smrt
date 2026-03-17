@@ -7,6 +7,21 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
 
+async function ensureContentAssetsTable(db: {
+  query: (...args: any[]) => Promise<unknown>;
+}) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS content_assets (
+      content_id TEXT NOT NULL,
+      asset_id TEXT NOT NULL,
+      relationship TEXT NOT NULL DEFAULT 'attachment',
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (content_id, asset_id, relationship)
+    )
+  `);
+}
+
 /**
  * Options for Content initialization
  */
@@ -278,12 +293,43 @@ export class Content extends SmrtObject {
     return this;
   }
 
+  private async getReferenceCollection() {
+    const { ContentReferences } = await import('./content-references');
+    return ContentReferences.create({ db: this.db });
+  }
+
+  private async getContentsCollection() {
+    const { Contents } = await import('./contents');
+    const contents = new Contents({ db: this.db });
+    await contents.initialize();
+    return contents;
+  }
+
+  private async resolveReferenceTarget(content: Content | string) {
+    if (typeof content !== 'string') {
+      return content;
+    }
+
+    const contents = await this.getContentsCollection();
+
+    return (await contents.getOrUpsert(
+      { url: content },
+      {
+        name: content,
+        title: content,
+        type: 'reference',
+      },
+    )) as Content;
+  }
+
   /**
    * Loads referenced content objects
    *
    * @returns Promise that resolves when references are loaded
    */
-  public async loadReferences() {}
+  public async loadReferences() {
+    this.references = await this.getReferences();
+  }
 
   /**
    * Adds a reference to another content object
@@ -292,13 +338,39 @@ export class Content extends SmrtObject {
    * @returns Promise that resolves when the reference is added
    */
   public async addReference(content: Content | string) {
-    if (typeof content === 'string') {
-      content = new Content({
-        url: content,
-      } as any);
-      await content.initialize();
+    if (!this.id) {
+      throw new Error('Cannot add reference to unsaved content');
     }
-    this.references.push(content);
+
+    const target = await this.resolveReferenceTarget(content);
+
+    if (!target.id) {
+      throw new Error('Cannot add reference to unsaved content');
+    }
+    if (this.id === target.id) {
+      return;
+    }
+
+    const references = await this.getReferenceCollection();
+    await references.link(this.id, target.id, this.tenantId);
+    this.references = await this.getReferences();
+  }
+
+  /**
+   * Removes a reference to another content object
+   *
+   * @param targetId - ID of the referenced content to remove
+   */
+  public async removeReference(targetId: string) {
+    if (!this.id) {
+      return;
+    }
+
+    const references = await this.getReferenceCollection();
+    await references.unlink(this.id, targetId);
+    this.references = this.references.filter(
+      (reference) => reference.id !== targetId,
+    );
   }
 
   /**
@@ -307,6 +379,26 @@ export class Content extends SmrtObject {
    * @returns Promise resolving to an array of referenced Content objects
    */
   public async getReferences() {
+    if (!this.id) {
+      return [];
+    }
+
+    const references = await this.getReferenceCollection();
+    const linkedReferences = await references.getForSource(this.id);
+
+    if (linkedReferences.length === 0) {
+      this.references = [];
+      return this.references;
+    }
+
+    const contents = await this.getContentsCollection();
+    const resolved = await Promise.all(
+      linkedReferences.map((reference) =>
+        contents.get({ id: reference.targetId }),
+      ),
+    );
+
+    this.references = resolved.filter(Boolean) as Content[];
     return this.references;
   }
 
@@ -391,6 +483,12 @@ export class Content extends SmrtObject {
    */
   async getAssets(relationship?: string): Promise<Asset[]> {
     const db = this.db;
+    await ensureContentAssetsTable(db);
+
+    const images = await (ImageCollection as any).create({
+      db: (this as any).options?.db,
+    });
+    await images.count();
 
     let sql = `
       SELECT a.* FROM assets a
@@ -407,13 +505,6 @@ export class Content extends SmrtObject {
     sql += ' ORDER BY ca.sort_order ASC, ca.created_at ASC';
 
     const { rows } = await db.query(sql, ...params);
-
-    // Use ImageCollection to properly instantiate assets with STI
-    // Cast to any: ImageCollection.create is a protected factory method inherited from Collection
-    // that TypeScript doesn't expose on the static type. This is intentional SMRT ORM design.
-    const images = await (ImageCollection as any).create({
-      db: (this as any).options?.db,
-    });
 
     const assets: Asset[] = [];
     for (const row of rows) {
@@ -456,17 +547,7 @@ export class Content extends SmrtObject {
 
     const db = this.db;
 
-    // Ensure content_assets table exists
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS content_assets (
-        content_id TEXT NOT NULL,
-        asset_id TEXT NOT NULL,
-        relationship TEXT NOT NULL DEFAULT 'attachment',
-        sort_order INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (content_id, asset_id, relationship)
-      )
-    `);
+    await ensureContentAssetsTable(db);
 
     await db.query(
       `INSERT INTO content_assets (content_id, asset_id, relationship, sort_order)
