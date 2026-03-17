@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - restore shared-db lazy schemas and model content references (#1031) (core)
+  - @happyvertical/smrt-scanner@0.21.1
+  - @happyvertical/smrt-config@0.21.1
+  - @happyvertical/smrt-types@0.21.1
+
 ## 1.0.0
 
 ### Minor Changes
