@@ -1,4 +1,8 @@
-import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  type Asset,
+  AssetAssociationCollection,
+  AssetCollection,
+} from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
@@ -6,21 +10,6 @@ import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
-
-async function ensureContentAssetsTable(db: {
-  query: (...args: any[]) => Promise<unknown>;
-}) {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS content_assets (
-      content_id TEXT NOT NULL,
-      asset_id TEXT NOT NULL,
-      relationship TEXT NOT NULL DEFAULT 'attachment',
-      sort_order INTEGER DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (content_id, asset_id, relationship)
-    )
-  `);
-}
 
 /**
  * Options for Content initialization
@@ -305,16 +294,32 @@ export class Content extends SmrtObject {
     return contents;
   }
 
-  private async getImageCollection() {
-    const images = new ImageCollection({ db: this.db } as any);
-    await images.initialize();
-    const ensureStorageReady = (images as any).ensureStorageReady;
+  private async getAssetCollection() {
+    const assets = new AssetCollection({ db: this.db } as any);
+    await assets.initialize();
+    const ensureStorageReady = (assets as any).ensureStorageReady;
     if (typeof ensureStorageReady === 'function') {
-      await ensureStorageReady.call(images);
+      await ensureStorageReady.call(assets);
     } else {
-      await images.count();
+      await assets.count();
     }
-    return images;
+    return assets;
+  }
+
+  private async getAssetAssociationCollection() {
+    const associations = new AssetAssociationCollection({ db: this.db } as any);
+    await associations.initialize();
+    const ensureStorageReady = (associations as any).ensureStorageReady;
+    if (typeof ensureStorageReady === 'function') {
+      await ensureStorageReady.call(associations);
+    } else {
+      await associations.count();
+    }
+    return associations;
+  }
+
+  private getAssetAssociationMetaType(): string {
+    return (this as any)._meta_type || this.constructor.name;
   }
 
   private async resolveReferenceTarget(content: Content | string) {
@@ -502,34 +507,38 @@ export class Content extends SmrtObject {
    * @returns Promise resolving to array of assets
    */
   async getAssets(relationship?: string): Promise<Asset[]> {
-    const db = this.db;
-    await ensureContentAssetsTable(db);
-    const images = await this.getImageCollection();
-
-    let sql = `
-      SELECT a.* FROM assets a
-      INNER JOIN content_assets ca ON ca.asset_id = a.id
-      WHERE ca.content_id = ?
-    `;
-    const params: any[] = [this.id];
-
-    if (relationship) {
-      sql += ' AND ca.relationship = ?';
-      params.push(relationship);
+    if (!this.id) {
+      return [];
     }
 
-    sql += ' ORDER BY ca.sort_order ASC, ca.created_at ASC';
+    const associations = await this.getAssetAssociationCollection();
+    const linkedAssets = relationship
+      ? await associations.getForObjectByRole(
+          this.getAssetAssociationMetaType(),
+          this.id,
+          relationship,
+        )
+      : await associations.getForObject(
+          this.getAssetAssociationMetaType(),
+          this.id,
+        );
+    const assetIds = linkedAssets.map((association) => association.assetId);
 
-    const { rows } = await db.query(sql, ...params);
-
-    const assets: Asset[] = [];
-    for (const row of rows) {
-      // Get the proper instance through the collection to handle STI
-      const asset = await images.get({ id: row.id });
-      if (asset) assets.push(asset);
+    if (assetIds.length === 0) {
+      return [];
     }
 
-    return assets;
+    const assets = await this.getAssetCollection();
+    const resolved = await assets.listByIds(assetIds);
+    const assetsById = new Map(
+      resolved
+        .filter((asset) => asset.id)
+        .map((asset) => [asset.id as string, asset]),
+    );
+
+    return assetIds
+      .map((assetId) => assetsById.get(assetId))
+      .filter(Boolean) as Asset[];
   }
 
   /**
@@ -543,6 +552,10 @@ export class Content extends SmrtObject {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
+    if (!this.id || !asset.id) {
+      throw new Error('Cannot associate unsaved content or asset');
+    }
+
     // Validate relationship - must start with letter/underscore, contain only alphanumeric and underscores
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(relationship)) {
       throw new Error(
@@ -561,16 +574,11 @@ export class Content extends SmrtObject {
       );
     }
 
-    const db = this.db;
-
-    await ensureContentAssetsTable(db);
-
-    await db.query(
-      `INSERT INTO content_assets (content_id, asset_id, relationship, sort_order)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT (content_id, asset_id, relationship) DO UPDATE SET sort_order = excluded.sort_order`,
-      this.id,
+    const associations = await this.getAssetAssociationCollection();
+    await associations.associate(
       asset.id,
+      this.getAssetAssociationMetaType(),
+      this.id,
       relationship,
       sortOrder,
     );
@@ -582,22 +590,17 @@ export class Content extends SmrtObject {
    * @param relationship - Optional specific relationship to remove (removes all if not specified)
    */
   async removeAsset(assetId: string, relationship?: string): Promise<void> {
-    const db = this.db;
-
-    if (relationship) {
-      await db.query(
-        'DELETE FROM content_assets WHERE content_id = ? AND asset_id = ? AND relationship = ?',
-        this.id,
-        assetId,
-        relationship,
-      );
-    } else {
-      await db.query(
-        'DELETE FROM content_assets WHERE content_id = ? AND asset_id = ?',
-        this.id,
-        assetId,
-      );
+    if (!this.id) {
+      return;
     }
+
+    const associations = await this.getAssetAssociationCollection();
+    await associations.dissociate(
+      assetId,
+      this.getAssetAssociationMetaType(),
+      this.id,
+      relationship,
+    );
   }
 
   // ============================================
