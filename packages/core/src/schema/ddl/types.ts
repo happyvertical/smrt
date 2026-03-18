@@ -101,6 +101,17 @@ export interface DDLStrategy {
    * @returns true if UNIQUE must be inline
    */
   requiresInlineUnique(): boolean;
+
+  /**
+   * Generate a single column definition for use in ALTER TABLE ADD COLUMN
+   * @param columnName - The column name
+   * @param columnDef - The column definition
+   * @returns Column definition SQL fragment (e.g. '"name" TEXT DEFAULT '')
+   */
+  generateColumnDefinition(
+    columnName: string,
+    columnDef: import('../types').ColumnDefinition,
+  ): string;
 }
 
 /**

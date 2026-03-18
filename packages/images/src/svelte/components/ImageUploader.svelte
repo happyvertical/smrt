@@ -232,19 +232,21 @@ onDestroy(() => {
   {#if selectedImage}
     <!-- Gallery Confirmation Step -->
     <div class="header">
-      <button class="back-btn" onclick={handleBackToChooser}>
+      <button type="button" class="back-btn" onclick={handleBackToChooser}>
         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"></polyline>
         </svg>
         Back
       </button>
       {#if onCancel}
-        <button class="close-btn" onclick={onCancel}>×</button>
+        <button type="button" class="close-btn" onclick={onCancel}>×</button>
       {/if}
     </div>
 
     <div class="confirm-panel">
-      <div class="confirm-preview" style="background-image: url({selectedImage.url})"></div>
+      <div class="confirm-preview-wrapper">
+        <img class="confirm-preview-img" src={selectedImage.sourceUri || selectedImage.url} alt={selectedImage.name} />
+      </div>
       
       <div class="confirm-info">
         <span class="confirm-name">{selectedImage.name}</span>
@@ -252,10 +254,11 @@ onDestroy(() => {
       </div>
 
       <div class="confirm-actions">
-        <button class="primary-btn" onclick={handleConfirmOriginal}>
-          Use Original
+        <button type="button" class="primary-btn" onclick={handleConfirmOriginal}>
+          Select Image
         </button>
         <button 
+          type="button"
           class="variation-toggle" 
           class:active={showVariation}
           onclick={() => showVariation = !showVariation}
@@ -281,6 +284,7 @@ onDestroy(() => {
             <div class="variation-error">{variationError}</div>
           {/if}
           <button 
+            type="button"
             class="generate-btn"
             disabled={isGenerating || !variationPrompt.trim()} 
             onclick={handleGenerateVariation}
@@ -301,22 +305,22 @@ onDestroy(() => {
     <div class="header">
       <h3>Choose Image</h3>
       {#if onCancel}
-        <button class="close-btn" onclick={onCancel}>×</button>
+        <button type="button" class="close-btn" onclick={onCancel}>×</button>
       {/if}
     </div>
     
     <div class="tabs">
       {#if allowedTabs.includes('gallery')}
-        <button class:active={activeTab === 'gallery'} onclick={() => activeTab = 'gallery'}>Gallery</button>
+        <button type="button" class:active={activeTab === 'gallery'} onclick={() => activeTab = 'gallery'}>Gallery</button>
       {/if}
       {#if allowedTabs.includes('upload')}
-        <button class:active={activeTab === 'upload'} onclick={() => activeTab = 'upload'}>Upload</button>
+        <button type="button" class:active={activeTab === 'upload'} onclick={() => activeTab = 'upload'}>Upload</button>
       {/if}
       {#if allowedTabs.includes('camera')}
-        <button class:active={activeTab === 'camera'} onclick={() => activeTab = 'camera'}>Camera</button>
+        <button type="button" class:active={activeTab === 'camera'} onclick={() => activeTab = 'camera'}>Camera</button>
       {/if}
       {#if allowedTabs.includes('external')}
-        <button class:active={activeTab === 'external'} onclick={() => activeTab = 'external'}>External URL</button>
+        <button type="button" class:active={activeTab === 'external'} onclick={() => activeTab = 'external'}>External URL</button>
       {/if}
     </div>
     
@@ -348,7 +352,7 @@ onDestroy(() => {
           </div>
           <p>Drag and drop an image here</p>
           <span class="divider">or</span>
-          <button class="browse-btn">Browse Files</button>
+          <button type="button" class="browse-btn">Browse Files</button>
           <input 
             type="file" 
             accept="image/*" 
@@ -366,7 +370,7 @@ onDestroy(() => {
           {#if cameraError}
             <div class="error-panel">
               <p>{cameraError}</p>
-              <button onclick={startCamera}>Try Again</button>
+              <button type="button" onclick={startCamera}>Try Again</button>
             </div>
           {:else}
             <div class="video-container">
@@ -376,7 +380,7 @@ onDestroy(() => {
                 <div class="loading-overlay">Starting camera...</div>
               {/if}
             </div>
-            <button class="capture-btn" disabled={!isCameraActive} onclick={takePicture}>
+            <button type="button" class="capture-btn" disabled={!isCameraActive} onclick={takePicture}>
               Take Picture
             </button>
             <canvas bind:this={canvasElement} style="display: none;"></canvas>
@@ -394,6 +398,7 @@ onDestroy(() => {
               onkeydown={(e) => e.key === 'Enter' && handleExternalSubmit()}
             />
             <button 
+              type="button"
               class="submit-btn" 
               disabled={!externalUrl.trim()} 
               onclick={handleExternalSubmit}
@@ -706,28 +711,36 @@ onDestroy(() => {
     background: rgba(59, 130, 246, 0.08);
   }
 
-  /* --- Confirmation Panel --- */
   .confirm-panel {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 1.5rem;
-    overflow-y: auto;
+    overflow: hidden; /* Prevent body scroll, let preview wrapper handle it */
   }
 
-  .confirm-preview {
+  .confirm-preview-wrapper {
+    flex: 1;
+    min-height: 0;
+    padding: 1.5rem 1.5rem 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .confirm-preview-img {
     width: 100%;
-    aspect-ratio: 16 / 10;
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-color: var(--smrt-color-surface-container-high, #242424);
+    height: 100%;
+    min-height: 200px;
+    max-width: 100%;
+    max-height: 400px;
+    object-fit: contain;
     border-radius: var(--smrt-radius-md, 6px);
     border: 1px solid var(--smrt-color-outline-variant, #333);
+    background-color: var(--smrt-color-surface-container-high, #242424);
   }
 
   .confirm-info {
+    padding: 1rem 1.5rem 0.5rem;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -744,9 +757,12 @@ onDestroy(() => {
   }
 
   .confirm-actions {
+    padding: 1rem 1.5rem 1.5rem;
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
+    border-top: 1px solid var(--smrt-color-outline-variant, #333);
+    margin-top: 0.5rem;
   }
 
   .primary-btn {
@@ -794,6 +810,7 @@ onDestroy(() => {
     flex-direction: column;
     gap: 0.75rem;
     padding: 1.25rem;
+    margin: 0 1.5rem 1.5rem;
     background: var(--smrt-color-surface-container-high, #242424);
     border-radius: var(--smrt-radius-md, 6px);
     border: 1px solid var(--smrt-color-outline-variant, #333);
