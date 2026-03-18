@@ -1,12 +1,15 @@
 /**
- * Issue #1031: Attached fresh databases should lazily create collection tables
+ * Issue #1031: Attached databases require upfront schema creation
  *
- * Reproduces the core invariant behind the cross-package chat/content failures:
- * a collection attached to an existing fresh database should be able to
- * bootstrap its backing table on the first read operation.
+ * Verifies that collections attached to a fresh database work correctly
+ * when tables are created upfront (via syncSchema or migrations).
+ *
+ * Previously, tables were lazily created on first read. This was removed
+ * to align SQLite with Postgres behavior — tables must exist before queries.
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { syncSchema } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
@@ -22,7 +25,7 @@ class Issue1031AttachedRecords extends SmrtCollection<Issue1031AttachedRecord> {
   static readonly _itemClass = Issue1031AttachedRecord;
 }
 
-describe('Issue #1031: attached DB lazy schema bootstrap', () => {
+describe('Issue #1031: attached DB upfront schema creation', () => {
   let db: DatabaseInterface;
   const tableName = ObjectRegistry.getTableName('Issue1031AttachedRecord');
 
@@ -36,27 +39,38 @@ describe('Issue #1031: attached DB lazy schema bootstrap', () => {
     }
   });
 
-  it('should lazily create the table on first list() against an attached fresh DB', async () => {
+  it('should work after explicit schema creation via syncSchema', async () => {
+    // Create table upfront using DDL from the registry
+    const schema = ObjectRegistry.getSchema('Issue1031AttachedRecord');
+    expect(schema).toBeDefined();
+    expect(schema?.ddl).toBeDefined();
+    await syncSchema({ db, schema: schema?.ddl as string });
+
     const records = await Issue1031AttachedRecords.create({ db });
 
-    expect(await db.tableExists(tableName)).toBe(false);
+    expect(await db.tableExists(tableName)).toBe(true);
     await expect(records.list()).resolves.toEqual([]);
-    expect(await db.tableExists(tableName)).toBe(true);
-  });
-
-  it('should lazily create the table on first get() against an attached fresh DB', async () => {
-    const records = await Issue1031AttachedRecords.create({ db });
-
-    expect(await db.tableExists(tableName)).toBe(false);
-    await expect(records.get({ name: 'missing' })).resolves.toBeNull();
-    expect(await db.tableExists(tableName)).toBe(true);
-  });
-
-  it('should lazily create the table on first count() against an attached fresh DB', async () => {
-    const records = await Issue1031AttachedRecords.create({ db });
-
-    expect(await db.tableExists(tableName)).toBe(false);
     await expect(records.count()).resolves.toBe(0);
+  });
+
+  it('should fail with clear error if table not created upfront', async () => {
+    const records = await Issue1031AttachedRecords.create({ db });
+
+    expect(await db.tableExists(tableName)).toBe(false);
+    // Without upfront creation, queries fail with a clear error
+    await expect(records.count()).rejects.toThrow();
+  });
+
+  it('should support list and count after upfront schema creation', async () => {
+    const schema = ObjectRegistry.getSchema('Issue1031AttachedRecord');
+    expect(schema).toBeDefined();
+    await syncSchema({ db, schema: schema?.ddl as string });
+
+    const records = await Issue1031AttachedRecords.create({ db });
+
+    // Table exists and is queryable
     expect(await db.tableExists(tableName)).toBe(true);
+    await expect(records.list()).resolves.toEqual([]);
+    await expect(records.count()).resolves.toBe(0);
   });
 });

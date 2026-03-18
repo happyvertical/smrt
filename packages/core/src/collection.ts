@@ -10,7 +10,7 @@ import {
 } from './interceptors';
 import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
-import { generateSchema } from './schema/utils';
+
 import { isTableVerified, markTableVerified } from './table-cache';
 import {
   fieldsFromClass,
@@ -52,17 +52,6 @@ function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
   }
 
   return where;
-}
-
-function shouldAutoEnsureCollectionSchema(
-  db: { requiresSchemaCheck?: boolean } | undefined,
-): boolean {
-  return (
-    !!db &&
-    !db.requiresSchemaCheck &&
-    typeof process !== 'undefined' &&
-    !!process.versions?.node
-  );
 }
 
 /**
@@ -609,14 +598,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * This is especially important when a collection is attached to an existing
    * database connection, because no upfront `schemas` bootstrap runs in that path.
    */
+  /**
+   * @deprecated Tables are now created upfront by plugins (vitest/vite).
+   * This method is a no-op retained for backward compatibility.
+   */
   public async ensureStorageReady(): Promise<void> {
-    if (!shouldAutoEnsureCollectionSchema(this.db)) {
-      return;
-    }
-
-    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
-    const { ensureSchema } = await import('./schema/utils.js');
-    await ensureSchema(this.db, this._itemClass.name);
+    // No-op: tables are created upfront by smrtVitestPlugin / smrtPlugin
   }
 
   /**
@@ -1460,6 +1447,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   async generateSchema() {
     // Always generate fresh schema to ensure latest field mapping is used
+    const { generateSchema } = await import('./schema/utils.js');
     return await generateSchema(this._itemClass);
   }
 

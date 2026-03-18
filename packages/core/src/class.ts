@@ -508,22 +508,18 @@ export class SmrtClass {
        */
       this.options.db = this._db;
 
-      // For JSON adapter, ensure ALL tables exist upfront (issue #603).
-      // JSON adapter loads tables on-demand which causes issues with cross-table
-      // queries (JOINs, NOT EXISTS subqueries). Unlike SQLite/Postgres where all
-      // tables exist in the database file, JSON needs explicit table creation.
-      // Detection: JSON adapter has exportTable method (see schema-manager.ts:50-54)
+      // For JSON/DuckDB adapter, create ALL tables upfront (issue #603).
+      // Unlike SQLite/Postgres which persist table definitions, JSON adapter
+      // loads tables on-demand and has no persistent schema storage.
+      // Detection: JSON adapter has exportTable method (see schema-manager.ts)
       if ((this._db as any).exportTable) {
-        const { ensureSchema } = await import('./schema/utils.js');
-        const classNames = ObjectRegistry.getClassNames();
-        for (const className of classNames) {
-          const registered = ObjectRegistry.getClass(className);
-          if (registered?.extends === 'SmrtCollection') continue;
-          try {
-            await ensureSchema(this._db, className);
-          } catch {
-            // Non-critical: some classes may not have schemas yet
-          }
+        const allSchemas = ObjectRegistry.getAllSchemas();
+        const ddlStatements = Object.values(allSchemas)
+          .filter((s) => s.ddl)
+          .map((s) => s.ddl);
+        if (ddlStatements.length > 0) {
+          const { syncSchema } = await import('@happyvertical/sql');
+          await syncSchema({ db: this._db, schema: ddlStatements.join(';\n') });
         }
       }
 
