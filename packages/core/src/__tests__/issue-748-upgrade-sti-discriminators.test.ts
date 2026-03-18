@@ -106,7 +106,11 @@ describe('Issue #748: STI Discriminator Upgrade', () => {
       ObjectRegistry.register(Test748Meeting, {});
       ObjectRegistry.register(Test748Conference, {});
 
-      const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+      const db = await getDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        __smrtSkipVitestSchemaPreparation: true,
+      });
 
       // Create the STI table
       await db.query(`
@@ -153,7 +157,11 @@ describe('Issue #748: STI Discriminator Upgrade', () => {
     });
 
     it('should be able to identify STI tables by _meta_type column', async () => {
-      const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+      const db = await getDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        __smrtSkipVitestSchemaPreparation: true,
+      });
 
       // Create a regular table (no _meta_type)
       await db.query(`
