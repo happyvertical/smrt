@@ -125,8 +125,127 @@ function removeReference(id: string) {
 
 let showImageUploader = $state(false);
 
+// Drag-and-drop state
+let imageDragOver = $state(false);
+let refDragOver = $state(false);
+
 function getImageRecord(payload: any) {
   return payload?.data ?? payload;
+}
+
+// ---------- Image drag-and-drop ----------
+function handleImageDragOver(e: DragEvent) {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  imageDragOver = true;
+}
+
+function handleImageDragLeave(e: DragEvent) {
+  // Only leave if we're actually leaving the drop zone
+  const relatedTarget = e.relatedTarget as Node | null;
+  const currentTarget = e.currentTarget as Node;
+  if (relatedTarget && currentTarget.contains(relatedTarget)) return;
+  imageDragOver = false;
+}
+
+function handleImageDrop(e: DragEvent) {
+  e.preventDefault();
+  imageDragOver = false;
+  if (!e.dataTransfer) return;
+
+  // Handle dropped files (images)
+  const files = Array.from(e.dataTransfer.files).filter((f) =>
+    f.type.startsWith('image/'),
+  );
+  for (const file of files) {
+    handleImageSelect(file);
+  }
+
+  // Handle dropped URLs
+  const url =
+    e.dataTransfer.getData('text/uri-list') ||
+    e.dataTransfer.getData('text/plain');
+  if (
+    !files.length &&
+    url &&
+    (url.startsWith('http://') || url.startsWith('https://'))
+  ) {
+    handleImageSelect(url);
+  }
+}
+
+// ---------- Reference drag-and-drop ----------
+function handleRefDragOver(e: DragEvent) {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  refDragOver = true;
+}
+
+function handleRefDragLeave(e: DragEvent) {
+  const relatedTarget = e.relatedTarget as Node | null;
+  const currentTarget = e.currentTarget as Node;
+  if (relatedTarget && currentTarget.contains(relatedTarget)) return;
+  refDragOver = false;
+}
+
+async function handleRefDrop(e: DragEvent) {
+  e.preventDefault();
+  refDragOver = false;
+  if (!e.dataTransfer) return;
+
+  // Handle dropped files — upload them as content and link as references
+  const files = Array.from(e.dataTransfer.files);
+  for (const file of files) {
+    try {
+      const reader = new FileReader();
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const resp = await fetch('/api/v1/contents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: file.name,
+          type: 'document',
+          status: 'draft',
+          state: 'active',
+          source: 'upload',
+          fileKey: dataUrl,
+          body: `Uploaded reference: ${file.name}`,
+        }),
+      });
+      if (resp.ok) {
+        const result = await resp.json();
+        const newId = result.data?.id || result.id;
+        if (newId && !formData.referenceIds.includes(newId)) {
+          formData.referenceIds = [...formData.referenceIds, newId];
+        }
+      } else {
+        console.error(
+          '[ContentEditor] Failed to upload reference file:',
+          await resp.text(),
+        );
+      }
+    } catch (err) {
+      console.error('[ContentEditor] Error uploading reference file:', err);
+    }
+  }
+
+  // Handle dropped URL or plain text (add as reference ID)
+  if (files.length === 0) {
+    const text =
+      e.dataTransfer.getData('text/uri-list') ||
+      e.dataTransfer.getData('text/plain');
+    if (text) {
+      const id = text.trim();
+      if (id && !formData.referenceIds.includes(id)) {
+        formData.referenceIds = [...formData.referenceIds, id];
+      }
+    }
+  }
 }
 
 function handleSubmit(e: Event) {
@@ -284,7 +403,20 @@ function removeAsset(id: string) {
             Images & Media
             <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </summary>
-          <div class="editor-drawer-content">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="editor-drawer-content drop-zone"
+            class:drop-zone-active={imageDragOver}
+            ondragover={handleImageDragOver}
+            ondragleave={handleImageDragLeave}
+            ondrop={handleImageDrop}
+          >
+             {#if imageDragOver}
+               <div class="drop-overlay">
+                 <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                 <span>Drop images here</span>
+               </div>
+             {/if}
              <div class="media-gallery">
                 {#if formData.assets && formData.assets.length > 0}
                   <div class="media-grid">
@@ -308,7 +440,7 @@ function removeAsset(id: string) {
                     {/each}
                   </div>
                 {:else}
-                  <p class="no-media-text">No images attached to this article.</p>
+                  <p class="no-media-text">No images attached. Drag & drop images here or use the button below.</p>
                 {/if}
                 {#if !showImageUploader}
                   <button type="button" class="add-image-btn" onclick={() => showImageUploader = true} style="margin-top: 1rem;">
@@ -339,7 +471,20 @@ function removeAsset(id: string) {
             References
             <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </summary>
-          <div class="editor-drawer-content">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="editor-drawer-content drop-zone"
+            class:drop-zone-active={refDragOver}
+            ondragover={handleRefDragOver}
+            ondragleave={handleRefDragLeave}
+            ondrop={handleRefDrop}
+          >
+            {#if refDragOver}
+              <div class="drop-overlay">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span>Drop reference files or URLs here</span>
+              </div>
+            {/if}
             <div class="references-section">
                <p class="section-label">References (Source Material)</p>
                <div class="references-list">
@@ -350,7 +495,7 @@ function removeAsset(id: string) {
                     </div>
                   {/each}
                   {#if formData.referenceIds.length === 0}
-                    <span class="no-refs">No references added.</span>
+                    <span class="no-refs">No references added. Drag & drop files or URLs here.</span>
                   {/if}
                </div>
                <div class="add-reference-row">
@@ -885,5 +1030,50 @@ function removeAsset(id: string) {
     border-radius: 0.25rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+
+  /* ── Drag & Drop Zones ── */
+  .drop-zone {
+    position: relative;
+    transition: border-color 0.2s, background 0.2s;
+    border: 2px dashed transparent;
+    border-radius: 0.75rem;
+  }
+
+  .drop-zone-active {
+    border-color: var(--smrt-color-primary, #3b82f6);
+    background: color-mix(in srgb, var(--smrt-color-primary, #3b82f6) 6%, transparent);
+  }
+
+  .drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background: color-mix(in srgb, var(--smrt-color-primary, #3b82f6) 12%, var(--smrt-color-surface, white) 88%);
+    border-radius: 0.5rem;
+    pointer-events: none;
+    animation: drop-pulse 0.3s ease-out;
+  }
+
+  .drop-overlay svg {
+    color: var(--smrt-color-primary, #3b82f6);
+    opacity: 0.8;
+  }
+
+  .drop-overlay span {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--smrt-color-primary, #3b82f6);
+    letter-spacing: 0.02em;
+  }
+
+  @keyframes drop-pulse {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
   }
 </style>
