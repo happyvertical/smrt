@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { smrtVitestPlugin } from '../index.js';
 
 describe('smrtVitestPlugin config', () => {
-  it('injects the setup file into root and project test configs', () => {
+  it('injects the setup file into root config and mutates project configs', () => {
     const plugin = smrtVitestPlugin();
-    const config = plugin.config?.({
+    const userConfig = {
       test: {
         setupFiles: ['existing-root-setup'],
         projects: [
@@ -21,11 +21,17 @@ describe('smrtVitestPlugin config', () => {
           },
         ],
       },
-    } as any);
+    };
+    const config = plugin.config?.(userConfig as any);
 
-    expect(config).toMatchObject({
+    expect(config).toEqual({
       test: {
         setupFiles: ['existing-root-setup', '@happyvertical/smrt-vitest/setup'],
+      },
+    });
+
+    expect(userConfig).toMatchObject({
+      test: {
         projects: [
           {
             test: {
@@ -47,7 +53,7 @@ describe('smrtVitestPlugin config', () => {
 
   it('does not duplicate the setup file when already configured', () => {
     const plugin = smrtVitestPlugin();
-    const config = plugin.config?.({
+    const userConfig = {
       test: {
         setupFiles: ['@happyvertical/smrt-vitest/setup'],
         projects: [
@@ -59,11 +65,17 @@ describe('smrtVitestPlugin config', () => {
           },
         ],
       },
-    } as any);
+    };
+    const config = plugin.config?.(userConfig as any);
 
-    expect(config).toMatchObject({
+    expect(config).toEqual({
       test: {
         setupFiles: ['@happyvertical/smrt-vitest/setup'],
+      },
+    });
+
+    expect(userConfig).toMatchObject({
+      test: {
         projects: [
           {
             test: {

@@ -422,36 +422,33 @@ export function smrtVitestPlugin(
     return setupFiles;
   };
 
+  const applySetupFilesToProjects = (projects: unknown[] | undefined): void => {
+    projects?.forEach((project) => {
+      if (!project || typeof project !== 'object' || !('test' in project)) {
+        return;
+      }
+
+      const projectConfig = project as Record<string, unknown> & {
+        test?: { setupFiles?: string | string[] };
+      };
+
+      projectConfig.test = {
+        ...projectConfig.test,
+        setupFiles: ensureSetupFiles(projectConfig.test?.setupFiles),
+      };
+    });
+  };
+
   return {
     name: 'smrt-vitest',
 
     config(userConfig) {
+      applySetupFilesToProjects(userConfig.test?.projects);
       const setupFiles = ensureSetupFiles(userConfig.test?.setupFiles);
-      const projects = userConfig.test?.projects?.map((project) => {
-        const projectConfig =
-          project && typeof project === 'object' && 'test' in project
-            ? (project as Record<string, unknown> & {
-                test?: { setupFiles?: string | string[] };
-              })
-            : undefined;
-
-        if (!projectConfig) {
-          return project;
-        }
-
-        return {
-          ...projectConfig,
-          test: {
-            ...projectConfig.test,
-            setupFiles: ensureSetupFiles(projectConfig.test?.setupFiles),
-          },
-        };
-      });
 
       return {
         test: {
           setupFiles,
-          ...(projects ? { projects } : {}),
         },
       };
     },
