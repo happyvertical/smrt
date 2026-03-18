@@ -8,6 +8,7 @@ import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { ContentReferences } from './content-references';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
 
@@ -283,7 +284,6 @@ export class Content extends SmrtObject {
   }
 
   private async getReferenceCollection() {
-    const { ContentReferences } = await import('./content-references');
     return ContentReferences.create({ db: this.db });
   }
 
