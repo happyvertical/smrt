@@ -10,8 +10,7 @@ import {
 } from './interceptors';
 import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
-import { generateSchema } from './schema/utils';
-import { isTableVerified, markTableVerified } from './table-cache';
+import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   fieldsFromClass,
   formatDataJs,
@@ -52,17 +51,6 @@ function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
   }
 
   return where;
-}
-
-function shouldAutoEnsureCollectionSchema(
-  db: { requiresSchemaCheck?: boolean } | undefined,
-): boolean {
-  return (
-    !!db &&
-    !db.requiresSchemaCheck &&
-    typeof process !== 'undefined' &&
-    !!process.versions?.node
-  );
 }
 
 /**
@@ -484,10 +472,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
    * Factory method — the recommended way to instantiate a collection.
    *
-   * Creates the collection instance, calls `initialize()`, optionally checks
-   * that the backing table exists (only for adapters that opt in via
-   * `requiresSchemaCheck`), and pre-populates the field cache used by
-   * synchronous query helpers.
+   * Creates the collection instance, calls `initialize()`, and pre-populates
+   * the field cache used by synchronous query helpers.
    *
    * Pass the same `options` object you received in a `SmrtObject` constructor
    * or a `SvelteKit` load function to share the database connection.
@@ -495,8 +481,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @param options - Database, AI, filesystem, and other configuration options.
    *   At minimum, provide `db` (or `persistence`) to connect to a database.
    * @returns A fully initialized, ready-to-query collection instance
-   * @throws {DatabaseError} If `requiresSchemaCheck` is enabled and the backing
-   *   table has not been created (`DB_SCHEMA_MISSING`)
    *
    * @example
    * ```typescript
@@ -549,29 +533,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Perform async initialization
     await instance.initialize();
 
-    // Verify table exists (tables must be created via smrt db:migrate)
-    // This replaces automatic schema creation which caused race conditions (issue #665)
-    // Cache verified tables to avoid redundant round-trips (issue #970)
-    // Only check when the adapter explicitly opts in via requiresSchemaCheck: true
-    // (JSON/DuckDB auto-create tables; Postgres/SQLite are migration-managed).
-    if (
-      instance.db &&
-      (this as any)._itemClass &&
-      instance.db.requiresSchemaCheck
-    ) {
-      const className = (this as any)._itemClass.name;
-      const tableName = ObjectRegistry.getTableName(className);
-      const dbUrl = instance.db.url || ':memory:';
-      if (tableName && !isTableVerified(dbUrl, tableName)) {
-        const tableExists = await instance.db.tableExists(tableName);
-        if (!tableExists) {
-          const { DatabaseError } = await import('./errors.js');
-          throw DatabaseError.schemaMissing(tableName, className);
-        }
-        markTableVerified(dbUrl, tableName);
-      }
-    }
-
     // Cache fields for sync access during queries (issue #663)
     // This eliminates async getFields() calls on every query
     const fields = await instance.getFields();
@@ -587,36 +548,29 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Called automatically by the static `create()` factory. In most cases you
    * do not need to call this directly — use `create()` instead.
    *
-   * Table creation is deferred until the first actual database operation
-   * (lazy initialization). This makes the collection safe to construct during
-   * SSR and import-time module evaluation.
+   * Runtime schema checks are deferred until a query actually touches the
+   * backing table. This keeps collection construction safe during SSR and
+   * import-time module evaluation without mutating application schema.
    *
    * @returns This instance (enables chaining)
    */
   public async initialize(): Promise<this> {
     await super.initialize();
 
-    // NOTE: Database table setup is now deferred until first database operation (lazy initialization)
-    // This prevents database connections during import/prerendering (issue #237)
-    // Tables will be created automatically when calling list(), get(), create(), etc.
+    // Defer table verification until the first real query. That keeps
+    // construction lightweight while ensuring runtime never auto-creates app
+    // tables behind the scenes.
 
     return this;
   }
 
   /**
-   * Ensure the collection's backing table exists before the first real query.
+   * Verify that the collection's backing table exists before running a query.
    *
-   * This is especially important when a collection is attached to an existing
-   * database connection, because no upfront `schemas` bootstrap runs in that path.
+   * This is a fail-fast check only. It does not create or alter schema.
    */
   public async ensureStorageReady(): Promise<void> {
-    if (!shouldAutoEnsureCollectionSchema(this.db)) {
-      return;
-    }
-
-    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
-    const { ensureSchema } = await import('./schema/utils.js');
-    await ensureSchema(this.db, this._itemClass.name);
+    await verifyPersistenceTable(this.db, this.tableName, this._itemClass.name);
   }
 
   /**
@@ -1460,6 +1414,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   async generateSchema() {
     // Always generate fresh schema to ensure latest field mapping is used
+    const { generateSchema } = await import('./schema/utils.js');
     return await generateSchema(this._itemClass);
   }
 

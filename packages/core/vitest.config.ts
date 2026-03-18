@@ -31,6 +31,7 @@ export default defineConfig({
 
     // Environment configuration
     environment: 'node',
+    setupFiles: [resolve(__dirname, '../vitest/src/setup.ts')],
 
     // Increased timeouts for CI environments
     testTimeout: 60000, // 60 seconds for slow CI

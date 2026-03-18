@@ -152,7 +152,11 @@ describe('Issue #746: Relationship loading for external packages', () => {
     ObjectRegistry.register(TestProfile, {});
     ObjectRegistry.register(TestIdentity, {});
 
-    const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    const db = await getDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
+    });
 
     // Create tables
     await db.query(`

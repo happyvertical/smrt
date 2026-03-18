@@ -74,6 +74,7 @@ export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities
 export * from './runtime/index';
+export { detectEngine, generateDDLForEngine } from './schema/ddl';
 // Schema types (for generated code from SchemaCodeGenerator)
 export type { SchemaDefinition } from './schema/types';
 // Universal signaling system

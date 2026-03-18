@@ -1598,8 +1598,7 @@ export class CLIGenerator {
       }
     } catch (error) {
       spinner.fail(`Failed to list ${objectName} objects`);
-      console.error(
-        'Error:',
+      this.exitWithError(
         error instanceof Error ? error.message : 'Unknown error',
       );
     }
@@ -1635,8 +1634,7 @@ export class CLIGenerator {
       }
     } catch (error) {
       spinner.fail(`Failed to get ${objectName}`);
-      console.error(
-        'Error:',
+      this.exitWithError(
         error instanceof Error ? error.message : 'Unknown error',
       );
     }
@@ -2132,8 +2130,11 @@ export class CLIGenerator {
         console.error('\nStack trace:');
         console.error(errorStack);
       }
+      const schemaGuidance = errorMessage.includes("Run 'smrt db:migrate'");
       console.error(
-        '\nTip: Set DEBUG=1 for full stack trace, or check the method implementation.',
+        schemaGuidance
+          ? '\nTip: Prepare the database schema before running generated CLI commands.'
+          : '\nTip: Set DEBUG=1 for full stack trace, or check the method implementation.',
       );
 
       this.exitWithError(errorMessage);
@@ -2195,25 +2196,6 @@ export class CLIGenerator {
       });
 
       await collection.initialize();
-
-      // For JSON adapter, ensure ALL tables exist upfront (issues #603/#607).
-      // JSON adapter doesn't pre-load related tables for cross-table queries.
-      if ((db as any).exportTable) {
-        const { ensureSchema } = await import(
-          '@happyvertical/smrt-core/schema/utils'
-        );
-        const classNames = ObjectRegistry.getClassNames();
-        for (const className of classNames) {
-          const registered = ObjectRegistry.getClass(className);
-          if (registered?.extends === 'SmrtCollection') continue;
-          try {
-            await ensureSchema(db, className);
-          } catch {
-            // Non-critical: some classes may not have schemas yet
-          }
-        }
-      }
-
       this.collections.set(objectName, collection);
     }
     const collection = this.collections.get(objectName);

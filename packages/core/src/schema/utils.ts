@@ -8,22 +8,10 @@
  * SDK SQL remains a pure query/CRUD layer.
  */
 
-import { syncSchema } from '@happyvertical/sql';
-import { discoverSTISiblingsSync } from '../manifest/manifest-loader.js';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry';
 import { tableNameFromClass } from '../utils';
-import { SchemaManager } from './schema-manager';
-
-/**
- * Framework base classes that are never registered in ObjectRegistry.
- * These are known bases that don't need STI sibling discovery.
- * Defined at module level to avoid recreating on every ensureSchema() call.
- */
-const FRAMEWORK_BASE_CLASSES = new Set([
-  'SmrtObject',
-  'SmrtClass',
-  'SmrtCollection',
-]);
+import { SchemaManager } from './schema-manager.js';
 
 /**
  * Generates a complete database schema SQL statement for a class
@@ -161,289 +149,54 @@ export async function generateSchema(
 }
 
 /**
- * Cache of ensureSchema promises to avoid duplicate setup operations
+ * Ensure schema exists for a registered class.
  *
- * Dual caching strategy:
- * - File-based DBs: String keys "${dbUrl}::${tableName}"
- * - In-memory DBs: WeakMap with db instance as key (prevents cross-instance conflicts)
+ * This compatibility helper is kept for tooling flows such as CLI commands that
+ * explicitly prepare schema ahead of runtime. Core runtime no longer calls this
+ * automatically.
+ *
+ * @deprecated Prefer explicit migration/bootstrap tooling. Runtime verifies
+ * schema and fails fast when tables are missing.
  */
-const _ensureSchemaPromises: Record<string, Promise<void> | null> = {};
-const _memoryDbSetupPromises = new WeakMap<
-  any,
-  Map<string, Promise<void> | null>
->();
-
-/**
- * Clears the ensureSchema cache - useful for testing
- * @internal
- */
-export function _clearSchemaCache() {
-  Object.keys(_ensureSchemaPromises).forEach((key) => {
-    delete _ensureSchemaPromises[key];
-  });
-  // Note: WeakMap doesn't need clearing - entries are garbage collected automatically
-}
-
-/**
- * Ensures database schema exists for a class (manifest-only, no class references)
- *
- * Works purely from manifest data without needing class constructor references.
- * Supports STI by recursively ensuring base class tables exist.
- *
- * @param db - Database connection interface
- * @param className - Name of the class to ensure schema for
- * @returns Promise that resolves when schema is ensured
- * @throws {Error} If class not registered or schema creation fails
- *
- * @example
- * ```typescript
- * // Simple usage
- * await ensureSchema(db, 'Product');
- *
- * // STI child class - automatically ensures base class table exists
- * await ensureSchema(db, 'Council'); // Also creates 'Profile' table if needed
- * ```
- */
-export async function ensureSchema(db: any, className: string): Promise<void> {
-  // FIX #623: For STI child classes from external packages, ensure the parent class
-  // is loaded before calling getSTIBase(). The parent might not be registered yet
-  // if it's from an external package manifest.
+export async function ensureSchema(
+  db: DatabaseInterface,
+  className: string,
+): Promise<void> {
   const registered = ObjectRegistry.getClass(className);
-  if (registered?.extends) {
-    // Skip STI discovery if parent is a framework base class (never registered)
-    if (!FRAMEWORK_BASE_CLASSES.has(registered.extends)) {
-      const parentClass = ObjectRegistry.getClass(registered.extends);
-      if (!parentClass) {
-        // Parent class not registered yet - discover and load STI siblings
-        // This will register the parent and any other siblings sharing the same table
-        const collection =
-          registered.schema?.tableName ||
-          ObjectRegistry.getSchema(className)?.tableName;
-        if (collection) {
-          console.log(
-            `[ensureSchema] Loading STI siblings for ${className} (parent ${registered.extends} not registered)`,
-          );
-          const siblings = discoverSTISiblingsSync(collection);
-          for (const sibling of siblings) {
-            if (!ObjectRegistry.hasClass(sibling.className)) {
-              ObjectRegistry.registerFromManifest(
-                sibling.className,
-                sibling.entry,
-                sibling.packageName,
-              );
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Get table name from registry (set during @smrt() decoration)
-  const tableName = ObjectRegistry.getTableName(className);
-
-  if (!tableName) {
+  if (!registered) {
     throw new Error(
       `Cannot ensure schema for unregistered class '${className}'. ` +
         `Ensure the class is decorated with @smrt() and registered in the ObjectRegistry.`,
     );
   }
 
-  // CRITICAL: Check if this is an STI child BEFORE any caching
-  // STI children should delegate directly to their base class without caching
-  // their own promise under the shared table name. This avoids a deadlock where:
-  // 1. Child caches promise P1 for table T
-  // 2. Child's async work calls ensureSchema(base)
-  // 3. Base finds P1 cached for table T and returns it
-  // 4. Child is waiting on P1, which only resolves when child completes
-  // 5. DEADLOCK
   const tableStrategy = ObjectRegistry.getTableStrategy(className);
   if (tableStrategy === 'sti') {
     const stiBase = ObjectRegistry.getSTIBase(className);
     if (stiBase && stiBase !== className) {
-      // This is an STI child - delegate directly to base without caching
-      return ensureSchema(db, stiBase);
+      await ensureSchema(db, stiBase);
+      return;
     }
   }
 
-  // From here, we're either:
-  // - An STI base class (stiBase === className)
-  // - A CTI class (no STI at all)
-  // These are safe to cache because they won't recursively call ensureSchema
-
-  // Dual caching strategy for :memory: vs file-based databases
-  const dbUrl = db.url || db.config?.url || 'memory';
-  const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
-
-  // Check cache first
-  let cachedPromise: Promise<void> | null | undefined;
-
-  if (isMemoryDb) {
-    // Use WeakMap for :memory: databases (instance-specific)
-    const tableMap = _memoryDbSetupPromises.get(db);
-    cachedPromise = tableMap?.get(tableName);
-  } else {
-    // Use string key for file-based databases (URL-specific)
-    const cacheKey = `${dbUrl}::${tableName}`;
-    cachedPromise = _ensureSchemaPromises[cacheKey];
+  let schemaDefinition = ObjectRegistry.getSchema(className);
+  if (!schemaDefinition?.tableName) {
+    const providedFields =
+      registered.fields.size > 0 ? registered.fields : undefined;
+    await generateSchema(registered.constructor, providedFields);
+    schemaDefinition = ObjectRegistry.getSchema(className);
   }
 
-  if (cachedPromise !== undefined && cachedPromise !== null) {
-    return cachedPromise;
+  if (!schemaDefinition?.tableName) {
+    throw new Error(
+      `No schema definition found for class '${className}'. ` +
+        `Run the manifest generation/build step before preparing schema.`,
+    );
   }
 
-  // Create the setup promise - no recursion possible from here
-  // (STI children already delegated above)
-  const setupPromise = (async () => {
-    // Get fields from registry (from AST manifest)
-    const cachedFields = ObjectRegistry.getFields(className);
-
-    // For base classes or CTI, get schema and sync
-    // Use pre-generated DDL from manifest (zero runtime overhead)
-    // STI schemas now include ALL descendant columns (generated at build time)
-    const preGenerated = ObjectRegistry.getSchema(className);
-
-    // FIX #527: For STI classes with cross-package descendants, regenerate schema at runtime
-    // Pre-generated schemas from external packages won't have columns from
-    // child classes defined in consuming packages (e.g., Agenda.meetingId from praeco)
-    const descendants = ObjectRegistry.getDescendants(className);
-
-    // Check if any STI descendants are from a different package than the base class
-    // If so, pre-generated schema may be missing their columns
-    let hasCrossPackageDescendants = false;
-    if (tableStrategy === 'sti' && descendants.length > 0) {
-      const baseClass = ObjectRegistry.getClass(className);
-      const basePackage = baseClass?.packageName;
-
-      for (const descendantName of descendants) {
-        const descendant = ObjectRegistry.getClass(descendantName);
-        if (!descendant) continue;
-        // Descendant is from a different package if packageName values don't match
-        if (basePackage !== descendant.packageName) {
-          hasCrossPackageDescendants = true;
-          break;
-        }
-      }
-    }
-
-    if (preGenerated?.ddl && !hasCrossPackageDescendants) {
-      // Use pre-generated schema from manifest
-      // Safe for CTI classes or STI where all classes are from same package
-      const schemaManager = new SchemaManager(db);
-      await schemaManager.ensureTable(preGenerated);
-    } else {
-      // Fallback: regenerate schema at runtime using SchemaGenerator
-      // This happens for external packages that don't have DDL in their manifest
-      const registered = ObjectRegistry.getClass(className);
-      if (!registered) {
-        throw new Error(
-          `Cannot generate schema for unregistered class '${className}'. ` +
-            `Ensure the class is decorated with @smrt().`,
-        );
-      }
-
-      // Dynamic import SchemaGenerator (Node.js-only, uses node:crypto)
-      const { SchemaGenerator } = await import('./generator.js');
-      const generator = new SchemaGenerator();
-
-      // Check if class uses STI strategy
-      const tableStrategy = ObjectRegistry.getTableStrategy(className);
-
-      let schemaDefinition: Awaited<
-        ReturnType<
-          InstanceType<typeof SchemaGenerator>['generateSchemaFromRegistry']
-        >
-      >;
-
-      if (tableStrategy === 'sti') {
-        // STI: Generate shared table for base class with all descendant columns
-        schemaDefinition = await generator.generateSTISchemaFromRegistry(
-          className,
-          tableName,
-          cachedFields,
-        );
-      } else {
-        // CTI: Generate separate table for this class
-        schemaDefinition = generator.generateSchemaFromRegistry(
-          className,
-          tableName,
-          cachedFields,
-        );
-      }
-
-      // Generate DDL and store columns in the registry
-      const createTableDDL = generator.generateSQL(schemaDefinition);
-      if (registered.schema) {
-        registered.schema.columns = schemaDefinition.columns;
-        registered.schema.ddl = createTableDDL;
-      }
-
-      // Generate index SQL strings from schemaDefinition.indexes
-      // These must be included in the schema string for syncSchema to process them
-      // (especially for JSON/DuckDB adapter which converts UNIQUE indexes to inline constraints)
-      const indexStatements: string[] = [];
-      if (schemaDefinition.indexes && schemaDefinition.indexes.length > 0) {
-        for (const idx of schemaDefinition.indexes) {
-          const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
-          const columns = idx.columns.map((c) => `"${c}"`).join(', ');
-          indexStatements.push(
-            `CREATE ${indexType} IF NOT EXISTS "${idx.name}" ON "${schemaDefinition.tableName}" (${columns})`,
-          );
-        }
-      }
-
-      // Combine CREATE TABLE and CREATE INDEX statements for syncSchema
-      // The JSON/DuckDB adapter will convert UNIQUE indexes to inline constraints
-      const fullSchema = [createTableDDL, ...indexStatements].join(';\n');
-
-      // Use syncSchema to execute DDL (like main branch does for external packages)
-      if (fullSchema && fullSchema.trim() !== '') {
-        await syncSchema({ db, schema: fullSchema });
-
-        // FIX #735: Verify table was actually created
-        // Some adapters may silently fail to create tables
-        const tableCreated = await db.tableExists(tableName);
-        if (!tableCreated) {
-          console.warn(
-            `[ensureSchema] syncSchema returned but table "${tableName}" doesn't exist, attempting direct DDL`,
-          );
-          // Fallback: Execute DDL directly
-          await db.query(createTableDDL);
-          for (const indexSQL of indexStatements) {
-            await db.query(indexSQL);
-          }
-        }
-      }
-    }
-  })();
-
-  // Store in cache AFTER creating the promise
-  // Safe because no recursion can happen (STI children delegate at the top)
-  if (isMemoryDb) {
-    // Use WeakMap for :memory: databases
-    let tableMap = _memoryDbSetupPromises.get(db);
-    if (!tableMap) {
-      tableMap = new Map();
-      _memoryDbSetupPromises.set(db, tableMap);
-    }
-    tableMap.set(tableName, setupPromise);
-  } else {
-    // Use string key for file-based databases
-    const cacheKey = `${dbUrl}::${tableName}`;
-    _ensureSchemaPromises[cacheKey] = setupPromise;
-  }
-
-  // Handle errors by clearing cache
-  setupPromise.catch((_error) => {
-    if (isMemoryDb) {
-      const tableMap = _memoryDbSetupPromises.get(db);
-      if (tableMap) {
-        tableMap.set(tableName, null);
-      }
-    } else {
-      const cacheKey = `${dbUrl}::${tableName}`;
-      _ensureSchemaPromises[cacheKey] = null;
-    }
+  const schemaManager = new SchemaManager(db, {
+    skipTriggers:
+      typeof (db as { exportTable?: unknown }).exportTable === 'function',
   });
-
-  return setupPromise;
+  await schemaManager.ensureTable(schemaDefinition);
 }

@@ -1105,24 +1105,6 @@ export class ObjectRegistry {
       options,
     )) as SmrtCollection<T>;
 
-    // For JSON adapter, ensure ALL tables exist upfront (issue #603).
-    // JSON adapter loads tables on-demand which causes issues with cross-table
-    // queries (JOINs, NOT EXISTS subqueries).
-    const db = (collection as any).db;
-    if (db && (db as any).exportTable) {
-      const { ensureSchema } = await import('./schema/utils.js');
-      const classNames = ObjectRegistry.getClassNames();
-      for (const className of classNames) {
-        const registered = ObjectRegistry.getClass(className);
-        if (registered?.extends === 'SmrtCollection') continue;
-        try {
-          await ensureSchema(db, className);
-        } catch {
-          // Non-critical: some classes may not have schemas yet
-        }
-      }
-    }
-
     // Cache the initialized instance
     ObjectRegistry.collectionCache.set(cacheKey, collection);
 

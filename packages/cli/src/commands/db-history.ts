@@ -4,6 +4,7 @@
  * Shows detailed migration history with filtering options.
  */
 
+import type { MigrationStatus } from '@happyvertical/smrt-core/migrations';
 import type { CLICommand } from '../cli-generator.js';
 
 export const dbHistoryCommand: CLICommand = {
@@ -82,7 +83,7 @@ export const dbHistoryCommand: CLICommand = {
       const queryOptions: {
         limit?: number;
         since?: Date;
-        status?: string;
+        status?: MigrationStatus;
       } = {};
 
       if (options.limit) {

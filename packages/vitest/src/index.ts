@@ -252,18 +252,11 @@ async function loadAndRegisterManifest(
       return false;
     }
 
-    // Register each object from the manifest
-    let registered = 0;
-    for (const [name, objectDef] of Object.entries(manifest.objects)) {
-      if (!ObjectRegistry.hasClass(name)) {
-        ObjectRegistry.registerFromManifest(
-          name,
-          objectDef,
-          manifest.packageName || packageName,
-        );
-        registered++;
-      }
-    }
+    const registered = registerManifestObjects(
+      ObjectRegistry,
+      manifest,
+      manifest.packageName || packageName,
+    );
 
     if (verbose || registered > 0) {
       console.log(
@@ -278,6 +271,74 @@ async function loadAndRegisterManifest(
         `[smrt-vitest] Failed to load manifest from ${packageName}:`,
         error,
       );
+    }
+    return false;
+  }
+}
+
+function registerManifestObjects(
+  ObjectRegistry: {
+    hasClass(name: string): boolean;
+    registerFromManifest(
+      name: string,
+      objectDef: unknown,
+      packageName?: string,
+    ): void;
+  },
+  manifest: { objects?: Record<string, unknown>; packageName?: string } | null,
+  packageName?: string,
+): number {
+  if (!manifest?.objects) {
+    return 0;
+  }
+
+  let registered = 0;
+  for (const [name, objectDef] of Object.entries(manifest.objects)) {
+    if (!ObjectRegistry.hasClass(name)) {
+      ObjectRegistry.registerFromManifest(name, objectDef, packageName);
+      registered++;
+    }
+  }
+
+  return registered;
+}
+
+async function loadAndRegisterLocalManifest(
+  root: string,
+  verbose: boolean,
+): Promise<boolean> {
+  try {
+    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+    const { ManifestManager } = await import(
+      '@happyvertical/smrt-core/manifest'
+    );
+
+    const manager = new ManifestManager(root);
+    const manifest = manager.loadLocal();
+
+    if (!manifest) {
+      if (verbose) {
+        console.log('[smrt-vitest] No local manifest found');
+      }
+      return false;
+    }
+
+    const registered = registerManifestObjects(
+      ObjectRegistry,
+      manifest,
+      manifest.packageName,
+    );
+
+    if (verbose || registered > 0) {
+      console.log(
+        `[smrt-vitest] Loaded ${registered} classes from local manifest`,
+      );
+    }
+
+    return true;
+  } catch (error) {
+    if (verbose) {
+      console.error('[smrt-vitest] Failed to load local manifest:', error);
     }
     return false;
   }
@@ -410,9 +471,48 @@ export function smrtVitestPlugin(
   } = options;
 
   let manifestsLoaded = false;
+  const setupFileId = '@happyvertical/smrt-vitest/setup';
+
+  const ensureSetupFiles = (value: string | string[] | undefined): string[] => {
+    const setupFiles = Array.isArray(value) ? [...value] : value ? [value] : [];
+
+    if (!setupFiles.includes(setupFileId)) {
+      setupFiles.push(setupFileId);
+    }
+
+    return setupFiles;
+  };
+
+  const applySetupFilesToProjects = (projects: unknown[] | undefined): void => {
+    projects?.forEach((project) => {
+      if (!project || typeof project !== 'object' || !('test' in project)) {
+        return;
+      }
+
+      const projectConfig = project as Record<string, unknown> & {
+        test?: { setupFiles?: string | string[] };
+      };
+
+      projectConfig.test = {
+        ...projectConfig.test,
+        setupFiles: ensureSetupFiles(projectConfig.test?.setupFiles),
+      };
+    });
+  };
 
   return {
     name: 'smrt-vitest',
+
+    config(userConfig) {
+      applySetupFilesToProjects(userConfig.test?.projects);
+      const setupFiles = ensureSetupFiles(userConfig.test?.setupFiles);
+
+      return {
+        test: {
+          setupFiles,
+        },
+      };
+    },
 
     // Run during config resolution to ensure manifests are loaded before tests
     async configResolved() {
@@ -424,7 +524,11 @@ export function smrtVitestPlugin(
         await generateLocalManifest(root, options, verbose);
       }
 
-      // Step 2: Discover and load manifests from SMRT peer dependencies
+      // Step 2: Load the local manifest so late-imported local classes are
+      // available to schema preparation before the first DB call.
+      await loadAndRegisterLocalManifest(root, verbose);
+
+      // Step 3: Discover and load manifests from SMRT peer dependencies
       const smrtPackages = discoverSmrtPackages(root, packages);
 
       if (smrtPackages.length === 0) {
@@ -450,7 +554,7 @@ export function smrtVitestPlugin(
         );
       }
 
-      // Step 3: Validate local manifest is loaded
+      // Step 4: Validate local manifest is loaded
       try {
         const { ManifestManager } = await import(
           '@happyvertical/smrt-core/manifest'
@@ -543,12 +647,11 @@ export async function setupSmrtManifests(
 ): Promise<void> {
   const { packages = [], verbose = false, root = process.cwd() } = options;
 
+  await loadAndRegisterLocalManifest(root, verbose);
+
   const smrtPackages = discoverSmrtPackages(root, packages);
 
   if (smrtPackages.length === 0) {
-    if (verbose) {
-      console.log('[smrt-vitest] No SMRT packages found to load');
-    }
     return;
   }
 

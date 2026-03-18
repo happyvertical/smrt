@@ -23,6 +23,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry.js';
+import { SchemaGenerator } from '../schema/generator.js';
 
 // Test class that has a 'name' field - same name as Profile.name from smrt-profiles
 // This class simulates Council but uses a different name to avoid collision with praeco's Council
@@ -50,29 +51,52 @@ describe('Issue #847: Field name collision with external packages', () => {
     // Clear registry to ensure clean state
     ObjectRegistry.clear();
 
+    const schemaGenerator = new SchemaGenerator();
+    const profileFields = {
+      name: { type: 'text', required: false, default: '' }, // Collision with Council.name!
+      email: { type: 'text', required: false, default: '' },
+      bio: { type: 'text', required: false, default: '' },
+    };
+    const councilFields = {
+      name: { type: 'text', required: false, default: '' }, // Same field name as Profile!
+      meetingsUrl: { type: 'text', required: false, default: '' },
+      timezone: {
+        type: 'text',
+        required: false,
+        default: 'America/Toronto',
+      },
+    };
+
     // FIRST: Register a mock "Profile" class from an external package
     // This simulates @happyvertical/smrt-profiles having a "name" field
     const profileDef = {
       className: 'Profile',
-      tableName: 'profiles',
-      fields: {
-        name: { type: 'text', required: false, default: '' }, // Collision with Council.name!
-        email: { type: 'text', required: false, default: '' },
-        bio: { type: 'text', required: false, default: '' },
+      decoratorConfig: {
+        tableName: 'profiles',
       },
+      fields: profileFields,
+      schema: schemaGenerator.generateCTISchemaFromManifest(
+        'Profile',
+        'profiles',
+        profileFields,
+      ),
     };
     ObjectRegistry.registerFromManifest('Profile', profileDef, 'smrt-profiles');
 
     // Register the Issue847Council class FROM a manifest that includes the name field
-    // This simulates the production scenario where OXC scanner generates a correct manifest
+    // This simulates the production scenario where OXC scanner generates
+    // a manifest with both decorator config and pre-generated schema metadata.
     const councilDef = {
       className: 'Issue847Council',
-      tableName: 'issue847_councils',
-      fields: {
-        name: { type: 'text', required: false, default: '' }, // Same field name as Profile!
-        meetingsUrl: { type: 'text', required: false, default: '' },
-        timezone: { type: 'text', required: false, default: 'America/Toronto' },
+      decoratorConfig: {
+        tableName: 'issue847_councils',
       },
+      fields: councilFields,
+      schema: schemaGenerator.generateCTISchemaFromManifest(
+        'Issue847Council',
+        'issue847_councils',
+        councilFields,
+      ),
     };
     ObjectRegistry.registerFromManifest('Issue847Council', councilDef);
   });

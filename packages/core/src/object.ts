@@ -15,7 +15,7 @@ import {
 } from './errors';
 import { createInterceptorContext, GlobalInterceptors } from './interceptors';
 import { ObjectRegistry } from './registry';
-import { isTableVerified, markTableVerified } from './table-cache';
+import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   executeToolCall as executeToolCallInternal,
   type ToolCall,
@@ -61,17 +61,6 @@ function isValidMetaType(actualMetaType: unknown, className: string): boolean {
 function getExpectedMetaType(className: string): string {
   const registeredClass = ObjectRegistry.getClass(className);
   return registeredClass?.qualifiedName || className;
-}
-
-function shouldAutoEnsureObjectSchema(
-  db: { requiresSchemaCheck?: boolean } | undefined,
-): boolean {
-  return (
-    !!db &&
-    !db.requiresSchemaCheck &&
-    typeof process !== 'undefined' &&
-    !!process.versions?.node
-  );
 }
 
 /**
@@ -230,6 +219,14 @@ export class SmrtObject extends SmrtClass {
    */
   protected setId(id: string): void {
     this._id = id;
+  }
+
+  protected async verifyStorageReady(): Promise<void> {
+    await verifyPersistenceTable(
+      this.db,
+      this.tableName,
+      this.constructor.name,
+    );
   }
 
   /**
@@ -399,8 +396,9 @@ export class SmrtObject extends SmrtClass {
    * 3. If `options.id` is set, calls `loadFromId()` to hydrate from DB
    * 4. If `options.slug` is set (and no id), calls `loadFromSlug()` instead
    *
-   * Database table creation is deferred until the first actual DB operation
-   * (lazy initialization — safe for SSR and prerendering).
+   * Runtime schema verification is deferred until the first actual DB
+   * operation, which keeps initialization safe for SSR and prerendering
+   * without mutating application schema.
    *
    * Called automatically by collection methods. Call manually only when
    * constructing objects outside of a collection.
@@ -424,9 +422,9 @@ export class SmrtObject extends SmrtClass {
       await this.initializePropertiesFromOptions();
     }
 
-    // NOTE: Database table setup is now deferred until first database operation (lazy initialization)
-    // This prevents database connections during import/prerendering (issue #237)
-    // Tables will be created automatically when calling save(), delete(), or query methods
+    // Defer schema verification until an operation actually touches the
+    // backing table. That keeps construction lightweight without hiding schema
+    // mutation inside normal runtime flows.
 
     if (this._id && !(this.options as any)._skipLoad) {
       await this.loadFromId();
@@ -912,13 +910,17 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise resolving to the object's ID
    */
   async getId() {
-    // lookup by slug and context using adapter method
-    const saved = await this.db.get(this.tableName, {
-      slug: this.slug,
-      context: this.context,
-    });
-    if (saved) {
-      this.id = saved.id;
+    if (this.slug) {
+      await this.verifyStorageReady();
+
+      // lookup by slug and context using adapter method
+      const saved = await this.db.get(this.tableName, {
+        slug: this.slug,
+        context: this.context,
+      });
+      if (saved) {
+        this.id = saved.id;
+      }
     }
 
     if (!this.id) {
@@ -982,6 +984,12 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise resolving to the saved ID or null if not saved
    */
   async getSavedId() {
+    if (!this.id && !this.slug) {
+      return null;
+    }
+
+    await this.verifyStorageReady();
+
     // Try to find by id first
     if (this.id) {
       const byId = await this.db.get(this.tableName, { id: this.id });
@@ -1042,12 +1050,6 @@ export class SmrtObject extends SmrtClass {
    */
   async save() {
     try {
-      if (shouldAutoEnsureObjectSchema(this.db)) {
-        await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
-        const { ensureSchema } = await import('./schema/utils.js');
-        await ensureSchema(this.db, this.constructor.name);
-      }
-
       // Validate object state before saving
       await this.validateBeforeSave();
 
@@ -1073,21 +1075,7 @@ export class SmrtObject extends SmrtClass {
         this.created_at = new Date();
       }
 
-      // Verify table exists (tables must be created via smrt db:migrate)
-      // This replaces automatic schema creation which caused race conditions (issue #665)
-      // Cache verified tables to avoid redundant round-trips (issue #970)
-      // Only check when the adapter explicitly opts in via requiresSchemaCheck: true
-      if (this.db?.requiresSchemaCheck) {
-        const tableName = this.tableName;
-        const dbUrl = this.db.url || ':memory:';
-        if (!isTableVerified(dbUrl, tableName)) {
-          const tableExists = await this.db.tableExists(tableName);
-          if (!tableExists) {
-            throw DatabaseError.schemaMissing(tableName, this.constructor.name);
-          }
-          markTableVerified(dbUrl, tableName);
-        }
-      }
+      await this.verifyStorageReady();
 
       // Execute save operation with retry logic for transient failures
       // Use per-adapter upsert method instead of generating SQL
@@ -1351,6 +1339,8 @@ export class SmrtObject extends SmrtClass {
         throw ValidationError.requiredField('id', this.constructor.name);
       }
 
+      await this.verifyStorageReady();
+
       await ErrorUtils.withRetry(
         async () => {
           try {
@@ -1403,6 +1393,8 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public async loadFromSlug() {
+    await this.verifyStorageReady();
+
     const existing = await this.db.get(this.tableName, {
       slug: this._slug,
       context: this._context || '',
@@ -1579,12 +1571,6 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public async delete(): Promise<void> {
-    if (shouldAutoEnsureObjectSchema(this.db)) {
-      await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
-      const { ensureSchema } = await import('./schema/utils.js');
-      await ensureSchema(this.db, this.constructor.name);
-    }
-
     // Execute beforeDelete interceptors (e.g., tenant validation)
     const interceptorContext = createInterceptorContext(
       this.constructor.name,
@@ -1594,6 +1580,7 @@ export class SmrtObject extends SmrtClass {
 
     await this.runHook('beforeDelete');
 
+    await this.verifyStorageReady();
     await this.db.delete(this.tableName, { id: this.id });
 
     await this.runHook('afterDelete');
@@ -1697,6 +1684,7 @@ export class SmrtObject extends SmrtClass {
       // First, fetch just the row to get the _meta_type discriminator
       const tempInstance = new targetClassInfo.constructor(this.options);
       await tempInstance.initialize();
+      await tempInstance.verifyStorageReady();
       const row = await tempInstance.db.get(tempInstance.tableName, {
         id: foreignKeyValue as string,
       });
