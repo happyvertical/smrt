@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.2
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: remove lazy schema creation path (#1034) (core)
+  - @happyvertical/smrt-scanner@0.21.2
+  - @happyvertical/smrt-config@0.21.2
+  - @happyvertical/smrt-types@0.21.2
+
 ## 0.21.1
 
 ### Patch Changes
