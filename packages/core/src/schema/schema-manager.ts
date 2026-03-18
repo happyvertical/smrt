@@ -74,7 +74,21 @@ export class SchemaManager {
       // Table exists — check for missing columns and add them
       // This handles the case where a table was created with a partial schema
       // (e.g., base SmrtObject fields only) and needs additional columns
-      await this.addMissingColumns(tableName, schema);
+      const addedColumns = await this.addMissingColumns(tableName, schema);
+
+      // If columns were added, recreate indexes to ensure STI tables get the
+      // correct UNIQUE(slug, context, _meta_type) constraint (Codex P1 review)
+      if (addedColumns > 0) {
+        const strategy = getDDLStrategy(this.engine);
+        const indexes = strategy.generateIndexes(schema);
+        for (const indexSQL of indexes) {
+          try {
+            await this.db.query(indexSQL);
+          } catch (_err) {
+            // Index may already exist — safe to ignore
+          }
+        }
+      }
 
       if (this.options.debug) {
         console.log(
@@ -187,23 +201,29 @@ export class SchemaManager {
 
     try {
       if (this.engine === 'postgres') {
+        // Use parameterized query to avoid SQL injection
         const result = await this.db.query(
-          `SELECT column_name FROM information_schema.columns WHERE table_name = '${tableName}'`,
+          'SELECT column_name FROM information_schema.columns WHERE table_name = ? AND table_schema = current_schema()',
+          [tableName],
         );
         const rows = Array.isArray(result)
           ? result
           : ((result as any)?.rows ?? []);
         for (const row of rows) {
-          columns.add(row.column_name);
+          // Normalize to lowercase for consistent comparison
+          columns.add(String(row.column_name).toLowerCase());
         }
       } else {
         // SQLite and DuckDB use PRAGMA
-        const result = await this.db.query(`PRAGMA table_info("${tableName}")`);
+        // Escape double quotes in table name to prevent SQL injection
+        const safeName = tableName.replace(/"/g, '""');
+        const result = await this.db.query(`PRAGMA table_info("${safeName}")`);
         const rows = Array.isArray(result)
           ? result
           : ((result as any)?.rows ?? []);
         for (const row of rows) {
-          columns.add(row.name);
+          // Normalize to lowercase for consistent comparison
+          columns.add(String(row.name).toLowerCase());
         }
       }
     } catch (error) {
@@ -236,22 +256,23 @@ export class SchemaManager {
   private async addMissingColumns(
     tableName: string,
     schema: SchemaDefinition,
-  ): Promise<void> {
+  ): Promise<number> {
     if (!schema.columns || Object.keys(schema.columns).length === 0) {
-      return;
+      return 0;
     }
 
     const existingColumns = await this.getExistingColumns(tableName);
     if (existingColumns.size === 0) {
       // Introspection failed or returned no columns — skip to avoid errors
-      return;
+      return 0;
     }
 
     const strategy = getDDLStrategy(this.engine);
     let addedCount = 0;
 
     for (const [colName, colDef] of Object.entries(schema.columns)) {
-      if (existingColumns.has(colName)) {
+      // Normalize to lowercase for consistent comparison with introspected names
+      if (existingColumns.has(colName.toLowerCase())) {
         continue; // Column already exists
       }
 
@@ -271,8 +292,16 @@ export class SchemaManager {
         continue;
       }
 
+      // SQLite/DuckDB: ALTER TABLE ADD COLUMN cannot include UNIQUE constraint.
+      // Strip it here; uniqueness will be enforced by index recreation after
+      // all missing columns are added (see ensureTable).
+      if (safeDef.unique) {
+        safeDef.unique = false;
+      }
+
       const colSQL = strategy.generateColumnDefinition(colName, safeDef);
-      const alterSQL = `ALTER TABLE "${tableName}" ADD COLUMN ${colSQL}`;
+      const safeName = tableName.replace(/"/g, '""');
+      const alterSQL = `ALTER TABLE "${safeName}" ADD COLUMN ${colSQL}`;
 
       try {
         await this.db.query(alterSQL);
@@ -295,11 +324,13 @@ export class SchemaManager {
       }
     }
 
-    if (addedCount > 0) {
+    if (addedCount > 0 && this.options.debug) {
       console.log(
         `[SchemaManager] Added ${addedCount} missing column(s) to "${tableName}"`,
       );
     }
+
+    return addedCount;
   }
 
   /**

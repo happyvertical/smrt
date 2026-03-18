@@ -449,10 +449,20 @@ export class SmrtClass {
       const { ObjectRegistry } = await import('./registry.js');
 
       // Determine if this adapter needs schemas passed upfront
+      // JSON/DuckDB adapters need schemas because they have no persistent
+      // schema storage — tables must be created on every init.
       const needsUpfrontSchemas = (dbConfig: any): boolean => {
-        // JSON and DuckDB adapters need schemas passed to getDatabase()
+        // Check explicit type field
         const type = dbConfig?.type;
-        return type === 'json' || type === 'duckdb';
+        if (type === 'json' || type === 'duckdb') return true;
+
+        // Also detect from URL extension for shortcut formats like
+        // db: './data.json' or { url: './cache.duckdb' } (Codex P2 review)
+        const url =
+          typeof dbConfig === 'string' ? dbConfig : dbConfig?.url || '';
+        if (url.endsWith('.json') || url.endsWith('.duckdb')) return true;
+
+        return false;
       };
 
       const schemas = needsUpfrontSchemas(this.options.db)
