@@ -11,9 +11,7 @@ export const GET: RequestHandler = async ({ url }) => {
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
 
-  const collection = await getCollection(
-    '@happyvertical/smrt-content:ContentReference',
-  );
+  const collection = await getCollection('@happyvertical/smrt-content:ContentReference');
   const items = await collection.list({ limit, offset });
   const count = await collection.count();
 
@@ -24,9 +22,7 @@ export const GET: RequestHandler = async ({ url }) => {
 export const POST: RequestHandler = async ({ request }) => {
   const data = await request.json();
 
-  const collection = await getCollection(
-    '@happyvertical/smrt-content:ContentReference',
-  );
+  const collection = await getCollection('@happyvertical/smrt-content:ContentReference');
   const item = await collection.create(data);
   await item.save();
 

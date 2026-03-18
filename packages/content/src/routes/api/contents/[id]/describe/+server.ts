@@ -4,13 +4,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getCollection } from '$lib/server/smrt';
-import type { Mirror } from '../content-types';
 
 // Custom action: describe
 export const POST: RequestHandler = async ({ params, request }) => {
-  const collection = await getCollection<any>(
-    '@happyvertical/smrt-content:Mirror',
-  );
+  const collection = await getCollection<any>('@happyvertical/smrt-content:Mirror');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Mirror not found');
 

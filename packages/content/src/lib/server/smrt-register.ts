@@ -18,7 +18,7 @@ import { Contents } from '../../contents';
 ObjectRegistry.register(ContentReference, {
   packageName: '@happyvertical/smrt-content',
 });
-ObjectRegistry.register(ContentReferences, {
+ObjectRegistry.register(ContentReferences as any, {
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(Article, {
@@ -31,6 +31,6 @@ ObjectRegistry.register(Mirror, { packageName: '@happyvertical/smrt-content' });
 ObjectRegistry.register(Content, {
   packageName: '@happyvertical/smrt-content',
 });
-ObjectRegistry.register(Contents, {
+ObjectRegistry.register(Contents as any, {
   packageName: '@happyvertical/smrt-content',
 });

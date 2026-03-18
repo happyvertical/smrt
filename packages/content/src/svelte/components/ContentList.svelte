@@ -19,12 +19,16 @@ let {
 }>();
 
 let searchTerm = $state('');
-let selectedType = $state(type || 'All Types');
+let selectedType = $state('All Types');
 let selectedStatus = $state('All Statuses');
 let viewMode = $state<'grid' | 'detailed' | 'compact'>('grid');
 
+$effect(() => {
+  selectedType = type || 'All Types';
+});
+
 const filteredContents = $derived(
-  contents.filter((content) => {
+  contents.filter((content: any) => {
     const matchesSearch =
       searchTerm === '' ||
       content.title.toLowerCase().includes(searchTerm.toLowerCase()) ||

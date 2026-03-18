@@ -1,7 +1,12 @@
-import { json } from '@sveltejs/kit';
+import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 
-export async function GET({ params, locals }) {
+type ContentRouteLocals = {
+  tenantId?: string | null;
+};
+
+export const GET: RequestHandler = async ({ params, locals }) => {
+  const smrtLocals = locals as ContentRouteLocals;
   const { id } = params;
 
   if (!id) {
@@ -14,7 +19,7 @@ export async function GET({ params, locals }) {
     );
 
     // Check tenant scoping manually if standard API doesn't handle natively
-    const tenantId = locals.tenantId || '';
+    const tenantId = smrtLocals.tenantId || '';
 
     const content = await contentsCollection.get({ id });
 
@@ -44,9 +49,10 @@ export async function GET({ params, locals }) {
       { status: 500 },
     );
   }
-}
+};
 
-export async function PUT({ params, request, locals }) {
+export const PUT: RequestHandler = async ({ params, request, locals }) => {
+  const smrtLocals = locals as ContentRouteLocals;
   const { id } = params;
 
   if (!id) {
@@ -58,7 +64,7 @@ export async function PUT({ params, request, locals }) {
       '@happyvertical/smrt-content:Content',
     );
 
-    const tenantId = locals.tenantId || '';
+    const tenantId = smrtLocals.tenantId || '';
 
     const content = await contentsCollection.get({ id });
     if (!content) {
@@ -178,9 +184,10 @@ export async function PUT({ params, request, locals }) {
       { status: 500 },
     );
   }
-}
+};
 
-export async function DELETE({ params, locals }) {
+export const DELETE: RequestHandler = async ({ params, locals }) => {
+  const smrtLocals = locals as ContentRouteLocals;
   const { id } = params;
 
   if (!id) {
@@ -191,7 +198,7 @@ export async function DELETE({ params, locals }) {
     const contentsCollection = await getCollection<any>(
       '@happyvertical/smrt-content:Content',
     );
-    const tenantId = locals.tenantId || '';
+    const tenantId = smrtLocals.tenantId || '';
 
     const content = await contentsCollection.get({ id });
     if (!content) {
@@ -212,4 +219,4 @@ export async function DELETE({ params, locals }) {
       { status: 500 },
     );
   }
-}
+};

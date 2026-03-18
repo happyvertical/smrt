@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
+import type { UserConfig, UserConfigFnPromise } from 'vite';
 import dts from 'vite-plugin-dts';
 
 interface PackageConfigOptions {
@@ -33,13 +33,13 @@ interface PackageConfigOptions {
 export function createPackageConfig(
   packageName: string,
   options: PackageConfigOptions = {},
-) {
+): UserConfigFnPromise {
   const packageDir = resolve(__dirname, 'packages', packageName);
 
   // Packages that should NOT use smrtPlugin (framework infrastructure)
   const skipSmrtPlugin = ['core', 'types', 'config'];
 
-  return defineConfig(async () => {
+  return async () => {
     // Dynamically import smrtPlugin only if needed
     const shouldUseSmrtPlugin = !skipSmrtPlugin.includes(packageName);
     let smrtPlugin = null;
@@ -222,6 +222,6 @@ export function createPackageConfig(
           tsconfigPath: resolve(packageDir, 'tsconfig.json'),
         }),
       ],
-    };
-  });
+    } satisfies UserConfig;
+  };
 }

@@ -1,7 +1,7 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { syncSchema } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Content } from './content';
 import { Contents } from './contents';
 import {
   POST as createContent,
@@ -13,14 +13,42 @@ import {
   PUT as updateContent,
 } from './routes/api/v1/contents/[id]/+server';
 
+let currentContents: Contents | undefined;
+
+const CONTENT_REFERENCES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_references (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  source_id TEXT,
+  target_id TEXT
+);
+CREATE INDEX IF NOT EXISTS content_references_id_idx ON content_references (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_references_source_id_target_id_idx ON content_references (source_id, target_id);
+`;
+
 vi.mock('$lib/server/smrt', () => {
   return {
     getCollection: async () => {
-      const { Contents: LocalContents } = require('./contents');
-      return new LocalContents({ tenantId: 'test-tenant' });
+      if (!currentContents) {
+        throw new Error('Test collection not initialized');
+      }
+
+      return currentContents;
     },
   };
 });
+
+vi.mock('$lib/server/seed-contents', () => ({
+  seedContents: async () => {},
+}));
+
+vi.mock('$lib/server/seed-images', () => ({
+  seedImages: async () => {},
+}));
 
 // Mock SvelteKit json as just a plain Response
 vi.mock('@sveltejs/kit', () => {
@@ -40,13 +68,11 @@ describe('Content API Endpoints', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
-    // Make sure tables are created
-    await new Content({
-      name: 'init',
-      title: 'init',
-      body: 'init',
+    currentContents = await Contents.create({
+      tenantId: 'test-tenant',
       db,
-    }).initialize();
+    });
+    await syncSchema({ db, schema: CONTENT_REFERENCES_SCHEMA });
 
     mockLocals = {
       tenantId: 'test-tenant',
@@ -59,6 +85,8 @@ describe('Content API Endpoints', () => {
     if (db && typeof (db as any).close === 'function') {
       await (db as any).close();
     }
+
+    currentContents = undefined;
   });
 
   // Helper to create mock Request for endpoints
@@ -105,9 +133,11 @@ describe('Content API Endpoints', () => {
 
     it('creates content and links references', async () => {
       // Create a reference raw
-      const ref1 = new Content({ title: 'Ref 1', tenantId: 'test-tenant', db });
-      await ref1.initialize();
-      await ref1.save();
+      const ref1 = await currentContents?.create({
+        name: 'Ref 1',
+        title: 'Ref 1',
+        tenantId: 'test-tenant',
+      });
 
       const payload = {
         title: 'Post with Refs',
@@ -137,22 +167,18 @@ describe('Content API Endpoints', () => {
 
   describe('GET /api/v1/contents', () => {
     it('lists contents', async () => {
-      const c1 = new Content({
+      const c1 = await currentContents?.create({
+        name: 'Post A',
         title: 'Post A',
         status: 'published',
         tenantId: 'test-tenant',
-        db,
       });
-      const c2 = new Content({
+      const c2 = await currentContents?.create({
+        name: 'Post B',
         title: 'Post B',
         status: 'draft',
         tenantId: 'test-tenant',
-        db,
       });
-      await c1.initialize();
-      await c1.save();
-      await c2.initialize();
-      await c2.save();
 
       const req = currentRequest({}, { status: 'published' });
       const res = await getList({
@@ -170,13 +196,16 @@ describe('Content API Endpoints', () => {
 
   describe('GET /api/v1/contents/[id]', () => {
     it('retrieves single content with references', async () => {
-      const ref = new Content({ title: 'A ref', db });
-      await ref.initialize();
-      await ref.save();
+      const ref = await currentContents?.create({
+        name: 'A ref',
+        title: 'A ref',
+      });
 
-      const main = new Content({ title: 'Main', tenantId: 'test-tenant', db });
-      await main.initialize();
-      await main.save();
+      const main = await currentContents?.create({
+        name: 'Main',
+        title: 'Main',
+        tenantId: 'test-tenant',
+      });
       await main.addReference(ref);
 
       const res = await getSingle({
@@ -202,20 +231,20 @@ describe('Content API Endpoints', () => {
 
   describe('PUT /api/v1/contents/[id]', () => {
     it('updates content properties and syncs references', async () => {
-      const ref1 = new Content({ title: 'Ref 1', db });
-      const ref2 = new Content({ title: 'Ref 2', db });
-      await ref1.initialize();
-      await ref1.save();
-      await ref2.initialize();
-      await ref2.save();
+      const ref1 = await currentContents?.create({
+        name: 'Ref 1',
+        title: 'Ref 1',
+      });
+      const ref2 = await currentContents?.create({
+        name: 'Ref 2',
+        title: 'Ref 2',
+      });
 
-      const main = new Content({
+      const main = await currentContents?.create({
+        name: 'Old Title',
         title: 'Old Title',
         tenantId: 'test-tenant',
-        db,
       });
-      await main.initialize();
-      await main.save();
       await main.addReference(ref1);
 
       const payload = {
@@ -239,13 +268,11 @@ describe('Content API Endpoints', () => {
 
   describe('DELETE /api/v1/contents/[id]', () => {
     it('deletes content', async () => {
-      const main = new Content({
+      const main = await currentContents?.create({
+        name: 'To Delete',
         title: 'To Delete',
         tenantId: 'test-tenant',
-        db,
       });
-      await main.initialize();
-      await main.save();
 
       const res = await deleteContent({
         params: { id: main.id },

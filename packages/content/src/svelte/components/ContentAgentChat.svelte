@@ -6,7 +6,6 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
-import { onMount } from 'svelte';
 
 const AI_MODELS = [
   { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
@@ -51,10 +50,20 @@ let showNewTopicInput = $state(false);
 
 // Active model selected
 let selectedModelId = $state(AI_MODELS[0].id);
-let isDropdownOpen = $state(false);
+let loadedContentId = $state<string | null>(null);
 
-onMount(() => {
-  loadSession();
+$effect(() => {
+  if (!contentId || contentId === loadedContentId) {
+    return;
+  }
+
+  loadedContentId = contentId;
+  session = null;
+  threads = [];
+  activeThreadId = null;
+  messages = [];
+  error = null;
+  void loadSession();
 });
 
 /** Ensure every message has the UI fields that AgentChat.svelte requires */
@@ -117,7 +126,6 @@ async function loadThread(threadId: string) {
     return;
   }
 
-  console.log(`[loadThread] Step 1: Initiating load for thread ${threadId}`);
   loadingMessages = true;
   activeThreadId = threadId;
   isCreatingTopic = false;
@@ -125,17 +133,14 @@ async function loadThread(threadId: string) {
   error = null;
 
   try {
-    console.log(`[loadThread] Step 2: Fetching...`);
     const res = await fetch(
       `/api/v1/contents/${contentId}/chat/threads/${threadId}`,
     );
-    console.log(`[loadThread] Step 3: Fetch returned status ${res.status}`);
 
     if (!res.ok)
       throw new Error(`Failed to load thread messages. Status: ${res.status}`);
 
     const data = await res.json();
-    console.log(`[loadThread] Step 4: JSON parsed`);
 
     messages = (data.messages || []).map(normalizeMessage);
 
@@ -152,15 +157,11 @@ async function loadThread(threadId: string) {
         // ignore parsing error
       }
     }
-    console.log(`[loadThread] Step 5: Finished successfully`);
   } catch (err: any) {
-    console.error(`[loadThread] Caught error:`, err);
+    console.error(`[loadThread] Failed for thread ${threadId}:`, err);
     error = err.message;
   } finally {
     loadingMessages = false;
-    console.log(
-      `[loadThread] Step 6: Finally block executed. loadingMessages is now false.`,
-    );
   }
 }
 
@@ -263,15 +264,6 @@ async function handleSendMessage(content: string) {
     sendingMessage = false;
   }
 }
-
-function selectModel(modelId: string) {
-  selectedModelId = modelId;
-  isDropdownOpen = false;
-}
-
-let selectedModelLabel = $derived(
-  AI_MODELS.find((m) => m.id === selectedModelId)?.label || 'Select Model',
-);
 </script>
 
 <div class="content-agent-chat-container">

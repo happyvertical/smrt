@@ -6,7 +6,7 @@
  * Links to the full article page.
  */
 import { Badge, Card } from '@happyvertical/smrt-svelte/ui';
-import type { Article } from './types.js';
+import type { Article } from '../types.js';
 
 export interface Props {
   /** Article data to display */
@@ -56,7 +56,7 @@ const _tags = $derived.by(() => {
     // Comma-separated string
     return article.tags
       .split(',')
-      .map((t) => t.trim())
+      .map((t: string) => t.trim())
       .filter(Boolean);
   }
   return [];

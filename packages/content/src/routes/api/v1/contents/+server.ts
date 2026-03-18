@@ -1,9 +1,15 @@
-import { json } from '@sveltejs/kit';
+import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import { seedContents } from '$lib/server/seed-contents';
 import { seedImages } from '$lib/server/seed-images';
 
-export async function GET({ request, locals, url }) {
+type ContentRouteLocals = {
+  tenantId?: string | null;
+};
+
+export const GET: RequestHandler = async ({ locals, url }) => {
+  const smrtLocals = locals as ContentRouteLocals;
+
   try {
     // Ensure base tables are created before STI queries
     await getCollection<any>('@happyvertical/smrt-assets:Asset');
@@ -53,9 +59,11 @@ export async function GET({ request, locals, url }) {
       { status: 500 },
     );
   }
-}
+};
 
-export async function POST({ request, locals }) {
+export const POST: RequestHandler = async ({ request, locals }) => {
+  const smrtLocals = locals as ContentRouteLocals;
+
   try {
     const contentsCollection = await getCollection<any>(
       '@happyvertical/smrt-content:Content',
@@ -63,7 +71,7 @@ export async function POST({ request, locals }) {
     const body = await request.json();
 
     // Use the tenant extracted by SMRT auth hooks
-    const tenantId = locals.tenantId || '';
+    const tenantId = smrtLocals.tenantId || '';
 
     // Create payload
     const payload = {
@@ -122,4 +130,4 @@ export async function POST({ request, locals }) {
       { status: 500 },
     );
   }
-}
+};

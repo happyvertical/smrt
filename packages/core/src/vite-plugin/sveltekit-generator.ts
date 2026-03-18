@@ -184,6 +184,9 @@ async function generateRegistrationFile(
   const registrations = Object.entries(manifest.objects)
     .map(([className, objectDef]) => {
       const simpleClassName = extractSimpleClassName(className);
+      const registrationTarget = isCollectionClass(objectDef)
+        ? `${simpleClassName} as any`
+        : simpleClassName;
       const localObject = isLocalObject(projectRoot, objectDef);
       const packageName = getRegistrationPackageName(
         manifest,
@@ -196,14 +199,14 @@ async function generateRegistrationFile(
       }
 
       const packageNameLiteral = toSingleQuotedStringLiteral(packageName);
-      const singleLineRegistration = `ObjectRegistry.register(${simpleClassName}, { packageName: ${packageNameLiteral} });`;
+      const singleLineRegistration = `ObjectRegistry.register(${registrationTarget}, { packageName: ${packageNameLiteral} });`;
 
       if (singleLineRegistration.length <= BIOME_LINE_WIDTH) {
         return singleLineRegistration;
       }
 
       return [
-        `ObjectRegistry.register(${simpleClassName}, {`,
+        `ObjectRegistry.register(${registrationTarget}, {`,
         `  packageName: ${packageNameLiteral},`,
         `});`,
       ].join('\n');
@@ -344,7 +347,9 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
       ...defaults,
       ...override,
       // Ensure nested objects are merged properly
-      db: override.db ? { ...defaults.db, ...override.db } : defaults.db,
+      db: override.db
+        ? { ...(defaults.db as any), ...(override.db as any) }
+        : defaults.db,
       ai: override.ai !== undefined ? override.ai : defaults.ai
     };
   }
@@ -356,10 +361,21 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
  * Helper to get a collection with centralized configuration
  * Automatically applies project defaults or object-specific overrides
  */
-export async function getCollection<T>(className: string) {
+export async function getCollection<
+  T extends import('@happyvertical/smrt-core').SmrtObject,
+>(className: string, overrides: Partial<SmrtClassOptions> = {}) {
+  const config = getSmrtConfig(className);
+
   return await ObjectRegistry.getCollection<T>(
     className,
-    getSmrtConfig(className)
+    {
+      ...config,
+      ...overrides,
+      db: overrides.db
+        ? { ...(config.db as any), ...(overrides.db as any) }
+        : config.db,
+      ai: overrides.ai !== undefined ? overrides.ai : config.ai
+    }
   );
 }
 `;
@@ -566,54 +582,6 @@ function isLocalObject(
 }
 
 /**
- * Resolve the import statement for a SMRT model class.
- * Local objects use $lib paths, external packages use the package/import path.
- */
-function resolveModelImport(
-  projectRoot: string,
-  className: string,
-  objectDef: SmartObjectDefinition,
-  options: SvelteKitOptions,
-): { simpleClassName: string; importStatement: string } {
-  const simpleClassName = extractSimpleClassName(className);
-
-  // Local objects (source files in the project, not node_modules) use $lib paths
-  if (isLocalObject(projectRoot, objectDef)) {
-    const importPath = getSvelteKitImportPath(
-      projectRoot,
-      objectDef.filePath,
-      options.objectsDir,
-      simpleClassName,
-    );
-    return {
-      simpleClassName,
-      importStatement: `import type { ${simpleClassName} } from '${importPath}';`,
-    };
-  }
-
-  // External packages: prefer importPath (subpath export) over packageName (root)
-  const externalImportSource = objectDef.importPath ?? objectDef.packageName;
-  if (externalImportSource) {
-    return {
-      simpleClassName,
-      importStatement: `import type { ${simpleClassName} } from '${externalImportSource}';`,
-    };
-  }
-
-  // Fallback: use $lib path from filePath
-  const importPath = getSvelteKitImportPath(
-    projectRoot,
-    objectDef.filePath,
-    options.objectsDir,
-    simpleClassName,
-  );
-  return {
-    simpleClassName,
-    importStatement: `import type { ${simpleClassName} } from '${importPath}';`,
-  };
-}
-
-/**
  * Generates collection route template (GET list, POST create)
  */
 function generateCollectionRouteTemplate(
@@ -673,22 +641,16 @@ export const POST: RequestHandler = async ({ request }) => {
  * Generates item route template (GET, PUT, DELETE)
  */
 function generateItemRouteTemplate(
-  projectRoot: string,
+  _projectRoot: string,
   className: string,
-  objectDef: SmartObjectDefinition,
+  _objectDef: SmartObjectDefinition,
   includedActions: string[],
-  options: SvelteKitOptions,
+  _options: SvelteKitOptions,
 ): string {
   const hasGet = includedActions.includes('get');
   const hasPut = includedActions.includes('update');
   const hasDelete = includedActions.includes('delete');
-
-  const { simpleClassName, importStatement } = resolveModelImport(
-    projectRoot,
-    className,
-    objectDef,
-    options,
-  );
+  const simpleClassName = extractSimpleClassName(className);
 
   const imports = `// Auto-generated by @smrt/core vite plugin
 // DO NOT EDIT - changes will be overwritten
@@ -696,7 +658,6 @@ function generateItemRouteTemplate(
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getCollection } from '$lib/server/smrt';
-${importStatement}
 `;
 
   const getHandler = hasGet
@@ -750,21 +711,14 @@ export const DELETE: RequestHandler = async ({ params }) => {
  * Generates custom action route template
  */
 function generateActionRouteTemplate(
-  projectRoot: string,
+  _projectRoot: string,
   className: string,
   actionName: string,
   actionDef: any,
-  objectDef: SmartObjectDefinition,
-  options: SvelteKitOptions,
+  _objectDef: SmartObjectDefinition,
+  _options: SvelteKitOptions,
 ): string {
   const paramsList = actionDef.parameters.map((p: any) => p.name).join(', ');
-
-  const { simpleClassName, importStatement } = resolveModelImport(
-    projectRoot,
-    className,
-    objectDef,
-    options,
-  );
 
   return `// Auto-generated by @smrt/core vite plugin
 // DO NOT EDIT - changes will be overwritten
@@ -772,7 +726,6 @@ function generateActionRouteTemplate(
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getCollection } from '$lib/server/smrt';
-${importStatement}
 
 // Custom action: ${actionName}
 export const POST: RequestHandler = async ({ params, request }) => {

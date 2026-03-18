@@ -10,6 +10,7 @@ import type {
   ToolCallDisplayData,
 } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
+import { parseAgentMessageBlocks } from './message-blocks.js';
 import ToolCallDisplay from './ToolCallDisplay.svelte';
 
 export interface Props {
@@ -55,52 +56,6 @@ function showDiff(fields: Record<string, string>) {
 function closeDiff() {
   diffDialog?.close();
   diffDialogFields = null;
-}
-
-type ParsedBlock =
-  | { type: 'text'; content: string }
-  | { type: 'fields'; fields: Record<string, string> }
-  | { type: 'legacy_applied' };
-
-function parseBlocks(text: string): ParsedBlock[] {
-  if (!text) return [];
-  // Match both ```json and ```markdown code blocks
-  const regex = /```(json|markdown)\n([\s\S]*?)```/g;
-  const blocks: ParsedBlock[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null = regex.exec(text);
-
-  while (match !== null) {
-    if (match.index > lastIndex) {
-      blocks.push({
-        type: 'text',
-        content: text.slice(lastIndex, match.index),
-      });
-    }
-    const lang = match[1];
-    const body = match[2].trim();
-    if (lang === 'json') {
-      try {
-        const parsed = JSON.parse(body);
-        if (parsed.fields && typeof parsed.fields === 'object') {
-          blocks.push({ type: 'fields', fields: parsed.fields });
-        }
-      } catch {
-        blocks.push({ type: 'text', content: match[0] });
-      }
-    } else {
-      // Old markdown code block — show as compact applied indicator
-      blocks.push({ type: 'legacy_applied' });
-    }
-    lastIndex = regex.lastIndex;
-    match = regex.exec(text);
-  }
-
-  if (lastIndex < text.length) {
-    blocks.push({ type: 'text', content: text.slice(lastIndex) });
-  }
-
-  return blocks;
 }
 
 function handleSubmit(event: Event) {
@@ -185,7 +140,7 @@ $effect(() => {
               {#if isUser}
                 {msg.content}
               {:else}
-                {#each parseBlocks(msg.content || '') as block}
+                {#each parseAgentMessageBlocks(msg.content || '') as block}
                   {#if block.type === 'text'}
                     <span class="text-block">{block.content}</span>
                   {:else if block.type === 'fields'}
@@ -193,9 +148,18 @@ $effect(() => {
                       <span class="applied-badge">✓ Updated {Object.keys(block.fields).length} field{Object.keys(block.fields).length !== 1 ? 's' : ''}</span>
                       <button class="diff-btn" type="button" onclick={() => showDiff(block.fields)}>Diff</button>
                     </div>
-                  {:else if block.type === 'legacy_applied'}
-                    <div class="field-update-block">
-                      <span class="applied-badge">✓ Content applied</span>
+                  {:else if block.type === 'markdown'}
+                    <div class="markdown-block">
+                      <pre class="markdown-block__content"><code>{block.content}</code></pre>
+                      {#if onapplychange}
+                        <button
+                          class="diff-btn"
+                          type="button"
+                          onclick={() => onapplychange(block.content)}
+                        >
+                          Apply
+                        </button>
+                      {/if}
                     </div>
                   {/if}
                 {/each}
@@ -421,6 +385,25 @@ $effect(() => {
     align-items: center;
     gap: 6px;
     padding: 4px 0;
+  }
+
+  .markdown-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
+  }
+
+  .markdown-block__content {
+    margin: 0;
+    padding: 12px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--smrt-color-surface-container-low, #f4f2f6) 85%, white);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.875rem;
+    line-height: 1.45;
   }
 
   .diff-btn {

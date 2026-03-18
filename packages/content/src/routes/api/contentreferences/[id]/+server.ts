@@ -4,28 +4,21 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getCollection } from '$lib/server/smrt';
-import type { ContentReference } from '../content-reference';
 
 // Get single contentreference
 export const GET: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<any>(
-    '@happyvertical/smrt-content:ContentReference',
-  );
+  const collection = await getCollection<any>('@happyvertical/smrt-content:ContentReference');
   const item = await collection.get(params.id);
-  if (!item)
-    throw error(404, '@happyvertical/smrt-content:ContentReference not found');
+  if (!item) throw error(404, '@happyvertical/smrt-content:ContentReference not found');
 
   return json(item);
 };
 
 // Update contentreference
 export const PUT: RequestHandler = async ({ params, request }) => {
-  const collection = await getCollection<any>(
-    '@happyvertical/smrt-content:ContentReference',
-  );
+  const collection = await getCollection<any>('@happyvertical/smrt-content:ContentReference');
   const item = await collection.get(params.id);
-  if (!item)
-    throw error(404, '@happyvertical/smrt-content:ContentReference not found');
+  if (!item) throw error(404, '@happyvertical/smrt-content:ContentReference not found');
 
   const data = await request.json();
   Object.assign(item, data);
@@ -36,12 +29,9 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 // Delete contentreference
 export const DELETE: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<any>(
-    '@happyvertical/smrt-content:ContentReference',
-  );
+  const collection = await getCollection<any>('@happyvertical/smrt-content:ContentReference');
   const item = await collection.get(params.id);
-  if (!item)
-    throw error(404, '@happyvertical/smrt-content:ContentReference not found');
+  if (!item) throw error(404, '@happyvertical/smrt-content:ContentReference not found');
 
   await item.delete();
   return json({ success: true });

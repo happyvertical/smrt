@@ -16,9 +16,6 @@ let {
   onCancel: () => void;
 }>();
 
-let currentEditorState = $state('');
-let currentReferenceIds = $state<string[]>([]);
-
 function getInitialFormData(c: any) {
   return c
     ? {
@@ -45,8 +42,10 @@ function getInitialFormData(c: any) {
       };
 }
 
-let formData = $state<any>(getInitialFormData(content));
-let lastContentId = $state<string | undefined>(content?.id);
+let formData = $state<any>(getInitialFormData(undefined));
+let lastContentId = $state<string | undefined>(undefined);
+let currentEditorState = $derived(formData.body || '');
+let currentReferenceIds = $derived(formData.referenceIds || []);
 
 // Undo stack for AI field edits — each entry stores the old values of changed fields
 let fieldUndoStack = $state<Record<string, string>[]>([]);
@@ -59,8 +58,6 @@ $effect(() => {
   if (newId !== lastContentId) {
     lastContentId = newId;
     formData = getInitialFormData(content);
-    currentEditorState = formData.body || '';
-    currentReferenceIds = formData.referenceIds || [];
     fieldUndoStack = [];
     showUndoBanner = false;
   }
@@ -74,9 +71,6 @@ function applyFieldUpdates(fields: Record<string, string>) {
     oldValues[key] = formData[key] ?? '';
     formData[key] = fields[key];
   }
-  if (fields.body !== undefined) {
-    currentEditorState = fields.body;
-  }
   fieldUndoStack = [...fieldUndoStack, oldValues];
   lastAppliedFields = Object.keys(fields);
   showUndoBanner = true;
@@ -88,9 +82,6 @@ function undoLastApply() {
   fieldUndoStack = fieldUndoStack.slice(0, -1);
   for (const [key, val] of Object.entries(oldValues)) {
     formData[key] = val;
-  }
-  if (oldValues.body !== undefined) {
-    currentEditorState = oldValues.body;
   }
   lastAppliedFields = Object.keys(oldValues);
   if (fieldUndoStack.length === 0) {
@@ -117,6 +108,10 @@ function removeReference(id: string) {
 // AI Authoring State (Migrated to ContentAgentChat Sidebar)
 
 let showImageUploader = $state(false);
+
+function getImageRecord(payload: any) {
+  return payload?.data ?? payload;
+}
 
 function handleSubmit(e: Event) {
   e.preventDefault();
@@ -146,7 +141,7 @@ function handleImageSelect(selected: Image | File | string) {
         });
         if (resp.ok) {
           const newImage = await resp.json();
-          addSelectedAsset(newImage);
+          addSelectedAsset(getImageRecord(newImage));
         } else {
           console.error('[ContentEditor] Failed to save uploaded file record');
         }
@@ -161,25 +156,32 @@ function handleImageSelect(selected: Image | File | string) {
     showImageUploader = false;
   } else if (typeof selected === 'string') {
     // 2. External URL Upload
-    fetch('/api/v1/images', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: new URL(selected).pathname.split('/').pop() || 'External Image',
-        sourceUri: selected,
-        mimeType: 'image/jpeg',
-      }),
-    })
-      .then((r) => r.json())
-      .then((newImage) => {
-        addSelectedAsset(newImage);
-      })
-      .catch((err) =>
+    void (async () => {
+      try {
+        const parsedUrl = new URL(selected);
+        const resp = await fetch('/api/v1/images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: parsedUrl.pathname.split('/').pop() || 'External Image',
+            sourceUri: selected,
+            mimeType: 'image/jpeg',
+          }),
+        });
+
+        if (!resp.ok) {
+          throw new Error(await resp.text());
+        }
+
+        const newImage = await resp.json();
+        addSelectedAsset(getImageRecord(newImage));
+      } catch (err) {
         console.error(
           '[ContentEditor] Failed to save external URL record:',
           err,
-        ),
-      );
+        );
+      }
+    })();
     showImageUploader = false;
   }
 }
@@ -317,7 +319,7 @@ function removeAsset(id: string) {
           </summary>
           <div class="editor-drawer-content">
             <div class="references-section">
-               <label>References (Source Material)</label>
+               <p class="section-label">References (Source Material)</p>
                <div class="references-list">
                   {#each formData.referenceIds as refId}
                     <div class="reference-badge">
@@ -580,6 +582,12 @@ function removeAsset(id: string) {
     border-radius: 0.5rem;
   }
 
+  .section-label {
+    margin: 0;
+    font-weight: 600;
+    color: var(--smrt-color-on-surface, #1a1c1e);
+  }
+
   .references-list {
     display: flex;
     flex-wrap: wrap;
@@ -641,35 +649,6 @@ function removeAsset(id: string) {
     background: #f1f5f9;
   }
   
-  .thumbnail-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin: 0.5rem 0;
-  }
-  
-  .thumbnail-preview-area {
-    background: var(--smrt-color-surface-container-low, #f8fafc);
-    border: 1px dashed var(--smrt-color-outline, #cbd5e1);
-    border-radius: var(--smrt-radius-md, 8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    position: relative;
-    min-height: 120px;
-    transition: padding 0.2s, border 0.2s;
-  }
-  
-  .thumbnail-preview-area.has-image {
-    border: 1px solid var(--smrt-color-outline-variant, #333);
-    padding: 0;
-  }
-  
-  .thumbnail-preview-area:not(.has-image) {
-    padding: 2rem;
-  }
-  
   .add-image-btn {
     display: flex;
     align-items: center;
@@ -688,80 +667,6 @@ function removeAsset(id: string) {
     border-color: var(--smrt-color-primary, #94a3b8);
     color: var(--smrt-color-on-surface, #1e293b);
     background: var(--smrt-color-surface-container-low, #f1f5f9);
-  }
-  
-  .thumbnail-full-preview {
-    width: 100%;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .thumbnail-image {
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    background-size: cover;
-    background-position: center;
-    background-color: var(--smrt-color-surface-container-high, #242424);
-  }
-
-  .thumbnail-placeholder {
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--smrt-color-surface-container-high, #242424);
-  }
-  
-  .asset-id {
-    font-family: monospace;
-    color: var(--smrt-color-outline, #888);
-    font-size: 0.8rem;
-  }
-
-  .thumbnail-actions-overlay {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    display: flex;
-    gap: 0.5rem;
-    opacity: 0;
-    transition: opacity 0.2s ease-in-out;
-  }
-
-  .thumbnail-full-preview:hover .thumbnail-actions-overlay,
-  .thumbnail-actions-overlay:focus-within {
-    opacity: 1;
-  }
-
-  .icon-btn-overlay {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.6);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    backdrop-filter: blur(4px);
-    transition: background 0.2s, transform 0.1s, border-color 0.2s;
-  }
-
-  .icon-btn-overlay:hover {
-    transform: scale(1.05);
-  }
-
-  .icon-btn-overlay.edit:hover {
-    background: rgba(59, 130, 246, 0.9);
-    border-color: rgba(59, 130, 246, 1);
-  }
-
-  .icon-btn-overlay.delete:hover {
-    background: rgba(239, 68, 68, 0.9);
-    border-color: rgba(239, 68, 68, 1);
   }
 
   .form-actions {

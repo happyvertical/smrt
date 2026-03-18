@@ -1,8 +1,17 @@
-import { json } from '@sveltejs/kit';
+import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import { ChatService } from '@happyvertical/smrt-chat';
 
-export async function GET({ params, locals }) {
+type ContentChatLocals = {
+  tenantId?: string | null;
+  profileId?: string | null;
+  user?: {
+    id?: string | null;
+  } | null;
+};
+
+export const GET: RequestHandler = async ({ params, locals }) => {
+  const smrtLocals = locals as ContentChatLocals;
   const { id } = params;
 
   if (!id) {
@@ -15,11 +24,11 @@ export async function GET({ params, locals }) {
     );
     const db = contents.db;
 
-    const tenantId = locals.tenantId || 'global';
+    const tenantId = smrtLocals.tenantId || 'global';
     const chatService = await ChatService.create({ tenantId, db });
     await chatService.initialize();
 
-    const profileId = locals.profileId || locals.user?.id || 'system';
+    const profileId = smrtLocals.profileId || smrtLocals.user?.id || 'system';
 
     // Find existing session for this content
     let activeSession = null;
@@ -75,9 +84,10 @@ export async function GET({ params, locals }) {
       { status: 500 },
     );
   }
-}
+};
 
-export async function POST({ params, request, locals }) {
+export const POST: RequestHandler = async ({ params, request, locals }) => {
+  const smrtLocals = locals as ContentChatLocals;
   const { id } = params;
   if (!id) {
     return json({ error: 'Content ID is required' }, { status: 400 });
@@ -114,7 +124,7 @@ export async function POST({ params, request, locals }) {
       db: contents.db,
     });
 
-    const tenantId = locals.tenantId || 'global';
+    const tenantId = smrtLocals.tenantId || 'global';
     const chatService = await ChatService.create({ tenantId, db: contents.db });
 
     const session = await chatService.agentSessions.get(sessionId);
@@ -147,4 +157,4 @@ export async function POST({ params, request, locals }) {
     console.error(`Error sending message for content ${id}:`, error);
     return json({ error: 'Failed to process message' }, { status: 500 });
   }
-}
+};

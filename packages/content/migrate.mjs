@@ -21,8 +21,9 @@ async function migrate() {
       created++;
       console.log(`Created schema for ${className}`);
     } catch (e) {
-      if (!e.message.includes('No table mapping')) {
-        console.error(`Error for ${className}: ${e.message}`);
+      const message = e instanceof Error ? e.message : String(e);
+      if (!message.includes('No table mapping')) {
+        console.error(`Error for ${className}: ${message}`);
       }
     }
   }

@@ -4,13 +4,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getCollection } from '$lib/server/smrt';
-import type { Content } from '../content';
 
 // Get single content
 export const GET: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<any>(
-    '@happyvertical/smrt-content:Content',
-  );
+  const collection = await getCollection<any>('@happyvertical/smrt-content:Content');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
@@ -19,9 +16,7 @@ export const GET: RequestHandler = async ({ params }) => {
 
 // Update content
 export const PUT: RequestHandler = async ({ params, request }) => {
-  const collection = await getCollection<any>(
-    '@happyvertical/smrt-content:Content',
-  );
+  const collection = await getCollection<any>('@happyvertical/smrt-content:Content');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
@@ -34,9 +29,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 // Delete content
 export const DELETE: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<any>(
-    '@happyvertical/smrt-content:Content',
-  );
+  const collection = await getCollection<any>('@happyvertical/smrt-content:Content');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 

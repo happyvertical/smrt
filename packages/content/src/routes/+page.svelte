@@ -2,7 +2,6 @@
 import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
 import { onMount } from 'svelte';
 import { createClient } from '../mock-smrt-client';
-import ContentAgentChat from '../svelte/components/ContentAgentChat.svelte';
 import ContentEditor from '../svelte/components/ContentEditor.svelte';
 import ContentList from '../svelte/components/ContentList.svelte';
 

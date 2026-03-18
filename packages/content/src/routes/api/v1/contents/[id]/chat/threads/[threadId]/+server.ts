@@ -1,9 +1,18 @@
-import { json } from '@sveltejs/kit';
+import { json, type RequestHandler } from '@sveltejs/kit';
 import { ChatService } from '@happyvertical/smrt-chat';
 import { getCollection, getSmrtConfig } from '$lib/server/smrt';
-import { getAI } from '@happyvertical/ai';
+import { getAI, type AIClientOptions } from '@happyvertical/ai';
 
-export async function GET({ params, locals }) {
+type ContentChatLocals = {
+  tenantId?: string | null;
+  profileId?: string | null;
+  user?: {
+    id?: string | null;
+  } | null;
+};
+
+export const GET: RequestHandler = async ({ params, locals }) => {
+  const smrtLocals = locals as ContentChatLocals;
   const { threadId } = params;
 
   if (!threadId) {
@@ -14,7 +23,7 @@ export async function GET({ params, locals }) {
     const contentsCollection = await getCollection<any>(
       '@happyvertical/smrt-content:Content',
     );
-    const tenantId = locals.tenantId || 'global';
+    const tenantId = smrtLocals.tenantId || 'global';
     const chatService = await ChatService.create({
       tenantId,
       db: contentsCollection.db,
@@ -47,9 +56,10 @@ export async function GET({ params, locals }) {
     console.error(`Error fetching messages for thread ${threadId}:`, error);
     return json({ error: 'Failed to find thread messages' }, { status: 500 });
   }
-}
+};
 
-export async function POST({ params, request, locals }) {
+export const POST: RequestHandler = async ({ params, request, locals }) => {
+  const smrtLocals = locals as ContentChatLocals;
   const { id, threadId } = params;
   if (!id || !threadId) {
     return json(
@@ -78,12 +88,12 @@ export async function POST({ params, request, locals }) {
     const contentsCollection = await getCollection<any>(
       '@happyvertical/smrt-content:Content',
     );
-    const tenantId = locals.tenantId || 'global';
+    const tenantId = smrtLocals.tenantId || 'global';
     const chatService = await ChatService.create({
       tenantId,
       db: contentsCollection.db,
     });
-    const profileId = locals.profileId || locals.user?.id || 'system';
+    const profileId = smrtLocals.profileId || smrtLocals.user?.id || 'system';
 
     const session = await chatService.agentSessions.get(sessionId);
     if (!session || !session.isActive()) {
@@ -174,12 +184,10 @@ RULES:
     }));
 
     const config = getSmrtConfig('@happyvertical/smrt-content:Content');
-    const aiConfig = config.ai || {};
+    const aiConfig = (config.ai || {}) as AIClientOptions;
 
     // Get SvelteKit environment variables for SSR
-    const env = await import('$env/dynamic/private')
-      .then((m) => m.env)
-      .catch(() => process.env);
+    const env = process.env;
 
     // If a model is provided in the request, we use it, otherwise fallback
     const aiModel = model || 'gemini-2.5-pro'; // default to gemini since that's what we have
@@ -254,4 +262,4 @@ RULES:
       { status: 500 },
     );
   }
-}
+};

@@ -5,8 +5,8 @@
  * Renders articles in a responsive grid layout with configurable columns.
  */
 import { Grid } from '@happyvertical/smrt-svelte/layout';
+import type { Article } from '../types.js';
 import ArticleCard from './ArticleCard.svelte';
-import type { Article } from './types.js';
 
 export interface Props {
   /** Array of articles to display */

@@ -188,7 +188,8 @@ export class SchemaManager {
     try {
       if (this.engine === 'postgres') {
         const result = await this.db.query(
-          `SELECT column_name FROM information_schema.columns WHERE table_name = '${tableName}'`,
+          'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
+          tableName,
         );
         const rows = Array.isArray(result)
           ? result
@@ -198,7 +199,9 @@ export class SchemaManager {
         }
       } else {
         // SQLite and DuckDB use PRAGMA
-        const result = await this.db.query(`PRAGMA table_info("${tableName}")`);
+        const result = await this.db.query(
+          `PRAGMA table_info(${this.quoteIdentifier(tableName)})`,
+        );
         const rows = Array.isArray(result)
           ? result
           : ((result as any)?.rows ?? []);
@@ -272,7 +275,7 @@ export class SchemaManager {
       }
 
       const colSQL = strategy.generateColumnDefinition(colName, safeDef);
-      const alterSQL = `ALTER TABLE "${tableName}" ADD COLUMN ${colSQL}`;
+      const alterSQL = `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${colSQL}`;
 
       try {
         await this.db.query(alterSQL);
@@ -295,11 +298,15 @@ export class SchemaManager {
       }
     }
 
-    if (addedCount > 0) {
+    if (addedCount > 0 && this.options.debug) {
       console.log(
         `[SchemaManager] Added ${addedCount} missing column(s) to "${tableName}"`,
       );
     }
+  }
+
+  private quoteIdentifier(name: string): string {
+    return `"${name.replace(/"/g, '""')}"`;
   }
 
   /**
