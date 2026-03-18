@@ -410,25 +410,48 @@ export function smrtVitestPlugin(
   } = options;
 
   let manifestsLoaded = false;
+  const setupFileId = '@happyvertical/smrt-vitest/setup';
+
+  const ensureSetupFiles = (value: string | string[] | undefined): string[] => {
+    const setupFiles = Array.isArray(value) ? [...value] : value ? [value] : [];
+
+    if (!setupFiles.includes(setupFileId)) {
+      setupFiles.push(setupFileId);
+    }
+
+    return setupFiles;
+  };
 
   return {
     name: 'smrt-vitest',
 
     config(userConfig) {
-      const currentSetupFiles = userConfig.test?.setupFiles;
-      const setupFiles = Array.isArray(currentSetupFiles)
-        ? [...currentSetupFiles]
-        : currentSetupFiles
-          ? [currentSetupFiles]
-          : [];
+      const setupFiles = ensureSetupFiles(userConfig.test?.setupFiles);
+      const projects = userConfig.test?.projects?.map((project) => {
+        const projectConfig =
+          project && typeof project === 'object' && 'test' in project
+            ? (project as Record<string, unknown> & {
+                test?: { setupFiles?: string | string[] };
+              })
+            : undefined;
 
-      if (!setupFiles.includes('@happyvertical/smrt-vitest/setup')) {
-        setupFiles.push('@happyvertical/smrt-vitest/setup');
-      }
+        if (!projectConfig) {
+          return project;
+        }
+
+        return {
+          ...projectConfig,
+          test: {
+            ...projectConfig.test,
+            setupFiles: ensureSetupFiles(projectConfig.test?.setupFiles),
+          },
+        };
+      });
 
       return {
         test: {
           setupFiles,
+          ...(projects ? { projects } : {}),
         },
       };
     },
