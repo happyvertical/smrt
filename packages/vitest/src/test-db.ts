@@ -39,6 +39,12 @@ import type {
   TransactionHandle,
 } from './types.js';
 
+type VitestDatabaseConnectionOptions = Parameters<
+  typeof import('@happyvertical/sql')['getDatabase']
+>[0] & {
+  __smrtSkipVitestSchemaPreparation?: boolean;
+};
+
 // ============================================================================
 // Manifest Types (minimal to avoid circular dependency with smrt-core)
 // ============================================================================
@@ -444,7 +450,7 @@ export async function createIsolatedTestDb(
   const baseDb = (await getDatabase({
     ...config,
     __smrtSkipVitestSchemaPreparation: true,
-  } as any)) as DatabaseInterfaceWithTransaction;
+  } as VitestDatabaseConnectionOptions)) as DatabaseInterfaceWithTransaction;
 
   // Sync schema if provided (must be done before transaction for DDL)
   if (schema) {

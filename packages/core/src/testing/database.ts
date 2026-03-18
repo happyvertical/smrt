@@ -22,6 +22,10 @@ import { ObjectRegistry } from '../registry.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import { ALL_SYSTEM_TABLES } from '../system/schema.js';
 
+type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
+  __smrtSkipVitestSchemaPreparation?: boolean;
+};
+
 /**
  * Options for creating a test database
  */
@@ -115,7 +119,7 @@ export async function getTestDatabase(
       type,
       url,
       __smrtSkipVitestSchemaPreparation: true,
-    } as any));
+    } as TestDatabaseConnectionOptions));
 
   // Initialize system tables (same as production)
   if (includeSystemTables) {

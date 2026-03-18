@@ -55,10 +55,13 @@ describe('Issue #1031: attached DB upfront schema creation', () => {
 
   it('should fail with clear error if table not created upfront', async () => {
     const records = await Issue1031AttachedRecords.create({ db });
+    const missingSchemaQuery = records.count();
 
     expect(await db.tableExists(tableName)).toBe(false);
-    // Without upfront creation, queries fail with a clear error
-    await expect(records.count()).rejects.toThrow();
+    await expect(missingSchemaQuery).rejects.toMatchObject({
+      code: 'DB_SCHEMA_MISSING',
+    });
+    await expect(missingSchemaQuery).rejects.toThrow("Run 'smrt db:migrate'");
   });
 
   it('should support list and count after upfront schema creation', async () => {

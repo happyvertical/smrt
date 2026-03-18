@@ -2,8 +2,38 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { DatabaseError } from '../errors.js';
 import { isTableVerified, markTableVerified } from '../table-cache.js';
 
+const memoryVerificationKeys = new WeakMap<DatabaseInterface, string>();
+let nextMemoryVerificationId = 0;
+
 function getVerificationKey(db: DatabaseInterface): string {
-  return db.url || ':memory:';
+  const dbWithConfig = db as DatabaseInterface & {
+    dbid?: string;
+    config?: { dbid?: string; url?: string };
+  };
+
+  const dbid = dbWithConfig.dbid || dbWithConfig.config?.dbid;
+  if (dbid) {
+    return dbid;
+  }
+
+  const dbUrl = db.url || dbWithConfig.config?.url;
+  if (
+    dbUrl &&
+    dbUrl !== ':memory:' &&
+    dbUrl !== 'memory' &&
+    dbUrl !== 'file::memory:'
+  ) {
+    return dbUrl;
+  }
+
+  let memoryKey = memoryVerificationKeys.get(db);
+  if (!memoryKey) {
+    nextMemoryVerificationId += 1;
+    memoryKey = `memory:${nextMemoryVerificationId}`;
+    memoryVerificationKeys.set(db, memoryKey);
+  }
+
+  return memoryKey;
 }
 
 /**

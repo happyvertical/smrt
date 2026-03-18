@@ -8,8 +8,10 @@
  * SDK SQL remains a pure query/CRUD layer.
  */
 
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry';
 import { tableNameFromClass } from '../utils';
+import { SchemaManager } from './schema-manager.js';
 
 /**
  * Generates a complete database schema SQL statement for a class
@@ -144,4 +146,57 @@ export async function generateSchema(
   }
 
   return generator.generateSQL(schemaDefinition);
+}
+
+/**
+ * Ensure schema exists for a registered class.
+ *
+ * This compatibility helper is kept for tooling flows such as CLI commands that
+ * explicitly prepare schema ahead of runtime. Core runtime no longer calls this
+ * automatically.
+ *
+ * @deprecated Prefer explicit migration/bootstrap tooling. Runtime verifies
+ * schema and fails fast when tables are missing.
+ */
+export async function ensureSchema(
+  db: DatabaseInterface,
+  className: string,
+): Promise<void> {
+  const registered = ObjectRegistry.getClass(className);
+  if (!registered) {
+    throw new Error(
+      `Cannot ensure schema for unregistered class '${className}'. ` +
+        `Ensure the class is decorated with @smrt() and registered in the ObjectRegistry.`,
+    );
+  }
+
+  const tableStrategy = ObjectRegistry.getTableStrategy(className);
+  if (tableStrategy === 'sti') {
+    const stiBase = ObjectRegistry.getSTIBase(className);
+    if (stiBase && stiBase !== className) {
+      await ensureSchema(db, stiBase);
+      return;
+    }
+  }
+
+  let schemaDefinition = ObjectRegistry.getSchema(className);
+  if (!schemaDefinition?.tableName) {
+    const providedFields =
+      registered.fields.size > 0 ? registered.fields : undefined;
+    await generateSchema(registered.constructor, providedFields);
+    schemaDefinition = ObjectRegistry.getSchema(className);
+  }
+
+  if (!schemaDefinition?.tableName) {
+    throw new Error(
+      `No schema definition found for class '${className}'. ` +
+        `Run the manifest generation/build step before preparing schema.`,
+    );
+  }
+
+  const schemaManager = new SchemaManager(db, {
+    skipTriggers:
+      typeof (db as { exportTable?: unknown }).exportTable === 'function',
+  });
+  await schemaManager.ensureTable(schemaDefinition);
 }
