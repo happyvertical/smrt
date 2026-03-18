@@ -51,8 +51,10 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
 
   /**
    * Generate a single column definition
+   *
+   * Public so SchemaManager can reuse it for ALTER TABLE ADD COLUMN.
    */
-  protected generateColumnDefinition(
+  generateColumnDefinition(
     columnName: string,
     columnDef: ColumnDefinition,
   ): string {

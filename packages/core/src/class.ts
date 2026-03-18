@@ -440,13 +440,24 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
-      // Pass schemas as a lazy function so adapters that don't need them
-      // (Postgres, SQLite — they manage tables via migrations) never pay the
-      // cost of iterating 200+ classes and generating DDL.  Only JSON and
-      // DuckDB adapters call the function.  This eliminates ~2s of CPU work
-      // per Collection.create() call on large registries (issue #970).
+      // Pass schemas ONLY to adapters that need upfront table creation (JSON/DuckDB).
+      // SQLite and Postgres manage tables via ensureSchema()/SchemaManager at query
+      // time, using the full manifest schema. Passing schemas to SQLite's getDatabase()
+      // causes createTablesFromSchemas() to create tables with incomplete DDL from
+      // ObjectRegistry.getAllSchemas() (which only has base SmrtObject fields before
+      // the manifest is fully loaded), leading to missing column errors on UPSERT.
       const { ObjectRegistry } = await import('./registry.js');
-      const schemas = () => ObjectRegistry.getAllSchemas();
+
+      // Determine if this adapter needs schemas passed upfront
+      const needsUpfrontSchemas = (dbConfig: any): boolean => {
+        // JSON and DuckDB adapters need schemas passed to getDatabase()
+        const type = dbConfig?.type;
+        return type === 'json' || type === 'duckdb';
+      };
+
+      const schemas = needsUpfrontSchemas(this.options.db)
+        ? () => ObjectRegistry.getAllSchemas()
+        : undefined;
 
       // Handle four db config formats (in implementation order):
       // 1. String URL: 'products.db' (shortcut)
@@ -460,7 +471,7 @@ export class SmrtClass {
         const isMemoryDb = this.options.db === ':memory:';
         this._db = await getDatabase({
           url: this.options.db,
-          schemas,
+          ...(schemas ? { schemas } : {}),
           ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
         });
       } else if ('query' in this.options.db) {
@@ -478,7 +489,7 @@ export class SmrtClass {
           type: dbConfig.type || 'postgres',
           client: dbConfig.client,
           url: dbConfig.url,
-          schemas,
+          ...(schemas ? { schemas } : {}),
         } as any);
       } else {
         // Format 4: Config object - pass to getDatabase (handles all types uniformly)
@@ -489,7 +500,7 @@ export class SmrtClass {
         const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
         this._db = await getDatabase({
           ...this.options.db,
-          schemas,
+          ...(schemas ? { schemas } : {}),
           ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
         } as any);
       }
