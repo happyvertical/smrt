@@ -441,9 +441,10 @@ export async function createIsolatedTestDb(
 
   // Create the base database connection
   // Cast to extended interface that includes beginTransaction (from SDK #722)
-  const baseDb = (await getDatabase(
-    config,
-  )) as DatabaseInterfaceWithTransaction;
+  const baseDb = (await getDatabase({
+    ...config,
+    __smrtSkipVitestSchemaPreparation: true,
+  } as any)) as DatabaseInterfaceWithTransaction;
 
   // Sync schema if provided (must be done before transaction for DDL)
   if (schema) {

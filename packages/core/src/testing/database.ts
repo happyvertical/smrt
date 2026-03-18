@@ -109,7 +109,13 @@ export async function getTestDatabase(
   } = options;
 
   // Use existing database or create new one
-  const db = existingDb ?? (await getDatabase({ type, url }));
+  const db =
+    existingDb ??
+    (await getDatabase({
+      type,
+      url,
+      __smrtSkipVitestSchemaPreparation: true,
+    } as any));
 
   // Initialize system tables (same as production)
   if (includeSystemTables) {

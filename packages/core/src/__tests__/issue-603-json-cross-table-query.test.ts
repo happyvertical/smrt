@@ -7,8 +7,8 @@
  * Problem: JSON adapter loads tables on-demand, but cross-table queries
  * (JOINs, NOT EXISTS subqueries) fail because referenced tables aren't loaded.
  *
- * Solution: ObjectRegistry.getAllSchemas() is passed to getDatabase() during
- * initialization, enabling the JSON adapter to pre-create all registered tables.
+ * Solution: test setup must prepare all referenced tables before running
+ * cross-table queries. Runtime no longer bootstraps application schema.
  */
 
 import { randomUUID } from 'node:crypto';

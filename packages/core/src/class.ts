@@ -440,14 +440,6 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
-      // Pass schemas as a lazy function so adapters that don't need them
-      // (Postgres, SQLite — they manage tables via migrations) never pay the
-      // cost of iterating 200+ classes and generating DDL.  Only JSON and
-      // DuckDB adapters call the function.  This eliminates ~2s of CPU work
-      // per Collection.create() call on large registries (issue #970).
-      const { ObjectRegistry } = await import('./registry.js');
-      const schemas = () => ObjectRegistry.getAllSchemas();
-
       // Handle four db config formats (in implementation order):
       // 1. String URL: 'products.db' (shortcut)
       // 2. DatabaseInterface instance: already initialized db (has 'query' method)
@@ -455,12 +447,11 @@ export class SmrtClass {
       // 4. Config object: { type: 'sqlite', url: 'products.db' }
       if (typeof this.options.db === 'string') {
         // Format 1: String shortcut - let getDatabase auto-detect type from URL
-        // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
-        // EXCEPT for :memory: databases which should NOT be cached across instances
+        // Preserve connection sharing for file-backed databases while leaving
+        // true in-memory databases isolated per instance.
         const isMemoryDb = this.options.db === ':memory:';
         this._db = await getDatabase({
           url: this.options.db,
-          schemas,
           ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
         });
       } else if ('query' in this.options.db) {
@@ -478,18 +469,16 @@ export class SmrtClass {
           type: dbConfig.type || 'postgres',
           client: dbConfig.client,
           url: dbConfig.url,
-          schemas,
         } as any);
       } else {
         // Format 4: Config object - pass to getDatabase (handles all types uniformly)
-        // Pass dbid for connection caching (JSON adapter requires dbid when schemas provided)
-        // EXCEPT for :memory: databases which should NOT be cached across instances
+        // Preserve connection sharing for file-backed databases while leaving
+        // true in-memory databases isolated per instance.
         const dbConfig = this.options.db as { url?: string; type?: string };
         const dbUrl = dbConfig.url || 'memory';
         const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
         this._db = await getDatabase({
           ...this.options.db,
-          schemas,
           ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
         } as any);
       }
@@ -507,21 +496,6 @@ export class SmrtClass {
        * See issue #567 for context on why this pattern is necessary.
        */
       this.options.db = this._db;
-
-      // For JSON/DuckDB adapter, create ALL tables upfront (issue #603).
-      // Unlike SQLite/Postgres which persist table definitions, JSON adapter
-      // loads tables on-demand and has no persistent schema storage.
-      // Detection: JSON adapter has exportTable method (see schema-manager.ts)
-      if ((this._db as any).exportTable) {
-        const allSchemas = ObjectRegistry.getAllSchemas();
-        const ddlStatements = Object.values(allSchemas)
-          .filter((s) => s.ddl)
-          .map((s) => s.ddl);
-        if (ddlStatements.length > 0) {
-          const { syncSchema } = await import('@happyvertical/sql');
-          await syncSchema({ db: this._db, schema: ddlStatements.join(';\n') });
-        }
-      }
 
       await this.ensureSystemTables();
     }

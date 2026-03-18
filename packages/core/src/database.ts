@@ -81,8 +81,10 @@ export interface ResolveDatabaseOptions {
   dbid?: string;
 
   /**
-   * Pre-generated schemas to pass to the database adapter.
-   * Required for JSON adapter to create tables with correct types.
+   * Optional pre-generated schemas to pass to the database adapter.
+   *
+   * Intended for explicit tooling and test utilities that bootstrap schema
+   * ahead of runtime. Core runtime no longer passes these automatically.
    */
   schemas?: Record<string, any>;
 }
@@ -96,7 +98,7 @@ export interface ResolveDatabaseOptions {
  * 3. **DatabaseInterface**: Returned as-is
  *
  * @param config - Database configuration in any supported format
- * @param options - Resolution options (dbid for caching, schemas for JSON adapter)
+ * @param options - Resolution options (dbid for caching, optional explicit schemas)
  * @returns Promise resolving to a DatabaseInterface instance
  *
  * @example

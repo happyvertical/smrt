@@ -414,6 +414,25 @@ export function smrtVitestPlugin(
   return {
     name: 'smrt-vitest',
 
+    config(userConfig) {
+      const currentSetupFiles = userConfig.test?.setupFiles;
+      const setupFiles = Array.isArray(currentSetupFiles)
+        ? [...currentSetupFiles]
+        : currentSetupFiles
+          ? [currentSetupFiles]
+          : [];
+
+      if (!setupFiles.includes('@happyvertical/smrt-vitest/setup')) {
+        setupFiles.push('@happyvertical/smrt-vitest/setup');
+      }
+
+      return {
+        test: {
+          setupFiles,
+        },
+      };
+    },
+
     // Run during config resolution to ensure manifests are loaded before tests
     async configResolved() {
       if (manifestsLoaded) return;

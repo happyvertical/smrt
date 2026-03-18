@@ -1105,21 +1105,6 @@ export class ObjectRegistry {
       options,
     )) as SmrtCollection<T>;
 
-    // For JSON/DuckDB adapter, create ALL tables upfront (issue #603).
-    // Unlike SQLite/Postgres which persist table definitions, JSON adapter
-    // has no persistent schema storage. Uses syncSchema + DDL from registry.
-    const db = (collection as any).db;
-    if (db && (db as any).exportTable) {
-      const allSchemas = ObjectRegistry.getAllSchemas();
-      const ddlStatements = Object.values(allSchemas)
-        .filter((s) => s.ddl)
-        .map((s) => s.ddl);
-      if (ddlStatements.length > 0) {
-        const { syncSchema } = await import('@happyvertical/sql');
-        await syncSchema({ db, schema: ddlStatements.join(';\n') });
-      }
-    }
-
     // Cache the initialized instance
     ObjectRegistry.collectionCache.set(cacheKey, collection);
 

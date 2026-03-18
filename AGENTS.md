@@ -104,5 +104,5 @@ From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical
 - **Vite decorators**: needs `esbuild.tsconfigRaw` with `experimentalDecorators: true, emitDecoratorMetadata: true`
 - **Manifest is build-time**: generated once at vitest startup — restart after adding new `@smrt()` classes
 - **ObjectRegistry on globalThis**: singleton via `globalThis.__smrtRegistry*` — survives HMR
-- **Lazy table creation**: tables created on first DB op, not on `initialize()` — safe for SSR
+- **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime only verifies and fails clearly
 - **TypeScript & Svelte 5 Performance**: Avoid using inline intersected generic types (like `Asset & { id: string }`) in component `$props()`. It causes infinite-loop-like recursion during type evaluation. Export an explicit interface (e.g., `interface PersistedAsset extends Asset { id: string }`) instead.

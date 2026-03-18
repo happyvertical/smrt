@@ -76,11 +76,12 @@ export function getTableName(name: string): string | undefined {
 }
 
 /**
- * Get all pre-generated schemas for passing to database adapters
+ * Get all pre-generated schemas for explicit adapter bootstrap paths.
  *
  * Returns schemas in SDK SchemaProvider format for all registered classes.
- * This allows passing all known schemas upfront to getDatabase(), enabling
- * adapters like JSON to create tables with correct types before loading data.
+ * Tooling and test helpers can pass these to `getDatabase()` when they want
+ * to bootstrap schema before runtime. Core runtime no longer does this
+ * implicitly.
  *
  * @returns Record of table names to schema definitions
  * @example
