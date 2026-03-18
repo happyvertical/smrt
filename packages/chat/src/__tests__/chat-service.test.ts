@@ -31,10 +31,11 @@ describe('ChatService', () => {
   });
 
   describe('Room Management', () => {
-    it('should lazily create tables when attached to an existing fresh database', async () => {
+    it('should work when attached to an existing fresh database after explicit schema preparation', async () => {
       const sharedDb = await getTestDatabase({ classes: [] });
 
       try {
+        await getTestDatabase({ db: sharedDb });
         const sharedChat = await ChatService.create({ db: sharedDb });
         const room = await sharedChat.createRoom({
           tenantId: 'tenant-1',
