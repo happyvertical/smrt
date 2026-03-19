@@ -55,14 +55,4 @@ export class MagicLinkToken extends SmrtObject {
   isValid(): boolean {
     return !this.used && !this.isExpired();
   }
-
-  toJSON(): Record<string, unknown> {
-    return {
-      ...super.toJSON(),
-      nonce: this.nonce,
-      email: this.email,
-      used: this.used,
-      expiresAt: this.expiresAt,
-    };
-  }
 }

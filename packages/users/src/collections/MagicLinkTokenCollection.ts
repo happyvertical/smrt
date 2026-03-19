@@ -23,14 +23,26 @@ export class MagicLinkTokenCollection extends SmrtCollection<MagicLinkToken> {
   }
 
   /**
-   * Mark a token as used (single-use enforcement)
+   * Atomically mark a token as used (single-use enforcement).
+   *
+   * Returns true if the nonce was successfully claimed (transitioned from
+   * unused to used). Returns false if the nonce was already used, expired,
+   * or doesn't exist — preventing race conditions in concurrent verify() calls.
    */
-  async markUsed(nonce: string): Promise<void> {
-    const token = await this.findByNonce(nonce);
-    if (token) {
-      token.used = true;
-      await token.save();
-    }
+  async markUsed(nonce: string): Promise<boolean> {
+    const token = (await this.findOne({
+      where: {
+        nonce,
+        used: false,
+        'expiresAt >': new Date().toISOString(),
+      },
+    })) as MagicLinkToken | null;
+
+    if (!token) return false;
+
+    token.used = true;
+    await token.save();
+    return true;
   }
 
   /**

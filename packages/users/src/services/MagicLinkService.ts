@@ -128,25 +128,25 @@ export class MagicLinkService {
    * The caller is responsible for emailing the token to the user.
    */
   async generate(email: string): Promise<MagicLinkResult> {
-    // Dynamic import to avoid requiring jose as a hard dependency for
-    // consumers that don't use magic link
+    // Dynamic import to avoid eagerly loading jose at module init
     const { SignJWT } = await import('jose');
 
     const key = await this.getSigningKey();
     const nonce = crypto.randomUUID();
+    const normalizedEmail = email.trim().toLowerCase();
     const expiresAt = new Date(Date.now() + this.tokenExpiry * 1000);
 
     // Store nonce for replay protection
     await this.tokenCollection.create({
       nonce,
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       used: false,
       expiresAt,
     });
 
     // Sign the token
     const token = await new SignJWT({
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       nonce,
     })
       .setProtectedHeader({ alg: 'HS256' })
@@ -185,30 +185,23 @@ export class MagicLinkService {
       throw new MagicLinkError('Invalid token');
     }
 
-    const email = payload.email as string;
-    const nonce = payload.nonce as string;
+    const email = payload.email;
+    const nonce = payload.nonce;
 
-    if (!email || !nonce) {
+    // Explicit type validation — JWT payload values are unknown
+    if (typeof email !== 'string' || typeof nonce !== 'string') {
       throw new MagicLinkError('Invalid token payload');
     }
 
-    // Check nonce hasn't been used (replay protection)
-    const record = await this.tokenCollection.findByNonce(nonce);
+    // Atomically claim the nonce (single-use enforcement).
+    // markUsed() checks used=false AND expiresAt > now in a single query,
+    // so concurrent verify() calls for the same token will race on the
+    // DB write and only one can succeed.
+    const claimed = await this.tokenCollection.markUsed(nonce);
 
-    if (!record) {
-      throw new MagicLinkError('Invalid token');
+    if (!claimed) {
+      throw new MagicLinkError('Token has already been used or has expired');
     }
-
-    if (record.used) {
-      throw new MagicLinkError('Token has already been used');
-    }
-
-    if (record.isExpired()) {
-      throw new MagicLinkError('Token has expired');
-    }
-
-    // Mark as used (single-use enforcement)
-    await this.tokenCollection.markUsed(nonce);
 
     return { email, nonce };
   }
