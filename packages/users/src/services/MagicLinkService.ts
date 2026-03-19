@@ -31,7 +31,7 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { UsersMagicLinkTokenCollection } from '../collections/MagicLinkTokenCollection.js';
 import { DEFAULT_TOKEN_EXPIRY_SECONDS } from '../models/MagicLinkToken.js';
-import { normalizeEmail } from '../models/User.js';
+import { isValidEmail, normalizeEmail } from '../models/User.js';
 
 /**
  * Options for MagicLinkService
@@ -135,6 +135,11 @@ export class MagicLinkService {
     const key = await this.getSigningKey();
     const nonce = crypto.randomUUID();
     const normalizedEmail = normalizeEmail(email);
+
+    if (!isValidEmail(normalizedEmail)) {
+      throw new MagicLinkError('Invalid email address');
+    }
+
     const expiresAt = new Date(Date.now() + this.tokenExpiry * 1000);
 
     // Store nonce for replay protection

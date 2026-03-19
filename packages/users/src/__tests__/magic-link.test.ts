@@ -73,6 +73,16 @@ describe('MagicLinkService', () => {
     expect(stored?.used).toBe(true);
   });
 
+  it('rejects blank or malformed email addresses', async () => {
+    await expect(service.generate('   ')).rejects.toThrow(
+      new MagicLinkError('Invalid email address'),
+    );
+
+    await expect(service.generate('not-an-email')).rejects.toThrow(
+      new MagicLinkError('Invalid email address'),
+    );
+  });
+
   it('rejects a token after it has already been used', async () => {
     const { token } = await service.generate('single-use@example.com');
 
