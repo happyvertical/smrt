@@ -7,6 +7,12 @@
 export { Group } from './Group.js';
 export { GroupMember } from './GroupMember.js';
 export { GroupRole } from './GroupRole.js';
+// Magic Link
+export {
+  DEFAULT_TOKEN_EXPIRY_SECONDS,
+  MagicLinkToken,
+  UsersMagicLinkToken,
+} from './MagicLinkToken.js';
 // Membership
 export { Membership } from './Membership.js';
 export { MembershipOverride } from './MembershipOverride.js';

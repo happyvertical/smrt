@@ -47,6 +47,7 @@ export {
   GroupCollection,
   GroupMemberCollection,
   GroupRoleCollection,
+  MagicLinkTokenCollection,
   MembershipCollection,
   MembershipOverrideCollection,
   type OidcClaims,
@@ -60,15 +61,18 @@ export {
   TenantPermissionOverrideCollection,
   type TenantPermissionOverrideResult,
   UserCollection,
+  UsersMagicLinkTokenCollection,
 } from './collections/index.js';
 // Models
 export {
   DEFAULT_SESSION_TTL,
+  DEFAULT_TOKEN_EXPIRY_SECONDS,
   Group,
   GroupMember,
   GroupRole,
   generateSessionId,
   MAX_TENANT_HIERARCHY_DEPTH,
+  MagicLinkToken,
   Membership,
   MembershipOverride,
   Permission,
@@ -78,11 +82,17 @@ export {
   Tenant,
   TenantPermissionOverride,
   User,
+  UsersMagicLinkToken,
 } from './models/index.js';
 
 // Services
 export {
   type EnsureTenantResult,
+  MagicLinkError,
+  type MagicLinkResult,
+  MagicLinkService,
+  type MagicLinkServiceOptions,
+  type MagicLinkVerifyResult,
   type PermissionResolutionResult,
   PermissionResolver,
   type SessionContext,

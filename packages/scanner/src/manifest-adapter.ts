@@ -47,6 +47,22 @@ interface FieldDefinition {
   transient?: boolean;
 }
 
+type FieldDecoratorOptions = {
+  type?: FieldDefinition['type'];
+  required?: boolean;
+  nullable?: boolean;
+  default?: any;
+  min?: number;
+  max?: number;
+  maxLength?: number;
+  minLength?: number;
+  related?: string;
+  description?: string;
+  transient?: boolean;
+  unique?: boolean;
+  [key: string]: unknown;
+};
+
 interface MethodDefinition {
   name: string;
   async: boolean;
@@ -428,6 +444,7 @@ export class ManifestAdapter {
 
     // Check if field is a function type (automatically transient)
     const isFunctionType = field.typeAnnotation === 'Function';
+    const fieldDecoratorOptions = this.extractFieldDecoratorOptions(field);
 
     const inference = this.inferFieldType(field);
 
@@ -444,6 +461,61 @@ export class ManifestAdapter {
       definition.default = inference.defaultValue;
     }
 
+    // Apply generic @field({...}) options to preserve manifest metadata used by
+    // schema generation and runtime decorator merging.
+    if (fieldDecoratorOptions.type) {
+      definition.type = fieldDecoratorOptions.type;
+    }
+
+    if (fieldDecoratorOptions.nullable === true) {
+      definition.required = false;
+    } else if (fieldDecoratorOptions.required !== undefined) {
+      definition.required = fieldDecoratorOptions.required;
+    }
+
+    if (fieldDecoratorOptions.default !== undefined) {
+      definition.default = fieldDecoratorOptions.default;
+    }
+
+    if (fieldDecoratorOptions.related !== undefined) {
+      definition.related = fieldDecoratorOptions.related;
+    }
+
+    if (fieldDecoratorOptions.description !== undefined) {
+      definition.description = fieldDecoratorOptions.description;
+    }
+
+    if (fieldDecoratorOptions.min !== undefined) {
+      definition.min = fieldDecoratorOptions.min;
+    }
+
+    if (fieldDecoratorOptions.max !== undefined) {
+      definition.max = fieldDecoratorOptions.max;
+    }
+
+    if (fieldDecoratorOptions.minLength !== undefined) {
+      definition.minLength = fieldDecoratorOptions.minLength;
+    }
+
+    if (fieldDecoratorOptions.maxLength !== undefined) {
+      definition.maxLength = fieldDecoratorOptions.maxLength;
+    }
+
+    if (Object.keys(fieldDecoratorOptions).length > 0) {
+      definition._meta = {
+        ...definition._meta,
+        ...fieldDecoratorOptions,
+      };
+
+      if (definition._meta?.type) {
+        delete definition._meta.type;
+      }
+
+      if (definition.related !== undefined && definition._meta?.related) {
+        delete definition._meta.related;
+      }
+    }
+
     // For meta fields, store the underlying type for hydration coercion
     if (inference.underlyingType) {
       definition._meta = {
@@ -457,15 +529,8 @@ export class ManifestAdapter {
       definition.transient = true;
     }
 
-    // Check for @field({ transient: true }) decorator
-    for (const decorator of field.decorators) {
-      if (
-        decorator.name === 'field' &&
-        decorator.arguments[0]?.includes('transient: true')
-      ) {
-        definition.transient = true;
-        break;
-      }
+    if (fieldDecoratorOptions.transient === true) {
+      definition.transient = true;
     }
 
     return definition;
@@ -577,17 +642,32 @@ export class ManifestAdapter {
   ): FieldTypeInference | null {
     // @field decorator with type config
     if (decorator.name === 'field' && decorator.arguments.length > 0) {
-      const arg = decorator.arguments[0];
+      const fieldOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[0],
+      );
+      const type = this.normalizeFieldType(fieldOptions?.type);
 
-      // Try to parse type from argument
-      if (arg.includes("type: 'text'") || arg.includes('type: "text"')) {
-        return { type: 'text', required: true, source: 'decorator' };
-      }
-      if (arg.includes("type: 'integer'") || arg.includes('type: "integer"')) {
-        return { type: 'integer', required: true, source: 'decorator' };
-      }
-      if (arg.includes("type: 'decimal'") || arg.includes('type: "decimal"')) {
-        return { type: 'decimal', required: true, source: 'decorator' };
+      if (type) {
+        const hasDefaultValue =
+          field.initializer !== null || fieldOptions?.default !== undefined;
+        let required = !field.optional && !hasDefaultValue;
+
+        if (fieldOptions?.nullable === true) {
+          required = false;
+        } else if (fieldOptions?.required !== undefined) {
+          required = fieldOptions.required;
+        }
+
+        return {
+          type,
+          required,
+          defaultValue: fieldOptions?.default,
+          related:
+            typeof fieldOptions?.related === 'string'
+              ? fieldOptions.related
+              : undefined,
+          source: 'decorator',
+        };
       }
     }
 
@@ -630,6 +710,54 @@ export class ManifestAdapter {
     }
 
     return null;
+  }
+
+  private extractFieldDecoratorOptions(
+    field: RawFieldDefinition,
+  ): FieldDecoratorOptions {
+    for (const decorator of field.decorators) {
+      if (decorator.name !== 'field') continue;
+
+      const parsed = this.parseFieldDecoratorOptions(decorator.arguments[0]);
+      if (parsed) {
+        return parsed;
+      }
+    }
+
+    return {};
+  }
+
+  private parseFieldDecoratorOptions(
+    rawArgument: string | undefined,
+  ): FieldDecoratorOptions | null {
+    if (!rawArgument) return null;
+
+    const parsed = parseLiteralInitializer(rawArgument);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      return null;
+    }
+
+    return parsed as FieldDecoratorOptions;
+  }
+
+  private normalizeFieldType(
+    value: unknown,
+  ): FieldDefinition['type'] | undefined {
+    switch (value) {
+      case 'text':
+      case 'decimal':
+      case 'boolean':
+      case 'integer':
+      case 'datetime':
+      case 'json':
+      case 'foreignKey':
+      case 'oneToMany':
+      case 'manyToMany':
+      case 'meta':
+        return value;
+      default:
+        return undefined;
+    }
   }
 
   /**
