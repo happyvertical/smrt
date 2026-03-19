@@ -623,6 +623,7 @@ export function fieldsToColumns(
     const column: ColumnDefinition = {
       type: sqlType,
       notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
+      unique: fieldDef._meta?.unique || false,
       description: fieldDef.description,
     };
 

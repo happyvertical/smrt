@@ -83,6 +83,24 @@ describe('MagicLinkService', () => {
     );
   });
 
+  it('enforces nonce uniqueness for replay protection rows', async () => {
+    await tokens.create({
+      nonce: 'shared-nonce',
+      email: 'first@example.com',
+      used: false,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(
+      tokens.create({
+        nonce: 'shared-nonce',
+        email: 'second@example.com',
+        used: false,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toThrow();
+  });
+
   it('rejects a token after it has already been used', async () => {
     const { token } = await service.generate('single-use@example.com');
 

@@ -6,6 +6,67 @@ describe('ManifestAdapter', () => {
   const adapter = new ManifestAdapter();
 
   describe('inferFieldType', () => {
+    describe('@field decorator options', () => {
+      it('should preserve generic @field options in manifest metadata', () => {
+        const field: RawFieldDefinition = {
+          name: 'nonce',
+          accessibility: 'public',
+          typeAnnotation: 'string',
+          initializer: "''",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name: 'field',
+              arguments: [
+                "{ required: true, unique: true, description: 'Replay nonce' }",
+              ],
+            },
+          ],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.convertField(field);
+
+        expect(result).toBeDefined();
+        expect(result?.type).toBe('text');
+        expect(result?.required).toBe(true);
+        expect(result?.description).toBe('Replay nonce');
+        expect(result?._meta?.required).toBe(true);
+        expect(result?._meta?.unique).toBe(true);
+      });
+
+      it('should let nullable override required in @field options', () => {
+        const field: RawFieldDefinition = {
+          name: 'optionalName',
+          accessibility: 'public',
+          typeAnnotation: 'string',
+          initializer: null,
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name: 'field',
+              arguments: ['{ required: true, nullable: true }'],
+            },
+          ],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.convertField(field);
+
+        expect(result).toBeDefined();
+        expect(result?.required).toBe(false);
+        expect(result?._meta?.nullable).toBe(true);
+      });
+    });
+
     describe('@foreignKey decorator - Issue #846', () => {
       it('should respect TypeScript optional marker (?) for @foreignKey fields', () => {
         // Create a field with @foreignKey decorator and optional marker

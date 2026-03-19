@@ -138,6 +138,7 @@ export class SchemaGenerator {
         // If _meta.nullable is true, the field can be null regardless of required
         // This handles field helpers like text({ required: true, nullable: true })
         notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
+        unique: fieldDef._meta?.unique || false,
         description: fieldDef.description,
       };
 
@@ -1042,6 +1043,7 @@ export class SchemaGenerator {
       const columnDef: ManifestColumnDefinition = {
         type: sqlType,
         notNull: field._meta?.nullable ? false : field.required || false,
+        unique: field._meta?.unique || false,
       };
 
       if (field.default !== undefined) {

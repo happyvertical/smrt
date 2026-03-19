@@ -28,6 +28,12 @@ class SchemaGenArticle extends SmrtObject {
   body: string = '';
 }
 
+@smrt()
+class UniqueEmailRecord extends SmrtObject {
+  @field({ unique: true })
+  email: string = '';
+}
+
 // Move to module level so AST scanner can pick it up during test manifest generation
 @smrt()
 class CustomTimestamps extends SmrtObject {
@@ -151,5 +157,11 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     const updatedMatches = schema.match(/updated_at/g) || [];
     expect(createdMatches.length).toBe(1);
     expect(updatedMatches.length).toBe(1);
+  });
+
+  it('should preserve field-level unique constraints in generated schema', async () => {
+    const schema = await generateSchema(UniqueEmailRecord);
+
+    expect(schema).toContain('"email" TEXT UNIQUE');
   });
 });

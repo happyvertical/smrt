@@ -7,7 +7,7 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
  * Default magic link token expiry: 10 minutes in seconds
@@ -23,6 +23,7 @@ export const DEFAULT_TOKEN_EXPIRY_SECONDS = 10 * 60;
 })
 export class UsersMagicLinkToken extends SmrtObject {
   /** Unique nonce embedded in the signed JWT */
+  @field({ required: true, unique: true })
   nonce: string = '';
 
   /** Email address this token was generated for */
