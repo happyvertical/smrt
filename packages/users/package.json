@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-types": "workspace:*"
+    "@happyvertical/smrt-types": "workspace:*",
+    "jose": "^5.9.6"
   },
   "devDependencies": {
     "@happyvertical/smrt-profiles": "workspace:*",
