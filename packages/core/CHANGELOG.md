@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.3
+
+### Patch Changes
+
+- ### Features
+
+  - add MagicLinkService for passwordless email authentication (#1035) (users)
+  - @happyvertical/smrt-scanner@0.21.3
+  - @happyvertical/smrt-config@0.21.3
+  - @happyvertical/smrt-types@0.21.3
+
 ## 0.21.2
 
 ### Patch Changes
