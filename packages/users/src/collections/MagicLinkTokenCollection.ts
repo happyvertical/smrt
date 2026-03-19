@@ -7,19 +7,21 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { MagicLinkToken } from '../models/MagicLinkToken.js';
+import { UsersMagicLinkToken } from '../models/MagicLinkToken.js';
 
 /**
- * Collection for managing MagicLinkToken objects (replay protection)
+ * Collection for managing smrt-users magic link token records
  */
-export class MagicLinkTokenCollection extends SmrtCollection<MagicLinkToken> {
-  static readonly _itemClass = MagicLinkToken;
+export class UsersMagicLinkTokenCollection extends SmrtCollection<UsersMagicLinkToken> {
+  static readonly _itemClass = UsersMagicLinkToken;
 
   /**
    * Find a token by its nonce
    */
-  async findByNonce(nonce: string): Promise<MagicLinkToken | null> {
-    return this.findOne({ where: { nonce } }) as Promise<MagicLinkToken | null>;
+  async findByNonce(nonce: string): Promise<UsersMagicLinkToken | null> {
+    return this.findOne({
+      where: { nonce },
+    }) as Promise<UsersMagicLinkToken | null>;
   }
 
   /**
@@ -30,19 +32,19 @@ export class MagicLinkTokenCollection extends SmrtCollection<MagicLinkToken> {
    * or doesn't exist — preventing race conditions in concurrent verify() calls.
    */
   async markUsed(nonce: string): Promise<boolean> {
-    const token = (await this.findOne({
-      where: {
-        nonce,
-        used: false,
-        'expiresAt >': new Date().toISOString(),
-      },
-    })) as MagicLinkToken | null;
+    const now = new Date().toISOString();
+    const { rowCount } = await this.db.query(
+      `UPDATE ${this.tableName}
+       SET used = ?, updated_at = ?
+       WHERE nonce = ? AND used = ? AND expires_at > ?`,
+      true,
+      now,
+      nonce,
+      false,
+      now,
+    );
 
-    if (!token) return false;
-
-    token.used = true;
-    await token.save();
-    return true;
+    return rowCount > 0;
   }
 
   /**
@@ -65,3 +67,5 @@ export class MagicLinkTokenCollection extends SmrtCollection<MagicLinkToken> {
     return count;
   }
 }
+
+export { UsersMagicLinkTokenCollection as MagicLinkTokenCollection };

@@ -61,6 +61,7 @@ export {
   TenantPermissionOverrideCollection,
   type TenantPermissionOverrideResult,
   UserCollection,
+  UsersMagicLinkTokenCollection,
 } from './collections/index.js';
 // Models
 export {
@@ -81,6 +82,7 @@ export {
   Tenant,
   TenantPermissionOverride,
   User,
+  UsersMagicLinkToken,
 } from './models/index.js';
 
 // Services

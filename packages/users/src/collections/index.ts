@@ -8,7 +8,10 @@ export { GroupCollection } from './GroupCollection.js';
 export { GroupMemberCollection } from './GroupMemberCollection.js';
 export { GroupRoleCollection } from './GroupRoleCollection.js';
 // Magic Link
-export { MagicLinkTokenCollection } from './MagicLinkTokenCollection.js';
+export {
+  MagicLinkTokenCollection,
+  UsersMagicLinkTokenCollection,
+} from './MagicLinkTokenCollection.js';
 // Membership collections
 export { MembershipCollection } from './MembershipCollection.js';
 export { MembershipOverrideCollection } from './MembershipOverrideCollection.js';

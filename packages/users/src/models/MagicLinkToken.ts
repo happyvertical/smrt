@@ -15,12 +15,13 @@ import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 export const DEFAULT_TOKEN_EXPIRY_SECONDS = 10 * 60;
 
 @smrt({
+  tableName: 'users_magic_link_tokens',
   // Magic link tokens are security-sensitive — no public API
   api: { include: [] },
   mcp: { include: [] },
   cli: true,
 })
-export class MagicLinkToken extends SmrtObject {
+export class UsersMagicLinkToken extends SmrtObject {
   /** Unique nonce embedded in the signed JWT */
   nonce: string = '';
 
@@ -56,3 +57,5 @@ export class MagicLinkToken extends SmrtObject {
     return !this.used && !this.isExpired();
   }
 }
+
+export { UsersMagicLinkToken as MagicLinkToken };

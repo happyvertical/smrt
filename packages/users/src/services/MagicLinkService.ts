@@ -29,8 +29,9 @@
  */
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
-import { MagicLinkTokenCollection } from '../collections/MagicLinkTokenCollection.js';
+import { UsersMagicLinkTokenCollection } from '../collections/MagicLinkTokenCollection.js';
 import { DEFAULT_TOKEN_EXPIRY_SECONDS } from '../models/MagicLinkToken.js';
+import { normalizeEmail } from '../models/User.js';
 
 /**
  * Options for MagicLinkService
@@ -81,7 +82,7 @@ export class MagicLinkError extends Error {
  * The service is framework-agnostic — it does not send emails or set cookies.
  */
 export class MagicLinkService {
-  private tokenCollection!: MagicLinkTokenCollection;
+  private tokenCollection!: UsersMagicLinkTokenCollection;
   private signingKey: Uint8Array | null = null;
   private readonly secret: string;
   private readonly tokenExpiry: number;
@@ -102,9 +103,9 @@ export class MagicLinkService {
    * Initialize collections
    */
   async initialize(): Promise<void> {
-    this.tokenCollection = (await (MagicLinkTokenCollection as any).create(
+    this.tokenCollection = (await (UsersMagicLinkTokenCollection as any).create(
       this.options,
-    )) as MagicLinkTokenCollection;
+    )) as UsersMagicLinkTokenCollection;
   }
 
   /**
@@ -133,7 +134,7 @@ export class MagicLinkService {
 
     const key = await this.getSigningKey();
     const nonce = crypto.randomUUID();
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
     const expiresAt = new Date(Date.now() + this.tokenExpiry * 1000);
 
     // Store nonce for replay protection
@@ -193,17 +194,16 @@ export class MagicLinkService {
       throw new MagicLinkError('Invalid token payload');
     }
 
-    // Atomically claim the nonce (single-use enforcement).
-    // markUsed() checks used=false AND expiresAt > now in a single query,
-    // so concurrent verify() calls for the same token will race on the
-    // DB write and only one can succeed.
+    // Atomically claim the nonce (single-use enforcement) via a single
+    // conditional UPDATE. Only one concurrent verify() call can flip the
+    // row from used=false to used=true before the DB expires the nonce.
     const claimed = await this.tokenCollection.markUsed(nonce);
 
     if (!claimed) {
       throw new MagicLinkError('Token has already been used or has expired');
     }
 
-    return { email, nonce };
+    return { email: normalizeEmail(email), nonce };
   }
 
   /**

@@ -11,6 +11,7 @@ export { GroupRole } from './GroupRole.js';
 export {
   DEFAULT_TOKEN_EXPIRY_SECONDS,
   MagicLinkToken,
+  UsersMagicLinkToken,
 } from './MagicLinkToken.js';
 // Membership
 export { Membership } from './Membership.js';
