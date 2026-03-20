@@ -16,6 +16,26 @@ import type {
 } from '@happyvertical/smrt-config';
 import type { CLICommand } from '../cli-generator.js';
 
+function toSnakeCase(str: string): string {
+  return str
+    .replace(/([A-Z])/g, '_$1')
+    .toLowerCase()
+    .replace(/^_/, '');
+}
+
+function toColumnName(fieldName: string): string {
+  const dotIndex = fieldName.indexOf('.');
+  const baseFieldName =
+    dotIndex >= 0 ? fieldName.substring(0, dotIndex) : fieldName;
+  const jsonPath = dotIndex >= 0 ? fieldName.substring(dotIndex) : '';
+
+  const snakeBaseFieldName = baseFieldName.startsWith('_')
+    ? `_${toSnakeCase(baseFieldName.slice(1))}`
+    : toSnakeCase(baseFieldName);
+
+  return `${snakeBaseFieldName}${jsonPath}`;
+}
+
 /**
  * Get fields that should be exported for a given type
  */
@@ -75,6 +95,12 @@ async function getExportableFields(
     result.push('_meta_type');
   }
 
+  for (const standardField of ['id', 'slug', '_meta_data']) {
+    if (!result.includes(standardField)) {
+      result.push(standardField);
+    }
+  }
+
   return result;
 }
 
@@ -121,7 +147,7 @@ function buildWhereClause(
 /**
  * Query records with field projection
  */
-async function queryWithProjection(
+export async function queryWithProjection(
   db: any,
   tableName: string,
   types: string[],
@@ -131,7 +157,11 @@ async function queryWithProjection(
   limit?: number,
 ): Promise<any[]> {
   // Build SELECT clause with only exportable fields
-  const selectFields = fields.join(', ');
+  const fieldColumns = fields.map((field) => ({
+    field,
+    column: toColumnName(field),
+  }));
+  const selectFields = fieldColumns.map(({ column }) => column).join(', ');
 
   // Build WHERE clause
   const whereClauses: string[] = [];
@@ -155,28 +185,32 @@ async function queryWithProjection(
   // Apply custom filters
   for (const [field, value] of Object.entries(filters)) {
     if (field.endsWith('__gte')) {
-      whereClauses.push(`${field.replace('__gte', '')} >= ?`);
+      whereClauses.push(`${toColumnName(field.replace('__gte', ''))} >= ?`);
       whereValues.push(value);
     } else if (field.endsWith('__lte')) {
-      whereClauses.push(`${field.replace('__lte', '')} <= ?`);
+      whereClauses.push(`${toColumnName(field.replace('__lte', ''))} <= ?`);
       whereValues.push(value);
     } else if (field.endsWith('__gt')) {
-      whereClauses.push(`${field.replace('__gt', '')} > ?`);
+      whereClauses.push(`${toColumnName(field.replace('__gt', ''))} > ?`);
       whereValues.push(value);
     } else if (field.endsWith('__lt')) {
-      whereClauses.push(`${field.replace('__lt', '')} < ?`);
+      whereClauses.push(`${toColumnName(field.replace('__lt', ''))} < ?`);
       whereValues.push(value);
     } else if (field.endsWith('__ne')) {
-      whereClauses.push(`${field.replace('__ne', '')} != ?`);
+      whereClauses.push(`${toColumnName(field.replace('__ne', ''))} != ?`);
       whereValues.push(value);
     } else if (field.endsWith('__contains')) {
-      whereClauses.push(`${field.replace('__contains', '')} LIKE ?`);
+      whereClauses.push(
+        `${toColumnName(field.replace('__contains', ''))} LIKE ?`,
+      );
       whereValues.push(`%${value}%`);
     } else if (Array.isArray(value)) {
-      whereClauses.push(`${field} IN (${value.map(() => '?').join(', ')})`);
+      whereClauses.push(
+        `${toColumnName(field)} IN (${value.map(() => '?').join(', ')})`,
+      );
       whereValues.push(...value);
     } else {
-      whereClauses.push(`${field} = ?`);
+      whereClauses.push(`${toColumnName(field)} = ?`);
       whereValues.push(value);
     }
   }
@@ -188,7 +222,7 @@ async function queryWithProjection(
   }
   if (orderBy) {
     const desc = orderBy.startsWith('-');
-    const column = desc ? orderBy.slice(1) : orderBy;
+    const column = toColumnName(desc ? orderBy.slice(1) : orderBy);
     sql += ` ORDER BY ${column} ${desc ? 'DESC' : 'ASC'}`;
   }
   if (limit) {
@@ -196,8 +230,8 @@ async function queryWithProjection(
   }
 
   try {
-    const rows = await db.query(sql, whereValues);
-    return rows;
+    const result = await db.query(sql, whereValues);
+    return Array.isArray(result) ? result : (result?.rows ?? []);
   } catch (error) {
     // If query fails (missing column, etc.), return empty
     console.warn(
@@ -205,6 +239,38 @@ async function queryWithProjection(
     );
     return [];
   }
+}
+
+function parseExportValue(value: unknown) {
+  if (
+    typeof value === 'string' &&
+    (value.startsWith('{') || value.startsWith('['))
+  ) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  return value;
+}
+
+export function formatProjectedRecords(
+  records: any[],
+  fieldColumns: Array<{ field: string; column: string }>,
+) {
+  return records.map((row: any) => {
+    const record: Record<string, any> = {};
+    for (const { field, column } of fieldColumns) {
+      const rawValue =
+        row[field] !== undefined && row[field] !== null
+          ? row[field]
+          : row[column];
+      record[field] = parseExportValue(rawValue);
+    }
+    return record;
+  });
 }
 
 /**
@@ -449,7 +515,11 @@ export const exportCommand: CLICommand = {
         const filters = buildWhereClause(fileConfig.filters);
 
         // Add status filter if not showing drafts
-        if (!showDrafts && fields.includes('status')) {
+        if (
+          tableName === 'contents' &&
+          !showDrafts &&
+          fields.includes('status')
+        ) {
           if (!filters.status) {
             filters.status = ['published'];
           }
@@ -467,25 +537,12 @@ export const exportCommand: CLICommand = {
         );
 
         // Format records (parse JSON fields, etc.)
-        const formattedRecords = records.map((row: any) => {
-          const record: Record<string, any> = {};
-          for (const field of fields) {
-            let value = row[field];
-            // Try to parse JSON fields
-            if (
-              typeof value === 'string' &&
-              (value.startsWith('{') || value.startsWith('['))
-            ) {
-              try {
-                value = JSON.parse(value);
-              } catch {
-                // Keep as string
-              }
-            }
-            record[field] = value;
-          }
-          return record;
-        });
+        const fieldColumns = fields.map((field) => ({
+          field,
+          column: toColumnName(field),
+        }));
+
+        const formattedRecords = formatProjectedRecords(records, fieldColumns);
 
         // Write file
         const format = fileConfig.format || defaultFormat;

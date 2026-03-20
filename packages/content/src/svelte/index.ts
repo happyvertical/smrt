@@ -8,20 +8,60 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { CONTENT_MODULE_META } from '../ui.js';
 
 // Import components
 import ArticleCard from './components/ArticleCard.svelte';
 import ArticleList from './components/ArticleList.svelte';
+import ContentGovernanceAssignmentEditor from './components/ContentGovernanceAssignmentEditor.svelte';
+import ContentGovernanceManager from './components/ContentGovernanceManager.svelte';
+import ContentGovernancePanel from './components/ContentGovernancePanel.svelte';
+import ContentGovernancePolicyEditor from './components/ContentGovernancePolicyEditor.svelte';
+import ContentGovernanceProfileEditor from './components/ContentGovernanceProfileEditor.svelte';
+import ContentTransparencyReport from './components/ContentTransparencyReport.svelte';
+import GovernedContentEditor from './components/GovernedContentEditor.svelte';
 import Markdown from './components/Markdown.svelte';
 
 // Export components
-export { ArticleCard, ArticleList, Markdown };
+export {
+  ArticleCard,
+  ArticleList,
+  ContentGovernanceAssignmentEditor,
+  ContentGovernanceManager,
+  ContentGovernancePanel,
+  ContentGovernancePolicyEditor,
+  ContentGovernanceProfileEditor,
+  ContentTransparencyReport,
+  GovernedContentEditor,
+  Markdown,
+};
 
 // Export component prop types
-export type { Props as ArticleCardProps } from './components/ArticleCard.svelte';
-export type { Props as ArticleListProps } from './components/ArticleList.svelte';
-export type { Props as MarkdownProps } from './components/Markdown.svelte';
+export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
+export type ArticleListProps = ComponentProps<typeof ArticleList>;
+export type ContentTransparencyReportProps = ComponentProps<
+  typeof ContentTransparencyReport
+>;
+export type ContentGovernanceAssignmentEditorProps = ComponentProps<
+  typeof ContentGovernanceAssignmentEditor
+>;
+export type ContentGovernanceManagerProps = ComponentProps<
+  typeof ContentGovernanceManager
+>;
+export type ContentGovernancePanelProps = ComponentProps<
+  typeof ContentGovernancePanel
+>;
+export type ContentGovernancePolicyEditorProps = ComponentProps<
+  typeof ContentGovernancePolicyEditor
+>;
+export type ContentGovernanceProfileEditorProps = ComponentProps<
+  typeof ContentGovernanceProfileEditor
+>;
+export type GovernedContentEditorProps = ComponentProps<
+  typeof GovernedContentEditor
+>;
+export type MarkdownProps = ComponentProps<typeof Markdown>;
 
 // Export types
 export type {

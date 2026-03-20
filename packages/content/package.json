@@ -27,13 +27,13 @@
     }
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "svelte-kit sync && vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",
@@ -45,7 +45,9 @@
     "@happyvertical/ocr": "catalog:",
     "@happyvertical/pdf": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
+    "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-facts": "workspace:*",
     "@happyvertical/smrt-images": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
@@ -66,6 +68,7 @@
     "@faker-js/faker": "^10.2.0",
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/kit": "^2.0.0",
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/node": "25.0.9",

@@ -61,7 +61,7 @@ export class SchemaManager {
    * Ensure a table exists with the correct schema
    *
    * If table doesn't exist, creates it with DDL from the engine-specific strategy.
-   * If table exists, no action is taken (future: schema migration).
+   * If table exists but is missing columns, adds them via ALTER TABLE ADD COLUMN.
    *
    * @param schema - The schema definition
    */
@@ -71,10 +71,14 @@ export class SchemaManager {
     // Check if table already exists
     const exists = await this.db.tableExists(tableName);
     if (exists) {
-      // TODO: Future - schema migration/evolution
+      // Table exists — check for missing columns and add them
+      // This handles the case where a table was created with a partial schema
+      // (e.g., base SmrtObject fields only) and needs additional columns
+      await this.addMissingColumns(tableName, schema);
+
       if (this.options.debug) {
         console.log(
-          `[SchemaManager] Table "${tableName}" already exists, skipping`,
+          `[SchemaManager] Table "${tableName}" already exists, checked for missing columns`,
         );
       }
       return;
@@ -166,6 +170,143 @@ export class SchemaManager {
     if (this.options.debug) {
       console.log(`[SchemaManager] Table "${tableName}" created successfully`);
     }
+  }
+
+  /**
+   * Get existing column names from a database table
+   *
+   * Uses engine-appropriate introspection:
+   * - SQLite/DuckDB: PRAGMA table_info
+   * - PostgreSQL: information_schema.columns
+   *
+   * @param tableName - Name of the table to inspect
+   * @returns Set of existing column names (lowercase)
+   */
+  private async getExistingColumns(tableName: string): Promise<Set<string>> {
+    const columns = new Set<string>();
+
+    try {
+      if (this.engine === 'postgres') {
+        const result = await this.db.query(
+          'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
+          tableName,
+        );
+        const rows = Array.isArray(result)
+          ? result
+          : ((result as any)?.rows ?? []);
+        for (const row of rows) {
+          columns.add(row.column_name);
+        }
+      } else {
+        // SQLite and DuckDB use PRAGMA
+        const result = await this.db.query(
+          `PRAGMA table_info(${this.quoteIdentifier(tableName)})`,
+        );
+        const rows = Array.isArray(result)
+          ? result
+          : ((result as any)?.rows ?? []);
+        for (const row of rows) {
+          columns.add(row.name);
+        }
+      }
+    } catch (error) {
+      // If introspection fails, return empty set (no columns will be added)
+      if (this.options.debug) {
+        console.warn(
+          `[SchemaManager] Failed to introspect columns for "${tableName}":`,
+          error,
+        );
+      }
+    }
+
+    return columns;
+  }
+
+  /**
+   * Add missing columns to an existing table via ALTER TABLE ADD COLUMN
+   *
+   * Compares the schema's expected columns against the table's actual columns
+   * and adds any that are missing. This handles the race condition where a table
+   * is created with base fields by one code path, then a later code path needs
+   * additional columns from a more complete schema.
+   *
+   * SQLite limitation: ALTER TABLE ADD COLUMN cannot add NOT NULL columns
+   * without a DEFAULT value. We relax NOT NULL for such columns.
+   *
+   * @param tableName - Name of the existing table
+   * @param schema - The full schema definition with expected columns
+   */
+  private async addMissingColumns(
+    tableName: string,
+    schema: SchemaDefinition,
+  ): Promise<void> {
+    if (!schema.columns || Object.keys(schema.columns).length === 0) {
+      return;
+    }
+
+    const existingColumns = await this.getExistingColumns(tableName);
+    if (existingColumns.size === 0) {
+      // Introspection failed or returned no columns — skip to avoid errors
+      return;
+    }
+
+    const strategy = getDDLStrategy(this.engine);
+    let addedCount = 0;
+
+    for (const [colName, colDef] of Object.entries(schema.columns)) {
+      if (existingColumns.has(colName)) {
+        continue; // Column already exists
+      }
+
+      // SQLite limitation: ALTER TABLE ADD COLUMN cannot have NOT NULL
+      // without a DEFAULT value. Relax NOT NULL for such columns.
+      const safeDef = { ...colDef };
+      if (
+        safeDef.notNull &&
+        safeDef.defaultValue === undefined &&
+        !safeDef.primaryKey
+      ) {
+        safeDef.notNull = false;
+      }
+
+      // Cannot add PRIMARY KEY columns via ALTER TABLE
+      if (safeDef.primaryKey) {
+        continue;
+      }
+
+      const colSQL = strategy.generateColumnDefinition(colName, safeDef);
+      const alterSQL = `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${colSQL}`;
+
+      try {
+        await this.db.query(alterSQL);
+        addedCount++;
+
+        if (this.options.debug) {
+          console.log(
+            `[SchemaManager] Added column "${colName}" to "${tableName}"`,
+          );
+        }
+      } catch (error) {
+        // Column might already exist (race condition) or other issue
+        // Log and continue — don't fail the entire operation
+        if (this.options.debug) {
+          console.warn(
+            `[SchemaManager] Failed to add column "${colName}" to "${tableName}":`,
+            error,
+          );
+        }
+      }
+    }
+
+    if (addedCount > 0 && this.options.debug) {
+      console.log(
+        `[SchemaManager] Added ${addedCount} missing column(s) to "${tableName}"`,
+      );
+    }
+  }
+
+  private quoteIdentifier(name: string): string {
+    return `"${name.replace(/"/g, '""')}"`;
   }
 
   /**

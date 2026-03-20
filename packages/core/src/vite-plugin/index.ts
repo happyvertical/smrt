@@ -279,6 +279,40 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
             if (manifest) {
               await writeLocalManifest(manifest, projectRoot);
             }
+
+            // Generate SvelteKit routes if enabled
+            if (svelteKit.enabled && manifest && server) {
+              await generateSvelteKitRoutes(server.config.root, manifest, {
+                enabled: svelteKit.enabled,
+                routesDir: svelteKit.routesDir || 'src/routes/api',
+                objectsDir: svelteKit.objectsDir || 'src/lib/objects',
+                configPath: svelteKit.configPath || 'src/lib/server',
+                configFileName: svelteKit.configFileName || 'smrt.ts',
+              });
+            }
+          }
+        });
+
+        watcher.on('unlink', async (file) => {
+          if (await shouldRescan(file)) {
+            console.log(`[smrt] Rescanning due to removed file ${file}`);
+            manifest = await scanAndGenerateManifest(projectRoot);
+
+            // Write local manifest for CLI discovery (Issue #963)
+            if (manifest) {
+              await writeLocalManifest(manifest, projectRoot);
+            }
+
+            // Generate SvelteKit routes if enabled
+            if (svelteKit.enabled && manifest && server) {
+              await generateSvelteKitRoutes(server.config.root, manifest, {
+                enabled: svelteKit.enabled,
+                routesDir: svelteKit.routesDir || 'src/routes/api',
+                objectsDir: svelteKit.objectsDir || 'src/lib/objects',
+                configPath: svelteKit.configPath || 'src/lib/server',
+                configFileName: svelteKit.configFileName || 'smrt.ts',
+              });
+            }
           }
         });
       }

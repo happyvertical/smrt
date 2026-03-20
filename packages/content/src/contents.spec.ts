@@ -347,6 +347,47 @@ it('should persist content assets via AssetAssociation', async () => {
   expect(assets?.[0]?.id).toBe(image.id);
 });
 
+it('should sync editor-style assetIds on save', async () => {
+  const dbUrl = getTestDbUrl('editor-asset-sync');
+  const contents = await Contents.create({
+    db: {
+      url: dbUrl,
+    },
+  });
+  const images = await ImageCollection.create({
+    db: {
+      url: dbUrl,
+    },
+  });
+
+  const content = await contents.create({
+    name: 'editor-asset-sync',
+    title: 'Editor asset sync',
+    body: 'Starts without attachments',
+    status: 'draft',
+  });
+  const image = await images.create({
+    name: 'editor-asset-sync.jpg',
+    sourceUri: 'file:///tmp/editor-asset-sync.jpg',
+    mimeType: 'image/jpeg',
+    width: 1280,
+    height: 720,
+  });
+
+  (content as any).assetIds = [image.id];
+  await content.save();
+
+  let reloaded = await contents.get({ id: content.id });
+  expect(await reloaded?.getAssets()).toHaveLength(1);
+  expect((await reloaded?.getAssets())?.[0]?.id).toBe(image.id);
+
+  (reloaded as any).assetIds = [];
+  await reloaded?.save();
+
+  reloaded = await contents.get({ id: content.id });
+  expect(await reloaded?.getAssets()).toEqual([]);
+});
+
 it('should return an empty reference list before any reference writes', async () => {
   const contents = await Contents.create({
     db: {

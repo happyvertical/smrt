@@ -33,11 +33,13 @@ export class FactContentCollection extends SmrtCollection<FactContent> {
     factId: string,
     contentId: string,
     relationship: FactContentRelationship = 'extracted_from',
+    metadata?: Record<string, any>,
   ): Promise<FactContent> {
     return this.create({
       factId,
       contentId,
       relationship,
+      metadata: metadata ? JSON.stringify(metadata) : undefined,
     });
   }
 
@@ -52,11 +54,37 @@ export class FactContentCollection extends SmrtCollection<FactContent> {
   }
 
   /**
+   * Get content links by relationship type for a content item
+   */
+  async getForContentByRelationship(
+    contentId: string,
+    relationship: FactContentRelationship,
+  ): Promise<FactContent[]> {
+    return this.list({ where: { contentId, relationship } });
+  }
+
+  /**
    * Unlink a content item from a fact (removes all relationships)
    */
   async unlink(factId: string, contentId: string): Promise<void> {
     const links = await this.list({
       where: { factId, contentId },
+    });
+    for (const link of links) {
+      await link.delete();
+    }
+  }
+
+  /**
+   * Unlink a specific relationship between a fact and content item
+   */
+  async unlinkByRelationship(
+    factId: string,
+    contentId: string,
+    relationship: FactContentRelationship,
+  ): Promise<void> {
+    const links = await this.list({
+      where: { factId, contentId, relationship },
     });
     for (const link of links) {
       await link.delete();

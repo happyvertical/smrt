@@ -6,6 +6,7 @@ import {
   TestCustomer,
   TestOrder,
 } from './__tests__/fixtures/registry-test-classes.js';
+import { SmrtCollection } from './collection';
 import { ConfigurationError } from './errors';
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
@@ -113,6 +114,38 @@ describe('ObjectRegistry', () => {
       expect(ObjectRegistry.hasClass('RegistryTestProduct')).toBe(true);
       expect(ObjectRegistry.hasClass('registrytestproduct')).toBe(true);
       expect(ObjectRegistry.hasClass('REGISTRYTESTPRODUCT')).toBe(true);
+    });
+
+    it('should register decorated collection classes under item class identities', async () => {
+      @smrt({ packageName: '@test/facts' })
+      class FactRecord extends SmrtObject {}
+
+      @smrt({ packageName: '@test/facts' })
+      class FactRecordCollection extends SmrtCollection<FactRecord> {
+        static readonly _itemClass = FactRecord;
+
+        async browseFacts() {
+          return ['fact-a', 'fact-b'];
+        }
+      }
+
+      const registered = ObjectRegistry.getClass('FactRecord');
+      expect(registered?.collectionConstructor).toBe(FactRecordCollection);
+
+      const byItemName = await ObjectRegistry.getCollection('FactRecord');
+      expect(byItemName).toBeInstanceOf(FactRecordCollection);
+
+      const byQualifiedName = await ObjectRegistry.getCollection(
+        '@test/facts:FactRecord',
+      );
+      expect(byQualifiedName).toBeInstanceOf(FactRecordCollection);
+
+      const byTableName = await ObjectRegistry.getCollection(
+        tableNameFromClass(FactRecord),
+      );
+      expect(byTableName).toBeInstanceOf(FactRecordCollection);
+      expect(byQualifiedName).toBe(byItemName);
+      expect(byTableName).toBe(byItemName);
     });
   });
 

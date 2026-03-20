@@ -1,4 +1,7 @@
-import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtObjectOptions,
+} from '@happyvertical/smrt-core';
 import { AgentSessionCollection } from '../collections/AgentSessionCollection.js';
 import { ChatMessageCollection } from '../collections/ChatMessageCollection.js';
 import { ChatParticipantCollection } from '../collections/ChatParticipantCollection.js';
@@ -33,21 +36,48 @@ export class ChatService {
   }
 
   static async create(options: SmrtObjectOptions): Promise<ChatService> {
-    const rooms = (await ChatRoomCollection.create(
+    ObjectRegistry.registerCollection(
+      '@happyvertical/smrt-chat:ChatRoom',
+      ChatRoomCollection,
+    );
+    ObjectRegistry.registerCollection(
+      '@happyvertical/smrt-chat:ChatMessage',
+      ChatMessageCollection,
+    );
+    ObjectRegistry.registerCollection(
+      '@happyvertical/smrt-chat:ChatParticipant',
+      ChatParticipantCollection,
+    );
+    ObjectRegistry.registerCollection(
+      '@happyvertical/smrt-chat:ChatThread',
+      ChatThreadCollection,
+    );
+    ObjectRegistry.registerCollection(
+      '@happyvertical/smrt-chat:AgentSession',
+      AgentSessionCollection,
+    );
+
+    const rooms = (await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-chat:ChatRoom',
       options,
     )) as ChatRoomCollection;
-    const messages = (await ChatMessageCollection.create(
+    const messages = (await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-chat:ChatMessage',
       options,
     )) as ChatMessageCollection;
-    const participants = (await ChatParticipantCollection.create(
+    const participants = (await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-chat:ChatParticipant',
       options,
     )) as ChatParticipantCollection;
-    const threads = (await ChatThreadCollection.create(
+    const threads = (await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-chat:ChatThread',
       options,
     )) as ChatThreadCollection;
-    const agentSessions = (await AgentSessionCollection.create(
+    const agentSessions = (await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-chat:AgentSession',
       options,
     )) as AgentSessionCollection;
+
     return new ChatService(
       rooms,
       messages,
@@ -55,6 +85,15 @@ export class ChatService {
       threads,
       agentSessions,
     );
+  }
+
+  /** Initialize all underlying collections (table creation) */
+  async initialize(): Promise<void> {
+    await this.rooms.initialize();
+    await this.messages.initialize();
+    await this.participants.initialize();
+    await this.threads.initialize();
+    await this.agentSessions.initialize();
   }
 
   /** Create a room and add the creator as owner */

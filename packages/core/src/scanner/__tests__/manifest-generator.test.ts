@@ -176,4 +176,107 @@ describe('ManifestGenerator', () => {
       expect(obj.agent?.signalSubscriptions).toBeUndefined();
     });
   });
+
+  describe('generateRestEndpoints', () => {
+    it('should include collection class methods without duplicating CRUD endpoints', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = {
+        objects: {
+          Invitation: {
+            name: 'invitation',
+            className: 'Invitation',
+            collection: 'invitations',
+            fields: {},
+            methods: {
+              canBeRedeemed: {
+                name: 'canBeRedeemed',
+                isPublic: true,
+                parameters: [],
+              },
+            },
+            decoratorConfig: { api: true },
+            exportName: 'Invitation',
+            collectionExportName: 'InvitationCollection',
+          },
+          InvitationCollection: {
+            name: 'invitationCollection',
+            className: 'InvitationCollection',
+            collection: 'invitations',
+            fields: {},
+            methods: {
+              findByToken: {
+                name: 'findByToken',
+                isPublic: true,
+                parameters: [{ name: 'token', type: 'string' }],
+              },
+            },
+            decoratorConfig: { api: true },
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Invitation',
+            exportName: 'InvitationCollection',
+            collectionExportName: 'InvitationCollectionCollection',
+          },
+        },
+      };
+
+      const endpoints = generator.generateRestEndpoints(
+        manifest as Parameters<typeof generator.generateRestEndpoints>[0],
+      );
+
+      expect(endpoints.split('\n')).toEqual([
+        'GET /invitations',
+        'POST /invitations',
+        'GET /invitations/:id',
+        'PUT /invitations/:id',
+        'DELETE /invitations/:id',
+        'POST /invitations/:id/canBeRedeemed',
+        'POST /invitations/findByToken',
+      ]);
+    });
+
+    it('should honor route metadata for collection class methods', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = {
+        objects: {
+          DocumentCollection: {
+            name: 'documentCollection',
+            className: 'DocumentCollection',
+            collection: 'documents',
+            fields: {},
+            methods: {
+              browseFacts: {
+                name: 'browseFacts',
+                isPublic: true,
+                parameters: [{ name: 'options', type: 'any' }],
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['browseFacts'],
+                routes: {
+                  browseFacts: {
+                    scope: 'collection',
+                    method: 'GET',
+                    path: 'facts',
+                  },
+                },
+              },
+            },
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Document',
+            exportName: 'DocumentCollection',
+            collectionExportName: 'DocumentCollectionCollection',
+          },
+        },
+      };
+
+      const endpoints = generator.generateRestEndpoints(
+        manifest as Parameters<typeof generator.generateRestEndpoints>[0],
+      );
+
+      expect(endpoints).toBe('GET /documents/facts');
+    });
+  });
 });

@@ -929,8 +929,7 @@ export function registerFromManifest(
           // happen to share a name across different packages (genuine collisions).
           if (
             packageName &&
-            existing.packageName &&
-            packageName === existing.packageName &&
+            (!existing.packageName || packageName === existing.packageName) &&
             objectDef.fields
           ) {
             for (const [fieldName, fieldDef] of Object.entries(
@@ -967,7 +966,8 @@ export function registerFromManifest(
   }
   // Check exact key match (handles re-registration with same qualified key)
   if (getClasses().has(registrationKey)) {
-    const existing = getClasses().get(registrationKey)!;
+    const existing = getClasses().get(registrationKey);
+    if (!existing) return;
     const resolution = resolveManifestCollision(
       name,
       objectDef,

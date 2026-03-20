@@ -59,6 +59,108 @@ const parsed = stringToContent(markdown);
 await contents.syncContentDir({ contentDir: './blog-posts' });
 ```
 
+## Content Governance
+
+```typescript
+import {
+  Content,
+  ContentGovernanceAssignment,
+  ContentGovernanceManager,
+  GovernedContentEditor,
+  configureContentGovernance,
+} from '@happyvertical/smrt-content';
+
+configureContentGovernance({
+  policies: [
+    {
+      key: 'editorial',
+      label: 'Editorial Review',
+      kind: 'custom',
+      instructions: 'Check tone, sourcing, and local publication standards.',
+    },
+  ],
+  profiles: [
+    {
+      key: 'publication',
+      label: 'Publication',
+      requirements: [
+        { policyKey: 'safety', blocking: true },
+        { policyKey: 'facts', blocking: true },
+        { policyKey: 'editorial', blocking: false },
+      ],
+    },
+  ],
+  assignments: [
+    {
+      contentType: 'article',
+      enabled: true,
+      factLinkingEnabled: true,
+      transparencyEnabled: true,
+      publicationProfileKey: 'publication',
+      correctionProfileKey: 'correction',
+      enforcePublishReadiness: true,
+    },
+  ],
+});
+
+const article = new Content({
+  title: 'Transit service changes',
+  body: 'Weekend service will resume on April 3.',
+  type: 'article',
+  metadata: {
+    generation: {
+      publicPrompt: 'Summarize the service change for riders.',
+      aiAssisted: true,
+      model: 'gpt-5.4',
+    },
+  },
+});
+
+await article.initialize();
+await article.save();
+await article.addFact('fact_123', 'supports');
+await article.runReviewAction({ kind: 'facts', policyKey: 'facts' });
+await article.runReviewAction({ kind: 'safety', policyKey: 'safety' });
+
+article.status = 'published';
+await article.save();
+```
+
+Governance stays opt-in. Plain `Content` records behave like legacy `smrt-content`
+unless an assignment matches their `type` and optional exact `variant`.
+
+Persisted governance definitions are modeled as first-class SMRT objects:
+
+- `ContentGovernancePolicy`
+- `ContentGovernanceProfile`
+- `ContentGovernanceAssignment`
+
+The package also exports reusable Svelte components for consuming-app control
+panels and editorial workflows:
+
+- `GovernedContentEditor`
+- `ContentGovernancePanel`
+- `ContentGovernanceManager`
+- `ContentGovernancePolicyEditor`
+- `ContentGovernanceProfileEditor`
+- `ContentGovernanceAssignmentEditor`
+
+### Published Transparency
+
+```typescript
+const publishedTransparency = await article.getPublishedTransparencyAction();
+const previewTransparency = await article.previewTransparencyAction();
+
+console.log(publishedTransparency?.factsUsed);
+console.log(publishedTransparency?.publicationProfileKey);
+console.log(previewTransparency.references);
+```
+
+Published transparency is frozen into `ContentVersion.metadata.transparency` when a
+publication snapshot is created. Built sites should render the published snapshot,
+while editors can use the preview snapshot to inspect what will be shown publicly
+before publishing.
+
 ## API
 
 ### Classes

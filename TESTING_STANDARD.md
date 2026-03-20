@@ -9,6 +9,85 @@ This document outlines testing standards and best practices for the SMRT framewo
 - **BDD/TDD for bug fixes**: Write failing tests before fixing bugs
 - **README parity**: All README code examples must have corresponding tests
 
+## Release Gate For Touched Packages
+
+When a feature or refactor touches a package, the testing bar applies to the
+entire touched package, not just the new tests added for the change.
+
+- **Full touched-package suite must pass**: targeted regression tests are required, but they do not replace the package's full `vitest` suite
+- **Fix or remove stale tests as part of the work**: if older tests drift from current behavior, bring them up to date before calling the package release-ready
+- **Skipped tests must be intentional**: only skip for explicit environment gates or intentionally expensive cases, and keep the reason obvious in the test source
+- **Generated surfaces need tests**: if SMRT-generated REST/CLI/MCP behavior changes, add or update tests that exercise the generated contract
+- **Coverage must be wired in**: every actively developed package should enable Vitest coverage reporting in `vitest.config.ts`
+
+## Testing Pyramid For SMRT Packages
+
+Every actively developed SMRT package should aim for a balanced test pyramid.
+The exact mix varies by package, but releases should not rely on a single test
+layer.
+
+### 1. Unit Tests
+
+Use unit tests for pure logic and narrow contracts:
+
+- Serializers and JSON helpers
+- Policy and governance resolution
+- Versioning and state transforms
+- Utility helpers and derived values
+- Error handling for small isolated functions
+
+### 2. Component Tests
+
+Use component tests when a package exports user-facing UI components.
+Component tests should run in a lightweight DOM environment such as `jsdom` or
+`happy-dom`, and should exercise the real component rather than a mock.
+
+Component tests are the right place to verify:
+
+- Rendering from public props
+- User interactions, events, and callback contracts
+- Slots and conditional UI states
+- Accessibility-critical states and labels
+- Editor/admin workflows that can be proven without full browser automation
+
+If a touched package exports Svelte components, the release is not complete
+until the touched public UI surface has meaningful component coverage.
+
+### 3. Integration Tests
+
+Use integration tests for real runtime seams and package wiring:
+
+- Generated REST/CLI/MCP contracts
+- SvelteKit load/action/SSR boundaries
+- Persistence with real in-memory or temp-file resources
+- Cross-package wiring and registration
+- End-to-end object workflows inside a package boundary
+
+Integration tests should prefer real resources over mocks unless the dependency
+is external, expensive, or nondeterministic.
+
+### 4. End-to-End Tests
+
+Use browser or reference-app e2e tests sparingly for a small number of
+critical workflows:
+
+- Authoring and publish flows
+- Authentication or permission-sensitive user journeys
+- Cross-page editorial workflows
+- Regression-prone consuming-app behavior
+
+E2E tests are strongly recommended when a maintained reference app or demo app
+exists, but they are not a substitute for unit, component, and integration
+coverage in the package itself.
+
+### Test Naming Conventions
+
+- **Unit and component tests**: `*.test.ts`
+- **Integration tests**: `*.spec.ts`
+- **Browser e2e tests**: `*.e2e.ts`
+- **Example tests**: `*.examples.test.ts`
+- **Optional or expensive tests**: `*.optional.test.ts`
+
 ## Running Tests
 
 ### ⚠️ CRITICAL: Use the Vitest Plugin
@@ -469,15 +548,20 @@ describe('README examples', () => {
 
 ## Coverage Requirements
 
+- **Coverage is required for active packages**: package `vitest.config.ts` files should enable coverage reporting so feature work can produce a report without extra setup
 - **Minimum coverage**: 80% line coverage
 - **Critical paths**: 100% coverage for core ORM operations
 - **Error paths**: Test both success and failure cases
 - **Edge cases**: Empty inputs, null values, boundary conditions
+- **Document exclusions**: exclude generated files or non-product test harnesses deliberately, not by accident
 
 ## Running Coverage Reports
 
 ```bash
 npm run test:coverage
+
+# Or run coverage for a specific touched package
+pnpm --filter @happyvertical/smrt-<package> exec vitest run --coverage
 ```
 
 ## Additional Resources

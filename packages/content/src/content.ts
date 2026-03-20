@@ -4,13 +4,98 @@ import {
   AssetCollection,
 } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  smrt,
+  ValidationError,
+} from '@happyvertical/smrt-core';
+import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  buildContentReviewPrompt,
+  type ContentGovernanceState,
+  type ContentReviewProfileEvaluation,
+  type CreateContentVersionOptions,
+  getAcceptedContentReviewStatuses,
+  getContentReviewKind,
+  getContentReviewPolicy,
+  getContentReviewProfileKeys,
+  getContentReviewRequirements,
+  type IssueContentCorrectionOptions,
+  parseContentReviewResponse,
+  type ResolvedContentGovernance,
+  type RunContentReviewOptions,
+  resolveConfiguredContentGovernance,
+  resolveEffectiveContentGovernance,
+} from './content-governance';
 import { ContentReferences } from './content-references';
+import type { ContentReview } from './content-review';
+import { normalizeContentTransparency } from './content-transparency';
+import {
+  serializeContent,
+  serializeContentCorrection,
+  serializeContentReview,
+  serializeContentVersion,
+  serializeFact,
+  serializeFactLink,
+} from './serialization';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
+
+const USED_FACT_RELATIONSHIPS = new Set<FactContentRelationship>([
+  'supports',
+  'referenced_in',
+  'contradicts',
+]);
+
+function normalizeFingerprintValue(value: unknown): unknown {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeFingerprintValue(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entryValue]) => [
+          key,
+          normalizeFingerprintValue(entryValue),
+        ]),
+    );
+  }
+
+  return value ?? null;
+}
+
+function hashFingerprint(input: string): string {
+  let hash = 5381;
+
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 33) ^ input.charCodeAt(index);
+  }
+
+  return `fp-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function createFingerprint(value: unknown): string {
+  return hashFingerprint(JSON.stringify(normalizeFingerprintValue(value)));
+}
+
+function getPublicPrompt(metadata: Record<string, any>): string | null {
+  return (
+    metadata?.transparency?.generation?.publicPrompt ||
+    metadata?.generation?.publicPrompt ||
+    metadata?.publicPrompt ||
+    null
+  );
+}
 
 /**
  * Options for Content initialization
@@ -111,6 +196,17 @@ export interface ContentOptions extends SmrtObjectOptions {
   thumbnailAssetId?: string | null;
 
   /**
+   * Transient reference IDs used by editors and API payloads.
+   * These are synchronized into ContentReference links during save.
+   */
+  referenceIds?: string[];
+
+  /**
+   * Transient asset IDs used by editors and API payloads.
+   */
+  assetIds?: string[];
+
+  /**
    * Tenant ID for multi-tenant isolation
    */
   tenantId?: string | null;
@@ -127,7 +223,56 @@ export interface ContentOptions extends SmrtObjectOptions {
 @smrt({
   tableStrategy: 'sti',
   api: {
-    include: ['list', 'get', 'create', 'update', 'delete'], // Full CRUD operations
+    include: [
+      'list',
+      'get',
+      'create',
+      'update',
+      'delete',
+      'getFactsState',
+      'syncFactsState',
+      'getGovernanceStateAction',
+      'listReviews',
+      'runReviewAction',
+      'listReviewProfilesAction',
+      'evaluateReviewProfileAction',
+      'getPublishedTransparencyAction',
+      'previewTransparencyAction',
+      'listCorrections',
+      'issueCorrectionAction',
+      'listVersions',
+      'mutateVersionAction',
+    ],
+    routes: {
+      getFactsState: { method: 'GET', path: 'facts' },
+      syncFactsState: { method: 'PUT', path: 'facts' },
+      getGovernanceStateAction: { method: 'GET', path: 'governance' },
+      listReviews: { method: 'GET', path: 'reviews' },
+      runReviewAction: { method: 'POST', path: 'reviews' },
+      listReviewProfilesAction: { method: 'GET', path: 'review-profiles' },
+      evaluateReviewProfileAction: {
+        method: 'GET',
+        path: 'review-profiles/[profileKey]',
+      },
+      getPublishedTransparencyAction: {
+        method: 'GET',
+        path: 'transparency',
+      },
+      previewTransparencyAction: {
+        method: 'GET',
+        path: 'transparency/preview',
+      },
+      listCorrections: { method: 'GET', path: 'corrections' },
+      issueCorrectionAction: { method: 'POST', path: 'corrections' },
+      listVersions: { method: 'GET', path: 'versions' },
+      mutateVersionAction: { method: 'POST', path: 'versions' },
+    },
+    serializers: {
+      item: {
+        importPath: '$lib/server/content-api-serializers',
+        exportName: 'serializeContent',
+      },
+    },
   },
   mcp: {
     include: ['list', 'get', 'create', 'update'], // AI tools for content management
@@ -271,6 +416,12 @@ export class Content extends SmrtObject {
     this.state = options.state || 'active';
     this.metadata = options.metadata || {};
     this.thumbnailAssetId = options.thumbnailAssetId ?? null;
+    if (Array.isArray(options.referenceIds)) {
+      (this as any).referenceIds = [...options.referenceIds];
+    }
+    if (Array.isArray(options.assetIds)) {
+      (this as any).assetIds = [...options.assetIds];
+    }
   }
 
   /**
@@ -283,13 +434,627 @@ export class Content extends SmrtObject {
     return this;
   }
 
+  protected override async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+
+    if (this.status !== 'published') {
+      return;
+    }
+
+    const configuredGovernance = this.getConfiguredGovernance();
+    if (!configuredGovernance.isGoverned) {
+      return;
+    }
+
+    const governance = await this.resolveGovernance();
+    const profileKey = governance.publicationProfileKey;
+
+    if (
+      !governance.isGoverned ||
+      !governance.enforcePublishReadiness ||
+      !profileKey
+    ) {
+      return;
+    }
+
+    const evaluation = await this.evaluateReviewProfile(profileKey);
+    const blockingRequirements = evaluation.requirements.filter(
+      (requirement) => requirement.blocking && !requirement.satisfied,
+    );
+
+    if (blockingRequirements.length === 0) {
+      return;
+    }
+
+    const details = blockingRequirements.map((requirement) => {
+      if (requirement.missing) {
+        return `${requirement.label} has not been run yet`;
+      }
+
+      if (requirement.stale) {
+        return `${requirement.label} is stale and must be rerun`;
+      }
+
+      if (requirement.latestStatus) {
+        return `${requirement.label} returned ${requirement.latestStatus}`;
+      }
+
+      return `${requirement.label} is not satisfied`;
+    });
+
+    throw new ValidationError(
+      `Cannot publish content until the "${profileKey}" review profile is satisfied. ${details.join('; ')}`,
+      'VALIDATION_PUBLISH_READINESS',
+      {
+        profileKey,
+        blockingRequirements: blockingRequirements.map((requirement) => ({
+          policyKey: requirement.policyKey,
+          label: requirement.label,
+          missing: requirement.missing,
+          stale: requirement.stale,
+          latestStatus: requirement.latestStatus,
+        })),
+      },
+    );
+  }
+
+  override async save() {
+    const shouldConsiderPublicationSnapshot = this.status === 'published';
+    const configuredGovernance = shouldConsiderPublicationSnapshot
+      ? this.getConfiguredGovernance()
+      : null;
+
+    let governance: ResolvedContentGovernance | null = null;
+    let previous: Content | null = null;
+    let previousPublicationFingerprint: string | null = null;
+
+    if (configuredGovernance?.isGoverned) {
+      governance = await this.resolveGovernance();
+
+      if (governance.isGoverned && governance.transparencyEnabled) {
+        previous = await this.getPersistedContent();
+        previousPublicationFingerprint =
+          await this.getLatestPublicationSnapshotFingerprint();
+      }
+    }
+
+    await super.save();
+    await this.syncPendingReferenceIds();
+    await this.syncPendingAssetIds();
+
+    if (
+      !shouldConsiderPublicationSnapshot ||
+      !governance?.isGoverned ||
+      !governance.transparencyEnabled
+    ) {
+      return this;
+    }
+
+    const nextPublicationFingerprint =
+      await this.buildPublicationSnapshotFingerprint(governance);
+
+    if (
+      nextPublicationFingerprint &&
+      nextPublicationFingerprint !== previousPublicationFingerprint
+    ) {
+      await this.createVersion({
+        kind: 'publication',
+        summary:
+          previous?.status === 'published'
+            ? 'Published content updated.'
+            : 'Content published.',
+        metadata: {
+          publicationSnapshotFingerprint: nextPublicationFingerprint,
+          publicationProfileKey: governance.publicationProfileKey,
+          transparency: await this.buildTransparencySnapshot({
+            snapshotKind: 'published',
+            governance,
+          }),
+        },
+      });
+    }
+
+    return this;
+  }
+
   private async getReferenceCollection() {
     return ContentReferences.create({ db: this.db });
+  }
+
+  private async getFactCollection() {
+    const { FactCollection } = await import('@happyvertical/smrt-facts');
+    return FactCollection.create(this.options);
+  }
+
+  private async getFactContentCollection() {
+    const { FactContentCollection } = await import('@happyvertical/smrt-facts');
+    return FactContentCollection.create(this.options);
+  }
+
+  private async getFactSourceCollection() {
+    const { FactSourceCollection } = await import('@happyvertical/smrt-facts');
+    return FactSourceCollection.create(this.options);
+  }
+
+  private async getContentVersionCollection() {
+    const { ContentVersionCollection } = await import('./content-versions');
+    return ContentVersionCollection.create(this.options);
+  }
+
+  private async getContentReviewCollection() {
+    const { ContentReviewCollection } = await import('./content-reviews');
+    return ContentReviewCollection.create(this.options);
+  }
+
+  private async getContentCorrectionCollection() {
+    const { ContentCorrectionCollection } = await import(
+      './content-corrections'
+    );
+    return ContentCorrectionCollection.create(this.options);
   }
 
   private async getContentsCollection() {
     const { Contents } = await import('./contents');
     return Contents.create({ db: this.db });
+  }
+
+  private getConfiguredGovernance(): ResolvedContentGovernance {
+    return resolveConfiguredContentGovernance({
+      contentType: this.type,
+      contentVariant: this.variant,
+    });
+  }
+
+  public async resolveGovernance(): Promise<ResolvedContentGovernance> {
+    return resolveEffectiveContentGovernance({
+      contentType: this.type,
+      contentVariant: this.variant,
+      db: this.db,
+    });
+  }
+
+  private async requireGovernance(
+    feature = 'governance workflow',
+  ): Promise<ResolvedContentGovernance> {
+    const governance = await this.resolveGovernance();
+
+    if (!governance.isGoverned) {
+      throw new Error(
+        `Governance is not enabled for content type "${this.type || 'content'}"${this.variant ? ` variant "${this.variant}"` : ''}, so ${feature} is unavailable.`,
+      );
+    }
+
+    return governance;
+  }
+
+  private async requireFactLinking(
+    feature = 'fact linking',
+  ): Promise<ResolvedContentGovernance> {
+    const governance = await this.requireGovernance(feature);
+
+    if (!governance.factLinkingEnabled) {
+      throw new Error(
+        `Fact linking is not enabled for content type "${this.type || 'content'}"${this.variant ? ` variant "${this.variant}"` : ''}.`,
+      );
+    }
+
+    return governance;
+  }
+
+  private async getPersistedContent(): Promise<Content | null> {
+    if (!this.id) {
+      return null;
+    }
+
+    const contents = await this.getContentsCollection();
+    return (await contents.get({ id: this.id as string })) as Content | null;
+  }
+
+  private async buildReviewFingerprint(policyKey: string): Promise<string> {
+    const governance = await this.resolveGovernance();
+    const kind = getContentReviewKind(policyKey, governance.reviewPolicies);
+    const policy = getContentReviewPolicy(policyKey, governance.reviewPolicies);
+    const [references, facts, factLinks] = await Promise.all([
+      this.getReferences(),
+      kind === 'facts' && governance.factLinkingEnabled
+        ? this.getFacts({
+            latestOnly: true,
+            includeSuperseded: false,
+          })
+        : Promise.resolve([]),
+      kind === 'facts' && governance.factLinkingEnabled
+        ? this.getFactLinks()
+        : Promise.resolve([]),
+    ]);
+
+    return createFingerprint({
+      scope: 'content-review',
+      policyKey,
+      kind,
+      policyInstructions: policy?.instructions || '',
+      content: {
+        id: this.id || null,
+        type: this.type,
+        variant: this.variant,
+        title: this.title,
+        description: this.description,
+        body: this.body,
+        author: this.author,
+        state: this.state,
+        publishDate: this.publish_date,
+        language: this.language,
+        category: this.category,
+        tags: this.tags,
+        metadata: this.metadata,
+      },
+      referenceIds: references
+        .map((reference) => reference.id)
+        .filter(Boolean)
+        .sort(),
+      facts: facts.map((fact: any) => ({
+        id: fact.id || null,
+        parentId: fact.parentId || null,
+        status: fact.status || null,
+        textRefined: fact.textRefined || '',
+        sourceCount: fact.sourceCount ?? 0,
+        confidence: fact.confidence ?? null,
+        metadata:
+          typeof fact?.getMetadata === 'function' ? fact.getMetadata() : {},
+      })),
+      factLinks: factLinks.map((link: any) => ({
+        factId: link.factId || null,
+        relationship: link.relationship || null,
+        metadata:
+          typeof link?.getMetadata === 'function' ? link.getMetadata() : {},
+      })),
+    });
+  }
+
+  private async buildTransparencySnapshot(
+    options: {
+      snapshotKind?: 'preview' | 'published';
+      governance?: ResolvedContentGovernance;
+    } = {},
+  ) {
+    const snapshotKind = options.snapshotKind || 'preview';
+    const governance = options.governance || (await this.resolveGovernance());
+
+    if (!governance.isGoverned || !governance.transparencyEnabled) {
+      return null;
+    }
+
+    const [
+      references,
+      facts,
+      factLinks,
+      reviews,
+      corrections,
+      versions,
+      reviewProfiles,
+    ] = await Promise.all([
+      this.getReferences(),
+      governance.factLinkingEnabled
+        ? this.getFacts({
+            latestOnly: true,
+            includeSuperseded: false,
+          })
+        : Promise.resolve([]),
+      governance.factLinkingEnabled ? this.getFactLinks() : Promise.resolve([]),
+      this.listReviews(),
+      this.listCorrections(),
+      this.listVersions(),
+      this.listReviewProfilesAction(),
+    ]);
+
+    const factSources = await this.getFactSourceCollection();
+    const factSourcesByFactId = new Map<string, any[]>();
+
+    for (const fact of facts) {
+      const factId = fact.id as string | undefined;
+      if (!factId) {
+        continue;
+      }
+
+      const sources = await factSources.getForFact(factId);
+      factSourcesByFactId.set(factId, sources);
+    }
+
+    const usedFactIds = new Set(
+      factLinks
+        .filter((link: any) =>
+          USED_FACT_RELATIONSHIPS.has(
+            (link.relationship || 'related') as FactContentRelationship,
+          ),
+        )
+        .map((link: any) => link.factId)
+        .filter(Boolean),
+    );
+
+    const linkedFacts = facts.map((fact: any) => {
+      const factId = fact.id as string | undefined;
+      const link = factLinks.find((entry: any) => entry.factId === factId);
+      const sources = (factId ? factSourcesByFactId.get(factId) : []) || [];
+
+      return {
+        ...serializeFact(fact),
+        relationship: link?.relationship || null,
+        linkMetadata:
+          typeof link?.getMetadata === 'function' ? link.getMetadata() : {},
+        usedInArticle: factId ? usedFactIds.has(factId) : false,
+        sources: sources.map((source: any) => ({
+          id: source.id || null,
+          sourceType: source.sourceType || null,
+          sourceUrl: source.sourceUrl || null,
+          sourceTitle: source.sourceTitle || null,
+          credibility: source.credibility ?? null,
+          extractedAt: source.extractedAt || null,
+          metadata:
+            typeof source?.getMetadata === 'function'
+              ? source.getMetadata()
+              : {},
+        })),
+      };
+    });
+
+    const referenceGroups = await Promise.all(
+      references.map(async (reference) => {
+        const sourceUrls = [
+          reference.url,
+          reference.original_url,
+          reference.source,
+        ].filter(Boolean) as string[];
+
+        const extractedFacts = new Map<string, any>();
+        for (const sourceUrl of sourceUrls) {
+          const matches = await factSources.list({
+            where: { sourceUrl },
+            orderBy: 'created_at ASC',
+          });
+
+          for (const match of matches) {
+            if (!match.factId || extractedFacts.has(match.factId)) {
+              continue;
+            }
+
+            const fact = await match.getFact();
+            if (fact?.id) {
+              extractedFacts.set(fact.id as string, fact);
+            }
+          }
+        }
+
+        const extractedFactRecords = [...extractedFacts.values()].map(
+          (fact) => {
+            const factId = fact.id as string | undefined;
+            return {
+              ...serializeFact(fact),
+              usedInArticle: factId ? usedFactIds.has(factId) : false,
+            };
+          },
+        );
+
+        return {
+          id: reference.id || null,
+          title: reference.title || reference.name || reference.url || null,
+          url: reference.url || null,
+          originalUrl: reference.original_url || null,
+          type: reference.type || null,
+          source: reference.source || null,
+          usedFactIds: extractedFactRecords
+            .filter((fact: any) => fact.id && usedFactIds.has(fact.id))
+            .map((fact: any) => fact.id),
+          extractedFacts: extractedFactRecords,
+        };
+      }),
+    );
+
+    const publicGeneration = (this.metadata?.transparency?.generation ??
+      {}) as Record<string, any>;
+    const generationMetadata = (this.metadata?.generation ?? {}) as Record<
+      string,
+      any
+    >;
+    const serializedCorrections = corrections
+      .filter((correction: any) => correction.status === 'published')
+      .map((correction: any) => {
+        const correctionMetadata =
+          typeof correction?.getMetadata === 'function'
+            ? correction.getMetadata()
+            : (correction.metadata as Record<string, any>) || {};
+
+        return {
+          ...serializeContentCorrection(correction),
+          provenance: {
+            autoGeneratedDraft: Boolean(correctionMetadata.autoGeneratedDraft),
+            draftVersionId: correctionMetadata.draftVersionId || null,
+            draftVersionNumber: correctionMetadata.draftVersionNumber || null,
+            sourceCorrectionVersionId:
+              correctionMetadata.sourceCorrectionVersionId || null,
+            sourceCorrectionVersionNumber:
+              correctionMetadata.sourceCorrectionVersionNumber || null,
+          },
+        };
+      });
+    const serializedVersionHistory = versions.map((version: any) => {
+      const versionMetadata =
+        typeof version?.getMetadata === 'function'
+          ? version.getMetadata()
+          : (version.metadata as Record<string, any>) || {};
+
+      return {
+        id: version.id || null,
+        version: version.version ?? null,
+        kind: version.kind || null,
+        summary: version.summary || '',
+        createdAt: version.createdAt || null,
+        provenance: {
+          policyKey: versionMetadata.policyKey || null,
+          reviewFingerprint:
+            versionMetadata.reviewFingerprint ||
+            versionMetadata.contentFingerprint ||
+            null,
+          factId: versionMetadata.factId || null,
+          replacementFactId: versionMetadata.replacementFactId || null,
+          sourceCorrectionVersionId:
+            versionMetadata.sourceCorrectionVersionId || null,
+          sourceCorrectionVersionNumber:
+            versionMetadata.sourceCorrectionVersionNumber || null,
+          correctionDraft: versionMetadata.correctionDraft || null,
+          publicationSnapshotFingerprint:
+            versionMetadata.publicationSnapshotFingerprint || null,
+        },
+      };
+    });
+
+    return normalizeContentTransparency(
+      {
+        generatedAt: new Date().toISOString(),
+        snapshotKind,
+        contentId: (this.id as string) || null,
+        currentContentStatus: this.status || null,
+        publicationProfileKey: governance.publicationProfileKey || undefined,
+        generation: {
+          aiAssisted:
+            publicGeneration.aiAssisted ??
+            generationMetadata.aiAssisted ??
+            Boolean(getPublicPrompt(this.metadata)),
+          publicPrompt: getPublicPrompt(this.metadata),
+          model: publicGeneration.model || generationMetadata.model || null,
+        },
+        factsUsed: linkedFacts.filter((fact) => fact.usedInArticle),
+        linkedFacts,
+        otherExtractedFacts: referenceGroups.flatMap((reference) =>
+          reference.extractedFacts.filter((fact: any) => !fact.usedInArticle),
+        ),
+        references: referenceGroups,
+        reviews,
+        reviewProfiles,
+        corrections: serializedCorrections,
+        versionHistory: serializedVersionHistory,
+      },
+      {
+        snapshotKind,
+        contentId: (this.id as string) || null,
+        currentContentStatus: this.status || null,
+        publicationProfileKey: governance.publicationProfileKey || undefined,
+      },
+    );
+  }
+
+  private async buildPublicationSnapshotFingerprint(
+    governance: ResolvedContentGovernance,
+  ): Promise<string | null> {
+    const transparency = await this.buildTransparencySnapshot({
+      snapshotKind: 'published',
+      governance,
+    });
+
+    if (!transparency) {
+      return null;
+    }
+
+    const { generatedAt, ...stableSnapshot } = transparency;
+    return createFingerprint(stableSnapshot);
+  }
+
+  private async getLatestPublicationSnapshotFingerprint(): Promise<
+    string | null
+  > {
+    const versions = await this.getVersions();
+    const latestPublicationVersion = [...versions]
+      .reverse()
+      .find((version) => version.kind === 'publication');
+
+    if (!latestPublicationVersion) {
+      return null;
+    }
+
+    return (
+      latestPublicationVersion.getMetadata().publicationSnapshotFingerprint ||
+      null
+    );
+  }
+
+  private async buildCorrectionDraftSnapshot(
+    options: IssueContentCorrectionOptions,
+    replacementFactId: string,
+  ): Promise<{
+    snapshot: Record<string, any>;
+    metadata: Record<string, any>;
+  }> {
+    const correctedText =
+      options.correctedText || options.correctedFactText || '';
+    const incorrectText = options.incorrectText || '';
+    let body = this.body;
+    let generationMethod = 'metadata';
+
+    if (incorrectText && correctedText && body.includes(incorrectText)) {
+      body = body.replace(incorrectText, correctedText);
+      generationMethod = 'replace';
+    } else if (correctedText) {
+      const ai = this.ai as { message?: (prompt: string) => Promise<string> };
+      if (ai?.message) {
+        const prompt = `You are revising an article draft to apply a factual correction.
+
+Return ONLY the fully revised body text, with no commentary.
+
+Current body:
+${this.body}
+
+Correction summary:
+${options.summary}
+
+Incorrect text to fix:
+${incorrectText || 'Not provided'}
+
+Corrected text to incorporate:
+${correctedText}
+`;
+
+        try {
+          const proposedBody = (await ai.message(prompt)).trim();
+          if (proposedBody) {
+            body = proposedBody;
+            generationMethod = 'ai';
+          }
+        } catch {
+          generationMethod = 'metadata';
+        }
+      }
+    }
+
+    return {
+      snapshot: {
+        title: this.title,
+        description: this.description,
+        body,
+        status: 'draft',
+        metadata: {
+          ...(this.metadata || {}),
+          governance: {
+            ...((this.metadata?.governance || {}) as Record<string, any>),
+            correctionDraft: {
+              summary: options.summary,
+              incorrectText,
+              correctedText,
+              factId: options.factId || null,
+              replacementFactId: replacementFactId || null,
+              autoGenerated: true,
+              generationMethod,
+            },
+          },
+        },
+      },
+      metadata: {
+        summary: options.summary,
+        incorrectText,
+        correctedText,
+        factId: options.factId || null,
+        replacementFactId: replacementFactId || null,
+        autoGenerated: true,
+        generationMethod,
+      },
+    };
   }
 
   private async getAssetCollection() {
@@ -332,6 +1097,139 @@ export class Content extends SmrtObject {
    */
   public async loadReferences() {
     this.references = await this.getReferences();
+  }
+
+  private getPendingReferenceIds(): string[] | null {
+    const pendingReferenceIds = (this as any).referenceIds;
+
+    if (!Array.isArray(pendingReferenceIds)) {
+      return null;
+    }
+
+    return [
+      ...new Set(
+        pendingReferenceIds.filter(
+          (referenceId): referenceId is string =>
+            typeof referenceId === 'string' &&
+            referenceId.length > 0 &&
+            referenceId !== this.id,
+        ),
+      ),
+    ];
+  }
+
+  private getPendingAssetIds(): string[] | null {
+    const pendingAssetIds = (this as any).assetIds;
+
+    if (!Array.isArray(pendingAssetIds)) {
+      return null;
+    }
+
+    return [
+      ...new Set(
+        pendingAssetIds.filter(
+          (assetId): assetId is string =>
+            typeof assetId === 'string' && assetId.length > 0,
+        ),
+      ),
+    ];
+  }
+
+  private async syncPendingReferenceIds(): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const pendingReferenceIds = this.getPendingReferenceIds();
+    if (pendingReferenceIds === null) {
+      return;
+    }
+
+    const currentReferences = await this.getReferences();
+    const currentReferenceIds = currentReferences
+      .map((reference) => reference.id)
+      .filter((referenceId): referenceId is string => Boolean(referenceId));
+    const currentReferenceIdSet = new Set(currentReferenceIds);
+    const pendingReferenceIdSet = new Set(pendingReferenceIds);
+
+    for (const referenceId of currentReferenceIds) {
+      if (!pendingReferenceIdSet.has(referenceId)) {
+        await this.removeReference(referenceId);
+      }
+    }
+
+    const referenceIdsToAdd = pendingReferenceIds.filter(
+      (referenceId) => !currentReferenceIdSet.has(referenceId),
+    );
+
+    if (referenceIdsToAdd.length === 0) {
+      this.references = await this.getReferences();
+      return;
+    }
+
+    const contents = await this.getContentsCollection();
+    const resolvedReferences = await contents.listByIds(referenceIdsToAdd);
+    const referencesById = new Map(
+      resolvedReferences
+        .filter((reference) => reference.id)
+        .map((reference) => [reference.id as string, reference]),
+    );
+
+    for (const referenceId of referenceIdsToAdd) {
+      const reference = referencesById.get(referenceId);
+      if (reference) {
+        await this.addReference(reference);
+      }
+    }
+
+    this.references = await this.getReferences();
+  }
+
+  private async syncPendingAssetIds(): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const pendingAssetIds = this.getPendingAssetIds();
+    if (pendingAssetIds === null) {
+      return;
+    }
+
+    const currentAssets = await this.getAssets();
+    const currentAssetIds = currentAssets
+      .map((asset) => asset.id)
+      .filter((assetId): assetId is string => Boolean(assetId));
+    const currentAssetIdSet = new Set(currentAssetIds);
+    const pendingAssetIdSet = new Set(pendingAssetIds);
+
+    for (const assetId of currentAssetIds) {
+      if (!pendingAssetIdSet.has(assetId)) {
+        await this.removeAsset(assetId);
+      }
+    }
+
+    const assetIdsToAdd = pendingAssetIds.filter(
+      (assetId) => !currentAssetIdSet.has(assetId),
+    );
+
+    if (assetIdsToAdd.length === 0) {
+      return;
+    }
+
+    const assets = await this.getAssetCollection();
+    const resolvedAssets = await assets.listByIds(assetIdsToAdd);
+    const assetsById = new Map(
+      resolvedAssets
+        .filter((asset) => asset.id)
+        .map((asset) => [asset.id as string, asset]),
+    );
+
+    for (const assetId of assetIdsToAdd) {
+      const asset = assetsById.get(assetId);
+      if (asset) {
+        await this.addAsset(asset);
+      }
+    }
   }
 
   /**
@@ -407,6 +1305,683 @@ export class Content extends SmrtObject {
       .map((targetId) => referencesById.get(targetId))
       .filter(Boolean) as Content[];
     return this.references;
+  }
+
+  public isGoverned(): boolean {
+    return this.getConfiguredGovernance().isGoverned;
+  }
+
+  public async getFactLinks(
+    options: { relationship?: FactContentRelationship } = {},
+  ) {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.factLinkingEnabled || !this.id) {
+      return [];
+    }
+
+    if (!this.id) {
+      return [];
+    }
+
+    const links = await this.getFactContentCollection();
+    return options.relationship
+      ? links.getForContentByRelationship(
+          this.id as string,
+          options.relationship,
+        )
+      : links.getForContent(this.id as string);
+  }
+
+  public async getFacts(
+    options: {
+      relationship?: FactContentRelationship;
+      includeSuperseded?: boolean;
+      latestOnly?: boolean;
+    } = {},
+  ): Promise<Fact[]> {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.factLinkingEnabled || !this.id) {
+      return [];
+    }
+
+    if (!this.id) {
+      return [];
+    }
+
+    const facts = await this.getFactCollection();
+    return facts.getForContent(this.id as string, options);
+  }
+
+  public async addFact(
+    fact: Fact | string,
+    relationship?: FactContentRelationship,
+    metadata?: Record<string, any>,
+  ) {
+    const governance = await this.requireFactLinking('fact association');
+
+    if (!this.id) {
+      throw new Error('Cannot associate an unsaved content item with a fact');
+    }
+
+    const factId = typeof fact === 'string' ? fact : (fact.id as string);
+    if (!factId) {
+      throw new Error('Fact ID is required to create a content-fact link');
+    }
+
+    const links = await this.getFactContentCollection();
+    return links.link(
+      factId,
+      this.id as string,
+      relationship || governance.defaultFactRelationship,
+      metadata,
+    );
+  }
+
+  public async removeFact(
+    factId: string,
+    relationship?: FactContentRelationship,
+  ): Promise<void> {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.factLinkingEnabled) {
+      return;
+    }
+
+    if (!this.id) {
+      return;
+    }
+
+    const links = await this.getFactContentCollection();
+    if (relationship) {
+      await links.unlinkByRelationship(factId, this.id as string, relationship);
+      return;
+    }
+
+    await links.unlink(factId, this.id as string);
+  }
+
+  public async syncFacts(
+    factIds: string[],
+    relationship?: FactContentRelationship,
+  ): Promise<{ added: string[]; kept: string[]; removed: string[] }> {
+    const governance = await this.requireFactLinking('fact sync');
+
+    if (!this.id) {
+      throw new Error('Cannot sync facts for unsaved content');
+    }
+
+    const uniqueFactIds = [...new Set(factIds.filter(Boolean))];
+    const links = await this.getFactContentCollection();
+    const resolvedRelationship =
+      relationship || governance.defaultFactRelationship;
+    const existing = await links.getForContentByRelationship(
+      this.id as string,
+      resolvedRelationship,
+    );
+
+    const existingIds = new Set(existing.map((link) => link.factId));
+    const desiredIds = new Set(uniqueFactIds);
+
+    const kept = uniqueFactIds.filter((factId) => existingIds.has(factId));
+    const added = uniqueFactIds.filter((factId) => !existingIds.has(factId));
+    const removed = existing
+      .map((link) => link.factId)
+      .filter((factId) => !desiredIds.has(factId));
+
+    for (const factId of added) {
+      await links.link(factId, this.id as string, resolvedRelationship);
+    }
+
+    for (const factId of removed) {
+      await links.unlinkByRelationship(
+        factId,
+        this.id as string,
+        resolvedRelationship,
+      );
+    }
+
+    return { added, kept, removed };
+  }
+
+  public async browseFacts(
+    query = '',
+    options: {
+      limit?: number;
+      minSimilarity?: number;
+      includeSuperseded?: boolean;
+      latestOnly?: boolean;
+    } = {},
+  ): Promise<Fact[]> {
+    await this.requireFactLinking('fact catalog browsing');
+    const facts = await this.getFactCollection();
+    return facts.browseCatalog(query, {
+      ...options,
+      tenantId: this.tenantId,
+    });
+  }
+
+  public async getFactsState(
+    options: { relationship?: FactContentRelationship } = {},
+  ) {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.factLinkingEnabled) {
+      return {
+        factIds: [],
+        facts: [],
+        factLinks: [],
+      };
+    }
+
+    const relationship = options.relationship;
+    const [facts, factLinks] = await Promise.all([
+      this.getFacts({
+        relationship,
+        latestOnly: true,
+        includeSuperseded: false,
+      }),
+      this.getFactLinks(relationship ? { relationship } : {}),
+    ]);
+
+    return {
+      factIds: facts.map((fact: any) => fact.id).filter(Boolean),
+      facts: facts.map(serializeFact),
+      factLinks: factLinks.map(serializeFactLink),
+    };
+  }
+
+  public async syncFactsState(
+    options: {
+      factIds?: string[];
+      relationship?: FactContentRelationship;
+    } = {},
+  ) {
+    const governance = await this.requireFactLinking('fact sync');
+    const relationship =
+      options.relationship || governance.defaultFactRelationship;
+    const sync = await this.syncFacts(options.factIds || [], relationship);
+    const state = await this.getFactsState({ relationship });
+    return {
+      ...state,
+      sync,
+    };
+  }
+
+  public async createVersion(options: CreateContentVersionOptions = {}) {
+    const versions = await this.getContentVersionCollection();
+    return versions.createSnapshot(this, options);
+  }
+
+  public async getVersions() {
+    if (!this.id) {
+      return [];
+    }
+
+    const versions = await this.getContentVersionCollection();
+    return versions.listForContent(this.id as string);
+  }
+
+  public async restoreFromVersion(versionNumber: number) {
+    const versions = await this.getContentVersionCollection();
+    return versions.restoreIntoContent(this, versionNumber);
+  }
+
+  public async getReviews(kind?: RunContentReviewOptions['kind']) {
+    if (!this.id) {
+      return [];
+    }
+
+    const reviews = await this.getContentReviewCollection();
+    return reviews.listForContent(this.id as string, kind);
+  }
+
+  public async listReviews(
+    options: { kind?: RunContentReviewOptions['kind'] } = {},
+  ) {
+    const reviews = await this.getReviews(options.kind);
+    return reviews.map(serializeContentReview);
+  }
+
+  public async getReviewRequirements(
+    profileKey: string,
+    governance?: ResolvedContentGovernance,
+  ) {
+    const resolvedGovernance = governance || (await this.resolveGovernance());
+    return getContentReviewRequirements(
+      profileKey,
+      resolvedGovernance.availableProfiles,
+    );
+  }
+
+  public async getGovernanceState(): Promise<ContentGovernanceState> {
+    const governance = await this.resolveGovernance();
+
+    if (!governance.isGoverned) {
+      return {
+        ...governance,
+        reviewProfiles: [],
+      };
+    }
+
+    return {
+      ...governance,
+      reviewProfiles: await this.listReviewProfilesAction(),
+    };
+  }
+
+  public async getGovernanceStateAction() {
+    return this.getGovernanceState();
+  }
+
+  public async listReviewProfilesAction() {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned) {
+      return [];
+    }
+
+    return Promise.all(
+      getContentReviewProfileKeys(governance.availableProfiles).map(
+        (profileKey) => this.evaluateReviewProfile(profileKey),
+      ),
+    );
+  }
+
+  public async evaluateReviewProfile(
+    profileKey: string,
+  ): Promise<ContentReviewProfileEvaluation> {
+    const governance = await this.resolveGovernance();
+    const requirements = await this.getReviewRequirements(
+      profileKey,
+      governance,
+    );
+
+    if (requirements.length === 0) {
+      return {
+        profileKey,
+        ready: true,
+        complete: true,
+        requirements: [],
+      };
+    }
+
+    const reviews = await this.getContentReviewCollection();
+    const reviewFingerprintCache = new Map<string, string>();
+    const evaluatedRequirements = await Promise.all(
+      requirements.map(async (requirement) => {
+        if (!reviewFingerprintCache.has(requirement.policyKey)) {
+          reviewFingerprintCache.set(
+            requirement.policyKey,
+            await this.buildReviewFingerprint(requirement.policyKey),
+          );
+        }
+
+        const latestReview =
+          this.id && requirement.policyKey
+            ? await reviews.getLatestForPolicyKey(
+                this.id as string,
+                requirement.policyKey,
+              )
+            : null;
+        const acceptedStatuses = getAcceptedContentReviewStatuses(requirement);
+        const latestStatus = latestReview?.status ?? null;
+        const latestMetadata =
+          typeof latestReview?.getMetadata === 'function'
+            ? latestReview.getMetadata()
+            : {};
+        const currentFingerprint =
+          reviewFingerprintCache.get(requirement.policyKey) || null;
+        const reviewedFingerprint =
+          latestMetadata?.reviewFingerprint ||
+          latestMetadata?.contentFingerprint ||
+          null;
+        const missing = !latestReview;
+        const stale =
+          !missing &&
+          !!reviewedFingerprint &&
+          reviewedFingerprint !== currentFingerprint;
+        const executed =
+          latestStatus !== null && latestStatus !== 'pending' && !stale;
+        const satisfied =
+          !stale &&
+          latestStatus !== null &&
+          acceptedStatuses.includes(latestStatus);
+
+        return {
+          kind: getContentReviewKind(
+            requirement.policyKey,
+            governance.reviewPolicies,
+          ),
+          policyKey: requirement.policyKey,
+          label:
+            requirement.label ||
+            getContentReviewPolicy(
+              requirement.policyKey,
+              governance.reviewPolicies,
+            )?.label ||
+            requirement.policyKey,
+          blocking: requirement.blocking === true,
+          acceptedStatuses,
+          missing,
+          stale,
+          executed,
+          satisfied,
+          latestReviewId: (latestReview?.id as string) || null,
+          latestStatus,
+          latestSummary: latestReview?.summary || null,
+        };
+      }),
+    );
+
+    return {
+      profileKey,
+      ready: evaluatedRequirements
+        .filter((requirement) => requirement.blocking)
+        .every((requirement) => requirement.satisfied),
+      complete: evaluatedRequirements.every(
+        (requirement) => requirement.executed,
+      ),
+      requirements: evaluatedRequirements,
+    };
+  }
+
+  public async evaluateReviewProfileAction(
+    options: { profileKey?: string } = {},
+  ) {
+    if (!options.profileKey) {
+      throw new Error('profileKey is required');
+    }
+
+    return this.evaluateReviewProfile(options.profileKey);
+  }
+
+  public async isReadyForReviewProfile(profileKey: string): Promise<boolean> {
+    const evaluation = await this.evaluateReviewProfile(profileKey);
+    return evaluation.ready;
+  }
+
+  public async getPublishedTransparency() {
+    if (!this.id) {
+      return null;
+    }
+
+    const versions = await this.getContentVersionCollection();
+    const latestPublicationVersion =
+      await versions.getLatestPublishedForContent(this.id as string);
+
+    return latestPublicationVersion?.getTransparency() || null;
+  }
+
+  public async getPublishedTransparencyAction() {
+    return this.getPublishedTransparency();
+  }
+
+  public async previewTransparency() {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.transparencyEnabled) {
+      return null;
+    }
+
+    return this.buildTransparencySnapshot({
+      snapshotKind: 'preview',
+      governance,
+    });
+  }
+
+  public async previewTransparencyAction() {
+    return this.previewTransparency();
+  }
+
+  public async runReview(options: RunContentReviewOptions = {}) {
+    const governance = await this.requireGovernance('review execution');
+
+    if (!this.id) {
+      throw new Error('Cannot review unsaved content');
+    }
+
+    const policyKey = options.policyKey || options.kind || 'custom';
+    const policy = getContentReviewPolicy(policyKey, governance.reviewPolicies);
+    const kind =
+      options.kind ||
+      getContentReviewKind(policyKey, governance.reviewPolicies);
+    const facts =
+      options.facts !== undefined
+        ? options.facts
+        : governance.factLinkingEnabled &&
+            (kind === 'facts' || Boolean(options.factIds?.length))
+          ? await this.getFacts({
+              latestOnly: true,
+              includeSuperseded: false,
+            })
+          : [];
+    const filteredFacts =
+      options.factIds && options.factIds.length > 0
+        ? facts.filter((fact) => options.factIds?.includes(fact.id as string))
+        : facts;
+    const prompt = buildContentReviewPrompt({
+      kind,
+      content: this,
+      facts: filteredFacts,
+      policy,
+      customInstructions: options.instructions,
+    });
+    const reviewFingerprint = await this.buildReviewFingerprint(policyKey);
+    const ai = this.ai as { message?: (prompt: string) => Promise<string> };
+    if (!ai?.message) {
+      throw new Error('AI client is not configured for content reviews');
+    }
+
+    const rawResponse = await ai.message(prompt);
+    const result = parseContentReviewResponse(rawResponse);
+    const version =
+      options.createVersion === false
+        ? null
+        : await this.createVersion({
+            kind: 'review',
+            summary: result.summary,
+            metadata: {
+              kind,
+              policyKey,
+              reviewFingerprint,
+            },
+          });
+
+    const reviews = await this.getContentReviewCollection();
+    return reviews.createFromResult({
+      contentId: this.id as string,
+      contentVersionId: version?.id as string | undefined,
+      kind,
+      policyKey,
+      reviewer: options.reviewer || 'system',
+      result,
+      metadata: {
+        ...(options.metadata || {}),
+        prompt,
+        rawResponse,
+        reviewFingerprint,
+        factIds: filteredFacts.map((fact) => fact.id),
+      },
+      tenantId: this.tenantId,
+    });
+  }
+
+  public async runReviewAction(options: RunContentReviewOptions = {}) {
+    let review: ContentReview;
+
+    if (options.kind === 'facts') {
+      review = await this.reviewFacts(options);
+    } else if (options.kind === 'safety') {
+      review = await this.reviewSafety(options);
+    } else {
+      review = await this.runReview(options);
+    }
+
+    return serializeContentReview(review);
+  }
+
+  public async reviewFacts(
+    options: Omit<RunContentReviewOptions, 'kind'> = {},
+  ) {
+    return this.runReview({
+      ...options,
+      kind: 'facts',
+      policyKey: options.policyKey || 'facts',
+    });
+  }
+
+  public async reviewSafety(
+    options: Omit<RunContentReviewOptions, 'kind'> = {},
+  ) {
+    const governance = await this.requireGovernance('safety review');
+    const safetyPolicy = getContentReviewPolicy(
+      options.policyKey || 'safety',
+      governance.reviewPolicies,
+    );
+    const baseInstructions = safetyPolicy?.instructions || '';
+
+    return this.runReview({
+      ...options,
+      kind: 'safety',
+      policyKey: options.policyKey || 'safety',
+      instructions:
+        options.instructions && baseInstructions
+          ? `${baseInstructions}\n\nAdditional app-level guidance:\n${options.instructions}`
+          : options.instructions || baseInstructions,
+    });
+  }
+
+  public async getCorrections() {
+    if (!this.id) {
+      return [];
+    }
+
+    const corrections = await this.getContentCorrectionCollection();
+    return corrections.listForContent(this.id as string);
+  }
+
+  public async listCorrections() {
+    const corrections = await this.getCorrections();
+    return corrections.map(serializeContentCorrection);
+  }
+
+  public async issueCorrection(options: IssueContentCorrectionOptions) {
+    const governance = await this.requireGovernance('corrections');
+
+    if (!this.id) {
+      throw new Error('Cannot issue a correction for unsaved content');
+    }
+
+    let replacementFactId = '';
+    if (
+      governance.factLinkingEnabled &&
+      options.factId &&
+      options.correctedFactText
+    ) {
+      const facts = await this.getFactCollection();
+      const existing = await facts.get({ id: options.factId });
+      if (!existing) {
+        throw new Error(`Fact not found for correction: ${options.factId}`);
+      }
+
+      // Create the correction branch directly so editorial corrections do not
+      // block on synchronous embedding generation inside facts.branch().
+      const replacement = await facts.create({
+        textRefined: options.correctedFactText,
+        textRaw: options.correctedFactText,
+        type: existing.getType(),
+        domain: existing.domain,
+        status: 'active',
+        tenantId: existing.tenantId ?? this.tenantId ?? null,
+        parentId: options.factId,
+        evolutionType: 'correction',
+      } as any);
+      existing.status = 'superseded';
+      await existing.save();
+      replacementFactId = replacement.id as string;
+      await this.addFact(replacementFactId);
+    }
+
+    const version =
+      options.createVersion === false
+        ? null
+        : await this.createVersion({
+            kind: 'correction',
+            summary: options.summary,
+            metadata: {
+              factId: options.factId || null,
+              replacementFactId: replacementFactId || null,
+            },
+          });
+    const correctionDraft =
+      options.createVersion === false
+        ? null
+        : await this.buildCorrectionDraftSnapshot(options, replacementFactId);
+    const draftVersion =
+      options.createVersion === false || !correctionDraft
+        ? null
+        : await this.createVersion({
+            kind: 'draft',
+            summary: `Auto-created correction draft: ${options.summary}`,
+            snapshot: correctionDraft.snapshot,
+            metadata: {
+              ...correctionDraft.metadata,
+              sourceCorrectionVersionId: (version?.id as string) || null,
+              sourceCorrectionVersionNumber: version?.version ?? null,
+            },
+          });
+
+    const corrections = await this.getContentCorrectionCollection();
+    const shouldPublish = options.publish ?? this.status === 'published';
+    return corrections.issue({
+      contentId: this.id as string,
+      contentVersionId: (version?.id as string) || '',
+      factId: options.factId || '',
+      replacementFactId,
+      correctionType: options.correctionType || 'fact',
+      status: shouldPublish ? 'published' : 'draft',
+      summary: options.summary,
+      incorrectText: options.incorrectText || '',
+      correctedText: options.correctedText || options.correctedFactText || '',
+      publicNote: options.publicNote || '',
+      metadata: {
+        ...(options.metadata || {}),
+        autoGeneratedDraft: Boolean(draftVersion),
+        draftVersionId: (draftVersion?.id as string) || null,
+        draftVersionNumber: draftVersion?.version ?? null,
+        sourceCorrectionVersionId: (version?.id as string) || null,
+        sourceCorrectionVersionNumber: version?.version ?? null,
+        correctionProfileKey: governance.correctionProfileKey || null,
+      },
+      tenantId: this.tenantId,
+      publishedAt: shouldPublish ? new Date() : null,
+    });
+  }
+
+  public async issueCorrectionAction(options: IssueContentCorrectionOptions) {
+    const correction = await this.issueCorrection(options);
+    return serializeContentCorrection(correction);
+  }
+
+  public async listVersions() {
+    const versions = await this.getVersions();
+    return versions.map(serializeContentVersion);
+  }
+
+  public async mutateVersionAction(
+    options: CreateContentVersionOptions & {
+      action?: string;
+      versionNumber?: number | string;
+    } = {},
+  ) {
+    if (options.action === 'restore') {
+      const versionNumber = Number(options.versionNumber);
+      if (!Number.isFinite(versionNumber)) {
+        throw new Error('versionNumber is required to restore a version');
+      }
+
+      const restored = await this.restoreFromVersion(versionNumber);
+      return serializeContent(restored);
+    }
+
+    const version = await this.createVersion(options);
+    return serializeContentVersion(version);
   }
 
   /**

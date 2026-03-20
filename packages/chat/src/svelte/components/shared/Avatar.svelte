@@ -16,9 +16,13 @@ export interface Props {
 }
 
 const { name, avatarUrl, onlineStatus, size = 'md' }: Props = $props();
+const safeName = $derived(name?.trim() || '');
+const avatarAlt = $derived(safeName || 'Avatar');
+const avatarLabel = $derived(safeName ? `${safeName}'s avatar` : 'Avatar');
 
 const initials = $derived.by(() => {
-  const parts = name.trim().split(/\s+/);
+  const parts = safeName.split(/\s+/);
+  if (!parts[0]) return '?';
   if (parts.length >= 2) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
@@ -32,12 +36,12 @@ function handleImgError() {
 }
 </script>
 
-<div class="avatar {size}" aria-label="{name}'s avatar">
+<div class="avatar {size}" aria-label={avatarLabel}>
   {#if avatarUrl && !imgError}
     <img
       class="avatar__img"
       src={avatarUrl}
-      alt={name}
+      alt={avatarAlt}
       onerror={handleImgError}
     />
   {:else}

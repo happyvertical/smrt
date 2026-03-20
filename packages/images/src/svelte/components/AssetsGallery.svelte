@@ -152,7 +152,7 @@ function handleSelect(image: Image) {
         tabindex={onSelect ? 0 : undefined}
       >
         <div class="img-container">
-          <img src={image.url} alt={image.alt || image.name} loading="lazy" />
+          <img src={image.sourceUri || image.url} alt={image.alt || image.name} loading="lazy" />
         </div>
         <div class="item-info">
           <span class="item-name" title={image.name}>{image.name}</span>

@@ -15,6 +15,9 @@ import { Content, type ContentOptions } from './content';
  */
 @smrt({
   tableStrategy: 'sti',
+  api: false,
+  mcp: false,
+  cli: false,
 })
 export class Article extends Content {
   constructor(options: ContentOptions = {}) {
@@ -30,6 +33,9 @@ export class Article extends Content {
  */
 @smrt({
   tableStrategy: 'sti',
+  api: false,
+  mcp: false,
+  cli: false,
 })
 export class ContentDocument extends Content {
   constructor(options: ContentOptions = {}) {
@@ -45,6 +51,9 @@ export class ContentDocument extends Content {
  */
 @smrt({
   tableStrategy: 'sti',
+  api: false,
+  mcp: false,
+  cli: false,
 })
 export class Mirror extends Content {
   constructor(options: ContentOptions = {}) {

@@ -76,6 +76,14 @@ export interface ConfigureDecoratorsInput {
   api?: {
     include?: string[];
     exclude?: string[];
+    routes?: Record<
+      string,
+      {
+        scope?: 'item' | 'collection';
+        method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+        path?: string;
+      }
+    >;
   };
   mcp?: {
     include?: string[];
