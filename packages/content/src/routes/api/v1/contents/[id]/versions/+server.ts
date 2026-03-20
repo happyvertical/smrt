@@ -6,7 +6,7 @@ import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
 // Custom action: listVersions
-export const GET: RequestHandler = async ({ params, request }) => {
+export const GET: RequestHandler = async ({ params }) => {
   const collection = await getCollection<any>(
     '@happyvertical/smrt-content:Content',
   );
