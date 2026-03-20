@@ -25,6 +25,20 @@ export type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
 
 export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+export interface ApiSerializerReference {
+  /**
+   * Module specifier to import the serializer from.
+   *
+   * Supports package imports and project aliases such as `$lib/...`.
+   */
+  importPath: string;
+
+  /**
+   * Named export to use as the serializer function.
+   */
+  exportName: string;
+}
+
 export interface ApiCustomRouteConfig {
   /**
    * Route scope for custom methods.
@@ -55,6 +69,20 @@ export interface ApiCustomRouteConfig {
   path?: string;
 }
 
+export interface ApiSerializersConfig {
+  /**
+   * Serializer used for standard item responses (`get`, `create`, `update`).
+   */
+  item?: ApiSerializerReference;
+
+  /**
+   * Serializer used for standard list responses.
+   *
+   * When omitted, SMRT falls back to `item` for each list entry.
+   */
+  listItem?: ApiSerializerReference;
+}
+
 export interface ApiConfig {
   /**
    * Exclude specific endpoints (supports both standard CRUD actions and custom methods)
@@ -81,6 +109,12 @@ export interface ApiConfig {
    * Lets generated routes declare collection-vs-item scope, HTTP verb, and path.
    */
   routes?: Record<string, ApiCustomRouteConfig>;
+
+  /**
+   * Optional serializers for standard generated CRUD responses.
+   * Useful when item JSON needs async enrichment beyond `transformJSON()`.
+   */
+  serializers?: ApiSerializersConfig;
 }
 
 /**

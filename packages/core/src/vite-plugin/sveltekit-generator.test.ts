@@ -317,7 +317,7 @@ describe('SvelteKit Route Generator', () => {
       const registrationContent = registrationCall?.[1] as string;
 
       expect(registrationContent).toContain(
-        "import { ImageCollection } from '../objects/ImageCollection';",
+        "import '../objects/ImageCollection';",
       );
       expect(registrationContent).not.toContain(
         'ObjectRegistry.register(ImageCollection',
@@ -1433,6 +1433,130 @@ describe('SvelteKit Route Generator', () => {
         p.includes('meetings'),
       );
       expect(meetingRoutes.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Standard Response Serializers', () => {
+    it('should apply the item serializer to standard item and list responses by default', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Content: {
+            className: 'Content',
+            collection: 'contents',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              api: {
+                include: ['list', 'get', 'create', 'update'],
+                serializers: {
+                  item: {
+                    importPath: '$lib/server/content-api-serializers',
+                    exportName: 'serializeContent',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const collectionRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('contents/+server.ts'),
+        );
+      expect(collectionRoute).toBeDefined();
+      const collectionContent = collectionRoute?.[1] as string;
+
+      expect(collectionContent).toContain(
+        "import { serializeContent as serializeItemResponse } from '$lib/server/content-api-serializers';",
+      );
+      expect(collectionContent).toContain(
+        'items.map((item) => serializeItemResponse(item))',
+      );
+      expect(collectionContent).toContain(
+        'return json({ items: serializedItems, count, limit, offset });',
+      );
+      expect(collectionContent).toContain(
+        'const serializedItem = await serializeItemResponse(item);',
+      );
+      expect(collectionContent).toContain(
+        'return json(serializedItem, { status: 201 });',
+      );
+
+      const itemRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('contents/[id]/+server.ts'),
+        );
+      expect(itemRoute).toBeDefined();
+      const itemContent = itemRoute?.[1] as string;
+
+      expect(itemContent).toContain(
+        "import { serializeContent as serializeItemResponse } from '$lib/server/content-api-serializers';",
+      );
+      expect(itemContent).toContain(
+        'const serializedItem = await serializeItemResponse(item);',
+      );
+      expect(itemContent).toContain('return json(serializedItem);');
+    });
+
+    it('should support a dedicated list item serializer', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Content: {
+            className: 'Content',
+            collection: 'contents',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              api: {
+                include: ['list', 'get'],
+                serializers: {
+                  item: {
+                    importPath: '$lib/server/content-api-serializers',
+                    exportName: 'serializeContent',
+                  },
+                  listItem: {
+                    importPath: '$lib/server/content-api-serializers',
+                    exportName: 'serializeContentListItem',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const collectionRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('contents/+server.ts'),
+        );
+      expect(collectionRoute).toBeDefined();
+      const collectionContent = collectionRoute?.[1] as string;
+
+      expect(collectionContent).toContain(
+        "import { serializeContent as serializeItemResponse } from '$lib/server/content-api-serializers';",
+      );
+      expect(collectionContent).toContain(
+        "import { serializeContentListItem as serializeListItemResponse } from '$lib/server/content-api-serializers';",
+      );
+      expect(collectionContent).toContain(
+        'items.map((item) => serializeListItemResponse(item))',
+      );
     });
   });
 });

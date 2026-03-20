@@ -16,6 +16,7 @@ import type {
   ApiConfig,
   ApiCustomRouteConfig,
   ApiHttpMethod,
+  ApiSerializerReference,
 } from '../registry/types.js';
 import type {
   SmartObjectDefinition,
@@ -48,6 +49,12 @@ interface GeneratedActionRouteSpec {
   actionDef: any;
   routeConfig: ResolvedApiActionRouteConfig;
   hostType: 'item' | 'collection';
+}
+
+interface ResolvedStandardRouteSerializers {
+  importStatements: string[];
+  itemSerializerName?: string;
+  listItemSerializerName?: string;
 }
 
 /**
@@ -101,6 +108,55 @@ function getApiConfigObject(apiConfig: unknown): ApiConfig | null {
   }
 
   return apiConfig as ApiConfig;
+}
+
+function isSameSerializerReference(
+  left?: ApiSerializerReference,
+  right?: ApiSerializerReference,
+): boolean {
+  return (
+    !!left &&
+    !!right &&
+    left.importPath === right.importPath &&
+    left.exportName === right.exportName
+  );
+}
+
+function resolveStandardRouteSerializers(
+  apiConfig: unknown,
+): ResolvedStandardRouteSerializers {
+  const config = getApiConfigObject(apiConfig);
+  const itemSerializer = config?.serializers?.item;
+  const listItemSerializer =
+    config?.serializers?.listItem || config?.serializers?.item;
+
+  const importStatements: string[] = [];
+  let itemSerializerName: string | undefined;
+  let listItemSerializerName: string | undefined;
+
+  if (itemSerializer) {
+    itemSerializerName = 'serializeItemResponse';
+    importStatements.push(
+      `import { ${itemSerializer.exportName} as ${itemSerializerName} } from '${itemSerializer.importPath}';`,
+    );
+  }
+
+  if (listItemSerializer) {
+    if (isSameSerializerReference(listItemSerializer, itemSerializer)) {
+      listItemSerializerName = itemSerializerName;
+    } else {
+      listItemSerializerName = 'serializeListItemResponse';
+      importStatements.push(
+        `import { ${listItemSerializer.exportName} as ${listItemSerializerName} } from '${listItemSerializer.importPath}';`,
+      );
+    }
+  }
+
+  return {
+    importStatements,
+    itemSerializerName,
+    listItemSerializerName,
+  };
 }
 
 function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
@@ -288,7 +344,10 @@ async function generateRegistrationFile(
 
   // Group objects by package for efficient imports
   const localObjects: Array<[string, (typeof manifest.objects)[string]]> = [];
-  const packageObjects = new Map<string, string[]>(); // packageName -> classNames
+  const packageObjects = new Map<
+    string,
+    { classNames: string[]; hasCollectionImport: boolean }
+  >();
 
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     if (isLocalObject(projectRoot, objectDef)) {
@@ -296,9 +355,18 @@ async function generateRegistrationFile(
       localObjects.push([className, objectDef]);
     } else if (objectDef.packageName) {
       // External package - group by package name
-      const classes = packageObjects.get(objectDef.packageName) || [];
-      classes.push(className);
-      packageObjects.set(objectDef.packageName, classes);
+      const packageEntry = packageObjects.get(objectDef.packageName) || {
+        classNames: [],
+        hasCollectionImport: false,
+      };
+
+      if (isCollectionClass(objectDef)) {
+        packageEntry.hasCollectionImport = true;
+      } else {
+        packageEntry.classNames.push(className);
+      }
+
+      packageObjects.set(objectDef.packageName, packageEntry);
     } else {
       // No package name and not local - treat as local fallback
       localObjects.push([className, objectDef]);
@@ -332,6 +400,10 @@ async function generateRegistrationFile(
         );
       }
 
+      if (isCollectionClass(objectDef)) {
+        return `import '${importPath}';`;
+      }
+
       return `import { ${simpleClassName} } from '${importPath}';`;
     })
     .join('\n');
@@ -339,10 +411,22 @@ async function generateRegistrationFile(
   // Generate imports for external packages
   // Issue #870: Extract simple class names from qualified names
   const packageImports = Array.from(packageObjects.entries())
-    .map(([packageName, classNames]) => {
-      // Extract simple class names for valid import syntax
-      const simpleNames = classNames.map(extractSimpleClassName);
-      return `import { ${simpleNames.join(', ')} } from '${packageName}';`;
+    .flatMap(([packageName, packageEntry]) => {
+      const imports: string[] = [];
+
+      if (packageEntry.hasCollectionImport) {
+        imports.push(`import '${packageName}';`);
+      }
+
+      if (packageEntry.classNames.length > 0) {
+        // Extract simple class names for valid import syntax
+        const simpleNames = packageEntry.classNames.map(extractSimpleClassName);
+        imports.push(
+          `import { ${simpleNames.join(', ')} } from '${packageName}';`,
+        );
+      }
+
+      return imports;
     })
     .join('\n');
 
@@ -869,12 +953,16 @@ function isLocalObject(
 function generateCollectionRouteTemplate(
   _projectRoot: string,
   className: string,
-  _objectDef: SmartObjectDefinition,
+  objectDef: SmartObjectDefinition,
   includedActions: string[],
   _options: SvelteKitOptions,
 ): string {
   const hasGet = includedActions.includes('list');
   const hasPost = includedActions.includes('create');
+  const serializers = resolveStandardRouteSerializers(
+    objectDef.decoratorConfig?.api,
+  );
+  const serializerImports = serializers.importStatements.join('\n');
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -882,7 +970,9 @@ function generateCollectionRouteTemplate(
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getCollection } from '$lib/server/smrt';
-// Note: ${className} is auto-registered by the Vite plugin scanner
+${
+  serializerImports ? `${serializerImports}\n` : ''
+}// Note: ${className} is auto-registered by the Vite plugin scanner
 `;
 
   const getHandler = hasGet
@@ -895,8 +985,17 @@ export const GET: RequestHandler = async ({ url }) => {
   const collection = await getCollection('${className}');
   const items = await collection.list({ limit, offset });
   const count = await collection.count();
+${
+  serializers.listItemSerializerName
+    ? `
+  const serializedItems = await Promise.all(
+    items.map((item) => ${serializers.listItemSerializerName}(item)),
+  );
 
-  return json({ items, count, limit, offset });
+  return json({ items: serializedItems, count, limit, offset });`
+    : `
+  return json({ items, count, limit, offset });`
+}
 };
 `
     : '';
@@ -910,8 +1009,15 @@ export const POST: RequestHandler = async ({ request }) => {
   const collection = await getCollection('${className}');
   const item = await collection.create(data);
   await item.save();
+${
+  serializers.itemSerializerName
+    ? `
+  const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(item, { status: 201 });
+  return json(serializedItem, { status: 201 });`
+    : `
+  return json(item, { status: 201 });`
+}
 };
 `
     : '';
@@ -925,7 +1031,7 @@ export const POST: RequestHandler = async ({ request }) => {
 function generateItemRouteTemplate(
   _projectRoot: string,
   className: string,
-  _objectDef: SmartObjectDefinition,
+  objectDef: SmartObjectDefinition,
   includedActions: string[],
   _options: SvelteKitOptions,
 ): string {
@@ -933,6 +1039,10 @@ function generateItemRouteTemplate(
   const hasPut = includedActions.includes('update');
   const hasDelete = includedActions.includes('delete');
   const simpleClassName = extractSimpleClassName(className);
+  const serializers = resolveStandardRouteSerializers(
+    objectDef.decoratorConfig?.api,
+  );
+  const serializerImports = serializers.importStatements.join('\n');
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -940,7 +1050,7 @@ function generateItemRouteTemplate(
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getCollection } from '$lib/server/smrt';
-`;
+${serializerImports ? `${serializerImports}\n` : ''}`;
 
   const getHandler = hasGet
     ? `
@@ -949,8 +1059,15 @@ export const GET: RequestHandler = async ({ params }) => {
   const collection = await getCollection<any>('${className}');
   const item = await collection.get(params.id);
   if (!item) throw error(404, '${className} not found');
+${
+  serializers.itemSerializerName
+    ? `
+  const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(item);
+  return json(serializedItem);`
+    : `
+  return json(item);`
+}
 };
 `
     : '';
@@ -966,8 +1083,15 @@ export const PUT: RequestHandler = async ({ params, request }) => {
   const data = await request.json();
   Object.assign(item, data);
   await item.save();
+${
+  serializers.itemSerializerName
+    ? `
+  const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(item);
+  return json(serializedItem);`
+    : `
+  return json(item);`
+}
 };
 `
     : '';
