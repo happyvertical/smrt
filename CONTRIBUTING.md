@@ -97,10 +97,18 @@ All code changes must include tests. See [TESTING_STANDARD.md](../TESTING_STANDA
 - README examples must have corresponding tests
 - A touched package is not release-ready until its full suite is green
 - Keep package coverage enabled and generate a coverage report when doing significant package work
+- Packages that export UI components should include component tests for the
+  touched public UI surface
+- Use reference-app e2e tests selectively for critical workflows when a real
+  app harness exists
 
 **Test Types**:
-- **Unit tests** (`*.test.ts`): Fast, isolated component tests
-- **Integration tests** (`*.spec.ts`): Real resource integration
+- **Unit and component tests** (`*.test.ts`): Pure logic plus rendered
+  component behavior in a lightweight DOM environment
+- **Integration tests** (`*.spec.ts`): Real resource, runtime seam, and package
+  wiring coverage
+- **End-to-end tests** (`*.e2e.ts`): Reference-app browser workflows for
+  critical user journeys
 - **Example tests** (`*.examples.test.ts`): Demonstrate common patterns
 - **Optional tests** (`*.optional.test.ts`): Expensive or external API tests
 

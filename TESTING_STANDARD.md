@@ -20,6 +20,74 @@ entire touched package, not just the new tests added for the change.
 - **Generated surfaces need tests**: if SMRT-generated REST/CLI/MCP behavior changes, add or update tests that exercise the generated contract
 - **Coverage must be wired in**: every actively developed package should enable Vitest coverage reporting in `vitest.config.ts`
 
+## Testing Pyramid For SMRT Packages
+
+Every actively developed SMRT package should aim for a balanced test pyramid.
+The exact mix varies by package, but releases should not rely on a single test
+layer.
+
+### 1. Unit Tests
+
+Use unit tests for pure logic and narrow contracts:
+
+- Serializers and JSON helpers
+- Policy and governance resolution
+- Versioning and state transforms
+- Utility helpers and derived values
+- Error handling for small isolated functions
+
+### 2. Component Tests
+
+Use component tests when a package exports user-facing UI components.
+Component tests should run in a lightweight DOM environment such as `jsdom` or
+`happy-dom`, and should exercise the real component rather than a mock.
+
+Component tests are the right place to verify:
+
+- Rendering from public props
+- User interactions, events, and callback contracts
+- Slots and conditional UI states
+- Accessibility-critical states and labels
+- Editor/admin workflows that can be proven without full browser automation
+
+If a touched package exports Svelte components, the release is not complete
+until the touched public UI surface has meaningful component coverage.
+
+### 3. Integration Tests
+
+Use integration tests for real runtime seams and package wiring:
+
+- Generated REST/CLI/MCP contracts
+- SvelteKit load/action/SSR boundaries
+- Persistence with real in-memory or temp-file resources
+- Cross-package wiring and registration
+- End-to-end object workflows inside a package boundary
+
+Integration tests should prefer real resources over mocks unless the dependency
+is external, expensive, or nondeterministic.
+
+### 4. End-to-End Tests
+
+Use browser or reference-app e2e tests sparingly for a small number of
+critical workflows:
+
+- Authoring and publish flows
+- Authentication or permission-sensitive user journeys
+- Cross-page editorial workflows
+- Regression-prone consuming-app behavior
+
+E2E tests are strongly recommended when a maintained reference app or demo app
+exists, but they are not a substitute for unit, component, and integration
+coverage in the package itself.
+
+### Test Naming Conventions
+
+- **Unit and component tests**: `*.test.ts`
+- **Integration tests**: `*.spec.ts`
+- **Browser e2e tests**: `*.e2e.ts`
+- **Example tests**: `*.examples.test.ts`
+- **Optional or expensive tests**: `*.optional.test.ts`
+
 ## Running Tests
 
 ### ⚠️ CRITICAL: Use the Vitest Plugin

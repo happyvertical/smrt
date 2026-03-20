@@ -1,14 +1,16 @@
 import { resolve } from 'node:path';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
 
 export default defineConfig({
-  plugins: [smrtVitestPlugin()],
+  plugins: [svelte(), smrtVitestPlugin()],
   resolve: {
     alias: {
       $lib: resolve(__dirname, 'src/lib'),
       '@happyvertical/smrt-facts': resolve(__dirname, 'src/workspace-facts.ts'),
     },
+    conditions: ['browser'],
   },
   test: {
     globals: true,

@@ -160,11 +160,17 @@ git checkout -b {type}/issue-XXX-short-desc origin/{type}/issue-XXX-short-desc
    - **Framework Integration**: Integration with existing patterns? Backward compatibility concerns? Documentation updates?
 
 4. **Test Strategy** (Always Ask):
-   - What test types are needed? (unit/integration/examples/optional)
+   - What test types are needed? (unit/component/integration/e2e/examples/optional)
    - Should tests use real resources or mocks? (default: real resources per TESTING_STANDARD.md)
+   - Does the touched package export UI components? (if yes, which public
+     components need component tests?)
    - For agent creation: Test with real Agent instances, not mocks
    - For smart objects: Test with real database operations, mock AI providers only
    - For code generation: Test the generator code, verify generated code compiles/runs
+   - For SvelteKit or component-library work: What runtime seams need
+     integration coverage (SSR/load/actions/hydration/package wiring)?
+   - Is there an existing reference app or demo surface that justifies a small
+     e2e workflow?
    - Are README examples affected? (if yes, must add corresponding tests)
    - Is this fixing a bug? (if yes, write failing test first per BDD/TDD workflow)
 
@@ -198,7 +204,9 @@ Following [Organization-Wide Testing Standard](../TESTING_STANDARD.md):
 
 **Test Types**:
 - [ ] Unit tests (`*.test.ts`) - [if needed, describe what]
+- [ ] Component tests (`*.test.ts`) - [if package exports UI, describe touched public components]
 - [ ] Integration tests (`*.spec.ts`) - [describe real resources to use]
+- [ ] E2E tests (`*.e2e.ts`) - [if a maintained reference app or demo harness exists]
 - [ ] Example tests (`*.examples.test.ts`) - [if demonstrating common patterns]
 - [ ] Optional tests (`*.optional.test.ts`) - [if using external APIs/expensive resources]
 
@@ -254,15 +262,21 @@ For **bug fixes**:
 
 For **new features**:
 1. Write tests from user stories (integration tests with real resources)
-2. Implement feature to make tests pass
-3. Add example tests for common usage patterns
-4. Update README with examples (and corresponding tests)
+2. If the package exports UI components, add component tests for the touched
+   public surface
+3. Implement feature to make tests pass
+4. Add example tests for common usage patterns
+5. Update README with examples (and corresponding tests)
 
 For **SMRT-specific work**:
 - **Agent features**: Test with real Agent instances, mock only external AI API calls
 - **Smart objects**: Test with real database operations (in-memory SQLite), mock AI providers
 - **Code generation**: Test the generator logic, verify generated code compiles and runs
 - **Framework integration**: Test with real instances, avoid excessive mocking
+- **UI/component library work**: Add rendered component tests for touched public
+  components, then cover SSR/load/actions/package wiring with integration tests
+- **Reference apps/demo apps**: Add a small e2e slice only for critical
+  workflows and only when a maintained harness already exists
 
 For **all work**:
 - Follow the plan established in Step 5
