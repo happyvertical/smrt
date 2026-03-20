@@ -44,11 +44,15 @@ async function handleSaveContent(formData: any) {
   try {
     const payload = formData;
 
-    if (editingContent) {
+    if (editingContent?.id) {
       // Update existing
       const response = await client.contents.update(editingContent.id, payload);
       const index = contents.findIndex((c) => c.id === editingContent.id);
-      contents[index] = response.data;
+      if (index >= 0) {
+        contents[index] = response.data;
+      } else {
+        contents = [response.data, ...contents];
+      }
     } else {
       // Create new
       const response = await client.contents.create(payload);
@@ -124,8 +128,15 @@ function getPublishedHref(content: any) {
 <div class="app">
   <header class="header">
     <div class="container">
-      <h1>📝 Content Service</h1>
-      <div class="status">Online</div>
+      <div class="header-brand">
+        <h1>📝 Content Service</h1>
+        <div class="status">Online</div>
+      </div>
+      <nav class="header-nav" aria-label="Content QA navigation">
+        <a href="/">Workspace</a>
+        <a href="/governance">Governance QA</a>
+        <a href="/contributions">Contribution QA</a>
+      </nav>
     </div>
   </header>
 
@@ -134,6 +145,10 @@ function getPublishedHref(content: any) {
       <div class="hero">
         <h1>Contents</h1>
         <p>Manage your content library with auto-generated CRUD operations, document processing, and AI-powered tools via MCP.</p>
+        <div class="hero-actions">
+          <a class="hero-link" href="/governance">Test governance admin</a>
+          <a class="hero-link" href="/contributions">Test contributions intake</a>
+        </div>
       </div>
 
       <div class="content-section">
@@ -267,6 +282,34 @@ function getPublishedHref(content: any) {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .header-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .header-nav a {
+    color: var(--smrt-color-on-surface);
+    text-decoration: none;
+    font-weight: 600;
+    opacity: 0.85;
+  }
+
+  .header-nav a:hover {
+    opacity: 1;
+    text-decoration: underline;
   }
 
   .header h1 {
@@ -306,6 +349,30 @@ function getPublishedHref(content: any) {
     opacity: 0.8;
     max-width: 600px;
     margin: 0 auto;
+  }
+
+  .hero-actions {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+
+  .hero-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.65rem 1rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+    color: var(--smrt-color-primary);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .hero-link:hover {
+    background: color-mix(in srgb, var(--smrt-color-primary) 18%, transparent);
   }
 
   .content-section {

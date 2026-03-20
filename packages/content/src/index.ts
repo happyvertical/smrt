@@ -6,6 +6,59 @@
 
 export type { ContentOptions } from './content';
 export { Content } from './content';
+export type {
+  AppendContentContributionRevisionOptions,
+  ApproveContentContributionOptions,
+  ContentContributionAttachmentInput,
+  ContentContributionOptions,
+  PromoteContentContributionOptions,
+  RejectContentContributionOptions,
+  RequestChangesContentContributionOptions,
+  WithdrawContentContributionOptions,
+} from './content-contribution';
+export { ContentContribution } from './content-contribution';
+export type { ContentContributionAttachmentOptions } from './content-contribution-attachment';
+export { ContentContributionAttachment } from './content-contribution-attachment';
+export { ContentContributionAttachmentCollection } from './content-contribution-attachments';
+export type {
+  ContentContributionChannel,
+  ContentContributionConfig,
+  ContentContributionIntakeDecision,
+  ContentContributionIntakeRules,
+  ContentContributionPromotionMapping,
+  ContentContributionStatus,
+  ContentContributionTypeDefinition,
+  ContentContributorTrustLevel,
+  EvaluateContributionIntakeOptions,
+  EvaluateContributionIntakeResult,
+  PersistedContentContributionTypeRecord,
+  ResolvedContentContributionType,
+} from './content-contribution-config';
+export {
+  configureContentContributions,
+  evaluateContributionIntake,
+  getContentContributionConfig,
+  getContentContributionTypeConfigState,
+  getEffectiveContentContributionConfig,
+  hasStaticContentContributionType,
+  loadPersistedContentContributionTypes,
+  resetContentContributionConfig,
+  resolveEffectiveContentContributionType,
+} from './content-contribution-config';
+export type { ContentContributionRevisionOptions } from './content-contribution-revision';
+export { ContentContributionRevision } from './content-contribution-revision';
+export { ContentContributionRevisionCollection } from './content-contribution-revisions';
+export type { ContentContributionTypeOptions } from './content-contribution-type';
+export { ContentContributionType } from './content-contribution-type';
+export { ContentContributionTypeCollection } from './content-contribution-types';
+export type {
+  IngestEmailContentContributionOptions,
+  SubmitWebContentContributionOptions,
+} from './content-contributions';
+export { ContentContributions } from './content-contributions';
+export type { ContentContributorOptions } from './content-contributor';
+export { ContentContributor } from './content-contributor';
+export { ContentContributorCollection } from './content-contributors';
 export type { ContentCorrectionOptions } from './content-correction';
 export { ContentCorrection } from './content-correction';
 export { ContentCorrectionCollection } from './content-corrections';

@@ -14,6 +14,11 @@ import { CONTENT_MODULE_META } from '../ui.js';
 // Import components
 import ArticleCard from './components/ArticleCard.svelte';
 import ArticleList from './components/ArticleList.svelte';
+import ContentContributionForm from './components/ContentContributionForm.svelte';
+import ContentContributionInbox from './components/ContentContributionInbox.svelte';
+import ContentContributionPortal from './components/ContentContributionPortal.svelte';
+import ContentContributionTypeManager from './components/ContentContributionTypeManager.svelte';
+import ContentContributorManager from './components/ContentContributorManager.svelte';
 import ContentGovernanceAssignmentEditor from './components/ContentGovernanceAssignmentEditor.svelte';
 import ContentGovernanceManager from './components/ContentGovernanceManager.svelte';
 import ContentGovernancePanel from './components/ContentGovernancePanel.svelte';
@@ -27,6 +32,11 @@ import Markdown from './components/Markdown.svelte';
 export {
   ArticleCard,
   ArticleList,
+  ContentContributionForm,
+  ContentContributionInbox,
+  ContentContributionPortal,
+  ContentContributionTypeManager,
+  ContentContributorManager,
   ContentGovernanceAssignmentEditor,
   ContentGovernanceManager,
   ContentGovernancePanel,
@@ -40,6 +50,21 @@ export {
 // Export component prop types
 export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
+export type ContentContributionFormProps = ComponentProps<
+  typeof ContentContributionForm
+>;
+export type ContentContributionInboxProps = ComponentProps<
+  typeof ContentContributionInbox
+>;
+export type ContentContributionPortalProps = ComponentProps<
+  typeof ContentContributionPortal
+>;
+export type ContentContributionTypeManagerProps = ComponentProps<
+  typeof ContentContributionTypeManager
+>;
+export type ContentContributorManagerProps = ComponentProps<
+  typeof ContentContributorManager
+>;
 export type ContentTransparencyReportProps = ComponentProps<
   typeof ContentTransparencyReport
 >;

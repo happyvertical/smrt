@@ -223,6 +223,104 @@ export interface ContentGovernanceDefinitionsData {
   };
 }
 
+export interface ContentContributionAttachmentData {
+  id?: string;
+  contributionId?: string;
+  revisionId?: string | null;
+  filename?: string;
+  mimeType?: string | null;
+  size?: number | null;
+  fileKey?: string | null;
+  sourceUri?: string | null;
+  channel?: string | null;
+  promotedAssetId?: string | null;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContentContributionRevisionData {
+  id?: string;
+  contributionId?: string;
+  revisionNumber?: number | null;
+  channel?: string | null;
+  title?: string | null;
+  description?: string | null;
+  body?: string | null;
+  sourceMessageId?: string | null;
+  sourceThreadKey?: string | null;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContentContributorData {
+  id?: string;
+  profileId?: string | null;
+  email?: string | null;
+  name?: string | null;
+  trustLevel?: string | null;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContentContributionTypeData {
+  id?: string;
+  key: string;
+  label: string;
+  enabled?: boolean;
+  allowedChannels?: string[];
+  allowText?: boolean;
+  allowFiles?: boolean;
+  allowEmptyText?: boolean;
+  intakeRules?: Record<string, any>;
+  promotion?: Record<string, any>;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContentContributionData {
+  id?: string;
+  contributorId?: string;
+  contributionTypeKey?: string;
+  status?: string | null;
+  intakeDecision?: string | null;
+  channel?: string | null;
+  title?: string | null;
+  description?: string | null;
+  body?: string | null;
+  contributorEmail?: string | null;
+  contributorName?: string | null;
+  threadKey?: string | null;
+  sourceMessageId?: string | null;
+  editorNotes?: string | null;
+  promotedContentId?: string | null;
+  revisionCount?: number | null;
+  approvedAt?: string | null;
+  promotedAt?: string | null;
+  rejectedAt?: string | null;
+  withdrawnAt?: string | null;
+  requestedChangesAt?: string | null;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  contributor?: ContentContributorData | null;
+  revisions?: ContentContributionRevisionData[];
+  attachments?: ContentContributionAttachmentData[];
+}
+
+export interface ContentContributionTypeConfigStateData {
+  effective: ContentContributionTypeData[];
+  persisted: ContentContributionTypeData[];
+}
+
 export interface ApiResponse<T> {
   data: T;
   success: boolean;
@@ -671,6 +769,196 @@ class ApiClient {
           method: 'DELETE',
         },
       );
+      if (!res.ok) throw new Error(await res.text());
+      return { data: undefined, success: true };
+    },
+  };
+
+  contentContributions = {
+    list: async (): Promise<ApiResponse<ContentContributionData[]>> =>
+      this.requestList<ContentContributionData>('/contentcontributions'),
+
+    get: async (id: string): Promise<ApiResponse<ContentContributionData>> =>
+      this.request<ContentContributionData>(`/contentcontributions/${id}`),
+
+    submitWebContribution: async (
+      payload: Record<string, unknown>,
+    ): Promise<ApiResponse<any>> =>
+      this.request<any>('/contentcontributions/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+
+    ingestEmailContribution: async (
+      payload: Record<string, unknown>,
+    ): Promise<ApiResponse<any>> =>
+      this.request<any>('/contentcontributions/ingest-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+
+    appendRevision: async (
+      id: string,
+      payload: Record<string, unknown>,
+    ): Promise<ApiResponse<any>> =>
+      this.request<any>(`/contentcontributions/${id}/revisions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+
+    requestChanges: async (
+      id: string,
+      payload: Record<string, unknown>,
+    ): Promise<ApiResponse<any>> =>
+      this.request<any>(`/contentcontributions/${id}/request-changes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+
+    approve: async (
+      id: string,
+      payload: Record<string, unknown> = {},
+    ): Promise<ApiResponse<any>> =>
+      this.request<any>(`/contentcontributions/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+
+    reject: async (
+      id: string,
+      payload: Record<string, unknown> = {},
+    ): Promise<ApiResponse<any>> =>
+      this.request<any>(`/contentcontributions/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+
+    withdraw: async (
+      id: string,
+      payload: Record<string, unknown> = {},
+    ): Promise<ApiResponse<any>> =>
+      this.request<any>(`/contentcontributions/${id}/withdraw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+
+    promote: async (
+      id: string,
+      payload: Record<string, unknown> = {},
+    ): Promise<ApiResponse<any>> =>
+      this.request<any>(`/contentcontributions/${id}/promote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+
+    listForContributor: async (
+      options: { contributorId?: string; contributorEmail?: string } = {},
+    ): Promise<ApiResponse<ContentContributionData[]>> =>
+      this.requestList<ContentContributionData>(
+        `/contentcontributions/by-contributor${toQueryString(options)}`,
+      ),
+
+    listInbox: async (
+      options: { statuses?: string | string[] } = {},
+    ): Promise<ApiResponse<ContentContributionData[]>> =>
+      this.requestList<ContentContributionData>(
+        `/contentcontributions/inbox${toQueryString({
+          statuses: Array.isArray(options.statuses)
+            ? options.statuses.join(',')
+            : options.statuses,
+        })}`,
+      ),
+
+    getContributionTypes: async (): Promise<
+      ApiResponse<ContentContributionTypeConfigStateData>
+    > => this.request('/contentcontributions/types'),
+  };
+
+  contentContributionTypes = {
+    list: async (): Promise<ApiResponse<ContentContributionTypeData[]>> =>
+      this.requestList<ContentContributionTypeData>(
+        '/contentcontributiontypes',
+      ),
+
+    get: async (
+      id: string,
+    ): Promise<ApiResponse<ContentContributionTypeData>> =>
+      this.request<ContentContributionTypeData>(
+        `/contentcontributiontypes/${id}`,
+      ),
+
+    create: async (
+      data: Partial<ContentContributionTypeData>,
+    ): Promise<ApiResponse<ContentContributionTypeData>> =>
+      this.request<ContentContributionTypeData>('/contentcontributiontypes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: async (
+      id: string,
+      data: Partial<ContentContributionTypeData>,
+    ): Promise<ApiResponse<ContentContributionTypeData>> =>
+      this.request<ContentContributionTypeData>(
+        `/contentcontributiontypes/${id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      ),
+
+    delete: async (id: string): Promise<ApiResponse<void>> => {
+      const res = await fetch(
+        `${this.baseUrl}/contentcontributiontypes/${id}`,
+        {
+          method: 'DELETE',
+        },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return { data: undefined, success: true };
+    },
+  };
+
+  contentContributors = {
+    list: async (): Promise<ApiResponse<ContentContributorData[]>> =>
+      this.requestList<ContentContributorData>('/contentcontributors'),
+
+    get: async (id: string): Promise<ApiResponse<ContentContributorData>> =>
+      this.request<ContentContributorData>(`/contentcontributors/${id}`),
+
+    create: async (
+      data: Partial<ContentContributorData>,
+    ): Promise<ApiResponse<ContentContributorData>> =>
+      this.request<ContentContributorData>('/contentcontributors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: async (
+      id: string,
+      data: Partial<ContentContributorData>,
+    ): Promise<ApiResponse<ContentContributorData>> =>
+      this.request<ContentContributorData>(`/contentcontributors/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: async (id: string): Promise<ApiResponse<void>> => {
+      const res = await fetch(`${this.baseUrl}/contentcontributors/${id}`, {
+        method: 'DELETE',
+      });
       if (!res.ok) throw new Error(await res.text());
       return { data: undefined, success: true };
     },

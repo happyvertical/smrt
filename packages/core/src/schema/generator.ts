@@ -333,9 +333,10 @@ export class SchemaGenerator {
    * @returns Schema definition object
    */
   generateSchemaFromRegistry(
-    _className: string,
+    className: string,
     tableName: string,
     fields: Map<string, any>,
+    config?: { conflictColumns?: string[] },
   ): SchemaDefinition {
     const columns: Record<string, ColumnDefinition> = {};
 
@@ -480,11 +481,17 @@ export class SchemaGenerator {
         description: 'Primary key index',
       });
 
+      const conflictColumns = config?.conflictColumns || ['slug', 'context'];
+      const conflictIndexName =
+        conflictColumns.length > 2
+          ? `${tableName}_${conflictColumns.slice(0, 2).join('_')}_idx`
+          : `${tableName}_${conflictColumns.join('_')}_idx`;
+
       indexes.push({
-        name: `${tableName}_slug_context_idx`,
-        columns: ['slug', 'context'],
+        name: conflictIndexName,
+        columns: conflictColumns,
         unique: true,
-        description: 'Unique index for slug and context',
+        description: `Unique conflict index for ${className}`,
       });
     } else {
       // Find custom PK column and create index

@@ -27,6 +27,14 @@ export default defineConfig(async ({ mode }) => {
           __dirname,
           '../facts/src/index.ts',
         ),
+        '@happyvertical/smrt-messages': resolve(
+          __dirname,
+          '../messages/src/index.ts',
+        ),
+        '@happyvertical/smrt-profiles': resolve(
+          __dirname,
+          '../profiles/src/index.ts',
+        ),
       },
     },
     plugins: [

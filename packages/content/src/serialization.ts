@@ -1,9 +1,12 @@
 function toJSON<T extends Record<string, any>>(value: any): T {
   if (value && typeof value.toJSON === 'function') {
-    return value.toJSON();
+    const serialized = value.toJSON();
+    return serialized && typeof serialized === 'object'
+      ? serialized
+      : ({} as T);
   }
 
-  return value as T;
+  return value && typeof value === 'object' ? value : ({} as T);
 }
 
 export function serializeFact(fact: any) {
@@ -66,6 +69,93 @@ export function serializeContentCorrection(correction: any) {
       typeof correction?.getMetadata === 'function'
         ? correction.getMetadata()
         : data.metadata || {},
+  };
+}
+
+export function serializeContentContributor(contributor: any) {
+  const data = toJSON<Record<string, any>>(contributor);
+  return {
+    ...data,
+    metadata:
+      typeof contributor?.getMetadata === 'function'
+        ? contributor.getMetadata()
+        : data.metadata || {},
+  };
+}
+
+export function serializeContentContributionType(contributionType: any) {
+  const data = toJSON<Record<string, any>>(contributionType);
+  return {
+    ...data,
+    allowedChannels:
+      typeof contributionType?.getAllowedChannels === 'function'
+        ? contributionType.getAllowedChannels()
+        : data.allowedChannels || [],
+    intakeRules:
+      typeof contributionType?.getIntakeRules === 'function'
+        ? contributionType.getIntakeRules()
+        : data.intakeRules || {},
+    promotion:
+      typeof contributionType?.getPromotion === 'function'
+        ? contributionType.getPromotion()
+        : data.promotion || {},
+    metadata:
+      typeof contributionType?.getMetadata === 'function'
+        ? contributionType.getMetadata()
+        : data.metadata || {},
+  };
+}
+
+export function serializeContentContributionRevision(revision: any) {
+  const data = toJSON<Record<string, any>>(revision);
+  return {
+    ...data,
+    sourceMessageId: data.sourceMessageId || null,
+    sourceThreadKey: data.sourceThreadKey || null,
+    metadata:
+      typeof revision?.getMetadata === 'function'
+        ? revision.getMetadata()
+        : data.metadata || {},
+  };
+}
+
+export function serializeContentContributionAttachment(attachment: any) {
+  const data = toJSON<Record<string, any>>(attachment);
+  return {
+    ...data,
+    revisionId: data.revisionId || null,
+    fileKey: data.fileKey || null,
+    sourceUri: data.sourceUri || null,
+    promotedAssetId: data.promotedAssetId || null,
+    metadata:
+      typeof attachment?.getMetadata === 'function'
+        ? attachment.getMetadata()
+        : data.metadata || {},
+  };
+}
+
+export async function serializeContentContribution(contribution: any) {
+  const [revisions, attachments, contributor] = await Promise.all([
+    typeof contribution?.getRevisions === 'function'
+      ? contribution.getRevisions()
+      : [],
+    typeof contribution?.getAttachments === 'function'
+      ? contribution.getAttachments()
+      : [],
+    typeof contribution?.getContributor === 'function'
+      ? contribution.getContributor()
+      : null,
+  ]);
+
+  return {
+    ...toJSON<Record<string, any>>(contribution),
+    contributor: contributor ? serializeContentContributor(contributor) : null,
+    revisions: revisions.map(serializeContentContributionRevision),
+    attachments: attachments.map(serializeContentContributionAttachment),
+    metadata:
+      typeof contribution?.getMetadata === 'function'
+        ? contribution.getMetadata()
+        : contribution?.metadata || {},
   };
 }
 

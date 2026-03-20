@@ -9,6 +9,16 @@
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 
+import { ContentContributionAttachment } from '../../content-contribution-attachment';
+import '../../content-contribution-attachments';
+import { ContentContributionRevision } from '../../content-contribution-revision';
+import '../../content-contribution-revisions';
+import { ContentContributionType } from '../../content-contribution-type';
+import '../../content-contribution-types';
+import { ContentContribution } from '../../content-contribution';
+import '../../content-contributions';
+import { ContentContributor } from '../../content-contributor';
+import '../../content-contributors';
 import { ContentCorrection } from '../../content-correction';
 import '../../content-corrections';
 import { ContentGovernanceAssignment } from '../../content-governance-assignment';
@@ -28,6 +38,21 @@ import { Content } from '../../content';
 import '../../contents';
 
 // Re-register imported objects with explicit package names for bundled runtimes
+ObjectRegistry.register(ContentContributionAttachment, {
+  packageName: '@happyvertical/smrt-content',
+});
+ObjectRegistry.register(ContentContributionRevision, {
+  packageName: '@happyvertical/smrt-content',
+});
+ObjectRegistry.register(ContentContributionType, {
+  packageName: '@happyvertical/smrt-content',
+});
+ObjectRegistry.register(ContentContribution, {
+  packageName: '@happyvertical/smrt-content',
+});
+ObjectRegistry.register(ContentContributor, {
+  packageName: '@happyvertical/smrt-content',
+});
 ObjectRegistry.register(ContentCorrection, {
   packageName: '@happyvertical/smrt-content',
 });

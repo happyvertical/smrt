@@ -33,6 +33,8 @@
     "dev": "vite dev",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
+    "test:e2e": "pnpm exec playwright test -c playwright.config.ts",
+    "test:e2e:headed": "pnpm exec playwright test -c playwright.config.ts --headed",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
@@ -49,6 +51,8 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-facts": "workspace:*",
     "@happyvertical/smrt-images": "workspace:*",
+    "@happyvertical/smrt-messages": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/spider": "catalog:",

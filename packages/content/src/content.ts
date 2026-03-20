@@ -15,6 +15,7 @@ import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
+  buildContentGovernanceAssignmentKey,
   buildContentReviewPrompt,
   type ContentGovernanceState,
   type ContentReviewProfileEvaluation,
@@ -435,22 +436,25 @@ export class Content extends SmrtObject {
   }
 
   protected override async validateBeforeSave(): Promise<void> {
+    if (!this.name && this.title) {
+      this.name = this.title;
+    }
+
+    if (!this.title && this.name) {
+      this.title = this.name;
+    }
+
     await super.validateBeforeSave();
 
     if (this.status !== 'published') {
       return;
     }
 
-    const configuredGovernance = this.getConfiguredGovernance();
-    if (!configuredGovernance.isGoverned) {
-      return;
-    }
-
-    const governance = await this.resolveGovernance();
-    const profileKey = governance.publicationProfileKey;
+    const governance = await this.resolvePublicationGovernance();
+    const profileKey = governance?.publicationProfileKey;
 
     if (
-      !governance.isGoverned ||
+      !governance?.isGoverned ||
       !governance.enforcePublishReadiness ||
       !profileKey
     ) {
@@ -500,18 +504,15 @@ export class Content extends SmrtObject {
 
   override async save() {
     const shouldConsiderPublicationSnapshot = this.status === 'published';
-    const configuredGovernance = shouldConsiderPublicationSnapshot
-      ? this.getConfiguredGovernance()
-      : null;
 
     let governance: ResolvedContentGovernance | null = null;
     let previous: Content | null = null;
     let previousPublicationFingerprint: string | null = null;
 
-    if (configuredGovernance?.isGoverned) {
-      governance = await this.resolveGovernance();
+    if (shouldConsiderPublicationSnapshot) {
+      governance = await this.resolvePublicationGovernance();
 
-      if (governance.isGoverned && governance.transparencyEnabled) {
+      if (governance?.isGoverned && governance.transparencyEnabled) {
         previous = await this.getPersistedContent();
         previousPublicationFingerprint =
           await this.getLatestPublicationSnapshotFingerprint();
@@ -611,6 +612,46 @@ export class Content extends SmrtObject {
       contentVariant: this.variant,
       db: this.db,
     });
+  }
+
+  private async hasPersistedGovernanceAssignments(): Promise<boolean> {
+    if (!this.db || typeof this.db.query !== 'function') {
+      return false;
+    }
+
+    try {
+      const exactKey = buildContentGovernanceAssignmentKey(
+        this.type || '',
+        this.variant || '',
+      );
+      const typeOnlyKey = buildContentGovernanceAssignmentKey(this.type || '');
+      const keys =
+        exactKey === typeOnlyKey ? [exactKey] : [exactKey, typeOnlyKey];
+      const placeholders = keys.map(() => '?').join(', ');
+      const result = await this.db.query(
+        `SELECT 1 AS matched FROM content_governance_assignments WHERE key IN (${placeholders}) LIMIT 1`,
+        keys,
+      );
+      const rows = Array.isArray(result) ? result : (result?.rows ?? []);
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private async resolvePublicationGovernance(): Promise<ResolvedContentGovernance | null> {
+    const configuredGovernance = this.getConfiguredGovernance();
+
+    if (configuredGovernance.isGoverned) {
+      return this.resolveGovernance();
+    }
+
+    if (!(await this.hasPersistedGovernanceAssignments())) {
+      return null;
+    }
+
+    const governance = await this.resolveGovernance();
+    return governance.isGoverned ? governance : null;
   }
 
   private async requireGovernance(

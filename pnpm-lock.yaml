@@ -582,6 +582,12 @@ importers:
       '@happyvertical/smrt-images':
         specifier: workspace:*
         version: link:../images
+      '@happyvertical/smrt-messages':
+        specifier: workspace:*
+        version: link:../messages
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -11724,7 +11730,7 @@ snapshots:
       agentkeepalive: 4.6.0
       axios: 1.13.5(debug@4.4.3)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.13.5(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.5)
     transitivePeerDependencies:
       - debug
 
@@ -16274,7 +16280,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.5(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.13.5)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -18030,7 +18036,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.5(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.13.5):
     dependencies:
       axios: 1.13.5(debug@4.4.3)
 

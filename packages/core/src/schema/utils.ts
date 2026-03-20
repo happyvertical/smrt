@@ -91,6 +91,12 @@ export async function generateSchema(
   // This prevents bundling it into browser builds
   const { SchemaGenerator } = await import('./generator.js');
   const generator = new SchemaGenerator();
+  const registeredClass = ObjectRegistry.getClass(className);
+  const runtimeSchemaConfig = registeredClass?.config
+    ? {
+        conflictColumns: registeredClass.config.conflictColumns,
+      }
+    : undefined;
 
   let schemaDefinition: Awaited<
     ReturnType<
@@ -130,6 +136,7 @@ export async function generateSchema(
       className,
       tableName,
       cachedFields,
+      runtimeSchemaConfig,
     );
   }
 
@@ -137,12 +144,11 @@ export async function generateSchema(
   // This is critical for:
   // - STI tables where descendants have additional columns (issue #427)
   // - Per-engine DDL generation via SchemaManager
-  const registered = ObjectRegistry.getClass(className);
-  if (registered) {
+  if (registeredClass) {
     // Store the full SchemaDefinition for SchemaManager to use
-    registered.schema = schemaDefinition;
+    registeredClass.schema = schemaDefinition;
     // Also store generated DDL for backward compatibility
-    registered.schema.ddl = generator.generateSQL(schemaDefinition);
+    registeredClass.schema.ddl = generator.generateSQL(schemaDefinition);
   }
 
   return generator.generateSQL(schemaDefinition);

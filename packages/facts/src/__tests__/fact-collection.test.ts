@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FactSubjectCollection } from '../fact-subjects';
 import { FactCollection } from '../facts';
 
@@ -193,5 +193,32 @@ describe('getEntityBriefing', () => {
     expect(profileBriefing.facts[0].type).toBe('assertion');
     expect(placeBriefing.totalCount).toBe(1);
     expect(placeBriefing.facts[0].type).toBe('observation');
+  });
+
+  it('keeps semantic browse results scoped to the requested tenant', async () => {
+    const tenantFact = await facts.create({
+      tenantId: 'tenant-a',
+      textRefined: 'Bridge reopened for tenant A',
+      type: 'assertion',
+      status: 'active',
+    });
+    const otherTenantFact = await facts.create({
+      tenantId: 'tenant-b',
+      textRefined: 'Bridge reopened for tenant B',
+      type: 'assertion',
+      status: 'active',
+    });
+
+    vi.spyOn(facts, 'semanticSearch').mockResolvedValue([
+      tenantFact,
+      otherTenantFact,
+    ]);
+
+    const results = await facts.browseCatalog('bridge', {
+      tenantId: 'tenant-a',
+      latestOnly: false,
+    });
+
+    expect(results.map((fact) => fact.id)).toEqual([tenantFact.id]);
   });
 });

@@ -1,16 +1,22 @@
 import { json } from '@sveltejs/kit';
 import { dev } from '$app/environment';
+import { env } from '$env/dynamic/private';
 import { seedImages } from '$lib/server/seed-images';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
+async function ensureImageBaseTables() {
+  await getCollection<any>('@happyvertical/smrt-assets:Asset');
+  await getCollection<any>('@happyvertical/smrt-assets:AssetAssociation');
+}
+
 export const GET: RequestHandler = async () => {
   try {
-    await seedImages();
+    if (dev || env.SMRT_CONTENT_SEED_IMAGES === 'true') {
+      await seedImages();
+    }
 
-    // Ensure base tables are created before STI queries
-    await getCollection<any>('@happyvertical/smrt-assets:Asset');
-    await getCollection<any>('@happyvertical/smrt-assets:AssetAssociation');
+    await ensureImageBaseTables();
 
     const collection = await getCollection<any>(
       '@happyvertical/smrt-images:Image',
@@ -34,9 +40,7 @@ export const GET: RequestHandler = async () => {
 };
 
 export const POST: RequestHandler = async ({ request }) => {
-  // Ensure base tables are created before STI setup
-  await getCollection<any>('@happyvertical/smrt-assets:Asset');
-  await getCollection<any>('@happyvertical/smrt-assets:AssetAssociation');
+  await ensureImageBaseTables();
 
   const collection = await getCollection<any>(
     '@happyvertical/smrt-images:Image',

@@ -735,4 +735,57 @@ describe('Content governance', () => {
       }
     }
   });
+
+  it('enforces publish readiness for persisted governance assignments', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
+
+      const profiles = await ContentGovernanceProfileCollection.create({
+        db,
+      });
+      const publicationProfile = await profiles.create({
+        key: 'publication',
+        label: 'Publication',
+        requirements: [{ policyKey: 'safety', blocking: true }],
+      });
+      await publicationProfile.save();
+
+      const assignments = await ContentGovernanceAssignmentCollection.create({
+        db,
+      });
+      const assignment = await assignments.create({
+        key: 'article::',
+        contentType: 'article',
+        enabled: true,
+        publicationProfileKey: 'publication',
+        correctionProfileKey: 'correction',
+        enforcePublishReadiness: true,
+      });
+      await assignment.save();
+
+      const content = new Content({
+        name: 'persisted-governance-article',
+        title: 'Persisted governance article',
+        body: 'This draft has not been reviewed yet.',
+        type: 'article',
+        status: 'published',
+        db,
+      });
+      await content.initialize();
+
+      await expect(content.save()).rejects.toMatchObject({
+        code: 'VALIDATION_PUBLISH_READINESS',
+      });
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
 });
