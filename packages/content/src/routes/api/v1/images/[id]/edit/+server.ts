@@ -1,6 +1,6 @@
-import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
+import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
+import type { RequestHandler } from './$types';
 
 // Mock AI Variation
 export const POST: RequestHandler = async ({ params, request }) => {

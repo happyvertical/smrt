@@ -1,6 +1,6 @@
+import { ChatService } from '@happyvertical/smrt-chat';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
-import { ChatService } from '@happyvertical/smrt-chat';
 
 type ContentChatLocals = {
   tenantId?: string | null;

@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { getCollection } from '$lib/server/smrt';
 import { seedImages } from '$lib/server/seed-images';
+import { getCollection } from '$lib/server/smrt';
+import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async () => {
   try {

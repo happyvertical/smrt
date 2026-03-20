@@ -1,7 +1,7 @@
-import { json, type RequestHandler } from '@sveltejs/kit';
+import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import { ChatService } from '@happyvertical/smrt-chat';
+import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection, getSmrtConfig } from '$lib/server/smrt';
-import { getAI, type AIClientOptions } from '@happyvertical/ai';
 
 type ContentChatLocals = {
   tenantId?: string | null;
@@ -217,7 +217,7 @@ RULES:
       typeof session.systemPrompt === 'string' ? session.systemPrompt : '';
     conversation.unshift({
       role: 'system',
-      content: fullSystemPrompt + '\n\n' + contextPrompt,
+      content: `${fullSystemPrompt}\n\n${contextPrompt}`,
     });
 
     const response = await ai.chat(conversation, {
