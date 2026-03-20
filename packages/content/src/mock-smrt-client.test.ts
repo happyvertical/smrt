@@ -238,4 +238,183 @@ describe('mock-smrt-client', () => {
     expect(response.data.publicationVersion?.id).toBe('version-2');
     expect(response.data.publicationVersion?.version).toBe(4);
   });
+
+  it('builds request paths, verbs, and bodies for the remaining client surface', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockJsonResponse({
+        data: {},
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createClient('/api/v1');
+
+    await client.contents.create({ title: 'Created' });
+    await client.contents.update('content-1', { title: 'Updated' });
+    await client.contents.delete('content-1');
+    await client.contents.browseFacts('bridge', {
+      limit: 5,
+      minSimilarity: 0.8,
+      includeSuperseded: true,
+      latestOnly: false,
+    });
+    await client.contents.getFacts('content-1', 'supports');
+    await client.contents.syncFacts('content-1', {
+      factIds: ['fact-1'],
+      relationship: 'supports',
+    });
+    await client.contents.getReviews('content-1', 'facts');
+    await client.contents.getGovernanceDefinitions();
+    await client.contents.resolveGovernance({
+      type: 'article',
+      variant: 'news',
+    });
+    await client.contents.getReviewProfile('content-1', 'publication');
+    await client.contents.runReview('content-1', { kind: 'facts' });
+    await client.contents.getCorrections('content-1');
+    await client.contents.issueCorrection('content-1', {
+      summary: 'Fix claim',
+    });
+    await client.contents.getVersions('content-1');
+    await client.contents.createVersion('content-1', { kind: 'manual' });
+    await client.contents.restoreVersion('content-1', 3);
+    await client.contentGovernancePolicies.list();
+    await client.contentGovernancePolicies.get('policy-1');
+    await client.contentGovernancePolicies.create({ key: 'editorial' });
+    await client.contentGovernancePolicies.update('policy-1', {
+      label: 'Editorial',
+    });
+    await client.contentGovernancePolicies.delete('policy-1');
+    await client.contentGovernanceProfiles.list();
+    await client.contentGovernanceProfiles.get('profile-1');
+    await client.contentGovernanceProfiles.create({ key: 'publication' });
+    await client.contentGovernanceProfiles.update('profile-1', {
+      label: 'Publication',
+    });
+    await client.contentGovernanceProfiles.delete('profile-1');
+    await client.contentGovernanceAssignments.list();
+    await client.contentGovernanceAssignments.get('assignment-1');
+    await client.contentGovernanceAssignments.create({
+      contentType: 'article',
+    });
+    await client.contentGovernanceAssignments.update('assignment-1', {
+      label: 'Article Assignment',
+    });
+    await client.contentGovernanceAssignments.delete('assignment-1');
+
+    const calls = fetchMock.mock.calls.map(([url, options]) => ({
+      url,
+      method: options?.method || 'GET',
+      body: options?.body ? JSON.parse(String(options.body)) : null,
+    }));
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        {
+          url: '/api/v1/contents',
+          method: 'POST',
+          body: { title: 'Created' },
+        },
+        {
+          url: '/api/v1/contents/content-1',
+          method: 'PUT',
+          body: { title: 'Updated' },
+        },
+        {
+          url: '/api/v1/contents/content-1',
+          method: 'DELETE',
+          body: null,
+        },
+        {
+          url: '/api/v1/contents/facts?q=bridge&limit=5&minSimilarity=0.8&includeSuperseded=true&latestOnly=false',
+          method: 'GET',
+          body: null,
+        },
+        {
+          url: '/api/v1/contents/content-1/facts?relationship=supports',
+          method: 'GET',
+          body: null,
+        },
+        {
+          url: '/api/v1/contents/content-1/facts',
+          method: 'PUT',
+          body: { factIds: ['fact-1'], relationship: 'supports' },
+        },
+        {
+          url: '/api/v1/contents/content-1/reviews?kind=facts',
+          method: 'GET',
+          body: null,
+        },
+        {
+          url: '/api/v1/contents/governance',
+          method: 'GET',
+          body: null,
+        },
+        {
+          url: '/api/v1/contents/governance/resolve?type=article&variant=news',
+          method: 'GET',
+          body: null,
+        },
+        {
+          url: '/api/v1/contents/content-1/review-profiles/publication',
+          method: 'GET',
+          body: null,
+        },
+        {
+          url: '/api/v1/contents/content-1/reviews',
+          method: 'POST',
+          body: { kind: 'facts' },
+        },
+        {
+          url: '/api/v1/contents/content-1/corrections',
+          method: 'POST',
+          body: { summary: 'Fix claim' },
+        },
+        {
+          url: '/api/v1/contents/content-1/versions',
+          method: 'POST',
+          body: { kind: 'manual' },
+        },
+        {
+          url: '/api/v1/contents/content-1/versions',
+          method: 'POST',
+          body: { action: 'restore', versionNumber: 3 },
+        },
+        {
+          url: '/api/v1/contentgovernancepolicies/policy-1',
+          method: 'DELETE',
+          body: null,
+        },
+        {
+          url: '/api/v1/contentgovernanceprofiles/profile-1',
+          method: 'DELETE',
+          body: null,
+        },
+        {
+          url: '/api/v1/contentgovernanceassignments/assignment-1',
+          method: 'DELETE',
+          body: null,
+        },
+      ]),
+    );
+  });
+
+  it('throws on failed item, list, and delete requests', async () => {
+    const failedResponse = {
+      ok: false,
+      json: vi.fn(),
+      text: vi.fn().mockResolvedValue('bad request'),
+    } as any;
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failedResponse));
+    const client = createClient('/api/v1');
+
+    await expect(client.contents.get('content-404')).rejects.toThrow(
+      'bad request',
+    );
+    await expect(client.contents.list()).rejects.toThrow('bad request');
+    await expect(client.contents.delete('content-404')).rejects.toThrow(
+      'bad request',
+    );
+  });
 });
