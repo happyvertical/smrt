@@ -6,7 +6,9 @@ const config = {
 	kit: {
 		outDir: '.svelte-kit',
 		alias: {
-			'@happyvertical/smrt-facts': '../facts/src/index.ts'
+			'@happyvertical/smrt-facts': '../facts/src/index.ts',
+			'@happyvertical/smrt-messages': '../messages/src/index.ts',
+			'@happyvertical/smrt-profiles': '../profiles/src/index.ts'
 		}
 	}
 };

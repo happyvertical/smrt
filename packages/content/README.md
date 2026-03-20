@@ -161,6 +161,106 @@ publication snapshot is created. Built sites should render the published snapsho
 while editors can use the preview snapshot to inspect what will be shown publicly
 before publishing.
 
+## Content Contributions
+
+```typescript
+import {
+  ContentContributionType,
+  ContentContributions,
+  ContentContributionForm,
+  ContentContributionInbox,
+  ContentContributionPortal,
+  ContentContributionTypeManager,
+  ContentContributorManager,
+  configureContentContributions,
+} from '@happyvertical/smrt-content';
+
+configureContentContributions({
+  types: [
+    {
+      key: 'letter',
+      label: 'Letter to the editor',
+      enabled: true,
+      allowedChannels: ['web', 'email'],
+      allowText: true,
+      allowFiles: true,
+      allowEmptyText: false,
+      intakeRules: {
+        maxFiles: 3,
+        allowedMimePatterns: ['image/*', 'application/pdf'],
+        quarantineTextPatterns: ['lawsuit', 'defamation'],
+      },
+      promotion: {
+        targetContentType: 'article',
+        targetContentVariant: 'letter',
+        targetContentStatus: 'draft',
+        autoPromoteTrusted: true,
+        createAssets: true,
+        assetRelationship: 'attachment',
+      },
+    },
+  ],
+});
+
+const contributions = await ContentContributions.create({
+  db: { url: 'sqlite:./content.db' },
+});
+
+const result = await contributions.submitWebContribution({
+  typeKey: 'letter',
+  contributorEmail: 'reader@example.com',
+  contributorName: 'Reader',
+  title: 'A community letter',
+  body: 'Please publish this letter.',
+  attachments: [
+    {
+      filename: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      size: 1024,
+      fileKey: 'uploads/photo.jpg',
+    },
+  ],
+  tenantId: 'tenant-1',
+});
+
+const approved = await contributions.get({ id: result.contribution.id });
+await approved?.approveAction({
+  editorNote: 'Looks good for editorial review.',
+  targetStatus: 'draft',
+});
+```
+
+Content contributions are held separately from editorial `Content` and `Asset`
+records until they are promoted. That keeps plain `smrt-content` generic, while
+supporting community intake and moderation workflows when an app opts in.
+
+The contribution holding layer adds these first-class SMRT objects:
+
+- `ContentContributionType`
+- `ContentContributor`
+- `ContentContribution`
+- `ContentContributionRevision`
+- `ContentContributionAttachment`
+
+Key behavior:
+
+- web and email intake normalize into the same contribution package
+- one contribution can contain one primary text submission plus zero or more held files
+- asset-only submissions are allowed when the type permits empty text
+- contributors are resolved by email and linked to a `Profile`
+- trust levels are `standard`, `trusted`, or `blocked`
+- intake rules can accept, quarantine, or reject before editorial review
+- approval promotes into normal draft `Content` and `Asset` records with provenance metadata
+- governance starts after promotion, based on the promoted content `type` and `variant`
+
+Reusable Svelte exports for consuming apps:
+
+- `ContentContributionForm`
+- `ContentContributionPortal`
+- `ContentContributionInbox`
+- `ContentContributionTypeManager`
+- `ContentContributorManager`
+
 ## API
 
 ### Classes
@@ -172,6 +272,12 @@ before publishing.
 | `ContentDocument` | STI subclass for structured documents |
 | `Mirror` | STI subclass for mirrored/cached external content |
 | `Contents` | Collection with `mirror()`, `syncContentDir()`, `generateMissingThumbnails()`, `findWithGlobals()`, `getOrUpsert()` |
+| `ContentContribution` | Held inbound submission with approval, rejection, withdrawal, and promotion actions |
+| `ContentContributions` | Contribution collection with web intake, email ingestion, inbox, and contributor views |
+| `ContentContributionType` | Persisted contribution-type override for app-defined intake rules and promotion mapping |
+| `ContentContributor` | Contributor profile/trust record resolved by email |
+| `ContentContributionRevision` | Revision history for held submissions |
+| `ContentContributionAttachment` | Held file metadata that only becomes an `Asset` on promotion |
 | `ThumbnailGenerator` | Generates thumbnails via `headline-card`, `static-map`, or `ai-generate` strategies |
 
 ### Types
@@ -185,6 +291,7 @@ before publishing.
 | `HeadlineCardThumbnailOptions` | Options for headline-card strategy |
 | `StaticMapThumbnailOptions` | Options for static-map strategy |
 | `AIGenerateThumbnailOptions` | Options for ai-generate strategy |
+| `ContentContributionTypeDefinition` | App-defined contribution type shape passed to `configureContentContributions()` |
 
 ### Utilities
 
@@ -192,6 +299,8 @@ before publishing.
 |--------|------------|
 | `contentToString(content)` | Serialize content to markdown with YAML frontmatter |
 | `stringToContent(str)` | Parse markdown with frontmatter back to content data |
+| `configureContentGovernance(config)` | Define default governance policies, profiles, and assignments |
+| `configureContentContributions(config)` | Define default contribution types and intake rules |
 
 ## Dependencies
 
@@ -200,6 +309,8 @@ before publishing.
 | `@happyvertical/smrt-core` | ORM base (SmrtObject, SmrtCollection) |
 | `@happyvertical/smrt-assets` | Asset association support |
 | `@happyvertical/smrt-images` | Image/thumbnail creation |
+| `@happyvertical/smrt-messages` | Email ingestion and attachment normalization for contribution intake |
+| `@happyvertical/smrt-profiles` | Contributor/profile resolution by email |
 | `@happyvertical/smrt-tenancy` | Optional tenant scoping |
 | `@happyvertical/documents` | Document fetching and text extraction |
 | `@happyvertical/files` | Filesystem operations |

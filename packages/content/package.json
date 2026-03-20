@@ -49,6 +49,8 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-facts": "workspace:*",
     "@happyvertical/smrt-images": "workspace:*",
+    "@happyvertical/smrt-messages": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/spider": "catalog:",
