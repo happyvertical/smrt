@@ -180,6 +180,12 @@ export interface ContentOptions extends SmrtObjectOptions {
       listVersions: { method: 'GET', path: 'versions' },
       mutateVersionAction: { method: 'POST', path: 'versions' },
     },
+    serializers: {
+      item: {
+        importPath: '$lib/server/content-api-serializers',
+        exportName: 'serializeContent',
+      },
+    },
   },
   mcp: {
     include: ['list', 'get', 'create', 'update'], // AI tools for content management

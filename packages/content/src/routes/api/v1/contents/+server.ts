@@ -2,6 +2,7 @@
 // DO NOT EDIT - changes will be overwritten
 
 import { json } from '@sveltejs/kit';
+import { serializeContent as serializeItemResponse } from '$lib/server/content-api-serializers';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 // Note: @happyvertical/smrt-content:Content is auto-registered by the Vite plugin scanner
@@ -15,7 +16,11 @@ export const GET: RequestHandler = async ({ url }) => {
   const items = await collection.list({ limit, offset });
   const count = await collection.count();
 
-  return json({ items, count, limit, offset });
+  const serializedItems = await Promise.all(
+    items.map((item) => serializeItemResponse(item)),
+  );
+
+  return json({ items: serializedItems, count, limit, offset });
 };
 
 // Create new @happyvertical/smrt-content:content
@@ -26,5 +31,7 @@ export const POST: RequestHandler = async ({ request }) => {
   const item = await collection.create(data);
   await item.save();
 
-  return json(item, { status: 201 });
+  const serializedItem = await serializeItemResponse(item);
+
+  return json(serializedItem, { status: 201 });
 };

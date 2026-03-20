@@ -2,6 +2,7 @@
 // DO NOT EDIT - changes will be overwritten
 
 import { error, json } from '@sveltejs/kit';
+import { serializeContent as serializeItemResponse } from '$lib/server/content-api-serializers';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
@@ -13,7 +14,9 @@ export const GET: RequestHandler = async ({ params }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
-  return json(item);
+  const serializedItem = await serializeItemResponse(item);
+
+  return json(serializedItem);
 };
 
 // Update content
@@ -28,7 +31,9 @@ export const PUT: RequestHandler = async ({ params, request }) => {
   Object.assign(item, data);
   await item.save();
 
-  return json(item);
+  const serializedItem = await serializeItemResponse(item);
+
+  return json(serializedItem);
 };
 
 // Delete content
