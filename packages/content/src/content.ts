@@ -16,6 +16,7 @@ import {
   getAcceptedContentReviewStatuses,
   getContentGovernanceConfig,
   getContentReviewPolicy,
+  getContentReviewProfileKeys,
   getContentReviewRequirements,
   type IssueContentCorrectionOptions,
   isFactualContentEnabled,
@@ -160,6 +161,7 @@ export interface ContentOptions extends SmrtObjectOptions {
       'syncFactsState',
       'listReviews',
       'runReviewAction',
+      'listReviewProfilesAction',
       'evaluateReviewProfileAction',
       'listCorrections',
       'issueCorrectionAction',
@@ -171,6 +173,7 @@ export interface ContentOptions extends SmrtObjectOptions {
       syncFactsState: { method: 'PUT', path: 'facts' },
       listReviews: { method: 'GET', path: 'reviews' },
       runReviewAction: { method: 'POST', path: 'reviews' },
+      listReviewProfilesAction: { method: 'GET', path: 'review-profiles' },
       evaluateReviewProfileAction: {
         method: 'GET',
         path: 'review-profiles/[profileKey]',
@@ -691,6 +694,14 @@ export class Content extends SmrtObject {
 
   public getReviewRequirements(profileKey: string) {
     return getContentReviewRequirements(this, profileKey);
+  }
+
+  public async listReviewProfilesAction() {
+    return Promise.all(
+      getContentReviewProfileKeys().map((profileKey) =>
+        this.evaluateReviewProfile(profileKey),
+      ),
+    );
   }
 
   public async evaluateReviewProfile(

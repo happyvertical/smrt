@@ -24,6 +24,13 @@ export interface Props {
 
 type ReviewKind = 'facts' | 'safety' | 'custom';
 
+interface ReviewAction {
+  kind: ReviewKind;
+  label: string;
+  policyKey?: string;
+  instructions?: string;
+}
+
 let {
   contentId = 'new',
   selectedFactIds = [],
@@ -41,7 +48,8 @@ let catalogFacts = $state<FactData[]>([]);
 let reviews = $state<ContentReviewData[]>([]);
 let corrections = $state<ContentCorrectionData[]>([]);
 let versions = $state<ContentVersionData[]>([]);
-let reviewProfile = $state<ContentReviewProfileData | null>(null);
+let reviewProfiles = $state<ContentReviewProfileData[]>([]);
+let activeReviewProfileKey = $state(reviewProfileKey);
 
 let catalogLoading = $state(false);
 let syncingFacts = $state(false);
@@ -88,9 +96,21 @@ const selectedFactsResolved = $derived(
     .map((factId) => selectedFactsMap.get(factId))
     .filter((fact): fact is FactData => Boolean(fact)),
 );
+const activeReviewProfile = $derived(
+  reviewProfiles.find(
+    (profile) => profile.profileKey === activeReviewProfileKey,
+  ) ?? null,
+);
+const activeProfileReviewActions = $derived(
+  getReviewActions(activeReviewProfile),
+);
 
 $effect(() => {
   customReviewText = customReviewInstructions;
+});
+
+$effect(() => {
+  activeReviewProfileKey = reviewProfileKey;
 });
 
 $effect(() => {
@@ -106,7 +126,7 @@ $effect(() => {
     reviews = [];
     corrections = [];
     versions = [];
-    reviewProfile = null;
+    reviewProfiles = [];
     workflowError = null;
     workflowNotice = null;
     return;
@@ -149,6 +169,96 @@ function updateSelectedFacts(nextFacts: FactData[]) {
   );
 }
 
+function formatProfileLabel(profileKey: string) {
+  return profileKey
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function resolveActiveReviewProfileKey(
+  profiles: ContentReviewProfileData[],
+  preferredKey: string | null | undefined,
+  fallbackKey: string,
+) {
+  if (
+    preferredKey &&
+    profiles.some((profile) => profile.profileKey === preferredKey)
+  ) {
+    return preferredKey;
+  }
+
+  if (
+    fallbackKey &&
+    profiles.some((profile) => profile.profileKey === fallbackKey)
+  ) {
+    return fallbackKey;
+  }
+
+  return profiles[0]?.profileKey ?? fallbackKey;
+}
+
+function createReviewAction(
+  policyKey: string,
+  label: string,
+  instructions?: string,
+): ReviewAction {
+  if (policyKey === 'facts') {
+    return {
+      kind: 'facts',
+      label,
+      policyKey,
+    };
+  }
+
+  if (policyKey === 'safety') {
+    return {
+      kind: 'safety',
+      label,
+      policyKey,
+    };
+  }
+
+  return {
+    kind: 'custom',
+    label,
+    policyKey,
+    instructions,
+  };
+}
+
+function getReviewActions(
+  profile: ContentReviewProfileData | null,
+): ReviewAction[] {
+  const requirements = profile?.requirements ?? [];
+  if (requirements.length === 0) {
+    return [
+      createReviewAction('facts', 'Facts Review'),
+      createReviewAction('safety', 'Safety Review'),
+    ];
+  }
+
+  const seen = new Set<string>();
+  return requirements.flatMap((requirement) => {
+    if (seen.has(requirement.policyKey)) {
+      return [];
+    }
+
+    seen.add(requirement.policyKey);
+    return [
+      createReviewAction(
+        requirement.policyKey,
+        requirement.label || formatProfileLabel(requirement.policyKey),
+      ),
+    ];
+  });
+}
+
+function getReviewActionBusyKey(action: ReviewAction) {
+  return action.policyKey || action.kind;
+}
+
 async function searchFacts(query = factQuery) {
   catalogLoading = true;
   catalogError = null;
@@ -184,7 +294,7 @@ async function syncFactsIfSaved(nextFacts: FactData[]) {
       relationship: defaultRelationship,
     });
     updateSelectedFacts(response.data.facts || nextFacts);
-    await refreshReviewProfile();
+    await refreshReviewProfiles();
     workflowNotice = 'Saved fact associations.';
   } catch (err: any) {
     workflowError = err.message || 'Failed to sync facts';
@@ -222,20 +332,25 @@ async function loadSavedWorkflow() {
       reviewsResponse,
       correctionsResponse,
       versionsResponse,
-      reviewProfileResponse,
+      reviewProfilesResponse,
     ] = await Promise.all([
       client.contents.getFacts(savedContentId),
       client.contents.getReviews(savedContentId),
       client.contents.getCorrections(savedContentId),
       client.contents.getVersions(savedContentId),
-      client.contents.getReviewProfile(savedContentId, reviewProfileKey),
+      client.contents.getReviewProfiles(savedContentId),
     ]);
 
     updateSelectedFacts(factsResponse.data.facts || []);
     reviews = reviewsResponse.data;
     corrections = correctionsResponse.data;
     versions = versionsResponse.data;
-    reviewProfile = reviewProfileResponse.data;
+    reviewProfiles = reviewProfilesResponse.data;
+    activeReviewProfileKey = resolveActiveReviewProfileKey(
+      reviewProfilesResponse.data,
+      activeReviewProfileKey,
+      reviewProfileKey,
+    );
   } catch (err: any) {
     workflowError = err.message || 'Failed to load factual workflow state';
   } finally {
@@ -243,30 +358,34 @@ async function loadSavedWorkflow() {
   }
 }
 
-async function runReview(kind: ReviewKind) {
+async function runReview(action: ReviewAction) {
   if (!savedContentId) {
     return;
   }
 
-  reviewBusy = kind;
+  reviewBusy = getReviewActionBusyKey(action);
   workflowError = null;
   workflowNotice = null;
 
   try {
     const payload: Record<string, any> = {
-      kind,
+      kind: action.kind,
       factIds: selectedFactIds,
     };
 
-    if (kind === 'custom') {
-      payload.policyKey = customReviewPolicyKey;
-      payload.instructions = customReviewText;
+    if (action.policyKey) {
+      payload.policyKey = action.policyKey;
+    }
+
+    if (action.kind === 'custom') {
+      payload.policyKey = action.policyKey || customReviewPolicyKey;
+      payload.instructions = action.instructions ?? customReviewText;
     }
 
     const response = await client.contents.runReview(savedContentId, payload);
     reviews = [response.data, ...reviews];
-    await refreshReviewProfile();
-    workflowNotice = `${kind} review completed.`;
+    await refreshReviewProfiles();
+    workflowNotice = `${action.label} completed.`;
     await refreshVersions();
   } catch (err: any) {
     workflowError = err.message || 'Failed to run content review';
@@ -367,17 +486,19 @@ async function refreshVersions() {
   versions = response.data;
 }
 
-async function refreshReviewProfile() {
+async function refreshReviewProfiles() {
   if (!savedContentId) {
-    reviewProfile = null;
+    reviewProfiles = [];
     return;
   }
 
-  const response = await client.contents.getReviewProfile(
-    savedContentId,
+  const response = await client.contents.getReviewProfiles(savedContentId);
+  reviewProfiles = response.data;
+  activeReviewProfileKey = resolveActiveReviewProfileKey(
+    response.data,
+    activeReviewProfileKey,
     reviewProfileKey,
   );
-  reviewProfile = response.data;
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -503,25 +624,38 @@ function hasCustomReview() {
         Save this content to run fact reviews, safety reviews, corrections, and version management.
       </p>
     {:else}
-      {#if reviewProfile}
+      {#if reviewProfiles.length > 0}
+        <label class="workflow-field">
+          Review profile
+          <select bind:value={activeReviewProfileKey}>
+            {#each reviewProfiles as profile (profile.profileKey)}
+              <option value={profile.profileKey}>
+                {formatProfileLabel(profile.profileKey)}
+              </option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+
+      {#if activeReviewProfile}
         <div class="review-profile-card">
           <div class="review-profile-card__header">
-            <strong>{reviewProfile.profileKey}</strong>
+            <strong>{formatProfileLabel(activeReviewProfile.profileKey)}</strong>
             <div class="review-profile-card__badges">
-              <span class={`pill ${reviewProfile.ready ? 'pill--passed' : 'pill--failed'}`}>
-                {reviewProfile.ready ? 'Blocking-ready' : 'Blocking issues'}
+              <span class={`pill ${activeReviewProfile.ready ? 'pill--passed' : 'pill--failed'}`}>
+                {activeReviewProfile.ready ? 'Blocking-ready' : 'Blocking issues'}
               </span>
-              <span class={`pill ${reviewProfile.complete ? 'pill--neutral' : 'pill--flagged'}`}>
-                {reviewProfile.complete ? 'All reviews run' : 'Reviews missing'}
+              <span class={`pill ${activeReviewProfile.complete ? 'pill--neutral' : 'pill--flagged'}`}>
+                {activeReviewProfile.complete ? 'All reviews run' : 'Reviews missing'}
               </span>
             </div>
           </div>
 
-          {#if reviewProfile.requirements?.length === 0}
+          {#if activeReviewProfile.requirements?.length === 0}
             <p class="empty-copy">No review requirements are configured for this profile.</p>
           {:else}
             <div class="review-profile-list">
-              {#each reviewProfile.requirements as requirement (requirement.policyKey)}
+              {#each activeReviewProfile.requirements as requirement (requirement.policyKey)}
                 <div class="review-profile-item">
                   <div class="review-profile-item__body">
                     <strong>{requirement.label}</strong>
@@ -551,20 +685,19 @@ function hasCustomReview() {
       {/if}
 
       <div class="review-actions">
-        <button
-          type="button"
-          disabled={reviewBusy !== null}
-          onclick={() => void runReview('facts')}
-        >
-          {reviewBusy === 'facts' ? 'Reviewing facts...' : 'Review Facts'}
-        </button>
-        <button
-          type="button"
-          disabled={reviewBusy !== null}
-          onclick={() => void runReview('safety')}
-        >
-          {reviewBusy === 'safety' ? 'Reviewing safety...' : 'Review Safety'}
-        </button>
+        {#each activeProfileReviewActions as action (action.policyKey ?? action.kind)}
+          <button
+            type="button"
+            disabled={reviewBusy !== null}
+            onclick={() => void runReview(action)}
+          >
+            {#if reviewBusy === getReviewActionBusyKey(action)}
+              Running {action.label.toLowerCase()}...
+            {:else}
+              Run {action.label}
+            {/if}
+          </button>
+        {/each}
       </div>
 
       {#if hasCustomReview()}
@@ -579,9 +712,20 @@ function hasCustomReview() {
         <button
           type="button"
           disabled={reviewBusy !== null}
-          onclick={() => void runReview('custom')}
+          onclick={() =>
+            void runReview(
+              createReviewAction(
+                customReviewPolicyKey,
+                customReviewLabel,
+                customReviewText,
+              ),
+            )}
         >
-          {reviewBusy === 'custom' ? 'Running custom review...' : customReviewLabel}
+          {#if reviewBusy === customReviewPolicyKey}
+            Running {customReviewLabel.toLowerCase()}...
+          {:else}
+            {customReviewLabel}
+          {/if}
         </button>
       {/if}
 

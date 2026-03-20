@@ -72,4 +72,35 @@ describe('mock-smrt-client', () => {
       data: { id: 'content-4', title: 'Raw' },
     });
   });
+
+  it('reads generated review-profile list responses from the result array', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        mockJsonResponse({
+          action: 'listReviewProfilesAction',
+          result: [
+            {
+              profileKey: 'publication',
+              ready: true,
+              complete: false,
+              requirements: [],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const client = createClient('/api/v1');
+    const response = await client.contents.getReviewProfiles('content-5');
+
+    expect(response.data).toEqual([
+      {
+        profileKey: 'publication',
+        ready: true,
+        complete: false,
+        requirements: [],
+      },
+    ]);
+  });
 });

@@ -293,6 +293,10 @@ export function getContentReviewProfile(
   return requirements.map(cloneReviewRequirement);
 }
 
+export function getContentReviewProfileKeys(): string[] {
+  return Object.keys(governanceConfig.reviewProfiles);
+}
+
 export function getContentReviewRequirements(
   content: Content,
   profileKey: string,

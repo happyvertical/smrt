@@ -5,6 +5,7 @@ import { ContentCorrection } from './content-correction';
 import {
   buildContentReviewPrompt,
   configureContentGovernance,
+  getContentReviewProfileKeys,
   getContentReviewRequirements,
   parseContentReviewResponse,
   resetContentGovernanceConfig,
@@ -171,6 +172,7 @@ describe('FactualContent foundations', () => {
     expect(
       publicationRequirements.map((requirement) => requirement.policyKey),
     ).toContain('facts');
+    expect(getContentReviewProfileKeys()).toContain('publication');
   });
 
   it('evaluates review profile readiness separately from completeness', async () => {
@@ -226,6 +228,71 @@ describe('FactualContent foundations', () => {
         evaluation.requirements.find(
           (requirement) => requirement.policyKey === 'safety',
         )?.satisfied,
+      ).toBe(true);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('lists configured review profile evaluations for content', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      configureContentGovernance({
+        reviewProfiles: {
+          publication: [
+            {
+              policyKey: 'safety',
+              blocking: true,
+            },
+            {
+              policyKey: 'facts',
+              blocking: false,
+            },
+          ],
+          correction: [
+            {
+              policyKey: 'safety',
+              blocking: true,
+            },
+          ],
+        },
+      });
+
+      const content = new FactualContent({
+        name: 'council-update',
+        title: 'Council update',
+        body: 'Council approved the budget.',
+        db,
+      });
+      await content.initialize();
+      await content.save();
+
+      const reviews = await ContentReviewCollection.create({ db });
+      await reviews.create({
+        contentId: content.id,
+        kind: 'safety',
+        policyKey: 'safety',
+        status: 'passed',
+        summary: 'Safety review passed.',
+      });
+
+      const profiles = await content.listReviewProfilesAction();
+
+      expect(profiles.map((profile) => profile.profileKey)).toEqual([
+        'publication',
+        'correction',
+      ]);
+      expect(
+        profiles.find((profile) => profile.profileKey === 'publication')?.ready,
+      ).toBe(true);
+      expect(
+        profiles.find((profile) => profile.profileKey === 'correction')?.ready,
       ).toBe(true);
     } finally {
       if (typeof db.close === 'function') {

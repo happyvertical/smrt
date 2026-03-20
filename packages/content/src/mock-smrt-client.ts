@@ -356,6 +356,18 @@ class ApiClient {
       return { data: getListData<ContentReviewData>(payload), success: true };
     },
 
+    getReviewProfiles: async (
+      id: string,
+    ): Promise<ApiResponse<ContentReviewProfileData[]>> => {
+      const res = await fetch(`${this.baseUrl}/contents/${id}/review-profiles`);
+      if (!res.ok) throw new Error(await res.text());
+      const payload = await res.json();
+      return {
+        data: getListData<ContentReviewProfileData>(payload),
+        success: true,
+      };
+    },
+
     getReviewProfile: async (
       id: string,
       profileKey: string,

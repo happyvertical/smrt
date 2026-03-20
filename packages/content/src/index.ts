@@ -35,6 +35,7 @@ export {
   getContentGovernanceConfig,
   getContentReviewPolicy,
   getContentReviewProfile,
+  getContentReviewProfileKeys,
   getContentReviewRequirements,
   isFactualContentEnabled,
   parseContentReviewResponse,
