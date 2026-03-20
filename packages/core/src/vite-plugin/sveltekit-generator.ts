@@ -41,6 +41,7 @@ interface ResolvedApiActionRouteConfig {
   scope: 'item' | 'collection';
   method: ApiHttpMethod;
   pathSegments: string[];
+  pathParamNames: string[];
 }
 
 interface GeneratedActionRouteSpec {
@@ -181,6 +182,13 @@ function normalizeCustomRoutePath(actionName: string, path?: string): string[] {
   return normalizedPath.length > 0 ? normalizedPath : [actionName];
 }
 
+function extractRoutePathParamNames(pathSegments: string[]): string[] {
+  return pathSegments
+    .filter((segment) => /^\[[^\]]+\]$/.test(segment))
+    .map((segment) => segment.slice(1, -1))
+    .filter(Boolean);
+}
+
 function resolveApiActionRouteConfig(
   actionName: string,
   actionDef: { isStatic?: boolean },
@@ -197,7 +205,42 @@ function resolveApiActionRouteConfig(
     scope: routeConfig?.scope || defaultScope,
     method: normalizeApiHttpMethod(routeConfig?.method),
     pathSegments: normalizeCustomRoutePath(actionName, routeConfig?.path),
+    pathParamNames: extractRoutePathParamNames(
+      normalizeCustomRoutePath(actionName, routeConfig?.path),
+    ),
   };
+}
+
+function buildRouteHandlerArgs(
+  includeParams: boolean,
+  includeRequest: boolean,
+): string {
+  const args: string[] = [];
+
+  if (includeParams) {
+    args.push('params');
+  }
+
+  if (includeRequest) {
+    args.push('request');
+  }
+
+  return args.length > 0 ? `{ ${args.join(', ')} }` : '';
+}
+
+function buildPathParamsObjectLiteral(pathParamNames: string[]): string {
+  if (pathParamNames.length === 0) {
+    return '{}';
+  }
+
+  return `{
+${pathParamNames
+  .map(
+    (paramName) =>
+      `    ${JSON.stringify(paramName)}: params[${JSON.stringify(paramName)}],`,
+  )
+  .join('\n')}
+  }`;
 }
 
 function findItemClassRegistryKey(
@@ -1187,14 +1230,39 @@ function generateActionRouteHandler(
   const handlerName = routeConfig.method;
   const hasInput = actionDef.parameters.length > 0;
   const needsRequest = hasInput;
+  const hasPathParams = routeConfig.pathParamNames.length > 0;
+  const pathParamsObjectLiteral = buildPathParamsObjectLiteral(
+    routeConfig.pathParamNames,
+  );
   const optionsLoad =
     hasInput && routeConfig.method === 'GET'
-      ? '  const options = Object.fromEntries(new URL(request.url).searchParams.entries());\n'
+      ? hasPathParams
+        ? [
+            `  const pathParams = ${pathParamsObjectLiteral};`,
+            '  const options = {',
+            '    ...Object.fromEntries(new URL(request.url).searchParams.entries()),',
+            '    ...pathParams,',
+            '  };',
+            '',
+          ].join('\n')
+        : '  const options = Object.fromEntries(new URL(request.url).searchParams.entries());\n'
       : hasInput
-        ? '  const options = await request.json();\n'
+        ? hasPathParams
+          ? [
+              `  const pathParams = ${pathParamsObjectLiteral};`,
+              '  const options = {',
+              '    ...(await request.json()),',
+              '    ...pathParams,',
+              '  };',
+              '',
+            ].join('\n')
+          : '  const options = await request.json();\n'
         : '';
-  const collectionHandlerArgs = needsRequest ? '{ request }' : '';
-  const itemHandlerArgs = needsRequest ? '{ params, request }' : '{ params }';
+  const collectionHandlerArgs = buildRouteHandlerArgs(
+    hasPathParams,
+    needsRequest,
+  );
+  const itemHandlerArgs = buildRouteHandlerArgs(true, needsRequest);
 
   if (hostType === 'collection') {
     return `// Custom collection method: ${actionName}

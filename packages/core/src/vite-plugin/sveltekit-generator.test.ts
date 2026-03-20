@@ -567,6 +567,67 @@ describe('SvelteKit Route Generator', () => {
       expect(content).not.toContain('params.id');
     });
 
+    it('should pass dynamic path params into custom GET action options', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Document: {
+            className: 'Document',
+            collection: 'documents',
+            fields: {},
+            methods: {
+              evaluateReviewProfileAction: {
+                name: 'evaluateReviewProfileAction',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['evaluateReviewProfileAction'],
+                routes: {
+                  evaluateReviewProfileAction: {
+                    method: 'GET',
+                    path: 'review-profiles/[profileKey]',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const reviewProfileRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0]
+            .toString()
+            .includes('documents/[id]/review-profiles/[profileKey]/+server.ts'),
+        );
+
+      expect(reviewProfileRoute).toBeDefined();
+      const content = reviewProfileRoute?.[1] as string;
+
+      expect(content).toContain(
+        'export const GET: RequestHandler = async ({ params, request }) => {',
+      );
+      expect(content).toContain('const pathParams = {');
+      expect(content).toContain('"profileKey": params["profileKey"],');
+      expect(content).toContain(
+        '...Object.fromEntries(new URL(request.url).searchParams.entries()),',
+      );
+      expect(content).toContain('...pathParams,');
+      expect(content).toContain(
+        'await item.evaluateReviewProfileAction(options)',
+      );
+    });
+
     it('should merge custom handlers that share the same route path', async () => {
       const manifest: SmartObjectManifest = {
         objects: {
