@@ -42,6 +42,7 @@ export interface ContentReviewResult {
 export interface ContentReviewPolicy {
   key: string;
   label?: string;
+  kind?: ContentReviewKind;
   instructions: string;
 }
 
@@ -54,6 +55,7 @@ export interface ContentReviewRequirement {
 }
 
 export interface ContentReviewProfileEvaluationItem {
+  kind: ContentReviewKind;
   policyKey: string;
   label: string;
   blocking: boolean;
@@ -140,6 +142,7 @@ const DEFAULT_REVIEW_POLICIES: Record<string, ContentReviewPolicy> = {
   facts: {
     key: 'facts',
     label: 'Facts Review',
+    kind: 'facts',
     instructions: [
       'Compare the draft copy against the supplied facts only.',
       'Flag contradictions, unsupported claims, stale claims, and places where the copy should cite or qualify a statement.',
@@ -149,6 +152,7 @@ const DEFAULT_REVIEW_POLICIES: Record<string, ContentReviewPolicy> = {
   safety: {
     key: 'safety',
     label: 'Safety Review',
+    kind: 'safety',
     instructions: DEFAULT_SAFETY_PROMPT,
   },
 };
@@ -284,6 +288,22 @@ export function getContentReviewPolicy(
   policyKey: string,
 ): ContentReviewPolicy | null {
   return governanceConfig.reviewPolicies[policyKey] ?? null;
+}
+
+export function getContentReviewKind(
+  policyKey: string,
+  fallback: ContentReviewKind = 'custom',
+): ContentReviewKind {
+  const configuredKind = governanceConfig.reviewPolicies[policyKey]?.kind;
+  if (configuredKind) {
+    return configuredKind;
+  }
+
+  if (policyKey === 'facts' || policyKey === 'safety') {
+    return policyKey;
+  }
+
+  return fallback;
 }
 
 export function getContentReviewProfile(

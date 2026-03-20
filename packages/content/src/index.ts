@@ -33,6 +33,7 @@ export {
   DEFAULT_SAFETY_PROMPT,
   getAcceptedContentReviewStatuses,
   getContentGovernanceConfig,
+  getContentReviewKind,
   getContentReviewPolicy,
   getContentReviewProfile,
   getContentReviewProfileKeys,

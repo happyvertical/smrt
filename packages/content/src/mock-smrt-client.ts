@@ -118,6 +118,7 @@ export interface ContentVersionData {
 }
 
 export interface ContentReviewProfileRequirementData {
+  kind?: string;
   policyKey: string;
   label: string;
   blocking: boolean;

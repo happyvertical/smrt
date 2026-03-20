@@ -1,6 +1,6 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContentCorrection } from './content-correction';
 import {
   buildContentReviewPrompt,
@@ -294,6 +294,68 @@ describe('FactualContent foundations', () => {
       expect(
         profiles.find((profile) => profile.profileKey === 'correction')?.ready,
       ).toBe(true);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('uses configured policy kinds for app-level review policies', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      configureContentGovernance({
+        reviewPolicies: {
+          legal: {
+            key: 'legal',
+            label: 'Legal Review',
+            kind: 'safety',
+            instructions: 'Check legal exposure and risky claims.',
+          },
+        },
+        reviewProfiles: {
+          publication: [
+            {
+              policyKey: 'legal',
+              blocking: true,
+            },
+          ],
+        },
+      });
+
+      const content = new FactualContent({
+        name: 'court-update',
+        title: 'Court update',
+        body: 'The filing made several allegations.',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: vi.fn().mockResolvedValue(
+            JSON.stringify({
+              status: 'passed',
+              summary: 'Legal review passed.',
+              findings: [],
+            }),
+          ),
+        },
+      });
+      await content.initialize();
+      await content.save();
+
+      const evaluation = await content.evaluateReviewProfile('publication');
+      expect(evaluation.requirements[0]?.kind).toBe('safety');
+
+      const review = await content.runReview({
+        policyKey: 'legal',
+        createVersion: false,
+      });
+
+      expect(review.kind).toBe('safety');
+      expect(review.policyKey).toBe('legal');
     } finally {
       if (typeof db.close === 'function') {
         await db.close();

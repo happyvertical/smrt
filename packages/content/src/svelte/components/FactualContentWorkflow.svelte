@@ -200,32 +200,28 @@ function resolveActiveReviewProfileKey(
 }
 
 function createReviewAction(
+  kind: ReviewKind,
   policyKey: string,
   label: string,
   instructions?: string,
 ): ReviewAction {
-  if (policyKey === 'facts') {
-    return {
-      kind: 'facts',
-      label,
-      policyKey,
-    };
-  }
-
-  if (policyKey === 'safety') {
-    return {
-      kind: 'safety',
-      label,
-      policyKey,
-    };
-  }
-
   return {
-    kind: 'custom',
+    kind,
     label,
     policyKey,
     instructions,
   };
+}
+
+function normalizeReviewKind(kind: string | null | undefined): ReviewKind {
+  switch (kind) {
+    case 'facts':
+    case 'safety':
+    case 'custom':
+      return kind;
+    default:
+      return 'custom';
+  }
 }
 
 function getReviewActions(
@@ -234,8 +230,8 @@ function getReviewActions(
   const requirements = profile?.requirements ?? [];
   if (requirements.length === 0) {
     return [
-      createReviewAction('facts', 'Facts Review'),
-      createReviewAction('safety', 'Safety Review'),
+      createReviewAction('facts', 'facts', 'Facts Review'),
+      createReviewAction('safety', 'safety', 'Safety Review'),
     ];
   }
 
@@ -248,6 +244,7 @@ function getReviewActions(
     seen.add(requirement.policyKey);
     return [
       createReviewAction(
+        normalizeReviewKind(requirement.kind),
         requirement.policyKey,
         requirement.label || formatProfileLabel(requirement.policyKey),
       ),
@@ -715,6 +712,7 @@ function hasCustomReview() {
           onclick={() =>
             void runReview(
               createReviewAction(
+                'custom',
                 customReviewPolicyKey,
                 customReviewLabel,
                 customReviewText,

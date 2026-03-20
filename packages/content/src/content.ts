@@ -15,6 +15,7 @@ import {
   type CreateContentVersionOptions,
   getAcceptedContentReviewStatuses,
   getContentGovernanceConfig,
+  getContentReviewKind,
   getContentReviewPolicy,
   getContentReviewProfileKeys,
   getContentReviewRequirements,
@@ -736,6 +737,7 @@ export class Content extends SmrtObject {
           latestStatus !== null && acceptedStatuses.includes(latestStatus);
 
         return {
+          kind: getContentReviewKind(requirement.policyKey),
           policyKey: requirement.policyKey,
           label:
             requirement.label ||
@@ -785,16 +787,18 @@ export class Content extends SmrtObject {
       throw new Error('Cannot review unsaved content');
     }
 
-    const kind = options.kind || 'custom';
-    const policyKey = options.policyKey || kind;
+    const policyKey = options.policyKey || options.kind || 'custom';
     const policy = getContentReviewPolicy(policyKey);
+    const kind = options.kind || getContentReviewKind(policyKey);
     const facts =
-      options.facts && options.facts.length > 0
+      options.facts !== undefined
         ? options.facts
-        : await this.getFacts({
-            latestOnly: true,
-            includeSuperseded: false,
-          });
+        : kind === 'facts' || Boolean(options.factIds?.length)
+          ? await this.getFacts({
+              latestOnly: true,
+              includeSuperseded: false,
+            })
+          : [];
     const filteredFacts =
       options.factIds && options.factIds.length > 0
         ? facts.filter((fact) => options.factIds?.includes(fact.id as string))
