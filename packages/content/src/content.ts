@@ -151,6 +151,11 @@ export interface ContentOptions extends SmrtObjectOptions {
   tableStrategy: 'sti',
   api: {
     include: [
+      'list',
+      'get',
+      'create',
+      'update',
+      'delete',
       'getFactsState',
       'syncFactsState',
       'listReviews',
