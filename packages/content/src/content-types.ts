@@ -15,6 +15,9 @@ import { Content, type ContentOptions } from './content';
  */
 @smrt({
   tableStrategy: 'sti',
+  api: false,
+  mcp: false,
+  cli: false,
 })
 export class Article extends Content {
   constructor(options: ContentOptions = {}) {
@@ -30,6 +33,9 @@ export class Article extends Content {
  */
 @smrt({
   tableStrategy: 'sti',
+  api: false,
+  mcp: false,
+  cli: false,
 })
 export class ContentDocument extends Content {
   constructor(options: ContentOptions = {}) {
@@ -45,10 +51,46 @@ export class ContentDocument extends Content {
  */
 @smrt({
   tableStrategy: 'sti',
+  api: false,
+  mcp: false,
+  cli: false,
 })
 export class Mirror extends Content {
   constructor(options: ContentOptions = {}) {
     super(options);
     // Mirror-specific initialization can go here
+  }
+}
+
+/**
+ * FactualContent type
+ *
+ * Opt-in base class for apps that want fact-linked authoring, reviews,
+ * and correction workflows without forcing every Content record into it.
+ */
+@smrt({
+  tableStrategy: 'sti',
+  api: false,
+  mcp: false,
+  cli: false,
+})
+export class FactualContent extends Content {
+  constructor(options: ContentOptions = {}) {
+    super({
+      ...options,
+      metadata: {
+        ...(options.metadata || {}),
+        factual: true,
+        governance: {
+          ...((options.metadata as any)?.governance || {}),
+          enabled: true,
+          factual: true,
+        },
+      },
+    });
+  }
+
+  override isFactual(): boolean {
+    return true;
   }
 }

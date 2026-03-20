@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
@@ -20,6 +21,14 @@ export default defineConfig(async ({ mode }) => {
   const { smrtPlugin } = await import('@happyvertical/smrt-core/vite-plugin');
 
   return {
+    resolve: {
+      alias: {
+        '@happyvertical/smrt-facts': resolve(
+          __dirname,
+          'src/workspace-facts.ts',
+        ),
+      },
+    },
     plugins: [
       sveltekit(),
       smrtPlugin({
@@ -28,7 +37,7 @@ export default defineConfig(async ({ mode }) => {
         generateTypes: false,
         svelteKit: {
           enabled: true,
-          routesDir: 'src/routes/api',
+          routesDir: 'src/routes/api/v1',
           objectsDir: 'src/models',
         },
       }),

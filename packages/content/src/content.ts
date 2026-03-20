@@ -5,10 +5,33 @@ import {
 } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  buildContentReviewPrompt,
+  type ContentReviewProfileEvaluation,
+  type CreateContentVersionOptions,
+  getAcceptedContentReviewStatuses,
+  getContentGovernanceConfig,
+  getContentReviewPolicy,
+  getContentReviewRequirements,
+  type IssueContentCorrectionOptions,
+  isFactualContentEnabled,
+  parseContentReviewResponse,
+  type RunContentReviewOptions,
+} from './content-governance';
 import { ContentReferences } from './content-references';
+import type { ContentReview } from './content-review';
+import {
+  serializeContent,
+  serializeContentCorrection,
+  serializeContentReview,
+  serializeContentVersion,
+  serializeFact,
+  serializeFactLink,
+} from './serialization';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
 
@@ -127,7 +150,31 @@ export interface ContentOptions extends SmrtObjectOptions {
 @smrt({
   tableStrategy: 'sti',
   api: {
-    include: ['list', 'get', 'create', 'update', 'delete'], // Full CRUD operations
+    include: [
+      'getFactsState',
+      'syncFactsState',
+      'listReviews',
+      'runReviewAction',
+      'evaluateReviewProfileAction',
+      'listCorrections',
+      'issueCorrectionAction',
+      'listVersions',
+      'mutateVersionAction',
+    ],
+    routes: {
+      getFactsState: { method: 'GET', path: 'facts' },
+      syncFactsState: { method: 'PUT', path: 'facts' },
+      listReviews: { method: 'GET', path: 'reviews' },
+      runReviewAction: { method: 'POST', path: 'reviews' },
+      evaluateReviewProfileAction: {
+        method: 'GET',
+        path: 'review-profiles',
+      },
+      listCorrections: { method: 'GET', path: 'corrections' },
+      issueCorrectionAction: { method: 'POST', path: 'corrections' },
+      listVersions: { method: 'GET', path: 'versions' },
+      mutateVersionAction: { method: 'POST', path: 'versions' },
+    },
   },
   mcp: {
     include: ['list', 'get', 'create', 'update'], // AI tools for content management
@@ -287,6 +334,33 @@ export class Content extends SmrtObject {
     return ContentReferences.create({ db: this.db });
   }
 
+  private async getFactCollection() {
+    const { FactCollection } = await import('@happyvertical/smrt-facts');
+    return FactCollection.create(this.options);
+  }
+
+  private async getFactContentCollection() {
+    const { FactContentCollection } = await import('@happyvertical/smrt-facts');
+    return FactContentCollection.create(this.options);
+  }
+
+  private async getContentVersionCollection() {
+    const { ContentVersionCollection } = await import('./content-versions');
+    return ContentVersionCollection.create(this.options);
+  }
+
+  private async getContentReviewCollection() {
+    const { ContentReviewCollection } = await import('./content-reviews');
+    return ContentReviewCollection.create(this.options);
+  }
+
+  private async getContentCorrectionCollection() {
+    const { ContentCorrectionCollection } = await import(
+      './content-corrections'
+    );
+    return ContentCorrectionCollection.create(this.options);
+  }
+
   private async getContentsCollection() {
     const { Contents } = await import('./contents');
     return Contents.create({ db: this.db });
@@ -407,6 +481,486 @@ export class Content extends SmrtObject {
       .map((targetId) => referencesById.get(targetId))
       .filter(Boolean) as Content[];
     return this.references;
+  }
+
+  public isFactual(): boolean {
+    return isFactualContentEnabled(this);
+  }
+
+  public async getFactLinks(
+    options: { relationship?: FactContentRelationship } = {},
+  ) {
+    if (!this.id) {
+      return [];
+    }
+
+    const links = await this.getFactContentCollection();
+    return options.relationship
+      ? links.getForContentByRelationship(
+          this.id as string,
+          options.relationship,
+        )
+      : links.getForContent(this.id as string);
+  }
+
+  public async getFacts(
+    options: {
+      relationship?: FactContentRelationship;
+      includeSuperseded?: boolean;
+      latestOnly?: boolean;
+    } = {},
+  ): Promise<Fact[]> {
+    if (!this.id) {
+      return [];
+    }
+
+    const facts = await this.getFactCollection();
+    return facts.getForContent(this.id as string, options);
+  }
+
+  public async addFact(
+    fact: Fact | string,
+    relationship: FactContentRelationship = getContentGovernanceConfig()
+      .defaultFactRelationship,
+    metadata?: Record<string, any>,
+  ) {
+    if (!this.id) {
+      throw new Error('Cannot associate an unsaved content item with a fact');
+    }
+
+    const factId = typeof fact === 'string' ? fact : (fact.id as string);
+    if (!factId) {
+      throw new Error('Fact ID is required to create a content-fact link');
+    }
+
+    const links = await this.getFactContentCollection();
+    return links.link(factId, this.id as string, relationship, metadata);
+  }
+
+  public async removeFact(
+    factId: string,
+    relationship?: FactContentRelationship,
+  ): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const links = await this.getFactContentCollection();
+    if (relationship) {
+      await links.unlinkByRelationship(factId, this.id as string, relationship);
+      return;
+    }
+
+    await links.unlink(factId, this.id as string);
+  }
+
+  public async syncFacts(
+    factIds: string[],
+    relationship: FactContentRelationship = getContentGovernanceConfig()
+      .defaultFactRelationship,
+  ): Promise<{ added: string[]; kept: string[]; removed: string[] }> {
+    if (!this.id) {
+      throw new Error('Cannot sync facts for unsaved content');
+    }
+
+    const uniqueFactIds = [...new Set(factIds.filter(Boolean))];
+    const links = await this.getFactContentCollection();
+    const existing = await links.getForContentByRelationship(
+      this.id as string,
+      relationship,
+    );
+
+    const existingIds = new Set(existing.map((link) => link.factId));
+    const desiredIds = new Set(uniqueFactIds);
+
+    const kept = uniqueFactIds.filter((factId) => existingIds.has(factId));
+    const added = uniqueFactIds.filter((factId) => !existingIds.has(factId));
+    const removed = existing
+      .map((link) => link.factId)
+      .filter((factId) => !desiredIds.has(factId));
+
+    for (const factId of added) {
+      await links.link(factId, this.id as string, relationship);
+    }
+
+    for (const factId of removed) {
+      await links.unlinkByRelationship(factId, this.id as string, relationship);
+    }
+
+    return { added, kept, removed };
+  }
+
+  public async browseFacts(
+    query = '',
+    options: {
+      limit?: number;
+      minSimilarity?: number;
+      includeSuperseded?: boolean;
+      latestOnly?: boolean;
+    } = {},
+  ): Promise<Fact[]> {
+    const facts = await this.getFactCollection();
+    return facts.browseCatalog(query, {
+      ...options,
+      tenantId: this.tenantId,
+    });
+  }
+
+  public async getFactsState(
+    options: { relationship?: FactContentRelationship } = {},
+  ) {
+    const relationship = options.relationship;
+    const [facts, factLinks] = await Promise.all([
+      this.getFacts({
+        relationship,
+        latestOnly: true,
+        includeSuperseded: false,
+      }),
+      this.getFactLinks(relationship ? { relationship } : {}),
+    ]);
+
+    return {
+      factIds: facts.map((fact: any) => fact.id).filter(Boolean),
+      facts: facts.map(serializeFact),
+      factLinks: factLinks.map(serializeFactLink),
+    };
+  }
+
+  public async syncFactsState(
+    options: {
+      factIds?: string[];
+      relationship?: FactContentRelationship;
+    } = {},
+  ) {
+    const relationship =
+      options.relationship ||
+      getContentGovernanceConfig().defaultFactRelationship;
+    const sync = await this.syncFacts(options.factIds || [], relationship);
+    const state = await this.getFactsState({ relationship });
+    return {
+      ...state,
+      sync,
+    };
+  }
+
+  public async createVersion(options: CreateContentVersionOptions = {}) {
+    const versions = await this.getContentVersionCollection();
+    return versions.createSnapshot(this, options);
+  }
+
+  public async getVersions() {
+    if (!this.id) {
+      return [];
+    }
+
+    const versions = await this.getContentVersionCollection();
+    return versions.listForContent(this.id as string);
+  }
+
+  public async restoreFromVersion(versionNumber: number) {
+    const versions = await this.getContentVersionCollection();
+    return versions.restoreIntoContent(this, versionNumber);
+  }
+
+  public async getReviews(kind?: RunContentReviewOptions['kind']) {
+    if (!this.id) {
+      return [];
+    }
+
+    const reviews = await this.getContentReviewCollection();
+    return reviews.listForContent(this.id as string, kind);
+  }
+
+  public async listReviews(
+    options: { kind?: RunContentReviewOptions['kind'] } = {},
+  ) {
+    const reviews = await this.getReviews(options.kind);
+    return reviews.map(serializeContentReview);
+  }
+
+  public getReviewRequirements(profileKey: string) {
+    return getContentReviewRequirements(this, profileKey);
+  }
+
+  public async evaluateReviewProfile(
+    profileKey: string,
+  ): Promise<ContentReviewProfileEvaluation> {
+    const requirements = this.getReviewRequirements(profileKey);
+
+    if (requirements.length === 0) {
+      return {
+        profileKey,
+        ready: true,
+        complete: true,
+        requirements: [],
+      };
+    }
+
+    const reviews = await this.getContentReviewCollection();
+    const evaluatedRequirements = await Promise.all(
+      requirements.map(async (requirement) => {
+        const latestReview =
+          this.id && requirement.policyKey
+            ? await reviews.getLatestForPolicyKey(
+                this.id as string,
+                requirement.policyKey,
+              )
+            : null;
+        const acceptedStatuses = getAcceptedContentReviewStatuses(requirement);
+        const latestStatus = latestReview?.status ?? null;
+        const missing = !latestReview;
+        const executed = latestStatus !== null && latestStatus !== 'pending';
+        const satisfied =
+          latestStatus !== null && acceptedStatuses.includes(latestStatus);
+
+        return {
+          policyKey: requirement.policyKey,
+          label:
+            requirement.label ||
+            getContentReviewPolicy(requirement.policyKey)?.label ||
+            requirement.policyKey,
+          blocking: requirement.blocking === true,
+          acceptedStatuses,
+          missing,
+          executed,
+          satisfied,
+          latestReviewId: (latestReview?.id as string) || null,
+          latestStatus,
+          latestSummary: latestReview?.summary || null,
+        };
+      }),
+    );
+
+    return {
+      profileKey,
+      ready: evaluatedRequirements
+        .filter((requirement) => requirement.blocking)
+        .every((requirement) => requirement.satisfied),
+      complete: evaluatedRequirements.every(
+        (requirement) => requirement.executed,
+      ),
+      requirements: evaluatedRequirements,
+    };
+  }
+
+  public async evaluateReviewProfileAction(
+    options: { profileKey?: string } = {},
+  ) {
+    if (!options.profileKey) {
+      throw new Error('profileKey is required');
+    }
+
+    return this.evaluateReviewProfile(options.profileKey);
+  }
+
+  public async isReadyForReviewProfile(profileKey: string): Promise<boolean> {
+    const evaluation = await this.evaluateReviewProfile(profileKey);
+    return evaluation.ready;
+  }
+
+  public async runReview(options: RunContentReviewOptions = {}) {
+    if (!this.id) {
+      throw new Error('Cannot review unsaved content');
+    }
+
+    const kind = options.kind || 'custom';
+    const policyKey = options.policyKey || kind;
+    const policy = getContentReviewPolicy(policyKey);
+    const facts =
+      options.facts && options.facts.length > 0
+        ? options.facts
+        : await this.getFacts({
+            latestOnly: true,
+            includeSuperseded: false,
+          });
+    const filteredFacts =
+      options.factIds && options.factIds.length > 0
+        ? facts.filter((fact) => options.factIds?.includes(fact.id as string))
+        : facts;
+    const prompt = buildContentReviewPrompt({
+      kind,
+      content: this,
+      facts: filteredFacts,
+      policy,
+      customInstructions: options.instructions,
+    });
+    const ai = this.ai as { message?: (prompt: string) => Promise<string> };
+    if (!ai?.message) {
+      throw new Error('AI client is not configured for content reviews');
+    }
+
+    const rawResponse = await ai.message(prompt);
+    const result = parseContentReviewResponse(rawResponse);
+    const version =
+      options.createVersion === false
+        ? null
+        : await this.createVersion({
+            kind: 'review',
+            summary: result.summary,
+            metadata: {
+              kind,
+              policyKey,
+            },
+          });
+
+    const reviews = await this.getContentReviewCollection();
+    return reviews.createFromResult({
+      contentId: this.id as string,
+      contentVersionId: version?.id as string | undefined,
+      kind,
+      policyKey,
+      reviewer: options.reviewer || 'system',
+      result,
+      metadata: {
+        ...(options.metadata || {}),
+        prompt,
+        rawResponse,
+        factIds: filteredFacts.map((fact) => fact.id),
+      },
+      tenantId: this.tenantId,
+    });
+  }
+
+  public async runReviewAction(options: RunContentReviewOptions = {}) {
+    let review: ContentReview;
+
+    if (options.kind === 'facts') {
+      review = await this.reviewFacts(options);
+    } else if (options.kind === 'safety') {
+      review = await this.reviewSafety(options);
+    } else {
+      review = await this.runReview(options);
+    }
+
+    return serializeContentReview(review);
+  }
+
+  public async reviewFacts(
+    options: Omit<RunContentReviewOptions, 'kind'> = {},
+  ) {
+    return this.runReview({
+      ...options,
+      kind: 'facts',
+      policyKey: options.policyKey || 'facts',
+    });
+  }
+
+  public async reviewSafety(
+    options: Omit<RunContentReviewOptions, 'kind'> = {},
+  ) {
+    const governance = getContentGovernanceConfig();
+    return this.runReview({
+      ...options,
+      kind: 'safety',
+      policyKey: options.policyKey || 'safety',
+      instructions: options.instructions
+        ? `${governance.safetyPrompt}\n\nAdditional app-level guidance:\n${options.instructions}`
+        : governance.safetyPrompt,
+    });
+  }
+
+  public async getCorrections() {
+    if (!this.id) {
+      return [];
+    }
+
+    const corrections = await this.getContentCorrectionCollection();
+    return corrections.listForContent(this.id as string);
+  }
+
+  public async listCorrections() {
+    const corrections = await this.getCorrections();
+    return corrections.map(serializeContentCorrection);
+  }
+
+  public async issueCorrection(options: IssueContentCorrectionOptions) {
+    if (!this.id) {
+      throw new Error('Cannot issue a correction for unsaved content');
+    }
+
+    let replacementFactId = '';
+    if (options.factId && options.correctedFactText) {
+      const facts = await this.getFactCollection();
+      const existing = await facts.get({ id: options.factId });
+      if (!existing) {
+        throw new Error(`Fact not found for correction: ${options.factId}`);
+      }
+
+      const replacement = await facts.branch(
+        options.factId,
+        {
+          textRefined: options.correctedFactText,
+          textRaw: options.correctedFactText,
+          type: existing.getType(),
+          domain: existing.domain,
+          status: 'active',
+          tenantId: existing.tenantId ?? this.tenantId ?? null,
+        },
+        'correction',
+      );
+      replacementFactId = replacement.id as string;
+      await this.addFact(replacementFactId);
+    }
+
+    const version =
+      options.createVersion === false
+        ? null
+        : await this.createVersion({
+            kind: 'correction',
+            summary: options.summary,
+            metadata: {
+              factId: options.factId || null,
+              replacementFactId: replacementFactId || null,
+            },
+          });
+
+    const corrections = await this.getContentCorrectionCollection();
+    const shouldPublish = options.publish ?? this.status === 'published';
+    return corrections.issue({
+      contentId: this.id as string,
+      contentVersionId: (version?.id as string) || '',
+      factId: options.factId || '',
+      replacementFactId,
+      correctionType: options.correctionType || 'fact',
+      status: shouldPublish ? 'published' : 'draft',
+      summary: options.summary,
+      incorrectText: options.incorrectText || '',
+      correctedText: options.correctedText || options.correctedFactText || '',
+      publicNote: options.publicNote || '',
+      metadata: options.metadata || {},
+      tenantId: this.tenantId,
+      publishedAt: shouldPublish ? new Date() : null,
+    });
+  }
+
+  public async issueCorrectionAction(options: IssueContentCorrectionOptions) {
+    const correction = await this.issueCorrection(options);
+    return serializeContentCorrection(correction);
+  }
+
+  public async listVersions() {
+    const versions = await this.getVersions();
+    return versions.map(serializeContentVersion);
+  }
+
+  public async mutateVersionAction(
+    options: CreateContentVersionOptions & {
+      action?: string;
+      versionNumber?: number | string;
+    } = {},
+  ) {
+    if (options.action === 'restore') {
+      const versionNumber = Number(options.versionNumber);
+      if (!Number.isFinite(versionNumber)) {
+        throw new Error('versionNumber is required to restore a version');
+      }
+
+      const restored = await this.restoreFromVersion(versionNumber);
+      return serializeContent(restored);
+    }
+
+    const version = await this.createVersion(options);
+    return serializeContentVersion(version);
   }
 
   /**

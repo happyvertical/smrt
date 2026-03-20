@@ -8,20 +8,35 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { CONTENT_MODULE_META } from '../ui.js';
 
 // Import components
 import ArticleCard from './components/ArticleCard.svelte';
 import ArticleList from './components/ArticleList.svelte';
+import FactualContentEditor from './components/FactualContentEditor.svelte';
+import FactualContentWorkflow from './components/FactualContentWorkflow.svelte';
 import Markdown from './components/Markdown.svelte';
 
 // Export components
-export { ArticleCard, ArticleList, Markdown };
+export {
+  ArticleCard,
+  ArticleList,
+  FactualContentEditor,
+  FactualContentWorkflow,
+  Markdown,
+};
 
 // Export component prop types
-export type { Props as ArticleCardProps } from './components/ArticleCard.svelte';
-export type { Props as ArticleListProps } from './components/ArticleList.svelte';
-export type { Props as MarkdownProps } from './components/Markdown.svelte';
+export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
+export type ArticleListProps = ComponentProps<typeof ArticleList>;
+export type FactualContentEditorProps = ComponentProps<
+  typeof FactualContentEditor
+>;
+export type FactualContentWorkflowProps = ComponentProps<
+  typeof FactualContentWorkflow
+>;
+export type MarkdownProps = ComponentProps<typeof Markdown>;
 
 // Export types
 export type {

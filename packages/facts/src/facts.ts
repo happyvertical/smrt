@@ -12,6 +12,7 @@ import { FactSubjectCollection } from './fact-subjects';
 import type {
   EntityBriefing,
   EvolutionType,
+  FactContentRelationship,
   FactOptions,
   FactStatus,
   FactType,
@@ -95,6 +96,132 @@ export class FactCollection extends SmrtCollection<Fact> {
       `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
       [tenantId],
     );
+  }
+
+  /**
+   * Browse active facts for editorial association.
+   * Uses semantic search when a query is provided and falls back to text filtering
+   * if embeddings are unavailable.
+   */
+  async browseCatalog(
+    query = '',
+    options: {
+      tenantId?: string | null;
+      limit?: number;
+      minSimilarity?: number;
+      includeSuperseded?: boolean;
+      latestOnly?: boolean;
+    } = {},
+  ): Promise<Fact[]> {
+    const {
+      tenantId,
+      limit = 25,
+      minSimilarity = 0.55,
+      includeSuperseded = false,
+      latestOnly = true,
+    } = options;
+
+    const baseList =
+      tenantId === undefined || tenantId === null
+        ? await this.list({
+            where: includeSuperseded ? {} : { status: 'active' },
+            orderBy: 'updated_at DESC',
+          })
+        : await this.findWithGlobals(tenantId);
+
+    const tenantScoped = includeSuperseded
+      ? baseList
+      : baseList.filter((fact) => fact.status !== 'superseded');
+
+    if (!query.trim()) {
+      const facts = tenantScoped.slice(0, limit);
+      if (!latestOnly) {
+        return facts;
+      }
+
+      const latest = await Promise.all(
+        facts.map((fact) => this.getLatestInChain(fact.id as string)),
+      );
+      return [
+        ...new Map(latest.map((fact) => [fact.id as string, fact])).values(),
+      ];
+    }
+
+    let matches: Fact[] = [];
+    try {
+      matches = await this.semanticSearch(query, {
+        limit,
+        minSimilarity,
+        where: includeSuperseded ? undefined : { status: 'active' },
+      });
+    } catch {
+      const normalizedQuery = query.toLowerCase();
+      matches = tenantScoped
+        .filter((fact) => {
+          const haystack = `${fact.textRefined} ${fact.textRaw}`.toLowerCase();
+          return haystack.includes(normalizedQuery);
+        })
+        .slice(0, limit);
+    }
+
+    if (!latestOnly) {
+      return matches;
+    }
+
+    const latest = await Promise.all(
+      matches.map((fact) => this.getLatestInChain(fact.id as string)),
+    );
+
+    return [
+      ...new Map(latest.map((fact) => [fact.id as string, fact])).values(),
+    ];
+  }
+
+  /**
+   * Get all facts linked to a content item.
+   */
+  async getForContent(
+    contentId: string,
+    options: {
+      relationship?: FactContentRelationship;
+      includeSuperseded?: boolean;
+      latestOnly?: boolean;
+    } = {},
+  ): Promise<Fact[]> {
+    const {
+      relationship,
+      includeSuperseded = false,
+      latestOnly = true,
+    } = options;
+
+    const { FactContentCollection } = await import('./fact-contents');
+    const links = await FactContentCollection.create(this.options);
+    const relatedLinks = relationship
+      ? await links.getForContentByRelationship(contentId, relationship)
+      : await links.getForContent(contentId);
+
+    const uniqueFactIds = [...new Set(relatedLinks.map((link) => link.factId))];
+    const loadedFacts = await Promise.all(
+      uniqueFactIds.map((factId) => this.get({ id: factId })),
+    );
+
+    const filtered = loadedFacts.filter((fact): fact is Fact => {
+      if (!fact) return false;
+      if (includeSuperseded) return true;
+      return fact.status !== 'superseded';
+    });
+
+    if (!latestOnly) {
+      return filtered;
+    }
+
+    const latestFacts = await Promise.all(
+      filtered.map((fact) => this.getLatestInChain(fact.id as string)),
+    );
+
+    return [
+      ...new Map(latestFacts.map((fact) => [fact.id as string, fact])).values(),
+    ];
   }
 
   // =========================================================================
@@ -403,7 +530,10 @@ Based ONLY on the semantic relationship between the existing fact and the new in
     const visited = new Set<string>();
     const queue: Fact[] = [root];
     while (queue.length > 0) {
-      const node = queue.shift()!;
+      const node = queue.shift();
+      if (!node) {
+        continue;
+      }
       const nodeId = node.id as string;
       if (visited.has(nodeId)) continue;
       visited.add(nodeId);

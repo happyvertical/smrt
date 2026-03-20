@@ -5,6 +5,9 @@ const config = {
 	preprocess: vitePreprocess(),
 	kit: {
 		outDir: '.svelte-kit',
+		alias: {
+			'@happyvertical/smrt-facts': './src/workspace-facts.ts'
+		}
 	}
 };
 

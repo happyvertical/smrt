@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       $lib: resolve(__dirname, 'src/lib'),
+      '@happyvertical/smrt-facts': resolve(__dirname, 'src/workspace-facts.ts'),
     },
   },
   test: {

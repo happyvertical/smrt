@@ -5,11 +5,12 @@ import { fetchDocument } from '@happyvertical/documents';
 import { ensureDirectoryExists } from '@happyvertical/files';
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { Content } from './content';
+import { serializeFact } from './serialization';
 import type {
   ThumbnailOptions,
   ThumbnailStrategy,
@@ -45,6 +46,20 @@ function isAIClientOptions(
  * collections of Content objects, including saving to the filesystem and
  * mirroring content from remote URLs.
  */
+@smrt({
+  api: {
+    include: ['browseFacts'],
+    routes: {
+      browseFacts: {
+        scope: 'collection',
+        method: 'GET',
+        path: 'facts',
+      },
+    },
+  },
+  mcp: false,
+  cli: false,
+})
 export class Contents extends SmrtCollection<Content> {
   /**
    * Class constructor for collection items
@@ -96,6 +111,49 @@ export class Contents extends SmrtCollection<Content> {
   public async initialize(): Promise<this> {
     await super.initialize();
     return this;
+  }
+
+  private async getFactCollection() {
+    const { FactCollection } = await import('@happyvertical/smrt-facts');
+    return FactCollection.create(this.options);
+  }
+
+  public async browseFacts(
+    options: {
+      q?: string;
+      query?: string;
+      limit?: number | string;
+      minSimilarity?: number | string;
+      includeSuperseded?: boolean | string;
+      latestOnly?: boolean | string;
+      tenantId?: string | null;
+    } = {},
+  ) {
+    const facts = await this.getFactCollection();
+    const query = options.query || options.q || '';
+    const limit =
+      options.limit !== undefined ? Number(options.limit) : undefined;
+    const minSimilarity =
+      options.minSimilarity !== undefined
+        ? Number(options.minSimilarity)
+        : undefined;
+    const includeSuperseded =
+      options.includeSuperseded === true ||
+      options.includeSuperseded === 'true';
+    const latestOnly =
+      options.latestOnly === undefined
+        ? true
+        : options.latestOnly === true || options.latestOnly === 'true';
+
+    const results = await facts.browseCatalog(query, {
+      limit: Number.isFinite(limit) ? limit : undefined,
+      minSimilarity: Number.isFinite(minSimilarity) ? minSimilarity : undefined,
+      includeSuperseded,
+      latestOnly,
+      tenantId: options.tenantId ?? null,
+    });
+
+    return results.map(serializeFact);
   }
 
   /**
