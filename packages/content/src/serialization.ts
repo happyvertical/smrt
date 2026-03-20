@@ -1,9 +1,10 @@
 function toJSON<T extends Record<string, any>>(value: any): T {
   if (value && typeof value.toJSON === 'function') {
-    return value.toJSON();
+    const serialized = value.toJSON();
+    return serialized && typeof serialized === 'object' ? serialized : ({} as T);
   }
 
-  return value as T;
+  return value && typeof value === 'object' ? value : ({} as T);
 }
 
 export function serializeFact(fact: any) {

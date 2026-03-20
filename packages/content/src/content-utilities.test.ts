@@ -218,6 +218,11 @@ describe('content utilities', () => {
       availableProfiles: [{ key: 'publication', requirements: [] }],
       reviewProfiles: [{ profileKey: 'publication', requirements: [] }],
     });
+    expect(serializeFact(null)).toEqual({ metadata: {} });
+    expect(serializeContentVersion({ toJSON: () => null })).toEqual({
+      snapshot: {},
+      metadata: {},
+    });
 
     await expect(serializeContent(content)).resolves.toEqual({
       id: 'content-1',

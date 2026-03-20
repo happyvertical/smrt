@@ -47,4 +47,30 @@ describe('export command helpers', () => {
       },
     ]);
   });
+
+  it('rejects unsafe identifiers before building SQL', async () => {
+    await expect(
+      queryWithProjection(
+        { query: vi.fn() },
+        'contents; DROP TABLE contents',
+        ['Article'],
+        ['title'],
+        {},
+        'title',
+        10,
+      ),
+    ).rejects.toThrow('Invalid table name');
+
+    await expect(
+      queryWithProjection(
+        { query: vi.fn() },
+        'contents',
+        ['Article'],
+        ['title'],
+        { 'status; DELETE': 'published' },
+        'title',
+        10,
+      ),
+    ).rejects.toThrow('Invalid filter field');
+  });
 });

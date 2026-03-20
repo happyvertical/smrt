@@ -9,7 +9,7 @@ export class ContentContributionRevisionCollection extends SmrtCollection<Conten
   ): Promise<ContentContributionRevision[]> {
     return this.list({
       where: { contributionId },
-      orderBy: 'revisionNumber ASC',
+      orderBy: 'revision_number ASC',
     });
   }
 
@@ -18,7 +18,7 @@ export class ContentContributionRevisionCollection extends SmrtCollection<Conten
   ): Promise<ContentContributionRevision | null> {
     const revisions = await this.list({
       where: { contributionId },
-      orderBy: 'revisionNumber DESC',
+      orderBy: 'revision_number DESC',
       limit: 1,
     });
 

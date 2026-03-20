@@ -36,6 +36,22 @@ function toColumnName(fieldName: string): string {
   return `${snakeBaseFieldName}${jsonPath}`;
 }
 
+function assertSafeIdentifier(identifier: string, label: string): string {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$/.test(identifier)) {
+    throw new Error(`Invalid ${label}: ${identifier}`);
+  }
+
+  return identifier;
+}
+
+function toSafeColumnName(fieldName: string, label = 'field name'): string {
+  return assertSafeIdentifier(toColumnName(fieldName), label);
+}
+
+function toSafeTableName(tableName: string): string {
+  return assertSafeIdentifier(tableName, 'table name');
+}
+
 /**
  * Get fields that should be exported for a given type
  */
@@ -159,7 +175,7 @@ export async function queryWithProjection(
   // Build SELECT clause with only exportable fields
   const fieldColumns = fields.map((field) => ({
     field,
-    column: toColumnName(field),
+    column: toSafeColumnName(field),
   }));
   const selectFields = fieldColumns.map(({ column }) => column).join(', ');
 
@@ -185,44 +201,57 @@ export async function queryWithProjection(
   // Apply custom filters
   for (const [field, value] of Object.entries(filters)) {
     if (field.endsWith('__gte')) {
-      whereClauses.push(`${toColumnName(field.replace('__gte', ''))} >= ?`);
+      whereClauses.push(
+        `${toSafeColumnName(field.replace('__gte', ''), 'filter field')} >= ?`,
+      );
       whereValues.push(value);
     } else if (field.endsWith('__lte')) {
-      whereClauses.push(`${toColumnName(field.replace('__lte', ''))} <= ?`);
+      whereClauses.push(
+        `${toSafeColumnName(field.replace('__lte', ''), 'filter field')} <= ?`,
+      );
       whereValues.push(value);
     } else if (field.endsWith('__gt')) {
-      whereClauses.push(`${toColumnName(field.replace('__gt', ''))} > ?`);
+      whereClauses.push(
+        `${toSafeColumnName(field.replace('__gt', ''), 'filter field')} > ?`,
+      );
       whereValues.push(value);
     } else if (field.endsWith('__lt')) {
-      whereClauses.push(`${toColumnName(field.replace('__lt', ''))} < ?`);
+      whereClauses.push(
+        `${toSafeColumnName(field.replace('__lt', ''), 'filter field')} < ?`,
+      );
       whereValues.push(value);
     } else if (field.endsWith('__ne')) {
-      whereClauses.push(`${toColumnName(field.replace('__ne', ''))} != ?`);
+      whereClauses.push(
+        `${toSafeColumnName(field.replace('__ne', ''), 'filter field')} != ?`,
+      );
       whereValues.push(value);
     } else if (field.endsWith('__contains')) {
       whereClauses.push(
-        `${toColumnName(field.replace('__contains', ''))} LIKE ?`,
+        `${toSafeColumnName(field.replace('__contains', ''), 'filter field')} LIKE ?`,
       );
       whereValues.push(`%${value}%`);
     } else if (Array.isArray(value)) {
       whereClauses.push(
-        `${toColumnName(field)} IN (${value.map(() => '?').join(', ')})`,
+        `${toSafeColumnName(field, 'filter field')} IN (${value.map(() => '?').join(', ')})`,
       );
       whereValues.push(...value);
     } else {
-      whereClauses.push(`${toColumnName(field)} = ?`);
+      whereClauses.push(`${toSafeColumnName(field, 'filter field')} = ?`);
       whereValues.push(value);
     }
   }
 
   // Build query
-  let sql = `SELECT ${selectFields} FROM ${tableName}`;
+  let sql = `SELECT ${selectFields} FROM ${toSafeTableName(tableName)}`;
   if (whereClauses.length > 0) {
     sql += ` WHERE ${whereClauses.join(' AND ')}`;
   }
   if (orderBy) {
     const desc = orderBy.startsWith('-');
-    const column = toColumnName(desc ? orderBy.slice(1) : orderBy);
+    const column = toSafeColumnName(
+      desc ? orderBy.slice(1) : orderBy,
+      'sort field',
+    );
     sql += ` ORDER BY ${column} ${desc ? 'DESC' : 'ASC'}`;
   }
   if (limit) {

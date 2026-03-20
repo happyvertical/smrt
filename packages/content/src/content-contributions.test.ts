@@ -694,4 +694,53 @@ describe('content contributions', () => {
     expect(revisions).toHaveLength(2);
     expect(revisions?.[1].body).toContain('Follow-up details.');
   });
+
+  it('reapplies intake rules to email-thread follow-up revisions', async () => {
+    const emails = await EmailCollection.create({ db, tenantId: 'tenant-1' });
+
+    const firstEmail = await emails.create({
+      tenantId: 'tenant-1',
+      fromAddress: 'mail@example.com',
+      fromName: 'Mail Source',
+      subject: 'Letter by email',
+      textBody: 'Initial email body.',
+      threadId: 'thread-2',
+      messageId: '<msg-10@example.com>',
+    });
+    await firstEmail.save();
+
+    const created = await contributions.ingestEmailContribution({
+      emailId: firstEmail.id || '',
+      typeKey: 'letter',
+      tenantId: 'tenant-1',
+    });
+
+    const blockedReply = await emails.create({
+      tenantId: 'tenant-1',
+      fromAddress: 'mail@example.com',
+      fromName: 'Mail Source',
+      subject: 'Re: Letter by email',
+      textBody: 'This reply includes a blocked phrase.',
+      threadId: 'thread-2',
+      messageId: '<msg-11@example.com>',
+      inReplyTo: '<msg-10@example.com>',
+    });
+    await blockedReply.save();
+
+    const rejected = await contributions.ingestEmailContribution({
+      emailId: blockedReply.id || '',
+      typeKey: 'letter',
+      tenantId: 'tenant-1',
+    });
+
+    expect(rejected.intake.decision).toBe('rejected');
+    expect(rejected.revision).toBeNull();
+
+    const updated = await contributions.get({ id: created.contribution.id });
+    expect(updated?.status).toBe('rejected');
+    expect(updated?.revisionCount).toBe(1);
+
+    const revisions = await updated?.getRevisions();
+    expect(revisions).toHaveLength(1);
+  });
 });

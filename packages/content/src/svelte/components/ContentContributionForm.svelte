@@ -47,10 +47,39 @@ function createDraft(
   };
 }
 
+function getInitialSignature(source: Partial<ContentContributionData>) {
+  return JSON.stringify({
+    contributionTypeKey: source.contributionTypeKey || '',
+    contributorEmail: source.contributorEmail || '',
+    contributorName: source.contributorName || '',
+    title: source.title || '',
+    description: source.description || '',
+    body: source.body || '',
+  });
+}
+
 let draft = $state(createDraft({}, []));
+let lastInitialSignature = $state('__unset__');
 
 $effect(() => {
-  draft = createDraft(initial, types);
+  const nextInitialSignature = getInitialSignature(initial);
+  if (nextInitialSignature !== lastInitialSignature) {
+    draft = createDraft(initial, types);
+    lastInitialSignature = nextInitialSignature;
+    return;
+  }
+
+  if (types.length === 0) {
+    if (draft.typeKey) {
+      draft.typeKey = '';
+    }
+    return;
+  }
+
+  const hasValidType = types.some((type) => type.key === draft.typeKey);
+  if (!hasValidType) {
+    draft.typeKey = types[0]?.key || '';
+  }
 });
 
 const activeType = $derived(

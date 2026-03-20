@@ -17,10 +17,6 @@ import type { Handle } from '@sveltejs/kit';
 import './lib/server/smrt-register.js';
 import { getSmrtConfig } from '$lib/server/smrt';
 
-// Also import actual class constructors so generateSchema can resolve them
-import { Content } from './content.js';
-import { ContentReference } from './content-reference.js';
-
 let schemaReady = false;
 let bootstrapPromise: Promise<void> | null = null;
 
@@ -43,14 +39,28 @@ async function bootstrapSchema() {
       // Load all available manifests so cross-package classes (Image, Asset, etc.) are known
       ObjectRegistry.loadAllManifests();
 
-      // For local classes, we need to compile schemas first
-      // (external classes already have schemas in their manifests)
-      const localClasses = [Content, ContentReference];
+      // Compile schemas for all local concrete objects in this package so
+      // runtime-only routes do not depend on stale manifests.
+      const localClasses = ObjectRegistry.getClassNames()
+        .map((name) => ObjectRegistry.getClass(name))
+        .filter(
+          (registered): registered is NonNullable<typeof registered> =>
+            Boolean(
+              registered &&
+                registered.packageName === '@happyvertical/smrt-content',
+            ),
+        )
+        .map((registered) => registered.constructor);
+
       for (const cls of localClasses) {
         try {
           await generateSchema(cls);
-        } catch {
-          // Schema generation may fail for abstract/collection classes
+        } catch (error) {
+          console.warn(
+            `[hooks] Skipped schema generation for ${cls.name}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
         }
       }
 

@@ -31,6 +31,20 @@ export interface IngestEmailContentContributionOptions {
   tenantId?: string | null;
 }
 
+function toContributionStatus(
+  decision: ReturnType<typeof evaluateContributionIntake>['decision'],
+) {
+  if (decision === 'quarantined') {
+    return 'quarantined' as const;
+  }
+
+  if (decision === 'rejected') {
+    return 'rejected' as const;
+  }
+
+  return 'submitted' as const;
+}
+
 function pickDefaultEmailType(
   types: ContentContributionTypeDefinition[],
 ): ContentContributionTypeDefinition | null {
@@ -145,7 +159,7 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
 
     return this.list({
       where: { contributorId },
-      orderBy: 'updatedAt DESC',
+      orderBy: 'updated_at DESC',
     });
   }
 
@@ -159,7 +173,7 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
         : ['submitted', 'quarantined', 'needs_changes', 'approved'];
 
     const contributions = await this.list({
-      orderBy: 'updatedAt DESC',
+      orderBy: 'updated_at DESC',
     });
 
     return contributions.filter((contribution) =>
@@ -186,12 +200,7 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
       attachments: options.attachments || [],
     });
 
-    const status =
-      intake.decision === 'quarantined'
-        ? 'quarantined'
-        : intake.decision === 'rejected'
-          ? 'rejected'
-          : 'submitted';
+    const status = toContributionStatus(intake.decision);
 
     const contribution = await this.create({
       contributorId: contributor.id || '',
@@ -299,7 +308,36 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
       }));
 
     if (existing) {
-      return existing.appendRevisionAction({
+      existing.intakeDecision = intake.decision;
+      existing.editorNotes = intake.reasons.join('\n');
+
+      const metadata = existing.getMetadata();
+      metadata.lastEmailIntake = {
+        decision: intake.decision,
+        reasons: intake.reasons,
+        emailId: email.id || null,
+      };
+      existing.setMetadata(metadata);
+
+      if (intake.decision === 'rejected') {
+        existing.status = 'rejected';
+        existing.rejectedAt = new Date();
+        await existing.save();
+
+        return {
+          contribution: existing.toJSON(),
+          intake,
+          revision: null,
+          attachments: (await existing.getAttachments()).map((item: any) =>
+            item.toJSON(),
+          ),
+        };
+      }
+
+      existing.status = toContributionStatus(intake.decision);
+      await existing.save();
+
+      const appended = await existing.appendRevisionAction({
         title: email.subject || existing.title,
         body: email.textBody || email.body || '',
         channel: 'email',
@@ -311,14 +349,14 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
           emailId: email.id || null,
         },
       });
+
+      return {
+        ...appended,
+        intake,
+      };
     }
 
-    const status =
-      intake.decision === 'quarantined'
-        ? 'quarantined'
-        : intake.decision === 'rejected'
-          ? 'rejected'
-          : 'submitted';
+    const status = toContributionStatus(intake.decision);
 
     const contribution = await this.create({
       contributorId: contributor.id || '',

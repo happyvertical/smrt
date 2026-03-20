@@ -9,7 +9,7 @@ export class ContentContributionAttachmentCollection extends SmrtCollection<Cont
   ): Promise<ContentContributionAttachment[]> {
     return this.list({
       where: { contributionId },
-      orderBy: 'createdAt ASC',
+      orderBy: 'created_at ASC',
     });
   }
 
@@ -18,7 +18,7 @@ export class ContentContributionAttachmentCollection extends SmrtCollection<Cont
   ): Promise<ContentContributionAttachment[]> {
     return this.list({
       where: { revisionId },
-      orderBy: 'createdAt ASC',
+      orderBy: 'created_at ASC',
     });
   }
 }

@@ -132,6 +132,11 @@ export class FactCollection extends SmrtCollection<Fact> {
     const tenantScoped = includeSuperseded
       ? baseList
       : baseList.filter((fact) => fact.status !== 'superseded');
+    const tenantScopedIds = new Set(
+      tenantScoped
+        .map((fact) => fact.id)
+        .filter((factId): factId is string => typeof factId === 'string'),
+    );
 
     if (!query.trim()) {
       const facts = tenantScoped.slice(0, limit);
@@ -154,6 +159,12 @@ export class FactCollection extends SmrtCollection<Fact> {
         minSimilarity,
         where: includeSuperseded ? undefined : { status: 'active' },
       });
+
+      if (tenantScopedIds.size > 0) {
+        matches = matches.filter(
+          (fact) => typeof fact.id === 'string' && tenantScopedIds.has(fact.id),
+        );
+      }
     } catch {
       const normalizedQuery = query.toLowerCase();
       matches = tenantScoped
