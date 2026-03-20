@@ -20,18 +20,16 @@ import {
   type ContentReviewProfileEvaluation,
   type CreateContentVersionOptions,
   getAcceptedContentReviewStatuses,
-  getContentGovernanceConfig,
-  getContentPublicationReviewProfileKey,
   getContentReviewKind,
-  getContentReviewPolicies,
   getContentReviewPolicy,
   getContentReviewProfileKeys,
   getContentReviewRequirements,
   type IssueContentCorrectionOptions,
-  isContentPublishReadinessEnforced,
-  isFactualContentEnabled,
   parseContentReviewResponse,
+  type ResolvedContentGovernance,
   type RunContentReviewOptions,
+  resolveConfiguredContentGovernance,
+  resolveEffectiveContentGovernance,
 } from './content-governance';
 import { ContentReferences } from './content-references';
 import type { ContentReview } from './content-review';
@@ -422,14 +420,26 @@ export class Content extends SmrtObject {
   protected override async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
 
+    if (this.status !== 'published') {
+      return;
+    }
+
+    const configuredGovernance = this.getConfiguredGovernance();
+    if (!configuredGovernance.isGoverned) {
+      return;
+    }
+
+    const governance = await this.resolveGovernance();
+    const profileKey = governance.publicationProfileKey;
+
     if (
-      this.status !== 'published' ||
-      !isContentPublishReadinessEnforced(this)
+      !governance.isGoverned ||
+      !governance.enforcePublishReadiness ||
+      !profileKey
     ) {
       return;
     }
 
-    const profileKey = getContentPublicationReviewProfileKey();
     const evaluation = await this.evaluateReviewProfile(profileKey);
     const blockingRequirements = evaluation.requirements.filter(
       (requirement) => requirement.blocking && !requirement.satisfied,
@@ -472,18 +482,37 @@ export class Content extends SmrtObject {
   }
 
   override async save() {
+    if (this.status !== 'published') {
+      await super.save();
+      return this;
+    }
+
+    const configuredGovernance = this.getConfiguredGovernance();
+    if (!configuredGovernance.isGoverned) {
+      await super.save();
+      return this;
+    }
+
+    const governance = await this.resolveGovernance();
+
+    if (
+      !governance.isGoverned ||
+      !governance.transparencyEnabled ||
+      this.status !== 'published'
+    ) {
+      await super.save();
+      return this;
+    }
+
     const previous = await this.getPersistedContent();
     const previousPublicationFingerprint =
       await this.getLatestPublicationSnapshotFingerprint();
     const nextPublicationFingerprint =
-      this.status === 'published'
-        ? await this.buildPublicationSnapshotFingerprint()
-        : null;
+      await this.buildPublicationSnapshotFingerprint(governance);
 
     await super.save();
 
     if (
-      this.status === 'published' &&
       nextPublicationFingerprint &&
       nextPublicationFingerprint !== previousPublicationFingerprint
     ) {
@@ -495,8 +524,10 @@ export class Content extends SmrtObject {
             : 'Content published.',
         metadata: {
           publicationSnapshotFingerprint: nextPublicationFingerprint,
+          publicationProfileKey: governance.publicationProfileKey,
           transparency: await this.buildTransparencySnapshot({
             snapshotKind: 'published',
+            governance,
           }),
         },
       });
@@ -546,6 +577,49 @@ export class Content extends SmrtObject {
     return Contents.create({ db: this.db });
   }
 
+  private getConfiguredGovernance(): ResolvedContentGovernance {
+    return resolveConfiguredContentGovernance({
+      contentType: this.type,
+      contentVariant: this.variant,
+    });
+  }
+
+  public async resolveGovernance(): Promise<ResolvedContentGovernance> {
+    return resolveEffectiveContentGovernance({
+      contentType: this.type,
+      contentVariant: this.variant,
+      db: this.db,
+    });
+  }
+
+  private async requireGovernance(
+    feature = 'governance workflow',
+  ): Promise<ResolvedContentGovernance> {
+    const governance = await this.resolveGovernance();
+
+    if (!governance.isGoverned) {
+      throw new Error(
+        `Governance is not enabled for content type "${this.type || 'content'}"${this.variant ? ` variant "${this.variant}"` : ''}, so ${feature} is unavailable.`,
+      );
+    }
+
+    return governance;
+  }
+
+  private async requireFactLinking(
+    feature = 'fact linking',
+  ): Promise<ResolvedContentGovernance> {
+    const governance = await this.requireGovernance(feature);
+
+    if (!governance.factLinkingEnabled) {
+      throw new Error(
+        `Fact linking is not enabled for content type "${this.type || 'content'}"${this.variant ? ` variant "${this.variant}"` : ''}.`,
+      );
+    }
+
+    return governance;
+  }
+
   private async getPersistedContent(): Promise<Content | null> {
     if (!this.id) {
       return null;
@@ -556,17 +630,20 @@ export class Content extends SmrtObject {
   }
 
   private async buildReviewFingerprint(policyKey: string): Promise<string> {
-    const kind = getContentReviewKind(policyKey);
-    const policy = getContentReviewPolicy(policyKey);
+    const governance = await this.resolveGovernance();
+    const kind = getContentReviewKind(policyKey, governance.reviewPolicies);
+    const policy = getContentReviewPolicy(policyKey, governance.reviewPolicies);
     const [references, facts, factLinks] = await Promise.all([
       this.getReferences(),
-      kind === 'facts'
+      kind === 'facts' && governance.factLinkingEnabled
         ? this.getFacts({
             latestOnly: true,
             includeSuperseded: false,
           })
         : Promise.resolve([]),
-      kind === 'facts' ? this.getFactLinks() : Promise.resolve([]),
+      kind === 'facts' && governance.factLinkingEnabled
+        ? this.getFactLinks()
+        : Promise.resolve([]),
     ]);
 
     return createFingerprint({
@@ -582,7 +659,6 @@ export class Content extends SmrtObject {
         description: this.description,
         body: this.body,
         author: this.author,
-        status: this.status,
         state: this.state,
         publishDate: this.publish_date,
         language: this.language,
@@ -614,10 +690,18 @@ export class Content extends SmrtObject {
   }
 
   private async buildTransparencySnapshot(
-    options: { snapshotKind?: 'preview' | 'published' } = {},
+    options: {
+      snapshotKind?: 'preview' | 'published';
+      governance?: ResolvedContentGovernance;
+    } = {},
   ) {
     const snapshotKind = options.snapshotKind || 'preview';
-    const factual = this.isFactual();
+    const governance = options.governance || (await this.resolveGovernance());
+
+    if (!governance.isGoverned || !governance.transparencyEnabled) {
+      return null;
+    }
+
     const [
       references,
       facts,
@@ -628,13 +712,13 @@ export class Content extends SmrtObject {
       reviewProfiles,
     ] = await Promise.all([
       this.getReferences(),
-      factual
+      governance.factLinkingEnabled
         ? this.getFacts({
             latestOnly: true,
             includeSuperseded: false,
           })
         : Promise.resolve([]),
-      factual ? this.getFactLinks() : Promise.resolve([]),
+      governance.factLinkingEnabled ? this.getFactLinks() : Promise.resolve([]),
       this.listReviews(),
       this.listCorrections(),
       this.listVersions(),
@@ -807,7 +891,7 @@ export class Content extends SmrtObject {
         snapshotKind,
         contentId: (this.id as string) || null,
         currentContentStatus: this.status || null,
-        publicationReviewProfileKey: getContentPublicationReviewProfileKey(),
+        publicationProfileKey: governance.publicationProfileKey || undefined,
         generation: {
           aiAssisted:
             publicGeneration.aiAssisted ??
@@ -831,16 +915,24 @@ export class Content extends SmrtObject {
         snapshotKind,
         contentId: (this.id as string) || null,
         currentContentStatus: this.status || null,
-        publicationReviewProfileKey: getContentPublicationReviewProfileKey(),
+        publicationProfileKey: governance.publicationProfileKey || undefined,
       },
     );
   }
 
-  private async buildPublicationSnapshotFingerprint(): Promise<string> {
-    const { generatedAt, ...stableSnapshot } =
-      await this.buildTransparencySnapshot({
-        snapshotKind: 'published',
-      });
+  private async buildPublicationSnapshotFingerprint(
+    governance: ResolvedContentGovernance,
+  ): Promise<string | null> {
+    const transparency = await this.buildTransparencySnapshot({
+      snapshotKind: 'published',
+      governance,
+    });
+
+    if (!transparency) {
+      return null;
+    }
+
+    const { generatedAt, ...stableSnapshot } = transparency;
     return createFingerprint(stableSnapshot);
   }
 
@@ -1061,13 +1153,18 @@ ${correctedText}
     return this.references;
   }
 
-  public isFactual(): boolean {
-    return isFactualContentEnabled(this);
+  public isGoverned(): boolean {
+    return this.getConfiguredGovernance().isGoverned;
   }
 
   public async getFactLinks(
     options: { relationship?: FactContentRelationship } = {},
   ) {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.factLinkingEnabled || !this.id) {
+      return [];
+    }
+
     if (!this.id) {
       return [];
     }
@@ -1088,6 +1185,11 @@ ${correctedText}
       latestOnly?: boolean;
     } = {},
   ): Promise<Fact[]> {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.factLinkingEnabled || !this.id) {
+      return [];
+    }
+
     if (!this.id) {
       return [];
     }
@@ -1098,10 +1200,11 @@ ${correctedText}
 
   public async addFact(
     fact: Fact | string,
-    relationship: FactContentRelationship = getContentGovernanceConfig()
-      .defaultFactRelationship,
+    relationship?: FactContentRelationship,
     metadata?: Record<string, any>,
   ) {
+    const governance = await this.requireFactLinking('fact association');
+
     if (!this.id) {
       throw new Error('Cannot associate an unsaved content item with a fact');
     }
@@ -1112,13 +1215,23 @@ ${correctedText}
     }
 
     const links = await this.getFactContentCollection();
-    return links.link(factId, this.id as string, relationship, metadata);
+    return links.link(
+      factId,
+      this.id as string,
+      relationship || governance.defaultFactRelationship,
+      metadata,
+    );
   }
 
   public async removeFact(
     factId: string,
     relationship?: FactContentRelationship,
   ): Promise<void> {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.factLinkingEnabled) {
+      return;
+    }
+
     if (!this.id) {
       return;
     }
@@ -1134,18 +1247,21 @@ ${correctedText}
 
   public async syncFacts(
     factIds: string[],
-    relationship: FactContentRelationship = getContentGovernanceConfig()
-      .defaultFactRelationship,
+    relationship?: FactContentRelationship,
   ): Promise<{ added: string[]; kept: string[]; removed: string[] }> {
+    const governance = await this.requireFactLinking('fact sync');
+
     if (!this.id) {
       throw new Error('Cannot sync facts for unsaved content');
     }
 
     const uniqueFactIds = [...new Set(factIds.filter(Boolean))];
     const links = await this.getFactContentCollection();
+    const resolvedRelationship =
+      relationship || governance.defaultFactRelationship;
     const existing = await links.getForContentByRelationship(
       this.id as string,
-      relationship,
+      resolvedRelationship,
     );
 
     const existingIds = new Set(existing.map((link) => link.factId));
@@ -1158,11 +1274,15 @@ ${correctedText}
       .filter((factId) => !desiredIds.has(factId));
 
     for (const factId of added) {
-      await links.link(factId, this.id as string, relationship);
+      await links.link(factId, this.id as string, resolvedRelationship);
     }
 
     for (const factId of removed) {
-      await links.unlinkByRelationship(factId, this.id as string, relationship);
+      await links.unlinkByRelationship(
+        factId,
+        this.id as string,
+        resolvedRelationship,
+      );
     }
 
     return { added, kept, removed };
@@ -1177,6 +1297,7 @@ ${correctedText}
       latestOnly?: boolean;
     } = {},
   ): Promise<Fact[]> {
+    await this.requireFactLinking('fact catalog browsing');
     const facts = await this.getFactCollection();
     return facts.browseCatalog(query, {
       ...options,
@@ -1187,6 +1308,15 @@ ${correctedText}
   public async getFactsState(
     options: { relationship?: FactContentRelationship } = {},
   ) {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.factLinkingEnabled) {
+      return {
+        factIds: [],
+        facts: [],
+        factLinks: [],
+      };
+    }
+
     const relationship = options.relationship;
     const [facts, factLinks] = await Promise.all([
       this.getFacts({
@@ -1210,9 +1340,9 @@ ${correctedText}
       relationship?: FactContentRelationship;
     } = {},
   ) {
+    const governance = await this.requireFactLinking('fact sync');
     const relationship =
-      options.relationship ||
-      getContentGovernanceConfig().defaultFactRelationship;
+      options.relationship || governance.defaultFactRelationship;
     const sync = await this.syncFacts(options.factIds || [], relationship);
     const state = await this.getFactsState({ relationship });
     return {
@@ -1256,19 +1386,29 @@ ${correctedText}
     return reviews.map(serializeContentReview);
   }
 
-  public getReviewRequirements(profileKey: string) {
-    return getContentReviewRequirements(this, profileKey);
+  public async getReviewRequirements(
+    profileKey: string,
+    governance?: ResolvedContentGovernance,
+  ) {
+    const resolvedGovernance = governance || (await this.resolveGovernance());
+    return getContentReviewRequirements(
+      profileKey,
+      resolvedGovernance.availableProfiles,
+    );
   }
 
   public async getGovernanceState(): Promise<ContentGovernanceState> {
-    const governance = getContentGovernanceConfig();
+    const governance = await this.resolveGovernance();
+
+    if (!governance.isGoverned) {
+      return {
+        ...governance,
+        reviewProfiles: [],
+      };
+    }
 
     return {
-      isFactual: this.isFactual(),
-      defaultFactRelationship: governance.defaultFactRelationship,
-      publicationReviewProfileKey: getContentPublicationReviewProfileKey(),
-      enforcePublishReadiness: isContentPublishReadinessEnforced(this),
-      reviewPolicies: getContentReviewPolicies(),
+      ...governance,
       reviewProfiles: await this.listReviewProfilesAction(),
     };
   }
@@ -1278,9 +1418,14 @@ ${correctedText}
   }
 
   public async listReviewProfilesAction() {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned) {
+      return [];
+    }
+
     return Promise.all(
-      getContentReviewProfileKeys().map((profileKey) =>
-        this.evaluateReviewProfile(profileKey),
+      getContentReviewProfileKeys(governance.availableProfiles).map(
+        (profileKey) => this.evaluateReviewProfile(profileKey),
       ),
     );
   }
@@ -1288,7 +1433,11 @@ ${correctedText}
   public async evaluateReviewProfile(
     profileKey: string,
   ): Promise<ContentReviewProfileEvaluation> {
-    const requirements = this.getReviewRequirements(profileKey);
+    const governance = await this.resolveGovernance();
+    const requirements = await this.getReviewRequirements(
+      profileKey,
+      governance,
+    );
 
     if (requirements.length === 0) {
       return {
@@ -1342,11 +1491,17 @@ ${correctedText}
           acceptedStatuses.includes(latestStatus);
 
         return {
-          kind: getContentReviewKind(requirement.policyKey),
+          kind: getContentReviewKind(
+            requirement.policyKey,
+            governance.reviewPolicies,
+          ),
           policyKey: requirement.policyKey,
           label:
             requirement.label ||
-            getContentReviewPolicy(requirement.policyKey)?.label ||
+            getContentReviewPolicy(
+              requirement.policyKey,
+              governance.reviewPolicies,
+            )?.label ||
             requirement.policyKey,
           blocking: requirement.blocking === true,
           acceptedStatuses,
@@ -1405,8 +1560,14 @@ ${correctedText}
   }
 
   public async previewTransparency() {
+    const governance = await this.resolveGovernance();
+    if (!governance.isGoverned || !governance.transparencyEnabled) {
+      return null;
+    }
+
     return this.buildTransparencySnapshot({
       snapshotKind: 'preview',
+      governance,
     });
   }
 
@@ -1415,17 +1576,22 @@ ${correctedText}
   }
 
   public async runReview(options: RunContentReviewOptions = {}) {
+    const governance = await this.requireGovernance('review execution');
+
     if (!this.id) {
       throw new Error('Cannot review unsaved content');
     }
 
     const policyKey = options.policyKey || options.kind || 'custom';
-    const policy = getContentReviewPolicy(policyKey);
-    const kind = options.kind || getContentReviewKind(policyKey);
+    const policy = getContentReviewPolicy(policyKey, governance.reviewPolicies);
+    const kind =
+      options.kind ||
+      getContentReviewKind(policyKey, governance.reviewPolicies);
     const facts =
       options.facts !== undefined
         ? options.facts
-        : kind === 'facts' || Boolean(options.factIds?.length)
+        : governance.factLinkingEnabled &&
+            (kind === 'facts' || Boolean(options.factIds?.length))
           ? await this.getFacts({
               latestOnly: true,
               includeSuperseded: false,
@@ -1509,14 +1675,21 @@ ${correctedText}
   public async reviewSafety(
     options: Omit<RunContentReviewOptions, 'kind'> = {},
   ) {
-    const governance = getContentGovernanceConfig();
+    const governance = await this.requireGovernance('safety review');
+    const safetyPolicy = getContentReviewPolicy(
+      options.policyKey || 'safety',
+      governance.reviewPolicies,
+    );
+    const baseInstructions = safetyPolicy?.instructions || '';
+
     return this.runReview({
       ...options,
       kind: 'safety',
       policyKey: options.policyKey || 'safety',
-      instructions: options.instructions
-        ? `${governance.safetyPrompt}\n\nAdditional app-level guidance:\n${options.instructions}`
-        : governance.safetyPrompt,
+      instructions:
+        options.instructions && baseInstructions
+          ? `${baseInstructions}\n\nAdditional app-level guidance:\n${options.instructions}`
+          : options.instructions || baseInstructions,
     });
   }
 
@@ -1535,30 +1708,38 @@ ${correctedText}
   }
 
   public async issueCorrection(options: IssueContentCorrectionOptions) {
+    const governance = await this.requireGovernance('corrections');
+
     if (!this.id) {
       throw new Error('Cannot issue a correction for unsaved content');
     }
 
     let replacementFactId = '';
-    if (options.factId && options.correctedFactText) {
+    if (
+      governance.factLinkingEnabled &&
+      options.factId &&
+      options.correctedFactText
+    ) {
       const facts = await this.getFactCollection();
       const existing = await facts.get({ id: options.factId });
       if (!existing) {
         throw new Error(`Fact not found for correction: ${options.factId}`);
       }
 
-      const replacement = await facts.branch(
-        options.factId,
-        {
-          textRefined: options.correctedFactText,
-          textRaw: options.correctedFactText,
-          type: existing.getType(),
-          domain: existing.domain,
-          status: 'active',
-          tenantId: existing.tenantId ?? this.tenantId ?? null,
-        },
-        'correction',
-      );
+      // Create the correction branch directly so editorial corrections do not
+      // block on synchronous embedding generation inside facts.branch().
+      const replacement = await facts.create({
+        textRefined: options.correctedFactText,
+        textRaw: options.correctedFactText,
+        type: existing.getType(),
+        domain: existing.domain,
+        status: 'active',
+        tenantId: existing.tenantId ?? this.tenantId ?? null,
+        parentId: options.factId,
+        evolutionType: 'correction',
+      } as any);
+      existing.status = 'superseded';
+      await existing.save();
       replacementFactId = replacement.id as string;
       await this.addFact(replacementFactId);
     }
@@ -1612,6 +1793,7 @@ ${correctedText}
         draftVersionNumber: draftVersion?.version ?? null,
         sourceCorrectionVersionId: (version?.id as string) || null,
         sourceCorrectionVersionNumber: version?.version ?? null,
+        correctionProfileKey: governance.correctionProfileKey || null,
       },
       tenantId: this.tenantId,
       publishedAt: shouldPublish ? new Date() : null,

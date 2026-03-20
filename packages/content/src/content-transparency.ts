@@ -62,7 +62,7 @@ export interface ContentTransparencyData {
   snapshotKind: 'preview' | 'published';
   contentId: string | null;
   currentContentStatus: string | null;
-  publicationReviewProfileKey: string;
+  publicationProfileKey: string;
   publicationVersion: ContentTransparencyPublicationVersion | null;
   generation: ContentTransparencyGeneration;
   factsUsed: ContentTransparencyFact[];
@@ -230,9 +230,10 @@ export function normalizeContentTransparency(
       asString(snapshot.currentContentStatus) ??
       defaults.currentContentStatus ??
       null,
-    publicationReviewProfileKey:
+    publicationProfileKey:
+      asString(snapshot.publicationProfileKey) ??
       asString(snapshot.publicationReviewProfileKey) ??
-      defaults.publicationReviewProfileKey ??
+      defaults.publicationProfileKey ??
       'publication',
     publicationVersion:
       normalizePublicationVersion(snapshot.publicationVersion) ??

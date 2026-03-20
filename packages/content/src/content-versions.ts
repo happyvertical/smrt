@@ -1,6 +1,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import type { Content } from './content';
 import type { CreateContentVersionOptions } from './content-governance';
+import { resolveEffectiveContentGovernance } from './content-governance';
 import { ContentVersion } from './content-version';
 
 export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
@@ -56,14 +57,18 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
     }
 
     const version = await this.getNextVersionNumber(content.id as string);
+    const governance = await resolveEffectiveContentGovernance({
+      contentType: content.type,
+      contentVariant: content.variant,
+      db: this.db,
+    });
     const [references, assets, factsState] = await Promise.all([
       typeof content.getReferences === 'function'
         ? content.getReferences()
         : [],
       typeof content.getAssets === 'function' ? content.getAssets() : [],
       typeof content.getFactsState === 'function' &&
-      typeof content.isFactual === 'function' &&
-      content.isFactual()
+      governance.factLinkingEnabled
         ? content.getFactsState()
         : {
             factIds: [],

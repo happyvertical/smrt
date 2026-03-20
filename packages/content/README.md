@@ -59,37 +59,54 @@ const parsed = stringToContent(markdown);
 await contents.syncContentDir({ contentDir: './blog-posts' });
 ```
 
-## Factual Governance
+## Content Governance
 
 ```typescript
 import {
-  FactualContent,
+  Content,
+  ContentGovernanceAssignment,
+  ContentGovernanceManager,
+  GovernedContentEditor,
   configureContentGovernance,
 } from '@happyvertical/smrt-content';
 
 configureContentGovernance({
-  publicationReviewProfileKey: 'publication',
-  enforcePublishReadiness: (content) => content.isFactual(),
-  reviewPolicies: {
-    editorial: {
+  policies: [
+    {
       key: 'editorial',
       label: 'Editorial Review',
       kind: 'custom',
       instructions: 'Check tone, sourcing, and local publication standards.',
     },
-  },
-  reviewProfiles: {
-    publication: [
-      { policyKey: 'safety', blocking: true },
-      { policyKey: 'facts', blocking: true, when: (content) => content.isFactual() },
-      { policyKey: 'editorial', blocking: false },
-    ],
-  },
+  ],
+  profiles: [
+    {
+      key: 'publication',
+      label: 'Publication',
+      requirements: [
+        { policyKey: 'safety', blocking: true },
+        { policyKey: 'facts', blocking: true },
+        { policyKey: 'editorial', blocking: false },
+      ],
+    },
+  ],
+  assignments: [
+    {
+      contentType: 'article',
+      enabled: true,
+      factLinkingEnabled: true,
+      transparencyEnabled: true,
+      publicationProfileKey: 'publication',
+      correctionProfileKey: 'correction',
+      enforcePublishReadiness: true,
+    },
+  ],
 });
 
-const article = new FactualContent({
+const article = new Content({
   title: 'Transit service changes',
   body: 'Weekend service will resume on April 3.',
+  type: 'article',
   metadata: {
     generation: {
       publicPrompt: 'Summarize the service change for riders.',
@@ -109,6 +126,25 @@ article.status = 'published';
 await article.save();
 ```
 
+Governance stays opt-in. Plain `Content` records behave like legacy `smrt-content`
+unless an assignment matches their `type` and optional exact `variant`.
+
+Persisted governance definitions are modeled as first-class SMRT objects:
+
+- `ContentGovernancePolicy`
+- `ContentGovernanceProfile`
+- `ContentGovernanceAssignment`
+
+The package also exports reusable Svelte components for consuming-app control
+panels and editorial workflows:
+
+- `GovernedContentEditor`
+- `ContentGovernancePanel`
+- `ContentGovernanceManager`
+- `ContentGovernancePolicyEditor`
+- `ContentGovernanceProfileEditor`
+- `ContentGovernanceAssignmentEditor`
+
 ### Published Transparency
 
 ```typescript
@@ -116,6 +152,7 @@ const publishedTransparency = await article.getPublishedTransparencyAction();
 const previewTransparency = await article.previewTransparencyAction();
 
 console.log(publishedTransparency?.factsUsed);
+console.log(publishedTransparency?.publicationProfileKey);
 console.log(previewTransparency.references);
 ```
 

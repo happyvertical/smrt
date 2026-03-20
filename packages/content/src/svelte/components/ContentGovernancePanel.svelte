@@ -1,6 +1,8 @@
 <script lang="ts">
 import {
   type ContentCorrectionData,
+  type ContentGovernanceDefinitionsData,
+  type ContentGovernanceProfileData,
   type ContentGovernanceStateData,
   type ContentReviewData,
   type ContentReviewPolicyData,
@@ -9,12 +11,15 @@ import {
   type ContentVersionData,
   createClient,
   type FactData,
+  type ResolvedContentGovernanceData,
 } from '../../mock-smrt-client';
 
 const client = createClient('/api/v1');
 
 export interface Props {
   contentId?: string;
+  draftType?: string | null;
+  draftVariant?: string | null;
   selectedFactIds?: string[];
   selectedFacts?: FactData[];
   defaultRelationship?: string;
@@ -37,6 +42,8 @@ interface ReviewAction {
 
 let {
   contentId = 'new',
+  draftType = null,
+  draftVariant = null,
   selectedFactIds = [],
   selectedFacts = [],
   defaultRelationship = 'supports',
@@ -57,6 +64,9 @@ let transparencyPreview = $state<ContentTransparencyData | null>(null);
 let publishedTransparency = $state<ContentTransparencyData | null>(null);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
 let reviewProfiles = $state<ContentReviewProfileData[]>([]);
+let governanceDefinitions = $state<ContentGovernanceDefinitionsData | null>(
+  null,
+);
 let activeReviewProfileKey = $state(reviewProfileKey);
 let activeCustomPolicyKey = $state(customReviewPolicyKey);
 
@@ -73,6 +83,7 @@ let workflowError = $state<string | null>(null);
 let workflowNotice = $state<string | null>(null);
 let catalogLoaded = $state(false);
 let loadedContentId = $state<string | null>(null);
+let resolvedDraftGovernanceKey = $state<string | null>(null);
 
 let correctionSummary = $state('');
 let correctionFactId = $state('');
@@ -83,6 +94,9 @@ let customReviewText = $state('');
 
 const savedContentId = $derived(
   contentId && contentId !== 'new' ? contentId : null,
+);
+const draftGovernanceKey = $derived(
+  draftType ? `${draftType}::${draftVariant || ''}` : null,
 );
 
 function getFactId(fact: FactData): string | null {
@@ -160,17 +174,30 @@ $effect(() => {
     versions = [];
     transparencyPreview = null;
     publishedTransparency = null;
-    governanceState = null;
     reviewProfiles = [];
-    onGovernanceStateChange?.(null);
     workflowError = null;
     workflowNotice = null;
+  } else if (savedContentId !== loadedContentId) {
+    loadedContentId = savedContentId;
+    void loadSavedWorkflow();
+  }
+});
+
+$effect(() => {
+  if (savedContentId) {
     return;
   }
 
-  if (savedContentId !== loadedContentId) {
-    loadedContentId = savedContentId;
-    void loadSavedWorkflow();
+  if (!draftType) {
+    governanceState = null;
+    governanceDefinitions = null;
+    onGovernanceStateChange?.(null);
+    return;
+  }
+
+  if (draftGovernanceKey !== resolvedDraftGovernanceKey) {
+    resolvedDraftGovernanceKey = draftGovernanceKey;
+    void loadDraftGovernance();
   }
 });
 
@@ -423,6 +450,11 @@ function getReviewActionBusyKey(action: ReviewAction) {
 }
 
 async function searchFacts(query = factQuery) {
+  if (governanceState && !governanceState.factLinkingEnabled) {
+    catalogFacts = [];
+    return;
+  }
+
   catalogLoading = true;
   catalogError = null;
 
@@ -441,6 +473,10 @@ async function searchFacts(query = factQuery) {
 
 async function syncFactsIfSaved(nextFacts: FactData[]) {
   updateSelectedFacts(nextFacts);
+
+  if (governanceState && !governanceState.factLinkingEnabled) {
+    return;
+  }
 
   if (!savedContentId) {
     return;
@@ -481,6 +517,52 @@ function removeFact(factId: string) {
   );
 }
 
+async function loadDraftGovernance() {
+  if (!draftType) {
+    governanceState = null;
+    governanceDefinitions = null;
+    reviewProfiles = [];
+    onGovernanceStateChange?.(null);
+    return;
+  }
+
+  workflowLoading = true;
+  workflowError = null;
+
+  try {
+    const [definitionsResponse, resolvedResponse] = await Promise.all([
+      client.contents.getGovernanceDefinitions(),
+      client.contents.resolveGovernance({
+        type: draftType,
+        variant: draftVariant,
+      }),
+    ]);
+
+    governanceDefinitions = definitionsResponse.data;
+    governanceState = {
+      ...resolvedResponse.data,
+      reviewProfiles: [],
+    };
+    reviewProfiles = [];
+    onGovernanceStateChange?.(governanceState);
+    activeReviewProfileKey =
+      governanceState.publicationProfileKey || reviewProfileKey;
+    activeCustomPolicyKey = resolveActiveCustomPolicyKey(
+      governanceState.reviewPolicies || [],
+      activeCustomPolicyKey,
+      customReviewPolicyKey,
+    );
+  } catch (err: any) {
+    governanceState = null;
+    governanceDefinitions = null;
+    reviewProfiles = [];
+    onGovernanceStateChange?.(null);
+    workflowError = err.message || 'Failed to resolve content governance';
+  } finally {
+    workflowLoading = false;
+  }
+}
+
 async function loadSavedWorkflow() {
   if (!savedContentId) {
     return;
@@ -496,6 +578,7 @@ async function loadSavedWorkflow() {
       correctionsResponse,
       versionsResponse,
       governanceResponse,
+      governanceDefinitionsResponse,
       transparencyPreviewResponse,
       publishedTransparencyResponse,
     ] = await Promise.all([
@@ -504,6 +587,7 @@ async function loadSavedWorkflow() {
       client.contents.getCorrections(savedContentId),
       client.contents.getVersions(savedContentId),
       client.contents.getGovernanceState(savedContentId),
+      client.contents.getGovernanceDefinitions(),
       client.contents.getTransparencyPreview(savedContentId),
       client.contents.getPublishedTransparency(savedContentId),
     ]);
@@ -515,6 +599,7 @@ async function loadSavedWorkflow() {
     transparencyPreview = transparencyPreviewResponse.data;
     publishedTransparency = publishedTransparencyResponse.data;
     governanceState = governanceResponse.data;
+    governanceDefinitions = governanceDefinitionsResponse.data;
     reviewProfiles = governanceResponse.data.reviewProfiles || [];
     onGovernanceStateChange?.(governanceResponse.data);
     activeReviewProfileKey = resolveActiveReviewProfileKey(
@@ -528,7 +613,7 @@ async function loadSavedWorkflow() {
       customReviewPolicyKey,
     );
   } catch (err: any) {
-    workflowError = err.message || 'Failed to load factual workflow state';
+    workflowError = err.message || 'Failed to load governance workflow state';
   } finally {
     workflowLoading = false;
   }
@@ -643,7 +728,6 @@ async function restoreVersion(versionNumber: number) {
       savedContentId,
       versionNumber,
     );
-    updateSelectedFacts(response.data.facts || []);
     workflowNotice = `Restored version ${versionNumber}.`;
     await loadSavedWorkflow();
   } catch (err: any) {
@@ -685,9 +769,7 @@ async function refreshTransparency() {
 
 async function refreshGovernanceState() {
   if (!savedContentId) {
-    governanceState = null;
-    reviewProfiles = [];
-    onGovernanceStateChange?.(null);
+    await loadDraftGovernance();
     return;
   }
 
@@ -765,76 +847,82 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       {/if}
     </div>
 
-    <div class="fact-search">
-      <input
-        type="text"
-        bind:value={factQuery}
-        placeholder="Browse app facts before authoring"
-      />
-      <button type="button" onclick={() => void searchFacts()}>
-        Search
-      </button>
-    </div>
+    {#if governanceState && !governanceState.factLinkingEnabled}
+      <p class="empty-copy">
+        Fact linking is not enabled for this governed content type.
+      </p>
+    {:else}
+      <div class="fact-search">
+        <input
+          type="text"
+          bind:value={factQuery}
+          placeholder="Browse app facts before authoring"
+        />
+        <button type="button" onclick={() => void searchFacts()}>
+          Search
+        </button>
+      </div>
 
-    {#if catalogError}
-      <p class="workflow-error">{catalogError}</p>
+      {#if catalogError}
+        <p class="workflow-error">{catalogError}</p>
+      {/if}
+
+      <div class="selected-facts">
+        <div class="section-caption">Selected facts</div>
+        {#if selectedFactsResolved.length === 0}
+          <p class="empty-copy">No facts linked yet.</p>
+        {:else}
+          <div class="fact-chip-list">
+            {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
+              <div class="fact-chip">
+                <div class="fact-chip__body">
+                  <strong>{fact.textRefined}</strong>
+                  <span>
+                    {fact.status} · confidence {formatPercent(fact.confidence)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="fact-chip__remove"
+                  onclick={() => fact.id && removeFact(fact.id)}
+                >
+                  Remove
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <div class="fact-catalog">
+        <div class="section-caption">Fact catalog</div>
+        {#if catalogLoading}
+          <p class="empty-copy">Loading facts...</p>
+        {:else if catalogFacts.length === 0}
+          <p class="empty-copy">No facts matched this search.</p>
+        {:else}
+          <div class="fact-catalog__list">
+            {#each catalogFacts as fact (fact.id ?? fact.textRefined)}
+              <div class="fact-result">
+                <div class="fact-result__body">
+                  <strong>{fact.textRefined}</strong>
+                  <span>
+                    {fact.status} · {fact.domain || 'general'} · confidence {formatPercent(fact.confidence)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={!fact.id || selectedFactIds.includes(fact.id ?? '')}
+                  onclick={() => addFact(fact)}
+                >
+                  {!fact.id || selectedFactIds.includes(fact.id ?? '') ? 'Selected' : 'Add'}
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
     {/if}
-
-    <div class="selected-facts">
-      <div class="section-caption">Selected facts</div>
-      {#if selectedFactsResolved.length === 0}
-        <p class="empty-copy">No facts linked yet.</p>
-      {:else}
-        <div class="fact-chip-list">
-          {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
-            <div class="fact-chip">
-              <div class="fact-chip__body">
-                <strong>{fact.textRefined}</strong>
-                <span>
-                  {fact.status} · confidence {formatPercent(fact.confidence)}
-                </span>
-              </div>
-              <button
-                type="button"
-                class="fact-chip__remove"
-                onclick={() => fact.id && removeFact(fact.id)}
-              >
-                Remove
-              </button>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <div class="fact-catalog">
-      <div class="section-caption">Fact catalog</div>
-      {#if catalogLoading}
-        <p class="empty-copy">Loading facts...</p>
-      {:else if catalogFacts.length === 0}
-        <p class="empty-copy">No facts matched this search.</p>
-      {:else}
-        <div class="fact-catalog__list">
-          {#each catalogFacts as fact (fact.id ?? fact.textRefined)}
-            <div class="fact-result">
-              <div class="fact-result__body">
-                <strong>{fact.textRefined}</strong>
-                <span>
-                  {fact.status} · {fact.domain || 'general'} · confidence {formatPercent(fact.confidence)}
-                </span>
-              </div>
-              <button
-                type="button"
-                disabled={!fact.id || selectedFactIds.includes(fact.id ?? '')}
-                onclick={() => addFact(fact)}
-              >
-                {!fact.id || selectedFactIds.includes(fact.id ?? '') ? 'Selected' : 'Add'}
-              </button>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
   </div>
 
   <div class="workflow-section">
@@ -855,7 +943,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
     {#if !savedContentId}
       <p class="empty-copy">
-        Save this content to run fact reviews, safety reviews, corrections, and version management.
+        Save this content to run governance reviews, corrections, and version management.
       </p>
     {:else}
       {#if reviewProfiles.length > 0}
@@ -1030,6 +1118,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     {#if !savedContentId}
       <p class="empty-copy">
         Save this content to preview the public transparency breakdown.
+      </p>
+    {:else if governanceState && !governanceState.transparencyEnabled}
+      <p class="empty-copy">
+        Public transparency snapshots are not enabled for this governed content type.
       </p>
     {:else if !transparencyPreview}
       <p class="empty-copy">No transparency preview is available yet.</p>

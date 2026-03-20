@@ -32,7 +32,6 @@ export interface ContentData {
   factIds?: string[];
   facts?: FactData[];
   factLinks?: FactLinkData[];
-  isFactual?: boolean;
   _meta_type?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -121,6 +120,19 @@ export interface ContentVersionData {
   updatedAt?: string;
 }
 
+export interface ContentReviewPolicyData {
+  id?: string;
+  key: string;
+  label: string;
+  kind: string;
+  instructions: string;
+  enabled?: boolean;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ContentReviewProfileRequirementData {
   kind?: string;
   policyKey: string;
@@ -143,20 +155,72 @@ export interface ContentReviewProfileData {
   requirements: ContentReviewProfileRequirementData[];
 }
 
-export interface ContentReviewPolicyData {
+export interface ContentGovernanceProfileData {
+  id?: string;
   key: string;
   label: string;
-  kind: string;
-  instructions: string;
+  description?: string;
+  enabled?: boolean;
+  requirements: Array<{
+    policyKey: string;
+    label?: string;
+    blocking?: boolean;
+    acceptedStatuses?: string[];
+  }>;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export interface ContentGovernanceStateData {
-  isFactual: boolean;
-  defaultFactRelationship: string;
-  publicationReviewProfileKey: string;
+export interface ContentGovernanceAssignmentData {
+  id?: string;
+  key?: string;
+  label?: string;
+  contentType: string;
+  contentVariant?: string | null;
+  enabled?: boolean;
+  factLinkingEnabled?: boolean;
+  transparencyEnabled?: boolean;
+  publicationProfileKey?: string | null;
+  correctionProfileKey?: string | null;
+  enforcePublishReadiness?: boolean;
+  defaultFactRelationship?: string | null;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ResolvedContentGovernanceData {
+  isGoverned: boolean;
+  factLinkingEnabled: boolean;
+  transparencyEnabled: boolean;
+  publicationProfileKey: string | null;
+  correctionProfileKey: string | null;
   enforcePublishReadiness: boolean;
+  defaultFactRelationship: string;
   reviewPolicies: ContentReviewPolicyData[];
+  availableProfiles: ContentGovernanceProfileData[];
+  assignment: ContentGovernanceAssignmentData | null;
+}
+
+export interface ContentGovernanceStateData
+  extends ResolvedContentGovernanceData {
   reviewProfiles: ContentReviewProfileData[];
+}
+
+export interface ContentGovernanceDefinitionsData {
+  effective: {
+    policies: ContentReviewPolicyData[];
+    profiles: ContentGovernanceProfileData[];
+    assignments: ContentGovernanceAssignmentData[];
+  };
+  persisted: {
+    policies: ContentReviewPolicyData[];
+    profiles: ContentGovernanceProfileData[];
+    assignments: ContentGovernanceAssignmentData[];
+  };
 }
 
 export interface ApiResponse<T> {
@@ -239,13 +303,29 @@ function toQueryString(params: Record<string, unknown>): string {
 class ApiClient {
   constructor(public baseUrl: string) {}
 
+  private async request<T>(
+    path: string,
+    options?: RequestInit,
+  ): Promise<ApiResponse<T>> {
+    const res = await fetch(`${this.baseUrl}${path}`, options);
+    if (!res.ok) throw new Error(await res.text());
+    const payload = await res.json();
+    return { data: getItemData<T>(payload), success: true };
+  }
+
+  private async requestList<T>(
+    path: string,
+    options?: RequestInit,
+  ): Promise<ApiResponse<T[]>> {
+    const res = await fetch(`${this.baseUrl}${path}`, options);
+    if (!res.ok) throw new Error(await res.text());
+    const payload = await res.json();
+    return { data: getListData<T>(payload), success: true };
+  }
+
   contents = {
-    list: async (): Promise<ApiResponse<ContentData[]>> => {
-      const res = await fetch(`${this.baseUrl}/contents`);
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getListData(payload), success: true };
-    },
+    list: async (): Promise<ApiResponse<ContentData[]>> =>
+      this.requestList<ContentData>('/contents'),
 
     getBySlug: async (
       slug: string,
@@ -253,52 +333,36 @@ class ApiClient {
         context?: string;
         status?: string;
       } = {},
-    ): Promise<ApiResponse<ContentData | null>> => {
-      const res = await fetch(
-        `${this.baseUrl}/contents/by-slug${toQueryString({
+    ): Promise<ApiResponse<ContentData | null>> =>
+      this.request<ContentData | null>(
+        `/contents/by-slug${toQueryString({
           slug,
           context: options.context,
           status: options.status,
         })}`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getItemData<ContentData | null>(payload), success: true };
-    },
+      ),
 
-    get: async (id: string): Promise<ApiResponse<ContentData>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}`);
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getItemData<ContentData>(payload), success: true };
-    },
+    get: async (id: string): Promise<ApiResponse<ContentData>> =>
+      this.request<ContentData>(`/contents/${id}`),
 
     create: async (
       contentData: Partial<ContentData>,
-    ): Promise<ApiResponse<ContentData>> => {
-      const res = await fetch(`${this.baseUrl}/contents`, {
+    ): Promise<ApiResponse<ContentData>> =>
+      this.request<ContentData>('/contents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(contentData),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getItemData<ContentData>(payload), success: true };
-    },
+      }),
 
     update: async (
       id: string,
       updates: Partial<ContentData>,
-    ): Promise<ApiResponse<ContentData>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}`, {
+    ): Promise<ApiResponse<ContentData>> =>
+      this.request<ContentData>(`/contents/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getItemData<ContentData>(payload), success: true };
-    },
+      }),
 
     delete: async (id: string): Promise<ApiResponse<void>> => {
       const res = await fetch(`${this.baseUrl}/contents/${id}`, {
@@ -316,20 +380,16 @@ class ApiClient {
         includeSuperseded?: boolean;
         latestOnly?: boolean;
       } = {},
-    ): Promise<ApiResponse<FactData[]>> => {
-      const res = await fetch(
-        `${this.baseUrl}/contents/facts${toQueryString({
+    ): Promise<ApiResponse<FactData[]>> =>
+      this.requestList<FactData>(
+        `/contents/facts${toQueryString({
           q: query,
           limit: options.limit,
           minSimilarity: options.minSimilarity,
           includeSuperseded: options.includeSuperseded,
           latestOnly: options.latestOnly,
         })}`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getListData<FactData>(payload), success: true };
-    },
+      ),
 
     getFacts: async (
       id: string,
@@ -340,16 +400,8 @@ class ApiClient {
         facts: FactData[];
         factLinks: FactLinkData[];
       }>
-    > => {
-      const res = await fetch(
-        `${this.baseUrl}/contents/${id}/facts${toQueryString({
-          relationship,
-        })}`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getItemData(payload), success: true };
-    },
+    > =>
+      this.request(`/contents/${id}/facts${toQueryString({ relationship })}`),
 
     syncFacts: async (
       id: string,
@@ -368,203 +420,269 @@ class ApiClient {
           removed: string[];
         };
       }>
-    > => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/facts`, {
+    > =>
+      this.request(`/contents/${id}/facts`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: {
-          ...getItemData(payload),
-          sync: payload.sync,
-        },
-        success: true,
-      };
-    },
+      }),
 
     getReviews: async (
       id: string,
       kind?: string,
-    ): Promise<ApiResponse<ContentReviewData[]>> => {
-      const res = await fetch(
-        `${this.baseUrl}/contents/${id}/reviews${toQueryString({ kind })}`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getListData<ContentReviewData>(payload), success: true };
-    },
+    ): Promise<ApiResponse<ContentReviewData[]>> =>
+      this.requestList<ContentReviewData>(
+        `/contents/${id}/reviews${toQueryString({ kind })}`,
+      ),
 
     getGovernanceState: async (
       id: string,
-    ): Promise<ApiResponse<ContentGovernanceStateData>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/governance`);
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getItemData<ContentGovernanceStateData>(payload),
-        success: true,
-      };
-    },
+    ): Promise<ApiResponse<ContentGovernanceStateData>> =>
+      this.request<ContentGovernanceStateData>(`/contents/${id}/governance`),
+
+    getGovernanceDefinitions: async (): Promise<
+      ApiResponse<ContentGovernanceDefinitionsData>
+    > => this.request<ContentGovernanceDefinitionsData>('/contents/governance'),
+
+    resolveGovernance: async (options: {
+      type?: string;
+      variant?: string | null;
+    }): Promise<ApiResponse<ResolvedContentGovernanceData>> =>
+      this.request<ResolvedContentGovernanceData>(
+        `/contents/governance/resolve${toQueryString({
+          type: options.type,
+          variant: options.variant,
+        })}`,
+      ),
 
     getPublishedTransparency: async (
       id: string,
-    ): Promise<ApiResponse<ContentTransparencyData | null>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/transparency`);
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getItemData<ContentTransparencyData | null>(payload),
-        success: true,
-      };
-    },
+    ): Promise<ApiResponse<ContentTransparencyData | null>> =>
+      this.request<ContentTransparencyData | null>(
+        `/contents/${id}/transparency`,
+      ),
 
     getTransparencyPreview: async (
       id: string,
-    ): Promise<ApiResponse<ContentTransparencyData>> => {
-      const res = await fetch(
-        `${this.baseUrl}/contents/${id}/transparency/preview`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getItemData<ContentTransparencyData>(payload),
-        success: true,
-      };
-    },
+    ): Promise<ApiResponse<ContentTransparencyData | null>> =>
+      this.request<ContentTransparencyData | null>(
+        `/contents/${id}/transparency/preview`,
+      ),
 
     getReviewProfiles: async (
       id: string,
-    ): Promise<ApiResponse<ContentReviewProfileData[]>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/review-profiles`);
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getListData<ContentReviewProfileData>(payload),
-        success: true,
-      };
-    },
+    ): Promise<ApiResponse<ContentReviewProfileData[]>> =>
+      this.requestList<ContentReviewProfileData>(
+        `/contents/${id}/review-profiles`,
+      ),
 
     getReviewProfile: async (
       id: string,
       profileKey: string,
-    ): Promise<ApiResponse<ContentReviewProfileData>> => {
-      const res = await fetch(
-        `${this.baseUrl}/contents/${id}/review-profiles/${encodeURIComponent(
-          profileKey,
-        )}`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getItemData<ContentReviewProfileData>(payload),
-        success: true,
-      };
-    },
+    ): Promise<ApiResponse<ContentReviewProfileData>> =>
+      this.request<ContentReviewProfileData>(
+        `/contents/${id}/review-profiles/${encodeURIComponent(profileKey)}`,
+      ),
 
     runReview: async (
       id: string,
       data: Record<string, any>,
-    ): Promise<ApiResponse<ContentReviewData>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/reviews`, {
+    ): Promise<ApiResponse<ContentReviewData>> =>
+      this.request<ContentReviewData>(`/contents/${id}/reviews`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getItemData<ContentReviewData>(payload), success: true };
-    },
+      }),
 
     getCorrections: async (
       id: string,
-    ): Promise<ApiResponse<ContentCorrectionData[]>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/corrections`);
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getListData<ContentCorrectionData>(payload),
-        success: true,
-      };
-    },
+    ): Promise<ApiResponse<ContentCorrectionData[]>> =>
+      this.requestList<ContentCorrectionData>(`/contents/${id}/corrections`),
 
     issueCorrection: async (
       id: string,
       data: Record<string, any>,
-    ): Promise<ApiResponse<ContentCorrectionData>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/corrections`, {
+    ): Promise<ApiResponse<ContentCorrectionData>> =>
+      this.request<ContentCorrectionData>(`/contents/${id}/corrections`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getItemData<ContentCorrectionData>(payload),
-        success: true,
-      };
-    },
+      }),
 
     getVersions: async (
       id: string,
-    ): Promise<ApiResponse<ContentVersionData[]>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/versions`);
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getListData<ContentVersionData>(payload), success: true };
-    },
+    ): Promise<ApiResponse<ContentVersionData[]>> =>
+      this.requestList<ContentVersionData>(`/contents/${id}/versions`),
 
     createVersion: async (
       id: string,
       data: Record<string, any>,
-    ): Promise<ApiResponse<ContentVersionData>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/versions`, {
+    ): Promise<ApiResponse<ContentVersionData>> =>
+      this.request<ContentVersionData>(`/contents/${id}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getItemData<ContentVersionData>(payload),
-        success: true,
-      };
-    },
+      }),
 
     restoreVersion: async (
       id: string,
       versionNumber: number,
-    ): Promise<ApiResponse<ContentData>> => {
-      const res = await fetch(`${this.baseUrl}/contents/${id}/versions`, {
+    ): Promise<ApiResponse<ContentData>> =>
+      this.request<ContentData>(`/contents/${id}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'restore',
           versionNumber,
         }),
-      });
+      }),
+  };
+
+  contentGovernancePolicies = {
+    list: async (): Promise<ApiResponse<ContentReviewPolicyData[]>> =>
+      this.requestList<ContentReviewPolicyData>('/contentgovernancepolicies'),
+
+    get: async (id: string): Promise<ApiResponse<ContentReviewPolicyData>> =>
+      this.request<ContentReviewPolicyData>(`/contentgovernancepolicies/${id}`),
+
+    create: async (
+      data: Partial<ContentReviewPolicyData>,
+    ): Promise<ApiResponse<ContentReviewPolicyData>> =>
+      this.request<ContentReviewPolicyData>('/contentgovernancepolicies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: async (
+      id: string,
+      data: Partial<ContentReviewPolicyData>,
+    ): Promise<ApiResponse<ContentReviewPolicyData>> =>
+      this.request<ContentReviewPolicyData>(
+        `/contentgovernancepolicies/${id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      ),
+
+    delete: async (id: string): Promise<ApiResponse<void>> => {
+      const res = await fetch(
+        `${this.baseUrl}/contentgovernancepolicies/${id}`,
+        {
+          method: 'DELETE',
+        },
+      );
       if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return { data: getItemData<ContentData>(payload), success: true };
+      return { data: undefined, success: true };
+    },
+  };
+
+  contentGovernanceProfiles = {
+    list: async (): Promise<ApiResponse<ContentGovernanceProfileData[]>> =>
+      this.requestList<ContentGovernanceProfileData>(
+        '/contentgovernanceprofiles',
+      ),
+
+    get: async (
+      id: string,
+    ): Promise<ApiResponse<ContentGovernanceProfileData>> =>
+      this.request<ContentGovernanceProfileData>(
+        `/contentgovernanceprofiles/${id}`,
+      ),
+
+    create: async (
+      data: Partial<ContentGovernanceProfileData>,
+    ): Promise<ApiResponse<ContentGovernanceProfileData>> =>
+      this.request<ContentGovernanceProfileData>('/contentgovernanceprofiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: async (
+      id: string,
+      data: Partial<ContentGovernanceProfileData>,
+    ): Promise<ApiResponse<ContentGovernanceProfileData>> =>
+      this.request<ContentGovernanceProfileData>(
+        `/contentgovernanceprofiles/${id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      ),
+
+    delete: async (id: string): Promise<ApiResponse<void>> => {
+      const res = await fetch(
+        `${this.baseUrl}/contentgovernanceprofiles/${id}`,
+        {
+          method: 'DELETE',
+        },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return { data: undefined, success: true };
+    },
+  };
+
+  contentGovernanceAssignments = {
+    list: async (): Promise<ApiResponse<ContentGovernanceAssignmentData[]>> =>
+      this.requestList<ContentGovernanceAssignmentData>(
+        '/contentgovernanceassignments',
+      ),
+
+    get: async (
+      id: string,
+    ): Promise<ApiResponse<ContentGovernanceAssignmentData>> =>
+      this.request<ContentGovernanceAssignmentData>(
+        `/contentgovernanceassignments/${id}`,
+      ),
+
+    create: async (
+      data: Partial<ContentGovernanceAssignmentData>,
+    ): Promise<ApiResponse<ContentGovernanceAssignmentData>> =>
+      this.request<ContentGovernanceAssignmentData>(
+        '/contentgovernanceassignments',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      ),
+
+    update: async (
+      id: string,
+      data: Partial<ContentGovernanceAssignmentData>,
+    ): Promise<ApiResponse<ContentGovernanceAssignmentData>> =>
+      this.request<ContentGovernanceAssignmentData>(
+        `/contentgovernanceassignments/${id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      ),
+
+    delete: async (id: string): Promise<ApiResponse<void>> => {
+      const res = await fetch(
+        `${this.baseUrl}/contentgovernanceassignments/${id}`,
+        {
+          method: 'DELETE',
+        },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return { data: undefined, success: true };
     },
   };
 
   contentVersions = {
     getTransparency: async (
       id: string,
-    ): Promise<ApiResponse<ContentTransparencyData>> => {
-      const res = await fetch(
-        `${this.baseUrl}/contentversions/${id}/transparency`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json();
-      return {
-        data: getItemData<ContentTransparencyData>(payload),
-        success: true,
-      };
-    },
+    ): Promise<ApiResponse<ContentTransparencyData>> =>
+      this.request<ContentTransparencyData>(
+        `/contentversions/${id}/transparency`,
+      ),
   };
 }
 

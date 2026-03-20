@@ -3,6 +3,13 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { syncSchema } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Contents } from './contents';
+import {
+  ContentGovernanceAssignmentCollection,
+  ContentGovernancePolicyCollection,
+  ContentGovernanceProfileCollection,
+  configureContentGovernance,
+  resetContentGovernanceConfig,
+} from './index';
 
 const CONTENT_REFERENCES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS content_references (
@@ -87,6 +94,69 @@ CREATE TABLE IF NOT EXISTS content_corrections (
 CREATE INDEX IF NOT EXISTS content_corrections_id_idx ON content_corrections (id);
 `;
 
+const GOVERNANCE_POLICIES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_policies (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  kind TEXT,
+  instructions TEXT,
+  enabled BOOLEAN,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_policies_id_idx ON content_governance_policies (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_policies_key_idx ON content_governance_policies (key);
+`;
+
+const GOVERNANCE_PROFILES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_profiles (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  description TEXT,
+  enabled BOOLEAN,
+  requirements TEXT,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_profiles_id_idx ON content_governance_profiles (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_profiles_key_idx ON content_governance_profiles (key);
+`;
+
+const GOVERNANCE_ASSIGNMENTS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_assignments (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  content_type TEXT NOT NULL,
+  content_variant TEXT,
+  enabled BOOLEAN,
+  fact_linking_enabled BOOLEAN,
+  transparency_enabled BOOLEAN,
+  publication_profile_key TEXT,
+  correction_profile_key TEXT,
+  enforce_publish_readiness BOOLEAN,
+  default_fact_relationship TEXT,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_assignments_id_idx ON content_governance_assignments (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_assignments_key_idx ON content_governance_assignments (key);
+`;
+
 describe('Contents', () => {
   let db: DatabaseInterface;
   let contents: Contents;
@@ -104,6 +174,7 @@ describe('Contents', () => {
   });
 
   afterEach(async () => {
+    resetContentGovernanceConfig();
     if (db && typeof (db as any).close === 'function') {
       await (db as any).close();
     }
@@ -146,5 +217,83 @@ describe('Contents', () => {
     });
 
     expect(result).toBeNull();
+  });
+
+  it('returns effective governance definitions with persisted override ids', async () => {
+    await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
+    await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
+    await syncSchema({ db, schema: GOVERNANCE_ASSIGNMENTS_SCHEMA });
+
+    configureContentGovernance({
+      policies: [
+        {
+          key: 'editorial',
+          label: 'Editorial Review',
+          kind: 'custom',
+          instructions: 'Check tone and style.',
+        },
+      ],
+      profiles: [
+        {
+          key: 'publication',
+          label: 'Publication',
+          requirements: [{ policyKey: 'editorial', blocking: true }],
+        },
+      ],
+      assignments: [
+        {
+          contentType: 'article',
+          enabled: true,
+          publicationProfileKey: 'publication',
+        },
+      ],
+    });
+
+    const policies = await ContentGovernancePolicyCollection.create({ db });
+    const profiles = await ContentGovernanceProfileCollection.create({ db });
+    const assignments = await ContentGovernanceAssignmentCollection.create({
+      db,
+    });
+
+    const policy = await policies.create({
+      key: 'editorial',
+      label: 'Admin Editorial Review',
+      kind: 'custom',
+      instructions: 'Admin override.',
+    });
+    const profile = await profiles.create({
+      key: 'publication',
+      label: 'Admin Publication',
+      requirements: [{ policyKey: 'editorial', blocking: true }],
+    });
+    const assignment = await assignments.create({
+      contentType: 'article',
+      enabled: true,
+      publicationProfileKey: 'publication',
+      enforcePublishReadiness: true,
+    });
+
+    const definitions = await contents.getGovernanceDefinitionsAction();
+
+    expect(
+      definitions.effective.policies.find((item) => item.key === 'editorial'),
+    ).toMatchObject({
+      id: policy.id,
+      label: 'Admin Editorial Review',
+    });
+    expect(
+      definitions.effective.profiles.find((item) => item.key === 'publication'),
+    ).toMatchObject({
+      id: profile.id,
+      label: 'Admin Publication',
+    });
+    expect(
+      definitions.effective.assignments.find(
+        (item) => item.contentType === 'article',
+      ),
+    ).toMatchObject({
+      id: assignment.id,
+      enforcePublishReadiness: true,
+    });
   });
 });

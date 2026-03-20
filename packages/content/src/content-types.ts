@@ -61,36 +61,3 @@ export class Mirror extends Content {
     // Mirror-specific initialization can go here
   }
 }
-
-/**
- * FactualContent type
- *
- * Opt-in base class for apps that want fact-linked authoring, reviews,
- * and correction workflows without forcing every Content record into it.
- */
-@smrt({
-  tableStrategy: 'sti',
-  api: false,
-  mcp: false,
-  cli: false,
-})
-export class FactualContent extends Content {
-  constructor(options: ContentOptions = {}) {
-    super({
-      ...options,
-      metadata: {
-        ...(options.metadata || {}),
-        factual: true,
-        governance: {
-          ...((options.metadata as any)?.governance || {}),
-          enabled: true,
-          factual: true,
-        },
-      },
-    });
-  }
-
-  override isFactual(): boolean {
-    return true;
-  }
-}

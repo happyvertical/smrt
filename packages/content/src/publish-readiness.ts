@@ -60,7 +60,7 @@ export function evaluateContentPublishReadiness(
       level: enforce ? 'blocked' : 'advisory',
       title: 'Publication Needs A Saved Draft',
       message:
-        'Save this factual content first so reviews can run before publication.',
+        'Save this governed content first so reviews can run before publication.',
       details: [],
       disableSave: enforce,
     };

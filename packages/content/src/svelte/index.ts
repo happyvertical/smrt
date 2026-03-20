@@ -14,18 +14,26 @@ import { CONTENT_MODULE_META } from '../ui.js';
 // Import components
 import ArticleCard from './components/ArticleCard.svelte';
 import ArticleList from './components/ArticleList.svelte';
+import ContentGovernanceAssignmentEditor from './components/ContentGovernanceAssignmentEditor.svelte';
+import ContentGovernanceManager from './components/ContentGovernanceManager.svelte';
+import ContentGovernancePanel from './components/ContentGovernancePanel.svelte';
+import ContentGovernancePolicyEditor from './components/ContentGovernancePolicyEditor.svelte';
+import ContentGovernanceProfileEditor from './components/ContentGovernanceProfileEditor.svelte';
 import ContentTransparencyReport from './components/ContentTransparencyReport.svelte';
-import FactualContentEditor from './components/FactualContentEditor.svelte';
-import FactualContentWorkflow from './components/FactualContentWorkflow.svelte';
+import GovernedContentEditor from './components/GovernedContentEditor.svelte';
 import Markdown from './components/Markdown.svelte';
 
 // Export components
 export {
   ArticleCard,
   ArticleList,
+  ContentGovernanceAssignmentEditor,
+  ContentGovernanceManager,
+  ContentGovernancePanel,
+  ContentGovernancePolicyEditor,
+  ContentGovernanceProfileEditor,
   ContentTransparencyReport,
-  FactualContentEditor,
-  FactualContentWorkflow,
+  GovernedContentEditor,
   Markdown,
 };
 
@@ -35,11 +43,23 @@ export type ArticleListProps = ComponentProps<typeof ArticleList>;
 export type ContentTransparencyReportProps = ComponentProps<
   typeof ContentTransparencyReport
 >;
-export type FactualContentEditorProps = ComponentProps<
-  typeof FactualContentEditor
+export type ContentGovernanceAssignmentEditorProps = ComponentProps<
+  typeof ContentGovernanceAssignmentEditor
 >;
-export type FactualContentWorkflowProps = ComponentProps<
-  typeof FactualContentWorkflow
+export type ContentGovernanceManagerProps = ComponentProps<
+  typeof ContentGovernanceManager
+>;
+export type ContentGovernancePanelProps = ComponentProps<
+  typeof ContentGovernancePanel
+>;
+export type ContentGovernancePolicyEditorProps = ComponentProps<
+  typeof ContentGovernancePolicyEditor
+>;
+export type ContentGovernanceProfileEditorProps = ComponentProps<
+  typeof ContentGovernanceProfileEditor
+>;
+export type GovernedContentEditorProps = ComponentProps<
+  typeof GovernedContentEditor
 >;
 export type MarkdownProps = ComponentProps<typeof Markdown>;
 

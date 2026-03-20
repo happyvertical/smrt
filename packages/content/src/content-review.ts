@@ -78,6 +78,10 @@ export class ContentReview extends SmrtObject {
   }
 
   getFindings(): ContentReviewFinding[] {
+    if (Array.isArray(this.findings)) {
+      return this.findings as ContentReviewFinding[];
+    }
+
     try {
       return this.findings ? JSON.parse(this.findings) : [];
     } catch {
@@ -86,6 +90,10 @@ export class ContentReview extends SmrtObject {
   }
 
   getMetadata(): Record<string, any> {
+    if (this.metadata && typeof this.metadata === 'object') {
+      return { ...(this.metadata as Record<string, any>) };
+    }
+
     try {
       return this.metadata ? JSON.parse(this.metadata) : {};
     } catch {

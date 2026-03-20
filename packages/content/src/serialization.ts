@@ -83,12 +83,38 @@ export function serializeContentReviewPolicy(policy: any) {
   };
 }
 
+export function serializeContentGovernanceProfile(profile: any) {
+  const data = toJSON<Record<string, any>>(profile);
+  return {
+    ...data,
+    requirements: Array.isArray(data.requirements) ? data.requirements : [],
+    metadata:
+      typeof profile?.getMetadata === 'function'
+        ? profile.getMetadata()
+        : data.metadata || {},
+  };
+}
+
+export function serializeContentGovernanceAssignment(assignment: any) {
+  const data = toJSON<Record<string, any>>(assignment);
+  return {
+    ...data,
+    metadata:
+      typeof assignment?.getMetadata === 'function'
+        ? assignment.getMetadata()
+        : data.metadata || {},
+  };
+}
+
 export function serializeContentGovernanceState(state: any) {
   const data = toJSON<Record<string, any>>(state);
   return {
     ...data,
     reviewPolicies: Array.isArray(data.reviewPolicies)
       ? data.reviewPolicies.map(serializeContentReviewPolicy)
+      : [],
+    availableProfiles: Array.isArray(data.availableProfiles)
+      ? data.availableProfiles.map(serializeContentGovernanceProfile)
       : [],
     reviewProfiles: Array.isArray(data.reviewProfiles)
       ? data.reviewProfiles.map(serializeContentReviewProfileEvaluation)
@@ -97,46 +123,17 @@ export function serializeContentGovernanceState(state: any) {
 }
 
 export async function serializeContent(content: any) {
-  const isFactual =
-    typeof content?.isFactual === 'function' ? content.isFactual() : false;
-
   const [references, assets] = await Promise.all([
     typeof content?.getReferences === 'function' ? content.getReferences() : [],
     typeof content?.getAssets === 'function' ? content.getAssets() : [],
   ]);
 
-  let factLinks: any[] = [];
-  let facts: any[] = [];
-
-  if (isFactual) {
-    try {
-      [factLinks, facts] = await Promise.all([
-        typeof content?.getFactLinks === 'function'
-          ? content.getFactLinks()
-          : [],
-        typeof content?.getFacts === 'function'
-          ? content.getFacts({
-              latestOnly: true,
-              includeSuperseded: false,
-            })
-          : [],
-      ]);
-    } catch {
-      factLinks = [];
-      facts = [];
-    }
-  }
-
   return {
     ...toJSON<Record<string, any>>(content),
-    isFactual,
     referenceIds: references
       .map((reference: any) => reference?.id)
       .filter(Boolean),
     assetIds: assets.map((asset: any) => asset?.id).filter(Boolean),
     assets: assets.map((asset: any) => toJSON<Record<string, any>>(asset)),
-    factIds: facts.map((fact: any) => fact?.id).filter(Boolean),
-    facts: facts.map(serializeFact),
-    factLinks: factLinks.map(serializeFactLink),
   };
 }

@@ -138,9 +138,12 @@ describe('mock-smrt-client', () => {
         mockJsonResponse({
           action: 'getGovernanceStateAction',
           result: {
-            isFactual: true,
+            isGoverned: true,
+            factLinkingEnabled: true,
+            transparencyEnabled: true,
             defaultFactRelationship: 'supports',
-            publicationReviewProfileKey: 'publication',
+            publicationProfileKey: 'publication',
+            correctionProfileKey: 'correction',
             enforcePublishReadiness: true,
             reviewPolicies: [
               {
@@ -150,6 +153,7 @@ describe('mock-smrt-client', () => {
                 instructions: 'Check style and tone.',
               },
             ],
+            availableProfiles: [],
             reviewProfiles: [],
           },
         }),
@@ -163,7 +167,8 @@ describe('mock-smrt-client', () => {
       key: 'editorial',
       kind: 'custom',
     });
-    expect(response.data.isFactual).toBe(true);
+    expect(response.data.isGoverned).toBe(true);
+    expect(response.data.publicationProfileKey).toBe('publication');
     expect(response.data.enforcePublishReadiness).toBe(true);
   });
 

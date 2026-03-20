@@ -4,7 +4,7 @@ import { onMount } from 'svelte';
 import { createClient } from '../mock-smrt-client';
 import ContentEditor from '../svelte/components/ContentEditor.svelte';
 import ContentList from '../svelte/components/ContentList.svelte';
-import FactualContentEditor from '../svelte/components/FactualContentEditor.svelte';
+import GovernedContentEditor from '../svelte/components/GovernedContentEditor.svelte';
 
 const client = createClient('/api/v1');
 
@@ -15,7 +15,7 @@ let error = $state<string | null>(null);
 // UI State
 let showAddForm = $state(false);
 let editingContent = $state<any>(null);
-let editorMode = $state<'generic' | 'factual'>('generic');
+let editorMode = $state<'generic' | 'governed'>('generic');
 
 const stats = $derived({
   total: contents.length,
@@ -42,24 +42,7 @@ async function loadContents() {
 
 async function handleSaveContent(formData: any) {
   try {
-    const payload =
-      editorMode === 'factual'
-        ? {
-            ...formData,
-            metadata: {
-              ...(formData.metadata || {}),
-              factual: true,
-              governance: {
-                ...((formData.metadata?.governance || {}) as Record<
-                  string,
-                  any
-                >),
-                enabled: true,
-                factual: true,
-              },
-            },
-          }
-        : formData;
+    const payload = formData;
 
     if (editingContent) {
       // Update existing
@@ -91,12 +74,16 @@ async function handleEditContent(content: any) {
     // Fetch the full record with hydrated assets/referenceIds
     const response = await client.contents.get(content.id);
     editingContent = response.data;
-    editorMode = isFactualContent(response.data) ? 'factual' : 'generic';
+    const governance = await client.contents.resolveGovernance({
+      type: response.data.type,
+      variant: response.data.variant,
+    });
+    editorMode = governance.data.isGoverned ? 'governed' : 'generic';
   } catch (err: any) {
     // Fall back to the list item if fetch fails
     console.error('Failed to fetch full content record:', err);
     editingContent = content;
-    editorMode = isFactualContent(content) ? 'factual' : 'generic';
+    editorMode = 'generic';
   }
   showAddForm = false;
 }
@@ -107,36 +94,21 @@ function handleAddContent() {
   editorMode = 'generic';
 }
 
-function handleAddFactualContent() {
+function handleAddGovernedContent() {
   editingContent = {
     type: 'article',
     status: 'draft',
     state: 'active',
     source: 'manual',
-    metadata: {
-      factual: true,
-      governance: {
-        enabled: true,
-        factual: true,
-      },
-    },
   };
   showAddForm = true;
-  editorMode = 'factual';
+  editorMode = 'governed';
 }
 
 function closeForms() {
   editingContent = null;
   showAddForm = false;
   editorMode = 'generic';
-}
-
-function isFactualContent(content: any) {
-  return Boolean(
-    content?.isFactual ||
-      content?.metadata?.factual ||
-      content?.metadata?.governance?.factual,
-  );
 }
 
 function getPublishedHref(content: any) {
@@ -197,10 +169,10 @@ function getPublishedHref(content: any) {
         
           {#if showAddForm || editingContent}
             <div class="editor-unified-container">
-              {#if editorMode === 'factual'}
-                <FactualContentEditor
+              {#if editorMode === 'governed'}
+                <GovernedContentEditor
                   content={editingContent}
-                  contentId={editingContent?.id || 'new-factual'}
+                  contentId={editingContent?.id || 'new'}
                   onSave={handleSaveContent}
                   onCancel={closeForms}
                 />
@@ -224,8 +196,8 @@ function getPublishedHref(content: any) {
               <!-- Example of injecting custom controls via Svelte Snippet -->
               {#snippet controls()}
                 <div class="custom-control">
-                  <button type="button" class="secondary-action" onclick={handleAddFactualContent}>
-                    Add factual
+                  <button type="button" class="secondary-action" onclick={handleAddGovernedContent}>
+                    Add governed article
                   </button>
                   <span class="badge state-active">Published QA ready</span>
                 </div>

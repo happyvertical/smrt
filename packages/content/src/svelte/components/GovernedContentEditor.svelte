@@ -6,12 +6,11 @@ import type {
 } from '../../mock-smrt-client';
 import { evaluateContentPublishReadiness } from '../../publish-readiness';
 import ContentEditor from './ContentEditor.svelte';
-import FactualContentWorkflow from './FactualContentWorkflow.svelte';
+import ContentGovernancePanel from './ContentGovernancePanel.svelte';
 
-export type FactualContentEditorSaveData = ContentData & {
+export type GovernedContentEditorSaveData = ContentData & {
   factIds: string[];
   facts: FactData[];
-  isFactual: true;
 };
 
 export interface Props {
@@ -23,7 +22,7 @@ export interface Props {
   customReviewInstructions?: string;
   customReviewPolicyKey?: string;
   enforcePublishReadiness?: boolean;
-  onSave: (data: FactualContentEditorSaveData) => void;
+  onSave: (data: GovernedContentEditorSaveData) => void;
   onCancel: () => void;
 }
 
@@ -70,25 +69,24 @@ $effect(() => {
   governanceState = null;
 });
 
-const factualContent = $derived(
+const governedContent = $derived(
   content
     ? {
         ...content,
         factIds: selectedFactIds,
         facts: selectedFacts,
-        isFactual: true,
       }
     : undefined,
 );
 const activeReviewProfileKey = $derived(
-  governanceState?.publicationReviewProfileKey || reviewProfileKey,
+  governanceState?.publicationProfileKey || reviewProfileKey,
 );
 const activeEnforcePublishReadiness = $derived(
   governanceState?.enforcePublishReadiness ?? enforcePublishReadiness,
 );
 const publishReadinessState = $derived(
   evaluateContentPublishReadiness({
-    status: draftContent?.status || factualContent?.status,
+    status: draftContent?.status || governedContent?.status,
     contentId:
       typeof resolvedContentId === 'string' && resolvedContentId !== 'new'
         ? resolvedContentId
@@ -133,12 +131,11 @@ function handleSave(data: ContentData) {
     ...data,
     factIds: selectedFactIds,
     facts: selectedFacts,
-    isFactual: true,
   });
 }
 </script>
 
-<div class="factual-editor">
+<div class="governed-editor">
   {#if publishReadinessState}
     <div class={`publish-readiness-card publish-readiness-card--${publishReadinessState.level}`}>
       <div class="publish-readiness-card__header">
@@ -159,7 +156,7 @@ function handleSave(data: ContentData) {
   {/if}
 
   <ContentEditor
-    content={factualContent}
+    content={governedContent}
     contentId={resolvedContentId}
     saveDisabled={publishSaveDisabled}
     saveNotice={publishSaveNotice}
@@ -168,8 +165,10 @@ function handleSave(data: ContentData) {
     onCancel={onCancel}
   />
 
-  <FactualContentWorkflow
+  <ContentGovernancePanel
     contentId={resolvedContentId}
+    draftType={draftContent?.type || content?.type}
+    draftVariant={draftContent?.variant || content?.variant}
     selectedFactIds={selectedFactIds}
     selectedFacts={selectedFacts}
     defaultRelationship={defaultRelationship}
@@ -183,7 +182,7 @@ function handleSave(data: ContentData) {
 </div>
 
 <style>
-  .factual-editor {
+  .governed-editor {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;

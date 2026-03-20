@@ -10,6 +10,10 @@ import type { Image } from '@happyvertical/smrt-images';
 import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { Content } from './content';
+import {
+  getEffectiveContentGovernanceConfig,
+  resolveEffectiveContentGovernance,
+} from './content-governance';
 import { serializeContent, serializeFact } from './serialization';
 import type {
   ThumbnailOptions,
@@ -48,7 +52,12 @@ function isAIClientOptions(
  */
 @smrt({
   api: {
-    include: ['browseFacts', 'getBySlug'],
+    include: [
+      'browseFacts',
+      'getBySlug',
+      'getGovernanceDefinitionsAction',
+      'resolveGovernanceAction',
+    ],
     routes: {
       browseFacts: {
         scope: 'collection',
@@ -59,6 +68,16 @@ function isAIClientOptions(
         scope: 'collection',
         method: 'GET',
         path: 'by-slug',
+      },
+      getGovernanceDefinitionsAction: {
+        scope: 'collection',
+        method: 'GET',
+        path: 'governance',
+      },
+      resolveGovernanceAction: {
+        scope: 'collection',
+        method: 'GET',
+        path: 'governance/resolve',
       },
     },
   },
@@ -182,6 +201,155 @@ export class Contents extends SmrtCollection<Content> {
     }
 
     return serializeContent(content);
+  }
+
+  public async getGovernanceDefinitionsAction() {
+    const [
+      effective,
+      persistedPolicies,
+      persistedProfiles,
+      persistedAssignments,
+    ] = await Promise.all([
+      getEffectiveContentGovernanceConfig({ db: this.db }),
+      this.loadPersistedGovernancePolicies(),
+      this.loadPersistedGovernanceProfiles(),
+      this.loadPersistedGovernanceAssignments(),
+    ]);
+
+    return {
+      effective: {
+        policies: effective.policies.map((policy) => ({
+          ...policy,
+          ...(persistedPolicies.find((item) => item.key === policy.key) || {}),
+        })),
+        profiles: effective.profiles.map((profile) => ({
+          ...profile,
+          ...(persistedProfiles.find((item) => item.key === profile.key) || {}),
+        })),
+        assignments: effective.assignments.map((assignment) => ({
+          ...assignment,
+          ...(persistedAssignments.find(
+            (item) => item.key === assignment.key,
+          ) || {}),
+        })),
+      },
+      persisted: {
+        policies: persistedPolicies,
+        profiles: persistedProfiles,
+        assignments: persistedAssignments,
+      },
+    };
+  }
+
+  public async resolveGovernanceAction(
+    options: { type?: string; variant?: string | null } = {},
+  ) {
+    return resolveEffectiveContentGovernance({
+      contentType: options.type || null,
+      contentVariant: options.variant || null,
+      db: this.db,
+    });
+  }
+
+  private async loadPersistedGovernancePolicies(): Promise<
+    Record<string, any>[]
+  > {
+    try {
+      const rows = await this.db.list('content_governance_policies', {});
+      rows.sort((a, b) =>
+        String(a.created_at || a.createdAt || '').localeCompare(
+          String(b.created_at || b.createdAt || ''),
+        ),
+      );
+
+      return rows.map((row) => ({
+        ...row,
+        enabled: row.enabled !== false && row.enabled !== 0,
+        metadata:
+          typeof row.metadata === 'string' && row.metadata.length > 0
+            ? JSON.parse(row.metadata)
+            : row.metadata || {},
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private async loadPersistedGovernanceProfiles(): Promise<
+    Record<string, any>[]
+  > {
+    try {
+      const rows = await this.db.list('content_governance_profiles', {});
+      rows.sort((a, b) =>
+        String(a.created_at || a.createdAt || '').localeCompare(
+          String(b.created_at || b.createdAt || ''),
+        ),
+      );
+
+      return rows.map((row) => ({
+        ...row,
+        enabled: row.enabled !== false && row.enabled !== 0,
+        requirements:
+          typeof row.requirements === 'string' && row.requirements.length > 0
+            ? JSON.parse(row.requirements)
+            : Array.isArray(row.requirements)
+              ? row.requirements
+              : [],
+        metadata:
+          typeof row.metadata === 'string' && row.metadata.length > 0
+            ? JSON.parse(row.metadata)
+            : row.metadata || {},
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private async loadPersistedGovernanceAssignments(): Promise<
+    Record<string, any>[]
+  > {
+    try {
+      const rows = await this.db.list('content_governance_assignments', {});
+      rows.sort((a, b) =>
+        String(a.created_at || a.createdAt || '').localeCompare(
+          String(b.created_at || b.createdAt || ''),
+        ),
+      );
+
+      return rows.map((row) => ({
+        ...row,
+        key: row.key || '',
+        contentType: row.contentType || row.content_type || '',
+        contentVariant: row.contentVariant || row.content_variant || null,
+        enabled: row.enabled !== false && row.enabled !== 0,
+        factLinkingEnabled:
+          row.factLinkingEnabled === true ||
+          row.fact_linking_enabled === true ||
+          row.fact_linking_enabled === 1,
+        transparencyEnabled:
+          row.transparencyEnabled === true ||
+          row.transparency_enabled === true ||
+          row.transparency_enabled === 1,
+        publicationProfileKey:
+          row.publicationProfileKey || row.publication_profile_key || null,
+        correctionProfileKey:
+          row.correctionProfileKey || row.correction_profile_key || null,
+        enforcePublishReadiness:
+          row.enforcePublishReadiness === true ||
+          row.enforce_publish_readiness === true ||
+          row.enforce_publish_readiness === 1,
+        defaultFactRelationship:
+          row.defaultFactRelationship ||
+          row.default_fact_relationship ||
+          'supports',
+        metadata:
+          typeof row.metadata === 'string' && row.metadata.length > 0
+            ? JSON.parse(row.metadata)
+            : row.metadata || {},
+      }));
+    } catch {
+      return [];
+    }
   }
 
   /**

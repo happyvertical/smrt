@@ -12,11 +12,12 @@ export { ContentCorrectionCollection } from './content-corrections';
 export type {
   ContentCorrectionStatus,
   ContentCorrectionType,
+  ContentGovernanceAssignmentDefinition,
   ContentGovernanceConfig,
+  ContentGovernanceProfileDefinition,
   ContentGovernanceState,
   ContentReviewFinding,
   ContentReviewKind,
-  ContentReviewPolicy,
   ContentReviewPolicyDefinition,
   ContentReviewProfileEvaluation,
   ContentReviewProfileEvaluationItem,
@@ -27,26 +28,38 @@ export type {
   ContentVersionKind,
   CreateContentVersionOptions,
   IssueContentCorrectionOptions,
+  ResolvedContentGovernance,
   RunContentReviewOptions,
 } from './content-governance';
 export {
+  buildContentGovernanceAssignmentKey,
   buildContentReviewPrompt,
   configureContentGovernance,
-  DEFAULT_SAFETY_PROMPT,
   getAcceptedContentReviewStatuses,
   getContentGovernanceConfig,
-  getContentPublicationReviewProfileKey,
   getContentReviewKind,
   getContentReviewPolicies,
   getContentReviewPolicy,
   getContentReviewProfile,
   getContentReviewProfileKeys,
   getContentReviewRequirements,
-  isContentPublishReadinessEnforced,
-  isFactualContentEnabled,
+  getEffectiveContentGovernanceConfig,
+  hasStaticContentGovernancePolicy,
+  hasStaticContentGovernanceProfile,
   parseContentReviewResponse,
   resetContentGovernanceConfig,
+  resolveConfiguredContentGovernance,
+  resolveEffectiveContentGovernance,
 } from './content-governance';
+export type { ContentGovernanceAssignmentOptions } from './content-governance-assignment';
+export { ContentGovernanceAssignment } from './content-governance-assignment';
+export { ContentGovernanceAssignmentCollection } from './content-governance-assignments';
+export { ContentGovernancePolicyCollection } from './content-governance-policies';
+export type { ContentGovernancePolicyOptions } from './content-governance-policy';
+export { ContentGovernancePolicy } from './content-governance-policy';
+export type { ContentGovernanceProfileOptions } from './content-governance-profile';
+export { ContentGovernanceProfile } from './content-governance-profile';
+export { ContentGovernanceProfileCollection } from './content-governance-profiles';
 export type { ContentReferenceOptions } from './content-reference';
 export { ContentReference } from './content-reference';
 export type { ContentReferencesOptions } from './content-references';
@@ -68,7 +81,6 @@ export { normalizeContentTransparency } from './content-transparency';
 export {
   Article,
   ContentDocument,
-  FactualContent,
   Mirror,
 } from './content-types';
 export type { ContentVersionOptions } from './content-version';

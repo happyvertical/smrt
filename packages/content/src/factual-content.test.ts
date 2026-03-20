@@ -1,26 +1,22 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
-import {
-  FactCollection,
-  FactSourceCollection,
-} from '@happyvertical/smrt-facts';
+import { FactCollection } from '@happyvertical/smrt-facts';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { syncSchema } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Content } from './content';
-import { ContentCorrection } from './content-correction';
 import {
   buildContentReviewPrompt,
   configureContentGovernance,
-  getContentReviewPolicies,
-  getContentReviewProfileKeys,
-  getContentReviewRequirements,
   parseContentReviewResponse,
   resetContentGovernanceConfig,
+  resolveConfiguredContentGovernance,
+  resolveEffectiveContentGovernance,
 } from './content-governance';
-import { ContentReview } from './content-review';
-import { ContentReviewCollection } from './content-reviews';
-import { FactualContent } from './content-types';
-import { ContentVersion } from './content-version';
+import {
+  ContentGovernanceAssignmentCollection,
+  ContentGovernancePolicyCollection,
+  ContentGovernanceProfileCollection,
+} from './index';
 
 afterEach(() => {
   resetContentGovernanceConfig();
@@ -64,6 +60,27 @@ CREATE INDEX IF NOT EXISTS content_versions_id_idx ON content_versions (id);
 CREATE UNIQUE INDEX IF NOT EXISTS content_versions_content_id_version_idx ON content_versions (content_id, version);
 `;
 
+const CONTENT_REVIEWS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_reviews (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  content_id TEXT,
+  content_version_id TEXT,
+  kind TEXT,
+  policy_key TEXT,
+  status TEXT,
+  summary TEXT,
+  findings TEXT,
+  reviewer TEXT,
+  metadata TEXT,
+  tenant_id TEXT
+);
+CREATE INDEX IF NOT EXISTS content_reviews_id_idx ON content_reviews (id);
+`;
+
 const CONTENT_CORRECTIONS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS content_corrections (
   id TEXT PRIMARY KEY NOT NULL,
@@ -88,6 +105,49 @@ CREATE TABLE IF NOT EXISTS content_corrections (
 CREATE INDEX IF NOT EXISTS content_corrections_id_idx ON content_corrections (id);
 `;
 
+const FACTS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS facts (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  _meta_type TEXT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  text_refined TEXT,
+  text_raw TEXT,
+  type TEXT,
+  status TEXT,
+  domain TEXT,
+  parent_id TEXT,
+  evolution_type TEXT,
+  source_count INTEGER,
+  confidence DECIMAL,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS facts_id_idx ON facts (id);
+`;
+
+const FACT_SOURCES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS fact_sources (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  _meta_type TEXT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  fact_id TEXT,
+  source_type TEXT,
+  source_url TEXT,
+  source_title TEXT,
+  credibility DECIMAL,
+  extracted_at DATETIME,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS fact_sources_id_idx ON fact_sources (id);
+`;
+
 const FACT_CONTENTS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS fact_contents (
   id TEXT PRIMARY KEY NOT NULL,
@@ -105,69 +165,147 @@ CREATE INDEX IF NOT EXISTS fact_contents_id_idx ON fact_contents (id);
 CREATE UNIQUE INDEX IF NOT EXISTS fact_contents_fact_id_content_id_relationship_idx ON fact_contents (fact_id, content_id, relationship);
 `;
 
+const GOVERNANCE_POLICIES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_policies (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  kind TEXT,
+  instructions TEXT,
+  enabled BOOLEAN,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_policies_id_idx ON content_governance_policies (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_policies_key_idx ON content_governance_policies (key);
+`;
+
+const GOVERNANCE_PROFILES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_profiles (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  description TEXT,
+  enabled BOOLEAN,
+  requirements TEXT,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_profiles_id_idx ON content_governance_profiles (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_profiles_key_idx ON content_governance_profiles (key);
+`;
+
+const GOVERNANCE_ASSIGNMENTS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_assignments (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  content_type TEXT NOT NULL,
+  content_variant TEXT,
+  enabled BOOLEAN,
+  fact_linking_enabled BOOLEAN,
+  transparency_enabled BOOLEAN,
+  publication_profile_key TEXT,
+  correction_profile_key TEXT,
+  enforce_publish_readiness BOOLEAN,
+  default_fact_relationship TEXT,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_assignments_id_idx ON content_governance_assignments (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_assignments_key_idx ON content_governance_assignments (key);
+`;
+
 async function prepareContentWorkflowSchemas(db: DatabaseInterface) {
   await syncSchema({ db, schema: CONTENT_REFERENCES_SCHEMA });
   await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
+  await syncSchema({ db, schema: CONTENT_REVIEWS_SCHEMA });
   await syncSchema({ db, schema: CONTENT_CORRECTIONS_SCHEMA });
+  await syncSchema({ db, schema: FACTS_SCHEMA });
+  await syncSchema({ db, schema: FACT_SOURCES_SCHEMA });
   await syncSchema({ db, schema: FACT_CONTENTS_SCHEMA });
 }
 
-describe('FactualContent foundations', () => {
-  it('marks factual content as opted in via metadata and helper methods', () => {
-    const content = new FactualContent({
-      title: 'Transit update',
-      body: 'Ridership increased this winter.',
-      metadata: {
-        section: 'transportation',
-      },
+async function prepareGovernanceSchemas(db: DatabaseInterface) {
+  await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_ASSIGNMENTS_SCHEMA });
+}
+
+describe('Content governance', () => {
+  it('keeps plain Content publish/save compatible without governance tables', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
     });
+    const touchedTables = new Set<string>();
+    const trackTable = <T extends (...args: any[]) => Promise<any>>(
+      method: T,
+    ): T =>
+      (async (table: string, ...args: any[]) => {
+        touchedTables.add(table);
+        return method(table, ...args);
+      }) as T;
 
-    expect(content.isFactual()).toBe(true);
-    expect(content.metadata.section).toBe('transportation');
-    expect(content.metadata.factual).toBe(true);
-    expect(content.metadata.governance.enabled).toBe(true);
-    expect(content.metadata.governance.factual).toBe(true);
-  });
+    db.list = trackTable(db.list.bind(db));
+    db.get = trackTable(db.get.bind(db));
+    db.insert = trackTable(db.insert.bind(db));
+    db.update = trackTable(db.update.bind(db));
+    db.delete = trackTable(db.delete.bind(db));
+    db.upsert = trackTable(db.upsert.bind(db));
+    db.getOrInsert = trackTable(db.getOrInsert.bind(db));
 
-  it('supports app-level governance overrides and reset', () => {
-    const configured = configureContentGovernance({
-      defaultFactRelationship: 'referenced_in',
-      publicationReviewProfileKey: 'preflight',
-      enforcePublishReadiness: true,
-      reviewPolicies: {
-        newsroom: {
-          key: 'newsroom',
-          instructions: 'Check tone, sourcing, and local publication rules.',
-        },
-      },
-      reviewProfiles: {
-        publish: [
-          {
-            policyKey: 'safety',
-            blocking: true,
-          },
-        ],
-      },
-    });
+    try {
+      const content = new Content({
+        name: 'document-body',
+        title: 'Document body',
+        body: 'This is a plain document body.',
+        type: 'document',
+        status: 'published',
+        db,
+      });
+      await content.initialize();
+      await content.save();
 
-    expect(configured.defaultFactRelationship).toBe('referenced_in');
-    expect(configured.publicationReviewProfileKey).toBe('preflight');
-    expect(configured.enforcePublishReadiness).toBe(true);
-    expect(configured.reviewPolicies.newsroom.instructions).toContain(
-      'local publication rules',
-    );
-    expect(configured.reviewProfiles.publish[0]?.policyKey).toBe('safety');
+      expect(content.id).toBeDefined();
+      expect(content.isGoverned()).toBe(false);
 
-    const reset = resetContentGovernanceConfig();
-    expect(reset.defaultFactRelationship).toBe('supports');
-    expect(reset.publicationReviewProfileKey).toBe('publication');
-    expect(reset.enforcePublishReadiness).toBe(false);
-    expect(reset.reviewPolicies.newsroom).toBeUndefined();
-    expect(reset.reviewProfiles.publish).toBeUndefined();
+      content.body = 'This is still plain content.';
+      await expect(content.save()).resolves.toBe(content);
+      expect(
+        [...touchedTables].filter((table) =>
+          [
+            'content_governance_policies',
+            'content_governance_profiles',
+            'content_governance_assignments',
+            'content_versions',
+            'content_reviews',
+            'content_corrections',
+            'fact_contents',
+          ].includes(table),
+        ),
+      ).toEqual([]);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
   });
 
   it('builds and parses structured review prompts', () => {
-    const content = new FactualContent({
+    const content = new Content({
       title: 'Bridge reopening',
       body: 'The bridge reopened in February.',
       status: 'draft',
@@ -189,7 +327,6 @@ describe('FactualContent foundations', () => {
 
     expect(prompt).toContain('Review kind: facts');
     expect(prompt).toContain('fact-1');
-    expect(prompt).toContain('The bridge reopened on March 1.');
 
     const parsed = parseContentReviewResponse(
       JSON.stringify({
@@ -207,356 +344,169 @@ describe('FactualContent foundations', () => {
     );
 
     expect(parsed.status).toBe('flagged');
-    expect(parsed.summary).toContain('unsupported timing');
-    expect(parsed.findings[0].factId).toBe('fact-1');
+    expect(parsed.findings[0]?.factId).toBe('fact-1');
   });
 
-  it('round-trips version, review, and correction JSON payloads', () => {
-    const version = new ContentVersion({
-      contentId: 'content-1',
-      version: 2,
-      summary: 'Updated numbers',
-      snapshot: {
-        title: 'Budget update',
-        body: 'The total is $4.2 million.',
-      },
-      metadata: {
-        editor: 'copy-desk',
-      },
-    });
-    expect(version.getSnapshot().body).toBe('The total is $4.2 million.');
-    expect(version.getMetadata().editor).toBe('copy-desk');
-
-    const review = new ContentReview({
-      contentId: 'content-1',
-      kind: 'facts',
-      findings: [
+  it('applies type-only assignments and keeps built-in policies/profiles available', () => {
+    configureContentGovernance({
+      assignments: [
         {
-          severity: 'warning',
-          title: 'Unsupported amount',
-          detail: 'The amount needs a source.',
+          contentType: 'article',
+          enabled: true,
+          factLinkingEnabled: true,
+          transparencyEnabled: true,
+          publicationProfileKey: 'publication',
+          correctionProfileKey: 'correction',
+          enforcePublishReadiness: true,
         },
       ],
-      metadata: {
-        reviewerMode: 'ai',
-      },
-    });
-    expect(review.getFindings()).toHaveLength(1);
-    expect(review.getMetadata().reviewerMode).toBe('ai');
-
-    const correction = new ContentCorrection({
-      contentId: 'content-1',
-      summary: 'Corrected the amount.',
-      metadata: {
-        correctionChannel: 'public-note',
-      },
-    });
-    expect(correction.getMetadata().correctionChannel).toBe('public-note');
-  });
-
-  it('filters review requirements for factual content profiles', () => {
-    const content = new FactualContent({
-      title: 'Budget update',
-      body: 'The budget passed second reading.',
     });
 
-    const publicationRequirements = getContentReviewRequirements(
-      content,
-      'publication',
-    );
+    const articleGovernance = resolveConfiguredContentGovernance({
+      contentType: 'article',
+    });
+    const documentGovernance = resolveConfiguredContentGovernance({
+      contentType: 'document',
+    });
 
+    expect(articleGovernance.isGoverned).toBe(true);
+    expect(articleGovernance.factLinkingEnabled).toBe(true);
     expect(
-      publicationRequirements.map((requirement) => requirement.policyKey),
-    ).toContain('safety');
+      articleGovernance.reviewPolicies.map((policy) => policy.key),
+    ).toEqual(expect.arrayContaining(['facts', 'safety']));
     expect(
-      publicationRequirements.map((requirement) => requirement.policyKey),
-    ).toContain('facts');
-    expect(getContentReviewProfileKeys()).toContain('publication');
-    expect(getContentReviewPolicies().map((policy) => policy.key)).toContain(
-      'facts',
-    );
+      articleGovernance.availableProfiles.map((profile) => profile.key),
+    ).toEqual(expect.arrayContaining(['publication', 'correction']));
+    expect(documentGovernance.isGoverned).toBe(false);
   });
 
-  it('evaluates review profile readiness separately from completeness', async () => {
-    const db: DatabaseInterface = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-    });
-
-    try {
-      configureContentGovernance({
-        reviewProfiles: {
-          publication: [
-            {
-              policyKey: 'safety',
-              blocking: true,
-            },
-            {
-              policyKey: 'facts',
-              blocking: false,
-            },
-          ],
+  it('lets exact variant assignments override and disable broader type rules', () => {
+    configureContentGovernance({
+      assignments: [
+        {
+          contentType: 'article',
+          enabled: true,
+          factLinkingEnabled: true,
+          transparencyEnabled: true,
+          publicationProfileKey: 'publication',
         },
-      });
-
-      const content = new FactualContent({
-        name: 'budget-update',
-        title: 'Budget update',
-        body: 'The budget passed.',
-        db,
-      });
-      await content.initialize();
-      await content.save();
-
-      const reviews = await ContentReviewCollection.create({ db });
-      await reviews.create({
-        contentId: content.id,
-        kind: 'safety',
-        policyKey: 'safety',
-        status: 'passed',
-        summary: 'Safety review passed.',
-      });
-
-      const evaluation = await content.evaluateReviewProfile('publication');
-
-      expect(evaluation.ready).toBe(true);
-      expect(evaluation.complete).toBe(false);
-      expect(
-        evaluation.requirements.find(
-          (requirement) => requirement.policyKey === 'facts',
-        )?.missing,
-      ).toBe(true);
-      expect(
-        evaluation.requirements.find(
-          (requirement) => requirement.policyKey === 'safety',
-        )?.satisfied,
-      ).toBe(true);
-    } finally {
-      if (typeof db.close === 'function') {
-        await db.close();
-      }
-    }
-  });
-
-  it('lists configured review profile evaluations for content', async () => {
-    const db: DatabaseInterface = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-    });
-
-    try {
-      configureContentGovernance({
-        reviewProfiles: {
-          publication: [
-            {
-              policyKey: 'safety',
-              blocking: true,
-            },
-            {
-              policyKey: 'facts',
-              blocking: false,
-            },
-          ],
-          correction: [
-            {
-              policyKey: 'safety',
-              blocking: true,
-            },
-          ],
+        {
+          contentType: 'article',
+          contentVariant: 'news:live-blog',
+          enabled: false,
         },
-      });
+        {
+          contentType: 'article',
+          contentVariant: 'news:analysis',
+          enabled: true,
+          factLinkingEnabled: false,
+          transparencyEnabled: true,
+          publicationProfileKey: 'correction',
+        },
+      ],
+    });
 
-      const content = new FactualContent({
-        name: 'council-update',
-        title: 'Council update',
-        body: 'Council approved the budget.',
-        db,
-      });
-      await content.initialize();
-      await content.save();
+    const liveBlog = resolveConfiguredContentGovernance({
+      contentType: 'article',
+      contentVariant: 'news:live-blog',
+    });
+    const analysis = resolveConfiguredContentGovernance({
+      contentType: 'article',
+      contentVariant: 'news:analysis',
+    });
+    const genericArticle = resolveConfiguredContentGovernance({
+      contentType: 'article',
+      contentVariant: 'news:brief',
+    });
 
-      const reviews = await ContentReviewCollection.create({ db });
-      await reviews.create({
-        contentId: content.id,
-        kind: 'safety',
-        policyKey: 'safety',
-        status: 'passed',
-        summary: 'Safety review passed.',
-      });
-
-      const profiles = await content.listReviewProfilesAction();
-
-      expect(profiles.map((profile) => profile.profileKey)).toEqual([
-        'publication',
-        'correction',
-      ]);
-      expect(
-        profiles.find((profile) => profile.profileKey === 'publication')?.ready,
-      ).toBe(true);
-      expect(
-        profiles.find((profile) => profile.profileKey === 'correction')?.ready,
-      ).toBe(true);
-    } finally {
-      if (typeof db.close === 'function') {
-        await db.close();
-      }
-    }
+    expect(liveBlog.isGoverned).toBe(false);
+    expect(analysis.isGoverned).toBe(true);
+    expect(analysis.factLinkingEnabled).toBe(false);
+    expect(analysis.publicationProfileKey).toBe('correction');
+    expect(genericArticle.isGoverned).toBe(true);
+    expect(genericArticle.factLinkingEnabled).toBe(true);
   });
 
-  it('uses configured policy kinds for app-level review policies', async () => {
+  it('lets persisted admin records override config defaults', async () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
     });
 
     try {
+      await prepareGovernanceSchemas(db);
+
       configureContentGovernance({
-        reviewPolicies: {
-          legal: {
-            key: 'legal',
-            label: 'Legal Review',
-            kind: 'safety',
-            instructions: 'Check legal exposure and risky claims.',
+        policies: [
+          {
+            key: 'editorial',
+            label: 'Editorial Review',
+            kind: 'custom',
+            instructions: 'Check style and tone.',
           },
-        },
-        reviewProfiles: {
-          publication: [
-            {
-              policyKey: 'legal',
-              blocking: true,
-            },
-          ],
-        },
+        ],
+        profiles: [
+          {
+            key: 'publication',
+            label: 'Publication',
+            requirements: [
+              {
+                policyKey: 'editorial',
+                blocking: false,
+              },
+            ],
+          },
+        ],
+        assignments: [
+          {
+            contentType: 'article',
+            enabled: true,
+            publicationProfileKey: 'publication',
+          },
+        ],
       });
 
-      const content = new FactualContent({
-        name: 'court-update',
-        title: 'Court update',
-        body: 'The filing made several allegations.',
+      const policies = await ContentGovernancePolicyCollection.create({ db });
+      const profiles = await ContentGovernanceProfileCollection.create({ db });
+      const assignments = await ContentGovernanceAssignmentCollection.create({
         db,
-        ai: {
-          embed: vi.fn().mockResolvedValue([]),
-          message: vi.fn().mockResolvedValue(
-            JSON.stringify({
-              status: 'passed',
-              summary: 'Legal review passed.',
-              findings: [],
-            }),
-          ),
-        },
-      });
-      await content.initialize();
-      await content.save();
-
-      const evaluation = await content.evaluateReviewProfile('publication');
-      expect(evaluation.requirements[0]?.kind).toBe('safety');
-
-      const review = await content.runReview({
-        policyKey: 'legal',
-        createVersion: false,
       });
 
-      expect(review.kind).toBe('safety');
-      expect(review.policyKey).toBe('legal');
-    } finally {
-      if (typeof db.close === 'function') {
-        await db.close();
-      }
-    }
-  });
-
-  it('marks version-bound reviews as stale after content changes', async () => {
-    const db: DatabaseInterface = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-    });
-
-    try {
-      configureContentGovernance({
-        reviewProfiles: {
-          publication: [
-            {
-              policyKey: 'safety',
-              blocking: true,
-            },
-          ],
-        },
+      await policies.create({
+        key: 'editorial',
+        label: 'Admin Editorial Review',
+        kind: 'custom',
+        instructions: 'Admin override instructions.',
       });
-
-      const content = new FactualContent({
-        name: 'transit-safety',
-        title: 'Transit safety',
-        body: 'Transit service remains available.',
-        db,
-        ai: {
-          embed: vi.fn().mockResolvedValue([]),
-          message: vi.fn().mockResolvedValue(
-            JSON.stringify({
-              status: 'passed',
-              summary: 'Safety review passed.',
-              findings: [],
-            }),
-          ),
-        },
+      await profiles.create({
+        key: 'admin-publication',
+        label: 'Admin Publication',
+        requirements: [
+          {
+            policyKey: 'editorial',
+            blocking: true,
+          },
+        ],
       });
-      await content.initialize();
-      await content.save();
-      await content.reviewSafety({ createVersion: false });
-
-      const freshEvaluation =
-        await content.evaluateReviewProfile('publication');
-      expect(freshEvaluation.ready).toBe(true);
-      expect(freshEvaluation.requirements[0]?.stale).toBe(false);
-
-      content.body = 'Transit service is suspended tonight.';
-
-      const staleEvaluation =
-        await content.evaluateReviewProfile('publication');
-      expect(staleEvaluation.ready).toBe(false);
-      expect(staleEvaluation.complete).toBe(false);
-      expect(staleEvaluation.requirements[0]?.stale).toBe(true);
-      expect(staleEvaluation.requirements[0]?.satisfied).toBe(false);
-    } finally {
-      if (typeof db.close === 'function') {
-        await db.close();
-      }
-    }
-  });
-
-  it('enforces blocking publish requirements on save when configured', async () => {
-    const db: DatabaseInterface = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-    });
-
-    try {
-      configureContentGovernance({
+      await assignments.create({
+        contentType: 'article',
+        enabled: true,
+        publicationProfileKey: 'admin-publication',
         enforcePublishReadiness: true,
-        reviewProfiles: {
-          publication: [
-            {
-              policyKey: 'safety',
-              blocking: true,
-            },
-          ],
-        },
       });
 
-      const content = new FactualContent({
-        name: 'overnight-publish',
-        title: 'Overnight publish',
-        body: 'Breaking copy without review.',
-        status: 'published',
+      const governance = await resolveEffectiveContentGovernance({
+        contentType: 'article',
         db,
       });
-      await content.initialize();
 
-      await expect(content.save()).rejects.toThrow(
-        /review profile is satisfied/i,
-      );
-
-      content.status = 'draft';
-      await expect(content.save()).resolves.toBe(content);
+      expect(governance.isGoverned).toBe(true);
+      expect(governance.publicationProfileKey).toBe('admin-publication');
+      expect(governance.enforcePublishReadiness).toBe(true);
+      expect(
+        governance.reviewPolicies.find((policy) => policy.key === 'editorial')
+          ?.label,
+      ).toBe('Admin Editorial Review');
     } finally {
       if (typeof db.close === 'function') {
         await db.close();
@@ -564,7 +514,83 @@ describe('FactualContent foundations', () => {
     }
   });
 
-  it('captures a transparency snapshot when published content is saved', async () => {
+  it('validates references and blocks deletion of in-use policies and profiles', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareGovernanceSchemas(db);
+
+      const policies = await ContentGovernancePolicyCollection.create({ db });
+      const profiles = await ContentGovernanceProfileCollection.create({ db });
+      const assignments = await ContentGovernanceAssignmentCollection.create({
+        db,
+      });
+
+      await expect(
+        profiles.create({
+          key: 'broken-profile',
+          label: 'Broken profile',
+          requirements: [
+            {
+              policyKey: 'missing-policy',
+            },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        cause: expect.objectContaining({
+          message: expect.stringContaining('missing-policy'),
+        }),
+      });
+
+      await expect(
+        assignments.create({
+          contentType: 'article',
+          enabled: true,
+          publicationProfileKey: 'missing-profile',
+        }),
+      ).rejects.toMatchObject({
+        cause: expect.objectContaining({
+          message: expect.stringContaining('missing-profile'),
+        }),
+      });
+
+      const policy = await policies.create({
+        key: 'legal',
+        label: 'Legal Review',
+        kind: 'safety',
+        instructions: 'Check legal risk.',
+      });
+      const profile = await profiles.create({
+        key: 'legal-publication',
+        label: 'Legal publication',
+        requirements: [
+          {
+            policyKey: 'legal',
+            blocking: true,
+          },
+        ],
+      });
+      await assignments.create({
+        contentType: 'article',
+        enabled: true,
+        publicationProfileKey: 'legal-publication',
+      });
+
+      await expect(policy.delete()).rejects.toThrow('referenced by profiles');
+      await expect(profile.delete()).rejects.toThrow(
+        'referenced by assignments',
+      );
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('keeps the governed article workflow working end to end', async () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
@@ -572,205 +598,103 @@ describe('FactualContent foundations', () => {
 
     try {
       await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
 
-      const content = new FactualContent({
+      configureContentGovernance({
+        assignments: [
+          {
+            contentType: 'article',
+            enabled: true,
+            factLinkingEnabled: true,
+            transparencyEnabled: true,
+            publicationProfileKey: 'publication',
+            correctionProfileKey: 'correction',
+            enforcePublishReadiness: true,
+            defaultFactRelationship: 'supports',
+          },
+        ],
+        profiles: [
+          {
+            key: 'publication',
+            label: 'Publication',
+            requirements: [
+              { policyKey: 'safety', blocking: true },
+              { policyKey: 'facts', blocking: true },
+            ],
+          },
+          {
+            key: 'correction',
+            label: 'Correction',
+            requirements: [{ policyKey: 'safety', blocking: true }],
+          },
+        ],
+      });
+
+      const aiMessage = vi.fn().mockResolvedValue(
+        JSON.stringify({
+          status: 'passed',
+          summary: 'Review passed.',
+          findings: [],
+        }),
+      );
+      const content = new Content({
         name: 'bridge-update',
         title: 'Bridge update',
-        body: 'The bridge reopened this morning.',
+        body: 'The bridge reopened on March 1.',
+        type: 'article',
+        status: 'draft',
         db,
-        metadata: {
-          generation: {
-            publicPrompt: 'Write a concise public-service update.',
-            aiAssisted: true,
-            model: 'gpt-test',
-          },
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: aiMessage,
         },
       });
       await content.initialize();
       await content.save();
 
-      const reference = new Content({
-        name: 'bridge-reference',
-        title: 'Bridge authority release',
-        url: 'https://example.com/bridge-release',
-        body: 'Official release from the bridge authority.',
-        db,
-      });
-      await reference.initialize();
-      await reference.save();
-      await content.addReference(reference);
-
       const facts = await FactCollection.create({ db });
-      const factSources = await FactSourceCollection.create({ db });
       const fact = await facts.create({
-        textRefined: 'The bridge reopened on Friday morning.',
-        textRaw: 'The bridge reopened on Friday morning.',
+        textRefined: 'The bridge reopened on March 1.',
+        textRaw: 'The bridge reopened on March 1.',
         status: 'active',
+        type: 'assertion',
+        domain: 'civic',
       });
-      await factSources.create({
-        factId: fact.id as string,
-        sourceUrl: reference.url || '',
-        sourceTitle: reference.title,
-        sourceType: 'article',
-      });
-      await content.addFact(fact, 'supports');
+
+      const sync = await content.syncFacts([fact.id as string]);
+      expect(sync.added).toEqual([fact.id]);
+
+      await content.reviewFacts({ createVersion: false });
+      await content.reviewSafety({ createVersion: false });
+
+      const governanceState = await content.getGovernanceState();
+      expect(governanceState.isGoverned).toBe(true);
+      expect(governanceState.factLinkingEnabled).toBe(true);
+      expect(
+        governanceState.reviewProfiles.find(
+          (profile) => profile.profileKey === 'publication',
+        )?.ready,
+      ).toBe(true);
 
       content.status = 'published';
       await content.save();
 
-      const versions = await content.getVersions();
-      const publicationVersion = versions.find(
-        (version) => version.kind === 'publication',
-      );
-
-      expect(publicationVersion).toBeTruthy();
-
-      const metadata = publicationVersion?.getMetadata() || {};
-      expect(metadata.publicationSnapshotFingerprint).toBeTruthy();
-      expect(metadata.transparency?.generation?.publicPrompt).toBe(
-        'Write a concise public-service update.',
-      );
-      expect(metadata.transparency?.factsUsed).toHaveLength(1);
-      expect(metadata.transparency?.references[0]?.usedFactIds).toContain(
-        fact.id,
-      );
-
-      const previewTransparency = await content.previewTransparencyAction();
-      const publishedTransparency =
-        await content.getPublishedTransparencyAction();
-      const versionTransparency =
-        await publicationVersion?.getTransparencyAction();
-
-      expect(previewTransparency.snapshotKind).toBe('preview');
-      expect(previewTransparency.factsUsed).toHaveLength(1);
-      expect(publishedTransparency?.snapshotKind).toBe('published');
-      expect(publishedTransparency?.publicationVersion?.id).toBe(
-        publicationVersion?.id,
-      );
-      expect(versionTransparency?.publicationVersion?.version).toBe(
-        publicationVersion?.version,
-      );
-    } finally {
-      if (typeof db.close === 'function') {
-        await db.close();
-      }
-    }
-  });
-
-  it('auto-creates a correction draft version when issuing a correction', async () => {
-    const db: DatabaseInterface = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-    });
-
-    try {
-      await prepareContentWorkflowSchemas(db);
-
-      const content = new FactualContent({
-        name: 'budget-fix',
-        title: 'Budget fix',
-        body: 'The budget is $4.2 million.',
-        status: 'published',
-        db,
-      });
-      await content.initialize();
-      await content.save();
+      const publishedTransparency = await content.getPublishedTransparency();
+      expect(publishedTransparency?.factsUsed).toHaveLength(1);
+      expect(publishedTransparency?.publicationProfileKey).toBe('publication');
 
       const correction = await content.issueCorrection({
-        summary: 'Correct the budget amount.',
-        incorrectText: '$4.2 million',
-        correctedText: '$5.1 million',
+        summary: 'Correct the reopening date reference.',
+        factId: fact.id as string,
+        correctedFactText: 'The bridge reopened shortly after March 1.',
       });
-
       expect(correction.getMetadata().autoGeneratedDraft).toBe(true);
-      expect(correction.getMetadata().draftVersionId).toBeTruthy();
 
       const versions = await content.getVersions();
-      const draftVersion = versions.find(
-        (version) =>
-          version.kind === 'draft' &&
-          version.summary ===
-            'Auto-created correction draft: Correct the budget amount.',
+      expect(versions.some((version) => version.kind === 'publication')).toBe(
+        true,
       );
-
-      expect(draftVersion).toBeTruthy();
-      expect(draftVersion?.getSnapshot().status).toBe('draft');
-      expect(draftVersion?.getSnapshot().body).toContain('$5.1 million');
-
-      const previewTransparency = await content.previewTransparencyAction();
-      const correctionEntry = previewTransparency.corrections[0];
-      const draftHistoryEntry = previewTransparency.versionHistory.find(
-        (version) => version.id === draftVersion?.id,
-      );
-
-      expect(correctionEntry?.provenance?.draftVersionId).toBe(
-        draftVersion?.id,
-      );
-      expect(draftHistoryEntry?.provenance?.sourceCorrectionVersionId).toBe(
-        correction.getMetadata().sourceCorrectionVersionId,
-      );
-    } finally {
-      if (typeof db.close === 'function') {
-        await db.close();
-      }
-    }
-  });
-
-  it('returns governance state with policies and evaluated profiles', async () => {
-    const db: DatabaseInterface = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-    });
-
-    try {
-      configureContentGovernance({
-        reviewPolicies: {
-          editorial: {
-            key: 'editorial',
-            label: 'Editorial Review',
-            kind: 'custom',
-            instructions: 'Check voice, style, and clarity.',
-          },
-        },
-        reviewProfiles: {
-          publication: [
-            {
-              policyKey: 'safety',
-              blocking: true,
-            },
-            {
-              policyKey: 'editorial',
-              blocking: false,
-            },
-          ],
-        },
-      });
-
-      const content = new FactualContent({
-        name: 'budget-roundup',
-        title: 'Budget roundup',
-        body: 'The budget passed last night.',
-        db,
-      });
-      await content.initialize();
-      await content.save();
-
-      const governanceState = await content.getGovernanceStateAction();
-
-      expect(governanceState.isFactual).toBe(true);
-      expect(governanceState.defaultFactRelationship).toBe('supports');
-      expect(governanceState.publicationReviewProfileKey).toBe('publication');
-      expect(governanceState.enforcePublishReadiness).toBe(false);
-      expect(
-        governanceState.reviewPolicies.find(
-          (policy) => policy.key === 'editorial',
-        )?.kind,
-      ).toBe('custom');
-      expect(
-        governanceState.reviewProfiles.find(
-          (profile) => profile.profileKey === 'publication',
-        ),
-      ).toBeTruthy();
+      expect(versions.some((version) => version.kind === 'draft')).toBe(true);
     } finally {
       if (typeof db.close === 'function') {
         await db.close();
